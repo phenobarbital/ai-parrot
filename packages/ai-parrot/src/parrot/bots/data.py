@@ -3,7 +3,7 @@ PandasAgent.
 A specialized agent for data analysis using pandas DataFrames.
 """
 from __future__ import annotations
-from typing import Any, List, Dict, Tuple, Union, Optional, TYPE_CHECKING
+from typing import Any, List, Dict, Tuple, Union, Optional
 import ast
 import asyncio
 import inspect
@@ -24,8 +24,10 @@ from ..tools.dataset_manager import DatasetManager
 from ..tools.pythonpandas import PythonPandasTool
 from ..tools.json_tool import ToJsonTool
 from .agent import BasicAgent
+from .mixins.intent_router import IntentRouterMixin
+from ..registry.capabilities.models import IntentRouterConfig
 from ..models.responses import AIMessage, AgentResponse
-from ..models.outputs import OutputMode, StructuredOutputConfig
+from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChartConfig
 from ..memory.abstract import ConversationTurn
 from ..conf import STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
@@ -426,7 +428,35 @@ def _detect_map_intent(question: str, df: Optional[pd.DataFrame]) -> bool:
     return len(cols & _INDIRECT_GEO_COLS) >= 2
 
 
-class PandasAgent(BasicAgent):
+# --- Output-mode routing (FEAT-224) ---------------------------------------
+# Default bilingual (EN/ES) phrase bank for PandasAgent's optional pre-LLM
+# output-mode router. Maps user phrasing to the framework-agnostic STRUCTURED_*
+# modes the agent already renders (chart: FEAT-215, table: FEAT-218,
+# map: FEAT-221). The map route here supersedes the post-execution
+# ``_detect_map_intent`` heuristic whenever the router is active.
+DEFAULT_OUTPUT_MODE_ROUTES: Dict[str, List[str]] = {
+    OutputMode.STRUCTURED_CHART.value: [
+        "create a chart", "make a bar chart", "draw a line chart",
+        "plot a pie chart", "show this as a graph", "visualize the trend",
+        "haz una gráfica", "crea un gráfico de barras", "dibuja una gráfica de líneas",
+        "muéstrame un gráfico de pastel", "grafica la tendencia",
+    ],
+    OutputMode.STRUCTURED_TABLE.value: [
+        "show as a table", "display this in a table", "give me a table",
+        "list the rows in a table", "tabular view",
+        "muéstrame una tabla", "ponlo en una tabla", "dame una tabla",
+        "lista los datos en una tabla", "vista tabular",
+    ],
+    OutputMode.STRUCTURED_MAP.value: [
+        "show on a map", "plot these locations on a map", "map the results",
+        "render a map", "display geographically",
+        "muéstralo en un mapa", "ubica estos puntos en un mapa", "dibuja un mapa",
+        "renderiza un mapa", "muéstralo geográficamente",
+    ],
+}
+
+
+class PandasAgent(IntentRouterMixin, BasicAgent):
     """
     A specialized agent for data analysis using pandas DataFrames.
 
@@ -467,6 +497,8 @@ class PandasAgent(BasicAgent):
         cache_expiration: int = 24,
         temperature: float = 0.0,
         max_iterations: Optional[int] = None,
+        output_routing: bool = False,
+        output_routing_config: Optional[IntentRouterConfig] = None,
         **kwargs
     ):
         """
@@ -481,8 +513,20 @@ class PandasAgent(BasicAgent):
             capabilities: Agent capabilities description
             generate_eda: Generate exploratory data analysis
             cache_expiration: Cache expiration in hours
+            output_routing: When True, activate the pre-LLM embedding-based
+                output-mode router (FEAT-224) so the agent auto-selects
+                STRUCTURED_CHART/TABLE/MAP from the user's phrasing. Opt-in
+                because it lazy-loads a SentenceTransformer (``embeddings``
+                extra) and encodes a phrase bank at ``configure()`` time.
+            output_routing_config: Optional :class:`IntentRouterConfig` to
+                override the default bilingual phrase bank / thresholds. When
+                provided, it takes precedence over the ``output_routing`` flag's
+                default config (and must set ``enable_output_mode_routing=True``
+                to activate).
             **kwargs: Additional configuration
         """
+        self._output_routing_enabled = output_routing
+        self._output_routing_config = output_routing_config
         self._queries = query or self.queries
         self._capabilities = capabilities
         self._generate_eda = generate_eda
@@ -979,6 +1023,18 @@ class PandasAgent(BasicAgent):
         # Call parent configure (handles LLM, tools, memory, etc.)
         await super().configure(app=app)
 
+        # FEAT-224: optionally activate the pre-LLM output-mode router so the
+        # agent auto-selects STRUCTURED_CHART/TABLE/MAP from the user's phrasing
+        # (e.g. "create a pie chart of Q1 sales"). Opt-in: loading the encoder
+        # and encoding the phrase bank is CPU-bound, so it runs off the event
+        # loop and only when explicitly enabled.
+        if self._output_routing_enabled or self._output_routing_config is not None:
+            router_cfg = self._output_routing_config or IntentRouterConfig(
+                enable_output_mode_routing=True,
+                output_mode_routes=DEFAULT_OUTPUT_MODE_ROUTES,
+            )
+            await asyncio.to_thread(self.configure_output_router, router_cfg)
+
         # Cache data after configuration
 
 
@@ -1032,8 +1088,6 @@ class PandasAgent(BasicAgent):
         self, tool_calls: Optional[List[Any]],
     ) -> Optional[Any]:
         """Return the last ``InfographicRenderResult`` from the tool calls list.
-
-        Placed adjacent to ``_rerun_for_map`` for reviewability (FEAT-197).
 
         When multiple ``infographic_render`` calls occurred in the same turn,
         only the LAST one is returned (spec §7 documents this design).
@@ -1107,63 +1161,39 @@ class PandasAgent(BasicAgent):
 
         return explanation
 
-    async def _rerun_for_map(
-        self,
-        *,
-        client: Any,
-        question: str,
-        result_var: str,
-        result_df: pd.DataFrame,
-        base_llm_kwargs: Dict[str, Any],
-        prev_response: AIMessage,
-    ) -> AIMessage:
-        """Re-invoke the LLM with the Folium system prompt so it produces
-        map code referencing the result DataFrame already living in the
-        PythonPandasTool REPL.
+    def _spatial_result_from_dataframe(
+        self, df: pd.DataFrame,
+    ) -> Optional[Any]:
+        """Convert a result DataFrame into a ``SpatialResult`` for STRUCTURED_MAP.
 
-        The first ``client.ask`` call ran without ``FOLIUM_SYSTEM_PROMPT``
-        because the user did not explicitly request ``OutputMode.MAP`` —
-        auto-detection happens after the result is materialised. This
-        helper performs the second pass and preserves the original
-        ``response.data`` on the returned AIMessage so the FoliumRenderer
-        sees the same DataFrame the user asked about.
+        FEAT-224: replaces the deprecated Folium re-render path. The backend no
+        longer generates map HTML — it builds the GeoJSON wire contract the
+        ``StructuredMapRenderer`` consumes (via
+        :meth:`SpatialResult.from_dataframe`), so the frontend renders the map.
+
+        Args:
+            df: The result DataFrame produced for the current question.
+
+        Returns:
+            A ``SpatialResult`` when the rows yield at least one feature, or
+            ``None`` when no coordinates/geometry can be resolved (caller then
+            falls through to the default output instead of an empty map).
         """
-        cols = [str(c) for c in result_df.columns]
-        augmented_prompt = (
-            f"Generate a Folium map using the DataFrame already stored "
-            f"in the variable `{result_var}` (columns: {cols}, "
-            f"rows: {len(result_df)}). Do not re-derive or filter that "
-            f"DataFrame — reference it directly. "
-            f"Original user request: {question}"
-        )
-
-        folium_addon = self.formatter.get_system_prompt(OutputMode.MAP) or ""
-        rerun_system_prompt = (
-            base_llm_kwargs["system_prompt"]
-            + OUTPUT_SYSTEM_PROMPT.format(output_mode="map")
-            + folium_addon
-        )
-
-        rerun_kwargs = dict(base_llm_kwargs)
-        rerun_kwargs["prompt"] = augmented_prompt
-        rerun_kwargs["system_prompt"] = rerun_system_prompt
-
-        map_response: AIMessage = await client.ask(**rerun_kwargs)
-
-        # Preserve the original result DataFrame — the second call's job
-        # is to produce Folium code, not to recompute the data. Pulling
-        # the live ``data_variable`` again risks the LLM truncating to a
-        # preview or fabricating rows.
-        map_response.data = result_df
-        map_response.session_id = prev_response.session_id
-        map_response.turn_id = prev_response.turn_id
-
-        if self._dataset_manager:
-            map_response.artifacts.extend(
-                self._dataset_manager.drain_artifacts()
+        try:
+            from ..tools.dataset_manager.spatial.contracts import SpatialResult
+        except ImportError:
+            self.logger.debug(
+                "SpatialResult unavailable; skipping STRUCTURED_MAP conversion."
             )
-
-        return map_response
+            return None
+        try:
+            result = SpatialResult.from_dataframe(df)
+        except ValueError:
+            # No geometry column and no lat/lon pair — not mappable.
+            return None
+        if not any(layer.features for layer in result.layers.values()):
+            return None
+        return result
 
     @staticmethod
     def _client_uses_split_structured_with_tools(client: Any) -> bool:
@@ -1353,6 +1383,18 @@ class PandasAgent(BasicAgent):
             if output_mode is None:
                 output_mode = OutputMode.DEFAULT
 
+            # FEAT-224: pre-LLM output-mode routing for data/viz queries (the
+            # primary use case, e.g. "create a pie chart of Q1 sales"). Runs
+            # after the None->DEFAULT normalization above and only when the
+            # caller did not specify a mode (precedence: explicit > router >
+            # default). No-op unless a routing mixin (IntentRouterMixin) is present.
+            if output_mode == OutputMode.DEFAULT:
+                _resolved_mode = await self._resolve_output_mode(question, ctx)
+                if _resolved_mode is not None:
+                    output_mode = _resolved_mode
+                    if ctx is not None:
+                        ctx.output_mode = _resolved_mode
+
             # Build context from different sources (no vector context for PandasAgent)
             vector_metadata = {'activated_kbs': []}
 
@@ -1496,8 +1538,20 @@ class PandasAgent(BasicAgent):
                     elif isinstance(structured_output, StructuredOutputConfig):
                         llm_kwargs["structured_output"] = structured_output
                 elif return_structured:
+                    # FEAT-215: for STRUCTURED_CHART the structured output IS the
+                    # chart config (mirrors the frontend AppChartConfig), not the
+                    # generic PandasAgentResponse. Forcing PandasAgentResponse here
+                    # made the model emit a prose-only {explanation} and omit the
+                    # chart config; advertising StructuredChartConfig (incl. the
+                    # fast-path JSON addendum below) makes it reliably emit the
+                    # config + embedded data rows.
+                    _forced_output_type = (
+                        StructuredChartConfig
+                        if output_mode == OutputMode.STRUCTURED_CHART
+                        else PandasAgentResponse
+                    )
                     llm_kwargs["structured_output"] = StructuredOutputConfig(
-                        output_type=PandasAgentResponse
+                        output_type=_forced_output_type
                     )
 
                 # Fast-path optimization for clients that split tools +
@@ -1539,6 +1593,62 @@ class PandasAgent(BasicAgent):
                 response.turn_id = getattr(response, 'turn_id', None) or turn_id
                 data_response: Optional[PandasAgentResponse] = response.output \
                     if isinstance(response.output, PandasAgentResponse) else None
+
+                # FEAT-221: in STRUCTURED_MAP mode the agent calls the spatial_filter
+                # tool which returns a SpatialResult. Route the SpatialResult to
+                # response.data so StructuredMapRenderer (table-style ownership) can
+                # read it deterministically. Unlike STRUCTURED_CHART, we do NOT force
+                # a structured_output type — the LLM emits the SpatialFilterSpec and
+                # calls the tool; the renderer builds the config.
+                if output_mode == OutputMode.STRUCTURED_MAP:
+                    # Look for a SpatialResult in tool call results
+                    spatial_result = self._extract_spatial_result_from_tools(
+                        response.tool_calls
+                    )
+                    if spatial_result is not None:
+                        response.data = spatial_result
+                        self.logger.info(
+                            "STRUCTURED_MAP: routed SpatialResult (%d layers) to response.data",
+                            len(getattr(spatial_result, "layers", {})),
+                        )
+                    else:
+                        self.logger.warning(
+                            "STRUCTURED_MAP: no SpatialResult found in tool calls; "
+                            "response.data may be empty for the renderer."
+                        )
+                    # Attach the originating SpatialFilterSpec so StructuredMapRenderer
+                    # can build MapQuery.  This must be set BEFORE the renderer runs.
+                    spec = self._extract_spatial_filter_spec_from_tools(response.tool_calls)
+                    if spec is not None:
+                        response.spatial_filter_spec = spec
+
+                # FEAT-215: in STRUCTURED_CHART mode the structured output IS the
+                # chart config (StructuredChartConfig), not a PandasAgentResponse, so
+                # the branch below is skipped.
+                # FEAT-224 (G3): response.code is NO LONGER populated with the config
+                # here — the StructuredChartRenderer now reads its input config from
+                # response.output / response.structured_output (TASK-1460). Only the
+                # data_variable injection is kept so rows still land in response.data.
+                if output_mode == OutputMode.STRUCTURED_CHART and data_response is None:
+                    _cfg_out = response.output
+                    _chart_data_var: Optional[str] = None
+                    if isinstance(_cfg_out, StructuredChartConfig):
+                        # response.code no longer set here (FEAT-224 G3)
+                        _chart_data_var = _cfg_out.data_variable
+                    elif isinstance(_cfg_out, dict):
+                        # response.code no longer set here (FEAT-224 G3)
+                        _chart_data_var = (
+                            _cfg_out.get("data_variable")
+                            or _cfg_out.get("dataVariable")
+                        )
+                    # The chart config may name the DataFrame variable to chart.
+                    # Inject it explicitly: this disambiguates turns that produced
+                    # multiple DataFrames, where blind inference refuses to guess
+                    # (see _infer_data_variable_from_tools).
+                    if _chart_data_var:
+                        await self._inject_data_from_variable(
+                            response, _chart_data_var
+                        )
 
                 missing_data_variables: List[str] = []
                 if data_response:
@@ -1600,8 +1710,18 @@ class PandasAgent(BasicAgent):
                     response.tool_calls
                 )
                 if not inferred_var:
+                    # FEAT-215: in STRUCTURED_CHART mode the prompt asks the
+                    # agent to place the final chart rows in a conventionally
+                    # named DataFrame (`chart_data`). Prefer it when present so a
+                    # multi-DataFrame turn still resolves instead of refusing.
+                    _prefer = (
+                        ("chart_data", "chart_df")
+                        if output_mode == OutputMode.STRUCTURED_CHART
+                        else ()
+                    )
                     inferred_var = self._infer_data_variable_from_tools(
-                        response.tool_calls
+                        response.tool_calls,
+                        prefer_names=_prefer,
                     )
 
                 response_data_is_empty = (
@@ -1626,7 +1746,15 @@ class PandasAgent(BasicAgent):
                     # rows) from replacing the aggregated DataFrame the LLM
                     # declared via data_variable. The renderer is responsible for
                     # setting response.data = cfg.data after validating the JSON.
+                    # FEAT-218: STRUCTURED_TABLE has the same ownership contract —
+                    # the StructuredTableRenderer sets response.data = cfg.data;
+                    # the override guard must not clobber it with the raw DataFrame.
+                    # FEAT-221: STRUCTURED_MAP has the same data-owned contract —
+                    # the StructuredMapRenderer builds the config from response.data
+                    # (SpatialResult); the override guard must not clobber it.
                     and output_mode != OutputMode.STRUCTURED_CHART
+                    and output_mode != OutputMode.STRUCTURED_TABLE
+                    and output_mode != OutputMode.STRUCTURED_MAP
                 ):
                     # Override guard: when the reformatter populated
                     # ``response.data`` but the live tool-local DataFrame
@@ -1688,49 +1816,54 @@ class PandasAgent(BasicAgent):
                         missing_data_variables or "none",
                     )
 
-                # Auto-switch to MAP when the caller did not explicitly
-                # pick a mode but the question phrases a map request AND
-                # the result DataFrame has the geographic signal to back
-                # it. Source DataFrames cannot be inspected for this —
-                # the DatasetManager exposes dozens of datasets, many
-                # with lat/lon, so the only honest signal is the result
-                # the LLM actually produced for this question.
+                # Auto-switch to STRUCTURED_MAP when the caller did not
+                # explicitly pick a mode but the question phrases a map request
+                # AND the result DataFrame carries the geographic signal to back
+                # it. Source DataFrames cannot be inspected for this — the
+                # DatasetManager exposes dozens of datasets, many with lat/lon,
+                # so the only honest signal is the result the LLM produced.
+                #
+                # FEAT-224: the backend no longer renders a Folium map (deprecated
+                # — that made the backend produce a frontend artifact). It now
+                # converts the result rows into a ``SpatialResult`` and emits a
+                # framework-agnostic STRUCTURED_MAP config the frontend renders.
+                # Complements the pre-LLM Intent Router (which routes clearly
+                # phrased map requests to STRUCTURED_MAP up front); this is the
+                # data-aware fallback. Skipped — falls through to the default
+                # output — when the rows lack real coordinates/geometry (e.g.
+                # city/country names only), since a map cannot be built without
+                # geocoding.
                 if (
                     output_mode == OutputMode.DEFAULT
                     and isinstance(response.data, pd.DataFrame)
                     and _detect_map_intent(question, response.data)
                 ):
-                    map_var = inferred_var
-                    if not map_var and data_response:
-                        map_var = data_response.data_variable
-                        if not map_var and data_response.data_variables:
-                            candidate = data_response.data_variables[0]
-                            map_var = candidate if isinstance(candidate, str) else None
-                    if map_var:
+                    spatial_result = self._spatial_result_from_dataframe(
+                        response.data
+                    )
+                    if spatial_result is not None:
+                        feature_count = sum(
+                            len(lyr.features)
+                            for lyr in spatial_result.layers.values()
+                        )
                         self.logger.info(
-                            "Map intent detected for variable '%s' — "
-                            "re-running with FOLIUM_SYSTEM_PROMPT",
-                            map_var,
+                            "Map intent detected — emitting STRUCTURED_MAP "
+                            "config (%d feature(s))",
+                            feature_count,
                         )
-                        output_mode = OutputMode.MAP
-                        response = await self._rerun_for_map(
-                            client=client,
-                            question=question,
-                            result_var=map_var,
-                            result_df=response.data,
-                            base_llm_kwargs=llm_kwargs,
-                            prev_response=response,
-                        )
+                        output_mode = OutputMode.STRUCTURED_MAP
+                        response.data = spatial_result
                     else:
                         self.logger.debug(
-                            "Map intent matched but no result variable "
-                            "could be resolved; skipping auto-switch."
+                            "Map intent matched but result rows lack "
+                            "coordinates/geometry; skipping STRUCTURED_MAP "
+                            "auto-switch."
                         )
 
                 # FEAT-197: Post-loop branch for InfographicRenderResult.
-                # Pattern mirrors _rerun_for_map: isinstance check on the last
-                # tool result → mutate response in place → return early,
-                # bypassing the formatter and structured-output reformat.
+                # isinstance check on the last tool result → mutate response in
+                # place → return early, bypassing the formatter and
+                # structured-output reformat.
                 infographic_envelope = self._extract_last_infographic_result(
                     response.tool_calls
                 )
@@ -1775,7 +1908,7 @@ class PandasAgent(BasicAgent):
                                 output_mode, response, **format_kwargs
                             )
                          except Exception as e:
-                            self.logger.error(f"Error extracting content on formatter: {e}")
+                            self.logger.error("Error extracting content on formatter: %s", e)
                             content = f"Error extracting content: {e}"
                             wrapped = content
                 else:
@@ -1787,6 +1920,44 @@ class PandasAgent(BasicAgent):
                     response.output = content
                     response.response = wrapped
                     response.output_mode = output_mode
+
+                # FEAT-224 (G1): Build the canonical artifacts[] envelope for the
+                # three structured output modes.  A typed artifact entry is appended to
+                # response.artifacts and response.artifact_id is set to the minted id.
+                # response.output is kept as a deprecated mirror (G6) so existing
+                # consumers keep working during the migration window.
+                _STRUCTURED_ARTIFACT_TYPE = {
+                    OutputMode.STRUCTURED_CHART: "chart",
+                    OutputMode.STRUCTURED_MAP:   "map",
+                    OutputMode.STRUCTURED_TABLE: "table",
+                }
+                _art_type = _STRUCTURED_ARTIFACT_TYPE.get(output_mode)
+                if _art_type and isinstance(content, dict) and content:
+                    # output_mode may arrive as a plain str (not an OutputMode
+                    # enum) — mirror the hasattr guard used in the log line below.
+                    _mode_str = (
+                        output_mode.value
+                        if hasattr(output_mode, "value")
+                        else output_mode
+                    )
+                    _art_id = f"{_mode_str}-{uuid.uuid4().hex[:8]}"
+                    # G2 safety net: the renderer already excludes rows, but strip
+                    # any stray `data` key defensively so the envelope definition
+                    # never carries rows (rows live in response.data only).
+                    _definition = {
+                        _k: _v for _k, _v in content.items() if _k != "data"
+                    }
+                    response.artifacts.append({
+                        "type": _art_type,
+                        "artifactId": _art_id,
+                        "definition": _definition,   # camelCase config, data excluded
+                    })
+                    response.artifact_id = _art_id
+                    self.logger.info(
+                        "FEAT-224: structured artifact envelope minted — mode=%s artifact_id=%s",
+                        output_mode.value if hasattr(output_mode, "value") else output_mode,
+                        _art_id,
+                    )
 
                 if output_mode == OutputMode.MSTEAMS:
                      # Suppress code output for MS Teams to avoid clutter in Adaptive Card
@@ -1801,7 +1972,13 @@ class PandasAgent(BasicAgent):
                     # Already serialized — either:
                     # - Multi-dataset: list of DatasetResult dicts (from _inject_multi_data_from_variables)
                     # - Single dataset: list of record dicts (from a prior path)
+                    # - STRUCTURED_MAP: list of per-layer payload dicts (post-renderer)
                     # Leave as-is in both cases — no double-serialization.
+                    pass
+                elif output_mode == OutputMode.STRUCTURED_MAP and response.data is not None:
+                    # FEAT-221: STRUCTURED_MAP carries a SpatialResult in response.data
+                    # before the renderer runs; after the renderer it's a list of payloads.
+                    # Either way — leave as-is; the formatter/renderer handles conversion.
                     pass
                 elif response.data is not None:
                     self.logger.warning(
@@ -2031,8 +2208,97 @@ class PandasAgent(BasicAgent):
                 continue
         return None
 
+    def _extract_spatial_result_from_tools(
+        self, tool_calls: Optional[List[Any]]
+    ) -> Optional[Any]:
+        """Extract a ``SpatialResult`` from tool call results (FEAT-221).
+
+        Iterates the current turn's tool calls in reverse order, looking for
+        a result that is (or can be parsed as) a ``SpatialResult``.  Used by
+        the ``STRUCTURED_MAP`` branch to route the per-dataset spatial result to
+        ``response.data`` for the ``StructuredMapRenderer``.
+
+        Args:
+            tool_calls: The current turn's tool calls (may be None or empty).
+
+        Returns:
+            The **most recent** (last) ``SpatialResult`` found in tool call results,
+            or ``None``.
+        """
+        if not tool_calls:
+            return None
+
+        try:
+            from ..tools.dataset_manager.spatial.contracts import SpatialResult
+        except ImportError:
+            return None
+
+        for tc in reversed(tool_calls):
+            try:
+                result = getattr(tc, "result", None)
+                if result is None:
+                    continue
+                if isinstance(result, SpatialResult):
+                    return result
+                # Accept a dict with 'version' + 'layers' keys (serialized shape)
+                if isinstance(result, dict) and "layers" in result and "version" in result:
+                    try:
+                        return SpatialResult(**result)
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+        return None
+
+    def _extract_spatial_filter_spec_from_tools(
+        self, tool_calls: Optional[List[Any]]
+    ) -> Optional[Any]:
+        """Extract a ``SpatialFilterSpec`` from tool call arguments (FEAT-221).
+
+        Iterates the current turn's tool calls in reverse order, looking for a
+        ``spatial_filter`` tool call whose ``arguments`` contain a ``spec`` key
+        that is (or can be parsed as) a ``SpatialFilterSpec``.  Used by the
+        ``STRUCTURED_MAP`` branch to populate ``response.spatial_filter_spec``
+        so that ``StructuredMapRenderer._extract_map_query`` can build the
+        ``MapQuery``.
+
+        Args:
+            tool_calls: The current turn's tool calls (may be None or empty).
+
+        Returns:
+            The **most recent** (last) ``SpatialFilterSpec`` found in tool call
+            arguments, or ``None``.
+        """
+        if not tool_calls:
+            return None
+
+        try:
+            from ..tools.dataset_manager.spatial.contracts import SpatialFilterSpec
+        except ImportError:
+            return None
+
+        for tc in reversed(tool_calls):
+            try:
+                tc_name = getattr(tc, "name", "") or ""
+                if tc_name != "spatial_filter":
+                    continue
+                args = getattr(tc, "arguments", {}) or {}
+                spec_raw = args.get("spec") if isinstance(args, dict) else None
+                if spec_raw is None:
+                    continue
+                if isinstance(spec_raw, SpatialFilterSpec):
+                    return spec_raw
+                if isinstance(spec_raw, dict):
+                    try:
+                        return SpatialFilterSpec(**spec_raw)
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+        return None
+
     def _infer_data_variable_from_tools(
-        self, tool_calls: List[Any]
+        self, tool_calls: List[Any], prefer_names: tuple = ()
     ) -> Optional[str]:
         """Strict-mode inference of a ``data_variable`` from the current turn.
 
@@ -2100,6 +2366,15 @@ class PandasAgent(BasicAgent):
             and isinstance(pandas_tool.locals[var], pd.DataFrame)
             and not pandas_tool.locals[var].empty
         ]
+
+        # Convention-aware preference: when the caller passes conventional names
+        # (e.g. the structured_chart `chart_data` DataFrame), prefer the first
+        # one that is live this turn. This breaks a multi-candidate tie WITHOUT
+        # relaxing the anti-stale guard — we still only ever return a DataFrame
+        # created and live in the current turn's REPL context.
+        for name in prefer_names:
+            if name in live_dataframes:
+                return name
 
         # Strict disambiguation: return only when there is exactly one.
         if len(live_dataframes) == 1:

@@ -1,8 +1,10 @@
 from __future__ import annotations
 from typing import Any, AsyncIterator, Dict, List, Optional, Union
 from collections import defaultdict
+import copy
 import re
 import asyncio
+import inspect
 import logging
 import time
 from pathlib import Path
@@ -201,12 +203,32 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return False
         return 'preview' in model
 
+    # Maps the native computer-use predefined function names (returned by the
+    # model) to the prefixed tool names registered by ComputerInteractionToolkit
+    # (tool_prefix="computer"). The model never emits the "computer_" prefix, so
+    # the dispatcher translates the call before resolving it in the ToolManager.
+    _COMPUTER_USE_PREDEFINED_MAP = {
+        "open_web_browser": "computer_open_browser",
+        "wait_5_seconds": "computer_wait",
+        "go_back": "computer_go_back",
+        "go_forward": "computer_go_forward",
+        "search": "computer_search",
+        "navigate": "computer_navigate",
+        "click_at": "computer_click_at",
+        "hover_at": "computer_hover_at",
+        "type_text_at": "computer_type_text_at",
+        "key_combination": "computer_key_combination",
+        "scroll_document": "computer_scroll_document",
+        "scroll_at": "computer_scroll_at",
+        "drag_and_drop": "computer_drag_and_drop",
+    }
+
     @staticmethod
     def _requires_thinking(model: str) -> bool:
         """Check if a model only works in thinking mode (budget > 0).
 
-        Gemini 2.5 Pro and Gemini 3.x Pro models are thinking-only and
-        reject budget=0.
+        Gemini 2.5 Pro, Gemini 3.x Pro, and computer-use models are
+        thinking-only and reject budget=0.
         """
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
@@ -215,6 +237,30 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             model.startswith('gemini-2.5-pro')
             or model.startswith('gemini-3.1-pro')
             or model.startswith('gemini-3-pro')
+            or GoogleGenAIClient._is_computer_use_model(model)
+        )
+
+    @staticmethod
+    def _is_computer_use_model(model: str) -> bool:
+        """Check if a model is a Gemini computer-use model.
+
+        Computer-use models require the ``types.ComputerUse`` tool type in
+        the GenerateContentConfig and return predefined function calls
+        (click_at, type_text_at, etc.) rather than custom FunctionDeclarations.
+
+        Args:
+            model: Model identifier — accepts plain string, GoogleModel enum,
+                or None (returns False for falsy inputs).
+
+        Returns:
+            True if the model is a computer-use model.
+        """
+        model = GoogleGenAIClient._as_model_str(model)
+        if not model:
+            return False
+        return (
+            model.startswith("gemini-2.5-computer-use")
+            or model.startswith("gemini-3-flash-preview")
         )
 
     @staticmethod
@@ -746,6 +792,21 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if 'properties' in cleaned and cleaned.get('type') != 'object':
             cleaned['type'] = 'object'
 
+        # Gemini requires every array schema to carry an `items` schema and does
+        # NOT understand `prefixItems` (the draft-2020-12 keyword Pydantic v2
+        # emits for fixed-length tuples, e.g. `Tuple[float, float]`). Since
+        # `prefixItems` is stripped below as unsupported, an array would be left
+        # with no item schema at all — Google then rejects the whole request
+        # with "...properties[<field>].items: missing field". Backfill `items`
+        # from the first `prefixItems` entry (tuples are homogeneous in practice,
+        # e.g. coordinate pairs), or fall back to a permissive string item.
+        if cleaned.get('type') == 'array' and 'items' not in cleaned:
+            prefix_items = schema.get('prefixItems')
+            if isinstance(prefix_items, list) and prefix_items:
+                cleaned['items'] = self.clean_google_schema(prefix_items[0])
+            else:
+                cleaned['items'] = {'type': 'string'}
+
         # Vertex AI requires function parameters to be of type OBJECT.
         # Keep empty-property objects as OBJECT (don't coerce to string).
 
@@ -942,7 +1003,63 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         return self._json.loads(structured_text)
 
     def _build_tools(self, tool_type: str, filter_names: Optional[List[str]] = None) -> Optional[List[types.Tool]]:
-        """Build tools based on the specified type."""
+        """Build tools based on the specified type.
+
+        Supports three tool types:
+        - ``"custom_functions"`` — FunctionDeclaration tools from the ToolManager.
+        - ``"builtin_tools"`` — Google Search builtin tool.
+        - ``"computer_use"`` — ComputerUse tool for vision-based browser automation.
+          Requires ``self._computer_use_config`` to be set (a
+          :class:`~parrot_tools.computer.models.ComputerUseConfig` instance).
+
+        Args:
+            tool_type: One of ``"custom_functions"``, ``"builtin_tools"``,
+                or ``"computer_use"``.
+            filter_names: Optional list of tool names to include (custom_functions only).
+
+        Returns:
+            List of ``types.Tool`` instances, or None if tool_type is unrecognised.
+        """
+        if tool_type == "computer_use":
+            # ComputerUse tool type for vision-based browser automation.
+            # Requires self._computer_use_config (set by ComputerAgent or caller).
+            config = getattr(self, '_computer_use_config', None)
+            excluded = []
+            if config is not None:
+                excluded = getattr(config, 'excluded_actions', [])
+            try:
+                computer_tool = types.Tool(
+                    computer_use=types.ComputerUse(
+                        environment=types.Environment.ENVIRONMENT_BROWSER,
+                        excluded_predefined_functions=excluded,
+                    )
+                )
+            except Exception as exc:
+                self.logger.error("_build_tools(computer_use): failed to build ComputerUse tool: %s", exc)
+                return None
+
+            built = [computer_tool]
+            # Append any *genuinely custom* function declarations (e.g.
+            # computer_screenshot, computer_run_loop, scraping tools) so they
+            # are still callable. The 13 predefined-equivalent toolkit tools
+            # (computer_click_at, …) are dropped — the model invokes those via
+            # the native ComputerUse tool instead, and sending duplicates only
+            # confuses tool selection.
+            predefined = set(self._COMPUTER_USE_PREDEFINED_MAP.values())
+            try:
+                custom = self._build_tools("custom_functions", filter_names=filter_names) or []
+            except Exception as exc:
+                # No ToolManager (e.g. bare client) or build failure — the
+                # ComputerUse tool alone is still a valid request.
+                self.logger.debug("_build_tools(computer_use): no custom functions appended: %s", exc)
+                custom = []
+            for tool in custom:
+                decls = getattr(tool, "function_declarations", None) or []
+                kept = [fd for fd in decls if fd.name not in predefined]
+                if kept:
+                    built.append(types.Tool(function_declarations=kept))
+            return built
+
         if tool_type == "custom_functions":
             # migrate to use abstractool + tool definition:
             # Group function declarations by their category.
@@ -1089,6 +1206,94 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if len(s) > max_chars:
             return s[:max_chars] + "\n...[TRUNCATED]"
         return data
+
+    def _extract_screenshot_bytes(self, result: Any) -> Optional[bytes]:
+        """Extract raw PNG screenshot bytes from a computer-use tool result.
+
+        Computer-use tools (e.g. ``click_at``, ``navigate``) return a dict
+        that may contain a ``"screenshot_bytes"`` key with PNG bytes. This
+        helper pulls those bytes out so the caller can wrap them in a
+        ``FunctionResponseBlob`` instead of sending them as a JSON string.
+
+        Also handles :class:`~parrot.tools.abstract.ToolResult` wrappers.
+
+        Args:
+            result: Raw tool result (dict, ToolResult, or any other type).
+
+        Returns:
+            PNG bytes if found, otherwise ``None``.
+        """
+        # Unwrap ToolResult
+        if isinstance(result, ToolResult):
+            result = result.result
+
+        if not isinstance(result, dict):
+            return None
+
+        screenshot = result.get("screenshot_bytes")
+        if isinstance(screenshot, (bytes, bytearray)):
+            return bytes(screenshot)
+        return None
+
+    def _build_computer_use_function_response_part(
+        self,
+        tool_id: str,
+        tool_name: str,
+        result: Any,
+    ) -> "Part":
+        """Build a ``Part`` with ``FunctionResponse`` for a computer-use tool.
+
+        When the tool result contains screenshot bytes, wraps them in a
+        ``FunctionResponseBlob`` (``inline_data``) so Gemini can process
+        the screenshot visually. Non-screenshot fields are sent as the
+        ``response`` dict.
+
+        Args:
+            tool_id: The function call ID to correlate request and response.
+            tool_name: Name of the computer-use tool that produced the result.
+            result: Raw tool result (usually a dict from the backend).
+
+        Returns:
+            A ``Part`` with a populated ``function_response``.
+        """
+        screenshot_bytes = self._extract_screenshot_bytes(result)
+
+        # Unwrap ToolResult for metadata access
+        raw = result.result if isinstance(result, ToolResult) else result
+
+        # Build the text response dict (URL, status, etc.) without the raw
+        # screenshot bytes (which go into the blob instead).
+        if isinstance(raw, dict):
+            text_fields = {k: v for k, v in raw.items() if k != "screenshot_bytes"}
+        else:
+            text_fields = {"result": str(raw) if raw is not None else "ok"}
+
+        if screenshot_bytes is not None:
+            # Send screenshot as a FunctionResponseBlob so Gemini can see it.
+            blob = types.FunctionResponseBlob(
+                mime_type="image/png",
+                data=screenshot_bytes,
+            )
+            return Part(
+                function_response=types.FunctionResponse(
+                    id=tool_id,
+                    name=tool_name,
+                    response=text_fields if text_fields else {"ok": True},
+                    parts=[
+                        types.FunctionResponsePart(inline_data=blob)
+                    ],
+                )
+            )
+        else:
+            # No screenshot — fall back to the standard JSON response.
+            response_content = self._process_tool_result_for_api(result)
+            return Part(
+                function_response=types.FunctionResponse(
+                    id=tool_id,
+                    name=tool_name,
+                    response=response_content,
+                )
+            )
 
     def _process_tool_result_for_api(self, result) -> dict:
         """Process tool result for Google Function Calling API compatibility.
@@ -1252,6 +1457,109 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """
         return None
 
+    def _has_registered_tool(self, tool_name: str) -> bool:
+        """Return True if ``tool_name`` is registered in the ToolManager."""
+        tm = getattr(self, "tool_manager", None)
+        if tm is None:
+            return False
+        try:
+            return tm.get_tool(tool_name) is not None
+        except Exception:
+            return False
+
+    @staticmethod
+    def _adapt_computer_use_args(
+        native_name: str, args: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Adapt native computer-use call args to the toolkit method signature.
+
+        Most predefined actions map 1:1 (coordinates are already 0-1000
+        normalized, which the toolkit expects). Two need fixups:
+
+        - ``wait_5_seconds`` takes no args natively → drop them (the toolkit's
+          ``computer_wait`` defaults to ``seconds=5``).
+        - ``key_combination`` may arrive as a list (``["control", "c"]``) or a
+          ``"+"``-joined string; the toolkit expects a comma-separated string.
+        """
+        if native_name == "wait_5_seconds":
+            return {}
+        if native_name == "key_combination":
+            keys = args.get("keys")
+            if isinstance(keys, (list, tuple)):
+                args["keys"] = ",".join(str(k) for k in keys)
+            elif isinstance(keys, str) and "+" in keys:
+                args["keys"] = ",".join(k.strip() for k in keys.split("+"))
+        return args
+
+    async def _execute_computer_use_call(
+        self, tool_name: str, args: Dict[str, Any]
+    ) -> Any:
+        """Execute a single computer-use function call, handling safety.
+
+        The model embeds an optional ``safety_decision`` object inside the
+        call args (``{"explanation": ..., "decision": "require_confirmation"}``).
+        That key is NOT a tool parameter, so it is always stripped before
+        dispatch. When the decision requires confirmation, a configured
+        ``_computer_use_safety_handler`` is consulted (e.g. ComputerAgent's
+        HITL handler); on approval the action runs and the result is tagged
+        with ``safety_acknowledgement="true"`` so the API call is accepted, on
+        rejection the action is skipped and a refusal is returned.
+        """
+        args = dict(args or {})
+        safety = args.pop("safety_decision", None)
+        acknowledged = False
+        if isinstance(safety, dict) and safety.get("decision") == "require_confirmation":
+            approved = await self._confirm_computer_use_safety(tool_name, safety, args)
+            if not approved:
+                self.logger.warning(
+                    "Computer-use action %r rejected by safety confirmation.", tool_name
+                )
+                return {
+                    "error": "rejected_by_user",
+                    "message": "The user did not approve this action.",
+                    "safety_acknowledgement": "false",
+                }
+            acknowledged = True
+
+        result = await self._execute_tool(tool_name, args)
+
+        if acknowledged and isinstance(result, dict):
+            result["safety_acknowledgement"] = "true"
+        return result
+
+    async def _confirm_computer_use_safety(
+        self, tool_name: str, safety: Dict[str, Any], args: Dict[str, Any]
+    ) -> bool:
+        """Ask the configured handler whether a flagged action may proceed.
+
+        Returns True (proceed) when no handler is configured — preserving the
+        previous auto-acknowledge behaviour — and otherwise defers to
+        ``self._computer_use_safety_handler`` (sync or async).
+        """
+        handler = getattr(self, "_computer_use_safety_handler", None)
+        decision = {
+            "tool": tool_name,
+            "arguments": args,
+            "explanation": safety.get("explanation", ""),
+            "decision": safety.get("decision"),
+        }
+        if handler is None:
+            self.logger.warning(
+                "Computer-use safety_decision auto-acknowledged (no handler set): %s",
+                decision,
+            )
+            return True
+        try:
+            res = handler(decision)
+            if inspect.isawaitable(res):
+                res = await res
+            return bool(res)
+        except Exception as exc:
+            self.logger.error(
+                "Computer-use safety handler raised (denying action): %s", exc
+            )
+            return False
+
     async def _execute_tool(
         self,
         tool_name: str,
@@ -1267,6 +1575,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         in the overlay, fall through to the base implementation which
         dispatches via ``self.tool_manager``.
         """
+        # Translate native computer-use predefined function calls (click_at,
+        # type_text_at, …) to the prefixed ComputerInteractionToolkit tools
+        # (computer_click_at, …) that are actually registered. Only applied
+        # when the mapped tool exists, so non-computer agents are unaffected.
+        mapped = self._COMPUTER_USE_PREDEFINED_MAP.get(tool_name)
+        if mapped is not None and self._has_registered_tool(mapped):
+            parameters = self._adapt_computer_use_args(tool_name, dict(parameters or {}))
+            tool_name = mapped
+
         request_tools = getattr(self, '_request_tools', None) or {}
         if tool_name in request_tools:
             tool = request_tools[tool_name]
@@ -1395,11 +1712,27 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
             # Execute tools
             start_time = time.time()
-            tool_execution_tasks = [
-                self._execute_tool(fc.name, dict(fc.args) if hasattr(fc.args, 'items') else fc.args)
-                for fc in function_calls
-            ]
-            tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
+            if self._is_computer_use_model(model):
+                # Computer-use calls carry an optional ``safety_decision`` in
+                # their args. Each is handled sequentially (a confirmation may
+                # block on human input) — see _execute_computer_use_call.
+                tool_results = []
+                for fc in function_calls:
+                    try:
+                        tool_results.append(
+                            await self._execute_computer_use_call(
+                                fc.name,
+                                dict(fc.args) if hasattr(fc.args, 'items') else (fc.args or {}),
+                            )
+                        )
+                    except Exception as exc:  # mirror gather(return_exceptions=True)
+                        tool_results.append(exc)
+            else:
+                tool_execution_tasks = [
+                    self._execute_tool(fc.name, dict(fc.args) if hasattr(fc.args, 'items') else fc.args)
+                    for fc in function_calls
+                ]
+                tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
             execution_time = time.time() - start_time
 
             # Lazy Loading Check
@@ -1445,6 +1778,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if fcc is not None and getattr(fcc, "mode", None) == types.FunctionCallingConfigMode.ANY:
                 fcc.mode = types.FunctionCallingConfigMode.AUTO
 
+            is_computer_use = self._is_computer_use_model(model)
             function_response_parts = []
             for fc, result in zip(function_calls, tool_results):
                 tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
@@ -1452,24 +1786,28 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 self.logger.notice(f"📤 Raw Result Type: {type(result)}")
 
                 try:
-                    # Debug log first 20 cahrs of result
+                    # Debug log first 20 chars of result
                     result_preview = str(result)[:20]
                     self.logger.notice(f"Tool {fc.name} output preview: {result_preview}...")
 
-                    response_content = self._process_tool_result_for_api(result)
-                    # self.logger.info(
-                    #     f"📦 Processed for API: {response_content}"
-                    # )
-
-                    function_response_parts.append(
-                        Part(
+                    if is_computer_use:
+                        # Computer-use tools may return screenshot bytes that
+                        # must be wrapped in FunctionResponseBlob so Gemini
+                        # can process the screenshot visually.
+                        part = self._build_computer_use_function_response_part(
+                            tool_id, fc.name, result
+                        )
+                    else:
+                        response_content = self._process_tool_result_for_api(result)
+                        part = Part(
                             function_response=types.FunctionResponse(
                                 id=tool_id,
                                 name=fc.name,
-                                response=response_content
+                                response=response_content,
                             )
                         )
-                    )
+
+                    function_response_parts.append(part)
 
                 except Exception as e:
                     self.logger.error(f"Error processing result for tool {fc.name}: {e}")
@@ -2242,6 +2580,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if kw_tool_type == "builtin_tools":
             tool_type = kw_tool_type
             _use_tools = True
+        elif _use_tools and self._is_computer_use_model(model):
+            # Computer-use models REQUIRE types.Tool(computer_use=...) in the
+            # request — sending only function_declarations yields a 400
+            # INVALID_ARGUMENT ("This model requires the use of the Computer
+            # Use tool."). The "computer_use" build path emits that tool and
+            # appends any genuinely-custom (non-predefined) function tools.
+            tool_type = "computer_use"
         elif _use_tools:
             tool_type = kw_tool_type or "custom_functions"
         else:
@@ -2354,6 +2699,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 max_thinking_tokens=100,
                 max_thinking_time=10,
             )
+        elif self._is_computer_use_model(model):
+            # Computer-use models reason over screenshots and require thoughts
+            # enabled (see Gemini computer-use docs / reference implementation).
+            thinking_config = ThinkingConfig(include_thoughts=True)
         elif _requires_thinking:
             # Pro models (2.5-pro, 3-pro, 3.1-pro) are thinking-only — budget=0 is invalid.
             thinking_config = ThinkingConfig(
@@ -2401,6 +2750,21 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 function_calling_config=types.FunctionCallingConfig(mode=mode)
             )
 
+        # Computer-use requests send a native ComputerUse tool alongside any
+        # genuinely-custom FunctionDeclaration tools (computer_screenshot,
+        # computer_run_loop, scraping helpers). The google-genai SDK cannot run
+        # Automatic Function Calling over raw function declarations, so it logs a
+        # noisy "Tools at indices [...] are not compatible with AFC. AFC is
+        # disabled." warning on every turn. We never want AFC here — the
+        # ComputerUse loop drives function_call/function_response manually — so
+        # we declare that intent explicitly. Setting ``disable=True`` makes the
+        # SDK short-circuit (should_disable_afc) *before* the incompatible-tools
+        # check, silencing the warning. Leave ``maximum_remote_calls`` unset to
+        # avoid the SDK's secondary "disable + positive max_remote_calls" warning.
+        afc_config = None
+        if tool_type == "computer_use":
+            afc_config = types.AutomaticFunctionCallingConfig(disable=True)
+
         # FEAT-181: resolve List[CacheableSegment] → string before passing to
         # GenerateContentConfig, which does not accept segment lists.
         # Also handle prompt caching: if segments were provided, attempt to create
@@ -2426,6 +2790,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             tools=tools,
             tool_config=tool_config,
             thinking_config=thinking_config,
+            automatic_function_calling=afc_config,
             **generation_config
         )
         # FEAT-181: if we have pending cache segments, attempt to create
@@ -3513,13 +3878,547 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         finally:
             self._request_tools = {}
 
-    async def batch_ask(self, requests) -> List[AIMessage]:
-        """Process multiple requests in batch."""
-        # Google GenAI doesn't have a native batch API, so we process sequentially
+    async def batch_ask(self, requests: List[Dict[str, Any]]) -> List[AIMessage]:
+        """Process multiple requests in batch. Delegates to ask_batch for efficiency."""
+        return await self.ask_batch(requests, use_flex=True)
+
+    async def _build_batch_request_payload(self, req: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert a standard ask() call parameters dict into a Gemini Batch API request dict."""
+        import json
+        prompt = req.get("prompt", "")
+        model = req.get("model") or self.model or GoogleModel.GEMINI_2_5_FLASH.value
+        model = self._as_model_str(model) or model
+        
+        # Determine tools
+        use_tools = req.get("use_tools") if req.get("use_tools") is not None else self.enable_tools
+        tools = req.get("tools")
+        kw_tool_type = req.get("tool_type", None)
+
+        if kw_tool_type == "builtin_tools":
+            tool_type = kw_tool_type
+            use_tools = True
+        elif use_tools:
+            tool_type = kw_tool_type or "custom_functions"
+        else:
+            tool_type = kw_tool_type
+
+        built_tools = []
+        if use_tools:
+            built_tools = self._build_tools(tool_type) if tool_type else []
+
+        # System prompt
+        system_prompt = req.get("system_prompt")
+        
+        # Generation config
+        generation_config = {
+            "temperature": req.get("temperature") if req.get("temperature") is not None else self.temperature
+        }
+        max_tokens = req.get("max_tokens") or self.max_tokens
+        if max_tokens:
+            generation_config["max_output_tokens"] = max_tokens
+            
+        # Structured output
+        structured_output = req.get("structured_output")
+        if structured_output:
+            output_config = self._get_structured_config(structured_output)
+            if output_config:
+                self._apply_structured_output_schema(generation_config, output_config)
+
+        # Upload files if any
+        contents = []
+        files = req.get("files")
+        if files:
+            for file_path in files:
+                path = Path(file_path).resolve()
+                self.logger.info(f"Uploading {path.name} to Gemini File API for batch request...")
+                file_obj = await self.client.aio.files.upload(file=path)
+                
+                # Wait for file to process if it's a video/etc.
+                processing_start = time.monotonic()
+                while file_obj.state == "PROCESSING":
+                    if time.monotonic() - processing_start > 300:
+                        raise TimeoutError(f"File processing timed out for {path.name}")
+                    await asyncio.sleep(5)
+                    file_obj = await self.client.aio.files.get(name=file_obj.name)
+                
+                contents.append({
+                    "parts": [{
+                        "file_data": {
+                            "file_uri": file_obj.uri,
+                            "mime_type": file_obj.mime_type
+                        }
+                    }]
+                })
+
+        # Add the main prompt content
+        contents.append({
+            "parts": [{"text": prompt}]
+        })
+
+        request_payload = {
+            "contents": contents
+        }
+        if system_prompt:
+            request_payload["system_instruction"] = {
+                "parts": [{"text": system_prompt}]
+            }
+        
+        generation_config = {k: v for k, v in generation_config.items() if v is not None}
+        if generation_config:
+            request_payload["generation_config"] = generation_config
+            
+        if built_tools:
+            serialized_tools = []
+            for t in built_tools:
+                if hasattr(t, "model_dump"):
+                    serialized_tools.append(t.model_dump(mode="json", exclude_none=True))
+                else:
+                    serialized_tools.append(t)
+            request_payload["tools"] = serialized_tools
+
+        return request_payload
+
+    async def ask_batch(
+        self,
+        requests: List[Dict[str, Any]],
+        use_flex: bool = False,
+        wait_for_completion: bool = True,
+        poll_interval: int = 30,
+        webhook_uri: Optional[str] = None,
+        display_name: Optional[str] = None,
+        **kwargs
+    ) -> Union[Any, List[AIMessage]]:
+        """
+        Execute a list of requests using Gemini Batch Mode or Flex Inference.
+
+        Args:
+            requests (List[Dict[str, Any]]): List of request parameters matching ask() arguments.
+            use_flex (bool): If True, execute requests synchronously using Flex Inference tier (latency target 1-15 min).
+                             If False, execute asynchronously using Gemini's Batch API (turnaround up to 24 hours).
+            wait_for_completion (bool): If True, wait/poll until job finishes and return parsed AIMessage objects.
+                                       Only applicable when use_flex=False.
+            poll_interval (int): How often (in seconds) to poll for job completion.
+            webhook_uri (Optional[str]): Optional webhook URL to receive state notifications when job completes.
+            display_name (Optional[str]): Human-readable display name for the batch job.
+            **kwargs: Extra arguments forwarded to batch creation or client initialization.
+        """
+        import tempfile
+        from datamodel.parsers.json import json_encoder, json_decoder
+        from google.genai import types
+
+        if not requests:
+            return []
+
+        # Ensure we have a valid client
+        await self._ensure_client()
+
+        if use_flex:
+            self.logger.info(f"Processing {len(requests)} batch requests using Flex Inference tier...")
+            tasks = []
+            for req in requests:
+                req_copy = req.copy()
+                req_copy["service_tier"] = "flex"
+                # Pass down standard defaults
+                for k, v in kwargs.items():
+                    req_copy.setdefault(k, v)
+                tasks.append(self.ask(**req_copy))
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            processed_results = []
+            for r in results:
+                if isinstance(r, Exception):
+                    self.logger.error(f"Batch flex request failed: {r}")
+                    processed_results.append(r)
+                else:
+                    processed_results.append(r)
+            return processed_results
+
+        # Standard asynchronous Batch API
+        self.logger.info(f"Preparing {len(requests)} requests for Gemini asynchronous Batch API...")
+        
+        # Determine the model. Batch jobs require all requests to run on the same model.
+        first_req = requests[0]
+        batch_model = first_req.get("model") or self.model or GoogleModel.GEMINI_2_5_FLASH.value
+        batch_model = self._as_model_str(batch_model) or batch_model
+        
+        # Build requests payloads
+        payload_tasks = [self._build_batch_request_payload(req) for req in requests]
+        payloads = await asyncio.gather(*payload_tasks)
+        
+        # Write .jsonl input file
+        with tempfile.NamedTemporaryFile(suffix=".jsonl", mode="w+", delete=False, encoding="utf-8") as temp_file:
+            temp_path = Path(temp_file.name)
+            try:
+                for i, payload in enumerate(payloads):
+                    line = {
+                        "key": f"req_{i}",
+                        "request": payload
+                    }
+                    temp_file.write(json_encoder(line) + "\n")
+                temp_file.flush()
+                temp_file.close()
+                
+                self.logger.info(f"Uploading input JSONL file to Gemini files service...")
+                uploaded_file = await self.client.aio.files.upload(
+                    file=temp_path,
+                    config={"mime_type": "application/jsonl"}
+                )
+                self.logger.info(f"Uploaded input file: {uploaded_file.name}")
+            finally:
+                if temp_path.exists():
+                    temp_path.unlink()
+
+        # Create config
+        config_args = {
+            "display_name": display_name or f"batch_job_{int(time.time())}"
+        }
+        if webhook_uri:
+            config_args["webhook_config"] = types.WebhookConfig(uris=[webhook_uri])
+            
+        create_config = types.CreateBatchJobConfig(**config_args)
+        
+        self.logger.info(f"Creating Gemini Batch Job with model: {batch_model}...")
+        batch_job = await self.client.aio.batches.create(
+            model=batch_model,
+            src=types.BatchJobSource(file_name=uploaded_file.name),
+            config=create_config
+        )
+        self.logger.info(f"Batch Job created successfully. Name: {batch_job.name}, State: {batch_job.state}")
+
+        if not wait_for_completion:
+            return batch_job
+
+        # Poll for completion
+        self.logger.info(f"Polling Gemini Batch Job state every {poll_interval}s until completion...")
+        while batch_job.state not in ("JOB_STATE_SUCCEEDED", "JOB_STATE_FAILED", "JOB_STATE_CANCELLED"):
+            await asyncio.sleep(poll_interval)
+            batch_job = await self.client.aio.batches.get(name=batch_job.name)
+            self.logger.debug(f"Batch Job state: {batch_job.state}")
+
+        if batch_job.state == "JOB_STATE_SUCCEEDED":
+            self.logger.info("Batch Job succeeded! Downloading and parsing results...")
+            results = await self.download_and_parse_batch_results(batch_job, requests)
+            
+            try:
+                await self.persist_batch_results(results, batch_id=batch_job.name)
+            except Exception as e:
+                self.logger.error(f"Failed to automatically persist batch results: {e}")
+            
+            # Clean up uploaded input file
+            try:
+                await self.client.aio.files.delete(name=uploaded_file.name)
+            except Exception as e:
+                self.logger.warning(f"Failed to delete uploaded input file {uploaded_file.name}: {e}")
+                
+            return results
+        else:
+            error_msg = f"Gemini Batch Job finished with terminal state: {batch_job.state}."
+            if getattr(batch_job, "error", None):
+                error_msg += f" Error: {batch_job.error}"
+            self.logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+    async def get_batch_job(self, job_name: str) -> Any:
+        """Retrieve status of an active or completed Batch Job."""
+        await self._ensure_client()
+        return await self.client.aio.batches.get(name=job_name)
+
+    async def cancel_batch_job(self, job_name: str) -> Any:
+        """Cancel an active Batch Job."""
+        await self._ensure_client()
+        return await self.client.aio.batches.cancel(name=job_name)
+
+    async def list_batch_jobs(self) -> List[Any]:
+        """List active or past Batch Jobs."""
+        await self._ensure_client()
+        jobs = []
+        async for job in self.client.aio.batches.list():
+            jobs.append(job)
+        return jobs
+
+    async def persist_batch_results(
+        self,
+        results: List[AIMessage],
+        batch_id: str,
+        save_dir: Optional[Union[str, Path]] = None
+    ) -> Path:
+        """
+        Serialize and persist batch results (AIMessage objects, images, videos, and structured data)
+        to a local directory to prevent content loss.
+
+        Args:
+            results: List of AIMessage objects from a batch execution.
+            batch_id: A unique identifier for the batch (e.g. job name, timestamp).
+            save_dir: Destination directory. Defaults to BASE_DIR / "batch_results".
+
+        Returns:
+            The Path where the batch results were saved.
+        """
+        import shutil
+        from navconfig import BASE_DIR
+        from datamodel.parsers.json import json_encoder
+
+        # 1. Resolve and create base save directory
+        if save_dir is None:
+            save_dir = BASE_DIR.joinpath("batch_results")
+        else:
+            save_dir = Path(save_dir)
+
+        # Clean batch_id for filename/folder safety
+        clean_batch_id = str(batch_id).replace("/", "_").replace("\\", "_").replace(":", "_")
+        job_dir = save_dir.joinpath(clean_batch_id)
+        job_dir.mkdir(parents=True, exist_ok=True)
+
+        self.logger.info(f"Persisting {len(results)} batch results to: {job_dir}")
+
+        for i, msg in enumerate(results):
+            if isinstance(msg, Exception):
+                # Write exception details to a file
+                err_file = job_dir.joinpath(f"result_{i}_error.txt")
+                err_file.write_text(str(msg), encoding="utf-8")
+                continue
+
+            # Copy media files to the job directory and update their paths in serialized dict
+            msg_dict = msg.model_dump(mode="json")
+            
+            # Helper to copy list of files
+            def copy_files(file_paths, key_name):
+                new_paths = []
+                if file_paths:
+                    media_dir = job_dir.joinpath(key_name)
+                    media_dir.mkdir(parents=True, exist_ok=True)
+                    for path_str in file_paths:
+                        src_path = Path(path_str)
+                        if src_path.exists() and src_path.is_file():
+                            timestamp = int(time.time() * 1000)
+                            unique_name = f"{src_path.stem}_{timestamp}{src_path.suffix}"
+                            dest_path = media_dir.joinpath(unique_name)
+                            shutil.copy2(src_path, dest_path)
+                            new_paths.append(str(dest_path))
+                        else:
+                            new_paths.append(path_str)
+                return new_paths
+
+            # Copy images, files, media, documents if present
+            if msg.images:
+                msg_dict["images"] = copy_files([str(p) for p in msg.images], "images")
+            if msg.files:
+                msg_dict["files"] = copy_files([str(p) for p in msg.files], "files")
+            if msg.media:
+                msg_dict["media"] = copy_files([str(p) for p in msg.media], "media")
+            if msg.documents:
+                msg_dict["documents"] = copy_files([str(p) for p in msg.documents], "documents")
+
+            # Write serialized AIMessage JSON
+            json_file = job_dir.joinpath(f"result_{i}_message.json")
+            with open(json_file, "w", encoding="utf-8") as f:
+                f.write(json_encoder(msg_dict))
+
+            # Write structured output separately for convenience
+            if msg.structured_output is not None:
+                struct_file = job_dir.joinpath(f"result_{i}_structured.json")
+                with open(struct_file, "w", encoding="utf-8") as f:
+                    if hasattr(msg.structured_output, "model_dump"):
+                        f.write(json_encoder(msg.structured_output.model_dump(mode="json")))
+                    elif isinstance(msg.structured_output, (dict, list)):
+                        f.write(json_encoder(msg.structured_output))
+                    else:
+                        f.write(str(msg.structured_output))
+
+            # Write plain response text separately
+            if msg.response:
+                text_file = job_dir.joinpath(f"result_{i}_response.txt")
+                text_file.write_text(msg.response, encoding="utf-8")
+
+        self.logger.info(f"Persisted batch results successfully.")
+        return job_dir
+
+    def _validate_genai_response(self, resp_dict: Dict[str, Any]) -> Any:
+        """Validate a raw batch ``response`` dict into a GenerateContentResponse.
+
+        The batch API may emit usage-metadata fields (e.g. ``serviceTier``)
+        that a given ``google-genai`` SDK version does not yet model. Those
+        models are configured with ``extra='forbid'``, so a strict
+        ``model_validate`` raises ``ValidationError`` on the unknown key and
+        the whole batch is lost. This validator strips any ``extra_forbidden``
+        keys reported by Pydantic and retries, so we degrade gracefully across
+        SDK versions instead of failing.
+
+        Args:
+            resp_dict: Raw ``response`` mapping from a batch JSONL line.
+
+        Returns:
+            A parsed ``types.GenerateContentResponse`` instance.
+        """
+        from google.genai import types
+        from pydantic import ValidationError
+
+        # Validate against a mutable copy so we never mutate the caller's dict.
+        payload = copy.deepcopy(resp_dict)
+        max_attempts = 8
+        for _ in range(max_attempts):
+            try:
+                return types.GenerateContentResponse.model_validate(payload)
+            except ValidationError as exc:
+                removed = False
+                for err in exc.errors():
+                    if err.get("type") != "extra_forbidden":
+                        continue
+                    # loc is the path to the offending key inside payload.
+                    if self._drop_nested_key(payload, err.get("loc", ())):
+                        removed = True
+                if not removed:
+                    raise
+                self.logger.warning(
+                    "Stripped %d unknown field(s) from batch GenerateContentResponse "
+                    "before validation (SDK schema mismatch).",
+                    len([e for e in exc.errors() if e.get("type") == "extra_forbidden"]),
+                )
+        # Final attempt; let it raise if it still fails.
+        return types.GenerateContentResponse.model_validate(payload)
+
+    @staticmethod
+    def _drop_nested_key(payload: Any, loc: tuple) -> bool:
+        """Remove the value at ``loc`` (a Pydantic error location path).
+
+        Walks ``payload`` (nested dicts/lists) following ``loc`` and deletes the
+        final key. Returns True if a key was removed.
+        """
+        if not loc:
+            return False
+        node = payload
+        for part in loc[:-1]:
+            if isinstance(node, dict):
+                node = node.get(part)
+            elif isinstance(node, list) and isinstance(part, int) and 0 <= part < len(node):
+                node = node[part]
+            else:
+                return False
+            if node is None:
+                return False
+        last = loc[-1]
+        if isinstance(node, dict) and last in node:
+            del node[last]
+            return True
+        return False
+
+    async def download_and_parse_batch_results(
+        self,
+        job: Any,
+        original_requests: List[Dict[str, Any]]
+    ) -> List[AIMessage]:
+        """Download output file from completed Batch Job and parse to List[AIMessage]."""
+        from google.genai import types
+        from datamodel.parsers.json import json_decoder
+
+        if not getattr(job, "dest", None) or not getattr(job.dest, "file_name", None):
+            raise ValueError(f"Job does not have a destination output file: {job}")
+
+        output_file_name = job.dest.file_name
+        self.logger.info(f"Downloading batch job results from: {output_file_name}")
+        
+        results_bytes = await self.client.aio.files.download(file=output_file_name)
+        results_text = results_bytes.decode("utf-8")
+        
+        # Parse output JSONL
+        output_map = {}
+        for line in results_text.splitlines():
+            if not line.strip():
+                continue
+            line_dict = json_decoder(line)
+            key = line_dict.get("key")
+            if not key:
+                continue
+            
+            if "response" in line_dict:
+                resp_dict = line_dict["response"]
+                response_obj = self._validate_genai_response(resp_dict)
+                output_map[key] = response_obj
+            elif "error" in line_dict:
+                output_map[key] = line_dict["error"]
+
+        # Map back to original requests in original order
         results = []
-        for request in requests:
-            result = await self.ask(**request)
-            results.append(result)
+        for i, req in enumerate(original_requests):
+            key = f"req_{i}"
+            prompt = req.get("prompt", "")
+            model = req.get("model") or self.model or GoogleModel.GEMINI_2_5_FLASH.value
+            model = self._as_model_str(model) or model
+            
+            if key not in output_map:
+                err_msg = AIMessage(
+                    input=prompt,
+                    output=f"Error: Missing response for {key} in batch output",
+                    response=f"Error: Missing response for {key} in batch output",
+                    model=str(model),
+                    provider="google_genai",
+                    usage=CompletionUsage(total_time=0)
+                )
+                results.append(err_msg)
+                continue
+                
+            item = output_map[key]
+            if isinstance(item, dict):  # Error dictionary
+                err_msg = AIMessage(
+                    input=prompt,
+                    output=f"Error {item.get('code', 'unknown')}: {item.get('message', 'unknown')}",
+                    response=f"Error {item.get('code', 'unknown')}: {item.get('message', 'unknown')}",
+                    model=str(model),
+                    provider="google_genai",
+                    usage=CompletionUsage(total_time=0)
+                )
+                results.append(err_msg)
+            else:  # types.GenerateContentResponse object
+                structured_output = req.get("structured_output")
+                final_output = None
+                text_response = self._safe_extract_text(item)
+                
+                if structured_output and text_response:
+                    try:
+                        output_config = self._get_structured_config(structured_output)
+                        if isinstance(output_config, StructuredOutputConfig):
+                            final_output = await self._parse_structured_output(
+                                text_response,
+                                output_config
+                            )
+                        elif isinstance(structured_output, type):
+                            if hasattr(structured_output, "model_validate_json"):
+                                final_output = structured_output.model_validate_json(text_response)
+                            elif hasattr(structured_output, "model_validate"):
+                                parsed_json = json_decoder(text_response)
+                                final_output = structured_output.model_validate(parsed_json)
+                        else:
+                            final_output = json_decoder(text_response)
+                    except Exception as e:
+                        self.logger.error(f"Error parsing structured output for batch response: {e}")
+                
+                # Check for any tool calls in response
+                all_tool_calls = []
+                if item.candidates and item.candidates[0].content and item.candidates[0].content.parts:
+                    for part in item.candidates[0].content.parts:
+                        if hasattr(part, "function_call") and part.function_call:
+                            tc = ToolCall(
+                                id=f"call_{uuid.uuid4().hex[:8]}",
+                                name=part.function_call.name,
+                                arguments=dict(part.function_call.args)
+                            )
+                            all_tool_calls.append(tc)
+
+                ai_message = AIMessageFactory.from_gemini(
+                    response=item,
+                    input_text=prompt,
+                    model=model,
+                    structured_output=final_output,
+                    tool_calls=all_tool_calls,
+                )
+                results.append(ai_message)
+
+        # Delete the destination file to keep files list tidy
+        try:
+            await self.client.aio.files.delete(name=output_file_name)
+        except Exception as e:
+            self.logger.warning(f"Failed to delete results output file {output_file_name}: {e}")
+
         return results
 
     async def ask_to_image(

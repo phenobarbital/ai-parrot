@@ -2,7 +2,7 @@
 
 import pytest
 
-from parrot.integrations.telegram.oauth2_providers import (
+from parrot.integrations.core.auth.oauth2_providers import (
     OAuth2ProviderConfig,
     OAUTH2_PROVIDERS,
     get_provider,

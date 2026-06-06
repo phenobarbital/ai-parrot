@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.integrations.telegram.post_auth import PostAuthProvider
+from parrot.integrations.core.auth.post_auth import PostAuthProvider
 from parrot.integrations.telegram.post_auth_jira import JiraPostAuthProvider
 
 

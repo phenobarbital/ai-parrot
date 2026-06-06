@@ -31,7 +31,6 @@ from .models import (
 )
 if TYPE_CHECKING:
     from aiogram import Bot, Dispatcher
-    from parrot.human import TelegramHumanChannel
     from .telegram.wrapper import TelegramAgentWrapper
     from .msteams.wrapper import MSTeamsAgentWrapper
     from .whatsapp.wrapper import WhatsAppAgentWrapper
@@ -196,6 +195,23 @@ class IntegrationBotManager:
             app = None
         wrapper = TelegramAgentWrapper(agent, bot, config, app=app)
 
+        # Publish the Telegram command menu (setMyCommands + chat menu button)
+        # so platform/agent commands (e.g. /connect_jira from JiraSpecialist)
+        # appear in Telegram Desktop and mobile autocomplete.  The wrapper is
+        # fully constructed here, so _platform_commands (Jira/Office365/MCP)
+        # is already populated and flows into the published menu automatically.
+        # Wrapped defensively: a menu failure must never abort bot startup.
+        # Parity with TelegramBotManager._start_bot (FEAT-220).
+        if config.register_menu:
+            try:
+                await wrapper.register_command_menu()
+            except Exception:
+                self.logger.warning(
+                    "Failed to register Telegram command menu for '%s'",
+                    name,
+                    exc_info=True,
+                )
+
         # HITL channel: shares the aiogram Bot. MUST be included BEFORE the
         # wrapper router so HITL replies (free_text / button callbacks) are
         # claimed first; otherwise the wrapper re-feeds the reply into the
@@ -249,14 +265,46 @@ class IntegrationBotManager:
         agent = await self._get_agent(config.chatbot_id)
         if not agent:
             return
-            
+
+        # Wire JiraOAuthManager if Jira OAuth is configured (FEAT-225).
+        app = self.bot_manager.get_app()
+        jira_oauth_manager = None
+        if getattr(config, "jira_client_id", None):
+            existing = app.get("jira_oauth_manager")
+            if existing is not None:
+                jira_oauth_manager = existing
+                self.logger.info(
+                    "MS Teams bot '%s': reusing existing JiraOAuthManager from app",
+                    name,
+                )
+            else:
+                try:
+                    from parrot.auth.jira_oauth import JiraOAuthManager
+
+                    jira_oauth_manager = JiraOAuthManager(
+                        client_id=config.jira_client_id,
+                        client_secret=config.jira_client_secret,
+                        redirect_uri=config.jira_redirect_uri,
+                        app=app,
+                    )
+                    self.logger.info(
+                        "MS Teams bot '%s': initialized JiraOAuthManager", name
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.warning(
+                        "MS Teams bot '%s': failed to initialize JiraOAuthManager: %s",
+                        name,
+                        exc,
+                    )
+
         # Initialize Wrapper (which registers the route)
         from .msteams.wrapper import MSTeamsAgentWrapper
         wrapper = MSTeamsAgentWrapper(
             agent=agent,
             config=config,
-            app=self.bot_manager.get_app(),
+            app=app,
             forms_directory=config.forms_directory or AGENTS_DIR / "forms",
+            oauth_manager=jira_oauth_manager,
         )
         self.msteams_bots[name] = wrapper
         self.logger.info("Started MS Teams bot '%s'", name)
@@ -286,11 +334,44 @@ class IntegrationBotManager:
         if not agent:
             return
 
+        # Wire JiraOAuthManager if Jira OAuth is configured (FEAT-225).
+        # Reuse an existing manager on the app if one was already set up by
+        # another integration (same Atlassian app registration, single callback).
+        app = self.bot_manager.get_app()
+        jira_oauth_manager = None
+        if getattr(config, "jira_client_id", None):
+            existing = app.get("jira_oauth_manager")
+            if existing is not None:
+                jira_oauth_manager = existing
+                self.logger.info(
+                    "Slack bot '%s': reusing existing JiraOAuthManager from app", name
+                )
+            else:
+                try:
+                    from parrot.auth.jira_oauth import JiraOAuthManager
+
+                    jira_oauth_manager = JiraOAuthManager(
+                        client_id=config.jira_client_id,
+                        client_secret=config.jira_client_secret,
+                        redirect_uri=config.jira_redirect_uri,
+                        app=app,
+                    )
+                    self.logger.info(
+                        "Slack bot '%s': initialized JiraOAuthManager", name
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.warning(
+                        "Slack bot '%s': failed to initialize JiraOAuthManager: %s",
+                        name,
+                        exc,
+                    )
+
         from .slack.wrapper import SlackAgentWrapper
         wrapper = SlackAgentWrapper(
             agent=agent,
             config=config,
-            app=self.bot_manager.get_app(),
+            app=app,
+            oauth_manager=jira_oauth_manager,
         )
         self.slack_bots[name] = wrapper
 

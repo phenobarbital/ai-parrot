@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-224",
+  "feature_slug": "intent-router-mixin",
+  "started_at": "2026-06-05T13:06:32Z",
+  "updated_at": "2026-06-05T13:06:32Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/intent-router-mixin-brainstorm.md",
+    "raw_path": "sdd/state/FEAT-224/source.md",
+    "fetched_at": "2026-06-05T13:06:32Z",
+    "summary_oneline": "IntentRouterMixin \u2014 deterministic, local, embedding-based output-mode routing inserted into BasicAgent.ask() via a template-method hook"
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-06-05T13:06:32Z",
+      "completed_at": "2026-06-05T13:06:32Z"
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-06-05T13:06:32Z",
+      "completed_at": "2026-06-05T13:08:00Z",
+      "queries_total": 12,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-224/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-06-05T13:08:30Z",
+      "completed_at": "2026-06-05T13:13:00Z",
+      "duration_seconds": 270,
+      "queries_executed": 12,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 8,
+      "grep_calls": 11,
+      "git_calls": 3,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-06-05T13:13:00Z",
+      "completed_at": "2026-06-05T13:14:30Z",
+      "synthesis_path": "sdd/state/FEAT-224/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "high",
+      "claims_total": 9,
+      "claims_high_conf": 8,
+      "claims_medium_conf": 1,
+      "claims_low_conf": 0,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-06-05T13:14:30Z",
+      "completed_at": "2026-06-05T13:15:00Z",
+      "questions_total": 1,
+      "questions_answered": 1,
+      "skipped_reason": "User pre-emptively resolved the primary unknown (U1) via direct direction; U2/U3 deferred to spec."
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-06-05T13:15:00Z",
+      "completed_at": "2026-06-05T13:16:00Z",
+      "proposal_path": "sdd/proposals/intent-router-mixin-embedding-routing.proposal.md",
+      "commit_sha": "ec501ade77d730e48a098cbd9597b252a97d605a",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Bounded evolution of an existing specced subsystem; architecture already chosen by user; only spec-time decisions (U2/U3) remain."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 8,
+    "grep_calls": 11,
+    "git_calls": 3,
+    "wall_seconds": 270
+  },
+  "detected_mode": "enrichment",
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "Run /sdd-spec FEAT-224 to scaffold the spec."
+  }
+}

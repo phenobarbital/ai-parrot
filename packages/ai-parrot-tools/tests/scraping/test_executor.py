@@ -395,3 +395,114 @@ class TestHelpers:
         source = await _get_page_source(mock_driver)
         assert source == HTML_BODY
         mock_driver.get_page_source.assert_awaited_once()
+
+
+# ── TestAdvancedActionDispatch (FEAT-222 TASK-1446) ───────────────────
+
+class TestAdvancedActionDispatch:
+    @pytest.mark.asyncio
+    async def test_executor_dispatches_loop(self, mock_driver):
+        """Loop action is now executed via advanced_actions, not stubbed."""
+        plan = ScrapingPlan(
+            url="https://example.com",
+            objective="loop test",
+            tags=[],
+            steps=[
+                {
+                    "action": "loop",
+                    "iterations": 2,
+                    "actions": [{"action": "click", "selector": ".item"}],
+                }
+            ],
+        )
+        result = await execute_plan_steps(mock_driver, plan)
+        assert result.success
+        assert mock_driver.click.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_executor_loop_value_substitution(self, mock_driver):
+        """Loop over values substitutes {value} into the dispatched action."""
+        plan = ScrapingPlan(
+            url="https://example.com",
+            objective="loop values",
+            tags=[],
+            steps=[
+                {
+                    "action": "loop",
+                    "values": ["a", "b", "c"],
+                    "actions": [{"action": "click", "selector": ".x-{value}"}],
+                }
+            ],
+        )
+        await execute_plan_steps(mock_driver, plan)
+        clicked = [c.args[0] for c in mock_driver.click.call_args_list]
+        assert clicked == [".x-a", ".x-b", ".x-c"]
+
+    @pytest.mark.asyncio
+    async def test_executor_dispatches_conditional_true(self, mock_driver):
+        """Conditional 'exists' true-branch is dispatched when element found."""
+        plan = ScrapingPlan(
+            url="https://example.com",
+            objective="conditional test",
+            tags=[],
+            steps=[
+                {
+                    "action": "conditional",
+                    "target": ".element",
+                    "condition_type": "exists",
+                    "expected_value": "true",
+                    "actions_if_true": [{"action": "click", "selector": ".btn"}],
+                }
+            ],
+        )
+        result = await execute_plan_steps(mock_driver, plan)
+        assert result.success
+        assert mock_driver.click.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_executor_conditional_false_branch(self, mock_driver):
+        """When the element is missing, the false-branch is dispatched."""
+        mock_driver.wait_for_selector = AsyncMock(side_effect=Exception("missing"))
+        plan = ScrapingPlan(
+            url="https://example.com",
+            objective="conditional false",
+            tags=[],
+            steps=[
+                {
+                    "action": "conditional",
+                    "target": ".element",
+                    "condition_type": "exists",
+                    "expected_value": "true",
+                    "actions_if_true": [{"action": "click", "selector": ".yes"}],
+                    "actions_if_false": [{"action": "fill", "selector": ".no",
+                                          "value": "x"}],
+                }
+            ],
+        )
+        await execute_plan_steps(mock_driver, plan)
+        assert mock_driver.click.call_count == 0
+        assert mock_driver.fill.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_executor_nested_loop(self, mock_driver):
+        """Loop-within-loop works via the recursive dispatch closure."""
+        plan = ScrapingPlan(
+            url="https://example.com",
+            objective="nested loop",
+            tags=[],
+            steps=[
+                {
+                    "action": "loop",
+                    "iterations": 2,
+                    "actions": [
+                        {
+                            "action": "loop",
+                            "iterations": 3,
+                            "actions": [{"action": "click", "selector": ".inner"}],
+                        }
+                    ],
+                }
+            ],
+        )
+        await execute_plan_steps(mock_driver, plan)
+        assert mock_driver.click.call_count == 6

@@ -1,0 +1,20 @@
+{
+  "feature_id": "FEAT-223",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "localization": [
+    {"path": "packages/ai-parrot/src/parrot/bots/flows/agents/orchestrator.py", "symbol": "OrchestratorAgent", "note": "home of new confer() method; reuses specialist_agents + _init_execution_memory", "evidence": ["F001"]},
+    {"path": "packages/ai-parrot/src/parrot/tools/agent.py", "symbol": "AgentTool._build_cross_pollination_context", "note": "formatting pattern to adapt for anonymized peer-context block", "evidence": ["F002"]},
+    {"path": "packages/ai-parrot/src/parrot/bots/base.py", "symbol": "BasicAgent.ask(structured_output=...)", "note": "enabling primitive for PeerVote structured vote", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot/src/parrot/bots/flows/core/storage/memory.py", "symbol": "ExecutionMemory", "note": "shared bus for storing rounds/audit", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py", "symbol": "AgentCrew.run_parallel", "note": "asyncio.gather fan-out pattern to mirror for Round-0 broadcast", "evidence": ["F005"]}
+  ],
+  "decisions": {
+    "vote_scope": "any-including-self (PeerVote.chosen_agent may be self; carries revised_answer)",
+    "consensus": "confidence-weighted vote (deterministic, no extra LLM)",
+    "rounds": "iterate until convergence (max_rounds=3, until_convergence=True)",
+    "attribution": "anonymized (Answer A/B/C), internal label->agent map"
+  },
+  "unknowns": [],
+  "recommended_next_command": {"command": "sdd-spec", "rationale": "Localization is exact and verified; design decisions resolved with the user. Ready to formalize into a spec."}
+}

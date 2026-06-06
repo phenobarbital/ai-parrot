@@ -21,6 +21,10 @@ os.environ['GRPC_VERBOSITY'] = 'ERROR'
 # setting it here kills the noise at the earliest possible moment.
 logging.getLogger("botocore").setLevel(logging.INFO)
 logging.getLogger("aiobotocore").setLevel(logging.INFO)
+# Silence JAX/XLA compilation diagnostics when the app root logger runs at DEBUG.
+logging.getLogger("jax").setLevel(logging.WARNING)
+logging.getLogger("jaxlib").setLevel(logging.WARNING)
+logging.getLogger("absl").setLevel(logging.WARNING)
 # logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint warnings
 # # Suppress tiktoken warnings
 # logging.getLogger("tiktoken").setLevel(logging.ERROR)
@@ -351,6 +355,16 @@ HUGGINGFACE_EMBEDDING_CACHE_DIR = config.get(
     'HUGGINGFACE_EMBEDDING_CACHE_DIR',
     fallback=BASE_DIR.joinpath('model_cache', 'huggingface')
 )
+# Propagate the app-level cache dir to the *standard* HuggingFace env var so
+# the whole HF stack (huggingface_hub, transformers, sentence-transformers)
+# downloads into this directory — not only the `cache_folder` kwarg we pass to
+# SentenceTransformer. Without this, hub snapshots land in the user's default
+# ~/.cache/huggingface/hub regardless of HUGGINGFACE_EMBEDDING_CACHE_DIR.
+#
+# IMPORTANT: huggingface_hub freezes HF_HUB_CACHE at import time, so this MUST
+# run before any HF library is imported. conf.py loads early enough to satisfy
+# that. `setdefault` lets an explicitly-set HF_HOME in the environment win.
+os.environ.setdefault('HF_HOME', str(HUGGINGFACE_EMBEDDING_CACHE_DIR))
 HUGGINGFACEHUB_API_TOKEN = config.get('HUGGINGFACEHUB_API_TOKEN')
 MAX_VRAM_AVAILABLE = config.get('MAX_VRAM_AVAILABLE', fallback=20000)
 RAM_AVAILABLE = config.get('RAM_AVAILABLE', fallback=819200)

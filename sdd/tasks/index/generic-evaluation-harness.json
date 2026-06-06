@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-03T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-03T18:22:43+00:00",
   "tasks": [
     {
       "id": "TASK-1415",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation module. Per-spec sequential worktree (spec Worktree Strategy); everything imports these models.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1415-eval-data-models.md"
+      "completed_at": "2026-06-03T16:49:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1415-eval-data-models.md"
     },
     {
       "id": "TASK-1416",
@@ -32,16 +32,18 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1415"],
+      "depends_on": [
+        "TASK-1415"
+      ],
       "parallel": false,
       "parallelism_notes": "Logically independent of TASK-1417 (different files), but sequential per chosen per-spec strategy.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1416-eval-registry.md"
+      "completed_at": "2026-06-03T16:51:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1416-eval-registry.md"
     },
     {
       "id": "TASK-1417",
@@ -50,16 +52,18 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1415"],
+      "depends_on": [
+        "TASK-1415"
+      ],
       "parallel": false,
       "parallelism_notes": "Resolves EvalTask.sandbox_spec forward ref; gating dependency for the state-sandbox chain.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1417-sandbox-abcs.md"
+      "completed_at": "2026-06-03T16:52:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1417-sandbox-abcs.md"
     },
     {
       "id": "TASK-1418",
@@ -68,16 +72,18 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1417"],
+      "depends_on": [
+        "TASK-1417"
+      ],
       "parallel": false,
       "parallelism_notes": "Deterministic snapshot store; consumed by sandbox + binders + evaluator.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1418-state-backend.md"
+      "completed_at": "2026-06-03T16:53:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1418-state-backend.md"
     },
     {
       "id": "TASK-1419",
@@ -86,16 +92,18 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1418"],
+      "depends_on": [
+        "TASK-1418"
+      ],
       "parallel": false,
-      "parallelism_notes": "Proves the binding pattern (brainstorm §13.7 step 3). Requires reading PostgresToolkit._execute_crud.",
+      "parallelism_notes": "Proves the binding pattern (brainstorm \u00a713.7 step 3). Requires reading PostgresToolkit._execute_crud.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1419-inmemory-sandbox-db-binder.md"
+      "completed_at": "2026-06-03T17:00:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1419-inmemory-sandbox-db-binder.md"
     },
     {
       "id": "TASK-1420",
@@ -104,16 +112,18 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1419"],
+      "depends_on": [
+        "TASK-1419"
+      ],
       "parallel": false,
       "parallelism_notes": "Second binder; depends on the binder ABC + sandbox from TASK-1419.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1420-jira-binder.md"
+      "completed_at": "2026-06-03T17:01:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1420-jira-binder.md"
     },
     {
       "id": "TASK-1421",
@@ -122,16 +132,19 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1415", "TASK-1417"],
+      "depends_on": [
+        "TASK-1415",
+        "TASK-1417"
+      ],
       "parallel": false,
       "parallelism_notes": "Scoring contract; independent of the binder chain but sequential per-spec.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1421-evaluator-abcs.md"
+      "completed_at": "2026-06-03T17:02:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1421-evaluator-abcs.md"
     },
     {
       "id": "TASK-1422",
@@ -140,16 +153,20 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1416", "TASK-1418", "TASK-1421"],
+      "depends_on": [
+        "TASK-1416",
+        "TASK-1418",
+        "TASK-1421"
+      ],
       "parallel": false,
       "parallelism_notes": "Subset-diff scorer; needs registry + backend + evaluator ABCs.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1422-state-based-evaluator.md"
+      "completed_at": "2026-06-03T17:04:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1422-state-based-evaluator.md"
     },
     {
       "id": "TASK-1423",
@@ -158,16 +175,19 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1415", "TASK-1417"],
+      "depends_on": [
+        "TASK-1415",
+        "TASK-1417"
+      ],
       "parallel": false,
       "parallelism_notes": "Drives AbstractBot via ask()/conversation(); LLMUserSimulator uses client.ask().",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1423-rollout-user-sim.md"
+      "completed_at": "2026-06-03T17:07:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1423-rollout-user-sim.md"
     },
     {
       "id": "TASK-1424",
@@ -176,16 +196,18 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1415"],
+      "depends_on": [
+        "TASK-1415"
+      ],
       "parallel": false,
       "parallelism_notes": "Distinct DatasetLoader (not AbstractLoader). Only depends on models.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1424-dataset-loaders.md"
+      "completed_at": "2026-06-03T17:09:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1424-dataset-loaders.md"
     },
     {
       "id": "TASK-1425",
@@ -194,16 +216,22 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1415", "TASK-1417", "TASK-1419", "TASK-1421", "TASK-1423"],
+      "depends_on": [
+        "TASK-1415",
+        "TASK-1417",
+        "TASK-1419",
+        "TASK-1421",
+        "TASK-1423"
+      ],
       "parallel": false,
       "parallelism_notes": "Orchestrator; ties all five axes. Needs sandbox, evaluator ABC, rollout.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1425-eval-runner.md"
+      "completed_at": "2026-06-03T17:11:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1425-eval-runner.md"
     },
     {
       "id": "TASK-1426",
@@ -212,16 +240,18 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1425"],
+      "depends_on": [
+        "TASK-1425"
+      ],
       "parallel": false,
       "parallelism_notes": "Read-only LifecycleEvent subclasses wired into the runner; FEAT-176 merged on dev.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1426-eval-events.md"
+      "completed_at": "2026-06-03T17:15:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1426-eval-events.md"
     },
     {
       "id": "TASK-1427",
@@ -230,16 +260,19 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-1415", "TASK-1425"],
+      "depends_on": [
+        "TASK-1415",
+        "TASK-1425"
+      ],
       "parallel": false,
       "parallelism_notes": "asyncpg + JSONB persistence; integration test gated on DB availability.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1427-postgres-sink.md"
+      "completed_at": "2026-06-03T17:16:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1427-postgres-sink.md"
     },
     {
       "id": "TASK-1428",
@@ -248,16 +281,22 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1419", "TASK-1420", "TASK-1422", "TASK-1424", "TASK-1425"],
+      "depends_on": [
+        "TASK-1419",
+        "TASK-1420",
+        "TASK-1422",
+        "TASK-1424",
+        "TASK-1425"
+      ],
       "parallel": false,
       "parallelism_notes": "Capstone E2E proof of the state-based path; hermetic (no real DB/Jira/LLM).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1428-benchmark-e2e.md"
+      "completed_at": "2026-06-03T17:21:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1428-benchmark-e2e.md"
     }
   ]
 }

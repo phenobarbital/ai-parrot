@@ -64,7 +64,7 @@ def _make_bot_model(
     m.reranker_config = {}
     m.parent_searcher_config = {}
     m.prompt_config = {}
-    m.bot_class = None
+    m.bot_class = "BasicBot"
     return m
 
 
@@ -153,7 +153,7 @@ class TestLoadDatabaseBotsPBAC:
             ):
                 await manager._load_database_bots(app)
 
-        mock_reg.assert_called_once_with("public_bot", None)
+        mock_reg.assert_called_once_with("public_bot", {})
         mock_add.assert_called_once_with(fake_bot)
 
     # ------------------------------------------------------------------

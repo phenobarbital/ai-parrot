@@ -171,30 +171,21 @@ Otherwise, keep going until the task is **done**.
 After the code is committed, update the per-spec index in the same branch
 — no `cd` to the main repo (FEAT-145).
 
+> **CRITICAL — use the script, do NOT hand-roll the move.** Closing a task
+> means *moving* its file from `active/` to `completed/`. Agents that paraphrase
+> this as a `Write`/copy leave the `active/` file behind; when the feature
+> branch merges, both copies land on the base branch as a "stalled" orphan.
+> `scripts/sdd/close_task.sh` does the move with `git mv` and HARD-VERIFIES that
+> no `active/` copy survives (exit 3 if it does). Always call it verbatim.
+
 ```bash
-INDEX="sdd/tasks/index/<feature-slug>.json"
-NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
+# Move active → completed, stamp the index (status/completed_at/verification/file),
+# stage the change, and assert active/ is clean. Idempotent.
+scripts/sdd/close_task.sh TASK-<NNN> <feature-slug> verified
 
-# Move task file from active to completed (in-place)
-mkdir -p sdd/tasks/completed/
-mv sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/
-
-# Update index: set status → "done", completed_at → now
-jq --arg id "<TASK-NNN>" --arg now "$NOW" '
-  (.tasks[] | select(.id == $id) | .status) = "done" |
-  (.tasks[] | select(.id == $id) | .completed_at) = $now |
-  (.tasks[] | select(.id == $id) | .file) = ("sdd/tasks/completed/TASK-<NNN>-<slug>.md")
-' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
-
-# Fill in the Completion Note section of the moved task file (in completed/).
-
-# CRITICAL: Unstage everything first — NEVER commit unrelated changes
-git reset HEAD
-# Stage ONLY the SDD task state files — NEVER use "git add ." or "git add -A"
-git add "$INDEX" sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/TASK-<NNN>-<slug>.md
-# Verify ONLY task-related files are staged
-git diff --cached --name-only
-# If ANY unrelated files appear, run "git reset HEAD" and start over
+# Fill in the Completion Note section of the moved file (now in completed/).
+# Then commit ONLY the staged SDD state — never "git add ." / "git add -A".
+git diff --cached --name-only        # sanity-check: only index + task files
 git commit -m "sdd: complete TASK-<NNN> — <title>"
 ```
 

@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from parrot.integrations.telegram.post_auth import (
+from parrot.integrations.core.auth.post_auth import (
     PostAuthProvider,
     PostAuthRegistry,
 )

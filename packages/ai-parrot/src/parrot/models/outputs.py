@@ -1,8 +1,8 @@
-from datetime import datetime
 from typing import (
     List,
     Optional,
     Any,
+    Tuple,
     Union,
     Callable,
     Literal,
@@ -13,9 +13,7 @@ from typing import (
 from enum import Enum
 from dataclasses import dataclass, fields, is_dataclass, MISSING
 import json
-import os
-import uuid
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
 from .basic import OutputFormat
 
 
@@ -70,6 +68,8 @@ class OutputMode(str, Enum):
     INFOGRAPHIC = "infographic"
     SQL_ANALYSIS = "sql_analysis"  # DBA helper: QueryResponse with explanation + SQL artifact
     STRUCTURED_CHART = "structured_chart"  # Library-agnostic chart config (AppChartConfig mirror)
+    STRUCTURED_TABLE = "structured_table"  # Framework-agnostic table config (FEAT-218)
+    STRUCTURED_MAP = "structured_map"      # Framework-agnostic map config (FEAT-221)
 
 @dataclass
 class StructuredOutputConfig:
@@ -219,12 +219,26 @@ class ObjectDetectionResult(BaseModel):
     )
 
 class ImageGenerationPrompt(BaseModel):
-    """Input schema for generating an image."""
+    """Input schema for generating an image.
+
+    Carries the full homologated attribute surface shared by both the Gemini
+    (``generate_image``) and Imagen (``generate_images``) backends. Individual
+    method kwargs always take precedence over the fields set here.
+    """
     prompt: str = Field(..., description="The main text prompt describing the desired image.")
     styles: Optional[List[str]] = Field(default_factory=list, description="Optional list of styles to apply (e.g., 'photorealistic', 'cinematic', 'anime').")
     model: str = Field(description="The image generation model to use.")
-    negative_prompt: Optional[str] = Field(None, description="A description of what to avoid in the image.")
+    negative_prompt: Optional[str] = Field(None, description="A description of what to avoid in the image (Imagen only).")
     aspect_ratio: str = Field(default="1:1", description="The desired aspect ratio (e.g., '1:1', '16:9', '9:16').")
+    resolution: Optional[str] = Field(default="1K", description="The desired resolution / image size (e.g., '1K', '2K', '4K').")
+    auto_upscale: Optional[bool] = Field(default=False, description="Whether to automatically upscale the generated image.")
+    number_of_images: int = Field(default=1, ge=1, le=8, description="How many images to generate per request.")
+    person_generation: str = Field(default="allow_adult", description="Person generation policy: 'allow_all', 'allow_adult', or 'dont_allow' (Imagen only).")
+    safety_filter_level: str = Field(default="BLOCK_ONLY_HIGH", description="Safety filter threshold (e.g., 'BLOCK_ONLY_HIGH', 'BLOCK_MEDIUM_AND_ABOVE', 'BLOCK_LOW_AND_ABOVE').")
+    seed: Optional[int] = Field(default=None, description="Optional seed for reproducible generation.")
+    add_watermark: bool = Field(default=False, description="Whether to add a SynthID watermark (Imagen only).")
+    output_mime_type: str = Field(default="image/png", description="Output image MIME type (e.g., 'image/png', 'image/jpeg').")
+    service_tier: Optional[str] = Field(default=None, description="Optional service tier (e.g., 'flex'); applies to the Gemini backend.")
 
 
 class SpeakerConfig(BaseModel):
@@ -264,6 +278,10 @@ class VideoGenerationPrompt(BaseModel):
         default='',
         description="A description of what to avoid in the video."
     )
+    resolution: Optional[str] = Field(default="1080p", description="The desired resolution (e.g., '1080p', '2K').")
+    smoothing: Optional[bool] = Field(default=False, description="Whether to apply frame rate smoothing to the generated video.")
+    seed: Optional[int] = Field(default=None, description="Optional seed for reproducible generation.")
+    include_audio: bool = Field(default=True, description="Whether to include generated audio.")
 
 class SentimentAnalysis(BaseModel):
     """Structured sentiment analysis response."""
@@ -359,34 +377,461 @@ class StructuredChartConfig(BaseModel):
         default=None, alias="negativeColor",
         description="Hex colour for negative values when colorBySign is True",
     )
+    positive_color: Optional[str] = Field(
+        default=None, alias="positiveColor",
+        description="Hex colour for positive values when colorBySign is True",
+    )
+    x_axis_label: Optional[str] = Field(
+        default=None, alias="xAxisLabel",
+        description="Human-readable x-axis display label (overrides column name)",
+    )
+    y_axis_label: Optional[str] = Field(
+        default=None, alias="yAxisLabel",
+        description="Human-readable y-axis display label",
+    )
     map_name: Optional[str] = Field(
         default=None, alias="mapName",
         description="GeoJSON map name (frontend-validated, free-form; required for type='map')",
     )
+    title: Optional[str] = Field(
+        default=None,
+        description="Short chart title (≤1 line) shown as the card header.",
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description=(
+            "One short paragraph (natural language) summarizing the chart's key "
+            "takeaway; shown as the message text alongside the chart."
+        ),
+    )
     data: List[dict] = Field(
         default_factory=list,
         description=(
-            "Flat data rows; INPUT-ONLY — excluded from `output`, "
-            "routed to response.data by the renderer."
+            "Optional: the rows to chart, as a list of flat dicts whose keys "
+            "include the x and y column names. When omitted, the renderer uses "
+            "the DataFrame the agent computed (injected into response.data) as "
+            "the data source instead — see StructuredChartRenderer."
+        ),
+    )
+    data_variable: Optional[str] = Field(
+        default=None,
+        alias="dataVariable",
+        description=(
+            "The name of the pandas DataFrame variable you created in a tool "
+            "(e.g. 'expense_breakdown') that holds the rows to chart. ALWAYS set "
+            "this to the variable that contains the chart data. It is REQUIRED "
+            "when the turn produced more than one DataFrame, so the system knows "
+            "which one to use; x and y must be columns of that DataFrame."
         ),
     )
 
+    @field_validator("data", mode="before")
+    @classmethod
+    def _normalize_data_orientation(cls, v):
+        """Accept any pandas-style orientation for ``data`` and coerce to records.
+
+        The LLM serializes the DataFrame inconsistently — sometimes as a list of
+        row dicts (``records``), sometimes as ``split`` orientation
+        ``{"columns": [...], "data": [[...], ...]}``, sometimes as the default
+        ``{col: {idx: val}}``. Only ``records`` matches ``List[dict]``; the others
+        used to fail validation and trigger a slow (~13s) reformat call. Normalize
+        them here so the chart pipeline is resilient to the serialization shape.
+
+        Args:
+            v: The raw ``data`` value from the LLM (list or dict orientation).
+
+        Returns:
+            A list of row dicts, or the value unchanged when already a list / not
+            a recognized orientation (lets normal validation handle it).
+        """
+        if not isinstance(v, dict):
+            return v
+        # 'split'/'tight' orientation: {"columns": [...], "data"|"rows"|"values": [[...]]}.
+        # The values key varies by serializer/LLM ('data' is pandas-canonical, but
+        # models also emit 'rows' or 'values'); accept any of them.
+        cols = v.get("columns")
+        rows = v.get("data")
+        if rows is None:
+            rows = v.get("rows")
+        if rows is None:
+            rows = v.get("values")
+        if isinstance(cols, list) and isinstance(rows, list):
+            return [
+                dict(zip(cols, r)) if isinstance(r, (list, tuple)) else r
+                for r in rows
+            ]
+        # pandas default 'dict' orientation: {col: {row_idx: value}}
+        if v and all(isinstance(col_vals, dict) for col_vals in v.values()):
+            indices = list(next(iter(v.values())).keys())
+            return [
+                {col: col_vals.get(idx) for col, col_vals in v.items()}
+                for idx in indices
+            ]
+        # A single row dict → wrap as one-row list
+        return [v]
+
     @model_validator(mode="after")
     def _validate_chart_constraints(self) -> "StructuredChartConfig":
-        """Validate map-name requirement and column presence.
+        """Validate the map-name requirement only.
+
+        We deliberately do NOT reject configs whose ``x``/``y`` don't match the
+        embedded data columns. The LLM frequently names semantic axes
+        (``x="expense_category"``) that differ from the keys it actually embeds,
+        and it delivers data through several paths (embedded rows, a python
+        variable, or a materialized dataset). Raising here forced a slow
+        reformat call and — worse — pre-empted ``StructuredChartRenderer``, which
+        is responsible for reconciling x/y against whatever rows are available.
+        So the only hard constraint left is the map-name requirement; column
+        alignment is handled downstream by the renderer.
 
         Returns:
             The validated StructuredChartConfig instance.
 
         Raises:
-            ValueError: When type='map' and mapName is absent, or when x/y
-                columns are missing from non-empty data rows.
+            ValueError: When type='map' and mapName is absent.
         """
         if self.type == "map" and not self.map_name:
             raise ValueError("type='map' requires 'mapName'")
+        return self
+
+
+# ── FEAT-218: Structured Table Output Mode ─────────────────────────────────────
+
+
+class TableColumn(BaseModel):
+    """Per-column contract for a structured table output.
+
+    Carries the minimum information a frontend grid library needs to
+    render a column correctly: the key name, its storage type, a human
+    label, and an optional display-format hint.
+
+    Attributes:
+        name: Column key — must match a key in every data row dict.
+        type: Storage type vocabulary: ``string`` | ``integer`` | ``number`` |
+            ``boolean`` | ``date`` | ``datetime`` | ``time`` | ``duration`` | ``any``.
+        title: Human-readable column label (defaults to ``name`` as-is; the
+            renderer may refine it via a narrow LLM pass).
+        format: Optional display hint for ambiguous columns:
+            ``currency`` | ``percent`` | ``email`` | ``uri`` | ``enum`` |
+            ``id`` | ``code``.
+            This is a *hint* for the frontend — it does NOT change the base
+            storage type.
+    """
+
+    name: str = Field(..., description="Column key (matches a key in data rows)")
+    type: str = Field(
+        ...,
+        description=(
+            "Storage type: string | integer | number | boolean"
+            " | date | datetime | time | duration | any"
+        ),
+    )
+    title: str = Field(..., description="Human-readable column label")
+    format: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional display hint: currency | percent | email | uri | enum | id | code"
+        ),
+    )
+
+
+class StructuredTableConfig(BaseModel):
+    """Framework-agnostic table configuration for FEAT-218.
+
+    Accepts data rows on input (for column-name validation), but the renderer
+    excludes the ``data`` field from the serialized output — rows are routed
+    to ``response.data`` instead (mirroring ``StructuredChartConfig``).
+
+    Attributes:
+        columns: Per-column contract list (name / type / title / optional format).
+        data: Flat row list — INPUT-ONLY; excluded from ``output``,
+            routed to ``response.data`` by the renderer.
+        explanation: Optional prose description of how the table was derived
+            (reused from the producing agent; absent → omitted).
+        total_rows: Total number of rows before truncation (set when data
+            originates from a larger dataset).
+        truncated: ``True`` when the dataset was capped at ``row_limit``
+            and rows were dropped.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    columns: List[TableColumn] = Field(
+        ..., description="Per-column contract (name / type / title / format)"
+    )
+    data: List[dict] = Field(
+        default_factory=list,
+        description=(
+            "Flat data rows; INPUT-ONLY — excluded from ``output``, "
+            "routed to response.data by the renderer."
+        ),
+    )
+    explanation: Optional[str] = Field(
+        default=None,
+        description="Prose description of how the table was derived (best-effort).",
+    )
+    total_rows: Optional[int] = Field(
+        default=None,
+        description="Total row count before any truncation.",
+    )
+    truncated: bool = Field(
+        default=False,
+        description="True when the dataset was capped at row_limit.",
+    )
+
+    @model_validator(mode="after")
+    def _validate_column_names(self) -> "StructuredTableConfig":
+        """Validate that every declared column name exists in the data rows.
+
+        When ``data`` is non-empty, every ``column.name`` must appear as a key
+        in ``data[0]``.  This mirrors the ``StructuredChartConfig`` x/y column
+        presence check.
+
+        Returns:
+            The validated ``StructuredTableConfig`` instance.
+
+        Raises:
+            ValueError: When a ``column.name`` is absent from ``data[0].keys()``
+                and ``data`` is non-empty.
+        """
         if self.data:
             cols = set(self.data[0].keys())
-            missing = [c for c in [self.x, *self.y] if c not in cols]
+            missing = [c.name for c in self.columns if c.name not in cols]
             if missing:
-                raise ValueError(f"columns not present in data rows: {missing}")
+                raise ValueError(
+                    f"column names not present in data rows: {missing}"
+                )
+        return self
+
+
+# ── FEAT-221: Structured Map Output Mode ──────────────────────────────────────
+
+
+class MapColumn(BaseModel):
+    """Per-column contract for a map layer (same vocabulary as TableColumn).
+
+    Carries the minimum information a frontend map library needs to
+    render a column correctly: the key name, its storage type, a human
+    label, and an optional display-format hint.
+
+    Attributes:
+        name: Column key — must match a key in every data row dict /
+            feature.properties.
+        type: Storage type vocabulary: ``string`` | ``integer`` | ``number`` |
+            ``boolean`` | ``date`` | ``datetime`` | ``time`` | ``duration`` | ``any``.
+        title: Human-readable column label (defaults to ``name`` as-is; the
+            renderer may refine it via a narrow LLM pass).
+        format: Optional display hint for ambiguous columns:
+            ``currency`` | ``percent`` | ``email`` | ``uri`` | ``enum`` |
+            ``id`` | ``code``.
+            This is a *hint* for the frontend — it does NOT change the base
+            storage type.
+    """
+
+    name: str = Field(..., description="Column key (matches a key in data rows / feature.properties)")
+    type: str = Field(
+        ...,
+        description=(
+            "Storage type: string | integer | number | boolean"
+            " | date | datetime | time | duration | any"
+        ),
+    )
+    title: str = Field(..., description="Human-readable column label")
+    format: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional display hint: currency | percent | email | uri | enum | id | code"
+        ),
+    )
+
+
+class MapLayer(BaseModel):
+    """One layer per dataset — data schema + presentation schema (FEAT-221).
+
+    Attributes:
+        layer: Leaflet layer id / GeoJSON source discriminator.
+        columns: Per-column contract for this layer (name / type / title / format).
+        tooltip_template: Python ``str.format_map`` template applied client-side
+            over ``feature.properties`` (compact, G8 — no per-element strings).
+        label_field: Property key used for the marker label.
+        data_shape: Per-layer data payload shape: ``"geojson"`` passes features
+            through; ``"rows"`` flattens to canonical row dicts (G6).
+        total_count: Per-dataset true count before capping (G10).
+        capped: True when the per-dataset result was truncated at the hard cap.
+        geodesic: Whether the executed path was geodesic (True) or
+            spherical-approximate (False). Sourced from ``SpatialLayerResult``.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    layer: str = Field(..., description="Leaflet layer id / GeoJSON source discriminator.")
+    columns: List[MapColumn] = Field(
+        ..., description="Per-column contract (name / type / title / format)"
+    )
+    tooltip_template: Optional[str] = Field(
+        default=None,
+        alias="tooltipTemplate",
+        description="str.format_map template for client-side tooltip rendering.",
+    )
+    label_field: Optional[str] = Field(
+        default=None,
+        alias="labelField",
+        description="Property key used for the marker label.",
+    )
+    data_shape: Literal["geojson", "rows"] = Field(
+        default="geojson",
+        alias="dataShape",
+        description="Per-layer data payload shape: geojson or rows.",
+    )
+    total_count: int = Field(
+        default=0,
+        alias="totalCount",
+        description="Per-dataset true count before capping.",
+    )
+    capped: bool = Field(
+        default=False,
+        description="True when the per-dataset result was truncated at the hard cap.",
+    )
+    geodesic: Optional[bool] = Field(
+        default=None,
+        description="True = geodesic path; False = spherical-approx. From SpatialLayerResult.",
+    )
+
+
+class MapViewport(BaseModel):
+    """Map viewport hints — computed from feature bounds (FEAT-221).
+
+    Attributes:
+        bbox: [min_lng, min_lat, max_lng, max_lat] bounding box.
+        center: (lat, lng) optional center — frontend may derive from bbox.
+        zoom: Optional zoom-level hint.
+    """
+
+    bbox: Optional[List[float]] = Field(
+        default=None,
+        description="[min_lng, min_lat, max_lng, max_lat] bounding box.",
+    )
+    center: Optional[Tuple[float, float]] = Field(
+        default=None,
+        description="(lat, lng) optional center — frontend may derive from bbox.",
+    )
+    zoom: Optional[int] = Field(
+        default=None,
+        description="Optional zoom-level hint.",
+    )
+
+
+class MapQuery(BaseModel):
+    """Echoed spatial filter query — carries the originating search parameters (FEAT-221).
+
+    Attributes:
+        point: (lat, lng) echoed from ``SpatialFilterSpec.point``.
+        radius: Search radius.
+        unit: Distance unit.
+    """
+
+    point: Tuple[float, float] = Field(
+        ...,
+        description="(lat, lng) in decimal degrees — echoed from SpatialFilterSpec.",
+    )
+    radius: float = Field(..., description="Search radius.")
+    unit: Literal["mi", "km", "m"] = Field(..., description="Distance unit: mi, km, or m.")
+
+
+class StructuredMapConfig(BaseModel):
+    """Framework-agnostic map configuration for FEAT-221.
+
+    Mirrors ``StructuredTableConfig``/``StructuredChartConfig`` — accepts data
+    on input (for column-name validation), but the renderer excludes the ``data``
+    field from the serialized output and routes per-layer payloads to
+    ``response.data`` instead.
+
+    Attributes:
+        layers: One ``MapLayer`` per dataset with data-schema + presentation hints.
+        data: Flat data rows or per-layer payloads — INPUT-ONLY; excluded from
+            ``output``, routed to ``response.data`` by the renderer.
+        viewport: Viewport hints (bbox + optional center/zoom).
+        query: Echoed ``SpatialFilterSpec`` parameters (point / radius / unit).
+        base_layer: Optional base-tile/style hint for the frontend (e.g. an OSM
+            tile URL template or a Mapbox style id).
+        title: Short map title.
+        description: Short prose description.
+        explanation: Longer LLM-authored prose explanation of the spatial result.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    layers: List[MapLayer] = Field(
+        ..., description="One MapLayer per dataset."
+    )
+    data: List[dict] = Field(
+        default_factory=list,
+        description=(
+            "Per-layer payloads; INPUT-ONLY — excluded from ``output``, "
+            "routed to response.data by the renderer."
+        ),
+    )
+    viewport: Optional[MapViewport] = Field(
+        default=None,
+        description="Viewport hints (bbox + optional center/zoom).",
+    )
+    query: Optional[MapQuery] = Field(
+        default=None,
+        description="Echoed SpatialFilterSpec parameters.",
+    )
+    base_layer: Optional[str] = Field(
+        default=None,
+        alias="baseLayer",
+        description="Optional base-tile/style hint (e.g. OSM tile URL or Mapbox style id).",
+    )
+    title: Optional[str] = Field(
+        default=None,
+        description="Short map title.",
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Short prose description of the map.",
+    )
+    explanation: Optional[str] = Field(
+        default=None,
+        description="Longer LLM-authored prose explanation of the spatial result.",
+    )
+
+    @model_validator(mode="after")
+    def _validate_column_names(self) -> "StructuredMapConfig":
+        """Validate that every declared column name exists in the data rows.
+
+        When ``data`` is non-empty, every ``layer.columns[*].name`` must appear
+        as a key in ``data[0]``.  This mirrors the ``StructuredTableConfig``
+        column-name check.
+
+        MULTI-LAYER LIMITATION:
+        ``data`` in this context is expected to be a *flat union* of all layer
+        columns (or left empty, which is the normal renderer path).  For
+        multi-layer configs where each layer has distinct property columns, the
+        check against a single ``data[0]`` row is a footgun: a column present
+        only in layer B will appear missing when ``data[0]`` is a row from
+        layer A.
+
+        **The renderer always passes ``data=[]``** (see ``StructuredMapRenderer``),
+        which skips this validator entirely.  The validator only fires when a
+        caller constructs ``StructuredMapConfig`` directly with non-empty ``data``
+        rows — in that case, ``data`` MUST be a flat union of all layer columns,
+        or the caller should omit ``data`` altogether.
+
+        Returns:
+            The validated ``StructuredMapConfig`` instance.
+
+        Raises:
+            ValueError: When a ``column.name`` is absent from ``data[0].keys()``
+                and ``data`` is non-empty.
+        """
+        if self.data:
+            cols = set(self.data[0].keys())
+            for layer in self.layers:
+                missing = [c.name for c in layer.columns if c.name not in cols]
+                if missing:
+                    raise ValueError(
+                        f"column names not present in data rows: {missing}"
+                    )
         return self

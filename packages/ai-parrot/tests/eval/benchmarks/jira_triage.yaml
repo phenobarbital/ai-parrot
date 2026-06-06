@@ -1,0 +1,45 @@
+name: jira-triage
+tasks:
+  - task_id: jira-assign-bug
+    inputs:
+      query: "Assign all unassigned bugs in PROJ to 'oncall'."
+    user_scenario: "I need all unassigned bug tickets in project PROJ assigned to the oncall engineer."
+    expected:
+      goal_state:
+        issues:
+          PROJ-1:
+            assignee: oncall
+    sandbox_spec:
+      kind: in_memory_state
+      seed_state:
+        issues:
+          PROJ-1:
+            type: bug
+            assignee: null
+          PROJ-2:
+            type: task
+            assignee: bob
+    tags:
+      - jira
+      - triage
+
+  - task_id: jira-transition-issue
+    inputs:
+      query: "Transition issue PROJ-5 to 'done'."
+    user_scenario: "Mark issue PROJ-5 as done — it has been resolved."
+    expected:
+      goal_state:
+        issues:
+          PROJ-5:
+            status: done
+    sandbox_spec:
+      kind: in_memory_state
+      seed_state:
+        issues:
+          PROJ-5:
+            type: bug
+            status: open
+            assignee: alice
+    tags:
+      - jira
+      - transition

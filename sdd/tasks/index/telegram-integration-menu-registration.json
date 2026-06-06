@@ -1,0 +1,69 @@
+{
+  "feature": "telegram-integration-menu-registration",
+  "feature_id": "FEAT-220",
+  "spec": "sdd/specs/telegram-integration-menu-registration.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-04T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1442",
+      "slug": "wrapper-register-command-menu",
+      "title": "Add register_command_menu() publisher to TelegramAgentWrapper",
+      "feature_id": "FEAT-220",
+      "feature": "telegram-integration-menu-registration",
+      "spec": "sdd/specs/telegram-integration-menu-registration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task — both TASK-1443 and TASK-1444 depend on this method existing. Must land first.",
+      "assigned_to": null,
+      "started_at": "2026-06-03T22:14:05+00:00",
+      "completed_at": "2026-06-03T22:17:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1442-wrapper-register-command-menu.md"
+    },
+    {
+      "id": "TASK-1443",
+      "slug": "telegrambotmanager-delegate-menu",
+      "title": "Delegate TelegramBotManager menu registration to the wrapper",
+      "feature_id": "FEAT-220",
+      "feature": "telegram-integration-menu-registration",
+      "spec": "sdd/specs/telegram-integration-menu-registration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1442"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits telegram/manager.py only — file-disjoint from TASK-1444 (integrations/manager.py), so the two COULD run in separate worktrees after TASK-1442. Kept sequential per the spec's per-spec isolation (both validate the shared wrapper method; one worktree keeps the regression + parity tests together).",
+      "assigned_to": null,
+      "started_at": "2026-06-03T22:14:05+00:00",
+      "completed_at": "2026-06-03T22:22:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1443-telegrambotmanager-delegate-menu.md"
+    },
+    {
+      "id": "TASK-1444",
+      "slug": "integrationbotmanager-register-menu",
+      "title": "Register the command menu on the IntegrationBotManager path",
+      "feature_id": "FEAT-220",
+      "feature": "telegram-integration-menu-registration",
+      "spec": "sdd/specs/telegram-integration-menu-registration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1442"
+      ],
+      "parallel": false,
+      "parallelism_notes": "The actual bug fix. Edits integrations/manager.py + docs — file-disjoint from TASK-1443, so could parallelize after TASK-1442, but kept sequential per per-spec isolation.",
+      "assigned_to": null,
+      "started_at": "2026-06-03T22:14:05+00:00",
+      "completed_at": "2026-06-03T22:29:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1444-integrationbotmanager-register-menu.md"
+    }
+  ]
+}

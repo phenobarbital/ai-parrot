@@ -1,0 +1,41 @@
+{
+  "feat_id": "FEAT-227",
+  "phase": "proposal_drafted",
+  "started_at": "2026-06-05T00:00:00Z",
+  "updated_at": "2026-06-05T00:00:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 18,
+    "grep_calls": 8,
+    "git_calls": 0,
+    "depth_reached": 1,
+    "wall_seconds": 180
+  },
+  "truncated": false,
+  "truncation_reason": null,
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Computer-Use Agent — ComputerInteraction toolkit + ComputerAgent for Playwright browser automation with Gemini"
+  },
+  "phases": {
+    "source": { "status": "complete" },
+    "plan": { "status": "complete" },
+    "research": { "status": "complete", "files_read": 18, "grep_calls": 8, "git_calls": 0 },
+    "synthesis": { "status": "complete" },
+    "review_gate": { "status": "pending" },
+    "qa": { "status": "pending" },
+    "output": {
+      "status": "complete",
+      "proposal_path": "sdd/proposals/computer-use-agent.proposal.md"
+    }
+  }
+}

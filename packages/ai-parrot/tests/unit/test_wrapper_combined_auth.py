@@ -25,7 +25,7 @@ from parrot.integrations.telegram.models import (
     PostAuthAction,
     TelegramAgentConfig,
 )
-from parrot.integrations.telegram.post_auth import PostAuthRegistry
+from parrot.integrations.core.auth.post_auth import PostAuthRegistry
 
 
 # ----------------------------------------------------------------------

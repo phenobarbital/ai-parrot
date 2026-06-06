@@ -3,7 +3,6 @@ WebScrapingTool for AI-Parrot
 Combines Selenium/Playwright automation with LLM-directed scraping
 """
 from pathlib import Path
-import random
 import sys
 import warnings
 from typing import Dict, List, Any, Optional, Union, Literal
@@ -12,7 +11,6 @@ import time
 import asyncio
 import logging
 import base64
-import re
 import json
 import contextlib
 from urllib.parse import urlparse, urljoin
@@ -38,6 +36,11 @@ try:
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
 from ..abstract import AbstractTool
+from .advanced_actions import (
+    exec_conditional,
+    exec_loop,
+    substitute_template_vars,
+)
 from .driver import SeleniumSetup
 from .driver_factory import DriverFactory
 from .crawl_graph import CrawlResult
@@ -47,7 +50,6 @@ from .plan import ScrapingPlan
 from .plan_io import save_plan_to_disk, load_plan_from_disk
 from .registry import PlanRegistry
 from .models import (
-    BrowserAction,
     Navigate,
     Click,
     Fill,
@@ -2459,222 +2461,47 @@ return 1;
         base_url: str = "",
         args: Optional[dict] = None
     ) -> bool:
-        """Handle Conditional action - execute actions based on a condition."""
+        """Handle Conditional action — delegates to advanced_actions.
 
-        CONDITION_TYPES = {
-            'exists': lambda element, expected: element is not None,
-            'not_exists': lambda element, expected: element is None,
-            'text_contains': lambda element, expected: expected in (element.text if element else ''),
-            'text_equals': lambda element, expected: (element.text if element else '') == expected,
-            'attribute_equals': lambda element, expected: element.get_attribute(expected['attr']) == expected['value'] if element else False,
-        }
+        Thin wrapper retained for backward compatibility. The implementation
+        now lives in the shared ``advanced_actions`` module (FEAT-222) so the
+        executor, the toolkit, and the FlowExecutor share one code path.
+        """
+        async def _dispatch(driver, step, url, timeout, step_extracted):
+            return await self._execute_step(step, url, args)
 
-        target = action.target
-        target_type = action.target_type or 'css'
-        condition_type = action.condition_type
-        expected_value = action.expected_value
-        timeout = action.timeout or 5
-
-        self.logger.info(
-            f"Evaluating conditional: {condition_type} on {target_type}='{target}' with value '*{expected_value}*'"
+        return await exec_conditional(
+            self._abstract_driver,
+            action,
+            _dispatch,
+            base_url,
+            self.default_timeout,
         )
-
-        # Find the element
-        element = None
-        if self.driver_type == 'selenium':
-            loop = asyncio.get_running_loop()
-
-            def find_element_sync():
-                try:
-                    # Determine locator type
-                    if target_type == 'xpath':
-                        by_type = By.XPATH
-                    else:  # css
-                        by_type = By.CSS_SELECTOR
-
-                    # Try to find element with timeout
-                    try:
-                        el = WebDriverWait(
-                            self.driver,
-                            timeout,
-                            poll_frequency=0.25
-                        ).until(
-                            EC.presence_of_element_located((by_type, target))
-                        )
-                        return el
-                    except (TimeoutException, NoSuchElementException):
-                        return None
-                except Exception as e:
-                    self.logger.debug(f"Error finding element: {str(e)}")
-                    return None
-
-            element = await loop.run_in_executor(None, find_element_sync)
-
-        else:  # Playwright
-            try:
-                if target_type == 'xpath':
-                    selector = f"xpath={target}"
-                else:
-                    selector = target
-
-                element = await self.page.wait_for_selector(
-                    selector,
-                    timeout=timeout * 1000,
-                    state='attached'
-                )
-            except Exception:
-                element = None
-
-        # Evaluate condition
-        condition_func = CONDITION_TYPES.get(condition_type)
-        if not condition_func:
-            self.logger.error(f"Unknown condition type: {condition_type}")
-            return False
-
-        # For attribute_equals, expected_value should be a dict
-        if condition_type == 'attribute_equals' and isinstance(expected_value, str):
-            # Try to parse as "attr=value"
-            if '=' in expected_value:
-                attr, val = expected_value.split('=', 1)
-                expected_value = {'attr': attr.strip(), 'value': val.strip()}
-
-        try:
-            condition_result = condition_func(element, expected_value)
-        except Exception as e:
-            self.logger.error(f"Error evaluating condition: {str(e)}")
-            condition_result = False
-
-        self.logger.notice(
-            f"Condition result: {condition_result}"
-        )
-
-        # Determine which actions to execute
-        actions_to_execute = (
-            action.actions_if_true if condition_result
-            else (action.actions_if_false or [])
-        )
-
-        if not actions_to_execute:
-            self.logger.info(
-                f"No actions to execute for condition result: {condition_result}"
-            )
-            return True
-
-        self.logger.info(
-            f"Executing {len(actions_to_execute)} action(s) based on condition result"
-        )
-
-        # Execute the actions
-        all_success = True
-        for sub_action in actions_to_execute:
-            step = ScrapingStep(action=sub_action)
-            success = await self._execute_step(step, base_url, args)
-
-            if not success:
-                self.logger.warning(
-                    f"Conditional sub-action failed: {sub_action.description}"
-                )
-                all_success = False
-                # Continue executing remaining actions even if one fails
-
-        return all_success
 
     async def _exec_loop(self, action: Loop, base_url: str) -> bool:
-        """Handle Loop action - execute actions repeatedly.
+        """Handle Loop action — delegates to advanced_actions.
 
-        Supports:
-        - Fixed iterations
-        - Iterating over a list of values
-        - Template variable substitution
+        Thin wrapper retained for backward compatibility. The implementation
+        now lives in the shared ``advanced_actions`` module (FEAT-222).
 
-        Template Variables:
-        - {i}, {index}, {iteration} - Current iteration number
-        - {i+1} - 1-based iteration (useful for page numbers)
-        - {i-1}, {i*2}, etc. - Arithmetic expressions
-        - {value} - Current value from values list
-
-        Example:
-            Loop with iterations=3, start_index=1:
-            - First iteration: {i} -> 1, {i+1} -> 2
-            - Second iteration: {i} -> 2, {i+1} -> 3
-            - Third iteration: {i} -> 3, {i+1} -> 4
+        Known limitation (FEAT-222): the legacy per-iteration ``args`` dict
+        (``{"iteration": i, "data": {"index": ..., value_name: ...}}``) is no
+        longer threaded to ``_execute_step``, because ``exec_loop`` substitutes
+        ``{i}`` / ``{value}`` directly into each action's fields before
+        dispatch. Steps that previously read iteration context from ``args``
+        (e.g. ``get_html`` metadata enrichment inside a loop) will see an empty
+        context. Templated selectors/URLs/values are unaffected.
         """
-        iteration = 0
-        start_index = action.start_index
-        value_name = action.value_name
+        async def _dispatch(driver, step, url, timeout, step_extracted):
+            return await self._execute_step(step, url)
 
-        if action.values:
-            max_iter = len(action.values)
-            self.logger.info(
-                f"Starting loop over {max_iter} values, start_index={start_index}"
-            )
-        else:
-            max_iter = action.iterations or action.max_iterations
-            self.logger.info(
-                f"Starting loop: {max_iter} iterations, start_index={start_index}"
-            )
-
-        while iteration < max_iter:
-            display_index = start_index + iteration
-            # Get current value if iterating over values
-            current_value = action.values[iteration] if action.values else None
-
-            # Check condition if provided
-            if action.condition:
-                should_continue = await self._evaluate_condition(action.condition)
-                if not should_continue:
-                    break
-
-            # Execute all actions in the loop
-            for loop_action in action.actions:
-                # Substitute template variables in the action
-                if action.do_replace:
-                    sub_action = self._substitute_action_vars(
-                        loop_action,
-                        iteration,
-                        start_index,
-                        current_value
-                    )
-                else:
-                    sub_action = loop_action
-
-                step = ScrapingStep(action=sub_action)
-                args = {
-                    "iteration": iteration,
-                    "data": {
-                        "index": display_index,
-                        value_name: current_value
-                    }
-                }
-                success = await self._execute_step(step, base_url, args)
-
-                if not success and action.break_on_error:
-                    self.logger.warning(f"Loop stopped at iteration {iteration} due to error")
-                    return False
-
-            iteration += 1
-
-            # Break if we've reached specified iterations
-            if action.iterations and iteration >= action.iterations:
-                break
-            # do a small delay (random) between iterations
-            await asyncio.sleep(random.uniform(0.1, 0.5))
-
-        self.logger.info(f"Loop completed {iteration} iterations")
-        return True
-
-    async def _evaluate_condition(self, condition: str) -> bool:
-        """Evaluate a JavaScript condition"""
-        if self.driver_type == 'selenium':
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: self.driver.execute_script(f"return Boolean({condition})")
-            )
-        else:  # Playwright
-            result = await self.page.evaluate(f"() => Boolean({condition})")
-
-        return bool(result)
+        return await exec_loop(
+            self._abstract_driver,
+            action,
+            _dispatch,
+            base_url,
+            self.default_timeout,
+        )
 
     async def _extract_content(
         self,
@@ -3275,101 +3102,34 @@ return 1;
         start_index: int = 0,
         current_value: Any = None
     ) -> Any:
-        """
-        Recursively substitute template variables in strings.
+        """Recursively substitute loop template variables in *value*.
+
+        Thin wrapper retained for backward compatibility. Delegates to
+        ``advanced_actions.substitute_template_vars`` (FEAT-222), preserving
+        the legacy ``current_value`` single-value calling convention by
+        positioning it at ``values[iteration]``.
 
         Supported variables:
-        - {i}, {index}, {iteration} - Current iteration (0-based by default)
-        - {i+1}, {index+1}, {iteration+1} - Current iteration + 1 (1-based)
-        - {i-1}, {index-1} - Current iteration - 1
-        - {value} - Current value from values list (if provided)
-        - Any arithmetic expression: {i*2}, {i+5}, etc.
+        - {i}, {index}, {iteration} - Current iteration (offset by start_index)
+        - {i+1}, {i-1}, {i*2}, {index+1} - arithmetic expressions
+        - {value} - Current value from the values list (if provided)
 
         Args:
-            value: Value to substitute (can be str, dict, list, or other)
-            iteration: Current iteration number (internal, 0-based counter)
-            start_index: Starting index for display (default 0)
-            current_value: Current value from the values list (if iterating over values)
+            value: Value to substitute (str, dict, list, or scalar).
+            iteration: Current iteration counter (0-based).
+            start_index: Starting index for display (default 0).
+            current_value: Current value from the values list (if any).
 
         Returns:
-            Value with substituted variables
+            Value with substituted variables.
         """
-        if isinstance(value, str):
-            # Actual index to expose to user (respects start_index)
-            actual_index = start_index + iteration
-
-            # Replace simple variables first
-            value = value.replace('{i}', str(actual_index))
-            value = value.replace('{index}', str(actual_index))
-            value = value.replace('{iteration}', str(actual_index))
-
-            # Replace {value} with current value from list
-            if current_value is not None:
-                value = value.replace('{value}', str(current_value))
-
-            # Handle arithmetic expressions like {i+1}, {i-1}, {i*2}, etc.
-            def eval_expr(match):
-                expr = match.group(1)
-                # Replace variable names with actual value
-                expr = expr.replace('i', str(actual_index))
-                expr = expr.replace('index', str(actual_index))
-                expr = expr.replace('iteration', str(actual_index))
-                try:
-                    # Safe evaluation of arithmetic
-                    result = eval(expr, {"__builtins__": {}}, {})
-                    return str(result)
-                except:
-                    # If evaluation fails, return original
-                    return match.group(0)
-
-            # Pattern to match {expression} where expression contains i/index/iteration
-            pattern = r'\{([^}]*(?:i|index|iteration)[^}]*)\}'
-            value = re.sub(pattern, eval_expr, value)
-
-            return value
-
-        elif isinstance(value, dict):
-            return {k: self._substitute_template_vars(v, iteration, start_index, current_value) for k, v in value.items()}
-
-        elif isinstance(value, list):
-            return [self._substitute_template_vars(item, iteration, start_index, current_value) for item in value]
-        else:
-            # Return as-is for other types (int, bool, None, etc.)
-            return value
-
-    def _substitute_action_vars(
-        self,
-        action: BrowserAction,
-        iteration: int,
-        start_index: int = 0,
-        current_value: Any = None
-    ) -> BrowserAction:
-        """
-        Create a copy of the action with template variables substituted.
-
-        Args:
-            action: Original action
-            iteration: Current iteration number (0-based internally)
-            start_index: Starting index for display
-            current_value: Current value from values list (if provided)
-
-        Returns:
-            New action instance with substituted values
-        """
-        # Get the action as a dictionary
-        action_dict = action.model_dump()
-
-        # Substitute variables in all string fields
-        substituted_dict = self._substitute_template_vars(
-            action_dict,
+        return substitute_template_vars(
+            value,
             iteration,
-            start_index,
-            current_value
+            start_index=start_index,
+            current_value=current_value,
+            value_name="value",
         )
-
-        # Create new action instance from substituted dict
-        action_class = type(action)
-        return action_class(**substituted_dict)
 
     def _collect_cookies(self) -> Dict[str, str]:
         if not self.driver:

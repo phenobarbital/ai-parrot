@@ -263,6 +263,7 @@ examples/graphindex/*
 plugins/agents/
 !/crew-builder/src/routes/agents/
 /agents/
+/batch_results/
 
 # SvelteKit build
 build/

@@ -43,6 +43,13 @@ class MSTeamsAgentConfig:
     allowed_user_ids: Optional[List[str]] = None
     voice_config: Optional["VoiceTranscriberConfig"] = None
 
+    # Jira OAuth 2.0 (3LO) configuration — FEAT-225
+    # When set, MSTeamsAgentWrapper will initialize a JiraOAuthManager and wire
+    # the /connect_jira, /disconnect_jira, and /jira_status text commands.
+    jira_client_id: Optional[str] = None
+    jira_client_secret: Optional[str] = None
+    jira_redirect_uri: Optional[str] = None
+
     def __post_init__(self):
         """
         Resolve credentials and whitelists from environment variables if not provided.
@@ -53,6 +60,13 @@ class MSTeamsAgentConfig:
         if not self.client_secret:
             env_var_name = f"{self.name.upper()}_MICROSOFT_APP_PASSWORD"
             self.client_secret = config.get(env_var_name)
+        # Jira OAuth env fallbacks
+        if not self.jira_client_id:
+            self.jira_client_id = config.get(f"{self.name.upper()}_JIRA_CLIENT_ID")
+        if not self.jira_client_secret:
+            self.jira_client_secret = config.get(f"{self.name.upper()}_JIRA_CLIENT_SECRET")
+        if not self.jira_redirect_uri:
+            self.jira_redirect_uri = config.get(f"{self.name.upper()}_JIRA_REDIRECT_URI")
         # Resolve whitelists from env vars (comma-separated)
         name_upper = self.name.upper()
         if self.allowed_conversation_ids is None:
@@ -116,4 +130,8 @@ class MSTeamsAgentConfig:
             allowed_conversation_ids=data.get('allowed_conversation_ids'),
             allowed_user_ids=data.get('allowed_user_ids'),
             voice_config=voice_config,
+            # Jira OAuth (FEAT-225)
+            jira_client_id=data.get('jira_client_id'),
+            jira_client_secret=data.get('jira_client_secret'),
+            jira_redirect_uri=data.get('jira_redirect_uri'),
         )

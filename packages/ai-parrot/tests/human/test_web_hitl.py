@@ -55,6 +55,9 @@ def mock_manager():
     manager.receive_response = AsyncMock()
     manager.get_result = AsyncMock(return_value={"value": "response_value"})
     manager.is_valid_respondent = AsyncMock(return_value=True)
+    # has_pending is a sync method on the real manager (returns bool); default
+    # to True so the 404 guard treats the interaction as existing.
+    manager.has_pending = MagicMock(return_value=True)
     manager.channels = {}
     manager._pending_futures = {}
     return manager
@@ -243,6 +246,7 @@ class TestHITLResponseHandler:
     async def test_hitl_endpoint_404_on_unknown_id(self, mock_manager):
         """POST with unknown interaction_id returns 404."""
         mock_manager._pending_futures = {}
+        mock_manager.has_pending = MagicMock(return_value=False)
         mock_manager.get_result = AsyncMock(return_value=None)
         set_default_human_manager(mock_manager)
         request = self._make_request({"interaction_id": "unknown-uuid", "value": "test"})
@@ -304,34 +308,45 @@ def aiohttp_app():
 
 
 class TestSetupWebHitl:
-    def test_setup_web_hitl_idempotent(self, aiohttp_app):
+    @pytest.mark.asyncio
+    async def test_setup_web_hitl_idempotent(self, aiohttp_app):
         """Calling setup_web_hitl twice does not create two managers."""
-        setup_web_hitl(aiohttp_app)
+        await setup_web_hitl(aiohttp_app)
         manager1 = get_default_human_manager()
 
-        setup_web_hitl(aiohttp_app)
+        await setup_web_hitl(aiohttp_app)
         manager2 = get_default_human_manager()
 
         assert manager1 is manager2
-        assert len(aiohttp_app.on_startup) == 1  # startup hook appended only once
+        # Second call is a no-op: the 'web' channel is registered exactly once.
+        assert "web" in manager2.channels
 
-    def test_setup_web_hitl_skips_when_no_socket_manager(self, aiohttp_app):
+    @pytest.mark.asyncio
+    async def test_setup_web_hitl_skips_when_no_socket_manager(self, aiohttp_app):
         """setup_web_hitl logs warning and continues if socket manager missing."""
         aiohttp_app.get = MagicMock(return_value=None)
         # Should not raise
-        setup_web_hitl(aiohttp_app)
+        await setup_web_hitl(aiohttp_app)
         # Manager should still be created
         manager = get_default_human_manager()
         assert manager is not None
 
-    def test_setup_web_hitl_registers_channel(self, aiohttp_app):
+    @pytest.mark.asyncio
+    async def test_setup_web_hitl_registers_channel(self, aiohttp_app):
         """setup_web_hitl registers WebHumanChannel under 'web'."""
-        setup_web_hitl(aiohttp_app)
+        await setup_web_hitl(aiohttp_app)
         manager = get_default_human_manager()
         # Check that a channel named 'web' is registered
         assert "web" in manager.channels
 
-    def test_setup_web_hitl_appends_startup_hook(self, aiohttp_app):
-        """setup_web_hitl appends manager.startup to app.on_startup."""
-        setup_web_hitl(aiohttp_app)
-        assert len(aiohttp_app.on_startup) == 1
+    @pytest.mark.asyncio
+    async def test_setup_web_hitl_awaits_startup_directly(self, aiohttp_app):
+        """setup_web_hitl awaits manager.startup() itself, appending no hook.
+
+        The bootstrap awaits ``manager.startup()`` directly so it is safe to
+        call from within an existing ``on_startup`` callback (where
+        ``app.on_startup`` is frozen). It must therefore NOT append a new hook.
+        """
+        await setup_web_hitl(aiohttp_app)
+        assert len(aiohttp_app.on_startup) == 0
+        assert get_default_human_manager() is not None

@@ -44,6 +44,7 @@ from parrot.handlers.programs import ProgramsUserHandler
 from parrot.handlers.video_reel import VideoReelHandler
 from parrot.handlers.lyria_music import LyriaMusicHandler
 from parrot.handlers.understanding import UnderstandingHandler
+from parrot.handlers.mediagen import MediaGen
 from parrot.handlers.stores import VectorStoreHandler
 ## Jira Integration:
 from parrot.auth.jira_oauth import JiraOAuthManager
@@ -55,6 +56,7 @@ from parrot.conf import (
     default_dsn
 )
 from parrot.clients.factory import LLMFactory
+from parrot.bots.github_reviewer import GitHubReviewer
 from parrot_formdesigner.api import setup_form_api
 from parrot_formdesigner.ui import setup_form_ui
 from parrot_formdesigner.services.registry import FormRegistry
@@ -161,6 +163,8 @@ class Main(AppHandler):
             '/api/v1/google/understanding',
             UnderstandingHandler,
         )
+        # Google Media Generation (Imagen/Veo) API:
+        MediaGen.setup(self.app, "/api/v1/google/media")
         # # Office 365 delegated authentication endpoints
         # self.app['o365_auth_manager'] = RemoteAuthManager()
         # self.app.router.add_view(
@@ -288,6 +292,8 @@ class Main(AppHandler):
             base_path="",
             protect_pages=False,
         )
+        # GitHub Reviewer webhook route — must be registered here, while
+        github_hook = GitHubReviewer.setup_webhook_route(self.app)
 
         ### Auth System
         # create a new instance of Auth System
@@ -299,6 +305,7 @@ class Main(AppHandler):
         # middlewares so the frontend can embed it in an <iframe> without a
         # session cookie. fnmatch pattern; '*' spans the signature + id.html.
         auth.add_exclude_list('/api/v1/artifacts/public/*')
+        auth.add_exclude_list(github_hook.url)
 
         # PBAC setup — navigator-auth Rust evaluator bug is now fixed.
         # setup_pbac() MUST be called BEFORE BotManager.setup(app) so that

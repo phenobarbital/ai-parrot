@@ -21,6 +21,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
+from .advanced_actions import exec_conditional, exec_loop
 from .drivers.abstract import AbstractDriver
 from .models import (
     ScrapingResult,
@@ -277,10 +278,27 @@ async def _dispatch_step(
         return await _action_press_key(driver, action)
     elif action_type == "select":
         return await _action_select(driver, action, timeout)
+    elif action_type == "loop":
+        # Recursive closure: forwards each sub-step back through this same
+        # dispatcher (enabling loop-within-loop) while preserving the shared
+        # ``step_extracted`` accumulator for nested ``extract`` actions.
+        async def _dispatch(d, s, u, t, _caller_se):
+            # Ignore the callee-supplied accumulator on purpose: we forward the
+            # enclosing ``step_extracted`` so nested extracts share one dict.
+            return await _dispatch_step(d, s, u, t, step_extracted)
+
+        return await exec_loop(driver, action, _dispatch, base_url, timeout)
+    elif action_type == "conditional":
+        async def _dispatch(d, s, u, t, _caller_se):
+            # Ignore the callee-supplied accumulator on purpose: we forward the
+            # enclosing ``step_extracted`` so nested extracts share one dict.
+            return await _dispatch_step(d, s, u, t, step_extracted)
+
+        return await exec_conditional(driver, action, _dispatch, base_url, timeout)
     elif action_type in (
         "get_cookies", "set_cookies", "authenticate",
         "await_human", "await_keypress", "await_browser_event",
-        "upload_file", "wait_for_download", "loop", "conditional",
+        "upload_file", "wait_for_download",
     ):
         # These advanced actions require the full WebScrapingTool context.
         # Log a warning and return True to not block the pipeline.

@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "mode": "enrichment",
+  "summary_oneline": "Evolve the existing IntentRouterMixin to add a deterministic e5-multilingual embedding router (LLM only as a discrepancy tie-breaker), wired into both ask() and conversation()",
+  "synthesis_summary": "The brainstorm proposes a NEW IntentRouterMixin for deterministic embedding-based output-mode routing, but research shows an IntentRouterMixin already exists (parrot/bots/mixins/intent_router.py) doing pre-RAG retrieval-strategy routing over conversation() via a keyword fast-path plus an LLM invoke() decision. Rather than create a colliding class, the work (per user direction) is to FIX/evolve the existing mixin: add an e5-multilingual SentenceTransformer embedding router as the primary deterministic decision path, demote the LLM call to a tie-breaker used only when the embedding decision is ambiguous (discrepancy), and extend the hook to cover ask() in addition to conversation(). The output-mode contract (OutputMode enum + response.output_mode + ask(output_mode=) kwarg) already exists, so the router fills output_mode only when the caller left it unset. The encoder stack (sentence-transformers) is already vendored, so no new runtime dependency is required.",
+  "localization": [
+    {"path": "parrot/bots/mixins/intent_router.py", "symbol": "IntentRouterMixin", "lines": "118-1039", "role": "Existing mixin to evolve — currently keyword+LLM retrieval-strategy routing over conversation()", "evidence": ["F006", "F003"]},
+    {"path": "parrot/bots/mixins/intent_router.py", "symbol": "IntentRouterMixin.conversation", "lines": "166-196", "role": "Current single hook point; must be generalized and also reached from ask()", "evidence": ["F006", "F010"]},
+    {"path": "parrot/bots/mixins/intent_router.py", "symbol": "_fast_path / _KEYWORD_STRATEGY_MAP", "lines": "52-105,332-369", "role": "Keyword fast path to be supplemented/replaced by embedding routing", "evidence": ["F006"]},
+    {"path": "parrot/bots/mixins/intent_router.py", "symbol": "_llm_route / _parse_invoke_response", "lines": "373-485", "role": "LLM decision path to be demoted to discrepancy tie-breaker", "evidence": ["F006"]},
+    {"path": "parrot/registry/capabilities/models.py", "symbol": "IntentRouterConfig", "lines": "149-150", "role": "Config to extend with embedding model name, per-route threshold, route utterances", "evidence": ["F008"]},
+    {"path": "parrot/bots/agent.py", "symbol": "BasicAgent", "lines": "37", "role": "Agent base the mixin composes in front of", "evidence": ["F001"]},
+    {"path": "parrot/bots/abstract.py", "symbol": "ask / conversation", "lines": "3107,3660", "role": "Distinct REQUEST entrypoints both accepting ctx: RequestContext; hook target for both", "evidence": ["F010", "F001"]},
+    {"path": "parrot/models/outputs.py", "symbol": "OutputMode", "lines": "37-72", "role": "Existing output-mode contract the router sets (MAP/TABLE/CHART/INFOGRAPHIC/STRUCTURED_*)", "evidence": ["F007"]},
+    {"path": "parrot/utils/helpers.py", "symbol": "RequestContext / current_context", "lines": "7-59", "role": "Named per-request carrier (contextvar-bound); lacks output_mode/intent_score fields today", "evidence": ["F004"]},
+    {"path": "parrot/bots/data.py", "symbol": "DataAgent.ask", "lines": "1294-1306", "role": "Subclass that overrides ask() with its own output_mode kwarg, bypassing conversation()", "evidence": ["F010", "F007"]},
+    {"path": "parrot/embeddings/base.py", "symbol": "EmbeddingModel", "lines": "15-188", "role": "Optional encoder abstraction to reuse; sentence-transformers already vendored", "evidence": ["F005"]}
+  ],
+  "constraints": [
+    {"text": "Name + concept collision: IntentRouterMixin already exists and routes RETRIEVAL strategy, not OUTPUT mode. Per user direction the existing class is evolved (not duplicated), so retrieval-strategy behavior must be preserved and the new output-mode routing added alongside it.", "implication": "Backwards compatibility for current conversation()-based retrieval routing is mandatory.", "evidence": ["F006"]},
+    {"text": "The output_mode contract already exists on the AIMessage/response and as an ask() kwarg, not on RequestContext.", "implication": "Router fills output_mode only when caller left it None; precedence explicit-kwarg > router > default. Adding ctx.output_mode/intent_score is optional plumbing, not the canonical store.", "evidence": ["F007", "F004"]},
+    {"text": "ask() and conversation() are distinct; subclasses (DataAgent) override ask() independently and do not funnel through conversation().", "implication": "Routing wired only into conversation() misses ask(); a shared private hook must be invoked from both.", "evidence": ["F010"]},
+    {"text": "sentence-transformers is already a present runtime dependency, loaded lazily elsewhere.", "implication": "e5-multilingual adds zero new hard dependency; follow the lazy-import + load-once-in-configure pattern. Encode() must run off the event loop.", "evidence": ["F005", "F002"]},
+    {"text": "abstract.py (ask/conversation) and the mixin are both under active churn.", "implication": "Keep the base-class change to a narrow named hook (template-method A3) to minimize merge risk; avoid a full ask() override.", "evidence": ["F003"]}
+  ],
+  "recent_history": [
+    {"commit": "21039d51", "when": "2026-05-12", "author": "Jesus Lara", "message": "fix(concept-document-authority): address 5 code-review issues", "files": "bots/mixins/intent_router.py", "evidence": ["F003"]},
+    {"commit": "20783618", "when": "2026-05-12", "author": "Jesus Lara", "message": "feat: TASK-1091 — IntentRouterMixin branch logic for ContextEnvelope", "files": "bots/mixins/intent_router.py", "evidence": ["F003"]},
+    {"commit": "24334a8a", "when": "2026-05-11", "author": "Jesus Lara", "message": "feat: TASK-1077 — wire _run_graph_pageindex user_context/tenant_id", "files": "bots/mixins/intent_router.py", "evidence": ["F003"]}
+  ],
+  "scope": {
+    "whats_new": [
+      "IntentRouter embedding engine (e5-multilingual via sentence-transformers): encode route utterances once, max-cosine score per route, abstain below per-route threshold",
+      "Output-mode phrase bank: OUTPUT_MODE_ROUTES = dict[OutputMode, list[str]] — reference utterances per output mode (e.g. STRUCTURED_CHART <- 'create a pie chart'/'hazme una gráfica de pastel'). The router resolves the OutputMode ONLY (mode-only granularity); chart subtype (pie/bar/line) is decided downstream",
+      "A discrepancy/tie-break policy: invoke the existing LLM route ONLY when the embedding decision is ambiguous (top-2 routes within a margin, or below threshold but non-trivial)",
+      "A shared private hook (e.g. _resolve_output_mode / _route_intent) invoked from BOTH ask() and conversation(); sets output_mode ONLY when the caller left it None (precedence: explicit kwarg > router > default)",
+      "IntentRouterConfig extension: embedding_model (default intfloat/multilingual-e5-small), per-route threshold, discrepancy margin, and the output-mode phrase bank"
+    ],
+    "whats_changed": [
+      "parrot/bots/mixins/intent_router.py::IntentRouterMixin — add embedding router + demote LLM to tie-breaker; generalize hook to ask()+conversation() (F006, F010)",
+      "parrot/registry/capabilities/models.py::IntentRouterConfig — add embedding/threshold/route fields (F008)",
+      "parrot/bots/abstract.py — add a minimal named no-op hook called from ask() and conversation() (F010, F003)",
+      "(optional) parrot/utils/helpers.py::RequestContext — add output_mode/intent_score fields if the contract should also live on the carrier (F004)"
+    ],
+    "whats_untouched": [
+      "OutputMode enum (already complete) — only consumed, not changed (F007)",
+      "Existing retrieval-strategy routing behavior (dataset/vector/graph/tool/free-llm) — preserved (F006)",
+      "Downstream output-mode rendering in data.py/visualizations — unchanged (F007)"
+    ],
+    "patterns_to_follow": [
+      "Lazy `import sentence_transformers as _st` + load-once in configure() (F005, F002)",
+      "Cooperative super().__init__/configure() chaining already used by the mixin (F006, F001)",
+      "asyncio.to_thread for blocking encode() to keep the event loop free (F005)"
+    ],
+    "integration_risks": [
+      "Reusing the name IntentRouterMixin for two routing concerns (retrieval + output mode) risks conceptual overload — consider clearly separated config sections / methods, or a sibling OutputModeRouter composed inside the mixin (F006)",
+      "Touching abstract.ask()/conversation() during active visualization churn — keep the hook tiny (F003)",
+      "e5 requires query/passage prefixing; wrong prefixing silently degrades similarity and invalidates tuned thresholds (F005)"
+    ]
+  },
+  "confidence_map": [
+    {"id": "C1", "claim": "An IntentRouterMixin already exists and routes retrieval strategy (not output mode) over conversation()", "evidence": ["F006"], "confidence": "high", "reasoning": "Full file read of the implementation"},
+    {"id": "C2", "claim": "The existing mixin uses keyword fast-path + LLM invoke() — the approach the brainstorm wanted to avoid", "evidence": ["F006"], "confidence": "high", "reasoning": "Direct read of _fast_path and _llm_route"},
+    {"id": "C3", "claim": "OutputMode + response.output_mode + ask(output_mode=) already form the output-mode contract", "evidence": ["F007"], "confidence": "high", "reasoning": "Enum source + multiple assignment sites read"},
+    {"id": "C4", "claim": "RequestContext exists (contextvar-bound) but lacks output_mode/intent_score fields", "evidence": ["F004"], "confidence": "high", "reasoning": "Full class read"},
+    {"id": "C5", "claim": "ask() and conversation() are distinct; ask() is overridden independently by subclasses and not funneled through conversation()", "evidence": ["F010"], "confidence": "high", "reasoning": "Both signatures + DataAgent.ask override read"},
+    {"id": "C6", "claim": "sentence-transformers is already vendored; e5 adds no new hard dependency", "evidence": ["F005"], "confidence": "high", "reasoning": "Three existing instantiation sites"},
+    {"id": "C7", "claim": "A prior intent-router spec already exists and the subsystem is actively maintained", "evidence": ["F008", "F003"], "confidence": "high", "reasoning": "Files on disk + recent git history"},
+    {"id": "C8", "claim": "RenderPhase exists but is scoped to prompt-layer caching, not general lifecycle dispatch", "evidence": ["F002"], "confidence": "medium", "reasoning": "Enum read; usage inferred from layer files only"},
+    {"id": "C9", "claim": "Best design is to evolve the existing mixin (embedding primary, LLM tie-breaker, hook ask()+conversation())", "evidence": ["F006", "F010", "F005"], "confidence": "high", "reasoning": "Directly confirmed by user direction; consistent with findings"}
+  ],
+  "overall_confidence": "high",
+  "unknowns": [
+    {"id": "U1", "question": "Should output-mode routing live as a second concern inside the existing IntentRouterMixin, or as a separate OutputModeRouter engine composed by the mixin?", "blocks_claims": ["C1"], "user_answer": "Fix/evolve the existing IntentRouterMixin to use the e5 embedding model; keep the LLM path only for resolving discrepancies; involve both ask() and conversation().", "resolved": true},
+    {"id": "U2", "question": "What exactly constitutes a 'discrepancy' that should trigger the LLM tie-breaker — below threshold, or top-2 routes within a margin?", "blocks_claims": ["C9"], "user_answer": null, "resolved": false},
+    {"id": "U3", "question": "Should output_mode/intent_score also be added to RequestContext, or remain only on the response + ask() kwarg as today?", "blocks_claims": ["C4"], "user_answer": null, "resolved": false},
+    {"id": "U4", "question": "Should the output-mode phrase bank route to OutputMode only, or also hint chart subtype (pie/bar/line)?", "blocks_claims": ["C3"], "user_answer": "Mode only — the router sets the OutputMode (e.g. STRUCTURED_CHART); chart subtype (pie/bar/line) is decided downstream by the LLM/chart builder. Avoids route/threshold explosion.", "resolved": true}
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and the work is a bounded evolution of an existing, specced subsystem with the architecture already chosen by the user (e5 embedding primary + LLM discrepancy fallback + ask()/conversation() hook). Two minor unknowns (discrepancy definition, ctx field) are spec-time decisions, not blockers."
+  }
+}

@@ -169,6 +169,15 @@ class BaseBot(AbstractBot):
         """
         if ctx is None:
             ctx = _current_ctx.get()
+        # FEAT-224: pre-LLM output-mode routing. Runs once, and only when the
+        # caller did not specify a mode (precedence: explicit > router > default).
+        # No-op unless a routing mixin (IntentRouterMixin) is present.
+        if output_mode == OutputMode.DEFAULT:
+            _resolved_mode = await self._resolve_output_mode(question, ctx)
+            if _resolved_mode is not None:
+                output_mode = _resolved_mode
+                if ctx is not None:
+                    ctx.output_mode = _resolved_mode
         warnings.warn(
             "BaseBot.conversation() is deprecated and will be removed in a "
             "future release. Use BaseBot.ask() instead.",
@@ -765,6 +774,15 @@ class BaseBot(AbstractBot):
         """
         if ctx is None:
             ctx = _current_ctx.get()
+        # FEAT-224: pre-LLM output-mode routing. Runs once, and only when the
+        # caller did not specify a mode (precedence: explicit > router > default).
+        # No-op unless a routing mixin (IntentRouterMixin) is present.
+        if output_mode == OutputMode.DEFAULT:
+            _resolved_mode = await self._resolve_output_mode(question, ctx)
+            if _resolved_mode is not None:
+                output_mode = _resolved_mode
+                if ctx is not None:
+                    ctx.output_mode = _resolved_mode
         # Generate session ID if not provided
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"

@@ -46,6 +46,13 @@ class SlackAgentConfig:
     suggested_prompts: Optional[List[Dict[str, str]]] = None
     max_concurrent_requests: int = 10
 
+    # Jira OAuth 2.0 (3LO) configuration — FEAT-225
+    # When set, SlackAgentWrapper will initialize a JiraOAuthManager and wire
+    # the /connect_jira, /disconnect_jira, and /jira_status slash commands.
+    jira_client_id: Optional[str] = None
+    jira_client_secret: Optional[str] = None
+    jira_redirect_uri: Optional[str] = None
+
     def __post_init__(self):
         """Initialize config with environment variable fallbacks and validation."""
         # Load tokens from environment if not provided
@@ -55,6 +62,13 @@ class SlackAgentConfig:
             self.signing_secret = config.get(f"{self.name.upper()}_SLACK_SIGNING_SECRET")
         if not self.app_token:
             self.app_token = config.get(f"{self.name.upper()}_SLACK_APP_TOKEN")
+        # Jira OAuth env fallbacks
+        if not self.jira_client_id:
+            self.jira_client_id = config.get(f"{self.name.upper()}_JIRA_CLIENT_ID")
+        if not self.jira_client_secret:
+            self.jira_client_secret = config.get(f"{self.name.upper()}_JIRA_CLIENT_SECRET")
+        if not self.jira_redirect_uri:
+            self.jira_redirect_uri = config.get(f"{self.name.upper()}_JIRA_REDIRECT_URI")
 
         # Resolve allowed_user_ids from env var if not set
         if self.allowed_user_ids is None:
@@ -97,4 +111,8 @@ class SlackAgentConfig:
             enable_assistant=data.get("enable_assistant", False),
             suggested_prompts=data.get("suggested_prompts"),
             max_concurrent_requests=data.get("max_concurrent_requests", 10),
+            # Jira OAuth (FEAT-225)
+            jira_client_id=data.get("jira_client_id"),
+            jira_client_secret=data.get("jira_client_secret"),
+            jira_redirect_uri=data.get("jira_redirect_uri"),
         )
