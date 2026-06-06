@@ -389,6 +389,26 @@ class EventRegistry:
             name=f"lifecycle.{type(event).__name__}",
         )
 
+    def forward_to_global(self, event: LifecycleEvent) -> None:
+        """Forward *event* to the global registry regardless of ``forward_to_global``.
+
+        Public, opt-in counterpart to the automatic forwarding done inside
+        :meth:`emit`.  An isolated registry (one constructed with
+        ``forward_to_global=False`` — e.g. an LLM client, see
+        ``clients/base.py``) can call this for the specific events it wants
+        global observers (cost/token recorders, OTel subscribers) to receive,
+        without forwarding *every* event it emits (e.g. high-frequency
+        ``ClientStreamChunkEvent`` stays isolated).
+
+        Reuses the same safe, guarded path as automatic forwarding: a no-op
+        when this registry IS the global one, when no event loop is running,
+        or when no global subscriber would receive ``type(event)``.
+
+        Args:
+            event: The ``LifecycleEvent`` to forward to the global registry.
+        """
+        self._forward_to_global_safely(event)
+
     def _forward_to_global_safely(self, event: LifecycleEvent) -> None:
         """Forward *event* to the global registry as a fire-and-forget task.
 

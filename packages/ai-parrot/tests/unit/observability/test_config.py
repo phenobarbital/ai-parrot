@@ -33,6 +33,24 @@ def test_config_defaults() -> None:
     assert cfg.service_instance_id is None
 
 
+def test_config_usage_layer_defaults() -> None:
+    """Defaults for the pluggable usage-logging layer."""
+    import logging
+
+    cfg = ObservabilityConfig()
+    assert cfg.usage_backend == "none"
+    assert cfg.usage_log_level == logging.INFO
+    assert cfg.usage_log_logger_name == "parrot.usage"
+    assert cfg.prometheus_port == 9464
+    assert cfg.prometheus_addr == "0.0.0.0"
+
+
+def test_config_rejects_invalid_usage_backend() -> None:
+    """usage_backend only accepts the known literal values."""
+    with pytest.raises(ValidationError):
+        ObservabilityConfig(usage_backend="bogus")
+
+
 def test_config_rejects_invalid_sampling() -> None:
     """sampling_ratio > 1.0 must raise ValidationError."""
     with pytest.raises(ValidationError):

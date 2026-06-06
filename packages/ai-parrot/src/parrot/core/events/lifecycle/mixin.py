@@ -60,6 +60,18 @@ class EventEmitterMixin:
             event_bus=event_bus,  # type: ignore[arg-type]
             forward_to_global=forward_to_global,
         )
+        # Env-driven observability auto-boot (idempotent; near-zero cost when
+        # disabled). Runs on the first bot/client/tool construction so the usage
+        # recorder is registered on the global registry before any LLM call.
+        # Guarded so a bootstrap failure can never break construction.
+        try:
+            from parrot.observability.bootstrap import (
+                ensure_observability_bootstrapped,
+            )
+
+            ensure_observability_bootstrapped()
+        except Exception:  # noqa: BLE001
+            logger.debug("observability bootstrap skipped", exc_info=True)
 
     @property
     def events(self) -> EventRegistry:
