@@ -7,6 +7,8 @@ screenshot memory pruning and safety decision handling.
 """
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 from typing import Any, Callable, List, Literal, Optional
 
@@ -34,19 +36,34 @@ class ComputerAgent(Agent):
     - Lazy browser start via ``_pre_execute`` in the toolkit.
     - Screenshot memory pruning: conversation history is pruned to keep
       only the last ``max_screenshot_turns`` turns that contain screenshots.
-    - Safety mode:
+    - Safety mode (the model can flag an action with
+      ``safety_decision.decision == "require_confirmation"``):
       ``"auto"`` — log and auto-acknowledge safety decisions.
-      ``"interactive"`` — emit an event for external handling.
+      ``"interactive"`` — emit an event; use ``safety_callback`` if provided,
+      otherwise fall back to a terminal y/n prompt.
+      ``"hitl"`` — route the confirmation through a
+      :class:`~parrot.human.manager.HumanInteractionManager` (an APPROVAL
+      interaction on ``safety_channel``), falling back to a terminal prompt
+      when no manager is available. Approved actions are acknowledged back to
+      Gemini with ``safety_acknowledgement="true"``; rejected actions are
+      skipped.
 
     Args:
         model: Gemini computer-use model identifier.
         viewport: Browser viewport as ``(width, height)`` in pixels.
         headless: Whether to run the browser in headless mode.
         initial_url: URL to open when the browser first starts.
-        safety_mode: ``"auto"`` or ``"interactive"``.
+        safety_mode: ``"auto"``, ``"interactive"``, or ``"hitl"``.
         max_screenshot_turns: Number of turns whose screenshots to retain in
             the conversation history.
         include_scraping: If True, include WebScrapingToolkit tools.
+        safety_callback: Optional callable consulted in ``"interactive"`` mode.
+        human_manager: Optional :class:`HumanInteractionManager` used in
+            ``"hitl"`` mode (defaults to the process-wide manager).
+        safety_channel: HITL channel name for ``"hitl"`` mode (default
+            ``"cli"`` — prompts in the terminal).
+        safety_approvers: Respondent ids for the HITL APPROVAL interaction.
+        safety_timeout: Seconds to wait for the human decision.
         **kwargs: Forwarded to Agent.
     """
 
@@ -59,10 +76,14 @@ class ComputerAgent(Agent):
         viewport: tuple[int, int] = (1280, 720),
         headless: bool = True,
         initial_url: str = "https://www.google.com",
-        safety_mode: Literal["auto", "interactive"] = "auto",
+        safety_mode: Literal["auto", "interactive", "hitl"] = "auto",
         max_screenshot_turns: int = 3,
         include_scraping: bool = False,
         safety_callback: Optional[Callable[..., Any]] = None,
+        human_manager: Optional[Any] = None,
+        safety_channel: str = "cli",
+        safety_approvers: Optional[List[str]] = None,
+        safety_timeout: float = 300.0,
         **kwargs: Any,
     ) -> None:
         self._computer_toolkit = ComputerInteractionToolkit(
@@ -74,6 +95,16 @@ class ComputerAgent(Agent):
         self._safety_mode = safety_mode
         self._max_screenshot_turns = max_screenshot_turns
         self._safety_callback = safety_callback
+        self._human_manager = human_manager
+        self._safety_channel = safety_channel
+        self._safety_approvers = safety_approvers
+        self._safety_timeout = safety_timeout
+        # Computer-use is Google-only (see spec Non-Goals). Bare model strings
+        # like "gemini-2.5-computer-use-preview-10-2025" fail provider
+        # resolution ("Unsupported LLM: 'gemini-...'"), so prefix the Google
+        # provider when the caller did not specify one.
+        if ":" not in model:
+            model = f"google:{model}"
         # Cache WebScrapingToolkit at init time to avoid re-instantiation on
         # every agent_tools() call. Import failure is caught here.
         self._scraping_toolkit = None
@@ -95,6 +126,125 @@ class ComputerAgent(Agent):
             agent_id=self.agent_id,
             llm=model,
             **kwargs,
+        )
+
+    async def configure(self, app: Any = None) -> None:
+        """Configure the agent and wire the computer-use safety handler.
+
+        After the base configuration resolves the Google client, registers
+        :meth:`_safety_handler` on it so flagged ``safety_decision`` actions
+        are routed back here for auto / interactive / HITL confirmation.
+        """
+        await super().configure(app=app)
+        client = getattr(self, "_llm", None)
+        if client is not None:
+            try:
+                client._computer_use_safety_handler = self._safety_handler
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("ComputerAgent: could not wire safety handler: %s", exc)
+
+    async def _safety_handler(self, decision: dict) -> bool:
+        """Resolve a computer-use ``safety_decision`` per ``safety_mode``.
+
+        Args:
+            decision: ``{"tool", "arguments", "explanation", "decision"}``.
+
+        Returns:
+            True to proceed with the action, False to skip it.
+        """
+        mode = self._safety_mode
+        if mode == "auto":
+            logger.warning("ComputerAgent safety decision (auto-acknowledged): %s", decision)
+            return True
+        if mode == "hitl":
+            return await self._hitl_confirm(decision)
+
+        # interactive: emit an event, then prefer the callback, else a prompt.
+        try:
+            self.emit("safety_decision", decision)
+        except Exception as exc:
+            logger.warning("ComputerAgent: could not emit safety_decision: %s", exc)
+        if self._safety_callback is not None:
+            try:
+                res = self._safety_callback(decision)
+                if inspect.isawaitable(res):
+                    res = await res
+                return bool(res)
+            except Exception as exc:
+                logger.warning("ComputerAgent: safety_callback raised, denying: %s", exc)
+                return False
+        return await self._terminal_confirm(decision)
+
+    async def _hitl_confirm(self, decision: dict) -> bool:
+        """Confirm a flagged action via the HumanInteractionManager (APPROVAL).
+
+        Falls back to a terminal prompt when no manager is available so the
+        agent stays usable in a plain local session.
+        """
+        manager = self._human_manager
+        if manager is None:
+            try:
+                from parrot.human import get_default_human_manager
+                manager = get_default_human_manager()
+            except Exception:
+                manager = None
+        if manager is None:
+            logger.info(
+                "ComputerAgent: no HumanInteractionManager configured; "
+                "falling back to terminal confirmation."
+            )
+            return await self._terminal_confirm(decision)
+
+        from parrot.human import (
+            HumanInteraction,
+            InteractionStatus,
+            InteractionType,
+            TimeoutAction,
+        )
+
+        interaction = HumanInteraction(
+            question=self._format_safety_question(decision),
+            context=str(decision.get("arguments")),
+            interaction_type=InteractionType.APPROVAL,
+            target_humans=self._safety_approvers or ["operator"],
+            timeout=self._safety_timeout,
+            timeout_action=TimeoutAction.CANCEL,
+            source_agent=self.agent_id,
+        )
+        result = await manager.request_human_input(interaction, channel=self._safety_channel)
+        approved = (
+            result.status == InteractionStatus.COMPLETED
+            and bool(result.consolidated_value)
+        )
+        logger.info(
+            "ComputerAgent HITL safety decision: approved=%s (status=%s)",
+            approved,
+            result.status,
+        )
+        return approved
+
+    async def _terminal_confirm(self, decision: dict) -> bool:
+        """Prompt for a yes/no confirmation on the controlling terminal."""
+        question = self._format_safety_question(decision)
+        loop = asyncio.get_event_loop()
+
+        def _ask() -> bool:
+            try:
+                answer = input(f"\n[HITL] {question} [y/N]: ").strip().lower()
+            except EOFError:
+                return False
+            return answer in ("y", "yes")
+
+        return await loop.run_in_executor(None, _ask)
+
+    @staticmethod
+    def _format_safety_question(decision: dict) -> str:
+        """Build a human-readable confirmation prompt from a safety decision."""
+        tool = decision.get("tool", "an action")
+        explanation = decision.get("explanation") or "(no explanation provided)"
+        return (
+            f"The computer-use agent wants to perform '{tool}'. "
+            f"Reason: {explanation}. Approve?"
         )
 
     def agent_tools(self) -> List[AbstractTool]:

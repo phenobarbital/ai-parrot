@@ -4,6 +4,7 @@ from collections import defaultdict
 import copy
 import re
 import asyncio
+import inspect
 import logging
 import time
 from pathlib import Path
@@ -201,6 +202,26 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if not model:
             return False
         return 'preview' in model
+
+    # Maps the native computer-use predefined function names (returned by the
+    # model) to the prefixed tool names registered by ComputerInteractionToolkit
+    # (tool_prefix="computer"). The model never emits the "computer_" prefix, so
+    # the dispatcher translates the call before resolving it in the ToolManager.
+    _COMPUTER_USE_PREDEFINED_MAP = {
+        "open_web_browser": "computer_open_browser",
+        "wait_5_seconds": "computer_wait",
+        "go_back": "computer_go_back",
+        "go_forward": "computer_go_forward",
+        "search": "computer_search",
+        "navigate": "computer_navigate",
+        "click_at": "computer_click_at",
+        "hover_at": "computer_hover_at",
+        "type_text_at": "computer_type_text_at",
+        "key_combination": "computer_key_combination",
+        "scroll_document": "computer_scroll_document",
+        "scroll_at": "computer_scroll_at",
+        "drag_and_drop": "computer_drag_and_drop",
+    }
 
     @staticmethod
     def _requires_thinking(model: str) -> bool:
@@ -1007,17 +1028,37 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if config is not None:
                 excluded = getattr(config, 'excluded_actions', [])
             try:
-                return [
-                    types.Tool(
-                        computer_use=types.ComputerUse(
-                            environment=types.Environment.ENVIRONMENT_BROWSER,
-                            excluded_predefined_functions=excluded,
-                        )
+                computer_tool = types.Tool(
+                    computer_use=types.ComputerUse(
+                        environment=types.Environment.ENVIRONMENT_BROWSER,
+                        excluded_predefined_functions=excluded,
                     )
-                ]
+                )
             except Exception as exc:
                 self.logger.error("_build_tools(computer_use): failed to build ComputerUse tool: %s", exc)
                 return None
+
+            built = [computer_tool]
+            # Append any *genuinely custom* function declarations (e.g.
+            # computer_screenshot, computer_run_loop, scraping tools) so they
+            # are still callable. The 13 predefined-equivalent toolkit tools
+            # (computer_click_at, …) are dropped — the model invokes those via
+            # the native ComputerUse tool instead, and sending duplicates only
+            # confuses tool selection.
+            predefined = set(self._COMPUTER_USE_PREDEFINED_MAP.values())
+            try:
+                custom = self._build_tools("custom_functions", filter_names=filter_names) or []
+            except Exception as exc:
+                # No ToolManager (e.g. bare client) or build failure — the
+                # ComputerUse tool alone is still a valid request.
+                self.logger.debug("_build_tools(computer_use): no custom functions appended: %s", exc)
+                custom = []
+            for tool in custom:
+                decls = getattr(tool, "function_declarations", None) or []
+                kept = [fd for fd in decls if fd.name not in predefined]
+                if kept:
+                    built.append(types.Tool(function_declarations=kept))
+            return built
 
         if tool_type == "custom_functions":
             # migrate to use abstractool + tool definition:
@@ -1416,6 +1457,109 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """
         return None
 
+    def _has_registered_tool(self, tool_name: str) -> bool:
+        """Return True if ``tool_name`` is registered in the ToolManager."""
+        tm = getattr(self, "tool_manager", None)
+        if tm is None:
+            return False
+        try:
+            return tm.get_tool(tool_name) is not None
+        except Exception:
+            return False
+
+    @staticmethod
+    def _adapt_computer_use_args(
+        native_name: str, args: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Adapt native computer-use call args to the toolkit method signature.
+
+        Most predefined actions map 1:1 (coordinates are already 0-1000
+        normalized, which the toolkit expects). Two need fixups:
+
+        - ``wait_5_seconds`` takes no args natively → drop them (the toolkit's
+          ``computer_wait`` defaults to ``seconds=5``).
+        - ``key_combination`` may arrive as a list (``["control", "c"]``) or a
+          ``"+"``-joined string; the toolkit expects a comma-separated string.
+        """
+        if native_name == "wait_5_seconds":
+            return {}
+        if native_name == "key_combination":
+            keys = args.get("keys")
+            if isinstance(keys, (list, tuple)):
+                args["keys"] = ",".join(str(k) for k in keys)
+            elif isinstance(keys, str) and "+" in keys:
+                args["keys"] = ",".join(k.strip() for k in keys.split("+"))
+        return args
+
+    async def _execute_computer_use_call(
+        self, tool_name: str, args: Dict[str, Any]
+    ) -> Any:
+        """Execute a single computer-use function call, handling safety.
+
+        The model embeds an optional ``safety_decision`` object inside the
+        call args (``{"explanation": ..., "decision": "require_confirmation"}``).
+        That key is NOT a tool parameter, so it is always stripped before
+        dispatch. When the decision requires confirmation, a configured
+        ``_computer_use_safety_handler`` is consulted (e.g. ComputerAgent's
+        HITL handler); on approval the action runs and the result is tagged
+        with ``safety_acknowledgement="true"`` so the API call is accepted, on
+        rejection the action is skipped and a refusal is returned.
+        """
+        args = dict(args or {})
+        safety = args.pop("safety_decision", None)
+        acknowledged = False
+        if isinstance(safety, dict) and safety.get("decision") == "require_confirmation":
+            approved = await self._confirm_computer_use_safety(tool_name, safety, args)
+            if not approved:
+                self.logger.warning(
+                    "Computer-use action %r rejected by safety confirmation.", tool_name
+                )
+                return {
+                    "error": "rejected_by_user",
+                    "message": "The user did not approve this action.",
+                    "safety_acknowledgement": "false",
+                }
+            acknowledged = True
+
+        result = await self._execute_tool(tool_name, args)
+
+        if acknowledged and isinstance(result, dict):
+            result["safety_acknowledgement"] = "true"
+        return result
+
+    async def _confirm_computer_use_safety(
+        self, tool_name: str, safety: Dict[str, Any], args: Dict[str, Any]
+    ) -> bool:
+        """Ask the configured handler whether a flagged action may proceed.
+
+        Returns True (proceed) when no handler is configured — preserving the
+        previous auto-acknowledge behaviour — and otherwise defers to
+        ``self._computer_use_safety_handler`` (sync or async).
+        """
+        handler = getattr(self, "_computer_use_safety_handler", None)
+        decision = {
+            "tool": tool_name,
+            "arguments": args,
+            "explanation": safety.get("explanation", ""),
+            "decision": safety.get("decision"),
+        }
+        if handler is None:
+            self.logger.warning(
+                "Computer-use safety_decision auto-acknowledged (no handler set): %s",
+                decision,
+            )
+            return True
+        try:
+            res = handler(decision)
+            if inspect.isawaitable(res):
+                res = await res
+            return bool(res)
+        except Exception as exc:
+            self.logger.error(
+                "Computer-use safety handler raised (denying action): %s", exc
+            )
+            return False
+
     async def _execute_tool(
         self,
         tool_name: str,
@@ -1431,6 +1575,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         in the overlay, fall through to the base implementation which
         dispatches via ``self.tool_manager``.
         """
+        # Translate native computer-use predefined function calls (click_at,
+        # type_text_at, …) to the prefixed ComputerInteractionToolkit tools
+        # (computer_click_at, …) that are actually registered. Only applied
+        # when the mapped tool exists, so non-computer agents are unaffected.
+        mapped = self._COMPUTER_USE_PREDEFINED_MAP.get(tool_name)
+        if mapped is not None and self._has_registered_tool(mapped):
+            parameters = self._adapt_computer_use_args(tool_name, dict(parameters or {}))
+            tool_name = mapped
+
         request_tools = getattr(self, '_request_tools', None) or {}
         if tool_name in request_tools:
             tool = request_tools[tool_name]
@@ -1559,11 +1712,27 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
             # Execute tools
             start_time = time.time()
-            tool_execution_tasks = [
-                self._execute_tool(fc.name, dict(fc.args) if hasattr(fc.args, 'items') else fc.args)
-                for fc in function_calls
-            ]
-            tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
+            if self._is_computer_use_model(model):
+                # Computer-use calls carry an optional ``safety_decision`` in
+                # their args. Each is handled sequentially (a confirmation may
+                # block on human input) — see _execute_computer_use_call.
+                tool_results = []
+                for fc in function_calls:
+                    try:
+                        tool_results.append(
+                            await self._execute_computer_use_call(
+                                fc.name,
+                                dict(fc.args) if hasattr(fc.args, 'items') else (fc.args or {}),
+                            )
+                        )
+                    except Exception as exc:  # mirror gather(return_exceptions=True)
+                        tool_results.append(exc)
+            else:
+                tool_execution_tasks = [
+                    self._execute_tool(fc.name, dict(fc.args) if hasattr(fc.args, 'items') else fc.args)
+                    for fc in function_calls
+                ]
+                tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
             execution_time = time.time() - start_time
 
             # Lazy Loading Check
@@ -2411,6 +2580,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if kw_tool_type == "builtin_tools":
             tool_type = kw_tool_type
             _use_tools = True
+        elif _use_tools and self._is_computer_use_model(model):
+            # Computer-use models REQUIRE types.Tool(computer_use=...) in the
+            # request — sending only function_declarations yields a 400
+            # INVALID_ARGUMENT ("This model requires the use of the Computer
+            # Use tool."). The "computer_use" build path emits that tool and
+            # appends any genuinely-custom (non-predefined) function tools.
+            tool_type = "computer_use"
         elif _use_tools:
             tool_type = kw_tool_type or "custom_functions"
         else:
@@ -2523,6 +2699,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 max_thinking_tokens=100,
                 max_thinking_time=10,
             )
+        elif self._is_computer_use_model(model):
+            # Computer-use models reason over screenshots and require thoughts
+            # enabled (see Gemini computer-use docs / reference implementation).
+            thinking_config = ThinkingConfig(include_thoughts=True)
         elif _requires_thinking:
             # Pro models (2.5-pro, 3-pro, 3.1-pro) are thinking-only — budget=0 is invalid.
             thinking_config = ThinkingConfig(
@@ -2570,6 +2750,21 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 function_calling_config=types.FunctionCallingConfig(mode=mode)
             )
 
+        # Computer-use requests send a native ComputerUse tool alongside any
+        # genuinely-custom FunctionDeclaration tools (computer_screenshot,
+        # computer_run_loop, scraping helpers). The google-genai SDK cannot run
+        # Automatic Function Calling over raw function declarations, so it logs a
+        # noisy "Tools at indices [...] are not compatible with AFC. AFC is
+        # disabled." warning on every turn. We never want AFC here — the
+        # ComputerUse loop drives function_call/function_response manually — so
+        # we declare that intent explicitly. Setting ``disable=True`` makes the
+        # SDK short-circuit (should_disable_afc) *before* the incompatible-tools
+        # check, silencing the warning. Leave ``maximum_remote_calls`` unset to
+        # avoid the SDK's secondary "disable + positive max_remote_calls" warning.
+        afc_config = None
+        if tool_type == "computer_use":
+            afc_config = types.AutomaticFunctionCallingConfig(disable=True)
+
         # FEAT-181: resolve List[CacheableSegment] → string before passing to
         # GenerateContentConfig, which does not accept segment lists.
         # Also handle prompt caching: if segments were provided, attempt to create
@@ -2595,6 +2790,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             tools=tools,
             tool_config=tool_config,
             thinking_config=thinking_config,
+            automatic_function_calling=afc_config,
             **generation_config
         )
         # FEAT-181: if we have pending cache segments, attempt to create

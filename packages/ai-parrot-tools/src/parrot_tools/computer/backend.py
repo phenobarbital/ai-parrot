@@ -134,11 +134,16 @@ class AsyncComputerBackend:
             viewport={"width": self._viewport[0], "height": self._viewport[1]},
         )
 
-        # Intercept new tabs and redirect them to the current page (single-tab model).
-        self._context.on("page", self._handle_new_page)
-
+        # Create the primary page BEFORE registering the new-tab handler.
+        # Registering it first makes the "page" event fire for this very page,
+        # which would route it through _redirect_new_page() and close it mid-
+        # navigation (TargetClosedError). Only *subsequent* tabs should be
+        # intercepted for the single-tab model.
         self._page = await self._context.new_page()
         await self._page.goto(self._initial_url)
+
+        # Intercept new tabs and redirect them to the current page (single-tab model).
+        self._context.on("page", self._handle_new_page)
         logger.info(
             "AsyncComputerBackend started: browser=%s headless=%s viewport=%s initial_url=%s",
             self._browser_type,
@@ -509,9 +514,9 @@ class AsyncComputerBackend:
             viewport={"width": self._viewport[0], "height": self._viewport[1]},
             record_video_dir=output_dir,
         )
-        self._context.on("page", self._handle_new_page)
         self._page = await self._context.new_page()
         await self._page.goto(current_url)
+        self._context.on("page", self._handle_new_page)
         logger.info("Recording started: output_dir=%s", output_dir)
 
     async def stop_recording(self) -> Optional[str]:
@@ -533,9 +538,9 @@ class AsyncComputerBackend:
         self._context = await self._browser.new_context(
             viewport={"width": self._viewport[0], "height": self._viewport[1]},
         )
-        self._context.on("page", self._handle_new_page)
         self._page = await self._context.new_page()
         await self._page.goto(current_url)
+        self._context.on("page", self._handle_new_page)
         logger.info("Recording stopped: video_path=%s", video)
         return video
 
@@ -582,10 +587,10 @@ class AsyncComputerBackend:
             viewport={"width": self._viewport[0], "height": self._viewport[1]},
             record_har_path=output_path,
         )
-        self._context.on("page", self._handle_new_page)
         self._page = await self._context.new_page()
         if current_url:
             await self._page.goto(current_url)
+        self._context.on("page", self._handle_new_page)
         logger.info("HAR recording started: output_path=%s", output_path)
 
     async def save_pdf(self, output_path: str) -> bytes:
