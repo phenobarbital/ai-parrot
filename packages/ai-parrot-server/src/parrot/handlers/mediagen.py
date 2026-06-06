@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from aiohttp import web
+from aiohttp import MultipartWriter, web
 from navigator.views import BaseView
 from datamodel.parsers.json import json_encoder
 
@@ -57,7 +57,7 @@ class MediaGen(BaseView):
             "prompt": "Text prompt for single generation",
             "prompts": ["Prompt 1", "Prompt 2"],  # for list-based batches
             "requests": [{"prompt": "...", "aspect_ratio": "..."}, ...],  # for custom-parameter batches
-            "download_mode": "StreamResponse" | "FileResponse",  # default is "StreamResponse"
+            "download_mode": "StreamResponse" | "FileResponse" | "Multipart",  # default is "StreamResponse"
             "model": "optional_model_name",
             ... rest of standard parameters like aspect_ratio, resolution, etc.
         }
@@ -65,6 +65,13 @@ class MediaGen(BaseView):
         Returns:
             StreamResponse (default) or FileResponse containing generated image/video files,
             or JSON list of metadata/paths if multiple files are generated and no zip download is resolved.
+
+            When ``download_mode`` is ``"Multipart"`` and at least one file is
+            produced, a ``multipart/mixed`` response is returned instead: the
+            first part is an ``application/json`` document with per-item
+            ``metadata`` (including ``{"error": ...}`` entries for failed batch
+            items), followed by one part per generated file. This is the only
+            delivery mode that preserves batch metadata alongside the binaries.
         """
         data = await self.request.json()
         action = str(data.get("action", "")).lower().strip()
@@ -196,6 +203,16 @@ class MediaGen(BaseView):
                     "metadata": results_metadata
                 })
 
+            # Multipart delivery: a JSON metadata part followed by one part per
+            # file. Unlike the single-file and zip paths below, this preserves
+            # per-item metadata (including failed-item errors) alongside the
+            # binaries — relevant for partially-failing batches.
+            if download_mode == "Multipart":
+                mime_type = "image/png" if action == "image" else "video/mp4"
+                return await self._deliver_multipart(
+                    generated_files, results_metadata, mime_type
+                )
+
             # If there's only one file, we return/stream it directly
             if len(generated_files) == 1:
                 target_file = generated_files[0]
@@ -287,6 +304,63 @@ class MediaGen(BaseView):
         # StreamResponse (default)
         self.logger.info(f"Delivering file via StreamResponse: {file_path.name}")
         return await self._stream_file(file_path, content_type)
+
+    async def _deliver_multipart(
+        self,
+        files: List[Path],
+        metadata: List[Any],
+        content_type: str,
+    ) -> web.StreamResponse:
+        """Deliver files and metadata as a single ``multipart/mixed`` response.
+
+        The first part is an ``application/json`` document carrying the
+        per-item ``metadata`` list (including ``{"error": ...}`` entries for
+        failed batch items); each remaining part carries one generated file.
+        This preserves batch metadata that the zip and single-file delivery
+        paths discard once any file is produced, and lets the client consume
+        individual assets without unzipping.
+
+        Args:
+            files: Generated asset paths to stream, one per multipart part.
+            metadata: Per-item result metadata to embed as the JSON part.
+            content_type: MIME type for the file parts (e.g. ``video/mp4``).
+
+        Returns:
+            A prepared ``StreamResponse`` with the multipart body written.
+        """
+        mpwriter = MultipartWriter("mixed")
+
+        meta_part = mpwriter.append(
+            json_encoder({"metadata": metadata}),
+            {"Content-Type": "application/json"},
+        )
+        meta_part.set_content_disposition("inline", name="metadata")
+
+        handles: List[Any] = []
+        for f in files:
+            if f.exists() and f.is_file():
+                fh = f.open("rb")
+                handles.append(fh)
+                file_part = mpwriter.append(fh, {"Content-Type": content_type})
+                file_part.set_content_disposition(
+                    "attachment", name="file", filename=f.name
+                )
+
+        self.logger.info(
+            f"Delivering {len(handles)} file(s) + metadata via multipart/mixed"
+        )
+        try:
+            response = web.StreamResponse(status=200, headers=mpwriter.headers)
+            await response.prepare(self.request)
+            await mpwriter.write(response)
+            await response.write_eof()
+            return response
+        finally:
+            for fh in handles:
+                try:
+                    fh.close()
+                except Exception:  # noqa: BLE001 - best-effort cleanup
+                    pass
 
     async def _stream_file(
         self,

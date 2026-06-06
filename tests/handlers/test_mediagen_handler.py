@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from aiohttp import web
+from aiohttp import MultipartReader, web
 from parrot.handlers.mediagen import MediaGen
 from parrot.models.responses import AIMessage
 from parrot.models.basic import CompletionUsage
@@ -204,6 +204,61 @@ class TestMediaGenHandler:
                 [{"prompt": "video 1"}, {"prompt": "video 2"}],
                 persist_results=True
             )
+
+    async def test_post_video_batch_multipart_preserves_metadata(
+        self, aiohttp_client, mock_client_methods, tmp_path
+    ):
+        """Verify Multipart mode returns metadata (incl. failed items) + file parts."""
+        app = web.Application()
+        MediaGen.setup(app, route="/api/v1/google/media")
+        client = await aiohttp_client(app)
+
+        vid1 = tmp_path / "vid1.mp4"
+        vid1.write_text("vid1 data")
+        vid2 = tmp_path / "vid2.mp4"
+        vid2.write_text("vid2 data")
+
+        with mock_client_methods as ctx:
+            # 2 successes + 1 failure: the failure must survive in the metadata part.
+            ctx.client_instance.generate_video_batch.return_value = [
+                _make_mock_message(prompt="video 1", files=[vid1]),
+                RuntimeError("Video generation failed for item 2"),
+                _make_mock_message(prompt="video 3", files=[vid2]),
+            ]
+
+            payload = {
+                "action": "video",
+                "batch": True,
+                "prompts": ["video 1", "video 2", "video 3"],
+                "download_mode": "Multipart",
+            }
+
+            resp = await client.post("/api/v1/google/media", json=payload)
+            assert resp.status == 200
+            assert resp.headers["Content-Type"].startswith("multipart/mixed")
+
+            metadata = None
+            file_bodies = []
+            reader = MultipartReader.from_response(resp)
+            while True:
+                part = await reader.next()
+                if part is None:
+                    break
+                if part.headers.get("Content-Type") == "application/json":
+                    metadata = await part.json()
+                else:
+                    file_bodies.append(await part.read(decode=False))
+
+            # Metadata part is present and carries one entry per batch item,
+            # including the failed item's error message.
+            assert metadata is not None
+            assert len(metadata["metadata"]) == 3
+            errors = [m for m in metadata["metadata"] if "error" in m]
+            assert len(errors) == 1
+            assert "item 2" in errors[0]["error"]
+
+            # Both successful videos are delivered as separate binary parts.
+            assert file_bodies == [b"vid1 data", b"vid2 data"]
 
     async def test_post_video_error_comprehensive(self, aiohttp_client, mock_client_methods):
         """Verify that MediaGen dynamically parses embedded error dictionaries on failure."""
