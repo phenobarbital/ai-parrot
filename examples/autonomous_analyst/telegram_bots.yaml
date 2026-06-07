@@ -1,0 +1,41 @@
+# Telegram configuration for the Autonomous Analyst demo.
+#
+# Copy this file to your environment's ENV_DIR as `telegram_bots.yaml`
+# (TelegramBotManager loads {ENV_DIR}/telegram_bots.yaml). The `chatbot_id`
+# MUST match the agent registered in service.py (CHATBOT_ID = "autonomous-analyst")
+# so TelegramBotManager.get_bot(chatbot_id) resolves THIS running instance.
+#
+# Values shown as ${VAR} are illustrative — set the real token/ids here or via
+# your secrets manager. Never commit real tokens.
+
+bots:
+  - name: "Autonomous Analyst"
+    chatbot_id: "autonomous-analyst"      # ← must equal CHATBOT_ID in service.py
+    bot_token: "${TELEGRAM_BOT_TOKEN}"    # from @BotFather
+
+    # Who may talk to the bot at all (omit/null = anyone who finds it).
+    allowed_chat_ids:
+      - 123456789
+
+    # ── Operator surface (FEAT-210) ──────────────────────────────────────
+    # FAIL-CLOSED: if operator_chat_ids is null/empty, NOBODY can run the
+    # operator commands (/health /status /context /memory /mission /model
+    # /thread). List the numeric Telegram ids of your operators only.
+    enable_operator_commands: true
+    operator_chat_ids:
+      - 123456789                          # your numeric Telegram id
+
+    # ── Voice reply (FEAT-213), optional ─────────────────────────────────
+    # When the operator sends a voice note, reply with a synthesized voice
+    # note too. Requires GOOGLE_API_KEY (Gemini TTS) in the environment.
+    # tts_enabled: true
+    # reply_in_kind: true
+    # tts_backend: "google"
+
+    welcome_message: >-
+      👋 Autonomous Analyst online. I run on a heartbeat, accumulate findings
+      in working memory, and can delegate to ephemeral sub-agents. Operators:
+      try /health, /status, /mission.
+
+    register_menu: true
+    enable_login: false                    # demo: no auth handshake
