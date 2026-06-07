@@ -21,10 +21,13 @@ path):
   * ``UsageRecordingSubscriber`` — builds records + fans out to recorders.
   * ``ensure_observability_bootstrapped`` / ``shutdown_usage_recording`` —
     env-driven auto-boot helpers.
+  * ``shutdown_observability`` — aggregate flush/teardown for any active backend
+    (registered automatically via ``atexit`` on first boot).
 """
 
 from parrot.observability.bootstrap import (
     ensure_observability_bootstrapped,
+    shutdown_observability,
     shutdown_usage_recording,
 )
 from parrot.observability.config import ObservabilityConfig
@@ -56,4 +59,5 @@ __all__: list[str] = [
     "UsageRecordingSubscriber",
     "ensure_observability_bootstrapped",
     "shutdown_usage_recording",
+    "shutdown_observability",
 ]

@@ -69,6 +69,46 @@ The `logging` backend pulls in **no third-party dependency** and never imports
 the OpenTelemetry SDK. Cost is computed via the bundled `CostCalculator`
 (disable with `OBSERVABILITY_COST=false`).
 
+### End-to-end with OpenLIT + OTLP (dashboards, zero code)
+
+This is the recommended path to get a **dashboard of LLM requests** (tokens,
+USD cost, latency, model, errors) without writing any code:
+
+```bash
+# 1. Install the extras
+pip install 'ai-parrot[observability,observability-openlit]'
+
+# 2. Launch the demo stack (OpenLIT UI :3000 + ClickHouse + Prometheus :9090)
+docker compose -f packages/ai-parrot/src/parrot/observability/examples/docker-compose.observability.yml up -d
+
+# 3. Point AI-Parrot at it (e.g. in your .env)
+export OBSERVABILITY_ENABLED=true
+export OBSERVABILITY_BACKEND=otel
+export OBSERVABILITY_OPENLIT=true
+export OBSERVABILITY_SERVICE_NAME=my-agent
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+Now build/use **any** bot — observability auto-boots on first construction and
+exports OTLP traces + metrics. Open <http://localhost:3000> to see each LLM
+request with tokens, cost and latency.
+
+Notes:
+
+- **OpenLIT escalates the backend.** Setting `OBSERVABILITY_OPENLIT=true` forces
+  the `otel` path even if `OBSERVABILITY_BACKEND` is unset/`logging`, because
+  OpenLIT needs the global `TracerProvider` that only `setup_telemetry` installs.
+- **Graceful flush is automatic.** An `atexit` hook flushes the final
+  `BatchSpanProcessor` / `PeriodicExportingMetricReader` batch on process exit;
+  long-running servers also flush deterministically via the autonomous
+  orchestrator's `stop()`. Call `shutdown_observability()` yourself if you manage
+  your own lifecycle.
+- **Sampling / PII.** Tune `OBSERVABILITY_SAMPLING` (0.0–1.0) for high-volume
+  deployments; prompts/completions are **not** captured by default
+  (`capture_prompts` / `capture_completions` are off — PII guard).
+- **Custom pricing.** Point `PARROT_PRICING_PATH` at a dir of `<provider>.json`
+  files to override the bundled cost tables.
+
 ### Backends
 
 | Backend | Install | When |

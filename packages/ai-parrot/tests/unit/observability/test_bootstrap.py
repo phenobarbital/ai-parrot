@@ -9,6 +9,7 @@ from parrot.observability import bootstrap as boot
 
 _ENV_KEYS = [
     "OBSERVABILITY_ENABLED", "OBSERVABILITY_BACKEND", "OBSERVABILITY_COST",
+    "OBSERVABILITY_OPENLIT",
 ]
 
 
@@ -75,3 +76,97 @@ def test_otel_backend_delegates_to_setup_telemetry(monkeypatch) -> None:
     assert "config" in called
     assert called["config"].usage_backend == "otel"
     assert boot._SUBSCRIBER is None  # lightweight path not used
+
+
+def test_openlit_escalates_to_otel(monkeypatch) -> None:
+    """OBSERVABILITY_OPENLIT=true forces the otel path even with backend unset."""
+    monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
+    monkeypatch.setenv("OBSERVABILITY_OPENLIT", "true")
+    # Backend deliberately left unset (resolves to "none"/"logging" normally).
+
+    called = {}
+
+    def _fake_setup(config):
+        called["config"] = config
+        return None
+
+    import parrot.observability.setup as setup_mod
+    monkeypatch.setattr(setup_mod, "setup_telemetry", _fake_setup)
+
+    with scope():
+        boot.ensure_observability_bootstrapped()
+
+    assert "config" in called
+    assert called["config"].usage_backend == "otel"
+    assert called["config"].enable_openlit is True
+    assert boot._SUBSCRIBER is None  # otel path, not the lightweight subscriber
+
+
+def test_atexit_flush_registered_once(monkeypatch) -> None:
+    """A successful boot registers the atexit flush hook exactly once."""
+    monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
+
+    registered = []
+    import parrot.observability.bootstrap as boot_mod
+    monkeypatch.setattr(boot_mod.atexit, "register", registered.append)
+
+    with scope():
+        boot.ensure_observability_bootstrapped()
+        boot.ensure_observability_bootstrapped()  # idempotent
+
+    assert registered == [boot.shutdown_observability]
+    assert boot._ATEXIT_REGISTERED is True
+
+
+def test_atexit_not_registered_when_disabled(monkeypatch) -> None:
+    """No flush hook is registered when observability is disabled."""
+    registered = []
+    import parrot.observability.bootstrap as boot_mod
+    monkeypatch.setattr(boot_mod.atexit, "register", registered.append)
+
+    with scope():
+        boot.ensure_observability_bootstrapped()
+
+    assert registered == []
+    assert boot._ATEXIT_REGISTERED is False
+
+
+def test_shutdown_observability_aggregates_and_is_idempotent(monkeypatch) -> None:
+    """shutdown_observability() calls both teardown paths and never raises."""
+    calls = {"otel": 0, "usage": 0}
+
+    import parrot.observability.setup as setup_mod
+    monkeypatch.setattr(
+        setup_mod, "shutdown_telemetry",
+        lambda: calls.__setitem__("otel", calls["otel"] + 1),
+    )
+    import parrot.observability.bootstrap as boot_mod
+    monkeypatch.setattr(
+        boot_mod, "shutdown_usage_recording",
+        lambda: calls.__setitem__("usage", calls["usage"] + 1),
+    )
+
+    boot.shutdown_observability()
+    boot.shutdown_observability()
+
+    assert calls == {"otel": 2, "usage": 2}
+
+
+def test_shutdown_observability_swallows_errors(monkeypatch) -> None:
+    """A failure in one teardown path must not block the other or raise."""
+    import parrot.observability.setup as setup_mod
+
+    def _boom():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(setup_mod, "shutdown_telemetry", _boom)
+    usage_called = {"n": 0}
+    import parrot.observability.bootstrap as boot_mod
+    monkeypatch.setattr(
+        boot_mod, "shutdown_usage_recording",
+        lambda: usage_called.__setitem__("n", usage_called["n"] + 1),
+    )
+
+    boot.shutdown_observability()  # must not raise
+
+    assert usage_called["n"] == 1
