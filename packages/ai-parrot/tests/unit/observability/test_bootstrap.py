@@ -9,7 +9,7 @@ from parrot.observability import bootstrap as boot
 
 _ENV_KEYS = [
     "OBSERVABILITY_ENABLED", "OBSERVABILITY_BACKEND", "OBSERVABILITY_COST",
-    "OBSERVABILITY_OPENLIT",
+    "OBSERVABILITY_OPENLIT", "OBSERVABILITY_TRACELOOP",
 ]
 
 
@@ -100,6 +100,40 @@ def test_openlit_escalates_to_otel(monkeypatch) -> None:
     assert called["config"].usage_backend == "otel"
     assert called["config"].enable_openlit is True
     assert boot._SUBSCRIBER is None  # otel path, not the lightweight subscriber
+
+
+def test_traceloop_backend_activates(monkeypatch) -> None:
+    """OBSERVABILITY_TRACELOOP=true forces the traceloop backend (not otel/logging)."""
+    monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
+    monkeypatch.setenv("OBSERVABILITY_TRACELOOP", "true")
+
+    called = {}
+    import parrot.observability.traceloop_integration as tl_mod
+    monkeypatch.setattr(tl_mod, "setup_traceloop", lambda cfg: called.__setitem__("cfg", cfg))
+
+    with scope():
+        boot.ensure_observability_bootstrapped()
+
+    assert "cfg" in called
+    assert called["cfg"].usage_backend == "traceloop"
+    assert boot._SUBSCRIBER is None  # not the lightweight path
+
+
+def test_traceloop_and_openlit_are_mutually_exclusive(monkeypatch) -> None:
+    """When both are set, Traceloop wins and OpenLIT is disabled."""
+    monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
+    monkeypatch.setenv("OBSERVABILITY_TRACELOOP", "true")
+    monkeypatch.setenv("OBSERVABILITY_OPENLIT", "true")
+
+    called = {}
+    import parrot.observability.traceloop_integration as tl_mod
+    monkeypatch.setattr(tl_mod, "setup_traceloop", lambda cfg: called.__setitem__("cfg", cfg))
+
+    with scope():
+        boot.ensure_observability_bootstrapped()
+
+    assert called["cfg"].usage_backend == "traceloop"
+    assert called["cfg"].enable_openlit is False
 
 
 def test_atexit_flush_registered_once(monkeypatch) -> None:

@@ -21,9 +21,25 @@ bot/client/tool construction
         └─ ensure_observability_bootstrapped()   ← reads OBSERVABILITY_* env
              ├─ backend=logging     → one structured line per LLM call (no infra)
              ├─ backend=prometheus  → counters/histograms on :9464/metrics
-             └─ backend=otel        → setup_telemetry(): OTLP traces + metrics
-                                       (+ openlit.init when OBSERVABILITY_OPENLIT=true)
+             ├─ backend=otel        → setup_telemetry(): OTLP traces + metrics
+             │                         (+ openlit.init when OBSERVABILITY_OPENLIT=true)  ← prod
+             └─ backend=traceloop   → Traceloop owns the OTLP pipeline + LLM-SDK
+                                       auto-instrumentation w/ content capture       ← local/dev
+                                       (forced by OBSERVABILITY_TRACELOOP=true)
 ```
+
+**Backend choice (FEAT — OpenLLMetry alternative).** OpenLIT and OpenLLMetry
+(Traceloop) both auto-instrument the provider SDKs, so they are **mutually
+exclusive** and ship as independent optional extras — picking one never installs
+the other. The recommended split:
+
+- **Production → OpenLIT** (`OBSERVABILITY_OPENLIT=true`, backend `otel`): layers
+  onto AI-Parrot's `setup_telemetry` providers; ships its own UI + ClickHouse.
+- **Local/dev → OpenLLMetry/Traceloop** (`OBSERVABILITY_TRACELOOP=true`, backend
+  `traceloop`): simplest path to see prompts/responses in the trace. Traceloop
+  owns a single OTLP pipeline and AI-Parrot's native subscribers ride the same
+  global provider — no duplicate spans. When both flags are set, Traceloop wins
+  and OpenLIT is disabled with a warning.
 
 Lifecycle events (FEAT-176) — `BeforeClientCallEvent` / `AfterClientCallEvent` /
 `ClientCallFailedEvent`, tool events, invoke events — are the instrumentation
@@ -59,8 +75,10 @@ tokens, USD cost, latency, model and errors. For Prometheus + Grafana, set
 | Env var | Field | Default |
 |---|---|---|
 | `OBSERVABILITY_ENABLED` | master switch | `false` |
-| `OBSERVABILITY_BACKEND` | `none`·`logging`·`prometheus`·`otel` | `none` → `logging` when enabled |
-| `OBSERVABILITY_OPENLIT` | init OpenLIT (escalates backend to `otel`) | `false` |
+| `OBSERVABILITY_BACKEND` | `none`·`logging`·`prometheus`·`otel`·`traceloop` | `none` → `logging` when enabled |
+| `OBSERVABILITY_OPENLIT` | init OpenLIT (escalates backend to `otel`) — prod | `false` |
+| `OBSERVABILITY_TRACELOOP` | OpenLLMetry/Traceloop (forces backend `traceloop`) — local/dev | `false` |
+| `OBSERVABILITY_CAPTURE_CONTENT` | capture prompts/completions (PII; dev only) | `false` |
 | `OBSERVABILITY_SERVICE_NAME` | `service.name` | `ai-parrot` |
 | `OBSERVABILITY_COST` | USD cost tracking | `true` |
 | `OBSERVABILITY_SAMPLING` | trace sampling ratio (0.0–1.0) | `1.0` |
