@@ -249,7 +249,12 @@ async def create_app() -> web.Application:
     # Mount HTTP routes (webhooks, admin UI, etc.)
     orchestrator.setup_routes(app)
 
-    # Ensure clean shutdown
+    # Ensure clean shutdown.
+    # Observability auto-boots from env (OBSERVABILITY_ENABLED=true,
+    # OBSERVABILITY_BACKEND=otel, OBSERVABILITY_OPENLIT=true,
+    # OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318) the first time an agent
+    # is built. orchestrator.stop() flushes the final OTLP batch; an atexit hook
+    # is also registered as a safety net for non-orchestrated exits.
     async def on_cleanup(_app: web.Application) -> None:
         await orchestrator.stop()
 

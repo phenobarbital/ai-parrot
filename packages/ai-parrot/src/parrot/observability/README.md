@@ -69,13 +69,90 @@ The `logging` backend pulls in **no third-party dependency** and never imports
 the OpenTelemetry SDK. Cost is computed via the bundled `CostCalculator`
 (disable with `OBSERVABILITY_COST=false`).
 
+### End-to-end with OpenLIT + OTLP (dashboards, zero code)
+
+This is the recommended path to get a **dashboard of LLM requests** (tokens,
+USD cost, latency, model, errors) without writing any code:
+
+```bash
+# 1. Install the extras
+pip install 'ai-parrot[observability,observability-openlit]'
+
+# 2. Launch the demo stack (OpenLIT UI :3000 + ClickHouse + Prometheus :9090)
+docker compose -f packages/ai-parrot/src/parrot/observability/examples/docker-compose.observability.yml up -d
+
+# 3. Point AI-Parrot at it (e.g. in your .env)
+export OBSERVABILITY_ENABLED=true
+export OBSERVABILITY_BACKEND=otel
+export OBSERVABILITY_OPENLIT=true
+export OBSERVABILITY_SERVICE_NAME=my-agent
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+Now build/use **any** bot — observability auto-boots on first construction and
+exports OTLP traces + metrics. Open <http://localhost:3000> to see each LLM
+request with tokens, cost and latency.
+
+Notes:
+
+- **OpenLIT escalates the backend.** Setting `OBSERVABILITY_OPENLIT=true` forces
+  the `otel` path even if `OBSERVABILITY_BACKEND` is unset/`logging`, because
+  OpenLIT needs the global `TracerProvider` that only `setup_telemetry` installs.
+- **Graceful flush is automatic.** An `atexit` hook flushes the final
+  `BatchSpanProcessor` / `PeriodicExportingMetricReader` batch on process exit;
+  long-running servers also flush deterministically via the autonomous
+  orchestrator's `stop()`. Call `shutdown_observability()` yourself if you manage
+  your own lifecycle.
+- **Sampling / PII.** Tune `OBSERVABILITY_SAMPLING` (0.0–1.0) for high-volume
+  deployments; prompts/completions are **not** captured by default
+  (`capture_prompts` / `capture_completions` are off — PII guard).
+- **Custom pricing.** Point `PARROT_PRICING_PATH` at a dir of `<provider>.json`
+  files to override the bundled cost tables.
+
+### Simple local/dev with OpenLLMetry (Traceloop)
+
+When you want a lightweight local/dev setup that shows the **actual prompts and
+responses** in the trace (the one thing the native path withholds by default for
+PII), use the `traceloop` backend. Keep OpenLIT for production:
+
+```bash
+pip install 'ai-parrot[observability,observability-traceloop]'
+
+export OBSERVABILITY_ENABLED=true
+export OBSERVABILITY_TRACELOOP=true          # forces backend=traceloop; OpenLIT stays off
+export OBSERVABILITY_CAPTURE_CONTENT=true    # dev only — captures prompts/completions (PII)
+export OBSERVABILITY_SERVICE_NAME=my-agent
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+How it works:
+
+- **Traceloop owns one OTLP pipeline.** `Traceloop.init()` installs the global
+  `TracerProvider`, exports to your collector, and auto-instruments the LLM SDKs
+  (OpenAI/Anthropic/…) with content capture. AI-Parrot's native span/metric
+  subscribers ride the *same* global provider, so you also get the agent/tool/
+  client spans and usage/cost metrics — **one pipeline, no duplicate spans**.
+- **Mutually exclusive with OpenLIT.** Setting `OBSERVABILITY_TRACELOOP=true`
+  forces `backend=traceloop`; if `OBSERVABILITY_OPENLIT=true` is also set,
+  Traceloop wins and OpenLIT is disabled with a warning. The `traceloop-sdk` is
+  an independent optional extra — choosing OpenLIT never installs Traceloop and
+  vice-versa.
+- **Content capture is gated.** Prompts/completions are captured only when
+  `OBSERVABILITY_CAPTURE_CONTENT=true` (maps to `capture_prompts` /
+  `capture_completions`, which also sets Traceloop's `TRACELOOP_TRACE_CONTENT`).
+  Leave it off outside dev/test.
+
+Point it at any OTLP backend — the bundled OpenLIT stack at `:4318`, a local
+Jaeger/Grafana Tempo, SigNoz, or the Traceloop cloud (set an API key).
+
 ### Backends
 
 | Backend | Install | When |
 |---|---|---|
 | `logging` (default) | none | Start here. Zero infra, zero network, minimal latency. |
 | `prometheus` | `pip install 'ai-parrot[observability-prometheus]'` | Pull-based metrics + Grafana dashboards. Exposes `:9464/metrics`. |
-| `otel` | `pip install 'ai-parrot[observability]'` | Full OTLP traces + metrics (delegates to `setup_telemetry`). |
+| `otel` | `pip install 'ai-parrot[observability]'` | Full OTLP traces + metrics (delegates to `setup_telemetry`). Add `observability-openlit` for the production OpenLIT backend. |
+| `traceloop` | `pip install 'ai-parrot[observability,observability-traceloop]'` | **Local/dev**: OpenLLMetry (Traceloop) owns the OTLP pipeline + auto-instruments the LLM SDKs with prompt/completion capture. Mutually exclusive with OpenLIT. |
 
 The Prometheus backend exposes `parrot_llm_requests_total`,
 `parrot_llm_input_tokens_total`, `parrot_llm_output_tokens_total`,

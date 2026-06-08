@@ -444,6 +444,15 @@ observability-openlit = [
     "openlit>=1.40.0",
 ]
 
+# Optional OpenLLMetry (Traceloop) backend (opt-in via enable_traceloop=True).
+# A simple, content-rich local/dev tracing path. Mutually exclusive with OpenLIT
+# at runtime. The Traceloop.init params used (app_name, api_endpoint, api_key,
+# disable_batch, telemetry_enabled, resource_attributes, headers) are stable
+# across the traceloop-sdk 0.x line; floor pinned to avoid the pre-0.30 API.
+observability-traceloop = [
+    "traceloop-sdk>=0.40.0,<1.0",
+]
+
 # Pluggable usage-logging: Prometheus backend (pull-based metrics + cost).
 # The default "logging" usage backend needs NO extra — it uses stdlib logging.
 observability-prometheus = [
