@@ -50,7 +50,7 @@
       "feature_id": "FEAT-228",
       "feature": "per-agent-cost-usage-metrics",
       "spec": "sdd/specs/per-agent-cost-usage-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Touches bots/base.py + bots/agent.py only; file-disjoint from 1502/1503/1504 once 1499/1500 land, but spec runs all tasks sequentially in one worktree.",
       "assigned_to": null,
       "started_at": "2026-06-08T13:24:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1501-bot-invocation-wrapping.md"
+      "completed_at": "2026-06-08T13:38:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1501-bot-invocation-wrapping.md"
     },
     {
       "id": "TASK-1502",
