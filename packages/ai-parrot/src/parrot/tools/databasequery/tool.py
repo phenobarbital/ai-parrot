@@ -595,7 +595,7 @@ class DatabaseQueryTool(AbstractTool):
                 )
                 from parrot.tools.dataset_manager.sources.rls import inject_rls_sql
                 from parrot.tools.dataset_manager.sources.dialects import driver_to_dialect
-                from parrot.tools.dataset_manager.tool import _pctx_var
+                from parrot.auth.context import _pctx_var
 
                 _ctx = _pctx_var.get(None)
                 if _ctx is not None:
@@ -739,7 +739,7 @@ class DatabaseQueryTool(AbstractTool):
         """
         # FEAT-228: explicit driver:connect gate before the test query.
         if self._dataplane_guard is not None:
-            from parrot.tools.dataset_manager.tool import _pctx_var
+            from parrot.auth.context import _pctx_var
             from parrot.auth.exceptions import AuthorizationRequired
 
             _ctx = _pctx_var.get(None)

@@ -14,7 +14,12 @@ from parrot.tools.dataset_manager.sources.rls import (
 
 
 class TestInjectRlsSql:
-    """Tests for the SQL wrapping injection strategy."""
+    """Tests for the SQL wrapping injection strategy.
+
+    Values are inlined (safely escaped) into the SQL string because
+    SQLQuerySource uses str.format()-style substitution and cannot bind named
+    :p0 parameters via a driver.  bound_params is always {} after injection.
+    """
 
     def test_single_predicate(self) -> None:
         pred = RlsPredicate(
@@ -25,9 +30,14 @@ class TestInjectRlsSql:
         sql, params = inject_rls_sql("SELECT * FROM sales.orders", "postgres", [pred])
         assert "_rls" in sql
         assert "WHERE" in sql
-        assert ":p0" in sql
-        assert ":p1" in sql
-        assert params == {"p0": ["northeast"], "p1": ["southeast"]}
+        # Values are inlined — placeholder names should NOT appear in the SQL
+        assert ":p0" not in sql
+        assert ":p1" not in sql
+        # Inlined values ARE in the SQL (safely quoted)
+        assert "'northeast'" in sql
+        assert "'southeast'" in sql
+        # bound_params is always empty when values are inlined
+        assert params == {}
 
     def test_no_predicates_passthrough(self) -> None:
         sql, params = inject_rls_sql("SELECT * FROM sales.orders", "postgres", [])
@@ -42,26 +52,41 @@ class TestInjectRlsSql:
         )
         pred2 = RlsPredicate(
             table="t2",
-            sql_predicate="b = :p1",
-            bound_params={"p1": ["y"]},
+            sql_predicate="b = :p0",  # same placeholder name — must not collide
+            bound_params={"p0": ["y"]},
         )
         sql, params = inject_rls_sql("SELECT * FROM t", "postgres", [pred1, pred2])
         assert "AND" in sql
-        assert "p0" in params
-        assert "p1" in params
+        # Values inlined, no placeholders remain
+        assert ":p0" not in sql
+        assert "'x'" in sql
+        assert "'y'" in sql
+        assert params == {}
 
     def test_no_value_interpolation_ac9(self) -> None:
-        """AC9: crafted values must not appear in the SQL string."""
+        """AC9: crafted values must be safely escaped when inlined into SQL.
+
+        Values are inlined via single-quote doubling (consistent with
+        SQLQuerySource._escape_value).  The raw unescaped injection string
+        must not appear verbatim; the doubled-quote form must be present.
+        """
+        malicious = "'; DROP TABLE users; --"
         pred = RlsPredicate(
             table="t",
             sql_predicate="region IN (:p0)",
-            bound_params={"p0": ["'; DROP TABLE users; --"]},
+            bound_params={"p0": [malicious]},
         )
         sql, params = inject_rls_sql("SELECT * FROM t", "postgres", [pred])
-        assert "DROP" not in sql
-        assert "'; DROP TABLE users; --" not in sql
-        # But the malicious value IS in params — driver will bind it safely
-        assert "'; DROP TABLE users; --" in params["p0"]
+        # The single-quote must be doubled — the raw form starts with '  but
+        # the escaped form has '' (two quotes) which prevents SQL injection.
+        assert "'';" in sql  # doubled single-quote before the semicolon
+        # No residual placeholders
+        assert ":p0" not in sql
+        # bound_params is empty — values are already in the SQL
+        assert params == {}
+        # The structure is valid SQL wrapping
+        assert "_rls" in sql
+        assert "WHERE" in sql
 
     def test_wrapped_sql_structure(self) -> None:
         """Wrapped SQL should be 'SELECT * FROM (<orig>) AS _rls WHERE ...'."""
@@ -74,6 +99,27 @@ class TestInjectRlsSql:
         assert sql.startswith("SELECT * FROM (")
         assert "SELECT id FROM orders" in sql
         assert "_rls" in sql
+        # Value inlined
+        assert "'val'" in sql
+
+    def test_multiple_predicates_no_param_collision(self) -> None:
+        """Two predicates with the same placeholder name must not collide."""
+        pred1 = RlsPredicate(
+            table="t1",
+            sql_predicate="region = :p0",
+            bound_params={"p0": ["northeast"]},
+        )
+        pred2 = RlsPredicate(
+            table="t2",
+            sql_predicate="dept = :p0",
+            bound_params={"p0": ["engineering"]},
+        )
+        sql, params = inject_rls_sql("SELECT * FROM t1 JOIN t2 ON t1.id=t2.id", "postgres", [pred1, pred2])
+        assert "AND" in sql
+        assert "'northeast'" in sql
+        assert "'engineering'" in sql
+        assert ":p0" not in sql
+        assert params == {}
 
 
 class TestInjectRlsTableSource:
@@ -90,7 +136,23 @@ class TestInjectRlsTableSource:
         )
         result = inject_rls_table_source(source, [pred])
         assert result is source  # in-place mutation
-        assert "p0" in source._permanent_filter
+        # The filter key must be the actual column name, not the placeholder "p0"
+        assert "region" in source._permanent_filter
+        assert "northeast" in source._permanent_filter["region"]
+        assert "p0" not in source._permanent_filter
+
+    def test_extends_permanent_filter_multi_value(self) -> None:
+        """Multiple bound params (one value each) are flattened under the column."""
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        source = TableSource(table="sales.orders", driver="pg")
+        pred = RlsPredicate(
+            table="sales.orders",
+            sql_predicate="region IN (:p0, :p1)",
+            bound_params={"p0": ["northeast"], "p1": ["southeast"]},
+        )
+        inject_rls_table_source(source, [pred])
+        assert source._permanent_filter["region"] == ["northeast", "southeast"]
 
     def test_empty_predicates_unchanged(self) -> None:
         from parrot.tools.dataset_manager.sources.table import TableSource
@@ -114,7 +176,10 @@ class TestInjectRlsQuerySlug:
         )
         result = inject_rls_query_slug(source, [pred])
         assert result is source
-        assert "p0" in source._permanent_filter
+        # Key must be the actual column name, not the placeholder
+        assert "region" in source._permanent_filter
+        assert "east" in source._permanent_filter["region"]
+        assert "p0" not in source._permanent_filter
 
 
 class TestInjectRlsPostfetch:

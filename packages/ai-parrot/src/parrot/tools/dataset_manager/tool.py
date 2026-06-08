@@ -9,7 +9,6 @@ Provides:
 - LLM-exposed tools for discovery, metadata retrieval, and management
 """
 from __future__ import annotations
-import contextvars
 import io
 import re
 import warnings
@@ -45,15 +44,12 @@ if TYPE_CHECKING:
     from ...auth.permission import PermissionContext
     from ...auth.resolver import AbstractPermissionResolver
 
-# Module-level ContextVar that isolates the per-call PermissionContext for each
-# asyncio task running on a shared DatasetManager instance.  Set by
-# DatasetManager._pre_execute and read by _get_current_pctx.  Using a
-# ContextVar (rather than an instance attribute) ensures that two concurrent
-# requests processed by the same DatasetManager cannot bleed each other's
-# PermissionContext across an await boundary.
-_pctx_var: contextvars.ContextVar = contextvars.ContextVar(
-    "dataset_manager_pctx", default=None
-)
+# _pctx_var is the module-level ContextVar that isolates the per-call
+# PermissionContext for each asyncio task on a shared DatasetManager instance.
+# Authoritative definition lives in parrot.auth.context to avoid cross-module
+# coupling (FEAT-228 code-review fix [4]).  Re-exported here for backward
+# compatibility with existing usages in this module and DatabaseQueryTool.
+from parrot.auth.context import _pctx_var  # noqa: F401
 
 try:
     logger = logging.getLogger(__name__)
@@ -2662,8 +2658,17 @@ class DatasetManager(AbstractToolkit):
         """
         # Store in the module-level ContextVar so concurrent tasks on this shared
         # instance each see their own context (not another request's context).
+        # Save the returned token so _post_execute can reset the ContextVar to
+        # its previous value after the call, preventing context leakage.
+        import asyncio
+
         pctx = kwargs.get("_permission_context")
-        _pctx_var.set(pctx)
+        token = _pctx_var.set(pctx)
+        task = asyncio.current_task()
+        if task is not None:
+            if not hasattr(self, "_pctx_tokens"):
+                self._pctx_tokens: Dict[int, Any] = {}
+            self._pctx_tokens[id(task)] = token
 
         if not self._policy_guard or not pctx:
             return
@@ -2696,6 +2701,31 @@ class DatasetManager(AbstractToolkit):
                     f"for user '{_user_id}' (Layer-2 defence-in-depth)."
                 ),
             )
+
+    async def _post_execute(self, tool_name: str, result: Any, **kwargs) -> Any:
+        """Reset the ContextVar token after tool execution.
+
+        Resets ``_pctx_var`` to its value before ``_pre_execute`` ran.  This
+        prevents a stale ``PermissionContext`` from leaking into subsequent
+        calls if the ContextVar is inspected outside of the normal
+        ``_pre_execute`` → tool → ``_post_execute`` lifecycle.
+
+        Args:
+            tool_name: Name of the tool that just executed (unused).
+            result: Raw result from the bound method.
+            **kwargs: Tool arguments (unused here).
+
+        Returns:
+            The unchanged ``result``.
+        """
+        import asyncio
+
+        task = asyncio.current_task()
+        if task is not None and hasattr(self, "_pctx_tokens"):
+            token = self._pctx_tokens.pop(id(task), None)
+            if token is not None:
+                _pctx_var.reset(token)
+        return result
 
     # ─────────────────────────────────────────────────────────────
     # LLM-Exposed Tools (Async methods become tools via AbstractToolkit)

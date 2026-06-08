@@ -212,8 +212,41 @@ class AuthorizingDataSource(DataSource):
                 len(predicates),
             )
         else:
+            # Try to detect MongoSource and apply Mongo RLS filter.
+            # We use a lazy import + isinstance check to avoid hard dependency.
+            try:
+                from parrot.tools.dataset_manager.sources.mongo import MongoSource
+                from parrot.tools.dataset_manager.sources.rls import inject_rls_mongo
+
+                if isinstance(self._inner, MongoSource):
+                    mongo_filter = inject_rls_mongo(self._inner, predicates)
+                    if mongo_filter:
+                        # MongoSource exposes `required_filter` which is merged
+                        # into every query.  Merge the RLS $and conditions.
+                        existing = getattr(self._inner, "required_filter", None) or {}
+                        if existing:
+                            self._inner.required_filter = {
+                                "$and": [existing, mongo_filter]
+                            }
+                        else:
+                            self._inner.required_filter = mongo_filter
+                    self._logger.debug(
+                        "AuthorizingDataSource: injected RLS into MongoSource "
+                        "(%d predicates)",
+                        len(predicates),
+                    )
+                    return
+            except ImportError:
+                pass
+
+            # TODO: FEAT-228 post-fetch RLS deferred — Airtable and Smartsheet
+            # sources return a DataFrame after fetch; applying inject_rls_postfetch
+            # here requires a pre/post split in fetch() that is not yet implemented.
+            # For now, non-SQL/Table/Slug/Mongo sources receive no RLS filtering.
+            # Track in: https://github.com/your-org/ai-parrot/issues/FEAT-228
             self._logger.debug(
-                "AuthorizingDataSource: RLS injection not supported for source type %s",
+                "AuthorizingDataSource: RLS injection not supported for source type %s "
+                "(post-fetch RLS for Airtable/Smartsheet is deferred — FEAT-228 TODO)",
                 type(self._inner).__name__,
             )
 
