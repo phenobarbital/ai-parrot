@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-230
 **Date**: 2026-06-08
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 > Source of record: research-grounded proposal
