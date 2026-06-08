@@ -109,7 +109,7 @@
       "feature_id": "FEAT-228",
       "feature": "dataplane-authz",
       "spec": "sdd/specs/dataplane-authz.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -119,8 +119,8 @@
       "parallelism_notes": "Uses RlsRegistry from TASK-1493; modifies parrot/auth/__init__.py",
       "assigned_to": null,
       "started_at": "2026-06-08T10:56:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1495-dataplane-policy-guard.md"
+      "completed_at": "2026-06-08T11:08:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1495-dataplane-policy-guard.md"
     },
     {
       "id": "TASK-1496",
