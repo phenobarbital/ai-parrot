@@ -33,6 +33,8 @@ from parrot.core.events.lifecycle.events import (
     AfterInvokeEvent,
     InvokeFailedEvent,
 )
+# FEAT-228: Per-agent cost & usage metrics — bind agent identity around each invocation
+from parrot.observability.context import current_agent_name
 
 
 class BaseBot(AbstractBot):
@@ -167,6 +169,57 @@ class BaseBot(AbstractBot):
         Returns:
             AIMessage: The response from the LLM
         """
+        # FEAT-228: bind agent identity for per-agent cost/usage attribution.
+        # Token-based set/reset is nested-safe (inner agents restore outer value).
+        _agt_token_conv = current_agent_name.set(self.name)
+        try:
+            return await self._conversation_body(
+                question=question,
+                session_id=session_id,
+                user_id=user_id,
+                search_type=search_type,
+                search_kwargs=search_kwargs,
+                metric_type=metric_type,
+                use_vector_context=use_vector_context,
+                use_conversation_history=use_conversation_history,
+                return_sources=return_sources,
+                return_context=return_context,
+                memory=memory,
+                ensemble_config=ensemble_config,
+                mode=mode,
+                ctx=ctx,
+                output_mode=output_mode,
+                format_kwargs=format_kwargs,
+                system_prompt=system_prompt,
+                trace_context=trace_context,
+                **kwargs,
+            )
+        finally:
+            current_agent_name.reset(_agt_token_conv)
+
+    async def _conversation_body(
+        self,
+        question: str,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        search_type: str = 'similarity',
+        search_kwargs: dict = None,
+        metric_type: Optional[str] = None,
+        use_vector_context: bool = True,
+        use_conversation_history: bool = True,
+        return_sources: bool = True,
+        return_context: bool = False,
+        memory: Optional[Callable] = None,
+        ensemble_config: dict = None,
+        mode: str = "adaptive",
+        ctx: Optional[RequestContext] = None,
+        output_mode: OutputMode = OutputMode.DEFAULT,
+        format_kwargs: dict = None,
+        system_prompt: Optional[str] = None,
+        trace_context=None,
+        **kwargs
+    ) -> AIMessage:
+        """Internal implementation of conversation(); called inside agent_identity scope."""
         if ctx is None:
             ctx = _current_ctx.get()
         # FEAT-224: pre-LLM output-mode routing. Runs once, and only when the
@@ -523,6 +576,8 @@ class BaseBot(AbstractBot):
         Returns:
             AIMessage: The response from the LLM
         """
+        # FEAT-228: bind agent identity for per-agent cost/usage attribution.
+        _agt_token_invoke = current_agent_name.set(self.name)
         if ctx is None:
             ctx = _current_ctx.get()
         # Generate session ID if not provided
@@ -689,6 +744,7 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self.status = AgentStatus.IDLE
+            current_agent_name.reset(_agt_token_invoke)  # FEAT-228
 
     # ── ask() lifecycle hooks (overridden by mixins) ──
 
@@ -772,6 +828,8 @@ class BaseBot(AbstractBot):
         Returns:
             AIMessage or formatted output based on output_mode
         """
+        # FEAT-228: bind agent identity for per-agent cost/usage attribution.
+        _agt_token_ask = current_agent_name.set(self.name)
         if ctx is None:
             ctx = _current_ctx.get()
         # FEAT-224: pre-LLM output-mode routing. Runs once, and only when the
@@ -1306,6 +1364,7 @@ class BaseBot(AbstractBot):
         finally:
             self.status = AgentStatus.IDLE
             self._current_trace_context = None
+            current_agent_name.reset(_agt_token_ask)  # FEAT-228
 
     async def ask_stream(
         self,
@@ -1328,6 +1387,8 @@ class BaseBot(AbstractBot):
         **kwargs
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream responses using the same preparation logic as :meth:`ask`."""
+        # FEAT-228: bind agent identity for per-agent cost/usage attribution.
+        _agt_token_stream = current_agent_name.set(self.name)
         if ctx is None:
             ctx = _current_ctx.get()
         session_id = session_id or str(uuid.uuid4())
@@ -1610,3 +1671,4 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self._current_trace_context = None
+            current_agent_name.reset(_agt_token_stream)  # FEAT-228
