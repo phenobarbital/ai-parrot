@@ -13,4 +13,7 @@ __all__ = (
     "AbstractClient",
     "LLM_PRESETS",
     "StreamingRetryConfig",
+    "ZaiClient",
 )
+
+from .zai import ZaiClient

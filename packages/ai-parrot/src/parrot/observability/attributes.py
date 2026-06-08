@@ -144,6 +144,8 @@ def build_before_client_attrs(event: BeforeClientCallEvent) -> dict[str, Any]:
         attrs["gen_ai.request.temperature"] = event.temperature
     if event.system_prompt_hash:
         attrs["parrot.system_prompt_hash"] = event.system_prompt_hash
+    if event.agent_name:  # FEAT-228: omit when None/empty
+        attrs["parrot.agent.name"] = event.agent_name
     return attrs
 
 
@@ -175,6 +177,8 @@ def build_after_client_attrs(
         attrs["gen_ai.response.finish_reason"] = event.finish_reason
     if cost_usd is not None:
         attrs["parrot.cost.usd"] = cost_usd
+    if event.agent_name:  # FEAT-228: omit when None/empty
+        attrs["parrot.agent.name"] = event.agent_name
     return attrs
 
 
@@ -187,13 +191,16 @@ def build_client_failed_attrs(event: ClientCallFailedEvent) -> dict[str, Any]:
     Returns:
         Dict of OTel error + GenAI SemConv attribute key-value pairs.
     """
-    return {
+    attrs: dict[str, Any] = {
         "gen_ai.system": resolve_gen_ai_system(event.client_name),
         "gen_ai.response.model": event.model,
         "parrot.client.duration_ms": event.duration_ms,
         "error.type": event.error_type,
         "error.message": event.error_message,
     }
+    if event.agent_name:  # FEAT-228: omit when None/empty
+        attrs["parrot.agent.name"] = event.agent_name
+    return attrs
 
 
 def build_before_tool_attrs(event: BeforeToolCallEvent) -> dict[str, Any]:

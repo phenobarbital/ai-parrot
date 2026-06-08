@@ -12,7 +12,6 @@ Automatically detects and renders:
 - Plotly charts
 - Matplotlib figures
 - DataFrames
-- Bokeh plots
 - Altair charts
 - Panel dashboards
 - HTML widgets

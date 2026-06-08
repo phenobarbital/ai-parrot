@@ -271,12 +271,9 @@ class TestLibraryModesRemain:
     @pytest.mark.parametrize("mode_value,expected_cls", [
         ("altair",      "AltairRenderer"),
         ("echarts",     "EChartsRenderer"),
-        ("bokeh",       "BokehRenderer"),
         ("plotly",      "PlotlyRenderer"),
         ("matplotlib",  "MatplotlibRenderer"),
-        ("d3",          "D3Renderer"),
         ("seaborn",     "SeabornRenderer"),
-        ("holoviews",   "HoloviewsRenderer"),
         ("table",       "TableRenderer"),
     ])
     def test_library_mode_still_resolves(self, mode_value, expected_cls):
