@@ -32,7 +32,7 @@ Transform the user's query and the agent's analysis into a fully functional, sta
 2.  **Visualize (Code Generation):**
     - If the user asks for charts, maps, or visual insights, generate the Python code to create them.
     - **Crucial:** The code MUST be self-contained (using `df` as the variable name for the data).
-    - Support libraries: `plotly`, `altair`, `matplotlib`, `bokeh`.
+    - Support libraries: `plotly`, `altair`, `matplotlib`.
 
 3.  **Structured Response:**
     - Return the response strictly following the `PandasAgentResponse` schema.

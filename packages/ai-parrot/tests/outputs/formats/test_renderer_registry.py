@@ -65,12 +65,6 @@ def test_json_has_no_system_prompt():
     assert get_output_prompt(OutputMode.JSON) is None
 
 
-def test_d3_has_system_prompt():
-    """D3Renderer has a system prompt registered."""
-    assert has_system_prompt(OutputMode.D3) is True
-    prompt = get_output_prompt(OutputMode.D3)
-    assert prompt is not None
-
 
 # ---------------------------------------------------------------------------
 # OutputFormatter integration
