@@ -14,7 +14,7 @@
       "feature_id": "FEAT-228",
       "feature": "per-agent-cost-usage-metrics",
       "spec": "sdd/specs/per-agent-cost-usage-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation. File-disjoint from TASK-1500 (new module vs events file) so the two could run concurrently, but spec mandates per-spec sequential execution in one worktree.",
       "assigned_to": null,
       "started_at": "2026-06-08T13:24:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1499-agent-identity-contextvar.md"
+      "completed_at": "2026-06-08T13:30:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1499-agent-identity-contextvar.md"
     },
     {
       "id": "TASK-1500",
