@@ -230,10 +230,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: —
-**Date**: —
-**Notes**: —
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-08
+**Notes**: Added `dataplane_guard` param to `__init__`, stored as `self._dataplane_guard`. Added `_make_source()` factory method (skips InMemorySource). Wired into all 10 registration paths: `add_source`, `add_query`, `add_table_source`, `add_sql_source`, `add_airtable_source`, `add_smartsheet_source`, `add_iceberg_source`, `add_mongo_source`, `add_deltatable_source`, `add_composite_dataset`. Also wired into `add_dataset()` ad-hoc source construction paths. Added TYPE_CHECKING import for DataPlanePolicyGuard. All 13 new tests pass; 94 FEAT-228 tests pass total.
 
 **Deviations from spec**: none

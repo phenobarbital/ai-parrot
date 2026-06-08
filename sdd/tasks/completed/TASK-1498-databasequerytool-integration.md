@@ -235,10 +235,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-08
+**Notes**: Added `dataplane_guard` kwarg to `__init__` (popped before super() to avoid rejection). In `_execute()`, added guard gate that runs steps 1-6 of the enforcement chain (authorize_source + RLS injection) directly without calling AuthorizingDataSource.fetch() to avoid double-executing the query. The RLS-rewritten SQL is passed to the real execution. Added explicit driver:connect gate in `test_connection()`. `get_supported_drivers()` left sync/unfiltered — enforcement is covered by `_execute()` and `test_connection()`. `_pctx_var` imported from `parrot.tools.dataset_manager.tool` (module-level ContextVar). All 11 new tests pass; 105 FEAT-228 tests pass total.
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-
-**Deviations from spec**: none
+**Deviations from spec**: `get_supported_drivers()` not filtered by driver:connect (sync method, enforcement covered by _execute gate).
