@@ -111,7 +111,7 @@
       "feature_id": "FEAT-228",
       "feature": "per-agent-cost-usage-metrics",
       "spec": "sdd/specs/per-agent-cost-usage-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "Touches attributes.py + trace.py only; file-disjoint from 1503 but sequential per spec strategy.",
       "assigned_to": null,
       "started_at": "2026-06-08T13:24:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1504-client-span-agent-attr.md"
+      "completed_at": "2026-06-08T13:45:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1504-client-span-agent-attr.md"
     }
   ]
 }
