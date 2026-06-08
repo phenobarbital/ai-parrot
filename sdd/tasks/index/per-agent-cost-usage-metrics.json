@@ -70,7 +70,7 @@
       "feature_id": "FEAT-228",
       "feature": "per-agent-cost-usage-metrics",
       "spec": "sdd/specs/per-agent-cost-usage-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Touches clients/base.py only; file-disjoint from siblings but sequential per spec strategy.",
       "assigned_to": null,
       "started_at": "2026-06-08T13:24:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1502-client-populate-agent-name.md"
+      "completed_at": "2026-06-08T13:39:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1502-client-populate-agent-name.md"
     },
     {
       "id": "TASK-1503",
