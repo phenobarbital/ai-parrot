@@ -14,7 +14,7 @@
       "feature_id": "FEAT-228",
       "feature": "dataplane-authz",
       "spec": "sdd/specs/dataplane-authz.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Leaf module — no shared files with TASK-1492 or TASK-1493; can run in a separate worktree",
       "assigned_to": null,
       "started_at": "2026-06-08T10:56:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1490-driver-dialect-map.md"
+      "completed_at": "2026-06-08T10:59:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1490-driver-dialect-map.md"
     },
     {
       "id": "TASK-1491",
