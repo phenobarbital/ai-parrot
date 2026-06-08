@@ -142,6 +142,15 @@ METHOD_TO_SERVICE_MAP = {
     "wd_get_payroll_balances": WorkdayService.PAYROLL,
     "wd_get_payroll_results": WorkdayService.PAYROLL,
     "wd_get_company_payment_dates": WorkdayService.PAYROLL,
+    # Homologated read tools (FEAT-230 Module 3)
+    "find_employee_id_by_name": WorkdayService.HUMAN_RESOURCES,
+    "get_current_user_info": WorkdayService.HUMAN_RESOURCES,
+    "get_more_employee_data": WorkdayService.HUMAN_RESOURCES,
+    "get_personal_information": WorkdayService.HUMAN_RESOURCES,
+    "get_direct_reports": WorkdayService.HUMAN_RESOURCES,
+    "get_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
+    "get_current_user_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
+    "get_current_user_time_off_history": WorkdayService.ABSENCE_MANAGEMENT,
 }
 
 
@@ -340,6 +349,41 @@ class GetCompanyPaymentDatesInput(BaseModel):
     pay_group_id: Optional[str] = Field(
         default=None,
         description="Optional Pay Group ID to filter by"
+    )
+
+
+# Homologated read-tool input schemas (FEAT-230 Module 3)
+class FindEmployeeByNameInput(BaseModel):
+    """Input for finding a worker by name."""
+
+    name: str = Field(description="Full or partial worker name to search for")
+    max_results: int = Field(default=50, description="Maximum number of results")
+
+
+class GetWorkerInfoInput(BaseModel):
+    """Input for retrieving worker information by ID."""
+
+    worker_id: str = Field(description="Workday Employee ID")
+
+
+class GetTimeOffHistoryInput(BaseModel):
+    """Input for retrieving a worker's time-off request history."""
+
+    worker_id: str = Field(description="Workday Employee ID")
+    start_date: Optional[str] = Field(
+        default=None, description="Start of date range (YYYY-MM-DD). Defaults to 7 days ago."
+    )
+    end_date: Optional[str] = Field(
+        default=None, description="End of date range (YYYY-MM-DD). Defaults to today."
+    )
+
+
+class GetTimeOffBalanceInput2(BaseModel):
+    """Input for retrieving time off plan balances."""
+
+    worker_id: str = Field(description="Workday Employee ID")
+    time_off_plan_id: Optional[str] = Field(
+        default=None, description="Optional specific time off plan ID to filter"
     )
 
 
@@ -1548,6 +1592,271 @@ class WorkdayToolkit(AbstractToolkit):
                 )
 
         return df.to_dict(orient="records")
+
+    # ------------------------------------------------------------------
+    # Homologated read tools — FEAT-230 Module 3
+    # ------------------------------------------------------------------
+
+    @tool_schema(FindEmployeeByNameInput)
+    async def find_employee_id_by_name(
+        self,
+        name: str,
+        max_results: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Find Workday employee IDs and names matching a worker name.
+
+        Searches workers by legal name (contains match). Returns a list of
+        matching workers with their employee ID and display name.
+
+        Args:
+            name: Full or partial worker name to search for.
+            max_results: Maximum number of results to return.
+
+        Returns:
+            List of dicts with worker_id and formatted_name keys.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_workers")
+        request = {
+            "Request_Criteria": {
+                "Field_And_Parameter_Criteria_Data": {
+                    "Field_Name": "Legal_Name",
+                    "Operator": "Contains",
+                    "Value": name,
+                },
+                "Exclude_Inactive_Workers": True,
+            },
+            "Response_Filter": {"Page": 1, "Count": max_results},
+            "Response_Group": {
+                "Include_Reference": True,
+                "Include_Personal_Information": True,
+            },
+        }
+        result = await svc.call_operation("Get_Workers", **request)
+        workers = self._parse_workers_response(result)
+        output = []
+        for w in workers:
+            worker_data = w.get("Worker_Data", {})
+            output.append({
+                "worker_id": worker_data.get("Worker_ID"),
+                "formatted_name": (
+                    worker_data.get("Personal_Data", {})
+                    .get("Name_Data", {})
+                    .get("Preferred_Name_Data", {})
+                    .get("Name_Detail_Data", {})
+                    .get("Formatted_Name")
+                    or worker_data.get("Worker_ID")
+                ),
+            })
+        return output
+
+    @tool_schema(GetWorkerInfoInput)
+    async def get_current_user_info(self, worker_id: str) -> Dict[str, Any]:
+        """Get comprehensive Workday information for a worker.
+
+        Returns all available fields for the worker including employment,
+        compensation, organisation, and management chain data.
+
+        Args:
+            worker_id: Workday Employee ID.
+
+        Returns:
+            Dict with all available worker fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_workers")
+        models = await svc.fetch_models("get_workers", worker_id=worker_id)
+        return models[0].model_dump(mode="json") if models else {}
+
+    @tool_schema(GetWorkerInfoInput)
+    async def get_more_employee_data(self, worker_id: str) -> Dict[str, Any]:
+        """Get extended employee data from Workday including benefits, roles, and documents.
+
+        Similar to get_current_user_info but emphasises extended fields such as
+        benefits, assigned roles, and document details.
+
+        Args:
+            worker_id: Workday Employee ID.
+
+        Returns:
+            Dict with extended worker fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_workers")
+        models = await svc.fetch_models("get_workers", worker_id=worker_id)
+        return models[0].model_dump(mode="json") if models else {}
+
+    @tool_schema(GetWorkerInfoInput)
+    async def get_personal_information(self, worker_id: str) -> Dict[str, Any]:
+        """Get personal information for a Workday worker.
+
+        Returns name, date of birth, gender, nationality, marital status,
+        and contact details as stored in Workday.
+
+        Args:
+            worker_id: Workday Employee ID.
+
+        Returns:
+            Dict with personal information fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_workers")
+        models = await svc.fetch_models("get_workers", worker_id=worker_id)
+        if not models:
+            return {}
+        m = models[0].model_dump(mode="json")
+        return {
+            "worker_id": m.get("worker_id"),
+            "first_name": m.get("first_name"),
+            "middle_name": m.get("middle_name"),
+            "last_name": m.get("last_name"),
+            "formatted_name": m.get("formatted_name"),
+            "reporting_name": m.get("reporting_name"),
+            "pref_formatted_name": m.get("pref_formatted_name"),
+            "email": m.get("email"),
+            "phone": m.get("phone"),
+            "date_of_birth": m.get("date_of_birth"),
+            "gender": m.get("gender"),
+            "nationality": m.get("nationality"),
+            "country": m.get("country"),
+        }
+
+    @tool_schema(GetWorkerInfoInput)
+    async def get_direct_reports(self, worker_id: str) -> List[Dict[str, Any]]:
+        """Get the direct reports (subordinates) of a manager in Workday.
+
+        Returns all active workers whose immediate manager is the given worker.
+
+        Args:
+            worker_id: Workday Employee ID of the manager.
+
+        Returns:
+            List of worker dicts for each direct report.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_workers")
+        request = {
+            "Request_Criteria": {
+                "Manager_Reference": {
+                    "ID": [{"type": "Employee_ID", "_value_1": worker_id}]
+                },
+                "Exclude_Inactive_Workers": True,
+            },
+            "Response_Filter": {"Page": 1, "Count": 200},
+            "Response_Group": {
+                "Include_Reference": True,
+                "Include_Personal_Information": True,
+                "Include_Employment_Information": True,
+            },
+        }
+        result = await svc.call_operation("Get_Workers", **request)
+        return self._parse_workers_response(result)
+
+    @tool_schema(GetTimeOffBalanceInput2)
+    async def get_time_off_balance(
+        self,
+        worker_id: str,
+        time_off_plan_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get time off plan balances for a worker.
+
+        Returns available balances for all time off plans assigned to the
+        worker. Optionally filter by a specific time off plan.
+
+        Args:
+            worker_id: Workday Employee ID.
+            time_off_plan_id: Optional time off plan ID to filter.
+
+        Returns:
+            List of dicts with plan name, balance, and unit fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_time_off_balances")
+        fetch_kwargs: Dict[str, Any] = {"worker_id": worker_id}
+        if time_off_plan_id:
+            fetch_kwargs["time_off_plan_id"] = time_off_plan_id
+        models = await svc.fetch_models("get_time_off_balances", **fetch_kwargs)
+        return [m.model_dump(mode="json") for m in models]
+
+    @tool_schema(GetWorkerInfoInput)
+    async def get_current_user_time_off_balance(
+        self,
+        worker_id: str,
+    ) -> List[Dict[str, Any]]:
+        """Get all time off plan balances for a worker (all plans).
+
+        Returns the current available balance for every time off plan
+        assigned to the worker.
+
+        Args:
+            worker_id: Workday Employee ID.
+
+        Returns:
+            List of dicts with plan name, balance, and unit fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_time_off_balances")
+        models = await svc.fetch_models("get_time_off_balances", worker_id=worker_id)
+        return [m.model_dump(mode="json") for m in models]
+
+    @tool_schema(GetTimeOffHistoryInput)
+    async def get_current_user_time_off_history(
+        self,
+        worker_id: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get time off request history for a worker.
+
+        Returns submitted time off requests within the given date range.
+        Defaults to the last 7 days when no range is provided.
+
+        Args:
+            worker_id: Workday Employee ID.
+            start_date: Start of date range (YYYY-MM-DD).
+            end_date: End of date range (YYYY-MM-DD).
+
+        Returns:
+            List of time request dicts with dates, status, and hours.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_time_requests")
+        fetch_kwargs: Dict[str, Any] = {"worker_id": worker_id}
+        if start_date:
+            fetch_kwargs["start_date"] = start_date
+        if end_date:
+            fetch_kwargs["end_date"] = end_date
+        models = await svc.fetch_models("get_time_requests", **fetch_kwargs)
+        return [m.model_dump(mode="json") for m in models]
+
+    async def get_today_date_and_day_of_week(self) -> Dict[str, str]:
+        """Return today's ISO date and the day of the week name.
+
+        No Workday call is made. Useful for agents that need the current
+        date context before performing date-relative operations.
+
+        Returns:
+            Dict with 'date' (ISO-8601) and 'day_of_week' keys.
+        """
+        from datetime import date as _date
+        d = _date.today()
+        return {"date": d.isoformat(), "day_of_week": d.strftime("%A")}
 
     def _parse_custom_report_xml(self, xml_bytes: bytes) -> List[Dict[str, Any]]:
         """
