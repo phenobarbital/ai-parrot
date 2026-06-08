@@ -1,7 +1,7 @@
 """Multimodal Embedding Provider package.
 
 Exports the public API for multimodal (text + image) embedding providers,
-enums, result types, and image utilities.
+enums, result types, image utilities, and quantization helpers.
 
 Usage:
     from parrot.embeddings.multimodal import (
@@ -11,6 +11,9 @@ Usage:
         QuantizationMode,
         ImageInput,
         resolve_image,
+    )
+    from parrot.embeddings.multimodal.quantization import (
+        matryoshka_slice, l2_normalize, quantize, PGVECTOR_TYPE_MAP,
     )
 """
 

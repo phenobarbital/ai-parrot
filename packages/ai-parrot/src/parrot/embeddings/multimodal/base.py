@@ -260,8 +260,7 @@ class MultimodalEmbedding(EmbeddingModel):
         2. L2-renormalize each vector.
         3. Apply quantization (f32/f16/i8/b1).
 
-        This method is a stub in base.py — TASK-1485 wires in the real
-        implementation from ``parrot.embeddings.multimodal.quantization``.
+        Delegates to :func:`parrot.embeddings.multimodal.quantization.postprocess`.
 
         Args:
             features: Raw embedding array of shape (N, D).
@@ -269,5 +268,5 @@ class MultimodalEmbedding(EmbeddingModel):
         Returns:
             Processed embedding array.
         """
-        # Stub: wire real logic in TASK-1485
-        return features
+        from parrot.embeddings.multimodal.quantization import postprocess
+        return postprocess(features, self._output_dim, self._quantization)
