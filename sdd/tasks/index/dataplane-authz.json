@@ -129,7 +129,7 @@
       "feature_id": "FEAT-228",
       "feature": "dataplane-authz",
       "spec": "sdd/specs/dataplane-authz.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Keystone module — depends on resolver, opaque, RLS injection, and guard",
       "assigned_to": null,
       "started_at": "2026-06-08T10:56:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1496-authorizing-data-source.md"
+      "completed_at": "2026-06-08T11:09:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1496-authorizing-data-source.md"
     },
     {
       "id": "TASK-1497",
