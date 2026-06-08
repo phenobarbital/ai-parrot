@@ -93,7 +93,7 @@
       "feature_id": "FEAT-229",
       "feature": "multimodal-embedding-provider",
       "spec": "sdd/specs/multimodal-embedding-provider.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Only depends on quantization (TASK-1485) for type mapping; could theoretically parallel with TASK-1486/1487 but sequential per worktree strategy",
       "assigned_to": null,
       "started_at": "2026-06-08T10:57:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1488-pgvector-multimodal-schema.md"
+      "completed_at": "2026-06-08T11:13:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1488-pgvector-multimodal-schema.md"
     },
     {
       "id": "TASK-1489",
