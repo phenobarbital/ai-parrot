@@ -73,7 +73,7 @@
       "feature_id": "FEAT-229",
       "feature": "multimodal-embedding-provider",
       "spec": "sdd/specs/multimodal-embedding-provider.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Must register the concrete UFormEmbedding class",
       "assigned_to": null,
       "started_at": "2026-06-08T10:57:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1487-registry-catalog-integration.md"
+      "completed_at": "2026-06-08T11:08:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1487-registry-catalog-integration.md"
     },
     {
       "id": "TASK-1488",
