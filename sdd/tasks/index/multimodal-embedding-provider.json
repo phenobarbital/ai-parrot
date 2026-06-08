@@ -52,7 +52,7 @@
       "feature_id": "FEAT-229",
       "feature": "multimodal-embedding-provider",
       "spec": "sdd/specs/multimodal-embedding-provider.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Requires base ABC and quantization pipeline",
       "assigned_to": null,
       "started_at": "2026-06-08T10:57:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1486-uform-provider.md"
+      "completed_at": "2026-06-08T11:06:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1486-uform-provider.md"
     },
     {
       "id": "TASK-1487",
