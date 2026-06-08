@@ -411,3 +411,67 @@ async def test_scenario_7_metrics_unknown_when_agent_none() -> None:
         pt.attributes.get("parrot.agent.name") == "unknown"
         for pt in duration_pts
     ), "parrot.agent.name='unknown' not found for None agent"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-228: per-agent attribution — Scenarios 8 & 9 (client span attributes)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_scenario_8_client_span_has_agent_name() -> None:
+    """FEAT-228: client child span carries parrot.agent.name when agent is set."""
+    exporter = InMemorySpanExporter()
+    tp = _make_tracer_provider(exporter)
+
+    with scope() as registry:
+        trace_sub = GenAIOpenTelemetrySubscriber(
+            service_name="parrot-poc",
+            tracer_provider=tp,
+        )
+        trace_sub.register(registry)
+        await _drive_client_cycle_with_agent(
+            registry, agent_name="porygon", client_name="openai", model="gpt-4o-mini"
+        )
+
+    finished = exporter.get_finished_spans()
+    assert finished, "No spans collected"
+    # The client span has gen_ai.response.model or gen_ai.request.model set
+    client_spans = [
+        s for s in finished
+        if s.attributes.get("gen_ai.response.model") or s.attributes.get("gen_ai.request.model")
+    ]
+    assert client_spans, f"No client span found; spans: {[s.name for s in finished]}"
+    for span in client_spans:
+        assert span.attributes.get("parrot.agent.name") == "porygon", (
+            f"Expected parrot.agent.name='porygon' on span '{span.name}', "
+            f"got: {dict(span.attributes)}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_scenario_9_client_span_omits_agent_when_none() -> None:
+    """FEAT-228: client child span omits parrot.agent.name when agent_name is None."""
+    exporter = InMemorySpanExporter()
+    tp = _make_tracer_provider(exporter)
+
+    with scope() as registry:
+        trace_sub = GenAIOpenTelemetrySubscriber(
+            service_name="parrot-poc",
+            tracer_provider=tp,
+        )
+        trace_sub.register(registry)
+        # Regular cycle — agent_name=None (not passed to events)
+        await _drive_client_cycle(registry, client_name="openai", model="gpt-4o-mini")
+
+    finished = exporter.get_finished_spans()
+    assert finished, "No spans collected"
+    client_spans = [
+        s for s in finished
+        if s.attributes.get("gen_ai.response.model") or s.attributes.get("gen_ai.request.model")
+    ]
+    assert client_spans, f"No client span found; spans: {[s.name for s in finished]}"
+    for span in client_spans:
+        assert "parrot.agent.name" not in span.attributes, (
+            f"parrot.agent.name should be omitted when agent_name=None, "
+            f"but found it on span '{span.name}': {dict(span.attributes)}"
+        )
