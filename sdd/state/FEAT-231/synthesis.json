@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-231",
+  "mode": "enrichment",
+  "summary_oneline": "Wire a decoupled WS voice round-trip for AgentTalk: STT (existing VoiceTranscriber) -> text Agent -> synthesize AIMessage.response via VoiceSynthesizer (+ new Supertonic backend) -> return audio_base64 + structured content",
+  "synthesis_summary": "AI-Parrot already ships every primitive this request needs, just not assembled for AgentTalk. A shared, symmetric voice stack lives in parrot.voice: STT (VoiceTranscriber/FasterWhisper, FEAT-039) and a decoupled TTS layer (VoiceSynthesizer + AbstractTTSBackend, FEAT-213). The canonical AIMessage already separates the speakable text (response: str) from non-speakable payloads (output/data/media), exactly validating the requester's concern about not streaming the raw AIMessage. A full aiohttp WebSocket shell with auth + sessions + base64 audio framing already exists (VoiceChatHandler), and LiveVoiceResponse.to_websocket_message defines the audio_base64 reply convention. The work is therefore enrichment, not greenfield: (1) add a Supertonic AbstractTTSBackend, (2) wire STT -> a text Agent -> synthesize(AIMessage.response) -> return {audio_base64 + content}, reusing VoiceChatHandler's transport (either as a new 'pipeline' mode or a sibling handler). Distinct from the Gemini-Live VoiceBot, which FEAT-213 explicitly deferred.",
+  "localization": [
+    {"path": "packages/ai-parrot-integrations/src/parrot/voice/tts/synthesizer.py", "symbol": "VoiceSynthesizer._get_backend", "lines": "71-91", "role": "Lazy TTS backend dispatch — extension point for a Supertonic branch", "evidence": ["F002", "F008"], "confidence": "high"},
+    {"path": "packages/ai-parrot-integrations/src/parrot/voice/tts/backend.py", "symbol": "AbstractTTSBackend.synthesize", "lines": "17-80", "role": "Abstract TTS contract a SupertonicTTSBackend must implement", "evidence": ["F008"], "confidence": "high"},
+    {"path": "packages/ai-parrot-integrations/src/parrot/voice/tts/models.py", "symbol": "TTSConfig.backend", "lines": "42-56", "role": "Literal backend enum + mime_format to extend for 'supertonic'", "evidence": ["F008"], "confidence": "high"},
+    {"path": "packages/ai-parrot-integrations/src/parrot/voice/transcriber/transcriber.py", "symbol": "VoiceTranscriber", "lines": "1-1", "role": "Existing STT entrypoint to transcribe the inbound WS audio buffer", "evidence": ["F002", "F006"], "confidence": "high"},
+    {"path": "packages/ai-parrot-integrations/src/parrot/voice/handler.py", "symbol": "VoiceChatHandler", "lines": "293-1024", "role": "Reusable aiohttp WS shell (auth, sessions, _handle_audio_data); currently hard-wired to Gemini-Live VoiceBot", "evidence": ["F007"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/models/responses.py", "symbol": "AIMessage", "lines": "72-110", "role": "Source of the speakable .response (str) vs non-speakable .output/.data/.media", "evidence": ["F003"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/models/responses.py", "symbol": "AgentResponse", "lines": "1022-1056", "role": "Wrapper returned by Agents — response: AIMessage, data, output", "evidence": ["F003"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/clients/live.py", "symbol": "LiveVoiceResponse.to_websocket_message", "lines": "189-213", "role": "Precedent for the audio_base64 WS reply payload", "evidence": ["F004"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/bots/voice.py", "symbol": "VoiceBot", "lines": "76-571", "role": "Native Gemini-Live S2S bot — the path this feature is NOT (out of scope)", "evidence": ["F001"], "confidence": "high"}
+  ],
+  "constraints": [
+    {"text": "AIMessage.response is the only field safe to feed to TTS; output/data/media are Any (dataframes/markdown/JSON) and must travel as a separate structured 'content' block, not through the synthesizer.", "implication": "Split the WS reply: synthesize from .response, ship .output/.data/.media for display.", "evidence": ["F003"]},
+    {"text": "The voice stack (parrot.voice.*) lives in the ai-parrot-integrations distribution, not core.", "implication": "A generic AgentTalk voice endpoint creates a core->integrations dependency; either host the handler in integrations or guard the import (extras-gated) like the integrations themselves.", "evidence": ["F002", "F007"]},
+    {"text": "VoiceChatHandler.bot_factory is typed Callable[[], VoiceBot] and routes audio into a native Gemini session (audio_queue/gemini_responding).", "implication": "Supporting a text Agent + synthesizer requires generalizing the factory/dispatch (a 'pipeline' mode) or a sibling handler reusing its auth/session/recording code.", "evidence": ["F007"]},
+    {"text": "FEAT-213 reserved elevenlabs/openai backends as ValueError stubs and built the TTS layer mirroring the transcriber; faster-whisper (STT) is an optional/extras dependency.", "implication": "Supertonic (ONNX, model weights) should be an extras-gated optional backend, with graceful degradation to text-only or Google TTS if unavailable (FEAT-213 G5).", "evidence": ["F005", "F008"]},
+    {"text": "Audio crosses the WS as base64-in-JSON (both inbound _handle_audio_data and outbound to_websocket_message).", "implication": "Keep the same envelope: inbound {type:'audio_data', data:<b64>}, outbound {type:'voice_response', audio_base64, audio_format, content}.", "evidence": ["F004", "F007"]}
+  ],
+  "recent_history": [
+    {"commit": "49536110", "when": "monorepo migration", "message": "feat(monorepo-migration): TASK-398 — Workspace Scaffolding", "files": "bots/voice.py", "note": "voice.py untouched since the monorepo move — VoiceBot is stable, not under active churn."}
+  ],
+  "scope": {
+    "whats_new": [
+      "SupertonicTTSBackend(AbstractTTSBackend) under parrot/voice/tts/supertonic_backend.py (extras-gated optional dep).",
+      "An AgentTalk voice round-trip path: decode WS audio -> VoiceTranscriber -> run a text Agent -> VoiceSynthesizer.synthesize(AIMessage.response) -> reply {audio_base64 + content}.",
+      "Either a new 'pipeline/agent' mode on VoiceChatHandler or a sibling AgentTalkVoiceHandler reusing its auth/session/recording code."
+    ],
+    "whats_changed": [
+      "TTSConfig.backend Literal extended to include 'supertonic'; VoiceSynthesizer._get_backend gains a 'supertonic' branch (F008).",
+      "VoiceChatHandler generalized so the inbound audio can be routed to a text-Agent+synthesizer instead of only a Gemini VoiceBot (F007)."
+    ],
+    "whats_untouched": [
+      "VoiceBot / GeminiLiveClient native speech-to-speech path (explicitly out of scope; FEAT-213 deferred it).",
+      "The STT layer internals (VoiceTranscriber/FasterWhisper) — reused as-is.",
+      "AIMessage/AgentResponse models — consumed, not modified.",
+      "Telegram/MSTeams voice wiring (FEAT-213/FEAT-039) — unaffected."
+    ],
+    "patterns_to_follow": [
+      "Mirror FEAT-213: decoupled AbstractTTSBackend + lazy VoiceSynthesizer dispatch; graceful degradation to text-only on TTS failure (G5).",
+      "Mirror LiveVoiceResponse.to_websocket_message for the outbound audio_base64 envelope (F004).",
+      "Mirror the msteams/telegram 'transcribe -> _process_transcribed_message -> agent' flow (F006)."
+    ],
+    "integration_risks": [
+      "Supertonic adds heavy optional deps + model weights; gate behind an extra and degrade gracefully if missing (F005, F008).",
+      "core->integrations dependency direction for a generic web voice endpoint (F002).",
+      "Browser audio playback format: TTSConfig.mime_format defaults to audio/ogg (Telegram-oriented); browsers may need audio/wav or audio/webm (F008)."
+    ],
+    "confidence": "medium"
+  },
+  "confidence_map": [
+    {"id": "C1", "claim": "A decoupled STT+TTS stack (parrot.voice.transcriber + parrot.voice.tts) already exists and is reusable.", "evidence": ["F002", "F005"], "confidence": "high", "reasoning": "Direct read of package __init__ files + FEAT-213 spec."},
+    {"id": "C2", "claim": "AIMessage.response (str) is the correct, isolated TTS source; output/data are non-speakable.", "evidence": ["F003"], "confidence": "high", "reasoning": "Direct read of the field definitions + docstrings."},
+    {"id": "C3", "claim": "A full aiohttp WS handler (VoiceChatHandler) with auth/sessions/base64 audio already exists.", "evidence": ["F007"], "confidence": "high", "reasoning": "Direct read of class + _handle_audio_data."},
+    {"id": "C4", "claim": "VoiceChatHandler is hard-wired to the Gemini-Live VoiceBot and must be generalized (or mirrored) for a text-Agent pipeline.", "evidence": ["F007", "F001"], "confidence": "high", "reasoning": "bot_factory typed Callable[[], VoiceBot]; audio routed into native gemini session."},
+    {"id": "C5", "claim": "Adding Supertonic is one new AbstractTTSBackend + one Literal/dispatch entry.", "evidence": ["F008"], "confidence": "high", "reasoning": "Read of synthesizer dispatch + abstract contract + TTSConfig."},
+    {"id": "C6", "claim": "The audio-over-WS envelope is base64-in-JSON in both directions.", "evidence": ["F004", "F007"], "confidence": "high", "reasoning": "to_websocket_message + _handle_audio_data both b64."},
+    {"id": "C7", "claim": "VoiceBot/Gemini Live native S2S is out of scope (deferred by FEAT-213).", "evidence": ["F005", "F001"], "confidence": "high", "reasoning": "Spec text explicitly postpones it."},
+    {"id": "C8", "claim": "Supertonic delivers the sub-second TTS latency the requester wants on-device.", "evidence": [], "confidence": "low", "reasoning": "Claimed by the upstream project; not verified in-repo (no web fetch). Latency depends on hardware/ONNX runtime."}
+  ],
+  "unknowns": [
+    {"id": "U1", "question": "Transport strategy: add a 'pipeline/agent' mode to the existing VoiceChatHandler, or ship a sibling AgentTalkVoiceHandler that reuses its auth/session/recording code?", "blocks_claims": ["C4"], "plausible_answers": ["Extend VoiceChatHandler with a mode flag (less code, one endpoint)", "Sibling handler (cleaner separation, no risk to the Gemini path)", "Refactor shared parts into a base class both use"], "user_answer": "Sibling handler — ship a new AgentTalkVoiceHandler that reuses VoiceChatHandler's auth/session/recording code, keeping the Gemini-Live path untouched."},
+    {"id": "U2", "question": "Supertonic backend now, or ship the round-trip first on the existing Google TTS backend and add Supertonic as a follow-up?", "blocks_claims": ["C5", "C8"], "plausible_answers": ["Supertonic from day one (the whole point is sub-second TTS)", "Google TTS first (de-risk), Supertonic as a second task", "Both behind config; default Google, opt-in Supertonic"], "user_answer": "Supertonic from day one — add SupertonicTTSBackend now, extras-gated, with graceful degradation to text-only on failure/unavailability."},
+    {"id": "U3", "question": "Single buffered round-trip (audio in -> one audio+content out) or streamed/partial audio chunks back?", "blocks_claims": [], "plausible_answers": ["Single round-trip (matches 'return the audio + content')", "Stream partial TTS audio as the agent answers"], "user_answer": "Single buffered round-trip — audio in -> one {audio_base64 + content} reply."},
+    {"id": "U4", "question": "Which Agent answers the transcribed question — resolved per agent_id from the WS (like other handlers) via Agent.invoke() returning AgentResponse/AIMessage, or a single configured default agent?", "blocks_claims": ["C2"], "plausible_answers": ["Per agent_id from the URL/auth, via BotManager", "A single configured AgentTalk agent", "Caller passes agent_id in the start_session message"], "user_answer": "Per agent_id via BotManager — resolve the agent from agent_id (URL/auth) and call Agent.invoke(), consuming the returned AgentResponse/AIMessage."},
+    {"id": "U5", "question": "Output audio format for browser playback — keep TTSConfig.mime_format default audio/ogg, or default to audio/wav / audio/webm for AgentTalk's web player?", "blocks_claims": [], "plausible_answers": ["audio/wav (broadest browser support)", "audio/webm/opus (compact, MediaSource-friendly)", "Negotiate via the start_session message"], "user_answer": "Default audio/wav for the web player (broadest browser support), negotiable via the start_session message. (Resolved by agent default — non-blocking.)"}
+  ],
+  "overall_confidence": "medium",
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and every building block exists; this is bounded enrichment. The remaining choices (handler strategy, Supertonic-now-vs-later, audio format) are implementation decisions a spec can pin down, not architectural unknowns requiring brainstorming.",
+    "alternatives": [
+      {"command": "sdd-brainstorm", "when": "if you want to weigh the transport-strategy fork (extend VoiceChatHandler vs sibling handler) and streaming-vs-buffered as alternative architectures before committing."}
+    ]
+  },
+  "truncated": false,
+  "truncation_reason": null
+}

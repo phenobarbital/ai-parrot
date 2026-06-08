@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-231",
+  "feature_slug": "agentalk-voice-support",
+  "started_at": "2026-06-08T23:30:45Z",
+  "updated_at": "2026-06-08T23:31:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-231/source.md",
+    "fetched_at": "2026-06-08T23:30:45Z",
+    "summary_oneline": "Voice support for AgentTalk — WS audio in, STT -> LLM -> sub-second TTS (Supertonic), return audio + content"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "proposal_drafted",
+  "phases": {
+    "plan": {
+      "status": "complete",
+      "queries_total": 14,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-231/research_plan.json"
+    },
+    "research": {
+      "status": "complete",
+      "queries_executed": 14,
+      "queries_skipped": 0,
+      "depth_reached": 0,
+      "files_read": 9,
+      "grep_calls": 7,
+      "git_calls": 1,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "complete",
+      "overall_confidence": "medium",
+      "unknowns": 5,
+      "recommended_next_command": "sdd-spec"
+    },
+    "qa": {
+      "status": "complete",
+      "questions_total": 5,
+      "questions_answered": 5
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/agentalk-voice-support.proposal.md"
+    }
+  },
+  "budget": {
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 9,
+    "grep_calls": 7,
+    "git_calls": 1,
+    "depth_reached": 0,
+    "wall_seconds": 0
+  }
+}
