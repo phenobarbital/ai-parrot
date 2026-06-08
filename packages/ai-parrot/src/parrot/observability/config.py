@@ -102,6 +102,21 @@ class ObservabilityConfig(BaseModel):
     enable_openlit: bool = False
     enable_traceloop: bool = False
 
+    # OpenLIT auto-instrumentation skip-list. OpenLIT tries to instrument every
+    # supported library it detects; several bundled instrumentors break against
+    # newer SDKs (openai 2.x restructured ``Videos`` → ``'Videos' has no
+    # attribute 'edit'``; pymilvus→environs trips ``marshmallow.__version_info__``
+    # on marshmallow 4.x) or fire even when the SDK is absent (``openai_agents``
+    # raises ``DependencyConflict`` when ``openai-agents`` is not installed).
+    # These three are non-fatal but log ERROR-level noise on every boot, and
+    # AI-Parrot already traces LLM calls via its native GenAI subscriber, so the
+    # openai instrumentor is redundant. Forwarded to ``openlit.init(
+    # disabled_instrumentors=...)``. Override via ``OBSERVABILITY_OPENLIT_DISABLE``
+    # (comma-separated); set to an empty string to disable nothing.
+    openlit_disabled_instrumentors: list[str] = Field(
+        default_factory=lambda: ["openai", "openai_agents", "milvus"]
+    )
+
     # Sampling & PII
     sampling_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
     capture_prompts: bool = False       # PII: default off
@@ -195,6 +210,14 @@ class ObservabilityConfig(BaseModel):
         endpoint = get("OTEL_EXPORTER_OTLP_ENDPOINT")
         if endpoint:
             values["otlp_endpoint"] = endpoint
+
+        # Comma-separated OpenLIT instrumentor skip-list. An explicitly empty
+        # string means "disable nothing" (distinct from unset → use defaults).
+        disable = get("OBSERVABILITY_OPENLIT_DISABLE")
+        if disable is not None:
+            values["openlit_disabled_instrumentors"] = [
+                name.strip() for name in disable.split(",") if name.strip()
+            ]
 
         pricing = get("PARROT_PRICING_PATH")
         if pricing:

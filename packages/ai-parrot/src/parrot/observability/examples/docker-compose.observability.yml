@@ -45,6 +45,11 @@ services:
       # OpenLIT's entrypoint writes a persistent NextAuth secret + SQLite DB
       # here. The directory does not exist in the image, so it must be a volume.
       - openlit-data:/app/client/data
+      # The image runs an embedded OTel Collector (managed by the opamp
+      # supervisor) that receives OTLP on 4317/4318 and exports to ClickHouse.
+      # Without this config it never starts the receiver, so 4318 is dead and
+      # no telemetry is ingested. Sourced from OpenLIT's assets/.
+      - ./otel-collector-config.yaml:/etc/otel/otel-collector-config.yaml:ro
     depends_on:
       clickhouse:
         condition: service_healthy
