@@ -144,3 +144,38 @@ def test_structured_map_no_regression_on_other_modes():
     assert OutputMode.STRUCTURED_TABLE == "structured_table"
     assert OutputMode.STRUCTURED_MAP != OutputMode.STRUCTURED_CHART
     assert OutputMode.STRUCTURED_MAP != OutputMode.STRUCTURED_TABLE
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Generation-time system prompt contract
+# The prompt injected into the agent's first call MUST instruct it to produce
+# the map data (call dataset_spatial_filter OR build a coordinate DataFrame and
+# declare data_variable) — NOT the column-format-hint refine text, which would
+# tell the agent the rows are "already determined" and stop it doing the job.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_structured_map_generation_prompt_instructs_data_production():
+    """The registered STRUCTURED_MAP prompt tells the agent how to produce data."""
+    from parrot.models.outputs import OutputMode
+    from parrot.outputs.formats import get_renderer, get_output_prompt
+
+    get_renderer(OutputMode.STRUCTURED_MAP)  # trigger lazy registration
+    prompt = get_output_prompt(OutputMode.STRUCTURED_MAP)
+
+    assert prompt is not None
+    # Path A: the spatial tool.
+    assert "dataset_spatial_filter" in prompt
+    # Path B: a coordinate DataFrame whose variable is declared.
+    assert "data_variable" in prompt
+    assert "latitude" in prompt.lower() and "longitude" in prompt.lower()
+    # It must NOT be the refine-only contract that says rows are predetermined.
+    assert "already been determined" not in prompt
+
+
+def test_structured_map_refine_prompt_preserved():
+    """The column-format-hint refine contract is kept as a separate constant."""
+    from parrot.outputs.formats.structured_map import STRUCTURED_MAP_REFINE_PROMPT
+
+    assert "format hint" in STRUCTURED_MAP_REFINE_PROMPT
+    assert "already been determined" in STRUCTURED_MAP_REFINE_PROMPT
