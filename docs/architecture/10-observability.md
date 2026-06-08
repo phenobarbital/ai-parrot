@@ -66,7 +66,14 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```
 
 Build/use any bot → open <http://localhost:3000> to see each LLM request with
-tokens, USD cost, latency, model and errors. For Prometheus + Grafana, set
+tokens, USD cost, latency, model and errors.
+
+On a clean start, log in with the default OpenLIT account — email
+`user@openlit.io`, password `openlituser` — then change it (or create your own)
+under **Settings → Profile**. Users persist in the `openlit-data` volume, so if
+you already created another account, use that instead.
+
+For Prometheus + Grafana, set
 `OBSERVABILITY_BACKEND=prometheus` and import the dashboards under
 `packages/ai-parrot/src/parrot/observability/examples/grafana-dashboards/`.
 
