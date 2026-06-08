@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-228
 **Date**: 2026-06-08
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x (next minor)
 **Depends on**: FEAT-151 (DatasetManager PBAC — DatasetPolicyGuard + `_pctx_var`)
 
