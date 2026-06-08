@@ -70,7 +70,7 @@
       "feature_id": "FEAT-228",
       "feature": "dataplane-authz",
       "spec": "sdd/specs/dataplane-authz.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -78,8 +78,8 @@
       "parallelism_notes": "Leaf module — only touches new file rls_registry.py in parrot/auth/; no shared deps",
       "assigned_to": null,
       "started_at": "2026-06-08T10:56:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1493-rls-registry.md"
+      "completed_at": "2026-06-08T11:01:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1493-rls-registry.md"
     },
     {
       "id": "TASK-1494",
