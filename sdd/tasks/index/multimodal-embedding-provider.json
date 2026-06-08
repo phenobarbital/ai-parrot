@@ -14,16 +14,16 @@
       "feature_id": "FEAT-229",
       "feature": "multimodal-embedding-provider",
       "spec": "sdd/specs/multimodal-embedding-provider.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task — all other tasks depend on it",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1484-multimodal-base-abc.md"
+      "started_at": "2026-06-08T10:57:27+00:00",
+      "completed_at": "2026-06-08T11:00:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1484-multimodal-base-abc.md"
     },
     {
       "id": "TASK-1485",
@@ -32,16 +32,18 @@
       "feature_id": "FEAT-229",
       "feature": "multimodal-embedding-provider",
       "spec": "sdd/specs/multimodal-embedding-provider.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1484"],
+      "depends_on": [
+        "TASK-1484"
+      ],
       "parallel": false,
       "parallelism_notes": "Extends MultimodalEmbedding._postprocess() created in TASK-1484",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1485-quantization-postprocess.md"
+      "started_at": "2026-06-08T10:57:27+00:00",
+      "completed_at": "2026-06-08T11:02:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1485-quantization-postprocess.md"
     },
     {
       "id": "TASK-1486",
@@ -50,16 +52,19 @@
       "feature_id": "FEAT-229",
       "feature": "multimodal-embedding-provider",
       "spec": "sdd/specs/multimodal-embedding-provider.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1484", "TASK-1485"],
+      "depends_on": [
+        "TASK-1484",
+        "TASK-1485"
+      ],
       "parallel": false,
       "parallelism_notes": "Requires base ABC and quantization pipeline",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1486-uform-provider.md"
+      "started_at": "2026-06-08T10:57:27+00:00",
+      "completed_at": "2026-06-08T11:06:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1486-uform-provider.md"
     },
     {
       "id": "TASK-1487",
@@ -68,16 +73,18 @@
       "feature_id": "FEAT-229",
       "feature": "multimodal-embedding-provider",
       "spec": "sdd/specs/multimodal-embedding-provider.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1486"],
+      "depends_on": [
+        "TASK-1486"
+      ],
       "parallel": false,
       "parallelism_notes": "Must register the concrete UFormEmbedding class",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1487-registry-catalog-integration.md"
+      "started_at": "2026-06-08T10:57:27+00:00",
+      "completed_at": "2026-06-08T11:08:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1487-registry-catalog-integration.md"
     },
     {
       "id": "TASK-1488",
@@ -86,16 +93,18 @@
       "feature_id": "FEAT-229",
       "feature": "multimodal-embedding-provider",
       "spec": "sdd/specs/multimodal-embedding-provider.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1485"],
+      "depends_on": [
+        "TASK-1485"
+      ],
       "parallel": false,
       "parallelism_notes": "Only depends on quantization (TASK-1485) for type mapping; could theoretically parallel with TASK-1486/1487 but sequential per worktree strategy",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1488-pgvector-multimodal-schema.md"
+      "started_at": "2026-06-08T10:57:27+00:00",
+      "completed_at": "2026-06-08T11:13:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1488-pgvector-multimodal-schema.md"
     },
     {
       "id": "TASK-1489",
@@ -104,16 +113,19 @@
       "feature_id": "FEAT-229",
       "feature": "multimodal-embedding-provider",
       "spec": "sdd/specs/multimodal-embedding-provider.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1486", "TASK-1488"],
+      "depends_on": [
+        "TASK-1486",
+        "TASK-1488"
+      ],
       "parallel": false,
       "parallelism_notes": "Needs both UForm provider and PgVector schema to benchmark the full pipeline",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1489-benchmark-harness.md"
+      "started_at": "2026-06-08T10:57:27+00:00",
+      "completed_at": "2026-06-08T11:17:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1489-benchmark-harness.md"
     },
     {
       "id": "TASK-1490",
@@ -122,16 +134,19 @@
       "feature_id": "FEAT-229",
       "feature": "multimodal-embedding-provider",
       "spec": "sdd/specs/multimodal-embedding-provider.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1487", "TASK-1488"],
+      "depends_on": [
+        "TASK-1487",
+        "TASK-1488"
+      ],
       "parallel": false,
       "parallelism_notes": "Final task — validates all prior work end-to-end",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1490-integration-tests.md"
+      "started_at": "2026-06-08T10:57:27+00:00",
+      "completed_at": "2026-06-08T11:20:59+00:00",
+      "file": "sdd/tasks/completed/TASK-1490-integration-tests.md"
     }
   ]
 }

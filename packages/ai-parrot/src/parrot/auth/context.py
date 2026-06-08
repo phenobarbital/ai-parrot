@@ -7,12 +7,32 @@ specific session model.
 Wrappers are responsible for building a ``UserContext`` from their own
 session object and passing it to ``AbstractBot.post_login`` and
 ``AbstractBot.clone_for_user``.
+
+This module also hosts the shared ``_pctx_var`` :class:`contextvars.ContextVar`
+used by ``DatasetManager`` and ``DatabaseQueryTool`` to propagate the current
+``PermissionContext`` across async call boundaries without coupling those
+modules to each other.
 """
 
 from __future__ import annotations
 
+import contextvars
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from parrot.auth.permission import PermissionContext
+
+# Module-level ContextVar carrying the current PermissionContext for the
+# running asyncio task.  Set by DatasetManager._pre_execute (and propagated
+# manually into sub-tasks) so that AuthorizingDataSource and DatabaseQueryTool
+# can access the per-call context without sharing instance state.
+# Using a ContextVar (rather than an instance attribute) ensures concurrent
+# requests on a shared toolkit instance cannot bleed each other's context
+# across an await boundary.
+_pctx_var: contextvars.ContextVar["PermissionContext | None"] = (
+    contextvars.ContextVar("dataset_manager_pctx", default=None)
+)
 
 
 @dataclass(frozen=True)

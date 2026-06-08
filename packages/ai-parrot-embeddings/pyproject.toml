@@ -86,9 +86,16 @@ reranker-local = [
 ]
 reranker-llm = []  # uses existing LLM clients (anthropic/openai/etc.) declared elsewhere
 
+# Multimodal embedding backends (FEAT-229)
+multimodal = [
+    "uform>=3.1",
+    "onnxruntime>=1.16",
+    "pillow>=9.0",
+]
+
 # Aggregator extra (TASK-1334/1335/1336)
 all = [
-    "ai-parrot-embeddings[huggingface,google,openai,pgvector,milvus,arango,bigquery,faiss,chroma,reranker-local,reranker-llm]",
+    "ai-parrot-embeddings[huggingface,google,openai,pgvector,milvus,arango,bigquery,faiss,chroma,reranker-local,reranker-llm,multimodal]",
 ]
 
 [project.urls]
