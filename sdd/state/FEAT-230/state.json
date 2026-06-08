@@ -1,0 +1,36 @@
+{
+  "feature_id": "FEAT-230",
+  "phase": "proposal_drafted",
+  "mode": "enrichment",
+  "started_at": "2026-06-08",
+  "updated_at": "2026-06-08",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Vendor flowtask's composable Workday interface into ai-parrot-tools and rebase WorkdayToolkit onto it; homologate 11 agent methods"
+  },
+  "budget": {
+    "profile": "default",
+    "files_read": 12,
+    "grep_calls": 9,
+    "git_calls": 0
+  },
+  "consumed": {
+    "files_read": 12,
+    "grep_calls": 9,
+    "git_calls": 0,
+    "truncated": false
+  },
+  "phases": {
+    "research": { "status": "complete", "findings": 5 },
+    "synthesis": { "status": "complete", "overall_confidence": "high" },
+    "qa": { "status": "complete", "questions_total": 4, "questions_answered": 4 },
+    "output": { "proposal_path": "sdd/proposals/workday-tooling-composable-interface.proposal.md" }
+  },
+  "decisions": {
+    "interface_placement": "parrot_tools/interfaces/workday",
+    "soapclient_base": "parrot.interfaces.soap.SOAPClient",
+    "current_user_identity": "explicit worker_id parameter",
+    "write_scope": "include request_my_time_off (write)"
+  }
+}

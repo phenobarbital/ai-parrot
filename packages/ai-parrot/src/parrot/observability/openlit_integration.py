@@ -37,8 +37,12 @@ def init_openlit(config: ObservabilityConfig) -> None:
     no-ops (the sentinel prevents double-init).
 
     Args:
-        config: ``ObservabilityConfig`` instance. ``otlp_endpoint`` and
-            ``service_name`` are forwarded to ``openlit.init``.
+        config: ``ObservabilityConfig`` instance. ``otlp_endpoint``,
+            ``service_name`` and ``openlit_disabled_instrumentors`` are
+            forwarded to ``openlit.init``. The skip-list defaults to the
+            instrumentors known to break against the installed SDK versions
+            (``openai``, ``openai_agents``, ``milvus``, ``fastapi``,
+            ``starlette``, ``tornado``) so boot logs stay clean.
 
     Raises:
         ImportError: If ``openlit`` is not installed. Install with:
@@ -60,12 +64,14 @@ def init_openlit(config: ObservabilityConfig) -> None:
     openlit.init(
         otlp_endpoint=config.otlp_endpoint,
         application_name=config.service_name,
+        disabled_instrumentors=config.openlit_disabled_instrumentors or None,
     )
     _INITIALIZED = True
     logger.info(
-        "OpenLIT initialized for %s → %s",
+        "OpenLIT initialized for %s → %s (disabled instrumentors: %s)",
         config.service_name,
         config.otlp_endpoint,
+        config.openlit_disabled_instrumentors or "none",
     )
 
 

@@ -25,7 +25,6 @@ class OutputType(str, Enum):
     FOLIUM_MAP = "folium_map"
     PLOTLY_CHART = "plotly_chart"
     MATPLOTLIB_FIGURE = "matplotlib_figure"
-    BOKEH_PLOT = "bokeh_plot"
     ALTAIR_CHART = "altair_chart"
     PANEL_DASHBOARD = "panel_dashboard"
     HTML_WIDGET = "html_widget"
@@ -51,15 +50,12 @@ class OutputMode(str, Enum):
     ALTAIR = "altair"           # Generate Altair chart visualization
     PLOTLY = "plotly"
     MATPLOTLIB = "matplotlib"
-    BOKEH = "bokeh"
     SEABORN = "seaborn"
     CODE = "code"
     MAP = "map"                   # Generate map visualization
     IMAGE = "image"             # render the image as a base64 embed into HTML <img>
-    D3 = "d3"                   # Generate D3.js visualization
     ECHARTS = "echarts"         # Generate ECharts visualization
     TABLE = "table"             # Generate table visualization
-    HOLOVIEWS = "holoviews"   # Generate HoloViews visualization
     CARD = "card"
     TELEGRAM = "telegram"
     MSTEAMS = "msteams"

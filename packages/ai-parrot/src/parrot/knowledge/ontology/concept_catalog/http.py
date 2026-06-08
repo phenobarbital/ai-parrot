@@ -21,9 +21,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 from uuid import UUID
-
 from aiohttp import web
-
 from parrot.knowledge.ontology.concept_catalog.service import ConceptCatalogService
 from parrot.knowledge.ontology.exceptions import (
     CycleError,

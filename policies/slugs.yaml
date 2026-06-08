@@ -102,3 +102,19 @@ policies:
         - admin
     priority: 100
     enforcing: false
+
+  - name: component_docs_read
+    effect: allow
+    description: "Allow reading the MultiQuery component catalog and pipeline validation."
+    resources:
+      - "slug:components"
+      - "slug:validate"
+    actions:
+      - "slug:read"
+    subjects:
+      groups:
+        - superuser
+        - admin
+        # añade aquí los grupos que deban ver el catálogo
+    priority: 50
+    enforcing: true

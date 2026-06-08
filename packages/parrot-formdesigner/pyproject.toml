@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-    "setuptools>=67.6.1",
+    "setuptools>=77.0.0",
     "wheel>=0.44.0"
 ]
 build-backend = "setuptools.build_meta"
@@ -13,7 +13,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.11"
 keywords = ["asyncio", "forms", "form-designer", "adaptive-cards", "html5", "ai", "parrot"]
 classifiers = [
@@ -48,7 +48,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ai-parrot = [
-    "ai-parrot>=0.25.6",
+    "ai-parrot>=0.25.7",
 ]
 redis = [
     "redis>=4.5",

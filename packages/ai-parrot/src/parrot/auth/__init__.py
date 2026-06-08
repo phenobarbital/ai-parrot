@@ -37,6 +37,8 @@ from .resolver import (
 )
 from .pbac import setup_pbac
 from .dataset_guard import DatasetPolicyGuard
+from .dataplane_guard import DataPlanePolicyGuard
+from .rls_registry import RlsRegistry, RlsRule, RlsPredicate
 from .models import PolicyRuleConfig
 from .exceptions import AuthorizationRequired
 from .agent_guard import AgentAccessDenied
@@ -71,6 +73,12 @@ __all__ = [
     "setup_pbac",
     # Dataset policy guard
     "DatasetPolicyGuard",
+    # Data-plane policy guard (FEAT-228)
+    "DataPlanePolicyGuard",
+    # RLS registry (FEAT-228)
+    "RlsRegistry",
+    "RlsRule",
+    "RlsPredicate",
     # Policy models
     "PolicyRuleConfig",
     # Exceptions

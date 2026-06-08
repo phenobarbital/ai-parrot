@@ -28,6 +28,12 @@ OpenLLMetry (Traceloop) backend — a simple, content-rich local/dev tracing pat
 mutually exclusive with OpenLIT (the production backend):
   * ``init_traceloop`` / ``setup_traceloop`` / ``shutdown_traceloop`` — activate
     via ``OBSERVABILITY_TRACELOOP=true`` (or ``usage_backend="traceloop"``).
+
+Per-agent attribution (FEAT-228):
+  * ``current_agent_name`` — task-local ``ContextVar[Optional[str]]`` holding
+    the invoking agent's ``self.name``.
+  * ``agent_identity(name)`` — context-manager that binds the active agent name
+    for the duration of a bot invocation (token-based; nested-safe).
 """
 
 from parrot.observability.bootstrap import (
@@ -35,6 +41,7 @@ from parrot.observability.bootstrap import (
     shutdown_observability,
     shutdown_usage_recording,
 )
+from parrot.observability.context import agent_identity, current_agent_name
 from parrot.observability.config import ObservabilityConfig
 from parrot.observability.cost.calculator import CostCalculator
 from parrot.observability.errors import ConfigurationError
@@ -73,4 +80,7 @@ __all__: list[str] = [
     "init_traceloop",
     "setup_traceloop",
     "shutdown_traceloop",
+    # FEAT-228: per-agent attribution
+    "current_agent_name",
+    "agent_identity",
 ]

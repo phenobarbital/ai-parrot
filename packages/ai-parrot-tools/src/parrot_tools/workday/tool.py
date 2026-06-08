@@ -59,7 +59,6 @@ Example usage:
 """
 from __future__ import annotations
 
-import asyncio
 import contextlib
 from enum import Enum
 from typing import Any, Dict, List, Optional, Type, Union
@@ -73,10 +72,10 @@ from ..toolkit import AbstractToolkit
 from ..decorators import tool_schema
 from parrot.interfaces.soap import SOAPClient
 from parrot.interfaces.http import HTTPService
+from ..interfaces.workday.service import WorkdayService as WorkdayComposable
+from ..interfaces.workday.config import WorkdayConfig
 from .models import (
-    WorkdayReference,
     WorkerModel,
-    OrganizationModel,
     WorkdayResponseParser
 )
 from parrot.conf import (
@@ -143,6 +142,18 @@ METHOD_TO_SERVICE_MAP = {
     "wd_get_payroll_balances": WorkdayService.PAYROLL,
     "wd_get_payroll_results": WorkdayService.PAYROLL,
     "wd_get_company_payment_dates": WorkdayService.PAYROLL,
+    # Homologated read tools (FEAT-230 Module 3)
+    "find_employee_id_by_name": WorkdayService.HUMAN_RESOURCES,
+    "get_current_user_info": WorkdayService.HUMAN_RESOURCES,
+    "get_more_employee_data": WorkdayService.HUMAN_RESOURCES,
+    "get_personal_information": WorkdayService.HUMAN_RESOURCES,
+    "get_direct_reports": WorkdayService.HUMAN_RESOURCES,
+    "get_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
+    "get_current_user_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
+    "get_current_user_time_off_history": WorkdayService.ABSENCE_MANAGEMENT,
+    # FEAT-230 Module 4/5 — write + eligibility
+    "request_my_time_off": WorkdayService.ABSENCE_MANAGEMENT,
+    "get_my_time_off_eligibility": WorkdayService.ABSENCE_MANAGEMENT,
 }
 
 
@@ -344,6 +355,58 @@ class GetCompanyPaymentDatesInput(BaseModel):
     )
 
 
+# Homologated read-tool input schemas (FEAT-230 Module 3)
+class FindEmployeeByNameInput(BaseModel):
+    """Input for finding a worker by name."""
+
+    name: str = Field(description="Full or partial worker name to search for")
+    max_results: int = Field(default=50, description="Maximum number of results")
+
+
+class GetWorkerInfoInput(BaseModel):
+    """Input for retrieving worker information by ID."""
+
+    worker_id: str = Field(description="Workday Employee ID")
+
+
+class GetTimeOffHistoryInput(BaseModel):
+    """Input for retrieving a worker's time-off request history."""
+
+    worker_id: str = Field(description="Workday Employee ID")
+    start_date: Optional[str] = Field(
+        default=None, description="Start of date range (YYYY-MM-DD). Defaults to 7 days ago."
+    )
+    end_date: Optional[str] = Field(
+        default=None, description="End of date range (YYYY-MM-DD). Defaults to today."
+    )
+
+
+class GetTimeOffBalanceInput2(BaseModel):
+    """Input for retrieving time off plan balances."""
+
+    worker_id: str = Field(description="Workday Employee ID")
+    time_off_plan_id: Optional[str] = Field(
+        default=None, description="Optional specific time off plan ID to filter"
+    )
+
+
+class RequestTimeOffInput(BaseModel):
+    """Input for submitting a time-off request."""
+
+    worker_id: str = Field(description="Workday Employee ID")
+    start_date: str = Field(description="First day of the time-off period (YYYY-MM-DD)")
+    end_date: str = Field(description="Last day of the time-off period (YYYY-MM-DD)")
+    time_off_type: str = Field(description="Time_Off_Type_ID value (e.g. 'VACATION', 'PTO')")
+    daily_quantity: float = Field(
+        default=8.0, description="Hours or days per calendar day (default 8.0)"
+    )
+    comment: Optional[str] = Field(default=None, description="Optional comment on the request")
+    dry_run: bool = Field(
+        default=True,
+        description="If True (default), validates the request without submitting to Workday",
+    )
+
+
 # -----------------------------
 # Workday SOAP Client
 # -----------------------------
@@ -364,106 +427,6 @@ class WorkdaySOAPClient(SOAPClient):
         """
         super().__init__(**kwargs)
         self.tenant_name = tenant_name
-
-    def _build_worker_reference(self, worker_id: str, id_type: str = "Employee_ID") -> Dict[str, Any]:
-        """
-        Build a Workday worker reference object.
-
-        Args:
-            worker_id: Worker identifier
-            id_type: Type of ID (Employee_ID, Contingent_Worker_ID, WID, etc.)
-
-        Returns:
-            Worker reference dictionary for SOAP request
-        """
-        return {
-            "ID": [
-                {
-                    "type": id_type,
-                    "_value_1": worker_id
-                }
-            ]
-        }
-
-    def _build_request_criteria(
-        self,
-        **filters: Any
-    ) -> Dict[str, Any]:
-        """
-        Build request criteria for Workday queries.
-
-        Args:
-            **filters: Filter parameters
-
-        Returns:
-            Request criteria dictionary
-        """
-        criteria = {}
-
-        if "search_text" in filters and filters["search_text"]:
-            criteria["Search_Text"] = filters["search_text"]
-
-        if "manager_id" in filters and filters["manager_id"]:
-            criteria["Manager_Reference"] = self._build_worker_reference(
-                filters["manager_id"]
-            )
-
-        return criteria
-
-    def _parse_worker_response(self, response: Any) -> Dict[str, Any]:
-        """
-        Parse Workday worker response into a clean dictionary.
-
-        Args:
-            response: Raw SOAP response
-
-        Returns:
-            Parsed worker data
-        """
-        # This is a simplified parser - adjust based on actual Workday response structure
-        return helpers.serialize_object(response) if response else {}
-
-    def _build_organization_reference(
-        self,
-        org_id: str,
-        id_type: str = "Organization_Reference_ID"
-    ) -> Dict[str, Any]:
-        """Build organization reference."""
-        return {
-            "ID": [
-                {
-                    "type": id_type,
-                    "_value_1": org_id
-                }
-            ]
-        }
-
-    def _build_field_criteria(
-        self,
-        field_name: str,
-        field_value: str,
-        operator: str = "Equals"
-    ) -> Dict[str, Any]:
-        """
-        Build field and parameter criteria for advanced searches.
-
-        Args:
-            field_name: Workday field name (e.g., "Legal_Name", "Email")
-            field_value: Value to search for
-            operator: Comparison operator (Equals, Contains, Starts_With, etc.)
-
-        Returns:
-            Field criteria dictionary
-        """
-        return {
-            "Field_And_Parameter_Criteria_Data": [
-                {
-                    "Field_Name": field_name,
-                    "Operator": operator,
-                    "Value": field_value
-                }
-            ]
-        }
 
 
 # -----------------------------
@@ -566,7 +529,7 @@ class WorkdayToolkit(AbstractToolkit):
         else:
             for service_name, wsdl_url in WORKDAY_WSDL_PATHS.items():
                 if isinstance(wsdl_url, PurePath) and not wsdl_url.is_file():
-                    print('Warning: WSDL path does not exist:', wsdl_url)
+                    self.logger.warning("WSDL path does not exist: %s", wsdl_url)
                 try:
                     service_enum = WorkdayService(service_name)
                     self.wsdl_paths[service_enum] = wsdl_url
@@ -581,6 +544,8 @@ class WorkdayToolkit(AbstractToolkit):
 
         # Dictionary to store initialized clients per service
         self._clients: Dict[WorkdayService, WorkdaySOAPClient] = {}
+        # Composable service instances keyed by operation_type
+        self._composables: Dict[str, WorkdayComposable] = {}
 
         # For backward compatibility, keep soap_client as primary client
         self.soap_client: Optional[WorkdaySOAPClient] = None
@@ -688,15 +653,42 @@ class WorkdayToolkit(AbstractToolkit):
 
         return await self._get_client_for_service(service)
 
+    async def _get_composable(self, operation_type: str) -> WorkdayComposable:
+        """Get or create a WorkdayComposable for the given operation_type.
+
+        Args:
+            operation_type: Composable operation type (e.g. "get_workers").
+
+        Returns:
+            Initialised WorkdayComposable instance.
+        """
+        if operation_type in self._composables:
+            return self._composables[operation_type]
+        config = WorkdayConfig(
+            client_id=self.credentials.get("client_id"),
+            client_secret=self.credentials.get("client_secret"),
+            token_url=self.credentials.get("token_url"),
+            refresh_token=self.credentials.get("refresh_token"),
+            report_username=self.report_username,
+            report_password=self.report_password,
+            tenant=self.tenant_name,
+            report_owner=self.report_owner or self.report_username or "",
+            workday_url=self.workday_url,
+            timeout=self.timeout,
+        )
+        svc = WorkdayComposable(config=config, operation_type=operation_type)
+        await svc.start()
+        self._composables[operation_type] = svc
+        return svc
+
     async def wd_close(self) -> None:
-        """
-        Close all SOAP client connections.
-        """
-        # Close all cached clients
+        """Close all SOAP client and composable connections."""
         for client in self._clients.values():
             await client.close()
-
         self._clients.clear()
+        for svc in self._composables.values():
+            await svc.close()
+        self._composables.clear()
         self.soap_client = None
         self._initialized = False
 
@@ -725,36 +717,9 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        # Get the appropriate client for this method
-        client = await self._get_client_for_method("wd_get_worker")
-
-        # Build the Get_Workers request
-        request = {
-            "Request_References": {
-                "Worker_Reference": client._build_worker_reference(worker_id)
-            },
-            "Response_Filter": {
-                "As_Of_Effective_Date": datetime.now().strftime("%Y-%m-%d"),
-                "As_Of_Entry_DateTime": datetime.now().isoformat()
-            },
-            "Response_Group": {
-                "Include_Reference": True,
-                "Include_Personal_Information": True,
-                "Include_Employment_Information": True,
-                "Include_Compensation": True,
-                "Include_Organizations": True,
-                "Include_Roles": True,
-                "Include_Management_Chain_Data": True
-            }
-        }
-
-        result = await client.run("Get_Workers", **request)
-        # Use parser for structured output
-        return WorkdayResponseParser.parse_worker_response(
-            result,
-            output_format=output_format
-        )
-        # return client._parse_worker_response(result)
+        svc = await self._get_composable("get_workers")
+        models = await svc.fetch_models("get_workers", worker_id=worker_id)
+        return models[0].model_dump() if models else {}
 
     @tool_schema(SearchWorkersInput)
     async def wd_search_workers(
@@ -788,29 +753,26 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        # Get the appropriate client for this method
-        client = await self._get_client_for_method("wd_search_workers")
+        svc = await self._get_composable("get_workers")
 
-        # Build request criteria
-        request = {
-            "Request_Criteria": client._build_request_criteria(
-                search_text=search_text,
-                manager_id=manager_id,
-                location_id=location_id,
-                job_profile_id=job_profile_id
-            ),
-            "Response_Filter": {
-                "Page": 1,
-                "Count": max_results
-            },
+        request_criteria: Dict[str, Any] = {}
+        if search_text:
+            request_criteria["Search_Text"] = search_text
+        if manager_id:
+            request_criteria["Manager_Reference"] = {
+                "ID": [{"type": "Employee_ID", "_value_1": manager_id}]
+            }
+
+        request: Dict[str, Any] = {
+            "Request_Criteria": request_criteria,
+            "Response_Filter": {"Page": 1, "Count": max_results},
             "Response_Group": {
                 "Include_Reference": True,
                 "Include_Personal_Information": True,
-                "Include_Employment_Information": True
-            }
+                "Include_Employment_Information": True,
+            },
         }
 
-        # Add hire date filters if provided
         if hire_date_from or hire_date_to:
             request["Request_Criteria"]["Hire_Date_Range"] = {}
         if hire_date_from:
@@ -818,16 +780,11 @@ class WorkdayToolkit(AbstractToolkit):
         if hire_date_to:
             request["Request_Criteria"]["Hire_Date_Range"]["To"] = hire_date_to
 
-        result = await client.run("Get_Workers", **request)
+        result = await svc.call_operation("Get_Workers", **request)
 
-        # Parse multiple workers from response
         workers = []
         if result and hasattr(result, "Worker"):
-            workers.extend(
-                client._parse_worker_response(worker)
-                for worker in result.Worker
-            )
-
+            workers.extend(helpers.serialize_object(worker) for worker in result.Worker)
         return workers
 
     @tool_schema(GetWorkerContactInput)
@@ -855,26 +812,23 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        # Get the appropriate client for this method
-        client = await self._get_client_for_method("wd_get_worker_contact")
+        svc = await self._get_composable("get_workers")
 
         request = {
             "Request_References": {
-                "Worker_Reference": client._build_worker_reference(worker_id)
+                "Worker_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]}
             },
             "Response_Group": {
                 "Include_Personal_Information": include_personal,
                 "Include_Employment_Information": include_work,
-                # "Include_Contact_Information": True
-            }
+            },
         }
 
-        result = await client.run("Get_Workers", **request)
-        # parsed = client._parse_worker_response(result)
+        result = await svc.call_operation("Get_Workers", **request)
         return WorkdayResponseParser.parse_contact_response(
             result,
             worker_id=worker_id,
-            output_format=output_format
+            output_format=output_format,
         )
 
     @tool_schema(GetWorkerJobDataInput)
@@ -899,35 +853,30 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        # Get the appropriate client for this method
-        client = await self._get_client_for_method("wd_get_worker_job_data")
+        svc = await self._get_composable("get_workers")
 
         if not effective_date:
             effective_date = datetime.now().strftime("%Y-%m-%d")
 
         request = {
             "Request_References": {
-                "Worker_Reference": client._build_worker_reference(worker_id)
+                "Worker_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]}
             },
-            "Response_Filter": {
-                "As_Of_Effective_Date": effective_date
-            },
+            "Response_Filter": {"As_Of_Effective_Date": effective_date},
             "Response_Group": {
                 "Include_Employment_Information": True,
                 "Include_Compensation": True,
                 "Include_Organizations": True,
-                "Include_Management_Chain_Data": True
-            }
+                "Include_Management_Chain_Data": True,
+            },
         }
 
-        result = await client.run("Get_Workers", **request)
-        parsed = client._parse_worker_response(result)
+        result = await svc.call_operation("Get_Workers", **request)
+        parsed = helpers.serialize_object(result) if result else {}
 
-        # Extract job-specific data
         if parsed and "Worker_Data" in parsed:
             worker_data = parsed["Worker_Data"]
             employment_data = worker_data.get("Employment_Data", {})
-
             return {
                 "worker_id": worker_id,
                 "effective_date": effective_date,
@@ -937,7 +886,7 @@ class WorkdayToolkit(AbstractToolkit):
                 "manager": employment_data.get("Worker_Job_Data", {}).get("Manager_Reference", {}),
                 "location": employment_data.get("Position_Data", {}).get("Business_Site_Summary_Data", {}),
                 "organizations": worker_data.get("Organization_Data", []),
-                "compensation": worker_data.get("Compensation_Data", {})
+                "compensation": worker_data.get("Compensation_Data", {}),
             }
 
         return {"worker_id": worker_id, "job_data": parsed}
@@ -964,8 +913,7 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        # Get the appropriate client for this method
-        client = await self._get_client_for_method("wd_get_organization")
+        svc = await self._get_composable("get_organizations")
 
         request = {
             "Request_References": {
@@ -976,12 +924,11 @@ class WorkdayToolkit(AbstractToolkit):
             "Response_Group": {
                 "Include_Reference": True,
                 "Include_Organization_Support_Role_Data": True,
-                "Include_Hierarchy_Data": include_hierarchy
-            }
+                "Include_Hierarchy_Data": include_hierarchy,
+            },
         }
 
-        result = await client.run("Get_Organizations", **request)
-        # Parse organization response
+        result = await svc.call_operation("Get_Organizations", **request)
         return helpers.serialize_object(result) if result else {}
 
     async def wd_get_worker_time_off_balance(
@@ -1004,30 +951,20 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        # Get the appropriate client for this method
-        client = await self._get_client_for_method("wd_get_worker_time_off_balance")
+        svc = await self._get_composable("get_workers")
 
         request = {
             "Request_References": {
-                "Worker_Reference": client._build_worker_reference(worker_id)
+                "Worker_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]}
             },
-            "Response_Group": {
-                # Some Workday tenants/WSDL versions do not expose
-                # Include_Time_Off_Balance on the Worker response group.  Keep
-                # the response group minimal to avoid zeep TypeError for
-                # unsupported fields while still returning the worker payload
-                # (which may contain Time_Off_Balance_Data when the tenant is
-                # licensed for Absence Management).
-                "Include_Reference": True
-            }
+            "Response_Group": {"Include_Reference": True},
         }
 
-        result = await client.run("Get_Workers", **request)
-        print('RESULT > ', result)
+        result = await svc.call_operation("Get_Workers", **request)
         return WorkdayResponseParser.parse_time_off_balance_response(
             result,
             worker_id=worker_id,
-            output_format=output_format
+            output_format=output_format,
         )
 
     @tool_schema(GetTimeOffBalanceInput)
@@ -1056,54 +993,12 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        # Get the Absence Management client
-        absence_client = await self._get_client_for_method("wd_get_time_off_balance")
-
-        # Build the request payload
-        payload = {
-            "Response_Filter": {
-                "As_Of_Entry_DateTime": datetime.now().replace(microsecond=0).isoformat() + "Z"
-            },
-            "Response_Group": {
-                "Include_Reference": True,
-                "Include_Time_Off_Plan_Balance_Data": True,
-            },
-        }
-
-        # Build Request_Criteria
-        request_criteria = {
-            "Employee_Reference": {
-                "ID": [
-                    {
-                        "_value_1": worker_id,
-                        "type": "Employee_ID"
-                    }
-                ]
-            }
-        }
-
-        # Add time off plan filter if provided
+        svc = await self._get_composable("get_time_off_balances")
+        fetch_kwargs: Dict[str, Any] = {"worker_id": worker_id}
         if time_off_plan_id:
-            request_criteria["Time_Off_Plan_Reference"] = {
-                "ID": [
-                    {
-                        "_value_1": time_off_plan_id,
-                        "type": "Time_Off_Plan_ID"
-                    }
-                ]
-            }
-
-        payload["Request_Criteria"] = request_criteria
-
-        # Execute the SOAP operation
-        result = await absence_client._service.Get_Time_Off_Plan_Balances(**payload)
-
-        # Parse the response using the dedicated parser
-        return WorkdayResponseParser.parse_time_off_plan_balances_response(
-            result,
-            worker_id=worker_id,
-            output_format=output_format
-        )
+            fetch_kwargs["time_off_plan_id"] = time_off_plan_id
+        models = await svc.fetch_models("get_time_off_balances", **fetch_kwargs)
+        return [m.model_dump() for m in models]
 
     @tool_schema(CustomReportInput)
     async def wd_run_custom_report(
@@ -1137,10 +1032,11 @@ class WorkdayToolkit(AbstractToolkit):
         # Debug logging (masked) to verify which creds/owner are being used
         try:
             user_preview = (self.report_username[:3] + "..." if self.report_username else "none")
-            pwd_preview = (self.report_password[:2] + "..." + self.report_password[-2:] if self.report_password else "none")
             owner_preview = report_owner or self.report_owner or self.report_username
-            print(f"[wd_run_custom_report] user={user_preview} pwd={pwd_preview} owner={owner_preview}")
-        except Exception:
+            self.logger.debug(
+                "[wd_run_custom_report] user=%s owner=%s", user_preview, owner_preview
+            )
+        except Exception:  # noqa: BLE001
             pass
 
         # Initialize HTTP client lazily
@@ -1217,36 +1113,31 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        # Get the appropriate client for this method
-        client = await self._get_client_for_method("wd_get_workers_by_organization")
+        svc = await self._get_composable("get_workers")
 
         request = {
             "Request_Criteria": {
                 "Organization_Reference": [
-                    client._build_organization_reference(org_id)
+                    {"ID": [{"type": "Organization_Reference_ID", "_value_1": org_id}]}
                 ],
                 "Include_Subordinate_Organizations": include_subordinate,
-                "Exclude_Inactive_Workers": exclude_inactive
+                "Exclude_Inactive_Workers": exclude_inactive,
             },
             "Response_Filter": {
                 "Page": 1,
                 "Count": max_results,
-                "As_Of_Effective_Date": datetime.now().strftime("%Y-%m-%d")
+                "As_Of_Effective_Date": datetime.now().strftime("%Y-%m-%d"),
             },
             "Response_Group": {
                 "Include_Reference": True,
                 "Include_Personal_Information": True,
                 "Include_Employment_Information": True,
-                "Include_Organizations": True
-            }
+                "Include_Organizations": True,
+            },
         }
 
-        result = await client.run("Get_Workers", **request)
-        # Use parser for structured output
-        return WorkdayResponseParser.parse_workers_response(
-            result,
-            output_format=output_format
-        )
+        result = await svc.call_operation("Get_Workers", **request)
+        return WorkdayResponseParser.parse_workers_response(result, output_format=output_format)
 
     async def wd_get_workers_by_ids(
         self,
@@ -1268,27 +1159,24 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        # Get the appropriate client for this method
-        client = await self._get_client_for_method("wd_get_workers_by_ids")
+        svc = await self._get_composable("get_workers")
 
         request = {
             "Request_References": {
                 "Worker_Reference": [
-                    client._build_worker_reference(wid, id_type)
+                    {"ID": [{"type": id_type, "_value_1": wid}]}
                     for wid in worker_ids
                 ]
             },
-            "Response_Filter": {
-                "As_Of_Effective_Date": datetime.now().strftime("%Y-%m-%d")
-            },
+            "Response_Filter": {"As_Of_Effective_Date": datetime.now().strftime("%Y-%m-%d")},
             "Response_Group": {
                 "Include_Reference": True,
                 "Include_Personal_Information": True,
-                "Include_Employment_Information": True
-            }
+                "Include_Employment_Information": True,
+            },
         }
 
-        result = await client.run("Get_Workers", **request)
+        result = await svc.call_operation("Get_Workers", **request)
         return self._parse_workers_response(result)
 
     async def wd_search_workers_by_name(
@@ -1314,30 +1202,26 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        # Get the appropriate client for this method
-        client = await self._get_client_for_method("wd_search_workers_by_name")
+        svc = await self._get_composable("get_workers")
 
         request = {
             "Request_Criteria": {
                 "Field_And_Parameter_Criteria_Data": {
-                    "Field_Name": "Legal_Name",  # Or "Preferred_Name"
+                    "Field_Name": "Legal_Name",
                     "Operator": search_type,
-                    "Value": name
+                    "Value": name,
                 },
-                "Exclude_Inactive_Workers": True
+                "Exclude_Inactive_Workers": True,
             },
-            "Response_Filter": {
-                "Page": 1,
-                "Count": max_results
-            },
+            "Response_Filter": {"Page": 1, "Count": max_results},
             "Response_Group": {
                 "Include_Reference": True,
                 "Include_Personal_Information": True,
-                "Include_Employment_Information": True
-            }
+                "Include_Employment_Information": True,
+            },
         }
 
-        result = await client.run("Get_Workers", **request)
+        result = await svc.call_operation("Get_Workers", **request)
         return self._parse_workers_response(result)
 
     async def wd_get_workers_by_manager(
@@ -1417,38 +1301,28 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        # Get the appropriate client for this method
-        client = await self._get_client_for_method("wd_get_inactive_workers")
+        svc = await self._get_composable("get_workers")
 
-        request = {
+        request: Dict[str, Any] = {
             "Request_Criteria": {
-                "Exclude_Inactive_Workers": False,  # We want inactive workers!
+                "Exclude_Inactive_Workers": False,
                 "Exclude_Employees": False,
-                "Exclude_Contingent_Workers": False
+                "Exclude_Contingent_Workers": False,
             },
-            "Response_Filter": {
-                "Page": 1,
-                "Count": max_results
-            },
+            "Response_Filter": {"Page": 1, "Count": max_results},
             "Response_Group": {
                 "Include_Reference": True,
                 "Include_Personal_Information": True,
-                "Include_Employment_Information": True
-            }
+                "Include_Employment_Information": True,
+            },
         }
 
-        # Add org filter if provided
         if org_id:
             request["Request_Criteria"]["Organization_Reference"] = [
-                client._build_organization_reference(org_id)
+                {"ID": [{"type": "Organization_Reference_ID", "_value_1": org_id}]}
             ]
 
-        # Note: Termination date filtering might require Transaction_Log_Criteria_Data
-        # depending on your Workday configuration
-
-        result = await client.run("Get_Workers", **request)
-
-        # Post-process to filter by termination date if needed
+        result = await svc.call_operation("Get_Workers", **request)
         workers = self._parse_workers_response(result)
 
         if termination_date_from or termination_date_to:
@@ -1491,9 +1365,9 @@ class WorkdayToolkit(AbstractToolkit):
 
         request = {
             "Request_References": {
-                "Worker_Reference": client._build_worker_reference(worker_id)
+                "Worker_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]}
             },
-            "Response_Filter": {}
+            "Response_Filter": {},
         }
 
         if start_date:
@@ -1539,9 +1413,9 @@ class WorkdayToolkit(AbstractToolkit):
 
         request = {
             "Request_References": {
-                "Worker_Reference": client._build_worker_reference(worker_id)
+                "Worker_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]}
             },
-            "Response_Filter": {}
+            "Response_Filter": {},
         }
 
         if start_date:
@@ -1739,6 +1613,350 @@ class WorkdayToolkit(AbstractToolkit):
                 )
 
         return df.to_dict(orient="records")
+
+    # ------------------------------------------------------------------
+    # Homologated read tools — FEAT-230 Module 3
+    # ------------------------------------------------------------------
+
+    @tool_schema(FindEmployeeByNameInput)
+    async def find_employee_id_by_name(
+        self,
+        name: str,
+        max_results: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Find Workday employee IDs and names matching a worker name.
+
+        Searches workers by legal name (contains match). Returns a list of
+        matching workers with their employee ID and display name.
+
+        Args:
+            name: Full or partial worker name to search for.
+            max_results: Maximum number of results to return.
+
+        Returns:
+            List of dicts with worker_id and formatted_name keys.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_workers")
+        request = {
+            "Request_Criteria": {
+                "Field_And_Parameter_Criteria_Data": {
+                    "Field_Name": "Legal_Name",
+                    "Operator": "Contains",
+                    "Value": name,
+                },
+                "Exclude_Inactive_Workers": True,
+            },
+            "Response_Filter": {"Page": 1, "Count": max_results},
+            "Response_Group": {
+                "Include_Reference": True,
+                "Include_Personal_Information": True,
+            },
+        }
+        result = await svc.call_operation("Get_Workers", **request)
+        workers = self._parse_workers_response(result)
+        output = []
+        for w in workers:
+            worker_data = w.get("Worker_Data", {})
+            output.append({
+                "worker_id": worker_data.get("Worker_ID"),
+                "formatted_name": (
+                    worker_data.get("Personal_Data", {})
+                    .get("Name_Data", {})
+                    .get("Preferred_Name_Data", {})
+                    .get("Name_Detail_Data", {})
+                    .get("Formatted_Name")
+                    or worker_data.get("Worker_ID")
+                ),
+            })
+        return output
+
+    @tool_schema(GetWorkerInfoInput)
+    async def get_current_user_info(self, worker_id: str) -> Dict[str, Any]:
+        """Get comprehensive Workday information for a worker.
+
+        Returns all available fields for the worker including employment,
+        compensation, organisation, and management chain data.
+
+        Args:
+            worker_id: Workday Employee ID.
+
+        Returns:
+            Dict with all available worker fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_workers")
+        models = await svc.fetch_models("get_workers", worker_id=worker_id)
+        return models[0].model_dump(mode="json") if models else {}
+
+    @tool_schema(GetWorkerInfoInput)
+    async def get_more_employee_data(self, worker_id: str) -> Dict[str, Any]:
+        """Get extended employee data from Workday including benefits, roles, and documents.
+
+        Similar to get_current_user_info but emphasises extended fields such as
+        benefits, assigned roles, and document details.
+
+        Args:
+            worker_id: Workday Employee ID.
+
+        Returns:
+            Dict with extended worker fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_workers")
+        models = await svc.fetch_models("get_workers", worker_id=worker_id)
+        return models[0].model_dump(mode="json") if models else {}
+
+    @tool_schema(GetWorkerInfoInput)
+    async def get_personal_information(self, worker_id: str) -> Dict[str, Any]:
+        """Get personal information for a Workday worker.
+
+        Returns name, date of birth, gender, nationality, marital status,
+        and contact details as stored in Workday.
+
+        Args:
+            worker_id: Workday Employee ID.
+
+        Returns:
+            Dict with personal information fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_workers")
+        models = await svc.fetch_models("get_workers", worker_id=worker_id)
+        if not models:
+            return {}
+        m = models[0].model_dump(mode="json")
+        return {
+            "worker_id": m.get("worker_id"),
+            "first_name": m.get("first_name"),
+            "middle_name": m.get("middle_name"),
+            "last_name": m.get("last_name"),
+            "formatted_name": m.get("formatted_name"),
+            "reporting_name": m.get("reporting_name"),
+            "pref_formatted_name": m.get("pref_formatted_name"),
+            "email": m.get("email"),
+            "phone": m.get("phone"),
+            "date_of_birth": m.get("date_of_birth"),
+            "gender": m.get("gender"),
+            "nationality": m.get("nationality"),
+            "country": m.get("country"),
+        }
+
+    @tool_schema(GetWorkerInfoInput)
+    async def get_direct_reports(self, worker_id: str) -> List[Dict[str, Any]]:
+        """Get the direct reports (subordinates) of a manager in Workday.
+
+        Returns all active workers whose immediate manager is the given worker.
+
+        Args:
+            worker_id: Workday Employee ID of the manager.
+
+        Returns:
+            List of worker dicts for each direct report.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_workers")
+        request = {
+            "Request_Criteria": {
+                "Manager_Reference": {
+                    "ID": [{"type": "Employee_ID", "_value_1": worker_id}]
+                },
+                "Exclude_Inactive_Workers": True,
+            },
+            "Response_Filter": {"Page": 1, "Count": 200},
+            "Response_Group": {
+                "Include_Reference": True,
+                "Include_Personal_Information": True,
+                "Include_Employment_Information": True,
+            },
+        }
+        result = await svc.call_operation("Get_Workers", **request)
+        return self._parse_workers_response(result)
+
+    @tool_schema(GetTimeOffBalanceInput2)
+    async def get_time_off_balance(
+        self,
+        worker_id: str,
+        time_off_plan_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get time off plan balances for a worker.
+
+        Returns available balances for all time off plans assigned to the
+        worker. Optionally filter by a specific time off plan.
+
+        Args:
+            worker_id: Workday Employee ID.
+            time_off_plan_id: Optional time off plan ID to filter.
+
+        Returns:
+            List of dicts with plan name, balance, and unit fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_time_off_balances")
+        fetch_kwargs: Dict[str, Any] = {"worker_id": worker_id}
+        if time_off_plan_id:
+            fetch_kwargs["time_off_plan_id"] = time_off_plan_id
+        models = await svc.fetch_models("get_time_off_balances", **fetch_kwargs)
+        return [m.model_dump(mode="json") for m in models]
+
+    @tool_schema(GetWorkerInfoInput)
+    async def get_current_user_time_off_balance(
+        self,
+        worker_id: str,
+    ) -> List[Dict[str, Any]]:
+        """Get all time off plan balances for a worker (all plans).
+
+        Returns the current available balance for every time off plan
+        assigned to the worker.
+
+        Args:
+            worker_id: Workday Employee ID.
+
+        Returns:
+            List of dicts with plan name, balance, and unit fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_time_off_balances")
+        models = await svc.fetch_models("get_time_off_balances", worker_id=worker_id)
+        return [m.model_dump(mode="json") for m in models]
+
+    @tool_schema(GetTimeOffHistoryInput)
+    async def get_current_user_time_off_history(
+        self,
+        worker_id: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get time off request history for a worker.
+
+        Returns submitted time off requests within the given date range.
+        Defaults to the last 7 days when no range is provided.
+
+        Args:
+            worker_id: Workday Employee ID.
+            start_date: Start of date range (YYYY-MM-DD).
+            end_date: End of date range (YYYY-MM-DD).
+
+        Returns:
+            List of time request dicts with dates, status, and hours.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_time_requests")
+        fetch_kwargs: Dict[str, Any] = {"worker_id": worker_id}
+        if start_date:
+            fetch_kwargs["start_date"] = start_date
+        if end_date:
+            fetch_kwargs["end_date"] = end_date
+        models = await svc.fetch_models("get_time_requests", **fetch_kwargs)
+        return [m.model_dump(mode="json") for m in models]
+
+    async def get_today_date_and_day_of_week(self) -> Dict[str, str]:
+        """Return today's ISO date and the day of the week name.
+
+        No Workday call is made. Useful for agents that need the current
+        date context before performing date-relative operations.
+
+        Returns:
+            Dict with 'date' (ISO-8601) and 'day_of_week' keys.
+        """
+        from datetime import date as _date
+        d = _date.today()
+        return {"date": d.isoformat(), "day_of_week": d.strftime("%A")}
+
+    @tool_schema(RequestTimeOffInput)
+    async def request_my_time_off(
+        self,
+        worker_id: str,
+        start_date: str,
+        end_date: str,
+        time_off_type: str,
+        daily_quantity: float = 8.0,
+        comment: Optional[str] = None,
+        dry_run: bool = True,
+    ) -> Dict[str, Any]:
+        """Submit a time-off request in Workday on behalf of a worker.
+
+        By default runs in dry-run mode (no submission). Set dry_run=False
+        to actually submit the request to Workday Absence Management.
+
+        Args:
+            worker_id: Workday Employee ID.
+            start_date: First day of the time-off period (YYYY-MM-DD).
+            end_date: Last day of the time-off period (YYYY-MM-DD).
+            time_off_type: Time_Off_Type_ID value (e.g. 'VACATION', 'PTO').
+            daily_quantity: Hours or days per calendar day (default 8.0).
+            comment: Optional employee comment on the request.
+            dry_run: If True (default), validates without submitting.
+
+        Returns:
+            Dict with submission status. Includes dry_run=True when not submitted.
+        """
+        if dry_run:
+            return {
+                "dry_run": True,
+                "worker_id": worker_id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "time_off_type": time_off_type,
+                "daily_quantity": daily_quantity,
+                "comment": comment,
+                "message": "Dry-run mode: no request submitted. Set dry_run=False to submit.",
+            }
+
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("request_time_off")
+        result_df = await svc.fetch(
+            "request_time_off",
+            worker_id=worker_id,
+            start_date=start_date,
+            end_date=end_date,
+            time_off_type=time_off_type,
+            daily_quantity=daily_quantity,
+            comment=comment,
+        )
+        records = result_df.to_dict(orient="records")
+        return records[0] if records else {"submitted": False, "error": "No response"}
+
+    @tool_schema(GetWorkerInfoInput)
+    async def get_my_time_off_eligibility(
+        self,
+        worker_id: str,
+    ) -> List[Dict[str, Any]]:
+        """Get the time-off types a worker is eligible to request in Workday.
+
+        Queries the Absence Management WSDL (Get_Time_Off_Types) to return
+        the list of time-off plans the given worker can submit a request for.
+
+        Args:
+            worker_id: Workday Employee ID.
+
+        Returns:
+            List of dicts with time_off_type_id, name, description, and unit fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_time_off_eligibility")
+        models = await svc.fetch_models("get_time_off_eligibility", worker_id=worker_id)
+        return [m.model_dump(mode="json") for m in models]
 
     def _parse_custom_report_xml(self, xml_bytes: bytes) -> List[Dict[str, Any]]:
         """

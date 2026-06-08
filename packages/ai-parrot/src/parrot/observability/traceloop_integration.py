@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 from parrot.observability.config import ObservabilityConfig
 

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=67.6.1", "wheel>=0.44.0"]
+requires = ["setuptools>=77.0.0", "wheel>=0.44.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -41,7 +41,7 @@ telegram = [
 msteams = [
     "azure-teambots>=0.1.1",
     "parrot-formdesigner",
-    "redis[asyncio]>=5.0",
+    "redis>=5.0",
 ]
 whatsapp = [
     "pywa>=3.8.0",

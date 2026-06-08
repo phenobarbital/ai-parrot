@@ -106,10 +106,7 @@ class Main(AppHandler):
             queue_size=5
         )
         # Loading QUerySource
-        qry = QuerySource(
-            lazy=False,
-            loop=self.event_loop()
-        )
+        qry = QuerySource(lazy=False)
         qry.setup(self.app)
         # Chatbot System
         self.bot_manager = BotManager(enable_database_bots=True)

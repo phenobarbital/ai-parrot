@@ -174,18 +174,29 @@ class MetricsSubscriber:
     async def _on_client_before(self, event: BeforeClientCallEvent) -> None:
         """Count outgoing LLM API request."""
         system = resolve_gen_ai_system(event.client_name)
+        # FEAT-228: metrics must always carry a string value for parrot.agent.name
+        # (OTel label sets must be stable per series); spans omit the attribute when
+        # agent_name is None instead — see attributes.py for the span-side handling.
         self._client_request_count.add(
             1,
             attributes={
                 "gen_ai.system": system,
                 "gen_ai.request.model": event.model,
+                "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
             },
         )
 
     async def _on_client_after(self, event: AfterClientCallEvent) -> None:
         """Record operation duration, token usage, and optional cost."""
         system = resolve_gen_ai_system(event.client_name)
-        base = {"gen_ai.system": system, "gen_ai.response.model": event.model}
+        # FEAT-228: metrics must always carry a string value for parrot.agent.name
+        # (OTel label sets must be stable per series); spans omit the attribute when
+        # agent_name is None instead — see attributes.py for the span-side handling.
+        base = {
+            "gen_ai.system": system,
+            "gen_ai.response.model": event.model,
+            "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
+        }
 
         # Operation duration histogram
         self._client_op_duration.record(
@@ -219,11 +230,15 @@ class MetricsSubscriber:
     async def _on_client_fail(self, event: ClientCallFailedEvent) -> None:
         """Count LLM API errors by error type."""
         system = resolve_gen_ai_system(event.client_name)
+        # FEAT-228: metrics must always carry a string value for parrot.agent.name
+        # (OTel label sets must be stable per series); spans omit the attribute when
+        # agent_name is None instead — see attributes.py for the span-side handling.
         self._client_error_count.add(
             1,
             attributes={
                 "gen_ai.system": system,
                 "error.type": event.error_type,
+                "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
             },
         )
 

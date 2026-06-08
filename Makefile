@@ -185,7 +185,6 @@ endif
 # the `images`/`all` extras (transformers<5.0). Install it in a separate env.
 develop:
 	uv sync --all-packages --all-extras --no-extra gemma4
-	uv pip install querysource
 	$(MAKE) build-inplace
 	@echo "Full development environment ready (all packages, all extras except gemma4, dev tools)."
 
@@ -202,6 +201,10 @@ develop-ml:
 	uv sync --package ai-parrot --extra embeddings --extra charts
 	uv sync --package ai-parrot-loaders --extra audio
 	@echo "ML development environment ready."
+
+observability:
+	uv sync --all-packages --no-extra gemma4 --extra observability --extra observability-openlit
+	@echo "Observability development environment ready."
 
 # Setup development environment from requirements file (if you still have one)
 setup:

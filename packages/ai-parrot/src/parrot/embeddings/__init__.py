@@ -18,6 +18,7 @@ supported_embeddings = {
     'huggingface': 'SentenceTransformerModel',
     'google': 'GoogleEmbeddingModel',
     'openai': 'OpenAIEmbeddingModel',
+    'multimodal': 'UFormEmbedding',
 }
 
 
