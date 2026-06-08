@@ -624,6 +624,18 @@ WORKDAY_WSDL_PAYROLL = config.get(
     "WORKDAY_WSDL_PAYROLL",
     fallback=BASE_DIR.joinpath("env", "workday", "payroll_v45_2.wsdl")
 )
+WORKDAY_WSDL_INTEGRATIONS = config.get(
+    "WORKDAY_WSDL_INTEGRATIONS",
+    fallback=BASE_DIR.joinpath("env", "workday", "integrations_45.wsdl")
+)
+WORKDAY_WSDL_CUSTOM_PUNCH_FIELD_REPORT = config.get(
+    "WORKDAY_WSDL_CUSTOM_PUNCH_FIELD_REPORT",
+    fallback=BASE_DIR.joinpath("env", "workday", "custom_punch_field_report_nav.wsdl")
+)
+WORKDAY_WSDL_TIME_BLOCK_REPORT = config.get(
+    "WORKDAY_WSDL_TIME_BLOCK_REPORT",
+    fallback=BASE_DIR.joinpath("env", "workday", "extract_time_blocks_navigator.wsdl")
+)
 WORKDAY_REFRESH_TOKEN = config.get("WORKDAY_REFRESH_TOKEN", fallback=None)
 WORKDAY_REPORT_USERNAME = config.get("WORKDAY_REPORT_USERNAME", fallback=None)
 WORKDAY_REPORT_PASSWORD = config.get("WORKDAY_REPORT_PASSWORD", fallback=None)

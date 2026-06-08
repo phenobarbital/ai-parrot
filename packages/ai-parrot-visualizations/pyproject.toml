@@ -34,10 +34,7 @@ matplotlib = ["matplotlib>=3.7"]
 seaborn = ["seaborn>=0.13", "matplotlib>=3.7"]
 plotly = ["plotly>=5.0"]
 altair = ["altair>=5.0"]
-bokeh = ["bokeh>=3.0", "pandas-bokeh>=0.5"]
-holoviews = ["holoviews>=1.18"]
 echarts = []  # JS-based — ECharts bundled as static asset (assets/echarts.min.js); no Python deps
-d3 = []       # JS-based — D3.js loaded via CDN at render time; no Python deps
 map = ["folium>=0.14"]
 infographic = ["cairosvg", "svglib", "reportlab"]
 jinja2 = ["jinja2>=3.0"]
@@ -45,7 +42,7 @@ streamlit = ["streamlit>=1.30"]
 panel = ["panel>=1.0"]
 messaging = []  # card/slack/whatsapp renderers — no heavy Python dependencies
 charts = [
-    "ai-parrot-visualizations[matplotlib,seaborn,plotly,altair,bokeh,holoviews,echarts,d3]",
+    "ai-parrot-visualizations[matplotlib,seaborn,plotly,altair,echarts]",
 ]
 all = [
     "ai-parrot-visualizations[charts,map,infographic,jinja2,streamlit,panel,messaging]",

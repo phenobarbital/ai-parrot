@@ -1,0 +1,113 @@
+{
+  "feature": "workday-tooling-composable-interface",
+  "feature_id": "FEAT-230",
+  "spec": "sdd/specs/workday-tooling-composable-interface.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-08T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1505",
+      "slug": "vendor-workday-composable",
+      "title": "Vendor the Workday composable + rebase onto parrot core",
+      "feature_id": "FEAT-230",
+      "feature": "workday-tooling-composable-interface",
+      "spec": "sdd/specs/workday-tooling-composable-interface.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task; everything else imports the vendored package. Vendor + rebase are inseparable (source service.py imports flowtask.interfaces.SOAPClient, which only resolves after the base rebase).",
+      "assigned_to": null,
+      "started_at": "2026-06-08T15:15:15+00:00",
+      "completed_at": "2026-06-08T16:37:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1505-vendor-workday-composable.md"
+    },
+    {
+      "id": "TASK-1506",
+      "slug": "refactor-toolkit-delegate",
+      "title": "Refactor WorkdayToolkit to delegate to the composable",
+      "feature_id": "FEAT-230",
+      "feature": "workday-tooling-composable-interface",
+      "spec": "sdd/specs/workday-tooling-composable-interface.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1505"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies tool.py; depends on the vendored package from TASK-1505.",
+      "assigned_to": null,
+      "started_at": "2026-06-08T16:39:57+00:00",
+      "completed_at": "2026-06-08T17:57:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1506-refactor-toolkit-delegate.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1507",
+      "slug": "read-path-homologation",
+      "title": "Read-path homologation \u2014 9 agent-facing tools",
+      "feature_id": "FEAT-230",
+      "feature": "workday-tooling-composable-interface",
+      "spec": "sdd/specs/workday-tooling-composable-interface.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1506"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Adds methods to tool.py after the delegation refactor lands; shares tool.py with TASK-1506/1508/1509.",
+      "assigned_to": null,
+      "started_at": "2026-06-08T18:03:47+00:00",
+      "completed_at": "2026-06-08T18:18:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1507-read-path-homologation.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1508",
+      "slug": "request-time-off-write-handler",
+      "title": "request_my_time_off write handler (NEW operation)",
+      "feature_id": "FEAT-230",
+      "feature": "workday-tooling-composable-interface",
+      "spec": "sdd/specs/workday-tooling-composable-interface.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1507"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Independent of TASK-1509 logically, but both modify tool.py + service.py + config.py \u2014 keep sequential in the same worktree to avoid merge churn (spec Worktree Strategy).",
+      "assigned_to": null,
+      "started_at": "2026-06-08T18:22:31+00:00",
+      "completed_at": "2026-06-08T18:45:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1508-request-time-off-write-handler.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1509",
+      "slug": "time-off-eligibility-handler",
+      "title": "get_my_time_off_eligibility handler (NEW operation)",
+      "feature_id": "FEAT-230",
+      "feature": "workday-tooling-composable-interface",
+      "spec": "sdd/specs/workday-tooling-composable-interface.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1507"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Shares tool.py + service.py + config.py with TASK-1508; keep sequential in the same worktree.",
+      "assigned_to": null,
+      "started_at": "2026-06-08T18:22:31+00:00",
+      "completed_at": "2026-06-08T18:45:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1509-time-off-eligibility-handler.md",
+      "verification": "verified"
+    }
+  ]
+}

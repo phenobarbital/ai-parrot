@@ -41,7 +41,8 @@ def init_openlit(config: ObservabilityConfig) -> None:
             ``service_name`` and ``openlit_disabled_instrumentors`` are
             forwarded to ``openlit.init``. The skip-list defaults to the
             instrumentors known to break against the installed SDK versions
-            (``openai``, ``openai_agents``, ``milvus``) so boot logs stay clean.
+            (``openai``, ``openai_agents``, ``milvus``, ``fastapi``,
+            ``starlette``, ``tornado``) so boot logs stay clean.
 
     Raises:
         ImportError: If ``openlit`` is not installed. Install with:

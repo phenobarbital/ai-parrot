@@ -167,11 +167,21 @@ class WorkdayToolkit(AbstractToolkit):
 ### Module 2: Refactor WorkdayToolkit to delegate
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/workday/tool.py`
 - **Responsibility**: Replace each `wd_*` method's in-line SOAP body with a
-  delegation to a `WorkdayService` instance (built per service/WSDL via the
-  existing routing). Retire `WorkdaySOAPClient`'s SOAP-building helpers (or
-  reduce to a thin shim). Add a JSON-conversion boundary (`fetch_models` +
-  `model_dump`, else `to_dict`). Keep constructor/credentials/`wd_start`
-  behavior backward-compatible.
+  delegation to the **vendored composable** `WorkdayService` instance (built per
+  service/WSDL via the existing routing). Retire `WorkdaySOAPClient`'s
+  SOAP-building helpers (or reduce to a thin shim). Add a JSON-conversion
+  boundary (`fetch_models` + `model_dump`, else `to_dict`). Keep
+  constructor/credentials/`wd_start` behavior backward-compatible.
+- **⚠️ NAME COLLISION (blocking).** `tool.py` already defines its own
+  `class WorkdayService(str, Enum)` (verified at `tool.py:99` — a WSDL-category
+  enum: `HUMAN_RESOURCES`/`ABSENCE_MANAGEMENT`, consumed by
+  `METHOD_TO_SERVICE_MAP` at `tool.py:113`). The vendored composable class is
+  ALSO named `WorkdayService(SOAPClient)`. Importing it into `tool.py` shadows
+  the enum and silently breaks `METHOD_TO_SERVICE_MAP`. **Resolution: import the
+  composable under an alias** —
+  `from ..interfaces.workday import WorkdayService as WorkdayComposable` — and
+  leave the existing enum and `METHOD_TO_SERVICE_MAP` untouched. (Renaming the
+  enum is the higher-churn alternative; prefer the alias.)
 - **Depends on**: Module 1.
 
 ### Module 3: Read-path homologation methods (9 methods)
@@ -189,11 +199,29 @@ class WorkdayToolkit(AbstractToolkit):
 ### Module 4: `request_my_time_off` write handler (NEW operation)
 - **Path**: `parrot_tools/interfaces/workday/handlers/time_off_request.py` (new) +
   `parrot_tools/workday/tool.py`
-- **Responsibility**: Implement a new `WorkdayTypeBase` handler issuing the
-  Workday Absence Management write op (e.g. `Request_Time_Off` /
-  `Enter_Time_Off`) via `service.call_operation()`, plus the toolkit
-  `request_my_time_off` tool and `RequestTimeOffInput`. Guard with a
+- **Responsibility**: Implement a new write handler issuing the Workday Absence
+  Management write op (e.g. `Request_Time_Off` / `Enter_Time_Off`) plus the
+  toolkit `request_my_time_off` tool and `RequestTimeOffInput`. Guard with a
   dry-run/confirm flag; target the implementation tenant first.
+- **Subclass the existing write base — do NOT hand-roll.** The composable
+  already ships `WorkdayWriteTypeBase` (verified at `handlers/base.py:178`),
+  whose `execute()` template drives a retry loop and delegates to three abstract
+  hooks the new handler MUST implement: `_operation_name()`, `build_request()`,
+  `parse_ack()`. Use the **FEAT-027 write handlers as reference**:
+  `handlers/put_time_clock_events.py`, `handlers/import_time_clock_events.py`,
+  `handlers/import_reported_time_blocks.py` (all single-call write ops via
+  `self.service.call_operation(operation=...)`).
+- **Register the handler (REQUIRED — else `fetch()` can't reach it).** Add the
+  new operation key to the eager `_type_handlers` registry in
+  `WorkdayService.__init__` (verified at `service.py:218`, mirroring the FEAT-027
+  entries at `service.py:240-242`). Optionally expose a public service wrapper
+  (mirroring `put_time_clock_events` at `service.py:364`) and call it from the
+  tool. If the write returns a typed ack model, register it in
+  `_OPERATION_MODEL_MAP` (`service.py:90`).
+- **WSDL routing.** The op lives on the Absence Management WSDL; add its
+  `operation_type` → `WORKDAY_WSDL_ABSENCE_MANAGEMENT` entry to `_WSDL_MAP`
+  (verified at `config.py:54`, alongside `get_time_off_balances` at
+  `config.py:69`).
 - **Depends on**: Module 1, Module 2.
 
 ### Module 5: `get_my_time_off_eligibility` handler (NEW operation)
@@ -201,7 +229,15 @@ class WorkdayToolkit(AbstractToolkit):
   `parrot_tools/workday/tool.py`
 - **Responsibility**: Implement an eligibility handler (Workday op returning the
   time-off plans/types the worker may request) since the source has no
-  eligibility operation, plus the `get_my_time_off_eligibility` tool.
+  eligibility operation, plus the `get_my_time_off_eligibility` tool. This is a
+  **read** op, so subclass the paginated `WorkdayTypeBase`
+  (`handlers/base.py:11`) and follow a read handler such as
+  `handlers/time_off_balances.py` as reference.
+- **Register the handler (REQUIRED).** Same as Module 4: add the new
+  `operation_type` to `_type_handlers` (`service.py:218`), add its
+  `_WSDL_MAP` entry (`config.py:54`, Absence Management WSDL), and — since it
+  returns typed rows — register a model in `_OPERATION_MODEL_MAP`
+  (`service.py:90`) so `fetch_models()` does not silently return `[]`.
 - **Depends on**: Module 1, Module 2.
 
 ---
@@ -326,8 +362,34 @@ class WorkdayService(SOAPClient):                                      # line 11
     async def get_custom_report(self, ...): ...                        # line 330
     async def start(self, **_kwargs) -> None: ...                      # line 451
     async def close(self) -> None: ...                                 # line 455
-# handler base: handlers/base.py  class WorkdayTypeBase(ABC): async def execute(self, **kwargs) -> Any  (uses self.service.call_operation)
+# handler bases: handlers/base.py
+class WorkdayTypeBase(ABC):                                            # line 11  (read; paginated execute)
+    async def execute(self, **kwargs) -> Any: ...                     # line 53  (uses self.service.call_operation)
+class WorkdayWriteTypeBase(WorkdayTypeBase):                          # line 178 (single-call write base)
+    def _operation_name(self) -> str: ...                             # line 202 (override: SOAP op name)
+    def build_request(self, **kwargs) -> dict: ...                    # line 212 (override: payload)
+    def parse_ack(self, raw) -> Any: ...                              # line 227 (override: ack -> rows)
+    async def execute(self, **kwargs) -> Any: ...                     # line 243 (template: build->call->parse, with retry)
+
+# service registry + routing (extend for new ops)
+_OPERATION_MODEL_MAP: dict[str, type]   # service.py:90  (operation_type -> Pydantic model; fetch_models returns [] if absent)
+WorkdayService._type_handlers: dict     # service.py:218 (operation_type -> handler instance; FEAT-027 writes at 240-242)
+_WSDL_MAP: dict                         # config.py:54   (operation_type -> WSDL; WORKDAY_WSDL_ABSENCE_MANAGEMENT at config.py:69)
+
+# EXISTING write handlers to use as reference (FEAT-027 — single-call writes):
+#   handlers/put_time_clock_events.py  ("Put_Time_Clock_Events")
+#   handlers/import_time_clock_events.py  ("Import_Time_Clock_Events")
+#   handlers/import_reported_time_blocks.py  ("Import_Reported_Time_Blocks")
+# plus public service wrappers: service.put_time_clock_events (service.py:364), import_* (393/415)
 ```
+
+### Naming collision (Anti-Hallucination)
+- `parrot_tools/workday/tool.py:99` defines `class WorkdayService(str, Enum)`
+  (WSDL category enum, used by `METHOD_TO_SERVICE_MAP` at `tool.py:113`). The
+  **vendored composable** `WorkdayService(SOAPClient)` shares this name. In
+  `tool.py`, import the composable as
+  `from ..interfaces.workday import WorkdayService as WorkdayComposable`; do NOT
+  rename the existing enum.
 
 ### Operation → method mapping (verified in source handlers)
 | Homologated tool | Composable operation | Source handler | Status |
@@ -357,9 +419,19 @@ class WorkdayService(SOAPClient):                                      # line 11
 ## 7. Implementation Notes & Constraints
 
 ### Patterns to Follow
-- `WorkdayTypeBase` handler contract (`async def execute(**kwargs)` calling
-  `self.service.call_operation(operation=..., **payload)`) for the new write and
-  eligibility handlers.
+- **Write ops** → subclass `WorkdayWriteTypeBase` (`handlers/base.py:178`):
+  implement `_operation_name()` / `build_request()` / `parse_ack()`; the base
+  `execute()` runs the single `call_operation` with retry. Reference: the three
+  FEAT-027 write handlers (`put_time_clock_events.py`,
+  `import_time_clock_events.py`, `import_reported_time_blocks.py`).
+- **Read ops** → subclass `WorkdayTypeBase` (`handlers/base.py:11`,
+  `async def execute(**kwargs)` calling
+  `self.service.call_operation(operation=..., **payload)`), as in
+  `handlers/time_off_balances.py`.
+- **Every new handler must be registered** in `WorkdayService.__init__`'s
+  `_type_handlers` dict (`service.py:218`); read ops returning models also need
+  an `_OPERATION_MODEL_MAP` entry (`service.py:90`) and a `_WSDL_MAP` entry
+  (`config.py:54`).
 - Tool auto-generation: a method becomes a tool iff it is **public** (no `_`
   prefix) and `inspect.iscoroutinefunction` — name + docstring drive the LLM
   tool spec (`AbstractToolkit.get_tools`, toolkit.py:337). Bind inputs with
@@ -438,3 +510,4 @@ class WorkdayService(SOAPClient):                                      # line 11
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-06-08 | Jesus Lara | Initial draft from FEAT-230 proposal (research-grounded) |
+| 0.2 | 2026-06-08 | Juan | Source-review pass: flagged `WorkdayService` name collision (alias resolution); anchored Modules 4/5 to `WorkdayWriteTypeBase` + FEAT-027 reference handlers; added handler-registration steps (`_type_handlers`/`_OPERATION_MODEL_MAP`/`_WSDL_MAP`) |

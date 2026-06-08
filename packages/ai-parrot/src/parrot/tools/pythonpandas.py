@@ -68,18 +68,6 @@ class PythonPandasTool(PythonREPLTool):
                 'fig.show()  # Note: may not display in REPL, use fig.write_html("plot.html")'
             ]
         },
-        'bokeh': {
-            'import_as': 'bokeh',
-            'import_statement': 'from bokeh.plotting import figure, show, output_file\nfrom bokeh.models import ColumnDataSource',
-            'description': 'Interactive visualization library for web browsers',
-            'best_for': ['large datasets', 'real-time streaming', 'web deployment'],
-            'examples': [
-                'p = figure(title="My Plot", x_axis_label="X", y_axis_label="Y")',
-                'p.circle(df1["x"], df1["y"], size=10)',
-                'output_file("plot.html")',
-                'show(p)'
-            ]
-        },
         'altair': {
             'import_as': 'alt',
             'import_statement': 'import altair as alt',
@@ -91,17 +79,6 @@ class PythonPandasTool(PythonREPLTool):
                 'chart.show()  # or chart.save("plot.html")'
             ]
         },
-        'holoviews': {
-            'import_as': 'hv',
-            'import_statement': 'import holoviews as hv\nhv.extension("bokeh")  # or "matplotlib"',
-            'description': 'High-level data visualization with multiple backends',
-            'best_for': ['multi-dimensional data', 'animated plots', 'complex layouts'],
-            'examples': [
-                'hv.Scatter(df1, "x", "y")',
-                'hv.Histogram(df1["numeric_column"])',
-                'hv.HeatMap(df1, ["category1", "category2"], "value")'
-            ]
-        }
     }
 
     def __init__(

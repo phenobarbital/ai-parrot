@@ -110,11 +110,17 @@ class ObservabilityConfig(BaseModel):
     # raises ``DependencyConflict`` when ``openai-agents`` is not installed).
     # These three are non-fatal but log ERROR-level noise on every boot, and
     # AI-Parrot already traces LLM calls via its native GenAI subscriber, so the
-    # openai instrumentor is redundant. Forwarded to ``openlit.init(
-    # disabled_instrumentors=...)``. Override via ``OBSERVABILITY_OPENLIT_DISABLE``
-    # (comma-separated); set to an empty string to disable nothing.
+    # openai instrumentor is redundant. fastapi/starlette/tornado are transitive
+    # deps (chromadb, mcp) that AI-Parrot never serves — instrumenting them
+    # adds noise and can trigger "already instrumented" warnings. Forwarded to
+    # ``openlit.init(disabled_instrumentors=...)``. Override via
+    # ``OBSERVABILITY_OPENLIT_DISABLE`` (comma-separated); set to an empty string
+    # to disable nothing.
     openlit_disabled_instrumentors: list[str] = Field(
-        default_factory=lambda: ["openai", "openai_agents", "milvus"]
+        default_factory=lambda: [
+            "openai", "openai_agents", "milvus",
+            "fastapi", "starlette", "tornado",
+        ]
     )
 
     # Sampling & PII

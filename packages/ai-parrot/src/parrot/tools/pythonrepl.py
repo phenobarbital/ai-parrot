@@ -84,7 +84,7 @@ class PythonREPLTool(AbstractTool):
 
     Features:
     - Pre-loaded libraries: pandas (pd), numpy (np), matplotlib.pyplot (plt), seaborn (sns), numexpr (ne)
-    - Pre-loaded libraries: altair, plotly, bokeh, holoviews, folium
+    - Pre-loaded libraries: altair, plotly, folium
     - Base64 encoding support for matplotlib plots
     - Automatic plot saving
     - Report directory management
@@ -274,25 +274,6 @@ class PythonREPLTool(AbstractTool):
             )
         except ImportError as exc:
             self.logger.debug(str(exc))
-
-        try:
-            optional_libs['bokeh'] = lazy_import("bokeh", extra="images")
-        except ImportError as exc:
-            self.logger.debug(str(exc))
-
-        # holoviews + bokeh extension. Only configure the bokeh backend when
-        # bokeh is also present, otherwise hv.extension('bokeh') raises.
-        if 'bokeh' in optional_libs:
-            try:
-                hv = lazy_import("holoviews", extra="images")
-                from holoviews import opts as hv_opts
-                hv.extension('bokeh')
-                optional_libs['hv'] = hv
-                optional_libs['opts'] = hv_opts
-            except ImportError as exc:
-                self.logger.debug(str(exc))
-            except Exception as exc:
-                self.logger.debug("holoviews extension init failed: %s", exc)
 
         try:
             optional_libs['folium'] = lazy_import("folium", extra="agents")
