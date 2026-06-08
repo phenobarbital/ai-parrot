@@ -172,7 +172,7 @@
       "feature_id": "FEAT-228",
       "feature": "dataplane-authz",
       "spec": "sdd/specs/dataplane-authz.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -182,8 +182,8 @@
       "parallelism_notes": "Touches different file than TASK-1497 but shares AuthorizingDataSource; sequential for safety",
       "assigned_to": null,
       "started_at": "2026-06-08T10:56:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1498-databasequerytool-integration.md"
+      "completed_at": "2026-06-08T11:21:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1498-databasequerytool-integration.md"
     }
   ]
 }
