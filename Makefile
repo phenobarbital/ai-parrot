@@ -185,7 +185,7 @@ endif
 # the `images`/`all` extras (transformers<5.0). Install it in a separate env.
 develop:
 	uv sync --all-packages --all-extras --no-extra gemma4
-	uv pip install querysource
+	# uv pip install querysource
 	$(MAKE) build-inplace
 	@echo "Full development environment ready (all packages, all extras except gemma4, dev tools)."
 
