@@ -88,7 +88,7 @@
       "feature_id": "FEAT-228",
       "feature": "dataplane-authz",
       "spec": "sdd/specs/dataplane-authz.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -99,8 +99,8 @@
       "parallelism_notes": "Uses RlsPredicate from TASK-1493 and dialect map from TASK-1490",
       "assigned_to": null,
       "started_at": "2026-06-08T10:56:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1494-rls-predicate-injection.md"
+      "completed_at": "2026-06-08T11:05:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1494-rls-predicate-injection.md"
     },
     {
       "id": "TASK-1495",
