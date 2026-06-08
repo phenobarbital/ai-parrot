@@ -30,6 +30,7 @@ anthropic = ["ai-parrot[anthropic]"]
 claude-agent = ["ai-parrot[claude-agent]"]
 groq = ["ai-parrot[groq]"]
 xai = ["ai-parrot[xai]"]
+zai = ["ai-parrot[zai]"]
 llms = ["ai-parrot[llms]"]
 # embeddings extra moved from core to the ai-parrot-embeddings satellite
 # package (FEAT-201); re-export the package directly (like `pipelines`).
