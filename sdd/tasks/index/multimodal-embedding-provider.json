@@ -134,7 +134,7 @@
       "feature_id": "FEAT-229",
       "feature": "multimodal-embedding-provider",
       "spec": "sdd/specs/multimodal-embedding-provider.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -145,8 +145,8 @@
       "parallelism_notes": "Final task — validates all prior work end-to-end",
       "assigned_to": null,
       "started_at": "2026-06-08T10:57:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1490-integration-tests.md"
+      "completed_at": "2026-06-08T11:20:59+00:00",
+      "file": "sdd/tasks/completed/TASK-1490-integration-tests.md"
     }
   ]
 }
