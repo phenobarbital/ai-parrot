@@ -25,6 +25,7 @@ from .base import (
     QuantizationMode,
     resolve_image,
 )
+from .uform import UFormEmbedding
 
 __all__ = [
     "EmbeddingBackend",
@@ -32,5 +33,6 @@ __all__ = [
     "ImageInput",
     "MultimodalEmbedding",
     "QuantizationMode",
+    "UFormEmbedding",
     "resolve_image",
 ]
