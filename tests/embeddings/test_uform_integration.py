@@ -21,7 +21,6 @@ To run slow/integration tests that download models:
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 import numpy as np
@@ -45,22 +44,18 @@ FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 RED_APPLE_PATH = str(FIXTURE_DIR / "red_apple.jpg")
 
 # ---------------------------------------------------------------------------
-# Module-level marker: all tests in this file are slow (model download)
+# Module-level markers: all tests in this file are slow (model download);
+# use module-scoped event loop via pytest-asyncio's modern API.
 # ---------------------------------------------------------------------------
-pytestmark = pytest.mark.slow
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.asyncio(loop_scope="module"),
+]
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="module")
-def event_loop():
-    """Provide a module-scoped event loop for async fixtures."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture(scope="module")

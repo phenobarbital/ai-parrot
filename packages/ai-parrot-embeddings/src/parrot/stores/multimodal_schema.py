@@ -11,13 +11,14 @@ Column type selection based on QuantizationMode:
 - F32  -> VECTOR(N)   (standard full-precision vector)
 - F16  -> HALFVEC(N)  (16-bit half-precision, pgvector >= 0.3.0)
 - I8   -> HALFVEC(N)  (stored as half-precision with client-side i8 semantics)
-- B1   -> BIT(N*8)    (binary vector, N*8 bits for N packed bytes)
+- B1   -> BIT(N)      (binary vector, N bits)
 
 Note: pgvector 0.4.x supports VECTOR, HALFVEC, and BIT column types.
 ``Bit`` (data class) is NOT the same as ``BIT`` (SQLAlchemy column type).
 """
 from __future__ import annotations
 
+import threading
 from typing import Any, Optional
 
 import numpy as np
@@ -40,7 +41,7 @@ def _get_vector_column_type(quantization: QuantizationMode, dimension: int) -> A
     - ``F32`` → ``VECTOR(dimension)``
     - ``F16`` → ``HALFVEC(dimension)``
     - ``I8``  → ``HALFVEC(dimension)`` (stored as half-precision)
-    - ``B1``  → ``BIT(dimension * 8)`` (N packed bits → N//8 bytes)
+    - ``B1``  → ``BIT(dimension)`` (binary vector with N bits)
 
     Args:
         quantization: The quantization mode for the embedding column.
@@ -68,9 +69,7 @@ def _get_vector_column_type(quantization: QuantizationMode, dimension: int) -> A
     elif type_name == "halfvec":
         return HALFVEC(dimension)
     elif type_name == "bit":
-        # B1 quantization: np.packbits packs 8 values per byte.
-        # dimension here is the number of original floats; after packbits the
-        # array has dimension//8 bytes, but BIT column takes the bit count.
+        # B1 quantization: BIT column takes the number of bits = dimension.
         return BIT(dimension)
     else:
         raise ValueError(
@@ -84,6 +83,7 @@ def _get_vector_column_type(quantization: QuantizationMode, dimension: int) -> A
 
 # Module-level cache keyed by (table_name, schema, dimension, quantization)
 _collection_cache: dict[tuple, Any] = {}
+_collection_cache_lock = threading.Lock()
 
 
 class _Base(DeclarativeBase):
@@ -110,6 +110,9 @@ def define_multimodal_collection(
     The returned class is cached by ``(table_name, schema, dimension, quantization)``
     so repeated calls with the same arguments return the same ORM class.
 
+    Thread-safe: uses a module-level lock to prevent race conditions when
+    multiple coroutines first encounter the same cache key concurrently.
+
     Args:
         table_name: PostgreSQL table name.
         schema: PostgreSQL schema name.
@@ -121,36 +124,36 @@ def define_multimodal_collection(
         An unbound SQLAlchemy DeclarativeBase-derived ORM class.
     """
     cache_key = (table_name, schema, dimension, quantization)
-    if cache_key in _collection_cache:
+    with _collection_cache_lock:
+        if cache_key not in _collection_cache:
+            vector_type = _get_vector_column_type(quantization, dimension)
+
+            # SQLAlchemy ORM classes must have unique class names when defined
+            # multiple times (e.g., different tables). Use the table_name as suffix.
+            class_name = f"MultimodalCollection_{table_name}_{schema}"
+
+            Collection = type(
+                class_name,
+                (_Base,),
+                {
+                    "__tablename__": table_name,
+                    "__table_args__": {
+                        "schema": schema,
+                        "extend_existing": True,
+                    },
+                    "id": mapped_column(Integer, primary_key=True, autoincrement=True),
+                    "embedding": mapped_column(vector_type, nullable=False),
+                    "modality": mapped_column(String(10), nullable=False),  # "text" | "image"
+                    "source_id": mapped_column(String(255), nullable=True, index=True),
+                    "doc_id": mapped_column(String(255), nullable=True, index=True),
+                    "text_content": mapped_column(Text, nullable=True),
+                    "payload": mapped_column(JSONB, nullable=True),
+                },
+            )
+
+            _collection_cache[cache_key] = Collection
+
         return _collection_cache[cache_key]
-
-    vector_type = _get_vector_column_type(quantization, dimension)
-
-    # SQLAlchemy ORM classes must have unique class names when defined
-    # multiple times (e.g., different tables). Use the table_name as suffix.
-    class_name = f"MultimodalCollection_{table_name}_{schema}"
-
-    Collection = type(
-        class_name,
-        (_Base,),
-        {
-            "__tablename__": table_name,
-            "__table_args__": {
-                "schema": schema,
-                "extend_existing": True,
-            },
-            "id": mapped_column(Integer, primary_key=True, autoincrement=True),
-            "embedding": mapped_column(vector_type, nullable=False),
-            "modality": mapped_column(String(10), nullable=False),  # "text" | "image"
-            "source_id": mapped_column(String(255), nullable=True, index=True),
-            "doc_id": mapped_column(String(255), nullable=True, index=True),
-            "text_content": mapped_column(Text, nullable=True),
-            "payload": mapped_column(JSONB, nullable=True),
-        },
-    )
-
-    _collection_cache[cache_key] = Collection
-    return Collection
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +173,8 @@ async def create_multimodal_table(
     Uses ``CREATE TABLE IF NOT EXISTS`` semantics (safe to call repeatedly).
 
     HNSW index ops class selection:
-    - F32 / F16 / I8 → ``vector_cosine_ops`` (cosine similarity)
+    - F32 → ``vector_cosine_ops`` (cosine similarity)
+    - F16 / I8 → ``halfvec_cosine_ops`` (cosine similarity for half-precision)
     - B1 → ``bit_hamming_ops`` (Hamming distance for binary vectors)
 
     Args:
@@ -191,13 +195,15 @@ async def create_multimodal_table(
     async with engine.begin() as conn:
         # Ensure pgvector extension is loaded
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        # Create table
-        await conn.run_sync(_Base.metadata.create_all)
+        # Create only this specific table (not all ORM tables tracked by _Base)
+        await conn.run_sync(lambda c: Collection.__table__.create(c, checkfirst=True))
 
         if create_hnsw_index:
             # Choose HNSW ops class based on quantization
             if quantization == QuantizationMode.B1:
                 ops_class = "bit_hamming_ops"
+            elif quantization in (QuantizationMode.F16, QuantizationMode.I8):
+                ops_class = "halfvec_cosine_ops"
             else:
                 ops_class = "vector_cosine_ops"
 
@@ -239,6 +245,7 @@ async def search_multimodal(
         quantization: Quantization mode of the stored embeddings.
         modality_filter: If provided, filter results to this modality
             (``"text"`` or ``"image"``). ``None`` returns all modalities.
+            Passed as a bound parameter to prevent SQL injection.
         top_k: Number of nearest neighbors to retrieve.
 
     Returns:
@@ -260,23 +267,38 @@ async def search_multimodal(
         dist_op = "<=>"  # Cosine distance for float vectors
 
     fq_table = f"{schema}.{table_name}"
-    vec_str = "[" + ",".join(str(float(v)) for v in query_embedding.flatten()) + "]"
 
+    # Determine cast type and vector string representation based on quantization
+    if quantization == QuantizationMode.B1:
+        cast_type = f"bit({dimension})"
+        # Pack float query into binary string for BIT column
+        bits = np.packbits((query_embedding.flatten() > 0).astype(np.uint8))
+        vec_str = "".join(f"{b:08b}" for b in bits)[:dimension]
+    elif quantization in (QuantizationMode.F16, QuantizationMode.I8):
+        cast_type = "halfvec"
+        vec_str = "[" + ",".join(str(float(v)) for v in query_embedding.flatten()) + "]"
+    else:  # F32
+        cast_type = "vector"
+        vec_str = "[" + ",".join(str(float(v)) for v in query_embedding.flatten()) + "]"
+
+    # Use bound parameters for modality filter to prevent SQL injection
+    params: dict = {"top_k": top_k}
     modality_clause = ""
     if modality_filter:
-        modality_clause = f"AND modality = '{modality_filter}'"
+        modality_clause = "AND modality = :modality"
+        params["modality"] = modality_filter
 
     sql = text(
         f"SELECT id, modality, source_id, doc_id, text_content, payload, "
-        f"       embedding {dist_op} '{vec_str}'::vector AS distance "
+        f"       embedding {dist_op} '{vec_str}'::{cast_type} AS distance "
         f"FROM {fq_table} "
         f"WHERE 1=1 {modality_clause} "
-        f"ORDER BY embedding {dist_op} '{vec_str}'::vector "
+        f"ORDER BY embedding {dist_op} '{vec_str}'::{cast_type} "
         f"LIMIT :top_k"
     )
 
     async with engine.connect() as conn:
-        result = await conn.execute(sql, {"top_k": top_k})
+        result = await conn.execute(sql, params)
         rows = result.fetchall()
 
     return [

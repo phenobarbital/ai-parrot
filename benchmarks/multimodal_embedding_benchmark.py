@@ -98,9 +98,6 @@ def load_domain_data(csv_path: str) -> list[QueryDoc]:
     Raises:
         FileNotFoundError: If the CSV file does not exist.
         ValueError: If required columns are missing.
-
-    # TODO: Replace with real Spanish domain data (see benchmarks/fixtures/README.md)
-    # Format: CSV with columns (query_id, query_text, relevant_doc_id, doc_text, lang)
     """
     required = {"query_id", "query_text", "relevant_doc_id", "doc_text"}
     rows = []
@@ -960,14 +957,14 @@ async def run_benchmark(args: argparse.Namespace) -> None:
                     self._st_model: Any = None
 
                 async def load(self) -> None:
-                    loop = asyncio.get_event_loop()
+                    loop = asyncio.get_running_loop()
                     self._st_model = await loop.run_in_executor(
                         None,
                         lambda: SentenceTransformer(self.model_id),
                     )
 
                 async def embed_texts(self, texts: list[str]) -> np.ndarray:
-                    loop = asyncio.get_event_loop()
+                    loop = asyncio.get_running_loop()
                     embs = await loop.run_in_executor(
                         None,
                         lambda: self._st_model.encode(texts, normalize_embeddings=True),

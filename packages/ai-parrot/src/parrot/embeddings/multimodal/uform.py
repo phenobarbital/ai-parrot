@@ -66,6 +66,9 @@ class UFormEmbedding(MultimodalEmbedding):
     ) -> None:
         super().__init__(model_name, output_dim=output_dim, quantization=quantization, **kwargs)
         self._backend = backend
+        # Override base class _device (set to None in EmbeddingModel.__init__).
+        # Note: do NOT call the `device` property before initialization is complete,
+        # as the property calls _get_device() which would overwrite this value.
         self._device = device
         # Set by _create_embedding; keyed by uform.Modality
         self._processors: dict = {}
@@ -76,6 +79,8 @@ class UFormEmbedding(MultimodalEmbedding):
     # ------------------------------------------------------------------
 
     def _get_model_type(self) -> str:
+        # The base class dispatch table does not include UFormEmbedding.
+        # This override is required until the base class is extended.
         return "multimodal"
 
     # ------------------------------------------------------------------
@@ -151,6 +156,8 @@ class UFormEmbedding(MultimodalEmbedding):
         the UForm-specific _processors and _models are populated before
         use, not just _model.
         """
+        # Double-check pattern is safe under asyncio's cooperative scheduling:
+        # no preemption occurs between the check and lock acquisition.
         async with self._model_lock:
             if not self._processors:
                 loop = asyncio.get_running_loop()
@@ -172,6 +179,8 @@ class UFormEmbedding(MultimodalEmbedding):
         Returns:
             Embedding array of shape (N, D) as float32.
         """
+        # Double-check pattern is safe under asyncio's cooperative scheduling:
+        # no preemption occurs between the check and lock acquisition.
         if not self._processors:
             await self.initialize_model()
 

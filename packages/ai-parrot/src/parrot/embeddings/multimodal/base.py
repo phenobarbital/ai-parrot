@@ -56,7 +56,7 @@ class QuantizationMode(str, Enum):
 # ---------------------------------------------------------------------------
 
 # ImageInput accepts PIL.Image, raw bytes, or a file path string.
-# URL support is deferred; implement in the resolver only.
+# HTTP/HTTPS URL support is deferred; use image_bytes for remote images.
 ImageInput = Union["PILImage.Image", bytes, str]
 
 
@@ -64,6 +64,9 @@ ImageInput = Union["PILImage.Image", bytes, str]
 # Result Dataclass
 # ---------------------------------------------------------------------------
 
+# NOTE: Uses dataclass (not Pydantic BaseModel) because np.ndarray is not
+# natively serializable by Pydantic v2 without a custom validator.
+# This is a deliberate exception to the project's Pydantic-first convention.
 @dataclass
 class EmbeddingResult:
     """Return type for all embed_* methods.
@@ -91,16 +94,20 @@ def resolve_image(input: ImageInput) -> "PILImage.Image":
     Resolves the three accepted input types:
     - PIL.Image.Image: passthrough (returned as-is).
     - bytes: decoded via ``Image.open(BytesIO(data))``.
-    - str: treated as a file path and loaded via ``Image.open(path)``.
+    - str: treated as a local file path and loaded via ``Image.open(path)``.
+      HTTP/HTTPS URLs are not supported; raise ``NotImplementedError``.
 
     Args:
-        input: One of PIL.Image.Image, bytes, or a file path string.
+        input: One of PIL.Image.Image, bytes, or a local file path string.
 
     Returns:
         A PIL.Image.Image instance.
 
     Raises:
         FileNotFoundError: If a file path string points to a missing file.
+        NotImplementedError: If a string starting with ``http://`` or
+            ``https://`` is provided. Pass a local path or use
+            ``image_bytes`` instead.
         OSError: If bytes cannot be decoded as an image.
         TypeError: If the input type is not supported.
     """
@@ -111,6 +118,11 @@ def resolve_image(input: ImageInput) -> "PILImage.Image":
     if isinstance(input, bytes):
         return Image.open(BytesIO(input))
     if isinstance(input, str):
+        if input.startswith(("http://", "https://")):
+            raise NotImplementedError(
+                "HTTP/HTTPS image URLs are not supported in v1. "
+                "Pass a local file path or use image_bytes instead."
+            )
         return Image.open(input)
     raise TypeError(
         f"Unsupported ImageInput type: {type(input).__name__}. "
@@ -195,7 +207,7 @@ class MultimodalEmbedding(EmbeddingModel):
 
         Routing rules:
         - A document is treated as an image document if its ``metadata``
-          contains ``image_path`` or ``image_url`` keys.
+          contains ``image_bytes``, ``image_path``, or ``image_url`` keys.
         - Otherwise it is treated as a text document (embedded via
           ``page_content``).
         - Mixed batches (text + image) are handled by embedding each
@@ -214,7 +226,7 @@ class MultimodalEmbedding(EmbeddingModel):
 
         for doc in docs:
             meta = getattr(doc, "metadata", {}) or {}
-            if meta.get("image_path") or meta.get("image_url"):
+            if meta.get("image_bytes") or meta.get("image_path") or meta.get("image_url"):
                 image_docs.append(doc)
             else:
                 text_docs.append(doc)
@@ -227,8 +239,12 @@ class MultimodalEmbedding(EmbeddingModel):
             inputs: List[ImageInput] = []
             for doc in image_docs:
                 meta = doc.metadata or {}
-                path = meta.get("image_path") or meta.get("image_url")
-                inputs.append(path)
+                # Prefer image_bytes > image_path > image_url
+                if meta.get("image_bytes"):
+                    inputs.append(meta["image_bytes"])
+                else:
+                    path = meta.get("image_path") or meta.get("image_url")
+                    inputs.append(path)
             return await self.embed_images(inputs)
 
         # Mixed batch: embed both and concatenate
@@ -239,8 +255,11 @@ class MultimodalEmbedding(EmbeddingModel):
             img_inputs: List[ImageInput] = []
             for doc in image_docs:
                 meta = doc.metadata or {}
-                path = meta.get("image_path") or meta.get("image_url")
-                img_inputs.append(path)
+                if meta.get("image_bytes"):
+                    img_inputs.append(meta["image_bytes"])
+                else:
+                    path = meta.get("image_path") or meta.get("image_url")
+                    img_inputs.append(path)
             tasks.append(self.embed_images(img_inputs))
 
         results = await asyncio.gather(*tasks)
