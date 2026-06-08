@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-229
 **Date**: 2026-06-08
 **Author**: jesuslarag
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x (next minor)
 
 ---
