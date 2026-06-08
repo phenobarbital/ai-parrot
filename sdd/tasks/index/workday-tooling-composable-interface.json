@@ -32,7 +32,7 @@
       "feature_id": "FEAT-230",
       "feature": "workday-tooling-composable-interface",
       "spec": "sdd/specs/workday-tooling-composable-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,9 @@
       "parallelism_notes": "Modifies tool.py; depends on the vendored package from TASK-1505.",
       "assigned_to": null,
       "started_at": "2026-06-08T16:39:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1506-refactor-toolkit-delegate.md"
+      "completed_at": "2026-06-08T17:57:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1506-refactor-toolkit-delegate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1507",
