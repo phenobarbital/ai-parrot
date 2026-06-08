@@ -113,7 +113,7 @@
       "feature_id": "FEAT-229",
       "feature": "multimodal-embedding-provider",
       "spec": "sdd/specs/multimodal-embedding-provider.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Needs both UForm provider and PgVector schema to benchmark the full pipeline",
       "assigned_to": null,
       "started_at": "2026-06-08T10:57:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1489-benchmark-harness.md"
+      "completed_at": "2026-06-08T11:17:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1489-benchmark-harness.md"
     },
     {
       "id": "TASK-1490",
