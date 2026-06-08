@@ -186,7 +186,17 @@ async def test_request_my_time_off_builds_write_payload(monkeypatch):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6
+**Date**: 2026-06-08
+**SOAP op used**: `Request_Time_Off` (Absence Management WSDL)
+**Notes**: Created `handlers/time_off_request.py` (RequestTimeOffType subclassing
+WorkdayWriteTypeBase). build_request() assembles Time_Off_Request_Data with
+Worker_Reference, Time_Off_Request_Line_Data (type ref, dates, daily_quantity),
+and optional Comment. parse_ack() returns one-row status DataFrame. Registered in
+handlers/__init__.py, service.py (_type_handlers), config.py (_WSDL_ROUTING →
+WORKDAY_WSDL_ABSENCE_MANAGEMENT). Added RequestTimeOffInput schema and
+request_my_time_off tool to WorkdayToolkit — defaults to dry_run=True, delegates
+to composable.fetch("request_time_off") when False. 11/11 tests pass; ruff clean.
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD

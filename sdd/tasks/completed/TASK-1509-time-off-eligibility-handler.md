@@ -171,10 +171,16 @@ def test_get_tools_exposes_eleven():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: Claude Sonnet 4.6
+**Date**: 2026-06-08
+**SOAP op used**: `Get_Time_Off_Types` (Absence Management WSDL)
+**Notes**: Created models/time_off_eligibility.py (TimeOffEligibility Pydantic model:
+time_off_type_id, name, description, unit). Created handlers/time_off_eligibility.py
+(TimeOffEligibilityType subclassing WorkdayTypeBase) — calls Get_Time_Off_Types with
+Employee_Reference filter, parses Response_Data.Time_Off_Type into rows. Registered in
+handlers/__init__.py, service.py (_type_handlers + _OPERATION_MODEL_MAP → TimeOffEligibility),
+config.py (_WSDL_ROUTING → WORKDAY_WSDL_ABSENCE_MANAGEMENT). Added
+get_my_time_off_eligibility tool to WorkdayToolkit. All 11 homologated tools confirmed
+present in get_tools(). 10/10 tests pass; ruff clean.
 
 **Deviations from spec**: none | describe if any

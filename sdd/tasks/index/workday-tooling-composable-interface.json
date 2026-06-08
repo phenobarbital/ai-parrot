@@ -74,7 +74,7 @@
       "feature_id": "FEAT-230",
       "feature": "workday-tooling-composable-interface",
       "spec": "sdd/specs/workday-tooling-composable-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -84,8 +84,9 @@
       "parallelism_notes": "Independent of TASK-1509 logically, but both modify tool.py + service.py + config.py \u2014 keep sequential in the same worktree to avoid merge churn (spec Worktree Strategy).",
       "assigned_to": null,
       "started_at": "2026-06-08T18:22:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1508-request-time-off-write-handler.md"
+      "completed_at": "2026-06-08T18:45:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1508-request-time-off-write-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1509",
@@ -94,7 +95,7 @@
       "feature_id": "FEAT-230",
       "feature": "workday-tooling-composable-interface",
       "spec": "sdd/specs/workday-tooling-composable-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -104,8 +105,9 @@
       "parallelism_notes": "Shares tool.py + service.py + config.py with TASK-1508; keep sequential in the same worktree.",
       "assigned_to": null,
       "started_at": "2026-06-08T18:22:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1509-time-off-eligibility-handler.md"
+      "completed_at": "2026-06-08T18:45:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1509-time-off-eligibility-handler.md",
+      "verification": "verified"
     }
   ]
 }
