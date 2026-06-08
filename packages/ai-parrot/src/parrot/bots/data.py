@@ -1860,6 +1860,40 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                             "auto-switch."
                         )
 
+                # FEAT-221 fallback: in explicit STRUCTURED_MAP mode the agent is
+                # expected to call the spatial_filter tool, which returns a
+                # SpatialResult routed to response.data above. When it instead
+                # produces the result as a plain DataFrame via python_repl_pandas
+                # (no SpatialResult in tool calls), response.data is still a
+                # DataFrame and StructuredMapRenderer rejects it ("response.data
+                # must be a SpatialResult"). Convert the result rows here — the
+                # same df->SpatialResult path the DEFAULT auto-switch uses — so the
+                # map renders instead of surfacing a renderer error to the user.
+                if (
+                    output_mode == OutputMode.STRUCTURED_MAP
+                    and isinstance(response.data, pd.DataFrame)
+                ):
+                    spatial_result = self._spatial_result_from_dataframe(
+                        response.data
+                    )
+                    if spatial_result is not None:
+                        feature_count = sum(
+                            len(lyr.features)
+                            for lyr in spatial_result.layers.values()
+                        )
+                        self.logger.info(
+                            "STRUCTURED_MAP: converted result DataFrame to "
+                            "SpatialResult (%d feature(s)) — agent returned rows "
+                            "instead of calling the spatial_filter tool.",
+                            feature_count,
+                        )
+                        response.data = spatial_result
+                    else:
+                        self.logger.warning(
+                            "STRUCTURED_MAP: result DataFrame has no resolvable "
+                            "coordinates/geometry; map cannot be rendered."
+                        )
+
                 # FEAT-197: Post-loop branch for InfographicRenderResult.
                 # isinstance check on the last tool result → mutate response in
                 # place → return early, bypassing the formatter and

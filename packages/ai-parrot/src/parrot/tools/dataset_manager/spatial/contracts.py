@@ -12,6 +12,7 @@ Note: ``from __future__ import annotations`` is intentionally omitted here to
 ensure Pydantic v2 can resolve the ``Tuple[float, float]`` annotation at class
 definition time without requiring a manual ``model_rebuild()`` call.
 """
+import re
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -25,6 +26,40 @@ _ALLOWED_COLUMN_FORMATS: frozenset = frozenset(
 _LAT_ALIASES: Tuple[str, ...] = ("lat", "latitude")
 _LON_ALIASES: Tuple[str, ...] = ("lon", "lng", "long", "longitude")
 _GEOM_ALIASES: Tuple[str, ...] = ("geometry", "geom")
+
+# Splits a column name into tokens on any non-alphanumeric boundary so that
+# prefixed/suffixed geo columns (``wh_latitude``, ``store_lat``, ``geom_wkt``)
+# are recognised by token, not substring — avoiding false positives such as
+# ``belongings`` matching ``long`` or ``flat_id`` matching ``lat``.
+_TOKEN_SPLIT = re.compile(r"[^a-z0-9]+")
+
+
+def _resolve_geo_column(
+    lower: Dict[str, str], aliases: Tuple[str, ...],
+) -> Optional[str]:
+    """Resolve a geo column from a lowercased-name -> original-name map.
+
+    Matching is two-tiered: an exact alias match is preferred (preserving the
+    historical alias-priority ordering), then a token-boundary match catches
+    prefixed/suffixed variants like ``wh_latitude`` or ``store_lng``.
+
+    Args:
+        lower: Mapping of ``column.lower().strip()`` to the original column name.
+        aliases: Candidate alias names (already lowercased), in priority order.
+
+    Returns:
+        The original column name of the first match, or ``None`` when no column
+        matches by exact alias or whole-token boundary.
+    """
+    for alias in aliases:
+        if alias in lower:
+            return lower[alias]
+    alias_set = set(aliases)
+    for col_lower, original in lower.items():
+        tokens = {t for t in _TOKEN_SPLIT.split(col_lower) if t}
+        if tokens & alias_set:
+            return original
+    return None
 
 
 class SpatialFilterSpec(BaseModel):
@@ -374,17 +409,10 @@ class SpatialResult(BaseModel):
         lower = {c.lower().strip(): c for c in columns}
 
         if geometry_col is None and lat_col is None and lon_col is None:
-            for alias in _GEOM_ALIASES:
-                if alias in lower:
-                    geometry_col = lower[alias]
-                    break
+            geometry_col = _resolve_geo_column(lower, _GEOM_ALIASES)
             if geometry_col is None:
-                lat_col = next(
-                    (lower[a] for a in _LAT_ALIASES if a in lower), None
-                )
-                lon_col = next(
-                    (lower[a] for a in _LON_ALIASES if a in lower), None
-                )
+                lat_col = _resolve_geo_column(lower, _LAT_ALIASES)
+                lon_col = _resolve_geo_column(lower, _LON_ALIASES)
 
         if geometry_col is None and not (lat_col and lon_col):
             raise ValueError(

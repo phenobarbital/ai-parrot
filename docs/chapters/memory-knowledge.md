@@ -36,6 +36,7 @@ facts, documents, embeddings used by RAG).
 
 ## Read next
 
+- [LLM Wiki — an agent-maintained knowledge repository](../llm-wiki.md)
 - [Execution Memory](../EXECUTION_MEMORY.md)
 - [Local Knowledge Base](../local_kb.md)
 - [Parent-Child Retrieval](../parent-child-retrieval.md)

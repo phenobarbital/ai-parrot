@@ -21,6 +21,7 @@
 | 7  | AgentCrew — sequential, parallel, flow and loop execution      | [07-agentcrew.md](07-agentcrew.md)         |
 | 8  | AgentsFlow — DAG-first orchestration with per-node FSM         | [08-agentsflow-dag.md](08-agentsflow-dag.md) |
 | 9  | Ontologic RAG — graph-first retrieval, intent routing & multi-tenant knowledge | [09-ontologic-rag.md](09-ontologic-rag.md) |
+| 10 | Observability — OpenLIT + OpenTelemetry traces, metrics & cost  | [10-observability.md](10-observability.md) |
 
 All file references in the chapters use the `package/path/file.py:line`
 convention so the reader can jump directly to the source of truth.

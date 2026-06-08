@@ -50,6 +50,37 @@ def test_alias_detection(lat_name: str, lon_name: str) -> None:
     assert feats[0]["geometry"]["coordinates"] == [2.0, 1.0]
 
 
+@pytest.mark.parametrize(
+    "lat_name,lon_name",
+    [
+        ("wh_latitude", "wh_longitude"),
+        ("store_lat", "store_lng"),
+        ("warehouse_lat", "warehouse_long"),
+        ("LATITUDE_DEG", "LONGITUDE_DEG"),
+    ],
+)
+def test_prefixed_suffixed_alias_detection(lat_name: str, lon_name: str) -> None:
+    """Prefixed/suffixed lat/lon columns are detected by token boundary.
+
+    Regression for the warehouse-map bug: ``wh_latitude``/``wh_longitude`` were
+    not recognised by the exact-only alias match, so the converter raised and
+    the map could not render.
+    """
+    df = pd.DataFrame({lat_name: [1.0], lon_name: [2.0], "name": ["A"]})
+    feats = _features(SpatialResult.from_dataframe(df))
+    assert feats[0]["geometry"]["coordinates"] == [2.0, 1.0]
+    # The geo columns become geometry, not properties.
+    assert feats[0]["properties"] == {"name": "A"}
+
+
+def test_token_boundary_avoids_false_positives() -> None:
+    """Substring-only matches (``belongings`` -> ``long``) must NOT be treated
+    as geo columns; such frames are not mappable and raise."""
+    df = pd.DataFrame({"belongings": ["x"], "flat_id": [1], "category": ["c"]})
+    with pytest.raises(ValueError):
+        SpatialResult.from_dataframe(df)
+
+
 def test_geometry_dict_preserved() -> None:
     polygon = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}
     df = pd.DataFrame({"geometry": [polygon], "name": ["zone"]})

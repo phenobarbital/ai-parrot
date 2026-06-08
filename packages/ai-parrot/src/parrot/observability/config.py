@@ -12,7 +12,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-UsageBackend = Literal["none", "logging", "prometheus", "otel"]
+UsageBackend = Literal["none", "logging", "prometheus", "otel", "traceloop"]
 
 
 class ObservabilityConfig(BaseModel):
@@ -40,7 +40,18 @@ class ObservabilityConfig(BaseModel):
         enable_cost_tracking: Build a ``CostCalculator`` and pass it to
             both subscribers.
         enable_openlit: Call ``openlit.init()`` after setting up OTel providers.
-            Requires the ``observability-openlit`` extra.
+            Requires the ``observability-openlit`` extra. Intended as the
+            production telemetry backend. Mutually exclusive with
+            ``enable_traceloop`` (Traceloop wins; OpenLIT is disabled with a
+            warning when both are requested).
+        enable_traceloop: Activate the OpenLLMetry (Traceloop) backend — a
+            simple, content-rich tracing path aimed at local/dev. Requires the
+            ``observability-traceloop`` extra. When ``True`` the usage backend is
+            forced to ``"traceloop"``: Traceloop owns the OTLP trace pipeline and
+            auto-instruments the LLM SDKs (with prompt/completion capture gated by
+            ``capture_prompts``/``capture_completions``), while AI-Parrot's native
+            span/metric subscribers ride the same global provider — one pipeline,
+            no duplicate spans.
         sampling_ratio: ``TraceIdRatioBased`` sampler rate. Range [0.0, 1.0].
             Default ``1.0`` (sample everything).
         capture_prompts: When ``True``, raw system-prompt hash values are
@@ -89,6 +100,7 @@ class ObservabilityConfig(BaseModel):
     enable_metrics: bool = True
     enable_cost_tracking: bool = True
     enable_openlit: bool = False
+    enable_traceloop: bool = False
 
     # Sampling & PII
     sampling_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -129,6 +141,8 @@ class ObservabilityConfig(BaseModel):
         ``OBSERVABILITY_LOG_LEVEL``  ``usage_log_level``
         ``OBSERVABILITY_SAMPLING``   ``sampling_ratio``
         ``OBSERVABILITY_OPENLIT``    ``enable_openlit``
+        ``OBSERVABILITY_TRACELOOP``  ``enable_traceloop``
+        ``OBSERVABILITY_CAPTURE_CONTENT``  ``capture_prompts`` + ``capture_completions``
         ``OTEL_EXPORTER_OTLP_ENDPOINT``  ``otlp_endpoint``
         ``OBSERVABILITY_PROM_PORT``  ``prometheus_port``
         ``OBSERVABILITY_PROM_ADDR``  ``prometheus_addr``
@@ -150,6 +164,9 @@ class ObservabilityConfig(BaseModel):
             "enable_openlit": _as_bool(
                 get("OBSERVABILITY_OPENLIT"), defaults.enable_openlit
             ),
+            "enable_traceloop": _as_bool(
+                get("OBSERVABILITY_TRACELOOP"), defaults.enable_traceloop
+            ),
             "sampling_ratio": _as_float(
                 get("OBSERVABILITY_SAMPLING"), defaults.sampling_ratio
             ),
@@ -165,6 +182,15 @@ class ObservabilityConfig(BaseModel):
         backend = get("OBSERVABILITY_BACKEND")
         if backend:
             values["usage_backend"] = backend.strip().lower()
+
+        # Single switch to enable prompt/completion capture (PII gate). Off by
+        # default; flip on only in local/dev. Applies to every backend that
+        # supports content capture (native span events, OpenLIT, Traceloop).
+        capture = get("OBSERVABILITY_CAPTURE_CONTENT")
+        if capture is not None:
+            on = _as_bool(capture, False)
+            values["capture_prompts"] = on
+            values["capture_completions"] = on
 
         endpoint = get("OTEL_EXPORTER_OTLP_ENDPOINT")
         if endpoint:

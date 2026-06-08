@@ -58,7 +58,52 @@ _ALLOWED_FORMATS: frozenset[str] = frozenset(
 STRUCTURED_MAP_SYSTEM_PROMPT = """\
 STRUCTURED MAP OUTPUT MODE
 
-You are generating structured map metadata for the frontend.
+You are answering a request to plot results on an interactive map. The backend
+turns geographic rows into the map; your job is to PRODUCE those rows. Pick ONE
+of the two paths below.
+
+PATH A — spatial query (PREFERRED when the question is a radius/proximity search,
+e.g. "within 10 miles of ...", "nearest stores to ..."):
+1. Call the `dataset_spatial_filter` tool with the point, radius and target
+   dataset(s).  It returns the spatial result directly — the backend routes it
+   to the map automatically.
+2. When you take this path you do NOT need to build a DataFrame; the tool output
+   IS the map data.
+
+PATH B — plot rows you already have (e.g. "map all warehouses", "show these
+locations on a map"):
+1. Compute a single pandas DataFrame whose rows carry GEOGRAPHIC COORDINATES.
+   Either:
+   a) a LATITUDE column AND a LONGITUDE column — the column names must contain a
+      recognised token: latitude → `lat`/`latitude`; longitude →
+      `lon`/`lng`/`long`/`longitude`.  Prefixes/suffixes are fine
+      (e.g. `wh_latitude`, `store_lng`, `latitude_deg`); OR
+   b) a `geometry` column holding GeoJSON geometry dicts.
+2. Drop rows with missing/NaN coordinates — every remaining row must be mappable.
+3. Keep descriptive columns (name, id, metrics) on the DataFrame; they become the
+   feature properties shown in map tooltips.
+4. MANDATORY: set `data_variable` to the EXACT name of your final DataFrame
+   variable (e.g. "warehouse_map_df") so the backend reads the right rows.
+
+BOTH PATHS:
+- Provide a short natural-language `explanation` of what the map shows.
+- Do NOT render HTML, do NOT return GeoJSON inline, do NOT retype the rows in your
+  answer — the backend builds the map from the tool output (Path A) or the named
+  DataFrame (Path B).
+"""
+
+# Column-format-hint refine contract (FEAT-221). Distinct from the generation
+# prompt above: this instructs a NARROW second LLM call to annotate ambiguous
+# (string/integer) columns with display-format hints, mirroring
+# ``StructuredTableRenderer``'s refine pass.  It is NOT injected at generation
+# time — registering it there would tell the agent the rows are "already
+# determined" and stop it producing the map data.
+#
+# TODO(FEAT-221): wire a dedicated refine LLM call that uses this prompt and
+# writes the resulting JSON to ``response.code`` (read by ``_extract_llm_hints``).
+# Until then the deterministic column schema is always used.
+STRUCTURED_MAP_REFINE_PROMPT = """\
+STRUCTURED MAP — COLUMN FORMAT REFINE
 
 The data rows and base column types have already been determined deterministically.
 Your task is ONLY to add optional format hints to ambiguous columns in a map layer.
@@ -77,17 +122,6 @@ OUTPUT FORMAT:
 - No prose, no markdown fences.
 - Empty object {} if no hints apply.
 """
-
-# TODO(FEAT-221): The system prompt above instructs the LLM to emit a JSON object
-# with column format hints.  However, in the STRUCTURED_MAP agent flow the LLM
-# emits *tool calls* (spatial_filter), not a bare JSON string.  As a result,
-# ``response.code`` is typically None in this flow and the refine pass always
-# falls back to the deterministic schema.
-#
-# The system prompt will only become effective when a second dedicated LLM call
-# is wired for the refine pass (analogous to ``StructuredTableRenderer``'s
-# approach).  Do NOT remove the prompt — it is the correct contract for that
-# future wiring.  Until then, the deterministic schema is always used.
 
 
 # ── Renderer ──────────────────────────────────────────────────────────────────

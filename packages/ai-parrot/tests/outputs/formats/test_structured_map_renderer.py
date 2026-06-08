@@ -454,3 +454,48 @@ class TestMapEnvelopeConformance:
         assert len(out["layers"]) == 2
         # Payload entries available on response.data
         assert isinstance(resp.data, list) and len(resp.data) == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Regression: warehouse-map bug — agent returns a DataFrame in STRUCTURED_MAP
+# mode instead of calling the spatial_filter tool. PandasAgent now converts the
+# result rows to a SpatialResult (via _spatial_result_from_dataframe), so the
+# renderer must accept it instead of failing with "must be a SpatialResult".
+# Columns use the wh_latitude/wh_longitude prefix that the exact-only alias
+# match previously missed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_render_accepts_dataframe_converted_warehouses():
+    """End-to-end: wh_latitude/wh_longitude DataFrame -> SpatialResult -> render."""
+    import logging
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    from parrot.bots.data import PandasAgent
+    from parrot.outputs.formats import get_renderer
+    from parrot.models.outputs import OutputMode
+
+    df = pd.DataFrame(
+        {
+            "warehouse_id": ["recA", "recB", "recC"],
+            "warehouse_name": ["Denver", "Phoenix", "Boston"],
+            "wh_latitude": [39.7904, 33.3429, 42.2107],
+            "wh_longitude": [-104.9939, -111.9525, -71.0286],
+        }
+    )
+
+    stub = SimpleNamespace(logger=logging.getLogger("test_warehouse_map"))
+    spatial_result = PandasAgent._spatial_result_from_dataframe(stub, df)
+    assert spatial_result is not None, "wh_latitude/wh_longitude must be detected"
+
+    r = get_renderer(OutputMode.STRUCTURED_MAP)()
+    resp = make_response(data=spatial_result, response_text="3 warehouses.")
+    out, explanation = await r.render(resp)
+
+    # Renderer accepted the converted result (no "must be a SpatialResult").
+    assert out is not None
+    assert "layers" in out and len(out["layers"]) == 1
+    assert explanation == "3 warehouses."

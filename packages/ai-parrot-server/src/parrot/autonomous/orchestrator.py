@@ -275,6 +275,17 @@ class AutonomousOrchestrator:
         if self.job_injector:
             await self.job_injector.close()
 
+        # Deterministic telemetry flush before the worker exits, so the final
+        # batch of OTLP spans/metrics is exported (complements the atexit safety
+        # net registered by the observability auto-boot). Guarded + lazy so a
+        # missing observability stack can never break shutdown.
+        try:
+            from parrot.observability import shutdown_observability
+
+            shutdown_observability()
+        except Exception:  # noqa: BLE001 — shutdown must never raise
+            self.logger.debug("Observability flush skipped", exc_info=True)
+
         self.logger.info("Autonomy Orchestrator stopped")
     
     def setup_routes(self, app):

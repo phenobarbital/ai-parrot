@@ -16,6 +16,7 @@ check; after the first construction the env is never re-read.
 
 from __future__ import annotations
 
+import atexit
 import logging
 import threading
 from typing import Optional
@@ -28,6 +29,8 @@ _BOOTSTRAPPED: bool = False
 _LOCK = threading.Lock()
 _SUBSCRIBER: Optional[object] = None
 _SUBSCRIPTION_IDS: list[str] = []
+# Guards the atexit flush hook so it is registered at most once per process.
+_ATEXIT_REGISTERED: bool = False
 
 
 def ensure_observability_bootstrapped() -> None:
@@ -61,6 +64,35 @@ def _do_bootstrap() -> None:
         logger.debug("Observability auto-boot: OBSERVABILITY_ENABLED is false.")
         return
 
+    # Traceloop (OpenLLMetry) and OpenLIT are mutually exclusive — both
+    # auto-instrument the LLM SDKs and would double-instrument together. Traceloop
+    # wins when both are requested (it owns the whole trace pipeline).
+    if config.enable_traceloop:
+        if config.enable_openlit:
+            logger.warning(
+                "Both OBSERVABILITY_TRACELOOP and OBSERVABILITY_OPENLIT are set; "
+                "using Traceloop and disabling OpenLIT (they are mutually exclusive)."
+            )
+            config = config.model_copy(update={"enable_openlit": False})
+        if config.usage_backend != "traceloop":
+            logger.info(
+                "Observability auto-boot: enable_traceloop=true → forcing backend "
+                "from %r to 'traceloop'.",
+                config.usage_backend,
+            )
+            config = config.model_copy(update={"usage_backend": "traceloop"})
+    # OpenLIT requires the global TracerProvider that only the "otel" path builds
+    # (so its auto-spans inherit the provider and nest under the caller's span).
+    # Escalate to "otel" when the user asked for OpenLIT but left the backend on a
+    # lightweight path, so OBSERVABILITY_OPENLIT=true "just works".
+    elif config.enable_openlit and config.usage_backend != "otel":
+        logger.info(
+            "Observability auto-boot: enable_openlit=true → escalating backend "
+            "from %r to 'otel'.",
+            config.usage_backend,
+        )
+        config = config.model_copy(update={"usage_backend": "otel"})
+
     # Resolve "none" → "logging" when explicitly enabled, so OBSERVABILITY_ENABLED
     # alone yields structured cost logs.
     backend = config.usage_backend
@@ -68,10 +100,21 @@ def _do_bootstrap() -> None:
         backend = "logging"
         config = config.model_copy(update={"usage_backend": backend})
 
+    if backend == "traceloop":
+        from parrot.observability.traceloop_integration import (  # noqa: PLC0415
+            setup_traceloop,
+        )
+
+        setup_traceloop(config)
+        _register_atexit_flush()
+        logger.info("Observability auto-boot: Traceloop (OpenLLMetry) backend active.")
+        return
+
     if backend == "otel":
         from parrot.observability.setup import setup_telemetry  # noqa: PLC0415
 
         setup_telemetry(config)
+        _register_atexit_flush()
         logger.info("Observability auto-boot: OTel backend active.")
         return
 
@@ -108,12 +151,61 @@ def _do_bootstrap() -> None:
     ids = get_global_registry().add_provider(subscriber)
     _SUBSCRIBER = subscriber
     _SUBSCRIPTION_IDS.extend(ids)
+    _register_atexit_flush()
     logger.info(
         "Observability auto-boot: '%s' backend active (cost=%s, service=%s).",
         backend,
         config.enable_cost_tracking,
         config.service_name,
     )
+
+
+def _register_atexit_flush() -> None:
+    """Register a process-exit hook that flushes telemetry. Idempotent.
+
+    Ensures the final ``BatchSpanProcessor`` / ``PeriodicExportingMetricReader``
+    batch is exported on graceful shutdown regardless of the entrypoint (gunicorn
+    worker, CLI, script). Deterministic flush points (e.g. the autonomous
+    orchestrator's ``stop()``) complement — they don't replace — this safety net.
+    """
+    global _ATEXIT_REGISTERED  # noqa: PLW0603
+    if _ATEXIT_REGISTERED:
+        return
+    atexit.register(shutdown_observability)
+    _ATEXIT_REGISTERED = True
+
+
+def shutdown_observability() -> None:
+    """Flush and tear down every active observability path. Idempotent + defensive.
+
+    Aggregates every shutdown surface so callers need not know which backend is
+    active: the OTel path (``shutdown_telemetry``), the Traceloop path
+    (``shutdown_traceloop``), and the lightweight logging/prometheus path
+    (``shutdown_usage_recording``). Safe to call when observability was never
+    started; never raises.
+    """
+    try:
+        from parrot.observability.setup import shutdown_telemetry  # noqa: PLC0415
+
+        shutdown_telemetry()
+    except Exception:  # noqa: BLE001 — shutdown must never raise
+        logger.debug("shutdown_observability: OTel teardown failed.", exc_info=True)
+
+    try:
+        from parrot.observability.traceloop_integration import (  # noqa: PLC0415
+            shutdown_traceloop,
+        )
+
+        shutdown_traceloop()
+    except Exception:  # noqa: BLE001
+        logger.debug("shutdown_observability: Traceloop teardown failed.", exc_info=True)
+
+    try:
+        shutdown_usage_recording()
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "shutdown_observability: usage-recording teardown failed.", exc_info=True
+        )
 
 
 def shutdown_usage_recording() -> None:
@@ -159,7 +251,13 @@ def shutdown_usage_recording() -> None:
 
 def reset_bootstrap_for_tests() -> None:
     """Test-only: reset module state so a fresh bootstrap can run."""
-    global _BOOTSTRAPPED, _SUBSCRIBER  # noqa: PLW0603
+    global _BOOTSTRAPPED, _SUBSCRIBER, _ATEXIT_REGISTERED  # noqa: PLW0603
     shutdown_usage_recording()
+    if _ATEXIT_REGISTERED:
+        try:
+            atexit.unregister(shutdown_observability)
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to unregister atexit flush hook.", exc_info=True)
     _BOOTSTRAPPED = False
     _SUBSCRIBER = None
+    _ATEXIT_REGISTERED = False

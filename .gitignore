@@ -259,6 +259,7 @@ artifacts/
 examples/pageindex/store/*
 examples/pageindex/data/*
 examples/graphindex/*
+examples/knowledge_wiki/store/
 
 # Custom Agents:
 plugins/agents/

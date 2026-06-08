@@ -21,10 +21,18 @@ path):
   * ``UsageRecordingSubscriber`` — builds records + fans out to recorders.
   * ``ensure_observability_bootstrapped`` / ``shutdown_usage_recording`` —
     env-driven auto-boot helpers.
+  * ``shutdown_observability`` — aggregate flush/teardown for any active backend
+    (registered automatically via ``atexit`` on first boot).
+
+OpenLLMetry (Traceloop) backend — a simple, content-rich local/dev tracing path,
+mutually exclusive with OpenLIT (the production backend):
+  * ``init_traceloop`` / ``setup_traceloop`` / ``shutdown_traceloop`` — activate
+    via ``OBSERVABILITY_TRACELOOP=true`` (or ``usage_backend="traceloop"``).
 """
 
 from parrot.observability.bootstrap import (
     ensure_observability_bootstrapped,
+    shutdown_observability,
     shutdown_usage_recording,
 )
 from parrot.observability.config import ObservabilityConfig
@@ -40,6 +48,11 @@ from parrot.observability.recorders import (
 from parrot.observability.setup import setup_telemetry, shutdown_telemetry
 from parrot.observability.subscribers.metrics import MetricsSubscriber
 from parrot.observability.subscribers.trace import GenAIOpenTelemetrySubscriber
+from parrot.observability.traceloop_integration import (
+    init_traceloop,
+    setup_traceloop,
+    shutdown_traceloop,
+)
 
 __all__: list[str] = [
     "ObservabilityConfig",
@@ -56,4 +69,8 @@ __all__: list[str] = [
     "UsageRecordingSubscriber",
     "ensure_observability_bootstrapped",
     "shutdown_usage_recording",
+    "shutdown_observability",
+    "init_traceloop",
+    "setup_traceloop",
+    "shutdown_traceloop",
 ]
