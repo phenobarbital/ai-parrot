@@ -75,6 +75,16 @@ end-to-end until an agent, a channel, and session identity are wired.
   (verify live + Workday agent over Telegram, using explicit/SSO-bound identity),
   and (B) Phase 5 separately (session-derived identity + authorization), since it
   is the delicate cross-cutting architectural piece.
+- **C8 — The Workday agent must NOT live in the ai-parrot (public) repo**: no
+  Workday agent exists yet (confirmed). ai-parrot is the **public framework** —
+  it ships only generic, non-sensitive pieces (the `WorkdayToolkit`, the Telegram
+  integration, the session-identity/authorization mechanism). The **agent itself**
+  — its `@register_agent` definition, system prompts, tenant-specific config and
+  `telegram_bots.yaml` binding — is **sensitive/company-specific** and must be
+  created in a **private repo** (the company keeps its agents in
+  `navigator-plugins`, e.g. `docs/`, via `@register_agent`). **Exact target
+  location is TBD — to be decided later.** This split is a hard boundary: nothing
+  agent-specific or tenant-specific may be committed to ai-parrot.
 
 ---
 
@@ -227,10 +237,15 @@ SSO**, then chats naturally:
   against the impl tenant whose `WORKDAY_*` creds resolve from `parrot.conf`, and
   records evidence (real PTO balance retrieved). Gated/skipped when creds absent so
   CI stays green.
-- **Phase 4 (agent + Telegram)**: register a **Workday Agent** that loads
-  `WorkdayToolkit`; add a `telegram_bots.yaml` entry binding it with SSO auth
-  required (fail-closed) and an allowlist. The existing `TelegramBotManager` /
-  `TelegramAgentWrapper` host it; SSO establishes `nav_user_id`.
+- **Phase 4 (agent + Telegram)**: **ai-parrot side (this repo)** only ensures the
+  framework is ready — `WorkdayToolkit` is loadable and the Telegram integration can
+  host an arbitrary agent with SSO required (fail-closed) + allowlist. The
+  **Workday agent itself is created in a private repo (location TBD — NOT
+  ai-parrot)**: a `@register_agent` Workday agent that loads `WorkdayToolkit`, its
+  system prompts, and the `telegram_bots.yaml` binding all live outside parrot (C8).
+  The existing `TelegramBotManager` / `TelegramAgentWrapper` host it; SSO
+  establishes `nav_user_id`. The seam between the two repos is just the public
+  `WorkdayToolkit` import + the integration config contract.
 - **Phase 5 (identity + authz)**: an authenticated-session `ContextVar` is set by the
   integration around `agent.ask()`. `WorkdayToolkit._pre_execute` resolves the
   caller's `worker_id` from `UserInfo` (`associate_id`), injects it when the tool
@@ -254,8 +269,10 @@ SSO**, then chats naturally:
 ### New Capabilities
 - `workday-live-verification`: live-tenant end-to-end verification of the homologated
   Workday read methods (Phase 3). *(spec A)*
-- `workday-telegram-agent`: a registered Workday agent exposed over Telegram with
-  SSO-gated access (Phase 4). *(spec A)*
+- `workday-telegram-agent`: framework-readiness in ai-parrot to host a Workday agent
+  over Telegram with SSO-gated access (Phase 4). **The agent definition itself is
+  created in a private repo, NOT in ai-parrot (C8 — location TBD).** *(spec A — the
+  parrot-side enablement; the private-repo agent is tracked separately.)*
 - `workday-session-identity`: session-derived `worker_id` resolution + self/direct-report
   authorization in the toolkit (Phase 5). *(spec B)*
 
@@ -273,7 +290,7 @@ SSO**, then chats naturally:
 | `packages/ai-parrot/src/parrot/tools/toolkit.py` | depends on | reuse `_pre_execute` + `_permission_context` plumbing (no change expected) |
 | `packages/ai-parrot/src/parrot/stores/kb/user.py` (`UserInfo`) | depends on / extends | `associate_id`→worker_id and `manager_id` for direct-report check |
 | `packages/ai-parrot-integrations/.../telegram/` | extends | session-identity ContextVar around `agent.ask()`; `telegram_bots.yaml` Workday bot; SSO required |
-| Workday agent registration (NEW) | creates | an Agent loading `WorkdayToolkit` (none exists today) |
+| Workday agent (NEW) | creates — **in a private repo, NOT ai-parrot (C8)** | `@register_agent` agent loading `WorkdayToolkit` + prompts + `telegram_bots.yaml`; none exists today; target location TBD (likely `navigator-plugins/docs`) |
 | `parrot.conf` `WORKDAY_*` | depends on | impl-tenant creds for Phase 3 verification |
 
 ---
@@ -344,8 +361,9 @@ from parrot.integrations.telegram.context import telegram_chat_scope, current_te
 - `WorkdayToolkit.METHOD_TO_SERVICE_MAP` routes per-method WSDL (tool.py:110-157)
 
 ### Does NOT Exist (Anti-Hallucination)
-- ~~a registered Workday `Agent`/bot~~ — **none exists** (grep for register_agent/WorkdayAgent returned nothing); Phase 4 must create one.
-- ~~a `telegram_bots.yaml` entry for Workday~~ — does not exist yet.
+- ~~a registered Workday `Agent`/bot~~ — **none exists anywhere** (confirmed in both ai-parrot and the private `navigator-plugins` repo). Phase 4 must create one **in the private repo, NOT in ai-parrot** (C8).
+- ~~a `telegram_bots.yaml` entry for Workday~~ — does not exist yet; it belongs in the private repo alongside the agent (C8).
+- ~~an existing HR/Workday agent in `navigator-plugins/docs`~~ — the `hr_agent` there is a retail/visit-info agent (NetworkNinja/foot-traffic), NOT Workday; `components/Workday/` is the legacy flowtask-style component, not an agent.
 - ~~`WorkdayToolkit._pre_execute`~~ — not overridden today (FEAT-230 left identity explicit); Phase 5 adds it.
 - ~~session-derived `worker_id` anywhere in `WorkdayToolkit`~~ — every method takes explicit `worker_id` (FEAT-230 Non-Goal).
 - ~~live-tenant Workday tests~~ — FEAT-230's 50 tests are all mocked; no live verification exists.
@@ -380,6 +398,8 @@ from parrot.integrations.telegram.context import telegram_chat_scope, current_te
 - [x] Write operations over Telegram — *Owner: Jesus*: self-only `request_my_time_off`, explicit in-chat confirmation before submit.
 - [x] Authentication method — *Owner: Jesus*: Azure/OAuth2 SSO, fail-closed (no Workday tool without an authenticated session).
 - [x] Program structure — *Owner: Jesus*: two specs — (A) Phase 3+4, (B) Phase 5.
+- [x] Does a Workday agent already exist? — *Owner: Jesus/Juan*: No, none exists. It must be created.
+- [ ] **Where exactly to create the Workday agent** (private repo — likely `navigator-plugins/docs`, but the precise repo/path/structure is **TBD, to be decided later**). The agent, its prompts, tenant config, and `telegram_bots.yaml` binding MUST NOT be committed to ai-parrot (C8) — *Owner: Jesus/Juan*.
 - [ ] Exact SSO provider/config for the Workday Telegram bot (Azure AD tenant/app registration details) — *Owner: implementer (Spec A)*.
 - [ ] Which `UserInfo.search` call shape resolves `worker_id` from `nav_user_id` (the existing signature takes `user_id: int`; confirm the session→`user_id` mapping) — *Owner: implementer (Spec B)*.
 - [ ] How a manager references a report in chat (by name → `find_employee_id_by_name` → validate against `get_direct_reports`) and the exact denial UX — *Owner: implementer (Spec B)*.
