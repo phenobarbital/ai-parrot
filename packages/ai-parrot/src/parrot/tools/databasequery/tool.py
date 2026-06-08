@@ -243,7 +243,18 @@ class DatabaseQueryTool(AbstractTool):
     args_schema = DatabaseQueryArgs
 
     def __init__(self, **kwargs):
-        """Initialize the Database Query tool."""
+        """Initialize the Database Query tool.
+
+        Args:
+            dataplane_guard: Optional ``DataPlanePolicyGuard`` for FEAT-228
+                data-plane authorization enforcement (L2).  When set, every
+                ``_execute()`` call is gated through the guard before the query
+                reaches the database.  ``None`` → no enforcement (fail-open,
+                backwards-compat default).
+            **kwargs: Forwarded to ``AbstractTool.__init__``.
+        """
+        # FEAT-228: pop before forwarding to avoid AbstractTool ctor rejecting it.
+        self._dataplane_guard = kwargs.pop("dataplane_guard", None)
         super().__init__(**kwargs)
         self.default_credentials = {}
 
@@ -571,6 +582,41 @@ class DatabaseQueryTool(AbstractTool):
                 f"(language: {driver_query_language.value})"
             )
 
+            # ── FEAT-228: Data-plane authorization gate (L2) ─────────────
+            # Run the authorization + RLS chain before touching credentials
+            # or the database.  We do NOT call AuthorizingDataSource.fetch()
+            # here (that would execute the query twice).  Instead we directly
+            # invoke the guard methods that make up steps 1–6 of the chain,
+            # mirroring what AuthorizingDataSource.fetch() does internally.
+            if self._dataplane_guard is not None:
+                from parrot.tools.dataset_manager.sources.sql import SQLQuerySource
+                from parrot.tools.dataset_manager.sources.resolver import (
+                    resolve_physical_resources,
+                )
+                from parrot.tools.dataset_manager.sources.rls import inject_rls_sql
+                from parrot.tools.dataset_manager.sources.dialects import driver_to_dialect
+                from parrot.tools.dataset_manager.tool import _pctx_var
+
+                _ctx = _pctx_var.get(None)
+                if _ctx is not None:
+                    # Resolve physical resources from the SQL/driver pair.
+                    _tmp_source = SQLQuerySource(sql=query, driver=driver)
+                    _resources = resolve_physical_resources(_tmp_source)
+
+                    # Authorize — raises AuthorizationRequired on denial.
+                    await self._dataplane_guard.authorize_source(_ctx, _resources)
+
+                    # Collect RLS predicates and inject into the SQL.
+                    _predicates = await self._dataplane_guard.rls_predicates(
+                        _ctx, _resources
+                    )
+                    if _predicates:
+                        _dialect = driver_to_dialect(driver) or "generic"
+                        query, _bound = inject_rls_sql(query, _dialect, _predicates)
+                # If _ctx is None → fail-open (no enforcement).
+
+            # ─────────────────────────────────────────────────────────────
+
             # Validate query safety based on query language
             validation_result = self._validate_query_safety(query, driver)
             if not validation_result['is_safe']:
@@ -691,6 +737,26 @@ class DatabaseQueryTool(AbstractTool):
         Returns:
             Dictionary with connection test results
         """
+        # FEAT-228: explicit driver:connect gate before the test query.
+        if self._dataplane_guard is not None:
+            from parrot.tools.dataset_manager.tool import _pctx_var
+            from parrot.auth.exceptions import AuthorizationRequired
+
+            _ctx = _pctx_var.get(None)
+            if _ctx is not None:
+                _normalized = normalize_driver(driver)
+                _allowed = await self._dataplane_guard.can_connect_driver(
+                    _ctx, _normalized
+                )
+                if not _allowed:
+                    raise AuthorizationRequired(
+                        tool_name="dataplane_authz",
+                        message=(
+                            f"Driver '{_normalized}' access denied for "
+                            f"current user"
+                        ),
+                    )
+
         try:
             # Simple test query
             test_query = "SELECT 1 as test_column"
