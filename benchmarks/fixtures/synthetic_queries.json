@@ -1,0 +1,147 @@
+{
+  "description": "Synthetic query/document pairs for multimodal embedding benchmark (fallback dataset).",
+  "version": "1.0",
+  "language_pairs": ["en", "es"],
+  "entries": [
+    {
+      "query_id": "q001",
+      "query_text": "a red apple on a wooden table",
+      "relevant_doc_id": "d001",
+      "doc_text": "Fresh red apple placed on a rustic wooden table",
+      "lang": "en"
+    },
+    {
+      "query_id": "q002",
+      "query_text": "quarterly financial report results",
+      "relevant_doc_id": "d002",
+      "doc_text": "Q3 2025 financial results: revenue up 12%, operating margin improved",
+      "lang": "en"
+    },
+    {
+      "query_id": "q003",
+      "query_text": "shelf layout product planogram",
+      "relevant_doc_id": "d003",
+      "doc_text": "Store planogram showing product arrangement on retail shelf",
+      "lang": "en"
+    },
+    {
+      "query_id": "q004",
+      "query_text": "neural network architecture diagram",
+      "relevant_doc_id": "d004",
+      "doc_text": "Deep learning model architecture with convolutional layers",
+      "lang": "en"
+    },
+    {
+      "query_id": "q005",
+      "query_text": "tropical beach sunset landscape",
+      "relevant_doc_id": "d005",
+      "doc_text": "Beautiful tropical beach at sunset with palm trees",
+      "lang": "en"
+    },
+    {
+      "query_id": "q006",
+      "query_text": "coffee cup on desk with laptop",
+      "relevant_doc_id": "d006",
+      "doc_text": "Work setup with coffee mug and laptop computer on office desk",
+      "lang": "en"
+    },
+    {
+      "query_id": "q007",
+      "query_text": "cat sitting on window sill",
+      "relevant_doc_id": "d007",
+      "doc_text": "Domestic cat resting on windowsill looking outside",
+      "lang": "en"
+    },
+    {
+      "query_id": "q008",
+      "query_text": "city skyline at night illuminated",
+      "relevant_doc_id": "d008",
+      "doc_text": "Urban city skyline with buildings lit up at night",
+      "lang": "en"
+    },
+    {
+      "query_id": "q009",
+      "query_text": "mountain peak covered in snow",
+      "relevant_doc_id": "d009",
+      "doc_text": "Snow-capped mountain summit in winter landscape",
+      "lang": "en"
+    },
+    {
+      "query_id": "q010",
+      "query_text": "data visualization bar chart analytics",
+      "relevant_doc_id": "d010",
+      "doc_text": "Business analytics dashboard with bar charts and metrics",
+      "lang": "en"
+    },
+    {
+      "query_id": "q011",
+      "query_text": "manzana roja sobre mesa de madera",
+      "relevant_doc_id": "d011",
+      "doc_text": "Manzana roja fresca colocada sobre una mesa rústica de madera",
+      "lang": "es"
+    },
+    {
+      "query_id": "q012",
+      "query_text": "informe financiero trimestral resultados",
+      "relevant_doc_id": "d012",
+      "doc_text": "Resultados financieros del tercer trimestre 2025: ingresos aumentaron 12%",
+      "lang": "es"
+    },
+    {
+      "query_id": "q013",
+      "query_text": "planograma de estante productos tienda",
+      "relevant_doc_id": "d013",
+      "doc_text": "Planograma de tienda mostrando la disposición de productos en estantes",
+      "lang": "es"
+    },
+    {
+      "query_id": "q014",
+      "query_text": "diagrama arquitectura red neuronal",
+      "relevant_doc_id": "d014",
+      "doc_text": "Arquitectura de modelo de aprendizaje profundo con capas convolucionales",
+      "lang": "es"
+    },
+    {
+      "query_id": "q015",
+      "query_text": "paisaje playa tropical atardecer",
+      "relevant_doc_id": "d015",
+      "doc_text": "Hermosa playa tropical al atardecer con palmeras",
+      "lang": "es"
+    },
+    {
+      "query_id": "q016",
+      "query_text": "taza café escritorio con laptop",
+      "relevant_doc_id": "d016",
+      "doc_text": "Configuración de trabajo con taza de café y laptop en escritorio",
+      "lang": "es"
+    },
+    {
+      "query_id": "q017",
+      "query_text": "gato sentado en alféizar ventana",
+      "relevant_doc_id": "d017",
+      "doc_text": "Gato doméstico descansando en el alféizar mirando afuera",
+      "lang": "es"
+    },
+    {
+      "query_id": "q018",
+      "query_text": "horizonte ciudad nocturno iluminado",
+      "relevant_doc_id": "d018",
+      "doc_text": "Horizonte urbano con edificios iluminados de noche",
+      "lang": "es"
+    },
+    {
+      "query_id": "q019",
+      "query_text": "pico montaña cubierto nieve",
+      "relevant_doc_id": "d019",
+      "doc_text": "Cumbre de montaña cubierta de nieve en paisaje invernal",
+      "lang": "es"
+    },
+    {
+      "query_id": "q020",
+      "query_text": "visualización datos gráfico barras analítica",
+      "relevant_doc_id": "d020",
+      "doc_text": "Panel de analítica empresarial con gráficos de barras y métricas",
+      "lang": "es"
+    }
+  ]
+}

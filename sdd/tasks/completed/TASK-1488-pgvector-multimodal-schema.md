@@ -235,10 +235,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-06-08
+**Notes**: Created multimodal_schema.py in parrot.stores with define_multimodal_collection()
+(dynamic ORM class with id, embedding, modality, source_id, doc_id, text_content, payload
+columns), _get_vector_column_type() (VECTOR/HALFVEC/BIT selection per quantization mode),
+create_multimodal_table() (async, creates table + optional HNSW index with cosine/hamming ops),
+and search_multimodal() (async, cosine <=> or hamming <~> distance). pgvector 0.4.1 confirms
+VECTOR, HALFVEC, BIT are all available. Tests: 11 unit tests pass, 1 integration test skipped
+(needs TEST_PGVECTOR_DSN env var). Note: task spec mentioned Bit (lowercase) which does NOT
+exist; BIT (uppercase) is the correct SQLAlchemy column type from pgvector.sqlalchemy.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Used BIT (not Bit) — the spec's "Does NOT Exist" section correctly
+flagged pgvector.sqlalchemy.Bit as potentially unavailable; BIT is the correct export.

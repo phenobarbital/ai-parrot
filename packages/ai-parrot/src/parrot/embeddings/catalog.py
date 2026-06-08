@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, model_validator
 # ── Literal type aliases ─────────────────────────────────────────────────────
 
 Metric = Literal["cosine", "dot", "l2"]
-Provider = Literal["huggingface", "openai", "google"]
+Provider = Literal["huggingface", "openai", "google", "multimodal"]
 UseCaseTag = Literal[
     "similarity",
     "retrieval",
@@ -1117,6 +1117,63 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 8191,
         "hnsw_compatible": True,
         "license": "proprietary",
+        "recommended_score_threshold": 0.50,
+        "recommended_search_limit": 10,
+    },
+
+    # ── UForm Multimodal (CLIP-style, text + image) ───────────────────────
+    {
+        "model": "unum-cloud/uform3-image-text-multilingual-base",
+        "provider": "multimodal",
+        "name": "UForm3 Image-Text Multilingual Base",
+        "dimension": 768,
+        "multilingual": True,
+        "language": "multi",
+        "use_case": ["retrieval", "multilingual", "similarity"],
+        "matryoshka_dimensions": [64, 128, 256, 512, 768],
+        "description": (
+            "768-dim CLIP-style multimodal model (206M params, 21 languages "
+            "incl. Spanish). Embeds text and images into a shared vector space "
+            "for cross-modal retrieval (text<->image, image<->image). "
+            "Matryoshka support (64 to 768 dims). Torch and ONNX backends. "
+            "Apache-2.0 license. Benchmark decision gate: if nDCG@10 lags >3% "
+            "vs best text baseline, use for cross-modal only."
+        ),
+        "metric_recommended": "cosine",
+        "requires_prefix": False,
+        "prefix_query": None,
+        "prefix_passage": None,
+        "normalized_output": True,
+        "max_seq_length": 77,
+        "hnsw_compatible": True,
+        "license": "apache-2.0",
+        "recommended_score_threshold": 0.50,
+        "recommended_search_limit": 10,
+    },
+    {
+        "model": "unum-cloud/uform3-image-text-english-large",
+        "provider": "multimodal",
+        "name": "UForm3 Image-Text English Large",
+        "dimension": 768,
+        "multilingual": False,
+        "language": "en",
+        "use_case": ["retrieval", "similarity"],
+        "matryoshka_dimensions": [64, 128, 256, 512, 768],
+        "description": (
+            "768-dim CLIP-style multimodal model (365M params, English). "
+            "Higher quality English text-image alignment than the multilingual "
+            "base model. Matryoshka support (64 to 768 dims). Torch and ONNX "
+            "backends. Apache-2.0 license. Prefer for English-only workloads "
+            "where retrieval quality is paramount."
+        ),
+        "metric_recommended": "cosine",
+        "requires_prefix": False,
+        "prefix_query": None,
+        "prefix_passage": None,
+        "normalized_output": True,
+        "max_seq_length": 77,
+        "hnsw_compatible": True,
+        "license": "apache-2.0",
         "recommended_score_threshold": 0.50,
         "recommended_search_limit": 10,
     },

@@ -149,10 +149,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-06-08
+**Notes**: Created benchmarks/multimodal_embedding_benchmark.py (standalone script with
+argparse CLI: --synthetic-only, --output-dir, --domain-data, --matryoshka-dims, --skip-quantization,
+--throughput-reps, --uform-model, --decision-threshold). Implements: load_synthetic_data() /
+load_domain_data(), Recall@{1,5,10} / MRR / nDCG@10 functions, rank_documents(), cosine_similarities(),
+measure_throughput() (async, p50/p95), UFormWrapper (direct UFormEmbedding instantiation) and
+HFBaseline (sentence-transformers). Matryoshka recall curve, quantization delta (f32/i8/b1),
+throughput stats, per-language breakdown (en/es). Writes report.md + CSV files. Decision gate:
+UForm nDCG@10 within 3% of baseline = PASS.
+Script exits cleanly on --help. Ruff passes. Synthetic data: 20 query/doc pairs (10 en + 10 es).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Decision gate uses 3% as default (configurable via --decision-threshold).
+UForm english-large omitted from default model list (single model per run, select via --uform-model).
+Runs with whatever models are importable; gracefully skips missing ones.

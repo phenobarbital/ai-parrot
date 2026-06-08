@@ -253,10 +253,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-06-08
+**Notes**: Created tests/embeddings/test_uform_integration.py (18 tests): CrossModalSanity,
+SharedDimension, OnnxTorchAgreement (skips if onnxruntime missing), AsyncNonBlocking,
+RegistryIntegration, MatryoshkaDimensions (5 dims via parametrize), EmbedDocumentsRouting.
+All marked pytest.mark.slow (require model download). Module skips if uform not installed.
+Created tests/stores/test_multimodal_pgvector_integration.py (9 tests): TestCreateMultimodalTable
+(f32/f16/b1 + idempotent), TestMultimodalPgVectorRoundTrip (text filter, no filter, nearest-self),
+TestQuantizedRoundTrip (f16/i8). All skip if TEST_PGVECTOR_DSN not set.
+Generated tests/fixtures/red_apple.jpg (224x224 RGB synthetic image with red circle on brown bg).
+69 non-slow tests pass, 1 skipped (needs TEST_PGVECTOR_DSN).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Module-level pytest.mark.slow added to test_uform_integration.py
+(requires model download); tests are collected and structured per spec but will be skipped
+in CI unless slow marks are included. QuantizationMode not re-exported from test_uform_integration
+(unused after removing from imports).
