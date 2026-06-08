@@ -14,14 +14,14 @@
       "feature_id": "FEAT-230",
       "feature": "workday-tooling-composable-interface",
       "spec": "sdd/specs/workday-tooling-composable-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task; everything else imports the vendored package. Vendor + rebase are inseparable (source service.py imports flowtask.interfaces.SOAPClient, which only resolves after the base rebase).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-08T15:15:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1505-vendor-workday-composable.md"
     },
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1505"],
+      "depends_on": [
+        "TASK-1505"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies tool.py; depends on the vendored package from TASK-1505.",
       "assigned_to": null,
@@ -46,14 +48,16 @@
     {
       "id": "TASK-1507",
       "slug": "read-path-homologation",
-      "title": "Read-path homologation — 9 agent-facing tools",
+      "title": "Read-path homologation \u2014 9 agent-facing tools",
       "feature_id": "FEAT-230",
       "feature": "workday-tooling-composable-interface",
       "spec": "sdd/specs/workday-tooling-composable-interface.spec.md",
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1506"],
+      "depends_on": [
+        "TASK-1506"
+      ],
       "parallel": false,
       "parallelism_notes": "Adds methods to tool.py after the delegation refactor lands; shares tool.py with TASK-1506/1508/1509.",
       "assigned_to": null,
@@ -71,9 +75,11 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1507"],
+      "depends_on": [
+        "TASK-1507"
+      ],
       "parallel": false,
-      "parallelism_notes": "Independent of TASK-1509 logically, but both modify tool.py + service.py + config.py — keep sequential in the same worktree to avoid merge churn (spec Worktree Strategy).",
+      "parallelism_notes": "Independent of TASK-1509 logically, but both modify tool.py + service.py + config.py \u2014 keep sequential in the same worktree to avoid merge churn (spec Worktree Strategy).",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -89,7 +95,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1507"],
+      "depends_on": [
+        "TASK-1507"
+      ],
       "parallel": false,
       "parallelism_notes": "Shares tool.py + service.py + config.py with TASK-1508; keep sequential in the same worktree.",
       "assigned_to": null,
