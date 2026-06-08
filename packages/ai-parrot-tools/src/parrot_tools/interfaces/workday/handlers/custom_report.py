@@ -14,6 +14,7 @@ import xmltodict
 from .base import WorkdayTypeBase
 from ..utils import safe_serialize
 from parrot.interfaces.http import HTTPService
+from parrot.conf import WORKDAY_DEFAULT_TENANT, WORKDAY_REPORT_OWNER
 
 
 class CustomReportType(WorkdayTypeBase):
@@ -231,12 +232,12 @@ class CustomReportType(WorkdayTypeBase):
             Full URL for the RaaS REST API request
         """
         # Get configuration from component
-        tenant = getattr(self.service, 'tenant', 'nav')
+        tenant = getattr(self.service, 'tenant', None) or WORKDAY_DEFAULT_TENANT
         owner = report_owner or getattr(
             self.service,
             'report_owner',
-            'owner@example.com'
-        )
+            None
+        ) or WORKDAY_REPORT_OWNER
         workday_url = getattr(
             self.service,
             'workday_url',
@@ -301,7 +302,7 @@ class CustomReportType(WorkdayTypeBase):
             # Using query_string_template for custom parameter formats
             df = await custom_report.execute(
                 report_name="TROC_New_Hire_Employment_-_Finance",
-                report_owner="owner@example.com",
+                report_owner="report.owner@example.com",
                 query_string_template="Organization!WID={org_wid}&To_Date={end_date}&From_Date={start_date}&Include_Subordinate_Organizations={include_subordinate}",
                 org_wid="795b89c2031c1000da0e4900aa460000",
                 start_date="2025-11-01-07:00",

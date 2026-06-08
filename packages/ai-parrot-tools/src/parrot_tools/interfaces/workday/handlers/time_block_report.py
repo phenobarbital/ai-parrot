@@ -7,6 +7,7 @@ from urllib.parse import quote
 from .base import WorkdayTypeBase
 from ..utils import safe_serialize
 from parrot.interfaces.http import HTTPService
+from parrot.conf import WORKDAY_DEFAULT_TENANT, WORKDAY_REPORT_OWNER
 
 
 class TimeBlockReportType(WorkdayTypeBase):
@@ -31,8 +32,8 @@ class TimeBlockReportType(WorkdayTypeBase):
             Full URL for the REST API request
         """
         # Get tenant and report owner from component config
-        tenant = getattr(self.service, 'tenant', 'nav')
-        report_owner = getattr(self.service, 'report_owner', 'owner@example.com')
+        tenant = getattr(self.service, 'tenant', None) or WORKDAY_DEFAULT_TENANT
+        report_owner = getattr(self.service, 'report_owner', None) or WORKDAY_REPORT_OWNER
 
         # Base URL for Workday instance
         workday_url = getattr(

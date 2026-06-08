@@ -13,6 +13,7 @@ from .base import WorkdayTypeBase
 from ..models.custom_punch_field_report import CustomPunchFieldReportEntry
 from ..parsers.custom_punch_field_report_parsers import parse_custom_punch_field_report_data
 from parrot.interfaces.http import HTTPService
+from parrot.conf import WORKDAY_DEFAULT_TENANT, WORKDAY_REPORT_OWNER
 
 
 class CustomPunchFieldReportRestType(WorkdayTypeBase):
@@ -38,8 +39,8 @@ class CustomPunchFieldReportRestType(WorkdayTypeBase):
         """
         Build the customreport2 URL for this report.
         """
-        tenant = getattr(self.service, 'tenant', 'nav')
-        owner = getattr(self.service, 'report_owner', 'owner@example.com')
+        tenant = getattr(self.service, 'tenant', None) or WORKDAY_DEFAULT_TENANT
+        owner = getattr(self.service, 'report_owner', None) or WORKDAY_REPORT_OWNER
         workday_url = getattr(
             self.service,
             'workday_url',
