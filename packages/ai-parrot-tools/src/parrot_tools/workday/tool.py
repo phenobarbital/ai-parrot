@@ -529,7 +529,7 @@ class WorkdayToolkit(AbstractToolkit):
         else:
             for service_name, wsdl_url in WORKDAY_WSDL_PATHS.items():
                 if isinstance(wsdl_url, PurePath) and not wsdl_url.is_file():
-                    print('Warning: WSDL path does not exist:', wsdl_url)
+                    self.logger.warning("WSDL path does not exist: %s", wsdl_url)
                 try:
                     service_enum = WorkdayService(service_name)
                     self.wsdl_paths[service_enum] = wsdl_url
@@ -1032,10 +1032,11 @@ class WorkdayToolkit(AbstractToolkit):
         # Debug logging (masked) to verify which creds/owner are being used
         try:
             user_preview = (self.report_username[:3] + "..." if self.report_username else "none")
-            pwd_preview = (self.report_password[:2] + "..." + self.report_password[-2:] if self.report_password else "none")
             owner_preview = report_owner or self.report_owner or self.report_username
-            print(f"[wd_run_custom_report] user={user_preview} pwd={pwd_preview} owner={owner_preview}")
-        except Exception:
+            self.logger.debug(
+                "[wd_run_custom_report] user=%s owner=%s", user_preview, owner_preview
+            )
+        except Exception:  # noqa: BLE001
             pass
 
         # Initialize HTTP client lazily

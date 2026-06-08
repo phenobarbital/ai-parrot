@@ -29,10 +29,13 @@ from pydantic import BaseModel, computed_field
 from parrot.conf import (
     WORKDAY_CLIENT_ID,
     WORKDAY_CLIENT_SECRET,
+    WORKDAY_DEFAULT_TENANT,
     WORKDAY_REFRESH_TOKEN,
+    WORKDAY_REPORT_OWNER,
     WORKDAY_REPORT_PASSWORD,
     WORKDAY_REPORT_USERNAME,
     WORKDAY_TOKEN_URL,
+    WORKDAY_URL,
     WORKDAY_WSDL_ABSENCE_MANAGEMENT,
     WORKDAY_WSDL_CUSTOM_PUNCH_FIELD_REPORT,
     WORKDAY_WSDL_FINANCIAL_MANAGEMENT,
@@ -124,9 +127,9 @@ class WorkdayConfig(BaseModel):
     refresh_token: str | None = None
     report_username: str | None = None
     report_password: str | None = None
-    tenant: str = "nav"
-    report_owner: str = "owner@example.com"
-    workday_url: str = "https://services1.wd501.myworkday.com"
+    tenant: str | None = None
+    report_owner: str | None = None
+    workday_url: str | None = None
     timeout: int = 300
 
     # ------------------------------------------------------------------
@@ -168,3 +171,21 @@ class WorkdayConfig(BaseModel):
     def resolved_report_password(self) -> str | None:
         """Return the explicit ``report_password`` or fall back to ``WORKDAY_REPORT_PASSWORD``."""
         return self.report_password if self.report_password is not None else WORKDAY_REPORT_PASSWORD
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def resolved_tenant(self) -> str | None:
+        """Return the explicit ``tenant`` or fall back to ``WORKDAY_DEFAULT_TENANT``."""
+        return self.tenant if self.tenant is not None else WORKDAY_DEFAULT_TENANT
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def resolved_report_owner(self) -> str | None:
+        """Return the explicit ``report_owner`` or fall back to ``WORKDAY_REPORT_OWNER``."""
+        return self.report_owner if self.report_owner is not None else WORKDAY_REPORT_OWNER
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def resolved_workday_url(self) -> str | None:
+        """Return the explicit ``workday_url`` or fall back to ``WORKDAY_URL``."""
+        return self.workday_url if self.workday_url is not None else WORKDAY_URL

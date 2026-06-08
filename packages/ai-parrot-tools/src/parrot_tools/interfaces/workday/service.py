@@ -191,9 +191,9 @@ class WorkdayService(SOAPClient):
         self._is_soap_custom_report: bool = is_soap_custom_report
 
         # Tenant / report config for custom-report URL building — workday.py:428-430
-        self.tenant: str = config.tenant
-        self.report_owner: str = config.report_owner
-        self.workday_url: str = config.workday_url
+        self.tenant: str = config.resolved_tenant
+        self.report_owner: str = config.resolved_report_owner
+        self.workday_url: str = config.resolved_workday_url
 
         # Log WSDL choice and auth method — workday.py:432-445
         self._logger.info(

@@ -207,10 +207,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6
+**Date**: 2026-06-08
+**Notes**: Copied 63 files verbatim from flowtask/interfaces/workday/. All imports
+rewritten (flowtask.interfaces.workday → parrot_tools.interfaces.workday). Two
+special cases handled: service.py base class rebased to parrot.interfaces.soap.SOAPClient;
+config.py conf import rebased to parrot.conf. HTTPService in 3 handlers changed from
+relative import (....interfaces.http) to absolute (parrot.interfaces.http). 3 missing
+WORKDAY_WSDL_* constants added to parrot.conf. Pre-existing ruff lint issues in vendored
+files fixed (106 auto-fixed + 12 manual). 4/4 acceptance tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: HTTPService import path was `....interfaces.http` (relative) in
+the flowtask source — rebased to `parrot.interfaces.http` (absolute). This is the correct
+parrot-core equivalent and was not documented in the Codebase Contract.
