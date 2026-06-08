@@ -179,13 +179,18 @@ class MetricsSubscriber:
             attributes={
                 "gen_ai.system": system,
                 "gen_ai.request.model": event.model,
+                "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
             },
         )
 
     async def _on_client_after(self, event: AfterClientCallEvent) -> None:
         """Record operation duration, token usage, and optional cost."""
         system = resolve_gen_ai_system(event.client_name)
-        base = {"gen_ai.system": system, "gen_ai.response.model": event.model}
+        base = {
+            "gen_ai.system": system,
+            "gen_ai.response.model": event.model,
+            "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
+        }
 
         # Operation duration histogram
         self._client_op_duration.record(
@@ -224,6 +229,7 @@ class MetricsSubscriber:
             attributes={
                 "gen_ai.system": system,
                 "error.type": event.error_type,
+                "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
             },
         )
 

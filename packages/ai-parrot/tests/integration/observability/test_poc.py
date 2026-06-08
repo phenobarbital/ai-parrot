@@ -300,3 +300,114 @@ async def test_scenario_5_sampling_ratio() -> None:
     assert 2 <= len(spans) <= 25, (
         f"Expected ~10 sampled spans from 100 requests at 10% ratio, got {len(spans)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# FEAT-228: per-agent attribution — Scenarios 6 & 7
+# ---------------------------------------------------------------------------
+
+async def _drive_client_cycle_with_agent(
+    registry,
+    *,
+    agent_name: str,
+    client_name: str = "openai",
+    model: str = "gpt-4o-mini",
+) -> None:
+    """Emit BeforeClientCall + AfterClientCall with explicit agent_name."""
+    tc = _make_tc()
+    before = BeforeClientCallEvent(
+        trace_context=tc,
+        client_name=client_name,
+        model=model,
+        source_type="client",
+        source_name=client_name,
+        agent_name=agent_name,
+    )
+    after = AfterClientCallEvent(
+        trace_context=tc,
+        client_name=client_name,
+        model=model,
+        duration_ms=42.0,
+        input_tokens=100,
+        output_tokens=50,
+        finish_reason="stop",
+        source_type="client",
+        source_name=client_name,
+        agent_name=agent_name,
+    )
+    await registry.emit(before)
+    await registry.emit(after)
+
+
+def _collect_metric_points(reader: InMemoryMetricReader, metric_name: str):
+    """Collect all data points from the named metric."""
+    metrics_data = reader.get_metrics_data()
+    points = []
+    for rm in metrics_data.resource_metrics:
+        for sm in rm.scope_metrics:
+            for m in sm.metrics:
+                if m.name == metric_name:
+                    for dp in m.data.data_points:
+                        points.append(dp)
+    return points
+
+
+@pytest.mark.asyncio
+async def test_scenario_6_metrics_carry_agent_name() -> None:
+    """FEAT-228: cost/duration/token metrics carry parrot.agent.name label."""
+    from parrot.observability.cost.calculator import CostCalculator, _reset_pricing_cache_for_tests  # noqa: PLC0415
+
+    _reset_pricing_cache_for_tests()
+    cost_calc = CostCalculator()
+    reader = InMemoryMetricReader()
+    mp = _make_meter_provider(reader)
+
+    with scope() as registry:
+        metrics_sub = MetricsSubscriber(
+            meter_provider=mp,
+            service_name="parrot-poc",
+            cost_calculator=cost_calc,
+        )
+        metrics_sub.register(registry)
+        await _drive_client_cycle_with_agent(
+            registry, agent_name="porygon", client_name="openai", model="gpt-4o-mini"
+        )
+
+    # Check operation duration histogram carries the agent label
+    duration_pts = _collect_metric_points(reader, "gen_ai.client.operation.duration")
+    assert duration_pts, "No duration data points collected"
+    assert any(
+        pt.attributes.get("parrot.agent.name") == "porygon"
+        for pt in duration_pts
+    ), "parrot.agent.name='porygon' not found in duration metric labels"
+
+    # Check token usage histogram
+    token_pts = _collect_metric_points(reader, "gen_ai.client.token.usage")
+    assert token_pts, "No token usage data points"
+    assert any(
+        pt.attributes.get("parrot.agent.name") == "porygon"
+        for pt in token_pts
+    ), "parrot.agent.name='porygon' not found in token metric labels"
+
+
+@pytest.mark.asyncio
+async def test_scenario_7_metrics_unknown_when_agent_none() -> None:
+    """FEAT-228: when agent_name is None, metrics label uses 'unknown'."""
+    reader = InMemoryMetricReader()
+    mp = _make_meter_provider(reader)
+
+    with scope() as registry:
+        metrics_sub = MetricsSubscriber(
+            meter_provider=mp,
+            service_name="parrot-poc",
+        )
+        metrics_sub.register(registry)
+        # Use regular _drive_client_cycle which passes agent_name=None (default)
+        await _drive_client_cycle(registry, client_name="openai", model="gpt-4o-mini")
+
+    duration_pts = _collect_metric_points(reader, "gen_ai.client.operation.duration")
+    assert duration_pts, "No duration data points"
+    assert any(
+        pt.attributes.get("parrot.agent.name") == "unknown"
+        for pt in duration_pts
+    ), "parrot.agent.name='unknown' not found for None agent"
