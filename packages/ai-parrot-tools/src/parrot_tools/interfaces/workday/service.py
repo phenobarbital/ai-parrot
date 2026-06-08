@@ -53,9 +53,11 @@ from parrot_tools.interfaces.workday.handlers import (
     PutTimeClockEventsType,
     RecruitingAgencyUsersType,
     ReferencesType,
+    RequestTimeOffType,
     TimeBlockReportType,
     TimeBlockType,
     TimeOffBalanceType,
+    TimeOffEligibilityType,
     TimeRequestType,
     WorkerType,
 )
@@ -80,6 +82,7 @@ from parrot_tools.interfaces.workday.models.organizations import Organization
 from parrot_tools.interfaces.workday.models.reference import WorkdayReference
 from parrot_tools.interfaces.workday.models.time_block import TimeBlock
 from parrot_tools.interfaces.workday.models.time_off_balance import TimeOffBalance
+from parrot_tools.interfaces.workday.models.time_off_eligibility import TimeOffEligibility
 from parrot_tools.interfaces.workday.models.time_request import TimeRequest
 from parrot_tools.interfaces.workday.models.worker import Worker
 
@@ -101,6 +104,7 @@ _OPERATION_MODEL_MAP: dict[str, type] = {
     "get_job_postings": JobPosting,
     "get_job_posting_sites": JobPostingSite,
     "get_time_off_balances": TimeOffBalance,
+    "get_time_off_eligibility": TimeOffEligibility,
     "get_references": WorkdayReference,
 }
 
@@ -240,6 +244,9 @@ class WorkdayService(SOAPClient):
             "put_time_clock_events": PutTimeClockEventsType(self),
             "import_time_clock_events": ImportTimeClockEventsType(self),
             "import_reported_time_blocks": ImportReportedTimeBlocksType(self),
+            # FEAT-230: Absence Management handlers
+            "request_time_off": RequestTimeOffType(self),
+            "get_time_off_eligibility": TimeOffEligibilityType(self),
         }
 
         self.metrics: dict[str, Any] = {}

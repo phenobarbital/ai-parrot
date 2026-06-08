@@ -74,6 +74,9 @@ _WSDL_ROUTING: dict[str, Any] = {
     "put_time_clock_events": WORKDAY_WSDL_TIME,
     "import_time_clock_events": WORKDAY_WSDL_TIME,
     "import_reported_time_blocks": WORKDAY_WSDL_TIME,
+    # FEAT-230: Absence Management write + eligibility ops
+    "request_time_off": WORKDAY_WSDL_ABSENCE_MANAGEMENT,
+    "get_time_off_eligibility": WORKDAY_WSDL_ABSENCE_MANAGEMENT,
 }
 
 

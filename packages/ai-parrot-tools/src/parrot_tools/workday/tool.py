@@ -151,6 +151,9 @@ METHOD_TO_SERVICE_MAP = {
     "get_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
     "get_current_user_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
     "get_current_user_time_off_history": WorkdayService.ABSENCE_MANAGEMENT,
+    # FEAT-230 Module 4/5 — write + eligibility
+    "request_my_time_off": WorkdayService.ABSENCE_MANAGEMENT,
+    "get_my_time_off_eligibility": WorkdayService.ABSENCE_MANAGEMENT,
 }
 
 
@@ -384,6 +387,23 @@ class GetTimeOffBalanceInput2(BaseModel):
     worker_id: str = Field(description="Workday Employee ID")
     time_off_plan_id: Optional[str] = Field(
         default=None, description="Optional specific time off plan ID to filter"
+    )
+
+
+class RequestTimeOffInput(BaseModel):
+    """Input for submitting a time-off request."""
+
+    worker_id: str = Field(description="Workday Employee ID")
+    start_date: str = Field(description="First day of the time-off period (YYYY-MM-DD)")
+    end_date: str = Field(description="Last day of the time-off period (YYYY-MM-DD)")
+    time_off_type: str = Field(description="Time_Off_Type_ID value (e.g. 'VACATION', 'PTO')")
+    daily_quantity: float = Field(
+        default=8.0, description="Hours or days per calendar day (default 8.0)"
+    )
+    comment: Optional[str] = Field(default=None, description="Optional comment on the request")
+    dry_run: bool = Field(
+        default=True,
+        description="If True (default), validates the request without submitting to Workday",
     )
 
 
@@ -1857,6 +1877,85 @@ class WorkdayToolkit(AbstractToolkit):
         from datetime import date as _date
         d = _date.today()
         return {"date": d.isoformat(), "day_of_week": d.strftime("%A")}
+
+    @tool_schema(RequestTimeOffInput)
+    async def request_my_time_off(
+        self,
+        worker_id: str,
+        start_date: str,
+        end_date: str,
+        time_off_type: str,
+        daily_quantity: float = 8.0,
+        comment: Optional[str] = None,
+        dry_run: bool = True,
+    ) -> Dict[str, Any]:
+        """Submit a time-off request in Workday on behalf of a worker.
+
+        By default runs in dry-run mode (no submission). Set dry_run=False
+        to actually submit the request to Workday Absence Management.
+
+        Args:
+            worker_id: Workday Employee ID.
+            start_date: First day of the time-off period (YYYY-MM-DD).
+            end_date: Last day of the time-off period (YYYY-MM-DD).
+            time_off_type: Time_Off_Type_ID value (e.g. 'VACATION', 'PTO').
+            daily_quantity: Hours or days per calendar day (default 8.0).
+            comment: Optional employee comment on the request.
+            dry_run: If True (default), validates without submitting.
+
+        Returns:
+            Dict with submission status. Includes dry_run=True when not submitted.
+        """
+        if dry_run:
+            return {
+                "dry_run": True,
+                "worker_id": worker_id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "time_off_type": time_off_type,
+                "daily_quantity": daily_quantity,
+                "comment": comment,
+                "message": "Dry-run mode: no request submitted. Set dry_run=False to submit.",
+            }
+
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("request_time_off")
+        result_df = await svc.fetch(
+            "request_time_off",
+            worker_id=worker_id,
+            start_date=start_date,
+            end_date=end_date,
+            time_off_type=time_off_type,
+            daily_quantity=daily_quantity,
+            comment=comment,
+        )
+        records = result_df.to_dict(orient="records")
+        return records[0] if records else {"submitted": False, "error": "No response"}
+
+    @tool_schema(GetWorkerInfoInput)
+    async def get_my_time_off_eligibility(
+        self,
+        worker_id: str,
+    ) -> List[Dict[str, Any]]:
+        """Get the time-off types a worker is eligible to request in Workday.
+
+        Queries the Absence Management WSDL (Get_Time_Off_Types) to return
+        the list of time-off plans the given worker can submit a request for.
+
+        Args:
+            worker_id: Workday Employee ID.
+
+        Returns:
+            List of dicts with time_off_type_id, name, description, and unit fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_time_off_eligibility")
+        models = await svc.fetch_models("get_time_off_eligibility", worker_id=worker_id)
+        return [m.model_dump(mode="json") for m in models]
 
     def _parse_custom_report_xml(self, xml_bytes: bytes) -> List[Dict[str, Any]]:
         """

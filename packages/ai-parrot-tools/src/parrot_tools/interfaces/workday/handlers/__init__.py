@@ -20,6 +20,9 @@ from .references import ReferencesType
 from .put_time_clock_events import PutTimeClockEventsType
 from .import_time_clock_events import ImportTimeClockEventsType
 from .import_reported_time_blocks import ImportReportedTimeBlocksType
+# FEAT-230: new Absence Management handlers
+from .time_off_request import RequestTimeOffType
+from .time_off_eligibility import TimeOffEligibilityType
 
 __all__ = [
     "TimeBlockType",
@@ -44,4 +47,7 @@ __all__ = [
     "PutTimeClockEventsType",
     "ImportTimeClockEventsType",
     "ImportReportedTimeBlocksType",
+    # FEAT-230
+    "RequestTimeOffType",
+    "TimeOffEligibilityType",
 ]
