@@ -18,6 +18,7 @@ plugins/*
 /outputs/**/*.jpg
 /outputs/**/*.png
 examples/**/*.py
+!examples/autonomous_analyst/**/*.py
 examples/**/*.csv
 examples/**/*.mp4
 examples/**/*.mkv

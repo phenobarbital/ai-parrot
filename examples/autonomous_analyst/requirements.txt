@@ -1,0 +1,24 @@
+# Autonomous Analyst demo — runtime dependencies.
+#
+# Install the AI-Parrot monorepo packages (editable, from the repo root):
+#   uv pip install -e packages/ai-parrot
+#   uv pip install -e packages/ai-parrot-server
+#   uv pip install -e packages/ai-parrot-integrations
+#
+# Plus the extras this demo touches:
+
+# Telegram bot (aiogram-based integration)
+aiogram>=3.0
+
+# Gemini (real LLM + TTS) — pulled in by ai-parrot's Google client
+google-genai
+
+# OPTIONAL — durable ledger + crash resume (Postgres via asyncdb).
+# Without these the demo uses the in-memory ledger (resume is a no-op).
+# asyncdb
+# asyncpg
+
+# OPTIONAL — OTLP telemetry export (only if OTLP_ENDPOINT is set).
+# Without these, telemetry falls back to the zero-infra "logging" backend.
+# opentelemetry-sdk
+# opentelemetry-exporter-otlp
