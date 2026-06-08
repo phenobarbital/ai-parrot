@@ -53,7 +53,7 @@
       "feature_id": "FEAT-230",
       "feature": "workday-tooling-composable-interface",
       "spec": "sdd/specs/workday-tooling-composable-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,7 +62,7 @@
       "parallel": false,
       "parallelism_notes": "Adds methods to tool.py after the delegation refactor lands; shares tool.py with TASK-1506/1508/1509.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-08T18:03:47+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1507-read-path-homologation.md"
     },
