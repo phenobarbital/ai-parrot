@@ -21,6 +21,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Iterator, Optional
 
+__all__ = ["current_agent_name", "agent_identity"]
+
 current_agent_name: ContextVar[Optional[str]] = ContextVar(
     "parrot_current_agent_name", default=None
 )

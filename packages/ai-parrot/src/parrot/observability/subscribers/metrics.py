@@ -174,6 +174,9 @@ class MetricsSubscriber:
     async def _on_client_before(self, event: BeforeClientCallEvent) -> None:
         """Count outgoing LLM API request."""
         system = resolve_gen_ai_system(event.client_name)
+        # FEAT-228: metrics must always carry a string value for parrot.agent.name
+        # (OTel label sets must be stable per series); spans omit the attribute when
+        # agent_name is None instead — see attributes.py for the span-side handling.
         self._client_request_count.add(
             1,
             attributes={
@@ -186,6 +189,9 @@ class MetricsSubscriber:
     async def _on_client_after(self, event: AfterClientCallEvent) -> None:
         """Record operation duration, token usage, and optional cost."""
         system = resolve_gen_ai_system(event.client_name)
+        # FEAT-228: metrics must always carry a string value for parrot.agent.name
+        # (OTel label sets must be stable per series); spans omit the attribute when
+        # agent_name is None instead — see attributes.py for the span-side handling.
         base = {
             "gen_ai.system": system,
             "gen_ai.response.model": event.model,
@@ -224,6 +230,9 @@ class MetricsSubscriber:
     async def _on_client_fail(self, event: ClientCallFailedEvent) -> None:
         """Count LLM API errors by error type."""
         system = resolve_gen_ai_system(event.client_name)
+        # FEAT-228: metrics must always carry a string value for parrot.agent.name
+        # (OTel label sets must be stable per series); spans omit the attribute when
+        # agent_name is None instead — see attributes.py for the span-side handling.
         self._client_error_count.add(
             1,
             attributes={

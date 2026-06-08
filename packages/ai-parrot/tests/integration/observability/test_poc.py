@@ -389,6 +389,14 @@ async def test_scenario_6_metrics_carry_agent_name() -> None:
         for pt in token_pts
     ), "parrot.agent.name='porygon' not found in token metric labels"
 
+    # Check cost counter carries agent label (only when pricing data is available)
+    cost_pts = _collect_metric_points(reader, "gen_ai.client.cost.total")
+    if cost_pts:
+        assert any(
+            pt.attributes.get("parrot.agent.name") == "porygon"
+            for pt in cost_pts
+        ), "parrot.agent.name='porygon' not found in cost metric labels"
+
 
 @pytest.mark.asyncio
 async def test_scenario_7_metrics_unknown_when_agent_none() -> None:
@@ -475,3 +483,37 @@ async def test_scenario_9_client_span_omits_agent_when_none() -> None:
             f"parrot.agent.name should be omitted when agent_name=None, "
             f"but found it on span '{span.name}': {dict(span.attributes)}"
         )
+
+
+@pytest.mark.asyncio
+async def test_token_reset_on_exception() -> None:
+    """FEAT-228: ContextVar token is reset even when the body raises."""
+    from parrot.observability.context import agent_identity, current_agent_name
+
+    assert current_agent_name.get() is None
+    with pytest.raises(ValueError):
+        with agent_identity("porygon"):
+            assert current_agent_name.get() == "porygon"
+            raise ValueError("forced")
+    assert current_agent_name.get() is None, "Token must be reset after exception"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_task_isolation() -> None:
+    """FEAT-228: ContextVar does not leak across concurrent asyncio tasks."""
+    import asyncio
+    from parrot.observability.context import agent_identity, current_agent_name
+
+    results: dict[str, str | None] = {}
+
+    async def run_as(name: str) -> None:
+        with agent_identity(name):
+            await asyncio.sleep(0)  # yield to allow other tasks to run
+            results[name] = current_agent_name.get()
+
+    await asyncio.gather(
+        asyncio.create_task(run_as("agent-a")),
+        asyncio.create_task(run_as("agent-b")),
+    )
+    assert results["agent-a"] == "agent-a"
+    assert results["agent-b"] == "agent-b"

@@ -25,7 +25,6 @@ from .prompts import (
 )
 from .abstract import AbstractBot
 from ..models.status import AgentStatus
-from .middleware import PromptPipeline
 # FEAT-176: Lifecycle Events
 from parrot.core.events.lifecycle.trace import TraceContext
 from parrot.core.events.lifecycle.events import (
@@ -171,7 +170,7 @@ class BaseBot(AbstractBot):
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
         # Token-based set/reset is nested-safe (inner agents restore outer value).
-        _agt_token_conv = current_agent_name.set(self.name)
+        _agent_token = current_agent_name.set(self.name)
         try:
             return await self._conversation_body(
                 question=question,
@@ -195,7 +194,7 @@ class BaseBot(AbstractBot):
                 **kwargs,
             )
         finally:
-            current_agent_name.reset(_agt_token_conv)
+            current_agent_name.reset(_agent_token)
 
     async def _conversation_body(
         self,
@@ -577,46 +576,46 @@ class BaseBot(AbstractBot):
             AIMessage: The response from the LLM
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
-        _agt_token_invoke = current_agent_name.set(self.name)
-        if ctx is None:
-            ctx = _current_ctx.get()
-        # Generate session ID if not provided
-        session_id = session_id or str(uuid.uuid4())
-        user_id = user_id or "anonymous"
-        turn_id = str(uuid.uuid4())
-        _trusted_source = kwargs.pop("_trusted_source", False)
-
-        # SECURITY: Sanitize question. The wrap is for the LLM call ONLY —
-        # do NOT rebind ``question`` here, otherwise the security wrapper
-        # leaks into events, conversation memory and downstream agents.
+        _agent_token = current_agent_name.set(self.name)
         try:
-            prompt_for_llm = await self._sanitize_question(
-                question=question,
-                user_id=user_id,
-                session_id=session_id,
-                context={'method': 'invoke'},
-                _trusted_source=_trusted_source,
-            )
-        except PromptInjectionException as e:
-            return AIMessage(
-                content="Your request could not be processed due to security concerns.",
-                metadata={'error': 'security_block'}
-            )
+            if ctx is None:
+                ctx = _current_ctx.get()
+            # Generate session ID if not provided
+            session_id = session_id or str(uuid.uuid4())
+            user_id = user_id or "anonymous"
+            turn_id = str(uuid.uuid4())
+            _trusted_source = kwargs.pop("_trusted_source", False)
 
-        # Apply prompt pipeline (also LLM-call-only; preserves the canonical
-        # ``question`` for events/memory).
-        if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
-            prompt_for_llm = await self._prompt_pipeline.apply(
-                prompt_for_llm,
-                context={
-                    'agent_name': self.name,
-                    'user_id': user_id,
-                    'session_id': session_id,
-                    'method': 'ask',
-                }
-            )
+            # SECURITY: Sanitize question. The wrap is for the LLM call ONLY —
+            # do NOT rebind ``question`` here, otherwise the security wrapper
+            # leaks into events, conversation memory and downstream agents.
+            try:
+                prompt_for_llm = await self._sanitize_question(
+                    question=question,
+                    user_id=user_id,
+                    session_id=session_id,
+                    context={'method': 'invoke'},
+                    _trusted_source=_trusted_source,
+                )
+            except PromptInjectionException:
+                return AIMessage(
+                    content="Your request could not be processed due to security concerns.",
+                    metadata={'error': 'security_block'}
+                )
 
-        try:
+            # Apply prompt pipeline (also LLM-call-only; preserves the canonical
+            # ``question`` for events/memory).
+            if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
+                prompt_for_llm = await self._prompt_pipeline.apply(
+                    prompt_for_llm,
+                    context={
+                        'agent_name': self.name,
+                        'user_id': user_id,
+                        'session_id': session_id,
+                        'method': 'ask',
+                    }
+                )
+
             # Update status and trigger start event
             self.status = AgentStatus.WORKING
             self._trigger_event(
@@ -744,7 +743,7 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self.status = AgentStatus.IDLE
-            current_agent_name.reset(_agt_token_invoke)  # FEAT-228
+            current_agent_name.reset(_agent_token)  # FEAT-228
 
     # ── ask() lifecycle hooks (overridden by mixins) ──
 
@@ -829,100 +828,100 @@ class BaseBot(AbstractBot):
             AIMessage or formatted output based on output_mode
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
-        _agt_token_ask = current_agent_name.set(self.name)
-        if ctx is None:
-            ctx = _current_ctx.get()
-        # FEAT-224: pre-LLM output-mode routing. Runs once, and only when the
-        # caller did not specify a mode (precedence: explicit > router > default).
-        # No-op unless a routing mixin (IntentRouterMixin) is present.
-        if output_mode == OutputMode.DEFAULT:
-            _resolved_mode = await self._resolve_output_mode(question, ctx)
-            if _resolved_mode is not None:
-                output_mode = _resolved_mode
-                if ctx is not None:
-                    ctx.output_mode = _resolved_mode
-        # Generate session ID if not provided
-        session_id = session_id or str(uuid.uuid4())
-        user_id = user_id or "anonymous"
-        turn_id = str(uuid.uuid4())
-        _trusted_source = kwargs.pop("_trusted_source", False)
-
-        # Security: sanitize the user's question. The wrap is for the LLM
-        # call ONLY — keep ``question`` clean so events, conversation memory,
-        # vector retrieval and downstream agents see the canonical input.
+        _agent_token = current_agent_name.set(self.name)
         try:
-            prompt_for_llm = await self._sanitize_question(
-                question=question,
+            if ctx is None:
+                ctx = _current_ctx.get()
+            # FEAT-224: pre-LLM output-mode routing. Runs once, and only when the
+            # caller did not specify a mode (precedence: explicit > router > default).
+            # No-op unless a routing mixin (IntentRouterMixin) is present.
+            if output_mode == OutputMode.DEFAULT:
+                _resolved_mode = await self._resolve_output_mode(question, ctx)
+                if _resolved_mode is not None:
+                    output_mode = _resolved_mode
+                    if ctx is not None:
+                        ctx.output_mode = _resolved_mode
+            # Generate session ID if not provided
+            session_id = session_id or str(uuid.uuid4())
+            user_id = user_id or "anonymous"
+            turn_id = str(uuid.uuid4())
+            _trusted_source = kwargs.pop("_trusted_source", False)
+
+            # Security: sanitize the user's question. The wrap is for the LLM
+            # call ONLY — keep ``question`` clean so events, conversation memory,
+            # vector retrieval and downstream agents see the canonical input.
+            try:
+                prompt_for_llm = await self._sanitize_question(
+                    question=question,
+                    user_id=user_id,
+                    session_id=session_id,
+                    context={'method': 'ask'},
+                    _trusted_source=_trusted_source,
+                )
+            except PromptInjectionException as e:
+                # Return error response instead of crashing
+                return AIMessage(
+                    content="Your request could not be processed due to security concerns. Please rephrase your question.",
+                    metadata={
+                        'error': 'security_block',
+                        'threats_detected': len(e.threats)
+                    }
+                )
+
+            # Apply prompt pipeline (LLM-call-only; canonical ``question`` stays
+            # untouched).
+            if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
+                prompt_for_llm = await self._prompt_pipeline.apply(
+                    prompt_for_llm,
+                    context={
+                        'agent_name': self.name,
+                        'user_id': user_id,
+                        'session_id': session_id,
+                        'method': 'ask',
+                    }
+                )
+
+            # FEAT-176: resolve trace context and emit BeforeInvokeEvent.
+            _trace_ctx = trace_context or TraceContext.new_root()
+            self._current_trace_context = _trace_ctx
+            _ask_started_ms = time.perf_counter()
+            await self.events.emit(BeforeInvokeEvent(
+                trace_context=_trace_ctx,
+                agent_name=self.name,
+                method="ask",
+                question=question[:512],
                 user_id=user_id,
                 session_id=session_id,
-                context={'method': 'ask'},
-                _trusted_source=_trusted_source,
-            )
-        except PromptInjectionException as e:
-            # Return error response instead of crashing
-            return AIMessage(
-                content="Your request could not be processed due to security concerns. Please rephrase your question.",
-                metadata={
-                    'error': 'security_block',
-                    'threats_detected': len(e.threats)
-                }
-            )
+                source_type="agent",
+                source_name=self.name,
+            ))
 
-        # Apply prompt pipeline (LLM-call-only; canonical ``question`` stays
-        # untouched).
-        if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
-            prompt_for_llm = await self._prompt_pipeline.apply(
-                prompt_for_llm,
-                context={
-                    'agent_name': self.name,
-                    'user_id': user_id,
-                    'session_id': session_id,
-                    'method': 'ask',
-                }
+            # Update status and trigger start event
+            self.status = AgentStatus.WORKING
+            self._trigger_event(
+                self.EVENT_TASK_STARTED,
+                agent_name=self.name,
+                task=question,
+                session_id=session_id
             )
 
-        # FEAT-176: resolve trace context and emit BeforeInvokeEvent.
-        _trace_ctx = trace_context or TraceContext.new_root()
-        self._current_trace_context = _trace_ctx
-        _ask_started_ms = time.perf_counter()
-        await self.events.emit(BeforeInvokeEvent(
-            trace_context=_trace_ctx,
-            agent_name=self.name,
-            method="ask",
-            question=question[:512],
-            user_id=user_id,
-            session_id=session_id,
-            source_type="agent",
-            source_name=self.name,
-        ))
-
-        # Update status and trigger start event
-        self.status = AgentStatus.WORKING
-        self._trigger_event(
-            self.EVENT_TASK_STARTED,
-            agent_name=self.name,
-            task=question,
-            session_id=session_id
-        )
-
-        # Set max_tokens using bot default when provided
-        default_max_tokens = self._llm_kwargs.get('max_tokens', None)
-        max_tokens = kwargs.get('max_tokens', default_max_tokens)
-        limit = kwargs.get('limit', self.context_search_limit)
-        if limit <= 5:
-            self.logger.warning(
-                f"Context search limit is set to {limit}, which may result in insufficient context for the LLM. Consider increasing the limit for better responses."
+            # Set max_tokens using bot default when provided
+            default_max_tokens = self._llm_kwargs.get('max_tokens', None)
+            max_tokens = kwargs.get('max_tokens', default_max_tokens)
+            limit = kwargs.get('limit', self.context_search_limit)
+            if limit <= 5:
+                self.logger.warning(
+                    f"Context search limit is set to {limit}, which may result in insufficient context for the LLM. Consider increasing the limit for better responses."
+                )
+                limit = 10  # enforce a minimum limit to ensure some context is retrieved
+            score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
+            metric_type = self._resolve_metric_type(metric_type)
+            self.logger.debug(
+                "[%s] ask() resolved metric_type=%s, score_threshold=%s, limit=%s",
+                self.name, metric_type, score_threshold, limit,
             )
-            limit = 10  # enforce a minimum limit to ensure some context is retrieved
-        score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
-        metric_type = self._resolve_metric_type(metric_type)
-        self.logger.debug(
-            "[%s] ask() resolved metric_type=%s, score_threshold=%s, limit=%s",
-            self.name, metric_type, score_threshold, limit,
-        )
-        ask_started = time.perf_counter()
+            ask_started = time.perf_counter()
 
-        try:
             # Get conversation history
             conversation_history = None
             conversation_context = ""
@@ -1364,7 +1363,7 @@ class BaseBot(AbstractBot):
         finally:
             self.status = AgentStatus.IDLE
             self._current_trace_context = None
-            current_agent_name.reset(_agt_token_ask)  # FEAT-228
+            current_agent_name.reset(_agent_token)  # FEAT-228
 
     async def ask_stream(
         self,
@@ -1388,71 +1387,71 @@ class BaseBot(AbstractBot):
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream responses using the same preparation logic as :meth:`ask`."""
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
-        _agt_token_stream = current_agent_name.set(self.name)
-        if ctx is None:
-            ctx = _current_ctx.get()
-        session_id = session_id or str(uuid.uuid4())
-        user_id = user_id or "anonymous"
-        # Maintain turn identifier generation for parity with ask()
-        _turn_id = str(uuid.uuid4())
-        _trusted_source = kwargs.pop("_trusted_source", False)
-
-        # FEAT-176: resolve trace context and emit BeforeInvokeEvent.
-        _trace_ctx_stream = trace_context or TraceContext.new_root()
-        self._current_trace_context = _trace_ctx_stream
-        _stream_started_ms = time.perf_counter()
-        await self.events.emit(BeforeInvokeEvent(
-            trace_context=_trace_ctx_stream,
-            agent_name=self.name,
-            method="ask_stream",
-            question=question[:512],
-            user_id=user_id,
-            session_id=session_id,
-            source_type="agent",
-            source_name=self.name,
-        ))
-
+        _agent_token = current_agent_name.set(self.name)
         try:
-            # The wrap is for the LLM call ONLY; keep ``question`` clean.
-            prompt_for_llm = await self._sanitize_question(
-                question=question,
+            if ctx is None:
+                ctx = _current_ctx.get()
+            session_id = session_id or str(uuid.uuid4())
+            user_id = user_id or "anonymous"
+            # Maintain turn identifier generation for parity with ask()
+            _turn_id = str(uuid.uuid4())
+            _trusted_source = kwargs.pop("_trusted_source", False)
+
+            # FEAT-176: resolve trace context and emit BeforeInvokeEvent.
+            _trace_ctx_stream = trace_context or TraceContext.new_root()
+            self._current_trace_context = _trace_ctx_stream
+            _stream_started_ms = time.perf_counter()
+            await self.events.emit(BeforeInvokeEvent(
+                trace_context=_trace_ctx_stream,
+                agent_name=self.name,
+                method="ask_stream",
+                question=question[:512],
                 user_id=user_id,
                 session_id=session_id,
-                context={'method': 'ask_stream'},
-                _trusted_source=_trusted_source,
+                source_type="agent",
+                source_name=self.name,
+            ))
+
+            try:
+                # The wrap is for the LLM call ONLY; keep ``question`` clean.
+                prompt_for_llm = await self._sanitize_question(
+                    question=question,
+                    user_id=user_id,
+                    session_id=session_id,
+                    context={'method': 'ask_stream'},
+                    _trusted_source=_trusted_source,
+                )
+            except PromptInjectionException:
+                yield (
+                    "Your request could not be processed due to security concerns. "
+                    "Please rephrase your question."
+                )
+                return
+
+            # Apply prompt pipeline (LLM-call-only; ``question`` stays untouched).
+            if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
+                prompt_for_llm = await self._prompt_pipeline.apply(
+                    prompt_for_llm,
+                    context={
+                        'agent_name': self.name,
+                        'user_id': user_id,
+                        'session_id': session_id,
+                        'method': 'ask',
+                    }
+                )
+
+            default_max_tokens = self._llm_kwargs.get('max_tokens', None)
+            max_tokens = kwargs.get('max_tokens', default_max_tokens)
+            limit = kwargs.get('limit', self.context_search_limit)
+            score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
+            metric_type = self._resolve_metric_type(metric_type)
+            self.logger.debug(
+                "[%s] ask_stream() resolved metric_type=%s, score_threshold=%s",
+                self.name, metric_type, score_threshold,
             )
-        except PromptInjectionException:
-            yield (
-                "Your request could not be processed due to security concerns. "
-                "Please rephrase your question."
-            )
-            return
 
-        # Apply prompt pipeline (LLM-call-only; ``question`` stays untouched).
-        if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
-            prompt_for_llm = await self._prompt_pipeline.apply(
-                prompt_for_llm,
-                context={
-                    'agent_name': self.name,
-                    'user_id': user_id,
-                    'session_id': session_id,
-                    'method': 'ask',
-                }
-            )
+            search_kwargs = search_kwargs or {}
 
-        default_max_tokens = self._llm_kwargs.get('max_tokens', None)
-        max_tokens = kwargs.get('max_tokens', default_max_tokens)
-        limit = kwargs.get('limit', self.context_search_limit)
-        score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
-        metric_type = self._resolve_metric_type(metric_type)
-        self.logger.debug(
-            "[%s] ask_stream() resolved metric_type=%s, score_threshold=%s",
-            self.name, metric_type, score_threshold,
-        )
-
-        search_kwargs = search_kwargs or {}
-
-        try:
             conversation_context = ""
             memory = memory or self.conversation_memory
 
@@ -1671,4 +1670,4 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self._current_trace_context = None
-            current_agent_name.reset(_agt_token_stream)  # FEAT-228
+            current_agent_name.reset(_agent_token)  # FEAT-228

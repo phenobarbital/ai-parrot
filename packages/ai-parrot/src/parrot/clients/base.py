@@ -463,7 +463,10 @@ $backstory
             has_tools=has_tools,
             source_type="client",
             source_name=client_name,
-            agent_name=current_agent_name.get(),  # FEAT-228: read at construction time
+            # FEAT-228: read here (construction time, bot's task context) not at emit time —
+            # _emit_* dispatches fire-and-forget via emit_nowait so the ContextVar must be
+            # captured before the event leaves the calling coroutine.
+            agent_name=current_agent_name.get(),
         )
         self.events.emit_nowait(event)
         # Client registries are isolated (forward_to_global=False). Forward the
@@ -507,7 +510,10 @@ $backstory
             finish_reason=finish_reason,
             source_type="client",
             source_name=client_name,
-            agent_name=current_agent_name.get(),  # FEAT-228: read at construction time
+            # FEAT-228: read here (construction time, bot's task context) not at emit time —
+            # _emit_* dispatches fire-and-forget via emit_nowait so the ContextVar must be
+            # captured before the event leaves the calling coroutine.
+            agent_name=current_agent_name.get(),
         )
         await self.events.emit(event)
         # Forward to global so cost/token recorders and OTel subscribers
@@ -544,7 +550,10 @@ $backstory
             error_message=str(exc),
             source_type="client",
             source_name=client_name,
-            agent_name=current_agent_name.get(),  # FEAT-228: read at construction time
+            # FEAT-228: read here (construction time, bot's task context) not at emit time —
+            # _emit_* dispatches fire-and-forget via emit_nowait so the ContextVar must be
+            # captured before the event leaves the calling coroutine.
+            agent_name=current_agent_name.get(),
         )
         await self.events.emit(event)
         # Forward to global so error counters on the global registry observe
