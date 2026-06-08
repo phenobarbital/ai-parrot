@@ -41,6 +41,7 @@ from .filtering.contracts import FilterDefinition, FilterResult
 
 if TYPE_CHECKING:
     from ...auth.dataset_guard import DatasetPolicyGuard
+    from ...auth.dataplane_guard import DataPlanePolicyGuard
     from ...auth.permission import PermissionContext
     from ...auth.resolver import AbstractPermissionResolver
 
@@ -531,6 +532,7 @@ class DatasetManager(AbstractToolkit):
         include_summary_stats: bool = False,
         auto_detect_types: bool = True,
         policy_guard: Optional["DatasetPolicyGuard"] = None,
+        dataplane_guard: Optional["DataPlanePolicyGuard"] = None,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -550,6 +552,10 @@ class DatasetManager(AbstractToolkit):
         # PBAC dataset-level policy enforcement (FEAT-151).
         # None → no enforcement (opt-in backwards compat).
         self._policy_guard: Optional["DatasetPolicyGuard"] = policy_guard
+        # FEAT-228: data-plane authorization guard (L2).
+        # Wraps every DataSource in AuthorizingDataSource at registration time.
+        # None → no enforcement (opt-in backwards compat).
+        self._dataplane_guard: Optional["DataPlanePolicyGuard"] = dataplane_guard
         # FEAT-225: instance-scoped filter definition store.
         # Keyed by FilterDefinition.name.  Never shared across instances.
         self._filter_defs: Dict[str, FilterDefinition] = {}
@@ -560,6 +566,40 @@ class DatasetManager(AbstractToolkit):
         # ContextVar (set by _pre_execute, read by _get_current_pctx).
         # Using a ContextVar instead of an instance attribute isolates concurrent
         # requests on a shared DatasetManager from cross-contaminating contexts.
+
+    # ── FEAT-228: Data-plane authorization factory ────────────────
+
+    def _make_source(self, source: "DataSource") -> "DataSource":
+        """Wrap a DataSource in AuthorizingDataSource when a dataplane guard is set.
+
+        This is the Option-D factory (Spec §2): every source that touches the
+        network / storage passes through the guard's enforcement chain before
+        its ``fetch()`` is called.
+
+        ``InMemorySource`` is intentionally excluded — it has no driver and
+        therefore no authorization surface.
+
+        Args:
+            source: Raw :class:`~parrot.tools.dataset_manager.sources.base.DataSource`
+                instance to (optionally) wrap.
+
+        Returns:
+            The original source when no ``dataplane_guard`` is configured, or
+            when the source is an ``InMemorySource``.  Otherwise returns an
+            :class:`~parrot.tools.dataset_manager.sources.authorizing.AuthorizingDataSource`
+            wrapping the original.
+        """
+        if self._dataplane_guard is None:
+            return source
+        from .sources.memory import InMemorySource
+        if isinstance(source, InMemorySource):
+            return source
+        from .sources.authorizing import AuthorizingDataSource
+        return AuthorizingDataSource(
+            inner=source,
+            guard=self._dataplane_guard,
+            pctx_provider=lambda: _pctx_var.get(None),
+        )
 
     def set_on_change(self, callback: Callable[[], None]) -> None:
         """Register a callback invoked after dataset mutations (fetch, activate, deactivate)."""
@@ -978,9 +1018,9 @@ class DatasetManager(AbstractToolkit):
 
         elif query_slug is not None:
             from .sources.query_slug import QuerySlugSource
-            source = QuerySlugSource(
+            source = self._make_source(QuerySlugSource(
                 slug=query_slug, permanent_filter=permanent_filter,
-            )
+            ))
             params = dict(conditions) if conditions else {}
             df = await source.fetch(**params)
 
@@ -988,12 +1028,12 @@ class DatasetManager(AbstractToolkit):
             if not driver:
                 raise ValueError("driver is required when using query=")
             from .sources.sql import SQLQuerySource
-            source = SQLQuerySource(
+            source = self._make_source(SQLQuerySource(
                 sql=query,
                 driver=driver,
                 dsn=dsn,
                 credentials=credentials,
-            )
+            ))
             params = dict(conditions) if conditions else {}
             df = await source.fetch(**params)
 
@@ -1001,14 +1041,14 @@ class DatasetManager(AbstractToolkit):
             if not driver:
                 raise ValueError("driver is required when using table=")
             from .sources.table import TableSource
-            source = TableSource(
+            source = self._make_source(TableSource(
                 table=table,
                 driver=driver,
                 dsn=dsn,
                 credentials=credentials,
                 strict_schema=False,
                 permanent_filter=permanent_filter,
-            )
+            ))
             fetch_sql = sql or f"SELECT * FROM {table}"
             df = await source.fetch(sql=fetch_sql)
 
@@ -1321,7 +1361,7 @@ class DatasetManager(AbstractToolkit):
         entry = DatasetEntry(
             name=name,
             description=description,
-            source=source,
+            source=self._make_source(source),
             metadata=getattr(source, 'routing_meta', {}) or {},
             auto_detect_types=self.auto_detect_types,
             protected=True,
@@ -1376,7 +1416,7 @@ class DatasetManager(AbstractToolkit):
         entry = DatasetEntry(
             name=name,
             description=description,
-            source=source,
+            source=self._make_source(source),
             metadata=metadata or {},
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
@@ -1457,7 +1497,7 @@ class DatasetManager(AbstractToolkit):
         entry = DatasetEntry(
             name=name,
             description=description,
-            source=source,
+            source=self._make_source(source),
             metadata=metadata or {},
             cache_ttl=cache_ttl,
             no_cache=no_cache,
@@ -1524,7 +1564,7 @@ class DatasetManager(AbstractToolkit):
         entry = DatasetEntry(
             name=name,
             description=description,
-            source=source,
+            source=self._make_source(source),
             metadata=metadata or {},
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
@@ -1563,7 +1603,7 @@ class DatasetManager(AbstractToolkit):
         entry = DatasetEntry(
             name=name,
             description=description,
-            source=source,
+            source=self._make_source(source),
             metadata=metadata or {},
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
@@ -1607,7 +1647,7 @@ class DatasetManager(AbstractToolkit):
         entry = DatasetEntry(
             name=name,
             description=description,
-            source=source,
+            source=self._make_source(source),
             metadata=metadata or {},
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
@@ -1682,7 +1722,7 @@ class DatasetManager(AbstractToolkit):
         entry = DatasetEntry(
             name=name,
             description=description,
-            source=source,
+            source=self._make_source(source),
             metadata=metadata or {},
             cache_ttl=cache_ttl,
             no_cache=no_cache,
@@ -1765,7 +1805,7 @@ class DatasetManager(AbstractToolkit):
         entry = DatasetEntry(
             name=name,
             description=description,
-            source=source,
+            source=self._make_source(source),
             metadata=metadata or {},
             cache_ttl=cache_ttl,
             no_cache=no_cache,
@@ -1847,7 +1887,7 @@ class DatasetManager(AbstractToolkit):
         entry = DatasetEntry(
             name=name,
             description=description,
-            source=source,
+            source=self._make_source(source),
             metadata=metadata or {},
             cache_ttl=cache_ttl,
             no_cache=no_cache,
@@ -1938,7 +1978,7 @@ class DatasetManager(AbstractToolkit):
         entry = DatasetEntry(
             name=name,
             description=description or source.describe(),
-            source=source,
+            source=self._make_source(source),
             metadata=metadata or {},
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
