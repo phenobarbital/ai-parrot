@@ -152,7 +152,7 @@
       "feature_id": "FEAT-228",
       "feature": "dataplane-authz",
       "spec": "sdd/specs/dataplane-authz.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -162,8 +162,8 @@
       "parallelism_notes": "Modifies tool.py (~5000 lines) — must be sequential to avoid merge conflicts with TASK-1498",
       "assigned_to": null,
       "started_at": "2026-06-08T10:56:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1497-datasetmanager-integration.md"
+      "completed_at": "2026-06-08T11:18:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1497-datasetmanager-integration.md"
     },
     {
       "id": "TASK-1498",
