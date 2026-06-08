@@ -11,8 +11,13 @@
 #   docker compose -f docker-compose.observability.yml up -d
 #
 # Then open http://localhost:3000 (OpenLIT UI) and run basic_telemetry.py.
-
-version: "3.8"
+#
+# Default login (seeded by OpenLIT on first clean start):
+#   email:    user@openlit.io
+#   password: openlituser
+# Change it (or create your own user) under Settings -> Profile after logging in.
+# NOTE: this only applies to a clean start. Users persist in the openlit-data
+#       volume, so if you already created another account, use that instead.
 
 services:
 
@@ -28,10 +33,18 @@ services:
       - "4317:4317"   # OTLP gRPC receiver
     environment:
       - INIT_DB_HOST=clickhouse
-      - INIT_DB_PORT=9000
+      - INIT_DB_PORT=8123
       - INIT_DB_DATABASE=openlit
       - INIT_DB_USERNAME=default
       - INIT_DB_PASSWORD=
+      # Prisma reads this directly; the image's entrypoint only persists it to
+      # /etc/environment, which the Node process does not source. Points at the
+      # mounted data volume (resolved relative to prisma/schema.prisma).
+      - SQLITE_DATABASE_URL=file:../data/data.db
+    volumes:
+      # OpenLIT's entrypoint writes a persistent NextAuth secret + SQLite DB
+      # here. The directory does not exist in the image, so it must be a volume.
+      - openlit-data:/app/client/data
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -46,12 +59,16 @@ services:
     ports:
       - "8123:8123"   # HTTP interface
       - "9000:9000"   # TCP/native interface
+    volumes:
+      # Creates the `openlit` database on first init; OpenLIT migrates tables
+      # into it but does not create the database itself.
+      - ./clickhouse-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -72,3 +89,6 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--web.enable-lifecycle"
     restart: unless-stopped
+
+volumes:
+  openlit-data:
