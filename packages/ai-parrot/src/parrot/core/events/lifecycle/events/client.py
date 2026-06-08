@@ -25,6 +25,10 @@ class BeforeClientCallEvent(LifecycleEvent):
         system_prompt_hash: SHA-256 hex of the system prompt. NEVER the prompt
             itself — this preserves privacy while enabling correlation.
         has_tools: True if tool definitions were included in the request.
+        agent_name: ``AbstractBot.name`` of the invoking agent, or ``None``
+            when called outside a bot invocation scope.  Set by the client
+            from the ``current_agent_name`` ContextVar (FEAT-228).
+            NEVER contains PII (user_id, session_id, prompt content).
     """
 
     client_name: str = ""
@@ -32,6 +36,7 @@ class BeforeClientCallEvent(LifecycleEvent):
     temperature: Optional[float] = None
     system_prompt_hash: str = ""     # SHA-256, never the prompt itself
     has_tools: bool = False
+    agent_name: Optional[str] = None   # FEAT-228: invoking agent's self.name
 
 
 @dataclass(frozen=True)
@@ -48,6 +53,10 @@ class AfterClientCallEvent(LifecycleEvent):
         output_tokens: Output token count (provider-dependent; may be None).
         finish_reason: Stop reason returned by the provider (e.g., ``"stop"``,
             ``"max_tokens"``). May be None.
+        agent_name: ``AbstractBot.name`` of the invoking agent, or ``None``
+            when called outside a bot invocation scope.  Set by the client
+            from the ``current_agent_name`` ContextVar (FEAT-228).
+            NEVER contains PII (user_id, session_id, prompt content).
     """
 
     client_name: str = ""
@@ -56,6 +65,7 @@ class AfterClientCallEvent(LifecycleEvent):
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
     finish_reason: Optional[str] = None
+    agent_name: Optional[str] = None   # FEAT-228: invoking agent's self.name
 
 
 @dataclass(frozen=True)
@@ -70,6 +80,10 @@ class ClientCallFailedEvent(LifecycleEvent):
         duration_ms: Wall-clock time in milliseconds until failure.
         error_type: ``type(exc).__name__`` of the exception.
         error_message: String representation of the exception.
+        agent_name: ``AbstractBot.name`` of the invoking agent, or ``None``
+            when called outside a bot invocation scope.  Set by the client
+            from the ``current_agent_name`` ContextVar (FEAT-228).
+            NEVER contains PII (user_id, session_id, prompt content).
     """
 
     client_name: str = ""
@@ -77,6 +91,7 @@ class ClientCallFailedEvent(LifecycleEvent):
     duration_ms: float = 0.0
     error_type: str = ""
     error_message: str = ""
+    agent_name: Optional[str] = None   # FEAT-228: invoking agent's self.name
 
 
 @dataclass(frozen=True)

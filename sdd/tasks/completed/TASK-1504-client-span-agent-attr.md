@@ -134,7 +134,13 @@ Move to `completed/`, update the index.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**: (state whether trace.py needed a change or builders sufficed)
-**Deviations from spec**: none
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-08
+**Notes**: Added `if event.agent_name: attrs["parrot.agent.name"] = event.agent_name` to
+all three client attribute builders in `attributes.py` — `build_before_client_attrs`,
+`build_after_client_attrs`, and `build_client_failed_attrs`. No change to `trace.py` was
+required: `_on_client_start`/`_on_client_end`/`_on_client_fail` already spread the builder
+dicts through `if v is not None` loops in `_start_span` and `_end_span_ok`/`_end_span_error`.
+9 integration tests pass (7 existing + 2 new: test_scenario_8 and test_scenario_9). ruff
+check passes.
+**Deviations from spec**: none — builders sufficed, trace.py untouched as spec anticipated.

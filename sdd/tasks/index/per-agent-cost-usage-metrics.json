@@ -14,7 +14,7 @@
       "feature_id": "FEAT-228",
       "feature": "per-agent-cost-usage-metrics",
       "spec": "sdd/specs/per-agent-cost-usage-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation. File-disjoint from TASK-1500 (new module vs events file) so the two could run concurrently, but spec mandates per-spec sequential execution in one worktree.",
       "assigned_to": null,
       "started_at": "2026-06-08T13:24:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1499-agent-identity-contextvar.md"
+      "completed_at": "2026-06-08T13:30:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1499-agent-identity-contextvar.md"
     },
     {
       "id": "TASK-1500",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-228",
       "feature": "per-agent-cost-usage-metrics",
       "spec": "sdd/specs/per-agent-cost-usage-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Foundation. File-disjoint from TASK-1499; could run concurrently but spec mandates per-spec sequential execution.",
       "assigned_to": null,
       "started_at": "2026-06-08T13:24:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1500-client-event-agent-name-field.md"
+      "completed_at": "2026-06-08T13:32:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1500-client-event-agent-name-field.md"
     },
     {
       "id": "TASK-1501",
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-228",
       "feature": "per-agent-cost-usage-metrics",
       "spec": "sdd/specs/per-agent-cost-usage-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Touches bots/base.py + bots/agent.py only; file-disjoint from 1502/1503/1504 once 1499/1500 land, but spec runs all tasks sequentially in one worktree.",
       "assigned_to": null,
       "started_at": "2026-06-08T13:24:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1501-bot-invocation-wrapping.md"
+      "completed_at": "2026-06-08T13:38:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1501-bot-invocation-wrapping.md"
     },
     {
       "id": "TASK-1502",
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-228",
       "feature": "per-agent-cost-usage-metrics",
       "spec": "sdd/specs/per-agent-cost-usage-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Touches clients/base.py only; file-disjoint from siblings but sequential per spec strategy.",
       "assigned_to": null,
       "started_at": "2026-06-08T13:24:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1502-client-populate-agent-name.md"
+      "completed_at": "2026-06-08T13:39:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1502-client-populate-agent-name.md"
     },
     {
       "id": "TASK-1503",
@@ -91,7 +91,7 @@
       "feature_id": "FEAT-228",
       "feature": "per-agent-cost-usage-metrics",
       "spec": "sdd/specs/per-agent-cost-usage-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -101,8 +101,8 @@
       "parallelism_notes": "Core deliverable. Touches subscribers/metrics.py only; file-disjoint from 1504 but sequential per spec strategy.",
       "assigned_to": null,
       "started_at": "2026-06-08T13:24:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1503-metrics-agent-label.md"
+      "completed_at": "2026-06-08T13:41:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1503-metrics-agent-label.md"
     },
     {
       "id": "TASK-1504",
@@ -111,7 +111,7 @@
       "feature_id": "FEAT-228",
       "feature": "per-agent-cost-usage-metrics",
       "spec": "sdd/specs/per-agent-cost-usage-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "Touches attributes.py + trace.py only; file-disjoint from 1503 but sequential per spec strategy.",
       "assigned_to": null,
       "started_at": "2026-06-08T13:24:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1504-client-span-agent-attr.md"
+      "completed_at": "2026-06-08T13:45:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1504-client-span-agent-attr.md"
     }
   ]
 }

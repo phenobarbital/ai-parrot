@@ -300,3 +300,220 @@ async def test_scenario_5_sampling_ratio() -> None:
     assert 2 <= len(spans) <= 25, (
         f"Expected ~10 sampled spans from 100 requests at 10% ratio, got {len(spans)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# FEAT-228: per-agent attribution — Scenarios 6 & 7
+# ---------------------------------------------------------------------------
+
+async def _drive_client_cycle_with_agent(
+    registry,
+    *,
+    agent_name: str,
+    client_name: str = "openai",
+    model: str = "gpt-4o-mini",
+) -> None:
+    """Emit BeforeClientCall + AfterClientCall with explicit agent_name."""
+    tc = _make_tc()
+    before = BeforeClientCallEvent(
+        trace_context=tc,
+        client_name=client_name,
+        model=model,
+        source_type="client",
+        source_name=client_name,
+        agent_name=agent_name,
+    )
+    after = AfterClientCallEvent(
+        trace_context=tc,
+        client_name=client_name,
+        model=model,
+        duration_ms=42.0,
+        input_tokens=100,
+        output_tokens=50,
+        finish_reason="stop",
+        source_type="client",
+        source_name=client_name,
+        agent_name=agent_name,
+    )
+    await registry.emit(before)
+    await registry.emit(after)
+
+
+def _collect_metric_points(reader: InMemoryMetricReader, metric_name: str):
+    """Collect all data points from the named metric."""
+    metrics_data = reader.get_metrics_data()
+    points = []
+    for rm in metrics_data.resource_metrics:
+        for sm in rm.scope_metrics:
+            for m in sm.metrics:
+                if m.name == metric_name:
+                    for dp in m.data.data_points:
+                        points.append(dp)
+    return points
+
+
+@pytest.mark.asyncio
+async def test_scenario_6_metrics_carry_agent_name() -> None:
+    """FEAT-228: cost/duration/token metrics carry parrot.agent.name label."""
+    from parrot.observability.cost.calculator import CostCalculator, _reset_pricing_cache_for_tests  # noqa: PLC0415
+
+    _reset_pricing_cache_for_tests()
+    cost_calc = CostCalculator()
+    reader = InMemoryMetricReader()
+    mp = _make_meter_provider(reader)
+
+    with scope() as registry:
+        metrics_sub = MetricsSubscriber(
+            meter_provider=mp,
+            service_name="parrot-poc",
+            cost_calculator=cost_calc,
+        )
+        metrics_sub.register(registry)
+        await _drive_client_cycle_with_agent(
+            registry, agent_name="porygon", client_name="openai", model="gpt-4o-mini"
+        )
+
+    # Check operation duration histogram carries the agent label
+    duration_pts = _collect_metric_points(reader, "gen_ai.client.operation.duration")
+    assert duration_pts, "No duration data points collected"
+    assert any(
+        pt.attributes.get("parrot.agent.name") == "porygon"
+        for pt in duration_pts
+    ), "parrot.agent.name='porygon' not found in duration metric labels"
+
+    # Check token usage histogram
+    token_pts = _collect_metric_points(reader, "gen_ai.client.token.usage")
+    assert token_pts, "No token usage data points"
+    assert any(
+        pt.attributes.get("parrot.agent.name") == "porygon"
+        for pt in token_pts
+    ), "parrot.agent.name='porygon' not found in token metric labels"
+
+    # Check cost counter carries agent label (only when pricing data is available)
+    cost_pts = _collect_metric_points(reader, "gen_ai.client.cost.total")
+    if cost_pts:
+        assert any(
+            pt.attributes.get("parrot.agent.name") == "porygon"
+            for pt in cost_pts
+        ), "parrot.agent.name='porygon' not found in cost metric labels"
+
+
+@pytest.mark.asyncio
+async def test_scenario_7_metrics_unknown_when_agent_none() -> None:
+    """FEAT-228: when agent_name is None, metrics label uses 'unknown'."""
+    reader = InMemoryMetricReader()
+    mp = _make_meter_provider(reader)
+
+    with scope() as registry:
+        metrics_sub = MetricsSubscriber(
+            meter_provider=mp,
+            service_name="parrot-poc",
+        )
+        metrics_sub.register(registry)
+        # Use regular _drive_client_cycle which passes agent_name=None (default)
+        await _drive_client_cycle(registry, client_name="openai", model="gpt-4o-mini")
+
+    duration_pts = _collect_metric_points(reader, "gen_ai.client.operation.duration")
+    assert duration_pts, "No duration data points"
+    assert any(
+        pt.attributes.get("parrot.agent.name") == "unknown"
+        for pt in duration_pts
+    ), "parrot.agent.name='unknown' not found for None agent"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-228: per-agent attribution — Scenarios 8 & 9 (client span attributes)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_scenario_8_client_span_has_agent_name() -> None:
+    """FEAT-228: client child span carries parrot.agent.name when agent is set."""
+    exporter = InMemorySpanExporter()
+    tp = _make_tracer_provider(exporter)
+
+    with scope() as registry:
+        trace_sub = GenAIOpenTelemetrySubscriber(
+            service_name="parrot-poc",
+            tracer_provider=tp,
+        )
+        trace_sub.register(registry)
+        await _drive_client_cycle_with_agent(
+            registry, agent_name="porygon", client_name="openai", model="gpt-4o-mini"
+        )
+
+    finished = exporter.get_finished_spans()
+    assert finished, "No spans collected"
+    # The client span has gen_ai.response.model or gen_ai.request.model set
+    client_spans = [
+        s for s in finished
+        if s.attributes.get("gen_ai.response.model") or s.attributes.get("gen_ai.request.model")
+    ]
+    assert client_spans, f"No client span found; spans: {[s.name for s in finished]}"
+    for span in client_spans:
+        assert span.attributes.get("parrot.agent.name") == "porygon", (
+            f"Expected parrot.agent.name='porygon' on span '{span.name}', "
+            f"got: {dict(span.attributes)}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_scenario_9_client_span_omits_agent_when_none() -> None:
+    """FEAT-228: client child span omits parrot.agent.name when agent_name is None."""
+    exporter = InMemorySpanExporter()
+    tp = _make_tracer_provider(exporter)
+
+    with scope() as registry:
+        trace_sub = GenAIOpenTelemetrySubscriber(
+            service_name="parrot-poc",
+            tracer_provider=tp,
+        )
+        trace_sub.register(registry)
+        # Regular cycle — agent_name=None (not passed to events)
+        await _drive_client_cycle(registry, client_name="openai", model="gpt-4o-mini")
+
+    finished = exporter.get_finished_spans()
+    assert finished, "No spans collected"
+    client_spans = [
+        s for s in finished
+        if s.attributes.get("gen_ai.response.model") or s.attributes.get("gen_ai.request.model")
+    ]
+    assert client_spans, f"No client span found; spans: {[s.name for s in finished]}"
+    for span in client_spans:
+        assert "parrot.agent.name" not in span.attributes, (
+            f"parrot.agent.name should be omitted when agent_name=None, "
+            f"but found it on span '{span.name}': {dict(span.attributes)}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_token_reset_on_exception() -> None:
+    """FEAT-228: ContextVar token is reset even when the body raises."""
+    from parrot.observability.context import agent_identity, current_agent_name
+
+    assert current_agent_name.get() is None
+    with pytest.raises(ValueError):
+        with agent_identity("porygon"):
+            assert current_agent_name.get() == "porygon"
+            raise ValueError("forced")
+    assert current_agent_name.get() is None, "Token must be reset after exception"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_task_isolation() -> None:
+    """FEAT-228: ContextVar does not leak across concurrent asyncio tasks."""
+    import asyncio
+    from parrot.observability.context import agent_identity, current_agent_name
+
+    results: dict[str, str | None] = {}
+
+    async def run_as(name: str) -> None:
+        with agent_identity(name):
+            await asyncio.sleep(0)  # yield to allow other tasks to run
+            results[name] = current_agent_name.get()
+
+    await asyncio.gather(
+        asyncio.create_task(run_as("agent-a")),
+        asyncio.create_task(run_as("agent-b")),
+    )
+    assert results["agent-a"] == "agent-a"
+    assert results["agent-b"] == "agent-b"
