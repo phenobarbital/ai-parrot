@@ -68,6 +68,8 @@ from parrot.core.events.lifecycle.events import (
     AfterClientCallEvent,
     ClientCallFailedEvent,
 )
+# FEAT-228: per-agent cost/usage metrics — read invoking agent's identity at event build time
+from parrot.observability.context import current_agent_name
 
 
 LLM_PRESETS = {
@@ -461,6 +463,7 @@ $backstory
             has_tools=has_tools,
             source_type="client",
             source_name=client_name,
+            agent_name=current_agent_name.get(),  # FEAT-228: read at construction time
         )
         self.events.emit_nowait(event)
         # Client registries are isolated (forward_to_global=False). Forward the
@@ -504,6 +507,7 @@ $backstory
             finish_reason=finish_reason,
             source_type="client",
             source_name=client_name,
+            agent_name=current_agent_name.get(),  # FEAT-228: read at construction time
         )
         await self.events.emit(event)
         # Forward to global so cost/token recorders and OTel subscribers
@@ -540,6 +544,7 @@ $backstory
             error_message=str(exc),
             source_type="client",
             source_name=client_name,
+            agent_name=current_agent_name.get(),  # FEAT-228: read at construction time
         )
         await self.events.emit(event)
         # Forward to global so error counters on the global registry observe
