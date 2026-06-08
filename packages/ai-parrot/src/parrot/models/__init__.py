@@ -89,6 +89,7 @@ from .vllm import (
     pydantic_to_guided_json,
 )
 from .nvidia import NvidiaModel
+from .zai import ZaiModel
 from .crew_definition import (
     ExecutionMode,
     AgentDefinition,
@@ -105,6 +106,7 @@ __all__ = (
     "OutputFormat",
     "ToolCall",
     "CompletionUsage",
+    "ZaiModel",
     "ToolConfig",
     "AIMessage",
     "AIMessageFactory",

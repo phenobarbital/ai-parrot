@@ -9,6 +9,7 @@ from .openrouter import OpenRouterClient
 from .localllm import LocalLLMClient
 from .vllm import vLLMClient
 from .nvidia import NvidiaClient
+from .zai import ZaiClient
 
 
 def _lazy_gemma4():
@@ -52,6 +53,8 @@ SUPPORTED_CLIENTS = {
     "groq": GroqClient,
     "grok": GrokClient,
     "xai": GrokClient,
+    "zai": ZaiClient,
+    "z.ai": ZaiClient,
     "openrouter": OpenRouterClient,
     "nvidia": NvidiaClient,
     "local": LocalLLMClient,
