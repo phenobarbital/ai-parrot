@@ -240,10 +240,38 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 4.8)
+**Date**: 2026-06-09
 **Notes**:
+- Created `AgentVoiceTalk(AgentTalk)` decorated `@is_authenticated()` /
+  `@user_session()` with `_logger_name = "Parrot.AgentVoiceTalk"` and a
+  `post_init` that initialises the logger + per-request voice state. Mirrors
+  the `InfographicTalk(AgentTalk)` precedent.
+- **Inbound seam** is the overridden `handle_upload()`: it calls
+  `super().handle_upload()`, detects an audio attachment (by mime/extension),
+  transcribes it via a lazily-imported `VoiceTranscriber.transcribe_file(Path)`,
+  injects `data['query']`, and removes the consumed attachment. The audio
+  tempfile is always `unlink()`-ed in a `finally`. This makes the inherited
+  `post()` text dispatch (`query = data.pop('query')` → `bot.ask(...)`) run
+  **completely unchanged** and LLM-agnostic — `AgentTalk.post()` is not touched.
+- **Outbound seam** is the overridden `post()`: it wraps `super().post()` and,
+  only when voice input occurred (`_did_transcribe`), calls
+  `_augment_with_audio()` which synthesizes **only** the envelope's `response`
+  field (== `AIMessage.response`) via a lazily-imported `VoiceSynthesizer`,
+  attaching `audio_base64` + `audio_format`. `output`/`data`/`media` stay in
+  `content` and never pass through the synthesizer.
+- Graceful degradation: TTS failures `(ValueError, RuntimeError, ImportError)`
+  → text-only (original 200 response returned, no `audio_base64`). A missing
+  STT stack returns a clean 503; a no-audio request behaves like the inherited
+  text path (TTS gated on `_did_transcribe`).
+- All voice imports are lazy/inside the voice code path — server boot never
+  requires `ai-parrot-integrations`.
+- Tests: 8 unit tests pass (detection, STT tempfile cleanup, response-only TTS,
+  audio attach, degradation, non-JSON skip, inheritance contract); `ruff` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The spec's design note offered two strategies; I
+delegated to the inherited path (option (a)) by intercepting the two reachable
+polymorphic seams — `handle_upload()` (inbound, where the inherited `post()`
+already reads the upload) and `post()`-wrapping (outbound). This keeps the text
+hot-path pristine without copy-pasting `post()`. The full `post()` round-trip
+(behind the auth decorators) is exercised by the TASK-1513 integration test.

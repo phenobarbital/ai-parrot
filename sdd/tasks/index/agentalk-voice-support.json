@@ -50,7 +50,7 @@
       "feature_id": "FEAT-231",
       "feature": "agentalk-voice-support",
       "spec": "sdd/specs/agentalk-voice-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -61,8 +61,8 @@
       "parallelism_notes": "Consumes both backends at runtime (lazy import) and the inherited AgentTalk seams; must run after 1510 and 1511 so the dispatch branches/extras exist for end-to-end verification.",
       "assigned_to": null,
       "started_at": "2026-06-09T00:59:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1512-agentvoicetalk-handler.md"
+      "completed_at": "2026-06-09T01:18:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1512-agentvoicetalk-handler.md"
     },
     {
       "id": "TASK-1513",
