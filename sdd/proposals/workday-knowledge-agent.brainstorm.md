@@ -59,8 +59,14 @@ GraphIndex, Ontology, IntentRouter) are built; what's missing is the domain wiri
   retrieval sources to discriminate; the three edges have very different maturity.
   Deliver in stages, each on a proven foundation.
 - **C2 — Two graph seed sources, both verified pipelines** (confirmed with Jesus):
-  - **Org structure** ← **Workday** (Edge 3). Entities + edges (all fields verified
-    present in the FEAT-230 composable models/operations):
+  - **Org structure** (Edge 3) — **largely already built by Jesus**:
+    `EmployeeHierarchyManager` (ArangoDB `org_hierarchy` graph) + `EmployeeHierarchyKB`
+    (identity-aware KB), **seeded from Postgres `troc.troc_employees`** (has
+    `associate_oid`, `department`, `program/region`, `reports_to`). **Gap**: no
+    `cost_center`/`location` in its current schema. So Edge 3 work = *attach the KB
+    to the agent* + *reconcile seeding & add departments(cost_centers)/locations*.
+    Entities + edges target (fields verified in the FEAT-230 composable, used to
+    enrich/cross-check the hierarchy):
     - **Worker** (`worker.py`) — `manager_id`/`direct_manager_id`,
       `supervisory_organization_id`, `cost_center_id`/`cost_center_name`/
       `cost_center_hierarchy_name`, `business_site_location_id`.
@@ -135,10 +141,13 @@ BaseBot` with the `WorkdayToolkit` attached — but **stage the edges**:
 
 - **Stage 1** (= the Telegram brainstorm): Workday ops + session identity. Verify
   live (PTO), deliver over Telegram. *Edge 2.*
-- **Stage 2**: seed a GraphIndex + Ontology of the org **from Workday** (workers,
-  `manager_id`→`reports_to`, organizations→divisions), persisted to ArangoDB. The
-  agent now answers structural questions ("who's my manager / in my division")
-  with the **same identity/authorization carril**. *Edge 3 + base of Edge 1.*
+- **Stage 2**: **reuse the existing `EmployeeHierarchyManager` + `EmployeeHierarchyKB`**
+  (Jesus already built the ArangoDB `reports_to` org graph, Postgres-seeded). Work:
+  (a) **attach `EmployeeHierarchyKB`** to the agent (identity-aware already), (b)
+  **add departments(cost_centers) + locations** (extend the Postgres source/schema or
+  enrich from Workday), (c) confirm its identity/permission carril matches Stage 1.
+  The agent now answers "who's my manager / in my division / department / location"
+  with self+reports scoping. *Edge 3 (mostly done).*
 - **Stage 3**: ingest the **HR policy PDF** via `PageIndexToolkit.import_pdf`,
   **bridge it into the graph** (`graph_seed_from_tree` → DOCUMENT/SECTION nodes,
   then LLM-curated CONCEPT cross-links), and **wire the IntentRouter** to route
@@ -286,7 +295,8 @@ The IntentRouter decides which edge each question hits; the user never picks.
 
 | Affected Component | Impact Type | Notes |
 |---|---|---|
-| `WorkdayToolkit` (FEAT-230) | reuses / data-source | query surface AND graph seed source; identity via `_pre_execute` |
+| `EmployeeHierarchyManager` + `EmployeeHierarchyKB` (parrot/interfaces/hierarchy.py, stores/kb/hierarchy.py) | **reuses (Edge 3 already built)** | ArangoDB org graph + identity-aware KB; Postgres-seeded; extend with cost_center/location |
+| `WorkdayToolkit` (FEAT-230) | reuses / data-source | query surface AND (optional) enrichment source for the org graph; identity via `_pre_execute` |
 | `parrot/knowledge/graphindex/` | extends | new `WorkdayExtractor` (or direct-assembler seeder) for org data |
 | `parrot/knowledge/ontology/` | depends on / extends | org ontology (YAML) authored; `OntologyRAGMixin` composed into the agent |
 | `parrot/knowledge/pageindex/` | depends on | HR-docs wiki (Stage 3) |
@@ -366,6 +376,28 @@ class IntentRouterMixin:                                       # intent_router.p
 # Seeding uses the composable directly: await svc.fetch_models("get_cost_centers"), etc.
 # (these are composable operations, broader than the 11 homologated agent tools)
 
+#### EXISTING org-hierarchy asset (Jesus already built Edge 3)
+```python
+# parrot/interfaces/hierarchy.py (1231 LOC) — ArangoDB org graph, ALREADY BUILT
+class EmployeeHierarchyManager(CacheMixin):                    # hierarchy.py:39
+    #   graph 'org_hierarchy': vertices 'employees' + edge collection 'reports_to' (setup l.117-141)
+    async def import_from_postgres(self)                       # hierarchy.py:225  <-- seeds from Postgres, NOT Workday
+    #   SQL FROM troc.troc_employees: associate_id AS employee_id, associate_oid, department,
+    #   reports_to_associate_id AS reports_to, region AS program, WHERE status='Active' (l.233-248)
+    async def does_report_to(...) / get_all_superiors / get_direct_reports / get_all_subordinates
+    async def get_org_chart / get_colleagues / are_colleagues / get_closest_common_boss / is_boss_of
+@dataclass
+class Employee:  # hierarchy.py:25  fields: employee_id, associate_oid, ..., department, program, reports_to
+    # NOTE: has 'department' + 'program/region' but NO cost_center / location fields
+
+# parrot/stores/kb/hierarchy.py — the agent attachment point for Edge 3
+class EmployeeHierarchyKB(AbstractKnowledgeBase):              # kb/hierarchy.py:9
+    def __init__(self, permission_service: EmployeeHierarchyManager, ...)   # identity-aware
+    async def should_activate(...) / async def search(...)     # builds "EmployeeHierarchyContext::" facts
+    async def _get_employee_id(...)                            # resolves caller identity
+# => Edge 3 (org hierarchy) is LARGELY DONE: a graph + an identity-aware KB. The work is to
+#    ATTACH this KB to the agent and RECONCILE seeding (Postgres troc_employees) + add cost_center/location.
+
 #### Mixin composition is proven
 ```python
 # Cooperative MRO works (verified):
@@ -394,7 +426,10 @@ advisor-ontologic-rag-agent.spec.md (FEAT-071)  <-- canonical multi-mixin agent
 ```
 
 ### Does NOT Exist (Anti-Hallucination)
-- ~~a Workday→graph/ontology seeder/extractor~~ — none; Stage 2 must build one (model on `GraphIndexBuilder` extractors `builder.py:30-32`, or the direct-assembler path in `wiki.py:269` fed from `WorkdayToolkit`).
+- ~~the org hierarchy graph must be built from scratch~~ — **FALSE**: `EmployeeHierarchyManager` + `EmployeeHierarchyKB` ALREADY provide an ArangoDB `reports_to` org graph (Postgres-seeded) with rich queries. Edge 3 reuses these.
+- ~~`cost_center` / `location` on the existing hierarchy~~ — NOT in `EmployeeHierarchyManager`'s `Employee` schema / import SQL today (only `department` + `program/region`); must be added.
+- ~~`EmployeeHierarchyManager` seeds from Workday~~ — it seeds from **Postgres `troc.troc_employees`** (hierarchy.py:225), not Workday directly; the Workday-vs-Postgres source is an open reconciliation (see Open Questions).
+- a Workday→graph seeder/extractor — only needed IF we choose to enrich/seed from Workday rather than extend the Postgres source.
 - ~~an org ontology (YAML) for employees/divisions/managers~~ — must be authored (Stage 2); it belongs in the private repo (C4).
 - ~~`WikiAgent`/`build_wiki_agent` as framework API~~ — they live in `examples/knowledge_wiki/` (inline glue), NOT the framework; `build_graphindex_toolkit` is flagged as not-yet-shipped glue.
 - ~~IntentRouter in PR #931's WikiAgent~~ — the wiki example does NOT use IntentRouter; routing is a Stage-3 addition.
@@ -426,7 +461,9 @@ advisor-ontologic-rag-agent.spec.md (FEAT-071)  <-- canonical multi-mixin agent
 - [x] Is ArangoDB available? — *Owner: Jesus*: yes.
 - [x] Relationship to yesterday's brainstorm? — *Owner: Jesus*: keep it as Stage 1; this umbrella references it (no merge into one spec).
 - [x] Does the agent live in parrot? — *Owner: Jesus*: no (C4) — private repo, location TBD.
-- [ ] Seeder shape: a reusable `WorkdayExtractor` for `GraphIndexBuilder`, vs. the direct-assembler path fed from `WorkdayToolkit` — *Owner: implementer (Stage 2 spec)*.
+- [ ] **Reconcile org-graph source (KEY)**: Jesus's `EmployeeHierarchyManager` seeds the org graph from **Postgres `troc.troc_employees`** (has `department`/`program`, NOT cost_center/location). Do we (a) keep Postgres as the source and **extend it** with cost_center/location, or (b) **enrich/re-seed from Workday** (the composable has `get_cost_centers`/`get_locations`)? Is `troc_employees` itself fed from Workday upstream? — *Owner: Jesus*.
+- [ ] **Edge 3 graph system**: use the purpose-built `EmployeeHierarchyKB` (recommended — it already answers manager/reports/colleagues/common-boss) for org, and reserve GraphIndex/Ontology + PageIndex for the policy/knowledge edge? Or unify both into GraphIndex/Ontology? — *Owner: Jesus/Juan*.
+- [ ] Seeder shape (only if enriching from Workday): reusable `WorkdayExtractor` vs. direct-assembler path — *Owner: implementer (Stage 2 spec)*.
 - [x] Org ontology scope/granularity — *Owner: Jesus*: entities = Worker, Division/Supervisory Org, **Department (= Workday Cost Center)**, **Location**; edges = reports_to, member_of_division, belongs_to_department, located_at, + cost-center & location hierarchies. (All backed by verified composable ops/models.)
 - [ ] Graph refresh cadence (full rebuild vs incremental `ingest_document`) and where it runs (scheduler?) — *Owner: implementer (Stage 2)*.
 - [ ] How many specs exactly: does Stage 2 split into "seeder (parrot)" + "ontology+agent (private)"? Decide at `/sdd-spec` time — *Owner: Juan*.
