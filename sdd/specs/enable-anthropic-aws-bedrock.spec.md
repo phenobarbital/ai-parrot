@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-232
 **Date**: 2026-06-10
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x
 
 > Input: `sdd/proposals/enable-anthropic-aws-bedrock.proposal.md` (research-grounded,
@@ -25,7 +25,7 @@ AI-Parrot's `AnthropicClient` (`clients/claude.py`) can only reach Claude throug
 the direct Anthropic API (`AsyncAnthropic`). Enterprise deployments frequently
 require Claude served through **AWS Bedrock** (`AnthropicBedrock`, IAM/STS
 credentials, region-scoped, ARN/inference-profile model IDs) or the **AWS-native
-workspace** path (`AnthropicAWS`, `aws_workspace_id`). Today neither is reachable
+workspace** path (`AnthropicAWS`, `workspace_id`). Today neither is reachable
 without bypassing the framework. The full ~1600-line completion/streaming/vision/
 tool-call pipeline in `claude.py` is transport-agnostic — it operates only on the
 object returned by `get_client()` — so the gap is narrow: SDK selection,
@@ -90,7 +90,7 @@ AnthropicClient(backend=…)                      models/bedrock_models.py
                          ┌───────────────┴───────────────┐
                   DirectBackend   BedrockBackend   AWSWorkspaceBackend
                   AsyncAnthropic  AsyncAnthropic   AsyncAnthropicAWS
-                                  Bedrock          (verify SDK name)
+                                  Bedrock          (region+workspace_id required)
 ```
 
 ### Integration Points
@@ -130,7 +130,8 @@ class AnthropicClient(AbstractClient):
         aws_secret_key: Optional[str] = None,
         aws_session_token: Optional[str] = None,
         aws_region: Optional[str] = None,
-        aws_workspace_id: Optional[str] = None,
+        workspace_id: Optional[str] = None,   # AWS-workspace only; SDK param name (NOT aws_workspace_id)
+        aws_profile: Optional[str] = None,     # optional, passed through to AWS backends
         **kwargs,
     ): ...
 
@@ -161,6 +162,10 @@ class AnthropicClient(AbstractClient):
   each with `build_client()` (lazy-imports its SDK class, constructs it from
   resolved config) and `translate_model(model_str) -> str` (identity for direct/
   aws; Bedrock translator for bedrock).
+  `AWSWorkspaceBackend.build_client()` MUST validate that `aws_region` **and**
+  `workspace_id` are non-empty before constructing `AsyncAnthropicAWS` (the SDK
+  raises at construction otherwise — no fallback); raise a clear `ConfigError`/
+  `ValueError` naming the missing field and its env var.
 - **Depends on**: Module 1.
 
 ### Module 3: AnthropicClient integration
@@ -175,7 +180,9 @@ class AnthropicClient(AbstractClient):
 - **Path**: `packages/ai-parrot/src/parrot/conf.py` (modify)
 - **Responsibility**: add `AWS_SESSION_TOKEN = config.get("AWS_SESSION_TOKEN", fallback=None)`
   and `ANTHROPIC_AWS_WORKSPACE_ID = config.get("ANTHROPIC_AWS_WORKSPACE_ID", fallback=None)`
-  alongside the existing AWS constants (`:457-484`).
+  alongside the existing AWS constants (`:457-484`). Note: the env/conf constant is
+  `ANTHROPIC_AWS_WORKSPACE_ID`, but it feeds the SDK's `workspace_id` parameter
+  (the SDK has no `aws_` prefix on this field).
 - **Depends on**: none.
 
 ### Module 5: Factory registration
@@ -208,6 +215,7 @@ class AnthropicClient(AbstractClient):
 | `test_get_client_dispatches_on_backend` | M3 | `get_client()` returns the SDK class matching `backend` |
 | `test_resolve_model_routes_through_backend` | M3 | `_resolve_model()` applies the active backend's translation |
 | `test_credential_precedence_conf_then_env` | M3 | parrot.conf value wins; env used only when conf is None; `None` passed to SDK otherwise |
+| `test_aws_requires_region_and_workspace` | M2 | `backend="aws"` missing `aws_region` or `workspace_id` raises a clear error before SDK construction |
 | `test_factory_bedrock_key` | M5 | `LLMFactory.create("bedrock:…")` yields `AnthropicClient(backend="bedrock")` |
 | `test_missing_aws_sdk_hint` | M5 | Missing `anthropic[aws]` raises ImportError with install hint |
 
@@ -238,9 +246,13 @@ def bedrock_env(monkeypatch):
   through `_resolve_model()`; a Bedrock-path test asserts the translated ID at
   completion, structured-output, and batch paths.
 - [ ] Bedrock translation implements map + region-prefix + pass-through (3 unit tests).
-- [ ] Credentials resolve parrot.conf → env → `None` (SDK chain) for
-  `aws_access_key`, `aws_secret_key`, `aws_session_token`, `aws_region`,
-  `aws_workspace_id`; verified by `test_credential_precedence_conf_then_env`.
+- [ ] Credentials resolve parrot.conf → env → `None` (SDK chain) for the Bedrock
+  backend (`aws_access_key`, `aws_secret_key`, `aws_session_token`, `aws_region`);
+  verified by `test_credential_precedence_conf_then_env`.
+- [ ] `backend="aws"` validates that `aws_region` **and** `workspace_id` are
+  present and raises a clear error (naming `AWS_REGION_NAME` /
+  `ANTHROPIC_AWS_WORKSPACE_ID`) before constructing `AsyncAnthropicAWS`; the SDK
+  receives `workspace_id` (not `aws_workspace_id`).
 - [ ] `LLMFactory` resolves `bedrock` and `anthropic-aws` provider keys.
 - [ ] Missing `anthropic[aws]` SDK raises ImportError with a `pip install
   ai-parrot[anthropic]` hint.
@@ -265,6 +277,9 @@ from .base import AbstractClient                    # verified: clients/claude.p
 from ..models.claude import ClaudeModel             # verified: clients/claude.py:41
 from anthropic import AsyncAnthropic                # verified: clients/claude.py:81 (lazy, inside get_client)
 from .claude import AnthropicClient                 # verified: clients/factory.py:3
+# anthropic 0.109.0 top-level exports (verified by user against installed SDK):
+from anthropic import AsyncAnthropicBedrock         # Amazon Bedrock transport
+from anthropic import AsyncAnthropicAWS             # Claude Platform on AWS (impl: anthropic.lib.aws._client)
 ```
 
 ### Existing Class Signatures
@@ -309,6 +324,14 @@ class ClaudeModel(Enum):                            # line 4
 SUPPORTED_CLIENTS = { "claude": AnthropicClient, "anthropic": AnthropicClient, ... }  # line 49
 def _lazy_claude_agent(): ...                       # line 16 — lazy-loader-with-hint pattern to copy
 
+# anthropic[aws] 0.109.0 — verified by user against installed SDK
+# AsyncAnthropicAWS(aws_region=..., workspace_id=...,            # BOTH mandatory, no fallback → raises at construction
+#                   aws_access_key=..., aws_secret_key=..., aws_session_token=...,
+#                   aws_profile=..., skip_auth=...)
+# AsyncAnthropicBedrock(aws_region=..., aws_access_key=..., aws_secret_key=...,
+#                       aws_session_token=...)                   # no-keys → standard AWS chain
+# (Also exported: AnthropicBedrockMantle / AsyncAnthropicBedrockMantle — NOT used here.)
+
 # conf.py
 AWS_ACCESS_KEY  = config.get("AWS_ACCESS_KEY",  fallback=aws_key)     # line 457
 AWS_SECRET_KEY  = config.get("AWS_SECRET_KEY",  fallback=aws_secret)  # line 458
@@ -328,7 +351,7 @@ AWS_CREDENTIALS = { ... }                                             # line 473
 - ~~`AWS_SESSION_TOKEN`~~ in `conf.py` — **must be added** (Module 4).
 - ~~`ANTHROPIC_AWS_WORKSPACE_ID`~~ in `conf.py` — **must be added** (Module 4).
 - ~~`AnthropicBedrockClient`~~ / ~~`AnthropicAWSClient`~~ — no separate subclasses (rejected; single class + `backend`).
-- `AsyncAnthropicAWS` — **unverified**: confirm the exact class name (sync vs async) in the installed `anthropic[aws]` SDK before wiring `backend="aws"` (see §8).
+- ~~`aws_workspace_id`~~ as an SDK parameter — **does not exist**; the SDK param is `workspace_id` (our env/conf constant is `ANTHROPIC_AWS_WORKSPACE_ID`, mapped to `workspace_id` at the call site).
 - `parrot.conf` is NOT imported by `claude.py` today — it uses `from navconfig import config`. Either import the conf constants or use `config.get(...)`; do not assume the constants are already in scope there.
 
 ---
@@ -347,9 +370,12 @@ AWS_CREDENTIALS = { ... }                                             # line 473
 - **Incomplete translation coverage** (primary risk): the model string is resolved
   at **≥5** sites — all must route through `_resolve_model()` or Bedrock 404s on
   unprefixed IDs. Add a per-path Bedrock test.
-- **AWS-workspace SDK shape unverified**: `AnthropicAWS` / `aws_workspace_id` is
-  the lowest-confidence claim in the source; verify the SDK class (and whether an
-  async variant exists — may need a thread wrapper) before shipping `backend="aws"`.
+- **AWS-workspace mandatory fields**: `AsyncAnthropicAWS` requires **both**
+  `aws_region` and `workspace_id` and raises at construction if either is missing
+  (no fallback). The "conf→env→None (SDK chain)" precedence that works for Bedrock
+  does NOT apply here — `AWSWorkspaceBackend` must validate these are present and
+  raise an actionable error naming the env var (`AWS_REGION_NAME` /
+  `ANTHROPIC_AWS_WORKSPACE_ID`). The SDK param is `workspace_id`, not `aws_workspace_id`.
 - **Region-dependent inference-profile prefixes**: a hard-coded prefix breaks
   cross-region callers — keep it configurable with a pass-through escape hatch.
 - **`_fallback_model` is `'claude-sonnet-4.5'`** (note the dot) — Bedrock fallback
@@ -375,10 +401,15 @@ AWS_CREDENTIALS = { ... }                                             # line 473
 - [x] **Packaging?** — *Resolved in proposal*: fold `anthropic[aws]` into the
   existing `[anthropic]` extra; keep lazy imports in `get_client()`.
 
+### Resolved (verified against installed SDK, 2026-06-10)
+- [x] **Exact `AnthropicAWS` async class name + param** — *Resolved*: anthropic
+  0.109.0 exports `AsyncAnthropicAWS` (impl `anthropic.lib.aws._client`) and
+  `AsyncAnthropicBedrock` at top level. Key params: `aws_region`, `workspace_id`,
+  `aws_access_key`/`aws_secret_key`/`aws_session_token`/`aws_profile`, `skip_auth`.
+  The param is `workspace_id` (NOT `aws_workspace_id`); `aws_region` + `workspace_id`
+  are mandatory with no fallback.
+
 ### Unresolved (defer to implementation)
-- [ ] **Exact `AnthropicAWS` async class name + `aws_workspace_id` param** —
-  *Owner: implementer*. Verify against installed `anthropic[aws]`; wrap in a
-  thread if only a sync class exists.
 - [ ] **Factory key naming for the AWS-workspace backend** — `"anthropic-aws"`
   vs `"aws"` vs `"claude-aws"`. *Owner: tbd*.
 - [ ] **Cross-region inference-profile prefix default** — ship `us.` as default,
