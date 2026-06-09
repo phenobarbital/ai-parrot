@@ -19,10 +19,13 @@ class TranscriberBackend(str, Enum):
 
     - FASTER_WHISPER: Local GPU-accelerated transcription using faster-whisper
     - OPENAI_WHISPER: Cloud-based transcription using OpenAI Whisper API
+    - MOONSHINE: Opt-in sub-second local transcription using Moonshine ONNX
+      models (added in FEAT-231)
     """
 
     FASTER_WHISPER = "faster_whisper"
     OPENAI_WHISPER = "openai_whisper"
+    MOONSHINE = "moonshine"
 
 
 class VoiceTranscriberConfig(BaseModel):

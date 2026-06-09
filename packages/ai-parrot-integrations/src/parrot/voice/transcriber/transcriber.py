@@ -98,6 +98,11 @@ class VoiceTranscriber:
                 self._backend = OpenAIWhisperBackend(
                     api_key=self.config.openai_api_key,
                 )
+            elif self.config.backend == TranscriberBackend.MOONSHINE:
+                from .moonshine_backend import MoonshineSTTBackend
+
+                self.logger.info("Creating MoonshineSTTBackend")
+                self._backend = MoonshineSTTBackend()
             else:
                 raise ValueError(f"Unknown backend: {self.config.backend}")
 
