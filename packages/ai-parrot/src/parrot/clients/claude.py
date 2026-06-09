@@ -1,6 +1,6 @@
 from __future__ import annotations
 import asyncio
-from typing import AsyncIterator, Dict, List, Optional, Union, Any, TYPE_CHECKING
+from typing import AsyncIterator, Dict, List, Literal, Optional, Union, Any, TYPE_CHECKING
 from typing import List as TypingList
 import base64
 import io
@@ -21,11 +21,21 @@ from parrot.core.events.lifecycle.events import (
     PromptCacheAppliedEvent,
     PromptCacheSkippedEvent,
 )
+# FEAT-232: AWS / Bedrock conf constants
+from ..conf import (
+    AWS_ACCESS_KEY,
+    AWS_SECRET_KEY,
+    AWS_REGION_NAME,
+    AWS_SESSION_TOKEN,
+    ANTHROPIC_AWS_WORKSPACE_ID,
+    BEDROCK_AWS_REGION,
+)
 
 if TYPE_CHECKING:
     # Type-check-only imports — keep IDE/mypy support without forcing the
     # SDKs to be installed at runtime when this client is unused.
-    from anthropic import AsyncAnthropic
+    from anthropic import AsyncAnthropic, AsyncAnthropicBedrock, AsyncAnthropicAWS
+    from parrot.clients.anthropic_backends import AnthropicBackendProtocol
     from PIL import Image
 from ..models import (
     AIMessage,
@@ -50,6 +60,9 @@ logging.getLogger("anthropic").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
+# FEAT-232: backend selector type alias.
+AnthropicBackend = Literal["direct", "bedrock", "aws"]
+
 
 class AnthropicClient(AbstractClient):
     """Client for interacting with the Anthropic API using the official SDK."""
@@ -67,31 +80,135 @@ class AnthropicClient(AbstractClient):
         self,
         api_key: str = None,
         base_url: str = "https://api.anthropic.com",
+        backend: AnthropicBackend = "direct",
+        aws_access_key: Optional[str] = None,
+        aws_secret_key: Optional[str] = None,
+        aws_session_token: Optional[str] = None,
+        aws_region: Optional[str] = None,
+        workspace_id: Optional[str] = None,
+        aws_profile: Optional[str] = None,
+        region_prefix: Optional[str] = None,
         **kwargs
     ):
+        """Initialise an Anthropic client.
+
+        Args:
+            api_key: Anthropic API key (direct backend only).  Defaults to the
+                ``ANTHROPIC_API_KEY`` navconfig / env value.
+            base_url: Base URL for the direct Anthropic API.
+            backend: Transport backend — ``"direct"`` (default), ``"bedrock"``,
+                or ``"aws"``.
+            aws_access_key: AWS access key ID.  Resolved: kwarg → conf/env → None
+                (SDK chain).
+            aws_secret_key: AWS secret access key.  Same resolution order.
+            aws_session_token: Optional STS session token.  Same resolution order.
+            aws_region: AWS region (e.g. ``"us-east-1"``).  For the ``bedrock``
+                backend, prefers the Bedrock-specific ``BEDROCK_AWS_REGION`` env
+                var over the general ``AWS_REGION_NAME`` to avoid region
+                pollution from other services.
+            workspace_id: Claude-on-AWS workspace ID (``aws`` backend only;
+                **mandatory** for that backend — the SDK raises at construction
+                without it).  Env/conf constant: ``ANTHROPIC_AWS_WORKSPACE_ID``.
+            aws_profile: Optional AWS named profile.  Passed through to the SDK
+                as-is; ``None`` → omitted.
+            region_prefix: Cross-region inference-profile prefix for the
+                ``bedrock`` backend (e.g. ``"us"``, ``"eu"``, ``"apac"``).
+                When provided, model IDs are translated to
+                ``"<prefix>.anthropic.<id>-vN:0"`` form.  ``None`` → no prefix.
+            **kwargs: Forwarded to :class:`~parrot.clients.base.AbstractClient`.
+        """
         self.api_key = api_key or config.get('ANTHROPIC_API_KEY')
         self.base_url = base_url
+        self.backend: AnthropicBackend = backend
+        self._backend_name: str = backend
+
+        # ── FEAT-232: credential resolution — kwarg → parrot.conf/env → None ─
+        # parrot.conf constants already back-fall to env vars via navconfig,
+        # so we only need one fallback level here.
+        _access_key = aws_access_key or AWS_ACCESS_KEY
+        _secret_key = aws_secret_key or AWS_SECRET_KEY
+        _session_token = aws_session_token or AWS_SESSION_TOKEN
+        # FIX-4: for Bedrock, prefer the Bedrock-specific region env var so that
+        # a general AWS_REGION_NAME set for other services (e.g. DynamoDB in
+        # eu-west-1) does not silently override the intended Bedrock region.
+        # Resolution order: explicit kwarg → BEDROCK_AWS_REGION → None (boto3 chain).
+        _bedrock_region = aws_region or BEDROCK_AWS_REGION
+        # For the aws-workspace backend keep using the general AWS_REGION_NAME fallback.
+        _region = aws_region or AWS_REGION_NAME
+        _workspace_id = workspace_id or ANTHROPIC_AWS_WORKSPACE_ID
+
+        # ── Instantiate the matching backend strategy ─────────────────────────
+        from .anthropic_backends import DirectBackend, BedrockBackend, AWSWorkspaceBackend
+        if backend == "bedrock":
+            self._backend: "AnthropicBackendProtocol" = BedrockBackend(
+                aws_region=_bedrock_region,
+                aws_access_key=_access_key,
+                aws_secret_key=_secret_key,
+                aws_session_token=_session_token,
+                region_prefix=region_prefix,
+            )
+        elif backend == "aws":
+            self._backend = AWSWorkspaceBackend(
+                aws_region=_region,
+                workspace_id=_workspace_id,
+                aws_access_key=_access_key,
+                aws_secret_key=_secret_key,
+                aws_session_token=_session_token,
+                aws_profile=aws_profile,
+            )
+        else:
+            self._backend = DirectBackend(api_key=self.api_key)
+
         # NOTE: no self.client = None — base class owns the per-loop cache as a property.
+        # FIX-3: x-api-key is only meaningful for the direct backend; Bedrock/AWS
+        # backends authenticate via SigV4 / SDK chain — sending "None" as a header
+        # value would be both incorrect and potentially confusing.
         self.base_headers = {
             "Content-Type": "application/json",
-            "x-api-key": self.api_key,
-            "anthropic-version": self.version
+            "anthropic-version": self.version,
         }
+        if self._backend_name == "direct" and self.api_key:
+            self.base_headers["x-api-key"] = self.api_key
         super().__init__(**kwargs)
 
-    async def get_client(self) -> "AsyncAnthropic":
-        """Initialize the Anthropic client."""
-        try:
-            from anthropic import AsyncAnthropic
-        except ImportError as exc:
-            raise ImportError(
-                "AnthropicClient requires the 'anthropic' SDK. "
-                "Install with: pip install ai-parrot[anthropic]"
-            ) from exc
-        return AsyncAnthropic(
-            api_key=self.api_key,
-            max_retries=2
+    async def get_client(self) -> "Union[AsyncAnthropic, AsyncAnthropicBedrock, AsyncAnthropicAWS]":
+        """Build and return the appropriate SDK client for the active backend.
+
+        Delegates to the backend strategy object's ``build_client()`` method.
+        On ``backend="direct"`` this is byte-for-byte equivalent to the
+        pre-FEAT-232 behaviour (``AsyncAnthropic(api_key=…, max_retries=2)``).
+
+        Returns:
+            An ``AsyncAnthropic``, ``AsyncAnthropicBedrock``, or
+            ``AsyncAnthropicAWS`` instance depending on ``self.backend``.
+
+        Raises:
+            ImportError: When the required SDK extra is not installed.
+            ValueError: When mandatory fields for the ``"aws"`` backend are
+                missing (``aws_region`` / ``workspace_id``).
+        """
+        return await self._backend.build_client()
+
+    def _resolve_model(self, model) -> str:
+        """Resolve and translate a model argument for the active backend.
+
+        Applies the same ``model.value if isinstance(model, ClaudeModel)``
+        normalisation that all call sites used inline, then feeds the result
+        through ``self._backend.translate_model()`` so Bedrock IDs are applied
+        uniformly at every model-resolution site.
+
+        Args:
+            model: A model identifier — a :class:`~parrot.models.claude.ClaudeModel`
+                enum member, a plain string, or ``None``.  ``None`` / falsy
+                values fall back to ``self.model`` then ``self.default_model``.
+
+        Returns:
+            A resolved, backend-translated model ID string.
+        """
+        raw = (model.value if isinstance(model, ClaudeModel) else model) or (
+            self.model or self.default_model
         )
+        return self._backend.translate_model(raw)
 
     def _is_capacity_error(self, error: Exception) -> bool:
         """Detect Anthropic capacity errors using SDK exception types."""
@@ -311,7 +428,7 @@ class AnthropicClient(AbstractClient):
             _use_tools = True
             self.logger.info("Deep research mode enabled: activating enhanced research prompt and tools")
 
-        model = (model.value if isinstance(model, ClaudeModel) else model) or (self.model or self.default_model)
+        model = self._resolve_model(model)
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
@@ -407,7 +524,7 @@ class AnthropicClient(AbstractClient):
                         "Model %s capacity error: %s. Retrying with fallback: %s",
                         payload["model"], e, self._fallback_model
                     )
-                    payload["model"] = self._fallback_model
+                    payload["model"] = self._backend.translate_model(self._fallback_model)
                     used_fallback = True
                     response = await self._sdk_create(payload)
                 else:
@@ -583,8 +700,11 @@ class AnthropicClient(AbstractClient):
 
         messages = state["messages"]
         tool_call_id = state["tool_call_id"]
-        model = state.get("agent_name", self.model or self.default_model)
-        
+        # Preserve agent_name semantics; translate result through backend.
+        model = self._backend.translate_model(
+            state.get("agent_name", self.model or self.default_model)
+        )
+
         # Inject user input as tool result
         messages.append({
             "role": "user",
@@ -720,9 +840,13 @@ class AnthropicClient(AbstractClient):
             system_prompt = f"{_sp}\n\n{research_prompt}" if _sp else research_prompt
             self.logger.info("Deep research mode enabled for streaming")
 
+        # FIX-5: resolve model BEFORE computing _lc_model_s so that lifecycle
+        # events log the actual Bedrock ID sent to the API, not the public alias.
+        model = self._resolve_model(model)
+
         # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
         import time as _lc_time_s
-        _lc_model_s = (model.value if isinstance(model, type(model)) and hasattr(model, 'value') else model) or (self.model or getattr(self, 'default_model', ''))
+        _lc_model_s = model  # already resolved via _resolve_model above
         _lc_tc_s = self._emit_before_call(
             client_name="anthropic",
             model=_lc_model_s or "",
@@ -744,9 +868,6 @@ class AnthropicClient(AbstractClient):
         retry_count = 0
         assistant_content = ""
         final_message = None
-        model = (
-            model.value if isinstance(model, ClaudeModel) else model
-        ) or (self.model or self.default_model)
         while retry_count <= retry_config.max_retries:
             try:
                 payload = {
@@ -1149,7 +1270,7 @@ class AnthropicClient(AbstractClient):
 
         # Prepare the payload
         payload = {
-            "model": model.value if isinstance(model, ClaudeModel) else model,
+            "model": self._resolve_model(model),
             "max_tokens": max_tokens or self.max_tokens,
             "temperature": temperature or self.temperature,
             "messages": messages
@@ -1314,7 +1435,7 @@ class AnthropicClient(AbstractClient):
         }]
 
         payload = {
-            "model": model.value if isinstance(model, Enum) else model,
+            "model": self._resolve_model(model),
             "max_tokens": self.max_tokens,
             "temperature": temperature or self.temperature,
             "messages": messages,
@@ -1401,7 +1522,7 @@ Requirements:
         }]
 
         payload = {
-            "model": model.value if isinstance(model, Enum) else model,
+            "model": self._resolve_model(model),
             "max_tokens": self.max_tokens,
             "temperature": temperature,
             "messages": messages,
@@ -1471,7 +1592,7 @@ Requirements:
         }]
 
         payload = {
-            "model": model.value if isinstance(model, Enum) else model,
+            "model": self._resolve_model(model),
             "max_tokens": self.max_tokens,
             "temperature": temperature,
             "messages": messages,
@@ -1546,7 +1667,7 @@ Format your response clearly with these sections.
         }]
 
         payload = {
-            "model": model.value if isinstance(model, Enum) else model,
+            "model": self._resolve_model(model),
             "max_tokens": self.max_tokens,
             "temperature": temperature,
             "messages": messages,
@@ -1647,7 +1768,7 @@ Provide your final answer with:
         }]
 
         payload = {
-            "model": model.value if isinstance(model, Enum) else model,
+            "model": self._resolve_model(model),
             "max_tokens": self.max_tokens,
             "temperature": temperature,
             "messages": messages,

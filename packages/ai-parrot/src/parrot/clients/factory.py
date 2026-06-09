@@ -48,6 +48,10 @@ def _lazy_claude_agent():
 SUPPORTED_CLIENTS = {
     "claude": AnthropicClient,
     "anthropic": AnthropicClient,
+    # FEAT-232: AWS Bedrock and AWS-workspace backends — both resolve to
+    # AnthropicClient; the `backend` kwarg is injected via PROVIDER_BACKEND below.
+    "bedrock": AnthropicClient,
+    "anthropic-aws": AnthropicClient,
     "google": GoogleGenAIClient,
     "openai": OpenAIClient,
     "groq": GroqClient,
@@ -65,6 +69,15 @@ SUPPORTED_CLIENTS = {
     "gemma4": _lazy_gemma4,
     "claude-agent": _lazy_claude_agent,
     "claude-code": _lazy_claude_agent,
+}
+
+# FEAT-232: provider keys that require a specific AnthropicClient backend value.
+# When a provider key is present here, LLMFactory.create() injects
+# ``backend=PROVIDER_BACKEND[provider]`` into the init params automatically,
+# overriding any default (which is "direct").
+PROVIDER_BACKEND: Dict[str, str] = {
+    "bedrock": "bedrock",
+    "anthropic-aws": "aws",
 }
 
 
@@ -169,6 +182,11 @@ class LLMFactory:
             })
             # Remove None values
             init_params = {k: v for k, v in init_params.items() if v is not None}
+
+        # FEAT-232: inject backend kwarg for AWS provider keys.
+        # This must happen before merging **kwargs so an explicit kwarg wins.
+        if provider in PROVIDER_BACKEND and "backend" not in kwargs:
+            init_params["backend"] = PROVIDER_BACKEND[provider]
 
         # Add tool_manager if provided
         if tool_manager:
