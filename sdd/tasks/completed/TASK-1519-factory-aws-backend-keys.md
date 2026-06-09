@@ -141,9 +141,7 @@ fill the note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-10
+**Notes**: Added `"bedrock"` and `"anthropic-aws"` to `SUPPORTED_CLIENTS` (both mapping to `AnthropicClient`) plus a `PROVIDER_BACKEND` dict. In `create()`, inject `init_params["backend"] = PROVIDER_BACKEND[provider]` before kwargs merge so explicit `backend=` kwarg still wins. 14 unit tests; all pass, ruff clean.
 **Deviations from spec**: none

@@ -109,7 +109,7 @@
       "feature_id": "FEAT-232",
       "feature": "enable-anthropic-aws-bedrock",
       "spec": "sdd/specs/enable-anthropic-aws-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -119,8 +119,8 @@
       "parallelism_notes": "Edits factory.py; requires the AnthropicClient backend param from 1518.",
       "assigned_to": null,
       "started_at": "2026-06-09T22:54:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1519-factory-aws-backend-keys.md"
+      "completed_at": "2026-06-09T23:16:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1519-factory-aws-backend-keys.md"
     }
   ]
 }
