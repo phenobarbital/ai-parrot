@@ -82,12 +82,29 @@ class SupertonicTTSBackend(AbstractTTSBackend):
         *,
         model_path: Optional[str] = None,
         sample_rate: int = _SAMPLE_RATE,
+        inference_fn=None,
         **kwargs,
     ) -> None:
-        """Initialize the Supertonic TTS backend (no model load here)."""
+        """Initialize the Supertonic TTS backend (no model load here).
+
+        Args:
+            voice: Default voice/speaker identifier.
+            model_path: Path to the Supertonic ONNX weights (or
+                ``SUPERTONIC_MODEL_PATH``).
+            sample_rate: Output PCM sample rate in Hz.
+            inference_fn: Optional callable
+                ``(session, text, *, voice, language, sample_rate) -> bytes``
+                that drives the loaded ONNX session and returns raw PCM. The
+                Supertonic ONNX graph I/O (tokenisation, speaker embedding,
+                output tensor names) is build-specific and intentionally not
+                hardcoded — deployments inject it here (or subclass and override
+                ``_synthesize_sync``). See spec FEAT-231 §8 R-deps.
+            **kwargs: Accepted and ignored for forward compatibility.
+        """
         self.voice = voice
         self.model_path = model_path
         self.sample_rate = sample_rate
+        self._inference_fn = inference_fn
         self.logger = logging.getLogger(__name__)
         # Lazily-created ONNX inference session (see ``_ensure_session``).
         self._session = None
@@ -230,15 +247,27 @@ class SupertonicTTSBackend(AbstractTTSBackend):
 
         Returns:
             Raw PCM audio bytes (16-bit LE, mono, ``self.sample_rate`` Hz).
+
+        Raises:
+            ImportError: If the ``voice-supertonic`` extra is not installed.
+            ValueError: If the Supertonic weights are not configured/found.
+            RuntimeError: If no inference function is wired (see ``inference_fn``).
         """
         self._ensure_session()
         # The concrete Supertonic ONNX graph I/O (tokenisation, speaker
-        # embeddings, output tensor name) is resolved against the installed
-        # weights. We expose the raw inference here; the public ``synthesize``
-        # handles WAV wrapping and the async offload. Tests stub this method.
-        from supertonic import synthesize_pcm  # noqa: PLC0415
-
-        return synthesize_pcm(
+        # embedding, output tensor names) is build-specific and intentionally
+        # not hardcoded — it is provided by the deployment via ``inference_fn``
+        # (or by overriding this method). The public ``synthesize`` handles WAV
+        # wrapping and the async offload; tests stub this method.
+        if self._inference_fn is None:
+            raise RuntimeError(
+                "Supertonic ONNX inference is not wired in this build. Pass "
+                "inference_fn=... to SupertonicTTSBackend (or override "
+                "_synthesize_sync) to drive the loaded ONNX session for your "
+                "Supertonic weights — see FEAT-231 §8 R-deps — or select "
+                "TTSConfig(backend='google')."
+            )
+        return self._inference_fn(
             self._session,
             text,
             voice=voice,

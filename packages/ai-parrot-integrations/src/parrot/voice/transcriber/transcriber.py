@@ -101,7 +101,10 @@ class VoiceTranscriber:
             elif self.config.backend == TranscriberBackend.MOONSHINE:
                 from .moonshine_backend import MoonshineSTTBackend
 
-                self.logger.info("Creating MoonshineSTTBackend")
+                self.logger.info(
+                    "Creating MoonshineSTTBackend (model='moonshine/base'; "
+                    "config.model_size is not used by Moonshine)"
+                )
                 self._backend = MoonshineSTTBackend()
             else:
                 raise ValueError(f"Unknown backend: {self.config.backend}")

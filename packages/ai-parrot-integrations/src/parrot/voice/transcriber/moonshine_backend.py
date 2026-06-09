@@ -127,6 +127,13 @@ class MoonshineSTTBackend(AbstractTranscriberBackend):
         if not audio_path.exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
+        if language and language.lower() not in ("en", "en-us", "en-gb"):
+            self.logger.warning(
+                "MoonshineSTTBackend: models are English-only; language=%r "
+                "hint is ignored.",
+                language,
+            )
+
         start_time = time.perf_counter()
 
         # Run CPU/GPU-bound inference in a worker thread (mirror FasterWhisper).

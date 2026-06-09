@@ -101,12 +101,23 @@ class AgentVoiceTalk(AgentTalk):
         self._read_voice_options(data)
 
         audio_info, field = self._find_audio_attachment(attachments)
-        if audio_info is not None and not data.get("query"):
-            transcript = await self._transcribe_attachment(audio_info)
-            data["query"] = transcript
-            self._did_transcribe = True
-            # Remove the consumed audio entry so the inherited path does not
-            # try to ingest it as a RAG document via _handle_attachments.
+        if audio_info is not None:
+            if not data.get("query"):
+                # Voice-in: transcribe and inject the transcript as the query.
+                # _transcribe_attachment unlinks the audio tempfile itself.
+                transcript = await self._transcribe_attachment(audio_info)
+                data["query"] = transcript
+                self._did_transcribe = True
+            else:
+                # An explicit text 'query' wins; discard the audio note and
+                # clean up its tempfile so it is not left on disk or ingested
+                # as a RAG document by the inherited _handle_attachments path.
+                self.logger.info(
+                    "AgentVoiceTalk: explicit 'query' present; "
+                    "ignoring audio attachment."
+                )
+                self._unlink_attachment(audio_info)
+            # Remove the consumed/ignored audio entry from the attachment map.
             attachments[field].remove(audio_info)
             if not attachments[field]:
                 del attachments[field]
@@ -214,7 +225,20 @@ class AgentVoiceTalk(AgentTalk):
                 len(result.text),
             )
             return result.text
-        except (ValueError, FileNotFoundError) as exc:
+        except ImportError as exc:
+            # Selected STT backend's extra is not installed — clean 503, never
+            # a 500. Mirrors the top-level guard above.
+            self.logger.warning("AgentVoiceTalk: STT backend unavailable: %s", exc)
+            raise web.HTTPServiceUnavailable(
+                text=json.dumps(
+                    {
+                        "error": "The selected speech-to-text backend is not "
+                        "installed; install ai-parrot-integrations[voice].",
+                    }
+                ),
+                content_type="application/json",
+            ) from exc
+        except (ValueError, FileNotFoundError, RuntimeError) as exc:
             self.logger.warning("AgentVoiceTalk: transcription failed: %s", exc)
             raise web.HTTPBadRequest(
                 text=json.dumps({"error": f"Could not transcribe audio: {exc}"}),
@@ -223,10 +247,20 @@ class AgentVoiceTalk(AgentTalk):
         finally:
             with contextlib.suppress(Exception):
                 await transcriber.close()
-            if isinstance(audio_path, Path) and audio_path.exists():
-                audio_path.unlink()
+            self._unlink_attachment(file_info)
+
+    def _unlink_attachment(self, file_info: dict) -> None:
+        """Best-effort removal of an uploaded attachment's tempfile.
+
+        Args:
+            file_info: An attachment dict with a ``file_path`` (Path).
+        """
+        path = file_info.get("file_path")
+        if isinstance(path, Path) and path.exists():
+            with contextlib.suppress(Exception):
+                path.unlink()
                 self.logger.debug(
-                    "AgentVoiceTalk: cleaned up audio tempfile %s", audio_path
+                    "AgentVoiceTalk: cleaned up audio tempfile %s", path
                 )
 
     # ── Outbound seam (TTS) ────────────────────────────────────────────

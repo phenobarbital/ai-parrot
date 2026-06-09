@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import wave
 
+import pytest
 from aiohttp import web
 
 from parrot.handlers.agent import AgentTalk
@@ -108,6 +109,41 @@ async def test_transcribe_attachment_cleans_tempfile(monkeypatch, tmp_path):
 
     assert text == "hola mundo"
     assert not audio.exists()  # tempfile cleaned up in finally
+
+
+async def test_transcribe_missing_stt_backend_returns_503(monkeypatch, tmp_path):
+    """A selected STT backend with no extra → clean 503, tempfile cleaned up."""
+    h = _make_handler()
+    audio = tmp_path / "note.wav"
+    _write_wav(audio)
+
+    class _FailingTranscriber:
+        def __init__(self, config):
+            pass
+
+        async def transcribe_file(self, path):
+            raise ImportError("moonshine runtime not installed")
+
+        async def close(self):
+            pass
+
+    import parrot.voice.transcriber.transcriber as tmod
+    monkeypatch.setattr(tmod, "VoiceTranscriber", _FailingTranscriber)
+
+    file_info = {"file_path": audio, "file_name": "note.wav", "mime_type": "audio/wav"}
+    with pytest.raises(web.HTTPServiceUnavailable):
+        await h._transcribe_attachment(file_info)
+    assert not audio.exists()  # tempfile still cleaned up on the error path
+
+
+def test_unlink_attachment_removes_tempfile(tmp_path):
+    """_unlink_attachment removes a persisted attachment tempfile."""
+    h = _make_handler()
+    audio = tmp_path / "ignored.wav"
+    _write_wav(audio)
+    assert audio.exists()
+    h._unlink_attachment({"file_path": audio})
+    assert not audio.exists()
 
 
 # ---------------------------------------------------------------------------

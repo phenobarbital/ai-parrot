@@ -96,6 +96,38 @@ async def test_empty_text_raises(supertonic_stub):
         await supertonic_stub.synthesize("   ")
 
 
+async def test_injected_inference_fn_is_used(monkeypatch):
+    """A deployment-provided inference_fn drives synthesis (no stub subclass)."""
+    seen = {}
+
+    def fake_inference(session, text, *, voice, language, sample_rate):
+        seen["text"] = text
+        seen["sample_rate"] = sample_rate
+        return b"\x00\x00" * 50  # 100 bytes of PCM
+
+    backend = SupertonicTTSBackend(voice="default", inference_fn=fake_inference)
+    # Skip the real ONNX session load; we are only exercising the inference seam.
+    monkeypatch.setattr(backend, "_ensure_session", lambda: None)
+
+    result = await backend.synthesize("Hola")
+    assert seen["text"] == "Hola"
+    assert seen["sample_rate"] == 24000
+    assert result.mime_format == "audio/wav"
+    assert result.audio
+
+
+async def test_unwired_backend_fails_loudly(monkeypatch):
+    """Without inference_fn (or override) the backend raises RuntimeError.
+
+    It must fail loudly, never silently return empty/garbage audio — the
+    handler is responsible for degrading to text-only.
+    """
+    backend = SupertonicTTSBackend(voice="default")
+    monkeypatch.setattr(backend, "_ensure_session", lambda: None)
+    with pytest.raises(RuntimeError):
+        await backend.synthesize("Hola")
+
+
 async def test_missing_deps_or_model_raises(monkeypatch):
     """A real backend with no extra/weights raises ImportError or ValueError.
 

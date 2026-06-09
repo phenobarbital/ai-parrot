@@ -96,6 +96,11 @@ def test_missing_voice_stack_skips_route_without_crash(monkeypatch):
     """ImportError on the voice handler → warning logged, route skipped, no crash."""
     from parrot.manager.manager import BotManager
     import builtins
+    import sys
+
+    # Evict the cached module so the guarded import is actually re-evaluated
+    # (the test file imports AgentVoiceTalk at module load, populating the cache).
+    monkeypatch.delitem(sys.modules, "parrot.handlers.agent_voice", raising=False)
 
     real_import = builtins.__import__
 
