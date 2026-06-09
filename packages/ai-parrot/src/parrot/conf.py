@@ -461,6 +461,11 @@ AWS_DEFAULT_CLOUDWATCH_LOG_GROUP = config.get(
     "AWS_DEFAULT_CLOUDWATCH_LOG_GROUP",
     fallback="/parrot/logs"
 )
+# FEAT-232: Anthropic AWS Bedrock / AWS-workspace extras.
+# AWS_SESSION_TOKEN — optional STS session token for temporary credentials.
+# ANTHROPIC_AWS_WORKSPACE_ID — Claude-on-AWS workspace ID (SDK param: workspace_id).
+AWS_SESSION_TOKEN = config.get("AWS_SESSION_TOKEN", fallback=None)
+ANTHROPIC_AWS_WORKSPACE_ID = config.get("ANTHROPIC_AWS_WORKSPACE_ID", fallback=None)
 
 # Backend (DynamoDB) credentials — kept separate from the general AWS_ACCESS_KEY/
 # AWS_SECRET_KEY so that the conversations/artifacts backend can run against a
