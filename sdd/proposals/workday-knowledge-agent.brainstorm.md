@@ -59,10 +59,20 @@ GraphIndex, Ontology, IntentRouter) are built; what's missing is the domain wiri
   retrieval sources to discriminate; the three edges have very different maturity.
   Deliver in stages, each on a proven foundation.
 - **C2 — Two graph seed sources, both verified pipelines** (confirmed with Jesus):
-  - **Org structure** ← **Workday** (Edge 3): hierarchy/divisions/managers/
-    subordinates from Workday data we already reach (FEAT-230 composable + flowtask
-    Workday component). Workday is both *query surface* and *graph data source* — no
-    new source of truth.
+  - **Org structure** ← **Workday** (Edge 3). Entities + edges (all fields verified
+    present in the FEAT-230 composable models/operations):
+    - **Worker** (`worker.py`) — `manager_id`/`direct_manager_id`,
+      `supervisory_organization_id`, `cost_center_id`/`cost_center_name`/
+      `cost_center_hierarchy_name`, `business_site_location_id`.
+    - **Division / Supervisory Org** ← `get_organizations` (`Organization`).
+    - **Department = Workday Cost Center** ← `get_cost_centers` (`CostCenter`).
+    - **Location** ← `get_locations` (`Location`; has its own hierarchy via
+      `superior_location_id` + `location_hierarchy`).
+    - **Edges**: `reports_to` (manager_id), `member_of_division`
+      (supervisory_organization_id), `belongs_to_department` (cost_center_id),
+      `located_at` (business_site_location_id), plus `cost_center` and `location`
+      hierarchies and `get_location_hierarchy_assignments` (org↔location links).
+    Workday is both *query surface* and *graph data source* — no new source of truth.
   - **HR policies** ← **PDF → PageIndex → graph** (Edge 1): policies are delivered
     as **PDF**; ingest with `PageIndexToolkit.import_pdf` (TOC detection + per-node
     summaries), then **bridge the PageIndex tree into the graph** with the example's
@@ -221,8 +231,10 @@ results. Everything else is composition.
 An authenticated employee chats with one Workday agent that fluidly handles:
 - **Operations** — "what's my PTO balance?", "request 2 days off" (Edge 2, Stage 1).
 - **Org structure** — "who's my manager?", "who reports to me?", "who's in the
-  Finance division?" — answered from the org graph/ontology (Edge 3, Stage 2),
-  scoped by identity (you only see self + your reports).
+  Finance division?", "what department (cost center) am I in?", "who's at the
+  Austin location?" — answered from the org graph/ontology (Edge 3, Stage 2:
+  workers, divisions, **departments/cost-centers**, **locations**), scoped by
+  identity (you only see self + your reports).
 - **Policy/knowledge** — "how does carryover work for PTO?" — answered from the
   curated HR wiki with citations (Edge 1, Stage 3).
 The IntentRouter decides which edge each question hits; the user never picks.
@@ -338,6 +350,22 @@ class IntentRouterMixin:                                       # intent_router.p
 # CapabilityRegistry.register / build_index / retrieve  (registry.py)
 ```
 
+#### Workday org-graph seed data (verified in the FEAT-230 composable)
+```python
+# Operations + models (parrot_tools/interfaces/workday/service.py _OPERATION_MODEL_MAP):
+#   "get_organizations" -> Organization   (division / supervisory org)   service.py:98
+#   "get_cost_centers"  -> CostCenter      (DEPARTMENT)                   service.py:100
+#   "get_locations"     -> Location                                      service.py:96
+#   "get_location_hierarchy_assignments" -> LocationHierarchyAssignmentsType  service.py:229
+# Worker model fields driving edges (parrot_tools/interfaces/workday/models/worker.py):
+#   manager_id / direct_manager_id (l.10/176)  -> reports_to
+#   supervisory_organization_id (l.201)         -> member_of_division
+#   cost_center_id / cost_center_hierarchy_name (l.196/198) -> belongs_to_department
+#   business_site_location_id (l.167)           -> located_at
+# Location.superior_location_id (location.py:24) -> location hierarchy edge
+# Seeding uses the composable directly: await svc.fetch_models("get_cost_centers"), etc.
+# (these are composable operations, broader than the 11 homologated agent tools)
+
 #### Mixin composition is proven
 ```python
 # Cooperative MRO works (verified):
@@ -399,7 +427,7 @@ advisor-ontologic-rag-agent.spec.md (FEAT-071)  <-- canonical multi-mixin agent
 - [x] Relationship to yesterday's brainstorm? — *Owner: Jesus*: keep it as Stage 1; this umbrella references it (no merge into one spec).
 - [x] Does the agent live in parrot? — *Owner: Jesus*: no (C4) — private repo, location TBD.
 - [ ] Seeder shape: a reusable `WorkdayExtractor` for `GraphIndexBuilder`, vs. the direct-assembler path fed from `WorkdayToolkit` — *Owner: implementer (Stage 2 spec)*.
-- [ ] Org ontology scope/granularity: which entities/edges (worker, supervisory org, division, cost center, location?) and relationship types — *Owner: Jesus/implementer (Stage 2)*.
+- [x] Org ontology scope/granularity — *Owner: Jesus*: entities = Worker, Division/Supervisory Org, **Department (= Workday Cost Center)**, **Location**; edges = reports_to, member_of_division, belongs_to_department, located_at, + cost-center & location hierarchies. (All backed by verified composable ops/models.)
 - [ ] Graph refresh cadence (full rebuild vs incremental `ingest_document`) and where it runs (scheduler?) — *Owner: implementer (Stage 2)*.
 - [ ] How many specs exactly: does Stage 2 split into "seeder (parrot)" + "ontology+agent (private)"? Decide at `/sdd-spec` time — *Owner: Juan*.
 - [ ] Reuse vs promote: should `build_graphindex_toolkit`/`build_wiki_agent` be promoted from the example into the framework before building the Workday agent? — *Owner: Jesus/Juan*.
