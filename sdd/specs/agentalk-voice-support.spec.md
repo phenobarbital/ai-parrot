@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-231
 **Date**: 2026-06-09
 **Author**: Jesus Lara
-**Status**: review
+**Status**: approved
 **Target version**: TBD
 
 > **Source**: research proposal `sdd/proposals/agentalk-voice-support.proposal.md`
