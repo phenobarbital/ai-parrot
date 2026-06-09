@@ -68,7 +68,7 @@
       "feature_id": "FEAT-232",
       "feature": "enable-anthropic-aws-bedrock",
       "spec": "sdd/specs/enable-anthropic-aws-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -78,8 +78,8 @@
       "parallelism_notes": "New file but imports the TASK-1514 translator; start after it.",
       "assigned_to": null,
       "started_at": "2026-06-09T22:54:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1517-anthropic-backend-strategy.md"
+      "completed_at": "2026-06-09T23:00:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1517-anthropic-backend-strategy.md"
     },
     {
       "id": "TASK-1518",
