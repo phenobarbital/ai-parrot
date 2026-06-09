@@ -461,6 +461,16 @@ AWS_DEFAULT_CLOUDWATCH_LOG_GROUP = config.get(
     "AWS_DEFAULT_CLOUDWATCH_LOG_GROUP",
     fallback="/parrot/logs"
 )
+# ── Anthropic Bedrock-specific AWS settings ────────────────────────────────
+# FEAT-232: Anthropic AWS Bedrock / AWS-workspace extras.
+# AWS_SESSION_TOKEN — optional STS session token for temporary credentials.
+# ANTHROPIC_AWS_WORKSPACE_ID — Claude-on-AWS workspace ID (SDK param: workspace_id).
+# BEDROCK_AWS_REGION — Bedrock-specific region; avoids polluting from general
+#   AWS_REGION_NAME used by other services (e.g., DynamoDB in eu-west-1).
+#   When unset, boto3 resolves the region via instance-metadata / env chain.
+AWS_SESSION_TOKEN = config.get("AWS_SESSION_TOKEN", fallback=None)
+ANTHROPIC_AWS_WORKSPACE_ID = config.get("ANTHROPIC_AWS_WORKSPACE_ID", fallback=None)
+BEDROCK_AWS_REGION = config.get("BEDROCK_AWS_REGION", fallback=None)
 
 # Backend (DynamoDB) credentials — kept separate from the general AWS_ACCESS_KEY/
 # AWS_SECRET_KEY so that the conversations/artifacts backend can run against a

@@ -9,6 +9,30 @@ from parrot.handlers.datasets import DatasetManagerHandler, MAX_FILE_SIZE
 from parrot.tools.dataset_manager import DatasetManager
 
 
+def _make_app(agents=None):
+    """Build a mock aiohttp ``app`` exposing a BotManager.
+
+    ``DatasetManagerHandler`` seeds an empty/absent session DatasetManager from
+    the agent's catalog via ``request.app['bot_manager']._bots.get(agent_id)``
+    (see ``_resolve_dataset_manager``). Unknown agent_ids resolve to a bare
+    agent with no DatasetManager, so the seed path yields a fresh empty
+    DatasetManager instead of raising ``KeyError``.
+    """
+    agents = agents or {}
+
+    def _get_bot(agent_id):
+        if agent_id in agents:
+            return agents[agent_id]
+        agent = MagicMock()
+        agent._dataset_manager = None
+        return agent
+
+    bot_manager = MagicMock()
+    bot_manager._bots = MagicMock()
+    bot_manager._bots.get = MagicMock(side_effect=_get_bot)
+    return {"bot_manager": bot_manager}
+
+
 class MockRequest:
     """Mock aiohttp request for testing."""
 
@@ -17,12 +41,14 @@ class MockRequest:
         match_info=None,
         query=None,
         json_data=None,
-        multipart_data=None
+        multipart_data=None,
+        app=None,
     ):
         self.match_info = match_info or {}
         self.query = query or {}
         self._json_data = json_data
         self._multipart_data = multipart_data
+        self.app = app if app is not None else _make_app()
 
     async def json(self):
         if self._json_data is None:
@@ -530,7 +556,10 @@ class TestDatasetManagerHandlerPost:
     @pytest.mark.asyncio
     async def test_add_datasource_airtable(self):
         """POST adds Airtable datasource and eagerly fetches it."""
+        # Seed a placeholder so the handler returns THIS dm (non-empty session
+        # DM is returned directly) and the patched add_airtable_source is hit.
         dm = DatasetManager()
+        dm.add_dataframe("_seed", pd.DataFrame({"_": [1]}))
 
         with patch('parrot.handlers.datasets.get_session', new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {"agent_dataset_manager": dm}
@@ -568,7 +597,10 @@ class TestDatasetManagerHandlerPost:
     @pytest.mark.asyncio
     async def test_add_datasource_smartsheet(self):
         """POST adds Smartsheet datasource and eagerly fetches it."""
+        # Seed a placeholder so the handler returns THIS dm (non-empty session
+        # DM is returned directly) and the patched add_smartsheet_source is hit.
         dm = DatasetManager()
+        dm.add_dataframe("_seed", pd.DataFrame({"_": [1]}))
 
         with patch('parrot.handlers.datasets.get_session', new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {"agent_dataset_manager": dm}
@@ -804,8 +836,12 @@ class TestSessionIntegration:
     @pytest.mark.asyncio
     async def test_different_agents_get_different_dms(self):
         """Different agent_ids get different DatasetManagers."""
+        # Seed both so each non-empty session DM is returned directly
+        # (the test asserts result1 is dm1 / result2 is dm2).
         dm1 = DatasetManager()
+        dm1.add_dataframe("_seed", pd.DataFrame({"_": [1]}))
         dm2 = DatasetManager()
+        dm2.add_dataframe("_seed", pd.DataFrame({"_": [1]}))
 
         with patch('parrot.handlers.datasets.get_session', new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {

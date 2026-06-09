@@ -32,6 +32,9 @@ from aiohttp import web
 from aiohttp.web_urldispatcher import View as _AioView
 
 _WORKTREE_SRC = Path(__file__).resolve().parents[2] / "src"
+# Handlers were relocated to the ai-parrot-server satellite package
+# (TASK-1371). ``helpers`` and ``models`` still live in ai-parrot core.
+_SERVER_SRC = Path(__file__).resolve().parents[3] / "ai-parrot-server" / "src"
 
 
 def _register_module(dotted_name: str, file_path: Path) -> None:
@@ -76,6 +79,23 @@ def _register_package(dotted_name: str, pkg_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 from aiohttp.abc import AbstractView as _AbstractView  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# Make aiohttp's read-only ``request`` property settable.
+#
+# Many handler tests build a handler via ``Handler.__new__(Handler)`` and then
+# assign ``handler.request = MagicMock()``. aiohttp's ``AbstractView.request``
+# is a getter-only property (it backs ``self._request``), so that assignment
+# raises ``AttributeError: property 'request' ... has no setter`` whenever the
+# real navigator ``BaseView`` (aiohttp-derived) is active instead of the
+# plain-object test stub. Add a setter backed by the same ``_request`` field so
+# both the assignment style and constructor injection keep working.
+if isinstance(getattr(_AbstractView, "request", None), property) \
+        and _AbstractView.request.fset is None:
+    _AbstractView.request = property(  # type: ignore[assignment]
+        _AbstractView.request.fget,
+        lambda self, value: setattr(self, "_request", value),
+    )
 
 
 class _TestBaseView(_AioView):
@@ -192,7 +212,7 @@ _auth_dec.is_authenticated = _noop_auth_factory  # type: ignore[attr-defined]
 _auth_dec.user_session = _noop_auth_factory  # type: ignore[attr-defined]
 
 try:
-    _handlers_dir = _WORKTREE_SRC / "parrot" / "handlers"
+    _handlers_dir = _SERVER_SRC / "parrot" / "handlers"
     _register_module(
         "parrot.handlers.infographic",
         _handlers_dir / "infographic.py",

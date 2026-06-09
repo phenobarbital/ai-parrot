@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "New capability (WS voice round-trip for AgentTalk) but the repo already ships voice.py bot, clients/live.py, and Telegram/MSTeams voice/TTS specs — so this is enrichment of existing STT/TTS/transport primitives, not greenfield.",
+  "queries": [
+    {"id": "Q001", "intent": "Read bots/voice.py to understand the existing voice bot abstraction and whether it already does STT->LLM->TTS", "type": "read", "priority": 1, "params": {"path": "packages/ai-parrot/src/parrot/bots/voice.py"}},
+    {"id": "Q002", "intent": "Find existing TTS/STT clients and providers (whisper, supertonic, elevenlabs, openai audio, google) across both packages", "type": "grep", "priority": 1, "params": {"pattern": "text.to.speech|speech.to.text|transcrib|whisper|supertonic|elevenlabs|synthesize|tts_|_tts|stt_", "include": "*.py", "path": "packages"}},
+    {"id": "Q003", "intent": "Locate the AgentTalk / chatbot response object and the response.response / response.data / response.output fields the requester referenced", "type": "grep", "priority": 1, "params": {"pattern": "class .*(Response|Output|AIMessage)|\\.response\\b|response\\.output|response\\.data", "include": "*.py", "path": "packages/ai-parrot/src/parrot"}},
+    {"id": "Q004", "intent": "Read models/outputs.py — the canonical response/output model that TTS must read response.response from", "type": "read", "priority": 1, "params": {"path": "packages/ai-parrot/src/parrot/models/outputs.py"}},
+    {"id": "Q005", "intent": "Read clients/live.py — likely the OpenAI realtime/live audio client; determines if realtime STT/TTS already exists", "type": "read", "priority": 2, "params": {"path": "packages/ai-parrot/src/parrot/clients/live.py"}},
+    {"id": "Q006", "intent": "Understand the WebSocket transport layer (human/channels/web.py) used for web HITL long-poll — candidate transport for audio", "type": "read", "priority": 2, "params": {"path": "packages/ai-parrot/src/parrot/human/channels/web.py"}},
+    {"id": "Q007", "intent": "Find the existing voice specs to reuse their decisions (Telegram TTS reply FEAT-213, msteams-voice, telegram-voice-notes)", "type": "glob", "priority": 2, "params": {"pattern": "sdd/specs/*voice*"}},
+    {"id": "Q008", "intent": "Read FEAT-213 telegram-voice-reply-tts spec — closest prior art for the TTS reply path and which provider it picked", "type": "read", "priority": 2, "params": {"path": "sdd/specs/FEAT-213-telegram-voice-reply-tts.spec.md"}},
+    {"id": "Q009", "intent": "Read msteams-voice-support spec — prior art for STT-in / TTS-out round trip over a channel", "type": "read", "priority": 3, "params": {"path": "sdd/specs/msteams-voice-support.spec.md"}},
+    {"id": "Q010", "intent": "Find how integrations (telegram/teams) currently transcribe incoming audio (STT entrypoint) to reuse for WS audio", "type": "grep", "priority": 2, "params": {"pattern": "transcrib|audio|voice|ogg|opus|\\.wav|\\.mp3|download_file", "include": "*.py", "path": "packages/ai-parrot-integrations/src/parrot/integrations"}},
+    {"id": "Q011", "intent": "Identify the HTTP/handler layer (aiohttp) that serves chatbots so a new WS voice endpoint can register alongside it", "type": "grep", "priority": 2, "params": {"pattern": "class .*Handler|add_routes|router.add|WebSocketResponse|web.get|web.post", "include": "*.py", "path": "packages/ai-parrot/src/parrot/handlers"}},
+    {"id": "Q012", "intent": "Check the demo agent websocket usage (agents/demo.py) as a concrete WS streaming example", "type": "read", "priority": 3, "params": {"path": "packages/ai-parrot/src/parrot/bots/agent.py", "lines": [1, 60]}},
+    {"id": "Q013", "intent": "Find any audio loader / audio rendering already present (formdesigner-audio-renderer referenced an audio renderer)", "type": "grep", "priority": 3, "params": {"pattern": "audio|AudioRenderer|render_audio|base64.*audio|mimetype.*audio", "include": "*.py", "path": "packages/ai-parrot/src/parrot/loaders"}},
+    {"id": "Q014", "intent": "Recent git activity on voice/live/audio code to see what is actively evolving", "type": "git_log", "priority": 3, "params": {"path": "packages/ai-parrot/src/parrot/bots/voice.py", "since": "120.days.ago"}}
+  ],
+  "expected_findings": [
+    "An existing voice bot abstraction (bots/voice.py) that may already chain STT->LLM->TTS",
+    "Existing STT (whisper/openai) and possibly TTS providers to reuse instead of building from scratch",
+    "The canonical response model exposing response.response as the speakable text field",
+    "A websocket transport (human/channels/web.py and/or handlers) to carry audio frames",
+    "Prior-art specs (FEAT-213, msteams-voice-support) establishing provider + payload conventions"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": ["AgentTalk", "Supertonic", "WebSocket", "AIMessage", "response.response", "speech-to-text", "text-to-speech"],
+      "verbs": ["receiving", "transform", "send", "return"],
+      "polarity": "positive"
+    },
+    "estimated_budget_use": {"files_read": 9, "grep_calls": 5, "git_calls": 1}
+  }
+}

@@ -3884,7 +3884,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
     async def _build_batch_request_payload(self, req: Dict[str, Any]) -> Dict[str, Any]:
         """Convert a standard ask() call parameters dict into a Gemini Batch API request dict."""
-        import json
         prompt = req.get("prompt", "")
         model = req.get("model") or self.model or GoogleModel.GEMINI_2_5_FLASH.value
         model = self._as_model_str(model) or model
@@ -4003,7 +4002,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             **kwargs: Extra arguments forwarded to batch creation or client initialization.
         """
         import tempfile
-        from datamodel.parsers.json import json_encoder, json_decoder
+        from datamodel.parsers.json import json_encoder
         from google.genai import types
 
         if not requests:
@@ -4058,7 +4057,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 temp_file.flush()
                 temp_file.close()
                 
-                self.logger.info(f"Uploading input JSONL file to Gemini files service...")
+                self.logger.info("Uploading input JSONL file to Gemini files service...")
                 uploaded_file = await self.client.aio.files.upload(
                     file=temp_path,
                     config={"mime_type": "application/jsonl"}
@@ -4230,7 +4229,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 text_file = job_dir.joinpath(f"result_{i}_response.txt")
                 text_file.write_text(msg.response, encoding="utf-8")
 
-        self.logger.info(f"Persisted batch results successfully.")
+        self.logger.info("Persisted batch results successfully.")
         return job_dir
 
     def _validate_genai_response(self, resp_dict: Dict[str, Any]) -> Any:
@@ -4308,7 +4307,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         original_requests: List[Dict[str, Any]]
     ) -> List[AIMessage]:
         """Download output file from completed Batch Job and parse to List[AIMessage]."""
-        from google.genai import types
         from datamodel.parsers.json import json_decoder
 
         if not getattr(job, "dest", None) or not getattr(job.dest, "file_name", None):

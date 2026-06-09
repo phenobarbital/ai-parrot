@@ -1027,7 +1027,7 @@ class GoogleAnalysis:
                 contents=contents,
                 config=generation_config,
             )
-        except Exception as e:
+        except Exception:
             # if is 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'The model is overloaded. Please try again later.', 'status': 'UNAVAILABLE'}}
             # then, retry with a short delay but chaing to use gemini-2,5-flash instead pro.
             await asyncio.sleep(1.5)
@@ -1127,7 +1127,7 @@ class GoogleAnalysis:
                         # TRUST the LLM's assignment, only use geometric fallback if missing
                         if not item.shelf_location:
                             self.logger.info(
-                                f"LLM didn't provide shelf_location, calculating geometrically"
+                                "LLM didn't provide shelf_location, calculating geometrically"
                             )
                             shelf, pos = self._shelf_and_position(
                                 item.detection_box, shelf_regions
@@ -1156,7 +1156,7 @@ class GoogleAnalysis:
                         # TRUST the LLM's assignment, only use geometric fallback if missing
                         if not item.shelf_location:
                             self.logger.info(
-                                f"LLM didn't provide shelf_location, calculating geometrically"
+                                "LLM didn't provide shelf_location, calculating geometrically"
                             )
                             shelf, pos = self._shelf_and_position(
                                 item.detection_box, shelf_regions

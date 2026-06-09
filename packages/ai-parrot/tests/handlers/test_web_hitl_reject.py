@@ -42,6 +42,10 @@ def mock_manager():
     mgr.advance_chain = AsyncMock()
     mgr.receive_response = AsyncMock()
     mgr.get_result = AsyncMock(return_value=MagicMock())
+    # has_pending is a SYNC method on the real manager; stub it explicitly so
+    # AsyncMock doesn't auto-return a truthy coroutine for it (which would mask
+    # the unknown-interaction 404 path).
+    mgr.has_pending = MagicMock(return_value=True)
     mgr._pending_futures = {INTERACTION_ID: MagicMock()}
     return mgr
 
@@ -119,6 +123,7 @@ class TestEscalateRoute:
         """Escalate for unknown/expired interaction returns 404 (same as normal responses)."""
         mock_manager._pending_futures = {}
         mock_manager.get_result = AsyncMock(return_value=None)
+        mock_manager.has_pending = MagicMock(return_value=False)
         set_default_human_manager(mock_manager)
         request = _make_request(
             {"interaction_id": "no-such-id", "value": ESCALATE_OPTION_KEY}

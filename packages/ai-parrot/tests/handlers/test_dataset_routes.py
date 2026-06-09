@@ -1,6 +1,22 @@
 """
 Tests for DatasetManagerHandler route registration.
 """
+import importlib.util
+
+
+def _read_manager_source() -> str:
+    """Return the source of ``parrot.manager.manager`` from its install path.
+
+    Resolves the module location via importlib instead of a hardcoded
+    relative path, so the test survives the manager/handlers modules being
+    relocated across distributions (e.g. the ai-parrot-server split).
+    """
+    spec = importlib.util.find_spec("parrot.manager.manager")
+    assert spec is not None and spec.origin is not None, (
+        "parrot.manager.manager could not be located"
+    )
+    with open(spec.origin) as f:
+        return f.read()
 
 
 class TestDatasetRouteRegistration:
@@ -18,14 +34,7 @@ class TestDatasetRouteRegistration:
 
     def test_manager_imports_handler(self):
         """BotManager module source includes DatasetManagerHandler import."""
-        # Read the source file directly to avoid import issues
-        import os
-        manager_path = os.path.join(
-            os.path.dirname(__file__),
-            '../../parrot/manager/manager.py'
-        )
-        with open(manager_path) as f:
-            source = f.read()
+        source = _read_manager_source()
         assert 'from ..handlers.datasets import DatasetManagerHandler' in source
 
     def test_handler_has_required_methods(self):
@@ -61,14 +70,7 @@ class TestRouteConfiguration:
 
     def test_route_path_in_manager(self):
         """Route path '/api/v1/agents/datasets/{agent_id}' is registered."""
-        # Read the manager.py source to verify route is configured
-        import os
-        manager_path = os.path.join(
-            os.path.dirname(__file__),
-            '../../parrot/manager/manager.py'
-        )
-        with open(manager_path) as f:
-            source = f.read()
+        source = _read_manager_source()
 
         # Verify route pattern exists in source
         assert "/api/v1/agents/datasets/{agent_id}" in source
@@ -76,13 +78,7 @@ class TestRouteConfiguration:
 
     def test_route_uses_add_view(self):
         """Route uses router.add_view for class-based handler."""
-        import os
-        manager_path = os.path.join(
-            os.path.dirname(__file__),
-            '../../parrot/manager/manager.py'
-        )
-        with open(manager_path) as f:
-            source = f.read()
+        source = _read_manager_source()
 
         # Verify the route registration pattern
         assert "router.add_view(" in source

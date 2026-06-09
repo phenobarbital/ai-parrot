@@ -350,6 +350,7 @@ def _install_navigator_stubs() -> None:
         STATIC_DIR = PROJECT_ROOT / "static"
         BASE_STATIC_URL = "/static"
         PROJECT_ROOT = PROJECT_ROOT
+        PARROT_SCHEMA = "navigator"
 
         def __getattr__(self, name: str):
             # Return a sensible default for any other constant
