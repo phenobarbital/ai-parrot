@@ -88,7 +88,7 @@
       "feature_id": "FEAT-232",
       "feature": "enable-anthropic-aws-bedrock",
       "spec": "sdd/specs/enable-anthropic-aws-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -99,8 +99,8 @@
       "parallelism_notes": "Heavily edits clients/claude.py; depends on backends (1517) and conf constants (1515).",
       "assigned_to": null,
       "started_at": "2026-06-09T22:54:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1518-anthropicclient-backend-integration.md"
+      "completed_at": "2026-06-09T23:12:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1518-anthropicclient-backend-integration.md"
     },
     {
       "id": "TASK-1519",
