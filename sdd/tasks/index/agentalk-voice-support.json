@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-09T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-09T01:23:15+00:00",
   "tasks": [
     {
       "id": "TASK-1510",
@@ -71,7 +71,7 @@
       "feature_id": "FEAT-231",
       "feature": "agentalk-voice-support",
       "spec": "sdd/specs/agentalk-voice-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Registers the route for the handler created in TASK-1512 in manager.py; must run last. Includes the end-to-end integration test.",
       "assigned_to": null,
       "started_at": "2026-06-09T00:59:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1513-voice-route-registration.md"
+      "completed_at": "2026-06-09T01:23:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1513-voice-route-registration.md"
     }
   ]
 }
