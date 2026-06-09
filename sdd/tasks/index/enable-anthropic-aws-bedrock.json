@@ -14,7 +14,7 @@
       "feature_id": "FEAT-232",
       "feature": "enable-anthropic-aws-bedrock",
       "spec": "sdd/specs/enable-anthropic-aws-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "New standalone file (models/bedrock_models.py); only reads ClaudeModel. No shared edits with other tasks.",
       "assigned_to": null,
       "started_at": "2026-06-09T22:54:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1514-bedrock-model-translator.md"
+      "completed_at": "2026-06-09T22:56:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1514-bedrock-model-translator.md"
     },
     {
       "id": "TASK-1515",
