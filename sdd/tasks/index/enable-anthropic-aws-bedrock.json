@@ -50,7 +50,7 @@
       "feature_id": "FEAT-232",
       "feature": "enable-anthropic-aws-bedrock",
       "spec": "sdd/specs/enable-anthropic-aws-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "pyproject.toml only. Note: overlaps uncommitted WIP that bumps the same lines to 0.109.0 — trivial merge expected.",
       "assigned_to": null,
       "started_at": "2026-06-09T22:54:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1516-anthropic-aws-packaging-extra.md"
+      "completed_at": "2026-06-09T22:58:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1516-anthropic-aws-packaging-extra.md"
     },
     {
       "id": "TASK-1517",
