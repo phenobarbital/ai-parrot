@@ -432,3 +432,4 @@ advisor-ontologic-rag-agent.spec.md (FEAT-071)  <-- canonical multi-mixin agent
 - [ ] How many specs exactly: does Stage 2 split into "seeder (parrot)" + "ontology+agent (private)"? Decide at `/sdd-spec` time — *Owner: Juan*.
 - [ ] Reuse vs promote: should `build_graphindex_toolkit`/`build_wiki_agent` be promoted from the example into the framework before building the Workday agent? — *Owner: Jesus/Juan*.
 - [ ] Channels beyond Telegram (Slack/Teams) for the knowledge agent — *Owner: Jesus (later)*.
+- [ ] **Data governance for the org graph**: seeding stores the *entire* employee org tree (workers, managers, departments, locations) + PTO data in ArangoDB. Confirm this is acceptable (data-at-rest), the tenant-isolation model, retention, and that graph/ontology traversal enforces the SAME self+direct-reports scoping as the toolkit (not just the tool calls) — *Owner: Jesus / security*.
