@@ -98,6 +98,89 @@ class AnthropicClient(AbstractClient):
             return True
         return super()._is_capacity_error(error)
 
+    # ── Model-capability guards ─────────────────────────────────────────────
+    # Adaptive-thinking-only models removed the legacy sampling parameters
+    # (``temperature`` / ``top_p`` / ``top_k``); sending any returns a 400.
+    # Fable 5 additionally rejects an explicit ``thinking={"type":"disabled"}``
+    # — the param must be omitted entirely. Mirrors the guard pattern in
+    # ``GoogleGenAIClient._requires_thinking``.
+    _ADAPTIVE_ONLY_PREFIXES: tuple = (
+        "claude-fable-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+    )
+
+    @staticmethod
+    def _model_str(model) -> str:
+        """Normalise a model identifier (str / ``ClaudeModel`` / None) to a str."""
+        if isinstance(model, ClaudeModel):
+            return model.value
+        return model or ""
+
+    @classmethod
+    def _rejects_sampling_params(cls, model) -> bool:
+        """Whether the model 400s on ``temperature`` / ``top_p`` / ``top_k``.
+
+        True for adaptive-thinking-only models (Fable 5, Opus 4.7, Opus 4.8),
+        which removed the sampling parameters.
+        """
+        m = cls._model_str(model)
+        return any(m.startswith(p) for p in cls._ADAPTIVE_ONLY_PREFIXES)
+
+    @classmethod
+    def _rejects_explicit_thinking_disabled(cls, model) -> bool:
+        """Whether an explicit ``thinking={"type": "disabled"}`` returns a 400.
+
+        Only Fable 5 rejects it (Opus 4.7/4.8 still accept ``disabled``); for
+        Fable 5 the ``thinking`` param must be omitted entirely instead.
+        """
+        return cls._model_str(model).startswith("claude-fable-5")
+
+    def _sanitize_payload_for_model(self, payload: dict) -> dict:
+        """Drop request params the target model rejects with a 400.
+
+        - Adaptive-only models (Fable 5, Opus 4.7/4.8): remove
+          ``temperature`` / ``top_p`` / ``top_k``.
+        - Fable 5: drop an explicit ``thinking={"type": "disabled"}`` (must be
+          omitted, not sent).
+
+        Applied just before every ``messages.create`` / ``messages.stream``
+        call so all payload-building paths are covered uniformly. Mutates and
+        returns ``payload``.
+        """
+        model = payload.get("model", "")
+        if self._rejects_sampling_params(model):
+            for param in ("temperature", "top_p", "top_k"):
+                if payload.pop(param, None) is not None:
+                    self.logger.debug(
+                        "AnthropicClient: dropped '%s' — %s is adaptive-only "
+                        "and rejects sampling params.", param, model,
+                    )
+        thinking = payload.get("thinking")
+        if (
+            isinstance(thinking, dict)
+            and thinking.get("type") == "disabled"
+            and self._rejects_explicit_thinking_disabled(model)
+        ):
+            payload.pop("thinking", None)
+            self.logger.debug(
+                "AnthropicClient: dropped thinking={type:disabled} — %s "
+                "requires the 'thinking' param omitted.", model,
+            )
+        return payload
+
+    async def _sdk_create(self, payload: dict):
+        """Sanitize then dispatch a non-streaming ``messages.create`` call."""
+        return await self.client.messages.create(
+            **self._sanitize_payload_for_model(payload)
+        )
+
+    def _sdk_stream(self, payload: dict):
+        """Sanitize then return a streaming ``messages.stream`` context manager."""
+        return self.client.messages.stream(
+            **self._sanitize_payload_for_model(payload)
+        )
+
     # ── FEAT-181: Prompt Caching ───────────────────────────────────────────
 
     def _segments_to_anthropic_blocks(self, segments: list) -> list:
@@ -313,7 +396,7 @@ class AnthropicClient(AbstractClient):
         while True:
             # Use the Anthropic SDK to create messages
             try:
-                response = await self.client.messages.create(**payload)
+                response = await self._sdk_create(payload)
             except Exception as e:
                 if self._should_use_fallback(payload["model"], e):
                     self.logger.warning(
@@ -322,7 +405,7 @@ class AnthropicClient(AbstractClient):
                     )
                     payload["model"] = self._fallback_model
                     used_fallback = True
-                    response = await self.client.messages.create(**payload)
+                    response = await self._sdk_create(payload)
                 else:
                     raise
             # Convert Message object to dict for compatibility
@@ -522,7 +605,7 @@ class AnthropicClient(AbstractClient):
 
         # Handle tool calls in a loop
         while True:
-            response = await self.client.messages.create(**payload)
+            response = await self._sdk_create(payload)
             result = response.model_dump()
 
             if result.get("stop_reason") == "tool_use":
@@ -687,7 +770,7 @@ class AnthropicClient(AbstractClient):
 
                 try:
                     # Use the Anthropic SDK's streaming API
-                    async with self.client.messages.stream(**payload) as stream:
+                    async with self._sdk_stream(payload) as stream:
                         async for text in stream.text_stream:
                             assistant_content += text
                             # FEAT-176: per-chunk event (short-circuited when no subscribers)
@@ -839,10 +922,10 @@ class AnthropicClient(AbstractClient):
             "requests": [
                 {
                     "custom_id": req.custom_id,
-                    "params": {
+                    "params": self._sanitize_payload_for_model({
                         **req.params,
                         **({"betas": ["context-1m-2025-08-07"]} if context_1m else {})
-                    }
+                    })
                 }
                 for req in requests
             ]
@@ -1119,7 +1202,7 @@ class AnthropicClient(AbstractClient):
         all_tool_calls = []
 
         # Make the API request using SDK
-        response = await self.client.messages.create(**payload)
+        response = await self._sdk_create(payload)
         result = response.model_dump()
 
         # Handle structured output
@@ -1238,7 +1321,7 @@ class AnthropicClient(AbstractClient):
             payload["betas"] = ["context-1m-2025-08-07"]
 
         # Make a stateless call to Claude using SDK
-        response = await self.client.messages.create(**payload)
+        response = await self._sdk_create(payload)
         result = response.model_dump()
 
         # Create AIMessage using factory
@@ -1325,7 +1408,7 @@ Requirements:
             payload["betas"] = ["context-1m-2025-08-07"]
 
         # Make a stateless call to Claude using SDK
-        response = await self.client.messages.create(**payload)
+        response = await self._sdk_create(payload)
         result = response.model_dump()
 
         # Create AIMessage using factory
@@ -1394,7 +1477,7 @@ Requirements:
         if context_1m:
             payload["betas"] = ["context-1m-2025-08-07"]
 
-        response = await self.client.messages.create(**payload)
+        response = await self._sdk_create(payload)
         result = response.model_dump()
 
         return AIMessageFactory.from_claude(
@@ -1469,7 +1552,7 @@ Format your response clearly with these sections.
         if context_1m:
             payload["betas"] = ["context-1m-2025-08-07"]
 
-        response = await self.client.messages.create(**payload)
+        response = await self._sdk_create(payload)
         structured_output = SentimentAnalysis if use_structured else None
         return AIMessageFactory.from_claude(
             response=response,
@@ -1567,7 +1650,7 @@ Provide your final answer with:
             "system": system_prompt
         }
 
-        response = await self.client.messages.create(**payload)
+        response = await self._sdk_create(payload)
         result = response.model_dump()
 
         return AIMessageFactory.from_claude(
