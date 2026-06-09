@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-232
 **Date**: 2026-06-09
 **Author**: Juan (raised by Jesus Lara)
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 > Focused follow-up to **FEAT-230** (Workday Composable Interface + Toolkit
