@@ -228,10 +228,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 4.8)
+**Date**: 2026-06-09
 **Notes**:
+- Created `SupertonicTTSBackend(AbstractTTSBackend)` with the exact abstract
+  signature `synthesize(text, *, voice, mime_format, language)`. ONNX session
+  is created lazily (`_ensure_session`); inference runs off the event loop via
+  `asyncio.to_thread(self._synthesize_sync, ...)`.
+- Returns a browser-playable **WAV** container built with the stdlib `wave`
+  module (no extra dependency for container wrapping); `SynthesisResult.mime_format`
+  is always reported as `audio/wav` so the label matches the bytes. A requested
+  `audio/ogg` is normalised to `audio/wav` (truthful labelling).
+- Missing deps/weights surface as `ImportError` (onnxruntime absent) or
+  `ValueError` (weights unconfigured/not found) — no silent degradation.
+- Added `"supertonic"` to `TTSConfig.backend` Literal and a lazy `"supertonic"`
+  dispatch branch in `VoiceSynthesizer._get_backend` (mirrors the `google` branch).
+- Added `voice-supertonic = ["onnxruntime>=1.17"]` extra and referenced it from
+  the `voice` aggregate in `ai-parrot-integrations/pyproject.toml`.
+- Tests: 6 new pass; full tts suite (38) green; `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. R-deps (exact Supertonic weights package) left as
+the deployment's responsibility per spec §8 R-deps — the backend loads weights
+from `model_path`/`SUPERTONIC_MODEL_PATH` and the `_synthesize_sync` inference
+seam is stubbable for tests. `onnxruntime>=1.17` pinned for the extra.

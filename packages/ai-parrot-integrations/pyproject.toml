@@ -59,10 +59,18 @@ voice-openai = [
 voice-tts = [
     "pydub>=0.25",
 ]
+voice-supertonic = [
+    "onnxruntime>=1.17",
+]
+voice-moonshine = [
+    "useful-moonshine-onnx",
+]
 voice = [
     "ai-parrot-integrations[voice-local]",
     "ai-parrot-integrations[voice-openai]",
     "ai-parrot-integrations[voice-tts]",
+    "ai-parrot-integrations[voice-supertonic]",
+    "ai-parrot-integrations[voice-moonshine]",
 ]
 messaging = [
     "ai-parrot-integrations[slack]",
