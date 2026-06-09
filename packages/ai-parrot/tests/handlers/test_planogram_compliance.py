@@ -104,7 +104,10 @@ def _make_handler(
 
     # Build mock DB connection
     mock_conn = AsyncMock()
+    # Handler fetches the config via fetch_one (asyncdb pg alias); keep fetchrow
+    # stubbed too for any legacy path.
     mock_conn.fetchrow = AsyncMock(return_value=db_row)
+    mock_conn.fetch_one = AsyncMock(return_value=db_row)
     mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_conn.__aexit__ = AsyncMock(return_value=False)
 
@@ -206,11 +209,11 @@ class TestPostEndpoint:
 
         with (
             patch(
-                "parrot.handlers.planogram_compliance.GoogleGenAIClient",
+                "parrot_pipelines.handlers.planogram_compliance.GoogleGenAIClient",
                 MagicMock(),
             ),
             patch(
-                "parrot.handlers.planogram_compliance.PlanogramCompliance",
+                "parrot_pipelines.handlers.planogram_compliance.PlanogramCompliance",
                 MagicMock(),
             ),
         ):
@@ -480,11 +483,11 @@ class TestEndToEndCompliance:
 
         # Use patch.start/stop so mocks persist for the background asyncio task
         p1 = patch(
-            "parrot.handlers.planogram_compliance.GoogleGenAIClient",
+            "parrot_pipelines.handlers.planogram_compliance.GoogleGenAIClient",
             mock_llm_class,
         )
         p2 = patch(
-            "parrot.handlers.planogram_compliance.PlanogramCompliance",
+            "parrot_pipelines.handlers.planogram_compliance.PlanogramCompliance",
             mock_pipeline_class,
         )
         p1.start()
