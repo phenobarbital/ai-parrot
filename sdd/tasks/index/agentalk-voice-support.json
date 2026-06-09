@@ -32,7 +32,7 @@
       "feature_id": "FEAT-231",
       "feature": "agentalk-voice-support",
       "spec": "sdd/specs/agentalk-voice-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Independent of TASK-1510 (Supertonic): different subpackage (voice/transcriber vs voice/tts). Only shared file is pyproject.toml — distinct extras blocks; trivial merge.",
       "assigned_to": null,
       "started_at": "2026-06-09T00:59:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1511-moonshine-stt-backend.md"
+      "completed_at": "2026-06-09T01:12:38+00:00",
+      "file": "sdd/tasks/completed/TASK-1511-moonshine-stt-backend.md"
     },
     {
       "id": "TASK-1512",

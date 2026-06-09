@@ -230,10 +230,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 4.8)
+**Date**: 2026-06-09
 **Notes**:
+- Created `MoonshineSTTBackend(AbstractTranscriberBackend)` with the exact
+  abstract signature `transcribe(audio_path: Path, language=None)`. Runtime
+  imported lazily (`_ensure_model`); inference runs off the event loop via
+  `asyncio.to_thread(self._transcribe_sync, ...)` (mirrors FasterWhisper).
+- Added `MOONSHINE = "moonshine"` to `TranscriberBackend` and a
+  `TranscriberBackend.MOONSHINE` dispatch branch in `VoiceTranscriber._get_backend`.
+  FasterWhisper remains the default — verified by `test_default_backend_unchanged`.
+- Missing runtime raises `ImportError`; missing audio file raises
+  `FileNotFoundError`. No silent degradation.
+- Lazy import is robust to both Moonshine distribution names
+  (`moonshine_onnx` from `useful-moonshine-onnx`, or `moonshine`).
+- `duration_seconds` is best-effort probed from WAV headers via stdlib `wave`
+  (Moonshine does not report duration); falls back to 0.0.
+- Added `voice-moonshine = ["useful-moonshine-onnx"]` extra and referenced it
+  from the `voice` aggregate.
+- Tests: 6 new pass; full transcriber suite (20) green; `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. R-deps (Moonshine runtime package) resolved to
+`useful-moonshine-onnx` per spec §8 R-deps (implementer's call); the
+`_transcribe_sync` inference seam is stubbable for tests.
