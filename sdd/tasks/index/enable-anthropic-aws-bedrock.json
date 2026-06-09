@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-10T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-09T23:48:07+00:00",
   "tasks": [
     {
       "id": "TASK-1514",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-232",
       "feature": "enable-anthropic-aws-bedrock",
       "spec": "sdd/specs/enable-anthropic-aws-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "New standalone file (models/bedrock_models.py); only reads ClaudeModel. No shared edits with other tasks.",
       "assigned_to": null,
       "started_at": "2026-06-09T22:54:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1514-bedrock-model-translator.md"
+      "completed_at": "2026-06-09T23:48:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1514-bedrock-model-translator.md"
     },
     {
       "id": "TASK-1515",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-232",
       "feature": "enable-anthropic-aws-bedrock",
       "spec": "sdd/specs/enable-anthropic-aws-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Adds two constants to conf.py; no overlap with the claude.py/backends chain.",
       "assigned_to": null,
       "started_at": "2026-06-09T22:54:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1515-aws-conf-constants.md"
+      "completed_at": "2026-06-09T23:48:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1515-aws-conf-constants.md"
     },
     {
       "id": "TASK-1516",
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-232",
       "feature": "enable-anthropic-aws-bedrock",
       "spec": "sdd/specs/enable-anthropic-aws-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "pyproject.toml only. Note: overlaps uncommitted WIP that bumps the same lines to 0.109.0 — trivial merge expected.",
       "assigned_to": null,
       "started_at": "2026-06-09T22:54:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1516-anthropic-aws-packaging-extra.md"
+      "completed_at": "2026-06-09T23:48:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1516-anthropic-aws-packaging-extra.md"
     },
     {
       "id": "TASK-1517",
@@ -68,7 +68,7 @@
       "feature_id": "FEAT-232",
       "feature": "enable-anthropic-aws-bedrock",
       "spec": "sdd/specs/enable-anthropic-aws-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -78,8 +78,8 @@
       "parallelism_notes": "New file but imports the TASK-1514 translator; start after it.",
       "assigned_to": null,
       "started_at": "2026-06-09T22:54:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1517-anthropic-backend-strategy.md"
+      "completed_at": "2026-06-09T23:48:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1517-anthropic-backend-strategy.md"
     },
     {
       "id": "TASK-1518",
@@ -88,7 +88,7 @@
       "feature_id": "FEAT-232",
       "feature": "enable-anthropic-aws-bedrock",
       "spec": "sdd/specs/enable-anthropic-aws-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -99,8 +99,8 @@
       "parallelism_notes": "Heavily edits clients/claude.py; depends on backends (1517) and conf constants (1515).",
       "assigned_to": null,
       "started_at": "2026-06-09T22:54:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1518-anthropicclient-backend-integration.md"
+      "completed_at": "2026-06-09T23:48:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1518-anthropicclient-backend-integration.md"
     },
     {
       "id": "TASK-1519",
@@ -109,7 +109,7 @@
       "feature_id": "FEAT-232",
       "feature": "enable-anthropic-aws-bedrock",
       "spec": "sdd/specs/enable-anthropic-aws-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -119,8 +119,8 @@
       "parallelism_notes": "Edits factory.py; requires the AnthropicClient backend param from 1518.",
       "assigned_to": null,
       "started_at": "2026-06-09T22:54:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1519-factory-aws-backend-keys.md"
+      "completed_at": "2026-06-09T23:48:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1519-factory-aws-backend-keys.md"
     }
   ]
 }
