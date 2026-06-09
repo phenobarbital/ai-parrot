@@ -78,15 +78,24 @@ class VoiceSynthesizer:
                     self.config.voice,
                 )
                 self._backend = GoogleTTSBackend(voice=self.config.voice)
+            elif backend_name == "supertonic":
+                from .supertonic_backend import SupertonicTTSBackend
+
+                self.logger.info(
+                    "VoiceSynthesizer: creating SupertonicTTSBackend (voice=%s)",
+                    self.config.voice,
+                )
+                self._backend = SupertonicTTSBackend(voice=self.config.voice)
             elif backend_name in ("elevenlabs", "openai"):
                 raise ValueError(
                     f"TTS backend not implemented: '{backend_name}'. "
-                    "Only 'google' is available in this release (FEAT-213)."
+                    "Available backends: 'google', 'supertonic' (FEAT-231)."
                 )
             else:
                 raise ValueError(
                     f"Unknown TTS backend: '{backend_name}'. "
-                    "Supported values: 'google', 'elevenlabs', 'openai'."
+                    "Supported values: 'google', 'supertonic', "
+                    "'elevenlabs', 'openai'."
                 )
         return self._backend
 

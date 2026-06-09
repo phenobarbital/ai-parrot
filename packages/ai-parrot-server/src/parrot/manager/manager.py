@@ -1449,6 +1449,38 @@ class BotManager:
         if hasattr(result, '__await__'):
             await result
 
+    def _register_voice_routes(self, router) -> bool:
+        """Register the AgentVoiceTalk voice route under the optional guard.
+
+        Imports the voice handler defensively: ``AgentVoiceTalk`` reaches the
+        ``ai-parrot-integrations[voice]`` stack via lazy imports, so the import
+        here usually succeeds even without the extra. The ``ImportError`` guard
+        is defence-in-depth — a broken/absent voice stack logs a warning and
+        skips the route instead of crashing server boot.
+
+        Args:
+            router: The aiohttp ``UrlDispatcher`` to register the route on.
+
+        Returns:
+            ``True`` if the voice route was registered, ``False`` if it was
+            skipped because the voice stack could not be imported.
+        """
+        try:
+            from ..handlers.agent_voice import AgentVoiceTalk
+        except ImportError as exc:
+            self.logger.warning(
+                "Voice endpoints disabled (%s); install "
+                "'ai-parrot-integrations[voice]' to enable "
+                "POST /api/v1/agents/voice/{agent_id}.",
+                exc,
+            )
+            return False
+        router.add_view(
+            '/api/v1/agents/voice/{agent_id}',
+            AgentVoiceTalk,
+        )
+        return True
+
     def setup(self, app: web.Application) -> web.Application:
         self.app = None
         if app:
@@ -1585,6 +1617,11 @@ class BotManager:
             '/api/v1/agents/infographic/{agent_id}',
             InfographicTalk,
         )
+        # AgentVoiceTalk route (FEAT-231) — voice I/O adapter around the text
+        # path. Registered under the optional-integration guard: the handler
+        # reaches the voice stack (ai-parrot-integrations[voice]) via lazy
+        # imports, so a missing stack must degrade gracefully, never crash boot.
+        self._register_voice_routes(router)
         # Dataset Manager for agents:
         router.add_view(
             '/api/v1/agents/datasets/{agent_id}',
