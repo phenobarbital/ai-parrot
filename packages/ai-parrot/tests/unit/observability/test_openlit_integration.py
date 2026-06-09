@@ -61,6 +61,8 @@ def test_init_passes_endpoint_and_service_name() -> None:
         fake_openlit.init.assert_called_once_with(
             otlp_endpoint="http://collector:4318",
             application_name="my-parrot",
+            disabled_instrumentors=cfg.openlit_disabled_instrumentors,
+            disable_metrics=cfg.openlit_disable_metrics,
         )
 
 

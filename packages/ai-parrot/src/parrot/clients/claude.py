@@ -45,6 +45,10 @@ from ..models.outputs import (
 )
 
 logging.getLogger("anthropic").setLevel(logging.WARNING)
+# Silence the underlying HTTP stack used by the Anthropic SDK; its DEBUG
+# traces (connect_tcp/start_tls) are pure noise for callers of this client.
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 class AnthropicClient(AbstractClient):

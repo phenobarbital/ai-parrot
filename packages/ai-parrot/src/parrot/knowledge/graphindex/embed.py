@@ -10,7 +10,10 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-import faiss
+from parrot.utils.faiss_logging import quiet_faiss_loader
+
+quiet_faiss_loader()
+import faiss  # noqa: E402 — must follow quiet_faiss_loader() to silence boot logs
 import numpy as np
 
 from parrot.embeddings.registry import EmbeddingRegistry
