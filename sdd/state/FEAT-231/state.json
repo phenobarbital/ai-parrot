@@ -11,11 +11,11 @@
     "file_path": null,
     "raw_path": "sdd/state/FEAT-231/source.md",
     "fetched_at": "2026-06-08T23:30:45Z",
-    "summary_oneline": "Voice support for AgentTalk — WS audio in, STT -> LLM -> sub-second TTS (Supertonic), return audio + content"
+    "summary_oneline": "Voice support for AgentTalk \u2014 WS audio in, STT -> LLM -> sub-second TTS (Supertonic), return audio + content"
   },
   "mode": "auto",
   "detected_mode": "enrichment",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "plan": {
       "status": "complete",
@@ -47,7 +47,8 @@
       "questions_answered": 5
     },
     "output": {
-      "proposal_path": "sdd/proposals/agentalk-voice-support.proposal.md"
+      "proposal_path": "sdd/proposals/agentalk-voice-support.proposal.md",
+      "commit_sha": "e8e62505"
     }
   },
   "budget": {
