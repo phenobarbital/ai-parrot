@@ -134,8 +134,15 @@ def build_before_client_attrs(event: BeforeClientCallEvent) -> dict[str, Any]:
     Returns:
         Dict of GenAI SemConv + parrot-specific OTel attribute key-value pairs.
     """
+    system = resolve_gen_ai_system(event.client_name)
     attrs: dict[str, Any] = {
-        "gen_ai.system": resolve_gen_ai_system(event.client_name),
+        # ``gen_ai.system`` is the legacy GenAI SemConv key; the newer convention
+        # (adopted by current OpenLIT, which dropped ``gen_ai.system`` entirely)
+        # reads the provider from ``gen_ai.provider.name``. Emit BOTH so the
+        # provider is populated regardless of which convention the collector /
+        # backend follows — otherwise OpenLIT shows ``provider=''``.
+        "gen_ai.system": system,
+        "gen_ai.provider.name": system,
         "gen_ai.request.model": event.model,
         # Custom extension — not part of OTel GenAI SemConv stable spec (May 2025)
         "gen_ai.request.has_tools": event.has_tools,
@@ -164,8 +171,10 @@ def build_after_client_attrs(
     Returns:
         Dict of GenAI SemConv + parrot-specific OTel attribute key-value pairs.
     """
+    system = resolve_gen_ai_system(event.client_name)
     attrs: dict[str, Any] = {
-        "gen_ai.system": resolve_gen_ai_system(event.client_name),
+        "gen_ai.system": system,
+        "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
         "gen_ai.response.model": event.model,
         "parrot.client.duration_ms": event.duration_ms,
     }
@@ -191,8 +200,10 @@ def build_client_failed_attrs(event: ClientCallFailedEvent) -> dict[str, Any]:
     Returns:
         Dict of OTel error + GenAI SemConv attribute key-value pairs.
     """
+    system = resolve_gen_ai_system(event.client_name)
     attrs: dict[str, Any] = {
-        "gen_ai.system": resolve_gen_ai_system(event.client_name),
+        "gen_ai.system": system,
+        "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
         "gen_ai.response.model": event.model,
         "parrot.client.duration_ms": event.duration_ms,
         "error.type": event.error_type,

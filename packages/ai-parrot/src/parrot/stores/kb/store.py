@@ -30,6 +30,8 @@ class KnowledgeBaseStore:
         index_type: str = "Flat",  # or "HNSW" for larger KBs
     ):
         try:
+            from parrot.utils.faiss_logging import quiet_faiss_loader
+            quiet_faiss_loader()
             import faiss  # noqa: F401 — trigger ImportError early if missing
         except ImportError as e:
             raise ImportError(

@@ -18,6 +18,8 @@ import numpy as np
 from navconfig.logging import logging
 
 try:
+    from parrot.utils.faiss_logging import quiet_faiss_loader
+    quiet_faiss_loader()
     import faiss
     FAISS_AVAILABLE = True
 except ImportError:

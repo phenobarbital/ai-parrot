@@ -123,6 +123,31 @@ class ObservabilityConfig(BaseModel):
         ]
     )
 
+    # OpenLIT logs its whole boot — one INFO line per supported library it
+    # scans ("Library for X not found. Skipping instrumentation") plus
+    # provider-reuse and per-instrumentor lines — through the ``openlit``
+    # logger family. That is dozens of INFO lines on every boot even though
+    # almost none of those libraries are installed. We raise the ``openlit``
+    # logger to WARNING by default so only genuine problems surface; the
+    # catalogue scan itself is intrinsic to OpenLIT and cannot be turned off
+    # (it has no allow-list, only ``disabled_instrumentors``). Override via
+    # ``OBSERVABILITY_OPENLIT_LOG_LEVEL`` (e.g. ``INFO`` to restore the full
+    # boot chatter, or a numeric level).
+    openlit_log_level: int = logging.WARNING
+
+    # OpenLIT registers its own GenAI metric instruments (``gen_ai.client.
+    # token.usage``, ``gen_ai.client.operation.duration``, …) using the same
+    # OTel semantic-convention names as our native ``MetricsSubscriber``. When
+    # OpenLIT reuses our global ``MeterProvider`` it creates duplicate
+    # same-named instruments, which the OTel SDK rejects with "Views … will
+    # cause conflicting metrics identities" warnings on every export. Our
+    # subscriber already owns these metrics (with LLM-tuned histogram buckets),
+    # so OpenLIT should do tracing only. Default to disabling OpenLIT metrics;
+    # override via ``OBSERVABILITY_OPENLIT_DISABLE_METRICS`` (set falsy to let
+    # OpenLIT emit its own metrics instead — only sensible if the native GenAI
+    # subscriber is off).
+    openlit_disable_metrics: bool = True
+
     # Sampling & PII
     sampling_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
     capture_prompts: bool = False       # PII: default off
@@ -162,6 +187,8 @@ class ObservabilityConfig(BaseModel):
         ``OBSERVABILITY_LOG_LEVEL``  ``usage_log_level``
         ``OBSERVABILITY_SAMPLING``   ``sampling_ratio``
         ``OBSERVABILITY_OPENLIT``    ``enable_openlit``
+        ``OBSERVABILITY_OPENLIT_DISABLE``  ``openlit_disabled_instrumentors``
+        ``OBSERVABILITY_OPENLIT_LOG_LEVEL``  ``openlit_log_level``
         ``OBSERVABILITY_TRACELOOP``  ``enable_traceloop``
         ``OBSERVABILITY_CAPTURE_CONTENT``  ``capture_prompts`` + ``capture_completions``
         ``OTEL_EXPORTER_OTLP_ENDPOINT``  ``otlp_endpoint``
@@ -224,6 +251,14 @@ class ObservabilityConfig(BaseModel):
             values["openlit_disabled_instrumentors"] = [
                 name.strip() for name in disable.split(",") if name.strip()
             ]
+
+        values["openlit_log_level"] = _as_log_level(
+            get("OBSERVABILITY_OPENLIT_LOG_LEVEL"), defaults.openlit_log_level
+        )
+        values["openlit_disable_metrics"] = _as_bool(
+            get("OBSERVABILITY_OPENLIT_DISABLE_METRICS"),
+            defaults.openlit_disable_metrics,
+        )
 
         pricing = get("PARROT_PRICING_PATH")
         if pricing:

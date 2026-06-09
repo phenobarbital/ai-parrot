@@ -22,6 +22,9 @@ from ..models import (
 logger = logging.getLogger(__name__)
 
 try:
+    from parrot.utils.faiss_logging import quiet_faiss_loader
+
+    quiet_faiss_loader()
     import faiss
 
     _FAISS_AVAILABLE = True

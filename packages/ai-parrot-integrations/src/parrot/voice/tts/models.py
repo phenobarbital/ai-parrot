@@ -38,9 +38,12 @@ class TTSConfig(BaseModel):
         cfg = TTSConfig(backend="google", voice="Charon", language="en-US")
     """
 
-    backend: Literal["google", "elevenlabs", "openai"] = Field(
+    backend: Literal["google", "elevenlabs", "openai", "supertonic"] = Field(
         default="google",
-        description="TTS backend to use (only 'google' is implemented in FEAT-213)",
+        description=(
+            "TTS backend to use ('google' default; 'supertonic' sub-second "
+            "backend added in FEAT-231; 'elevenlabs'/'openai' reserved)"
+        ),
     )
     voice: Optional[str] = Field(
         default=None,

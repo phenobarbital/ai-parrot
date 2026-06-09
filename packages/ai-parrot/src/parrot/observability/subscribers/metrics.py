@@ -181,6 +181,7 @@ class MetricsSubscriber:
             1,
             attributes={
                 "gen_ai.system": system,
+                "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
                 "gen_ai.request.model": event.model,
                 "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
             },
@@ -194,6 +195,7 @@ class MetricsSubscriber:
         # agent_name is None instead — see attributes.py for the span-side handling.
         base = {
             "gen_ai.system": system,
+            "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
             "gen_ai.response.model": event.model,
             "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
         }
@@ -237,6 +239,7 @@ class MetricsSubscriber:
             1,
             attributes={
                 "gen_ai.system": system,
+                "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
                 "error.type": event.error_type,
                 "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
             },
