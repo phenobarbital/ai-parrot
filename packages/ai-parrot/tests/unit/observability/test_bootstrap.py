@@ -7,16 +7,15 @@ import pytest
 from parrot.core.events.lifecycle.global_registry import get_global_registry, scope
 from parrot.observability import bootstrap as boot
 
-_ENV_KEYS = [
-    "OBSERVABILITY_ENABLED", "OBSERVABILITY_BACKEND", "OBSERVABILITY_COST",
-    "OBSERVABILITY_OPENLIT", "OBSERVABILITY_TRACELOOP",
-]
-
-
 @pytest.fixture(autouse=True)
-def _clean(monkeypatch):
-    for key in _ENV_KEYS:
-        monkeypatch.delenv(key, raising=False)
+def _clean():
+    """Reset the bootstrap module's own globals (``_SUBSCRIBER`` /
+    ``_ATEXIT_REGISTERED``) around each test.
+
+    Environment hermeticity and telemetry-provider resets are handled by the
+    package-level autouse fixtures in ``conftest.py``; this only covers the
+    bootstrap-specific state the shared fixtures don't touch.
+    """
     boot.reset_bootstrap_for_tests()
     yield
     boot.reset_bootstrap_for_tests()

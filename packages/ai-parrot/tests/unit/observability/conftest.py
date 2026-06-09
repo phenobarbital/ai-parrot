@@ -91,28 +91,45 @@ def _isolate_observability_globals():
     _reset_otel_api_globals()
 
 
+# Observability env keys the config/bootstrap tests assume are unset unless a
+# test explicitly sets them. Cleared from ``os.environ`` by the hermetic
+# fixture below.
+_OBSERVABILITY_ENV_EXTRA = (
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "PARROT_PRICING_PATH",
+)
+
+
 @pytest.fixture(autouse=True)
 def _hermetic_observability_env(monkeypatch):
     """Make ``ObservabilityConfig.from_env()`` honour only test-set env vars.
 
-    ``_env_getter()`` normally resolves keys through ``navconfig``, which loads
-    the repo's ``env/.env`` — and that file sets ``OBSERVABILITY_ENABLED=true``
-    / ``OBSERVABILITY_BACKEND=otel`` for local development. Because navconfig
-    reads from its own cache, the tests' ``monkeypatch.delenv``/``setenv`` calls
-    (which target ``os.environ``) cannot override it, so env-driven tests
-    (``test_bootstrap``, ``test_config_from_env``) silently pick up the local
-    ``.env`` and behave non-deterministically depending on the developer's
-    machine.
+    On import, ``navconfig`` loads the repo's ``env/.env`` BOTH into
+    ``os.environ`` AND into its own cache — and that file sets
+    ``OBSERVABILITY_ENABLED=true`` / ``OBSERVABILITY_BACKEND=otel`` for local
+    development. So env-driven tests (``test_bootstrap``, ``test_config_from_env``)
+    silently pick up the local ``.env`` and behave non-deterministically
+    depending on the developer's machine. Neutralising it needs two moves,
+    because the pollution lives in two places:
 
-    Pin the getter to the navconfig-free ``os.environ.get`` fallback so the
-    suite sees a clean environment plus whatever a test explicitly sets via
-    ``monkeypatch.setenv``. This is the same fallback ``_env_getter`` already
-    uses when navconfig is absent (e.g. in CI), so it changes nothing about
-    production behaviour — it only removes the local ``.env`` bleed-through.
+    1. Pin ``_env_getter`` to the navconfig-free ``os.environ.get`` fallback so
+       reads bypass navconfig's *cache* (which ``monkeypatch.delenv`` can't
+       touch). This is the same fallback ``_env_getter`` uses when navconfig is
+       absent (e.g. in CI), so production behaviour is unchanged.
+    2. Delete the observability keys from ``os.environ`` so that fallback sees a
+       clean environment.
+
+    A test that wants a value sets it via ``monkeypatch.setenv`` after this
+    fixture has run; that lands in ``os.environ`` and is read back by the
+    pinned getter.
     """
     import os  # noqa: PLC0415
 
     import parrot.observability.config as config_mod  # noqa: PLC0415
 
     monkeypatch.setattr(config_mod, "_env_getter", lambda: os.environ.get)
+    for key in [k for k in os.environ if k.startswith("OBSERVABILITY")]:
+        monkeypatch.delenv(key, raising=False)
+    for key in _OBSERVABILITY_ENV_EXTRA:
+        monkeypatch.delenv(key, raising=False)
     yield
