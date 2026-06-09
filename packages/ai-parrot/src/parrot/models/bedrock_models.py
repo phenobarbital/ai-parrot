@@ -36,6 +36,8 @@ _REGION_PREFIXES: tuple[str, ...] = ("us.", "eu.", "apac.")
 # publishes new inference-profile IDs.
 PUBLIC_TO_BEDROCK: dict[str, str] = {
     # ── Claude 4.6 ─────────────────────────────────────────────────────────
+    # NOTE: date suffix 20260115 is speculative for future models; update
+    # when AWS Bedrock publishes the actual model version identifiers.
     "claude-sonnet-4-6": "anthropic.claude-sonnet-4-6-20260115-v1:0",
     "claude-opus-4-6":   "anthropic.claude-opus-4-6-20260115-v1:0",
 
@@ -57,6 +59,9 @@ PUBLIC_TO_BEDROCK: dict[str, str] = {
     # ── Claude 3.x ─────────────────────────────────────────────────────────
     "claude-3-7-sonnet-20250219": "anthropic.claude-3-7-sonnet-20250219-v1:0",
     "claude-3-5-haiku-20241022":  "anthropic.claude-3-5-haiku-20241022-v1:0",
+
+    # ── Not yet available on Bedrock (will warn+passthrough) ──────────────
+    # claude-fable-5, claude-opus-4-8, claude-opus-4-7 — Bedrock IDs TBD.
 }
 
 

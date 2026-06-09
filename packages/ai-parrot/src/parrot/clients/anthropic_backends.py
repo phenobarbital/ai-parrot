@@ -27,7 +27,26 @@ Usage::
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Optional, Protocol, TYPE_CHECKING, runtime_checkable
+
+if TYPE_CHECKING:
+    # SDK types are optional extras — import only for static analysis / IDE
+    # support; never at runtime to avoid hard dependencies.
+    from anthropic import AsyncAnthropic, AsyncAnthropicBedrock, AsyncAnthropicAWS
+
+
+@runtime_checkable
+class AnthropicBackendProtocol(Protocol):
+    """Structural protocol for Anthropic backend strategies.
+
+    All three concrete backends (``DirectBackend``, ``BedrockBackend``,
+    ``AWSWorkspaceBackend``) satisfy this protocol.  Annotating
+    ``AnthropicClient._backend`` against it gives type-checkers and IDEs
+    precise completion without requiring a shared ABC.
+    """
+
+    async def build_client(self): ...  # noqa: E704
+    def translate_model(self, model: str) -> str: ...  # noqa: E704
 
 
 class DirectBackend:
@@ -45,7 +64,7 @@ class DirectBackend:
         self.api_key = api_key
         self.logger = logging.getLogger(__name__)
 
-    async def build_client(self):
+    async def build_client(self) -> "AsyncAnthropic":
         """Build and return an ``AsyncAnthropic`` SDK client.
 
         Returns:
@@ -108,7 +127,7 @@ class BedrockBackend:
         self.region_prefix = region_prefix
         self.logger = logging.getLogger(__name__)
 
-    async def build_client(self):
+    async def build_client(self) -> "AsyncAnthropicBedrock":
         """Build and return an ``AsyncAnthropicBedrock`` SDK client.
 
         Passes ``None`` credentials through so the SDK falls back to the
@@ -119,14 +138,14 @@ class BedrockBackend:
 
         Raises:
             ImportError: When ``anthropic[aws]`` is not installed, with a
-                hint to install ``ai-parrot[anthropic]``.
+                hint to install ``ai-parrot[bedrock]``.
         """
         try:
             from anthropic import AsyncAnthropicBedrock
         except ImportError as exc:
             raise ImportError(
                 "Bedrock backend requires the AWS extra of the anthropic SDK. "
-                "Install with: pip install ai-parrot[anthropic]"
+                "Install with: pip install ai-parrot[bedrock]"
             ) from exc
 
         kwargs: dict = {}
@@ -199,7 +218,7 @@ class AWSWorkspaceBackend:
         self.aws_profile = aws_profile
         self.logger = logging.getLogger(__name__)
 
-    async def build_client(self):
+    async def build_client(self) -> "AsyncAnthropicAWS":
         """Build and return an ``AsyncAnthropicAWS`` SDK client.
 
         Validates that ``aws_region`` and ``workspace_id`` are non-empty
@@ -213,7 +232,7 @@ class AWSWorkspaceBackend:
             ValueError: When ``aws_region`` or ``workspace_id`` is missing,
                 with a message naming the corresponding env var to set.
             ImportError: When ``anthropic[aws]`` is not installed, with a
-                hint to install ``ai-parrot[anthropic]``.
+                hint to install ``ai-parrot[bedrock]``.
         """
         if not self.aws_region:
             raise ValueError(
@@ -233,7 +252,7 @@ class AWSWorkspaceBackend:
         except ImportError as exc:
             raise ImportError(
                 "AWS-workspace backend requires the AWS extra of the anthropic SDK. "
-                "Install with: pip install ai-parrot[anthropic]"
+                "Install with: pip install ai-parrot[bedrock]"
             ) from exc
 
         kwargs: dict = {

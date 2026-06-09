@@ -10,7 +10,7 @@ from logging import getLogger
 
 from navconfig import config
 
-from .gpt import OpenAIClient, STRUCTURED_OUTPUT_COMPATIBLE_MODELS
+from .gpt import OpenAIClient
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI

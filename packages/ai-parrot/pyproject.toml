@@ -329,6 +329,13 @@ images = [
 ]
 
 anthropic = [
+    "anthropic[aiohttp]>=0.109.0,<1.0.0",
+]
+
+# FIX-2: Bedrock extra is opt-in; pulls boto3+botocore (~30 MB) only for users
+# who actually deploy via AWS Bedrock.  The `anthropic` extra stays clean for
+# direct-API users.
+bedrock = [
     "anthropic[aiohttp,aws]>=0.109.0,<1.0.0",
 ]
 
@@ -360,7 +367,9 @@ llms = [
     "google-genai>=2.6.0",
     "openai==2.8.1",
     "groq==0.33.0",
-    "anthropic[aiohttp,aws]>=0.109.0,<1.0.0",
+    # FIX-2: include both direct-API and Bedrock SDK so that `llms` covers all
+    # Anthropic transports; bedrock pulls anthropic[aiohttp,aws] (boto3 stack).
+    "ai-parrot[anthropic,bedrock]",
     "claude-agent-sdk>=0.1.68",
     "xai-sdk>=0.1.0",
     "zai-sdk>=0.2.2",

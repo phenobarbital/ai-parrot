@@ -12,30 +12,16 @@ from parrot.clients.anthropic_backends import (
     DirectBackend,
     BedrockBackend,
     AWSWorkspaceBackend,
+    AnthropicBackendProtocol,
 )
 
 
 # ── DirectBackend ────────────────────────────────────────────────────────────
 
-@pytest.mark.asyncio
-async def test_direct_builds_async_anthropic(monkeypatch):
-    """DirectBackend.build_client() returns an AsyncAnthropic instance."""
-    mock_cls = MagicMock(return_value=MagicMock())
-    monkeypatch.setattr(
-        "parrot.clients.anthropic_backends.DirectBackend.build_client",
-        lambda self: _fake_direct(self, mock_cls),
-    )
-    backend = DirectBackend(api_key="test-key")
-    client = await backend.build_client()
-    assert client is not None
-
-
-async def _fake_direct(self, mock_cls):
-    """Helper: actually test the real code path with mocked import."""
-    with patch("anthropic.AsyncAnthropic", mock_cls):
-        from anthropic import AsyncAnthropic  # noqa: F401
-        return mock_cls(api_key=self.api_key, max_retries=2)
-
+# FIX-9: test_direct_builds_async_anthropic was removed — it monkeypatched
+# DirectBackend.build_client with a lambda that called _fake_direct, effectively
+# testing its own mock rather than production code.  The real code path is fully
+# covered by test_direct_build_client_returns_async_anthropic below.
 
 @pytest.mark.asyncio
 async def test_direct_build_client_returns_async_anthropic():
@@ -177,3 +163,15 @@ async def test_aws_missing_sdk_raises_import_error(monkeypatch):
             aws_region="us-east-1", workspace_id="wrkspc_test"
         )
         await backend.build_client()
+
+
+# ── AnthropicBackendProtocol (FIX-6) ────────────────────────────────────────
+
+def test_all_backends_satisfy_protocol():
+    """All three backend classes satisfy AnthropicBackendProtocol at runtime."""
+    direct = DirectBackend()
+    bedrock = BedrockBackend()
+    aws = AWSWorkspaceBackend()
+    assert isinstance(direct, AnthropicBackendProtocol)
+    assert isinstance(bedrock, AnthropicBackendProtocol)
+    assert isinstance(aws, AnthropicBackendProtocol)
