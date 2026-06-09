@@ -1,0 +1,32 @@
+{
+  "mode": "enrichment",
+  "overall_confidence": "medium",
+  "localization": [
+    {"path": "packages/ai-parrot/src/parrot/clients/claude.py", "symbol": "AnthropicClient.get_client", "lines": "78-90", "role": "single SDK-construction seam to override per backend", "evidence": ["F001"]},
+    {"path": "packages/ai-parrot/src/parrot/clients/claude.py", "symbol": "AnthropicClient.__init__", "lines": "62-76", "role": "credential intake (api_key via navconfig)", "evidence": ["F001"]},
+    {"path": "packages/ai-parrot/src/parrot/clients/claude.py", "symbol": "model resolution sites", "lines": "227,499,638,662", "role": "4 sites resolving model string — Bedrock translation seam", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot/src/parrot/clients/factory.py", "symbol": "SUPPORTED_CLIENTS", "lines": "49-69", "role": "register bedrock / anthropic-aws provider keys", "evidence": ["F002"]},
+    {"path": "packages/ai-parrot/src/parrot/interfaces/aws.py", "symbol": "AWSInterface", "lines": "51-83", "role": "reusable parrot.conf->env->SDK-chain credential pattern", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/src/parrot/models/claude.py", "symbol": "ClaudeModel", "lines": "4-28", "role": "public model IDs to translate to Bedrock IDs", "evidence": ["F004"]}
+  ],
+  "constraints": [
+    {"claim": "get_client() is the only SDK-construction point; overriding it reuses the full completion pipeline", "confidence": "high", "evidence": ["F001"]},
+    {"claim": "AsyncAnthropicBedrock exposes the same messages.create/stream surface as AsyncAnthropic, so subclassing is viable", "confidence": "medium", "evidence": ["F001"]},
+    {"claim": "Model string is resolved at 4 distinct call sites; all must route through Bedrock ID translation or calls 404", "confidence": "high", "evidence": ["F004"]},
+    {"claim": "Repo already has a parrot.conf->env->boto-chain AWS credential pattern to mirror", "confidence": "high", "evidence": ["F003"]},
+    {"claim": "New backends are registered by adding keys to SUPPORTED_CLIENTS, ideally via the lazy-loader pattern for optional deps", "confidence": "high", "evidence": ["F002"]},
+    {"claim": "AnthropicAWS / aws_workspace_id is the least-verified part of the source; exact SDK class name and async variant unconfirmed in repo", "confidence": "low", "evidence": ["F004"]}
+  ],
+  "hypothesis": {
+    "statement": "Add two thin AnthropicClient subclasses (AnthropicBedrockClient, AnthropicAWSClient) that override only __init__ (credential intake) and get_client() (SDK selection), plus a Bedrock model-ID translation layer, registered in LLMFactory behind lazy loaders for an optional [anthropic-aws] extra.",
+    "confidence": "medium",
+    "evidence": ["F001", "F002", "F003", "F004"]
+  },
+  "unknowns": [
+    {"id": "U1", "question": "Class topology: two subclasses vs. one client with a backend= switch?", "user_answer": "One AnthropicClient class with backend=direct|bedrock|aws. get_client() is the factory that instantiates a composable backend object (including the current/direct SDK) based on backend. Reduced shared code in the main class, single class for talking to Claude."},
+    {"id": "U2", "question": "Bedrock model-ID translation: static map, region inference-profile prefix, pass-through of pre-formatted IDs, or all three?", "user_answer": "Map + region prefix + pass-through (all three)."},
+    {"id": "U3", "question": "Is the AnthropicAWS/aws_workspace_id path in scope now, or Bedrock-first with AWS-workspace as a follow-up?", "user_answer": "Both backends in this feature; verify AnthropicAWS/AsyncAnthropicAWS class + aws_workspace_id param against the installed anthropic[aws] SDK during implementation."},
+    {"id": "U4", "question": "Packaging: core deps or an optional ai-parrot[anthropic-aws] extra behind lazy imports?", "user_answer": "Fold anthropic[aws]/boto into the existing [anthropic] extra; keep lazy imports in get_client()."}
+  ],
+  "recommended_next_command": {"command": "sdd-spec", "rationale": "Localization is high-confidence and the design is a well-bounded subclass + factory wiring; once the 4 design forks are decided, a spec can be written directly."}
+}
