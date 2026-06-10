@@ -222,7 +222,7 @@ class TestNodeEventHook:
             events.append((event, node_id))
 
         flow = _branch_merge_flow("left")
-        flow._on_node_event = on_event
+        flow.add_node_event_listener(on_event)
         await flow.run_flow(FlowContext(initial_task=""))
 
         assert ("node_started", "root") in events
@@ -238,7 +238,7 @@ class TestNodeEventHook:
             events.append((event, node_id, info))
 
         flow = _pipeline_with_handler(fail_at="b")
-        flow._on_node_event = on_event
+        flow.add_node_event_listener(on_event)
         await flow.run_flow(FlowContext(initial_task=""))
         # Give fire-and-forget tasks a tick to drain.
         await asyncio.sleep(0)
@@ -268,7 +268,7 @@ class TestNodeEventHook:
             raise RuntimeError("telemetry exploded")
 
         flow = _branch_merge_flow("left")
-        flow._on_node_event = bad_callback
+        flow.add_node_event_listener(bad_callback)
         result = await flow.run_flow(FlowContext(initial_task=""))
         assert result.status.value == "completed"
 

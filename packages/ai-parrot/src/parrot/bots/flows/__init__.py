@@ -79,6 +79,7 @@ from .flow import (
     CompletionEvent,
     FlowEdge,
     EDGE_CONDITIONS,
+    FlowLifecycleAdapter,
 )
 
 # Flow definition models (FEAT-196)
@@ -143,6 +144,7 @@ __all__ = [
     "CompletionEvent",
     "FlowEdge",
     "EDGE_CONDITIONS",
+    "FlowLifecycleAdapter",
     # Flow definition
     "FlowDefinition",
     "NodeDefinition",

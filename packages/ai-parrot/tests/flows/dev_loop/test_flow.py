@@ -147,19 +147,26 @@ class TestKindRouting:
 
 class TestEventPublisherWiring:
     def test_publisher_attached_by_default(self, flow):
-        assert flow._on_node_event is not None
-        assert flow._event_publisher is flow._on_node_event
+        assert flow._event_publisher is not None
+        assert flow._event_publisher in flow._node_event_listeners
 
-    def test_publisher_can_be_disabled(self):
+    def test_lifecycle_adapter_attached_by_default(self, flow):
+        from parrot.bots.flows.flow.telemetry import FlowLifecycleAdapter
+        assert isinstance(flow._lifecycle_adapter, FlowLifecycleAdapter)
+        assert flow._lifecycle_adapter in flow._node_event_listeners
+
+    def test_publisher_and_adapter_can_be_disabled(self):
         f = build_dev_loop_flow(
             dispatcher=MagicMock(),
             jira_toolkit=MagicMock(),
             log_toolkits={},
             redis_url="redis://localhost:6379/0",
             publish_flow_events=False,
+            lifecycle_events=False,
         )
-        assert f._on_node_event is None
         assert f._event_publisher is None
+        assert f._lifecycle_adapter is None
+        assert f._node_event_listeners == []
 
 
 # ---------------------------------------------------------------------------

@@ -159,6 +159,7 @@ def build_dev_loop_flow(
     redis_url: str,
     name: str = "dev-loop",
     publish_flow_events: bool = True,
+    lifecycle_events: bool = True,
 ) -> AgentsFlow:
     """Build the seven-node dev-loop ``AgentsFlow`` (FEAT-132).
 
@@ -186,6 +187,11 @@ def build_dev_loop_flow(
             :class:`FlowEventPublisher` to the engine's ``on_node_event``
             hook. The publisher reads the run_id from
             ``flow._run_id_holder`` (seeded by ``DevLoopRunner``).
+        lifecycle_events: When True (default), also attach a
+            :class:`parrot.bots.flows.flow.telemetry.FlowLifecycleAdapter`
+            so typed FEAT-176 events (FlowStarted/NodeCompleted/…) reach
+            the global lifecycle registry — and through it the OTel /
+            logging / usage subscribers.
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -211,6 +217,15 @@ def build_dev_loop_flow(
     # Exposed for DevLoopRunner / callers to bind the current run_id.
     flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
     flow._event_publisher = publisher  # type: ignore[attr-defined]
+
+    lifecycle_adapter = None
+    if lifecycle_events:
+        from parrot.bots.flows.flow.telemetry import (  # noqa: PLC0415
+            FlowLifecycleAdapter,
+        )
+        lifecycle_adapter = FlowLifecycleAdapter()
+        flow.add_node_event_listener(lifecycle_adapter)
+    flow._lifecycle_adapter = lifecycle_adapter  # type: ignore[attr-defined]
 
     for node in (
         intent_classifier,

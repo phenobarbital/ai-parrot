@@ -30,6 +30,7 @@ from .result import NodeExecutionInfo
 from .types import AgentLike, AgentRef
 
 if TYPE_CHECKING:
+    from parrot.core.events.lifecycle.trace import TraceContext
     from parrot.registry.registry import AgentRegistry
 
 
@@ -102,6 +103,15 @@ class FlowContext:
     Any ``AbstractClient``-compatible instance that exposes ``ask(prompt=...)``.
     If ``None``, calling ``synthesize_results(ctx, result)`` raises a
     ``RuntimeError``.
+    """
+
+    trace_context: Optional["TraceContext"] = field(default=None)
+    """W3C TraceContext for this run (FEAT-176 Phase 1.5).
+
+    Seeded by the caller, or lazily created (root span) by
+    ``FlowLifecycleAdapter`` on the first event of the run. Nodes and the
+    code they invoke can read it to stitch their own spans (client/tool
+    lifecycle events) onto the flow's trace.
     """
 
     # ── Agent resolution ──────────────────────────────────────────────────

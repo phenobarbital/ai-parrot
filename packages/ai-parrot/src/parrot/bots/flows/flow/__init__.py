@@ -27,6 +27,7 @@ from .flow import (
     InteractiveDecisionNode,
     SynthesisNode,
 )
+from .telemetry import FlowLifecycleAdapter
 from .nodes import (
     DecisionMode,
     DecisionType,
@@ -44,6 +45,7 @@ __all__ = [
     "AgentsFlow",
     "EDGE_CONDITIONS",
     "FlowEdge",
+    "FlowLifecycleAdapter",
     "NODE_REGISTRY",
     "register_node",
     "CompletionEvent",

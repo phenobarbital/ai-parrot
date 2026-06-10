@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, Type, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Set, Tuple, Type, Union
 
 from pydantic import Field as PydanticField
 from navconfig.logging import logging
@@ -173,12 +173,18 @@ class AgentsFlow(PersistenceMixin):
             execution context. Used by ``from_definition`` (TASK-1068) for
             eager agent resolution.
         on_node_event: Optional callback ``(event, node_id, info) -> None``
-            (sync or async) invoked by the scheduler on node lifecycle
-            transitions. ``event`` is one of ``"node_started"``,
-            ``"node_completed"``, ``"node_failed"``, ``"node_skipped"``.
-            ``info`` carries ``"flow"`` (name), ``"context"`` (the run's
-            FlowContext), and ``"error"`` on failures. Exceptions raised
-            by the callback are logged, never propagated.
+            (sync or async) — or a sequence of them — invoked by the
+            scheduler on lifecycle transitions. ``event`` is one of
+            ``"flow_started"``, ``"node_started"``, ``"node_completed"``,
+            ``"node_failed"``, ``"node_skipped"``, ``"flow_completed"``
+            (flow-level events carry ``node_id=""``). ``info`` carries
+            ``"flow"`` (name) and ``"context"`` (the run's FlowContext),
+            plus per-event extras: ``"duration_ms"`` on completions and
+            failures, ``"error"``/``"error_type"`` on failures,
+            ``"node_count"`` on flow_started, and ``"status"`` +
+            outcome counts on flow_completed. Exceptions raised by a
+            callback are logged, never propagated. More listeners can be
+            attached later via :meth:`add_node_event_listener`.
         **kwargs: Forwarded to ``PersistenceMixin`` (and ultimately
             ``object.__init__``).
     """
@@ -190,7 +196,10 @@ class AgentsFlow(PersistenceMixin):
         definition: Optional[FlowDefinition] = None,
         agent_registry: Optional[AgentRegistry] = None,
         on_node_event: Optional[
-            Callable[[str, str, Dict[str, Any]], Any]
+            Union[
+                Callable[[str, str, Dict[str, Any]], Any],
+                Sequence[Callable[[str, str, Dict[str, Any]], Any]],
+            ]
         ] = None,
         **kwargs: Any,
     ) -> None:
@@ -200,7 +209,14 @@ class AgentsFlow(PersistenceMixin):
         self._agent_registry = agent_registry
         self._nodes: dict[str, Node] = {}
         self._edges: list[FlowEdge] = []
-        self._on_node_event = on_node_event
+        self._node_event_listeners: list[
+            Callable[[str, str, Dict[str, Any]], Any]
+        ] = []
+        if on_node_event is not None:
+            if callable(on_node_event):
+                self._node_event_listeners.append(on_node_event)
+            else:
+                self._node_event_listeners.extend(on_node_event)
         self.logger = logging.getLogger(f"parrot.flow.{name}")
 
     # ── Graph construction ────────────────────────────────────────────────
@@ -278,33 +294,49 @@ class AgentsFlow(PersistenceMixin):
 
     # ── Node-event notification ───────────────────────────────────────────
 
+    def add_node_event_listener(
+        self, callback: Callable[[str, str, Dict[str, Any]], Any]
+    ) -> None:
+        """Attach an additional node-event listener.
+
+        Listeners are invoked in registration order with the same
+        ``(event, node_id, info)`` contract as the constructor's
+        ``on_node_event`` parameter. Use this to compose several consumers
+        (e.g. a Redis publisher plus a lifecycle-telemetry adapter).
+
+        Args:
+            callback: Sync or async callable ``(event, node_id, info)``.
+        """
+        self._node_event_listeners.append(callback)
+
     def _notify_node_event(
         self, event: str, node_id: str, info: Dict[str, Any]
     ) -> None:
-        """Invoke the ``on_node_event`` callback, shielding the scheduler.
+        """Invoke every node-event listener, shielding the scheduler.
 
         Sync callbacks run inline; coroutines are scheduled as fire-and-forget
         tasks. Errors are logged and swallowed — telemetry must never break
         the run.
 
         Args:
-            event: Lifecycle event name (``node_started`` | ``node_completed``
-                | ``node_failed`` | ``node_skipped``).
-            node_id: The node the event refers to.
+            event: Lifecycle event name (``flow_started`` | ``node_started``
+                | ``node_completed`` | ``node_failed`` | ``node_skipped``
+                | ``flow_completed``).
+            node_id: The node the event refers to (empty for flow-level
+                events).
             info: Extra payload (e.g. ``{"error": "..."}`` for failures).
         """
-        callback = self._on_node_event
-        if callback is None:
-            return
-        try:
-            outcome = callback(event, node_id, info)
-            if asyncio.iscoroutine(outcome):
-                task = asyncio.ensure_future(outcome)
-                task.add_done_callback(self._log_event_task_error)
-        except Exception as exc:  # noqa: BLE001 - telemetry must not break runs
-            self.logger.warning(
-                "on_node_event callback raised for %s/%s: %s", event, node_id, exc
-            )
+        for callback in self._node_event_listeners:
+            try:
+                outcome = callback(event, node_id, info)
+                if asyncio.iscoroutine(outcome):
+                    task = asyncio.ensure_future(outcome)
+                    task.add_done_callback(self._log_event_task_error)
+            except Exception as exc:  # noqa: BLE001 - telemetry must not break runs
+                self.logger.warning(
+                    "node-event listener raised for %s/%s: %s",
+                    event, node_id, exc,
+                )
 
     def _log_event_task_error(self, task: "asyncio.Task[Any]") -> None:
         """Done-callback that logs (instead of raising) async event errors."""
@@ -532,6 +564,7 @@ class AgentsFlow(PersistenceMixin):
         completed: set[str],
         failed: set[str],
         edges: Optional[list[Any]] = None,
+        durations: Optional[dict[str, float]] = None,
     ) -> FlowResult:
         """Build a FlowResult from scheduler state after the main loop exits.
 
@@ -544,6 +577,8 @@ class AgentsFlow(PersistenceMixin):
             edges: Explicit-mode edge list used for leaf detection. ``None``
                 in definition/legacy modes (which use the definition's edges
                 or ``node.successors`` respectively).
+            durations: Optional node_id → wall-clock seconds of the last
+                execution attempt, used for ``NodeExecutionInfo.execution_time``.
 
         Returns:
             Populated FlowResult.
@@ -559,7 +594,7 @@ class AgentsFlow(PersistenceMixin):
                 agent=getattr(node, "agent", None),
                 response=resp,
                 output=resp,
-                execution_time=0.0,
+                execution_time=(durations or {}).get(nid, 0.0),
                 status=status_str,
                 error=str(err) if err else None,
             )
@@ -707,6 +742,10 @@ class AgentsFlow(PersistenceMixin):
         results: dict[str, Any] = {}
         errors: dict[str, BaseException] = {}
         active_count = 0
+        loop = asyncio.get_running_loop()
+        run_started_at = loop.time()
+        started_at: dict[str, float] = {}
+        durations: dict[str, float] = {}      # node_id → seconds (last attempt)
 
         # Incoming-edge index (explicit mode joins + derived dependencies).
         incoming: dict[str, list[Any]] = {nid: [] for nid in nodes}
@@ -767,6 +806,7 @@ class AgentsFlow(PersistenceMixin):
             nonlocal active_count
             node = nodes[node_id]
             deps = _deps_for(node_id)
+            started_at[node_id] = loop.time()
             tasks[node_id] = asyncio.create_task(
                 self._run_node(node, ctx, deps, completion_queue)
             )
@@ -881,6 +921,12 @@ class AgentsFlow(PersistenceMixin):
                         )
                     progress = True
 
+        # Run-level bracket: flow_started precedes every node_started.
+        self._notify_node_event(
+            "flow_started", "",
+            {"flow": self.name, "context": ctx, "node_count": len(nodes)},
+        )
+
         # Initial dispatch — entry nodes.
         if explicit_mode:
             for nid in nodes:
@@ -896,6 +942,7 @@ class AgentsFlow(PersistenceMixin):
             event: CompletionEvent = await completion_queue.get()
             active_count -= 1
             nid = event.node_id
+            durations[nid] = loop.time() - started_at.get(nid, run_started_at)
             self.logger.debug("Received completion event for node %r", nid)
 
             if event.error is not None:
@@ -929,6 +976,8 @@ class AgentsFlow(PersistenceMixin):
                         "flow": self.name,
                         "context": ctx,
                         "error": str(event.error),
+                        "error_type": type(event.error).__name__,
+                        "duration_ms": durations[nid] * 1000.0,
                     },
                 )
             else:
@@ -938,7 +987,11 @@ class AgentsFlow(PersistenceMixin):
                 self.logger.info("Node %r completed", nid)
                 self._notify_node_event(
                     "node_completed", nid,
-                    {"flow": self.name, "context": ctx},
+                    {
+                        "flow": self.name,
+                        "context": ctx,
+                        "duration_ms": durations[nid] * 1000.0,
+                    },
                 )
 
             if explicit_mode:
@@ -965,11 +1018,25 @@ class AgentsFlow(PersistenceMixin):
                     if all(d in completed for d in nodes[tgt].dependencies):
                         _spawn(tgt)
 
-        # Fire on_complete hooks sequentially; errors are logged, not re-raised.
         aggregated = self._aggregate_result(
             nodes, results, errors, completed, failed,
             edges=edges if explicit_mode else None,
+            durations=durations,
         )
+        self._notify_node_event(
+            "flow_completed", "",
+            {
+                "flow": self.name,
+                "context": ctx,
+                "status": aggregated.status.value,
+                "duration_ms": (loop.time() - run_started_at) * 1000.0,
+                "completed_count": len(completed),
+                "failed_count": len(failed),
+                "skipped_count": len(skipped),
+            },
+        )
+
+        # Fire on_complete hooks sequentially; errors are logged, not re-raised.
         for hook in on_complete:
             try:
                 await hook(ctx, aggregated)
