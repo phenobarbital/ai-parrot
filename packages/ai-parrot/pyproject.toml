@@ -548,6 +548,11 @@ parrot = ["py.typed", "templates/*.tpl"]
 "parrot.forms.renderers" = ["templates/*.j2"]
 "parrot.flows.dev_loop" = ["_subagent_data/*.md"]
 "parrot.storage.security_reports" = ["*.sql"]
+# Runtime-loaded bundled pricing tables (calculator.py globs *.json here).
+"parrot.observability.cost.pricing" = ["*.json"]
+# Schema DDL shipped for manual application.
+"parrot.security" = ["*.sql"]
+"parrot.pipelines" = ["*.sql"]
 
 # ---------------------------------------------------------------------------
 # Maturin (Rust extension)

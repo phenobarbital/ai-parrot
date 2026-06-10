@@ -73,6 +73,13 @@ where = ["src"]
 include = ["parrot*"]
 namespaces = true
 
+# Non-Python data files: schema DDL and the gRPC proto definition. Without
+# this section setuptools ships only the .py modules.
+[tool.setuptools.package-data]
+"parrot.handlers" = ["*.sql"]
+"parrot.handlers.models" = ["*.sql"]
+"parrot.mcp.transports" = ["*.proto"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = [
