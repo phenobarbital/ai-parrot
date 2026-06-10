@@ -1361,30 +1361,14 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        client = await self._get_client_for_method("wd_get_payroll_balances")
-
-        request = {
-            "Request_References": {
-                "Worker_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]}
-            },
-            "Response_Filter": {},
-        }
-
-        if start_date:
-            request["Response_Filter"]["Start_Date"] = start_date
-        if end_date:
-            request["Response_Filter"]["End_Date"] = end_date
-
-        if pay_component_group_ids:
-            request["Request_Criteria"] = {
-                "Pay_Component_Group_Reference": [
-                    {"ID": [{"type": "Pay_Component_Group_ID", "_value_1": pcg_id}]}
-                    for pcg_id in pay_component_group_ids
-                ]
-            }
-
-        result = await client.run("Get_Payroll_Balances", **request)
-        return helpers.serialize_object(result) if result else {}
+        svc = await self._get_composable("get_payroll_balances")
+        return await svc.fetch(
+            "get_payroll_balances",
+            worker_id=worker_id,
+            start_date=start_date,
+            end_date=end_date,
+            pay_component_group_ids=pay_component_group_ids,
+        )
 
     @tool_schema(GetPayrollResultsInput)
     async def wd_get_payroll_results(
@@ -1409,36 +1393,14 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        client = await self._get_client_for_method("wd_get_payroll_results")
-
-        request = {
-            "Request_References": {
-                "Worker_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]}
-            },
-            "Response_Filter": {},
-        }
-
-        if start_date:
-            request["Response_Filter"]["Start_Date"] = start_date
-        if end_date:
-            request["Response_Filter"]["End_Date"] = end_date
-
-        # Note: Response_Group might strictly depend on WSDL definition.
-        # Ideally we'd valid what groups are available.
-        if include_details:
-             request["Response_Group"] = {"Include_Payroll_Result_Lines": True}
-
-        result = await client.run("Get_Payroll_Results", **request)
-        
-        # Helper to extract list from response
-        if not result:
-            return []
-            
-        serialized = helpers.serialize_object(result)
-        results = serialized.get("Payroll_Result_Data", [])
-        if not isinstance(results, list):
-            results = [results]
-        return results
+        svc = await self._get_composable("get_payroll_results")
+        return await svc.fetch(
+            "get_payroll_results",
+            worker_id=worker_id,
+            start_date=start_date,
+            end_date=end_date,
+            include_details=include_details,
+        )
 
     @tool_schema(GetCompanyPaymentDatesInput)
     async def wd_get_company_payment_dates(
@@ -1461,30 +1423,13 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.wd_start()
 
-        client = await self._get_client_for_method("wd_get_company_payment_dates")
-
-        request = {
-            "Request_Criteria": {
-                "Start_Date": start_date,
-                "End_Date": end_date
-            }
-        }
-
-        if pay_group_id:
-             request["Request_Criteria"]["Pay_Group_Reference"] = {
-                 "ID": [{"type": "Pay_Group_ID", "_value_1": pay_group_id}]
-             }
-
-        result = await client.run("Get_Company_Payment_Dates", **request)
-        
-        if not result:
-            return []
-
-        serialized = helpers.serialize_object(result)
-        dates = serialized.get("Company_Payment_Dates_Data", [])
-        if not isinstance(dates, list):
-            dates = [dates]
-        return dates
+        svc = await self._get_composable("get_company_payment_dates")
+        return await svc.fetch(
+            "get_company_payment_dates",
+            start_date=start_date,
+            end_date=end_date,
+            pay_group_id=pay_group_id,
+        )
 
     def _parse_workers_response(self, response: Any) -> List[Dict[str, Any]]:
         """
