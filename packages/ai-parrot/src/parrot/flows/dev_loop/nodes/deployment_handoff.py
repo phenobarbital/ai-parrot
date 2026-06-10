@@ -23,18 +23,20 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
-from parrot.bots.flows.core.node import Node
+from parrot.bots.flows.core.context import FlowContext
+from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.models import (
     BugBrief,
     DevelopmentOutput,
     QAReport,
     ResearchOutput,
 )
+from parrot.flows.dev_loop.nodes.base import DevLoopNode
 
 
-class DeploymentHandoffNode(Node):
+class DeploymentHandoffNode(DevLoopNode):
     """Fifth (success-path) node — handles PR creation and Jira handoff.
 
     Args:
@@ -73,18 +75,24 @@ class DeploymentHandoffNode(Node):
         )
         object.__setattr__(self, "_base_branch", base_branch)
 
-    @property
-    def name(self) -> str:
-        return self.node_id
-
     # ------------------------------------------------------------------
     # Execute
     # ------------------------------------------------------------------
 
     async def execute(
-        self, prompt: str, ctx: Dict[str, Any]
+        self,
+        ctx: Union[FlowContext, Dict[str, Any]],
+        deps: Optional[DependencyResults] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Push, PR, transition Jira, comment.
+
+        Args:
+            ctx: Flow context whose shared state carries ``research_output``,
+                ``bug_brief``, and optionally ``development_output`` /
+                ``qa_report``.
+            deps: Dependency results (unused).
+            **kwargs: Extra execution context (ignored).
 
         Returns:
             ``{"status": "ready_to_deploy", "pr_url": "..."}`` on
@@ -92,10 +100,11 @@ class DeploymentHandoffNode(Node):
             ``{"status": "blocked", "error": "..."}`` after the retry
             budget is exhausted.
         """
-        research: ResearchOutput = ctx["research_output"]
-        brief: BugBrief = ctx["bug_brief"]
-        dev_out: DevelopmentOutput = ctx.get("development_output")
-        qa_report: QAReport = ctx.get("qa_report")
+        shared = self.shared_state(ctx)
+        research: ResearchOutput = shared["research_output"]
+        brief: BugBrief = shared["bug_brief"]
+        dev_out: DevelopmentOutput = shared.get("development_output")
+        qa_report: QAReport = shared.get("qa_report")
         issue_key = research.jira_issue_key
 
         # 1. Push.

@@ -76,7 +76,7 @@ class TestQAFailedPath:
             "failure_kind": "qa_failed",
             "failure_payload": qa,
         }
-        result = await node.execute(prompt="", ctx=ctx)
+        result = await node.execute(ctx)
         assert result == {"status": "escalated", "issue_key": "OPS-1"}
         jira.jira_assign_issue.assert_awaited_with(
             issue="OPS-1", assignee="557058:human"
@@ -108,7 +108,7 @@ class TestQAFailedPath:
             "failure_kind": "qa_failed",
             "failure_payload": qa,
         }
-        await node.execute(prompt="", ctx=ctx)
+        await node.execute(ctx)
         body = jira.jira_add_comment.await_args.kwargs["body"]
         assert "customers-sync" in body
         assert "exit=42" in body
@@ -130,7 +130,7 @@ class TestNodeErrorPath:
                 "message": "transport lost",
             },
         }
-        await node.execute(prompt="", ctx=ctx)
+        await node.execute(ctx)
         body = jira.jira_add_comment.await_args.kwargs["body"]
         assert "development" in body
         assert "DispatchExecutionError" in body
@@ -145,7 +145,7 @@ class TestNoTicket:
             "failure_kind": "node_error",
             "failure_payload": {},
         }
-        result = await node.execute(prompt="", ctx=ctx)
+        result = await node.execute(ctx)
         assert result == {"status": "escalated_without_ticket"}
         jira.jira_add_comment.assert_not_awaited()
 
@@ -163,6 +163,6 @@ class TestNeverRaises:
             "failure_kind": "node_error",
             "failure_payload": {"node_id": "x", "exception_type": "y"},
         }
-        result = await node.execute(prompt="", ctx=ctx)
+        result = await node.execute(ctx)
         assert result["status"] == "escalation_failed"
         assert "API down" in result["error"]

@@ -1,4 +1,4 @@
-"""build_dev_loop_flow — wire the six primary nodes into an AgentsFlow.
+"""build_dev_loop_flow — wire the seven dev-loop nodes into an AgentsFlow.
 
 Implements **Module 10**. Topology (FEAT-132):
 
@@ -9,19 +9,24 @@ Implements **Module 10**. Topology (FEAT-132):
                                                                    └─(passed=False)→ FailureHandler
                                                                    ↑(any node hard-error)
 
-The factory adapts each ``parrot.bots.flows.core.node.Node`` subclass into the
-``BasicAgent``-shaped interface that :class:`AgentsFlow.add_agent`
-expects (specifically: ``name`` attribute, ``is_configured=True`` so
-:meth:`AgentsFlow._ensure_agent_ready` short-circuits, and
-``async ask(question, **kwargs)`` that delegates to the node's
-``execute(prompt, ctx)``).
+Built on the FEAT-163 ``AgentsFlow`` executor using explicit conditional
+edges (``add_edge``): the engine's OR-join + skip-propagation semantics
+make the branch merge at ``research`` and the on_error fan-in at
+``failure_handler`` first-class — no adapters, no legacy API.
+
+When a ``redis_url`` is provided, the flow publishes node lifecycle
+events (``flow.node_started`` / ``node_completed`` / ``node_failed`` /
+``node_skipped``) to the per-run stream ``flow:{run_id}:flow`` via the
+engine's ``on_node_event`` hook (spec G4 — the multiplexer's "flow" view).
 
 The factory is a pure function — no globals, no env reads.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Protocol, runtime_checkable
+import json
+import time
+from typing import Any, Dict, Optional
 
 from parrot.bots.flows import AgentsFlow
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
@@ -38,78 +43,107 @@ from parrot.flows.dev_loop.nodes.research import ResearchNode
 
 
 # ---------------------------------------------------------------------------
-# Adapter — Node → BasicAgent shape
+# Edge predicates
 # ---------------------------------------------------------------------------
 
 
-@runtime_checkable
-class _ExecutableNode(Protocol):
-    """Structural type the adapter accepts — every dev-loop node matches.
+def _is_bug(result: Any) -> bool:
+    """Return True only if result is a WorkBrief with kind == 'bug'."""
+    if isinstance(result, WorkBrief):
+        return result.kind == "bug"
+    return False
 
-    Mirrors :class:`parrot.bots.flows.core.node.Node`'s public surface plus the
-    ``execute(prompt, ctx)`` contract used by ``FlowNode.execute``
-    (``parrot/bots/flows/flow/flow.py:266``).
+
+def _is_not_bug(result: Any) -> bool:
+    """Return True only if result is a WorkBrief with kind != 'bug'."""
+    if isinstance(result, WorkBrief):
+        return result.kind != "bug"
+    return False
+
+
+def _qa_passed(result: Any) -> bool:
+    """True when the QAReport's ``passed`` flag is exactly True."""
+    return getattr(result, "passed", False) is True
+
+
+def _qa_failed(result: Any) -> bool:
+    """True when the QAReport's ``passed`` flag is exactly False."""
+    return getattr(result, "passed", True) is False
+
+
+# ---------------------------------------------------------------------------
+# Flow-level event publisher (spec G4)
+# ---------------------------------------------------------------------------
+
+
+class FlowEventPublisher:
+    """Publishes AgentsFlow node-lifecycle events to ``flow:{run_id}:flow``.
+
+    Bound to ``AgentsFlow(on_node_event=...)``. The run_id is read from
+    the event's ``info["context"].shared_data["run_id"]`` (the engine
+    passes the run's FlowContext on every event, so concurrent runs on
+    the same flow instance publish to their own streams); a mutable
+    holder dict serves as fallback for callers that drive ``run_flow``
+    directly with an unseeded context.
+
+    The Redis connection is lazy and every failure is swallowed — event
+    publishing must never break a run.
+
+    Args:
+        redis_url: Redis URL for the XADD calls.
+        run_id_holder: Mutable mapping carrying the fallback ``"run_id"``.
     """
 
-    name: str
+    def __init__(self, redis_url: str, run_id_holder: Dict[str, str]) -> None:
+        self._redis_url = redis_url
+        self._holder = run_id_holder
+        self._redis: Any = None
 
-    async def execute(self, prompt: str, ctx: Dict[str, Any]) -> Any: ...
+    async def __call__(self, event: str, node_id: str, info: Dict[str, Any]) -> None:
+        """XADD one ``flow.<event>`` envelope to the current run's stream."""
+        run_id = ""
+        run_ctx = info.get("context")
+        if run_ctx is not None:
+            run_id = getattr(run_ctx, "shared_data", {}).get("run_id", "")
+        if not run_id:
+            run_id = self._holder.get("run_id", "")
+        if not run_id:
+            return
+        envelope = {
+            "kind": f"flow.{event}",
+            "ts": time.time(),
+            "run_id": run_id,
+            "node_id": node_id,
+            "payload": {
+                k: v for k, v in info.items() if k not in ("flow", "context")
+            },
+        }
+        try:
+            redis_client = await self._ensure_redis()
+            await redis_client.xadd(
+                f"flow:{run_id}:flow",
+                {"event": json.dumps(envelope)},
+                maxlen=10_000,
+                approximate=True,
+            )
+        except Exception:  # noqa: BLE001 - telemetry must never break the run
+            pass
 
+    async def _ensure_redis(self) -> Any:
+        """Return a cached async Redis client, creating it on first call."""
+        if self._redis is None:
+            import redis.asyncio as aioredis  # noqa: PLC0415 - lazy
 
-class _NodeAgentAdapter:
-    """Adapt a Node subclass into the BasicAgent-shape AgentsFlow expects.
+            self._redis = aioredis.from_url(
+                self._redis_url, decode_responses=True
+            )
+        return self._redis
 
-    AgentsFlow only requires the ``name`` attribute plus an ``async ask``
-    method. We also expose ``is_configured = True`` so the
-    ``_ensure_agent_ready`` hook short-circuits without needing a real
-    ``configure()`` implementation.
-
-    Every adapter built by :func:`build_dev_loop_flow` shares the same
-    ``shared_ctx`` dict so writes performed by one node (e.g.
-    ``ResearchNode`` setting ``ctx["research_output"]``) survive into
-    the next node's call. Without this, AgentsFlow's per-call
-    ``**kwargs`` would copy-fork the dict and mutations would be lost.
-    """
-
-    def __init__(
-        self,
-        node: _ExecutableNode,
-        *,
-        shared_ctx: Dict[str, Any],
-    ) -> None:
-        self._node = node
-        self._shared_ctx = shared_ctx
-        self.name: str = node.name
-        self.is_configured: bool = True
-        # Minimal tool_manager so add_agent's tool-sharing branch is
-        # safe when a shared_tool_manager is passed (we don't pass one,
-        # but be defensive).
-        self.tool_manager = _NoopToolManager()
-
-    async def configure(self) -> None:  # pragma: no cover - never called
-        return None
-
-    async def ask(self, question: str = "", **kwargs: Any) -> Any:
-        # Merge per-call kwargs into the shared context (last write
-        # wins) so callers can still inject ad-hoc keys per agent —
-        # but persistent state (bug_brief, research_output, qa_report)
-        # is the same dict object across nodes.
-        for key, value in kwargs.items():
-            self._shared_ctx[key] = value
-        return await self._node.execute(question, self._shared_ctx)
-
-
-class _NoopToolManager:
-    """Bare-minimum stand-in for ``parrot.tools.tool_manager.ToolManager``."""
-
-    def list_tools(self) -> list:
-        return []
-
-    def get_tool(self, name: str) -> None:  # noqa: ARG002
-        return None
-
-    def add_tool(self, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
-        return None
+    async def close(self) -> None:
+        """Release the Redis connection pool."""
+        if self._redis is not None:
+            await self._redis.aclose()
+            self._redis = None
 
 
 # ---------------------------------------------------------------------------
@@ -124,8 +158,9 @@ def build_dev_loop_flow(
     log_toolkits: Dict[str, Any],
     redis_url: str,
     name: str = "dev-loop",
+    publish_flow_events: bool = True,
 ) -> AgentsFlow:
-    """Build the six-node dev-loop ``AgentsFlow`` (FEAT-132).
+    """Build the seven-node dev-loop ``AgentsFlow`` (FEAT-132).
 
     Topology:
 
@@ -135,6 +170,7 @@ def build_dev_loop_flow(
     - ``ResearchNode`` → ``DevelopmentNode`` → ``QANode``
     - ``QANode`` → ``DeploymentHandoffNode`` (passed) or ``FailureHandlerNode``
     - Any hard error from any middle node → ``FailureHandlerNode``
+      (``on_error`` edges; untaken paths are skip-propagated by the engine)
 
     Args:
         dispatcher: A pre-built :class:`ClaudeCodeDispatcher` (shared by
@@ -142,14 +178,18 @@ def build_dev_loop_flow(
         jira_toolkit: Service-account ``JiraToolkit`` instance.
         log_toolkits: Mapping of source kind → toolkit. Recognised keys:
             ``"cloudwatch"``, ``"elasticsearch"``.
-        redis_url: Redis URL for ``IntentClassifierNode`` and
-            ``BugIntakeNode``'s flow-event publish.
-        name: Crew/flow name (default ``"dev-loop"``).
+        redis_url: Redis URL for ``IntentClassifierNode`` /
+            ``BugIntakeNode`` intake events and the flow-level
+            node-lifecycle events.
+        name: Flow name (default ``"dev-loop"``).
+        publish_flow_events: When True (default), attach a
+            :class:`FlowEventPublisher` to the engine's ``on_node_event``
+            hook. The publisher reads the run_id from
+            ``flow._run_id_holder`` (seeded by ``DevLoopRunner``).
 
     Returns:
-        A wired :class:`AgentsFlow` instance ready to run.
+        A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
     """
-    # FEAT-132: IntentClassifierNode is now the entry point.
     intent_classifier = IntentClassifierNode(redis_url=redis_url)
     bug_intake = BugIntakeNode(redis_url=redis_url)
     research = ResearchNode(
@@ -162,7 +202,17 @@ def build_dev_loop_flow(
     handoff = DeploymentHandoffNode(jira_toolkit=jira_toolkit)
     failure = FailureHandlerNode(jira_toolkit=jira_toolkit)
 
-    nodes_in_order = [
+    run_id_holder: Dict[str, str] = {}
+    publisher: Optional[FlowEventPublisher] = None
+    if publish_flow_events:
+        publisher = FlowEventPublisher(redis_url, run_id_holder)
+
+    flow = AgentsFlow(name=name, on_node_event=publisher)
+    # Exposed for DevLoopRunner / callers to bind the current run_id.
+    flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
+    flow._event_publisher = publisher  # type: ignore[attr-defined]
+
+    for node in (
         intent_classifier,
         bug_intake,
         research,
@@ -170,65 +220,32 @@ def build_dev_loop_flow(
         qa,
         handoff,
         failure,
-    ]
+    ):
+        flow.add_node(node)
 
-    # Disable execution memory so we don't trigger the registry-tool
-    # branch on adapters that lack `register_tool`.
-    flow = AgentsFlow(name=name, enable_execution_memory=False)
-    # Single shared dict — ResearchNode writes ctx["research_output"]
-    # which DevelopmentNode and QANode then read.
-    shared_ctx: Dict[str, Any] = {}
-    adapters = {
-        node.name: _NodeAgentAdapter(node, shared_ctx=shared_ctx)
-        for node in nodes_in_order
-    }
-    for adapter in adapters.values():
-        flow.add_agent(adapter)
+    # FEAT-132: IntentClassifier branches by kind. Register "bug" first so
+    # it wins in case of evaluation-order sensitivity (spec §7 R7).
+    flow.add_edge(intent_classifier.name, bug_intake.name, predicate=_is_bug)
+    flow.add_edge(intent_classifier.name, research.name, predicate=_is_not_bug)
 
-    # FEAT-132: IntentClassifier branches by kind.
-    # Register "bug" first so it wins in case of evaluation-order sensitivity
-    # (spec §7 R7).
-    def _is_bug(result: Any) -> bool:
-        """Return True only if result is a WorkBrief with kind == 'bug'."""
-        if isinstance(result, WorkBrief):
-            return result.kind == "bug"
-        return False
+    # Bug path keeps the linear edge to Research (the engine's OR-join
+    # merges it with the direct non-bug edge).
+    flow.add_edge(bug_intake.name, research.name)
 
-    def _is_not_bug(result: Any) -> bool:
-        """Return True only if result is a WorkBrief with kind != 'bug'."""
-        if isinstance(result, WorkBrief):
-            return result.kind != "bug"
-        return False
-
-    flow.on_condition(intent_classifier.name, bug_intake.name, predicate=_is_bug)
-    flow.on_condition(intent_classifier.name, research.name, predicate=_is_not_bug)
-
-    # Bug path keeps the linear edge to Research:
-    flow.task_flow(bug_intake.name, research.name)
-
-    # Remaining linear chain: Research → Development → QA
-    flow.task_flow(research.name, development.name)
-    flow.task_flow(development.name, qa.name)
+    # Remaining linear chain: Research → Development → QA.
+    flow.add_edge(research.name, development.name)
+    flow.add_edge(development.name, qa.name)
 
     # QA branch: passed=True → handoff, passed=False → failure handler.
-    def _qa_passed(result: Any) -> bool:
-        return getattr(result, "passed", False) is True
-
-    def _qa_failed(result: Any) -> bool:
-        return getattr(result, "passed", True) is False
-
-    flow.on_condition(qa.name, handoff.name, predicate=_qa_passed)
-    flow.on_condition(qa.name, failure.name, predicate=_qa_failed)
+    flow.add_edge(qa.name, handoff.name, predicate=_qa_passed)
+    flow.add_edge(qa.name, failure.name, predicate=_qa_failed)
 
     # Global error route — any hard error from intent_classifier or middle
-    # nodes routes to the failure handler.
-    for source in (intent_classifier, research, development, qa, handoff):
-        flow.on_error(source.name, failure.name)
+    # nodes routes to the failure handler (OR-join fan-in).
+    for source in (intent_classifier, bug_intake, research, development, qa, handoff):
+        flow.add_edge(source.name, failure.name, condition="on_error")
 
-    # Mark terminals.
-    flow.task_flow(handoff.name, None)
-    flow.task_flow(failure.name, None)
     return flow
 
 
-__all__ = ["build_dev_loop_flow"]
+__all__ = ["FlowEventPublisher", "build_dev_loop_flow"]

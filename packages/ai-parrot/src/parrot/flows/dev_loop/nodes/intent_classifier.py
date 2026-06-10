@@ -16,18 +16,20 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Union
 
-from parrot.bots.flows.core.node import Node
+from parrot.bots.flows.core.context import FlowContext
+from parrot.bots.flows.core.types import DependencyResults
 from parrot.conf import ACCEPTANCE_CRITERION_ALLOWLIST
 from parrot.flows.dev_loop.models import (
     FlowtaskCriterion,
     ShellCriterion,
     WorkBrief,
 )
+from parrot.flows.dev_loop.nodes.base import DevLoopNode
 
 
-class IntentClassifierNode(Node):
+class IntentClassifierNode(DevLoopNode):
     """Validates a :class:`WorkBrief` and routes by ``kind``.
 
     This is the first node in the FEAT-132 flow topology. It replaces
@@ -52,29 +54,31 @@ class IntentClassifierNode(Node):
         object.__setattr__(self, "_redis_url", redis_url)
         object.__setattr__(self, "_redis", None)
 
-    @property
-    def name(self) -> str:
-        """Node identifier used by the flow router."""
-        return self.node_id
-
     # ------------------------------------------------------------------
     # Execute
     # ------------------------------------------------------------------
 
-    async def execute(self, prompt: str, ctx: Dict[str, Any]) -> WorkBrief:
+    async def execute(
+        self,
+        ctx: Union[FlowContext, Dict[str, Any]],
+        deps: Optional[DependencyResults] = None,
+        **kwargs: Any,
+    ) -> WorkBrief:
         """Validate the :class:`WorkBrief` and emit the intake event.
 
         Args:
-            prompt: Optional JSON string containing a serialised
-                ``WorkBrief``. Used as a fallback when neither
-                ``ctx["work_brief"]`` nor ``ctx["bug_brief"]`` is present.
-            ctx: Flow context. Must contain ``"run_id"`` for the event
-                stream key. May contain ``"work_brief"`` or ``"bug_brief"``
-                (a ``WorkBrief`` instance or a dict).
+            ctx: Flow context (``FlowContext`` or plain dict in tests). The
+                shared state must contain ``"run_id"`` for the event stream
+                key and may contain ``"work_brief"`` or ``"bug_brief"`` (a
+                ``WorkBrief`` instance or a dict); the context's
+                ``initial_task`` is used as a JSON fallback when neither
+                key is present.
+            deps: Dependency results (unused — this is the entry node).
+            **kwargs: Extra execution context (ignored).
 
         Returns:
             The validated :class:`WorkBrief` instance.  The flow
-            factory's ``on_condition`` predicate reads ``result.kind``
+            factory's conditional edge predicate reads ``result.kind``
             to route either to ``BugIntakeNode`` (``kind="bug"``) or
             directly to ``ResearchNode`` (all other kinds).
 
@@ -83,13 +87,14 @@ class IntentClassifierNode(Node):
                 is not in the allowlist or any :class:`FlowtaskCriterion`
                 ``task_path`` is absolute or contains a ``..`` segment.
         """
-        brief = self._load_brief(prompt, ctx)
+        shared = self.shared_state(ctx)
+        brief = self._load_brief(self.initial_prompt(ctx), shared)
         self._validate(brief)
-        run_id = ctx.get("run_id", "")
+        run_id = shared.get("run_id", "")
         if run_id:
             await self._emit_validated_event(run_id, brief)
-        ctx["bug_brief"] = brief    # legacy key — Development/QA/Failure read this
-        ctx["work_brief"] = brief   # forward-compat name
+        shared["bug_brief"] = brief    # legacy key — Development/QA/Failure read this
+        shared["work_brief"] = brief   # forward-compat name
         self.logger.info(
             "Intake validated: kind=%s, criteria=%d, component=%s",
             brief.kind,

@@ -86,5 +86,5 @@ class TestStoresOutputInContext:
         node = DevelopmentNode(dispatcher=dispatcher)
 
         ctx = {"run_id": "r1", "research_output": research_out}
-        await node.execute(prompt="", ctx=ctx)
+        await node.execute(ctx)
         assert ctx["development_output"] is dev_out

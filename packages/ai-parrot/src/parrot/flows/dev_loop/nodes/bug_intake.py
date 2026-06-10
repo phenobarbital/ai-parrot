@@ -15,13 +15,15 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Union
 
-from parrot.bots.flows.core.node import Node
+from parrot.bots.flows.core.context import FlowContext
+from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.models import BugBrief
+from parrot.flows.dev_loop.nodes.base import DevLoopNode
 
 
-class BugIntakeNode(Node):
+class BugIntakeNode(DevLoopNode):
     """Bug-specific intake hook — emits ``flow.bug_brief_validated`` event.
 
     FEAT-132 scope-down: universal validation now lives in
@@ -46,16 +48,16 @@ class BugIntakeNode(Node):
         object.__setattr__(self, "_redis_url", redis_url)
         object.__setattr__(self, "_redis", None)
 
-    @property
-    def name(self) -> str:
-        """Node identifier used by the flow router."""
-        return self.node_id
-
     # ------------------------------------------------------------------
     # Execute
     # ------------------------------------------------------------------
 
-    async def execute(self, prompt: str, ctx: Dict[str, Any]) -> BugBrief:
+    async def execute(
+        self,
+        ctx: Union[FlowContext, Dict[str, Any]],
+        deps: Optional[DependencyResults] = None,
+        **kwargs: Any,
+    ) -> BugBrief:
         """Bug-specific intake hook (post FEAT-132 scope-down).
 
         Universal validation now happens in :class:`IntentClassifierNode`
@@ -66,20 +68,23 @@ class BugIntakeNode(Node):
         subscribe to that event.
 
         Args:
-            prompt: Optional JSON string containing a serialized BugBrief.
-                Used as a fallback when ``ctx["bug_brief"]`` is absent.
-            ctx: Flow context. Must contain ``"run_id"`` for the event
-                stream key. May contain ``"bug_brief"`` (a ``BugBrief``
-                instance or a dict).
+            ctx: Flow context (``FlowContext`` or plain dict in tests). The
+                shared state must contain ``"run_id"`` for the event stream
+                key and may contain ``"bug_brief"`` (a ``BugBrief`` instance
+                or a dict); the context's ``initial_task`` is used as a JSON
+                fallback.
+            deps: Dependency results (unused).
+            **kwargs: Extra execution context (ignored).
 
         Returns:
             The :class:`BugBrief` instance (already validated upstream).
         """
-        brief = self._load_brief(prompt, ctx)
-        run_id = ctx.get("run_id", "")
+        shared = self.shared_state(ctx)
+        brief = self._load_brief(self.initial_prompt(ctx), shared)
+        run_id = shared.get("run_id", "")
         if run_id:
             await self._emit_validated_event(run_id, brief)
-        ctx["bug_brief"] = brief
+        shared["bug_brief"] = brief
         return brief
 
     # ------------------------------------------------------------------

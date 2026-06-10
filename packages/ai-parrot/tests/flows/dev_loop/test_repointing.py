@@ -42,32 +42,32 @@ def test_devloop_nodes_no_legacy_node_import():
 
 
 def test_devloop_bug_intake_uses_canonical_node():
-    """bug_intake.py uses parrot.bots.flows.core.node."""
+    """bug_intake.py builds on DevLoopNode (canonical parrot.bots.flows core)."""
     import parrot.flows.dev_loop.nodes.bug_intake as _mod  # noqa: PLC0415
 
     src = _src(_mod)
-    assert "parrot.bots.flows.core.node import Node" in src
+    assert "parrot.flows.dev_loop.nodes.base import DevLoopNode" in src
 
 
 def test_devloop_development_uses_canonical_node():
-    """development.py uses parrot.bots.flows.core.node."""
+    """development.py builds on DevLoopNode (canonical parrot.bots.flows core)."""
     import parrot.flows.dev_loop.nodes.development as _mod  # noqa: PLC0415
 
     src = _src(_mod)
-    assert "parrot.bots.flows.core.node import Node" in src
+    assert "parrot.flows.dev_loop.nodes.base import DevLoopNode" in src
 
 
 def test_devloop_qa_uses_canonical_node():
-    """qa.py uses parrot.bots.flows.core.node."""
+    """qa.py builds on DevLoopNode (canonical parrot.bots.flows core)."""
     import parrot.flows.dev_loop.nodes.qa as _mod  # noqa: PLC0415
 
     src = _src(_mod)
-    assert "parrot.bots.flows.core.node import Node" in src
+    assert "parrot.flows.dev_loop.nodes.base import DevLoopNode" in src
 
 
 def test_devloop_research_uses_canonical_node():
-    """research.py uses parrot.bots.flows.core.node."""
+    """research.py builds on DevLoopNode (canonical parrot.bots.flows core)."""
     import parrot.flows.dev_loop.nodes.research as _mod  # noqa: PLC0415
 
     src = _src(_mod)
-    assert "parrot.bots.flows.core.node import Node" in src
+    assert "parrot.flows.dev_loop.nodes.base import DevLoopNode" in src
