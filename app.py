@@ -180,9 +180,10 @@ class Main(AppHandler):
         #     ExampleAsyncView,
         #     name='example_async'
         # )
-        # ## NextStop
-        # nextstop = NextStopAgent(app=self.app)
-        # nextstop.setup(self.app, '/api/v1/agents/nextstop')
+        #if ENABLE_NEXTSTOP is True:
+        #    ## NextStop
+        #    nextstop = NextStopAgent(app=self.app)
+        #    nextstop.setup(self.app, '/api/v1/agents/nextstop')
 
         # # MCP server lifecycle management
         # mcp_server = ParrotMCPServer(

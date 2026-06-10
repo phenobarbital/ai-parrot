@@ -16,13 +16,10 @@ from parrot.observability.openlit_integration import (
     init_openlit,
 )
 
-
-@pytest.fixture(autouse=True)
-def _reset():
-    """Reset the module sentinel before and after each test."""
-    _reset_for_tests()
-    yield
-    _reset_for_tests()
+# The module sentinel (``_INITIALIZED``) is reset around every test by the
+# package-level ``_isolate_observability_globals`` autouse fixture in
+# ``conftest.py``; tests that exercise re-initialisation call
+# ``_reset_for_tests()`` inline where needed.
 
 
 def test_import_does_not_load_openlit() -> None:

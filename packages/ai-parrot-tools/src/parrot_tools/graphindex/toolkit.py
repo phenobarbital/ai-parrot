@@ -39,14 +39,14 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
-from parrot.utils.faiss_logging import quiet_faiss_loader
-
-quiet_faiss_loader()
-import faiss  # noqa: E402 — must follow quiet_faiss_loader() to silence boot logs
 import numpy as np
 import rustworkx
 
 from parrot.tools.toolkit import AbstractToolkit
+from parrot.utils.faiss_logging import quiet_faiss_loader
+
+quiet_faiss_loader()  # silence faiss boot logs before the first import
+import faiss  # noqa: E402 — must follow quiet_faiss_loader()
 
 if TYPE_CHECKING:
     from parrot.knowledge.graphindex.assemble import GraphAssembler

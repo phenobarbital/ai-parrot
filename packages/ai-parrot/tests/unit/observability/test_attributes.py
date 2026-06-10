@@ -41,6 +41,7 @@ def test_provider_mapping_covers_all_known_clients() -> None:
     expected = {
         "openai", "anthropic", "claude-agent", "google", "gemini-live",
         "groq", "grok", "nvidia", "huggingface", "gemma4",
+        "anthropic-bedrock", "bedrock",  # FEAT-232: Claude via AWS Bedrock
     }
     assert expected.issubset(PROVIDER_TO_GEN_AI_SYSTEM.keys())
 
@@ -50,6 +51,9 @@ def test_resolve_gen_ai_system_known() -> None:
     assert resolve_gen_ai_system("openai") == "openai"
     assert resolve_gen_ai_system("anthropic") == "anthropic"
     assert resolve_gen_ai_system("claude-agent") == "anthropic"
+    # FEAT-232: Bedrock-served Claude maps to OpenLIT's aws.bedrock provider.
+    assert resolve_gen_ai_system("anthropic-bedrock") == "aws.bedrock"
+    assert resolve_gen_ai_system("bedrock") == "aws.bedrock"
     assert resolve_gen_ai_system("google") == "gemini"
     assert resolve_gen_ai_system("gemini-live") == "gemini"
     assert resolve_gen_ai_system("groq") == "groq"
@@ -91,6 +95,9 @@ def test_before_client_omits_none_temperature() -> None:
     attrs = build_before_client_attrs(e)
     assert "gen_ai.request.temperature" not in attrs
     assert attrs["gen_ai.system"] == "openai"
+    # New GenAI SemConv key — current OpenLIT reads the provider from this, not
+    # from the legacy gen_ai.system. Both must be present and agree.
+    assert attrs["gen_ai.provider.name"] == "openai"
     assert attrs["gen_ai.request.model"] == "gpt-4o"
 
 
@@ -136,6 +143,7 @@ def test_after_client_with_cost() -> None:
     )
     attrs = build_after_client_attrs(e, cost_usd=0.00042)
     assert attrs["gen_ai.system"] == "anthropic"
+    assert attrs["gen_ai.provider.name"] == "anthropic"  # new SemConv key (OpenLIT)
     assert attrs["gen_ai.usage.input_tokens"] == 100
     assert attrs["gen_ai.usage.output_tokens"] == 50
     assert attrs["gen_ai.response.finish_reason"] == "end_turn"

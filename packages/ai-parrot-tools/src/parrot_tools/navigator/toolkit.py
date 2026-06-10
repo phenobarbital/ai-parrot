@@ -14,6 +14,7 @@ This toolkit provides tools for:
 Refactored (FEAT-106 / TASK-744): inherits PostgresToolkit instead of AbstractToolkit.
 DB plumbing delegated to parent (asyncdb pool via _acquire_asyncdb_connection).
 """
+import asyncio
 import json
 import os
 import uuid as _uuid

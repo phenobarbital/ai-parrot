@@ -15,12 +15,7 @@ from parrot._imports import lazy_import
 from pydantic import ValidationError
 from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
-from tenacity import (
-    AsyncRetrying,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type
-)
+from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential, retry_if_exception_type
 from .base import AbstractClient
 
 if TYPE_CHECKING:
@@ -28,14 +23,7 @@ if TYPE_CHECKING:
     # SDKs to be installed at runtime when this client is unused.
     from openai import AsyncOpenAI
     from PIL import Image
-from ..models import (
-    AIMessage,
-    AIMessageFactory,
-    ToolCall,
-    CompletionUsage,
-    StructuredOutputConfig,
-    OutputFormat
-)
+from ..models import AIMessage, AIMessageFactory, ToolCall, CompletionUsage, StructuredOutputConfig, OutputFormat
 from ..models.responses import InvokeResult
 from ..exceptions import InvokeError
 from ..models.openai import (
@@ -44,23 +32,16 @@ from ..models.openai import (
     get_shutoff_date,
     resolve_alias,
 )
-from ..models.outputs import (
-    ProductReview
-)
-from ..models.detections import (
-    DetectionBox,
-    ShelfRegion,
-    IdentifiedProduct
-)
+from ..models.outputs import ProductReview
+from ..models.detections import DetectionBox, ShelfRegion, IdentifiedProduct
 
-
-getLogger('httpx').setLevel('WARNING')
+getLogger("httpx").setLevel("WARNING")
 
 # Module-level deduplication cache for deprecation warnings (spec §3 Module 2).
 # set.add is atomic under the GIL; no async lock needed.
 _warned: set[str] = set()
-getLogger('httpcore').setLevel('WARNING')
-getLogger('openai').setLevel('INFO')
+getLogger("httpcore").setLevel("WARNING")
+getLogger("openai").setLevel("INFO")
 
 # Reasoning models available via the Responses API only.
 # NOTE: spec §8 Q1 open — search-preview / deep-research IDs are
@@ -78,14 +59,17 @@ STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
     OpenAIModel.GPT5_4_PRO.value,
     OpenAIModel.GPT5_4_MINI.value,
     OpenAIModel.GPT5_4_NANO.value,
-    OpenAIModel.GPT5_3_CHAT.value,
-    OpenAIModel.GPT5_2_CHAT.value,
+    OpenAIModel.GPT5_3_CODEX.value,
+    OpenAIModel.GPT5_2.value,
+    OpenAIModel.GPT5_2_PRO.value,
+    OpenAIModel.GPT5_1.value,
     OpenAIModel.GPT5.value,
+    OpenAIModel.GPT5_PRO.value,
     OpenAIModel.GPT5_MINI.value,
     OpenAIModel.GPT5_NANO.value,
+    OpenAIModel.CHAT_LATEST.value,
     OpenAIModel.GPT4_1.value,
     OpenAIModel.GPT4_1_MINI.value,
-    OpenAIModel.GPT4_1_NANO.value,
     OpenAIModel.GPT4O_MINI.value,
 }
 
@@ -95,27 +79,19 @@ DEFAULT_STRUCTURED_OUTPUT_MODEL = OpenAIModel.GPT5_MINI.value
 class OpenAIClient(AbstractClient):
     """Client for interacting with OpenAI's API."""
 
-    client_type: str = 'openai'
+    client_type: str = "openai"
     model: str = OpenAIModel.GPT5_MINI.value
-    client_name: str = 'openai'
+    client_name: str = "openai"
     _default_model: str = "gpt-5-mini"
-    _fallback_model: str = 'gpt-4.1-nano'
+    _fallback_model: str = "gpt-5-nano"
     _lightweight_model: str = "gpt-4.1"
     # FEAT-181: OpenAI caches prefixes ≥1024 tokens automatically
     _min_cache_tokens: int = 1024
 
-    def __init__(
-        self,
-        api_key: str = None,
-        base_url: str = "https://api.openai.com/v1",
-        **kwargs
-    ):
-        self.api_key = api_key or config.get('OPENAI_API_KEY')
+    def __init__(self, api_key: str = None, base_url: str = "https://api.openai.com/v1", **kwargs):
+        self.api_key = api_key or config.get("OPENAI_API_KEY")
         self.base_url = base_url
-        self.base_headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
+        self.base_headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}
         if "model" in kwargs:
             kwargs["model"] = self._normalize_model(kwargs["model"])
         super().__init__(**kwargs)
@@ -132,8 +108,7 @@ class OpenAIClient(AbstractClient):
             shutoff = get_shutoff_date(s)
             target = resolve_alias(s)
             warnings.warn(
-                f"OpenAI model '{s}' is deprecated; shutoff {shutoff}. "
-                f"Migrate to '{target}'.",
+                f"OpenAI model '{s}' is deprecated; shutoff {shutoff}. " f"Migrate to '{target}'.",
                 DeprecationWarning,
                 stacklevel=3,
             )
@@ -175,16 +150,19 @@ class OpenAIClient(AbstractClient):
             PromptCacheSkippedEvent as _PCSkipped,
         )
         from parrot.core.events.lifecycle.trace import TraceContext as _TC
+
         tc = trace_context if trace_context is not None else _TC.new_root()
         if not segments:
-            self.events.emit_nowait(_PCSkipped(
-                trace_context=tc,
-                client_name="openai",
-                model=payload.get("model", ""),
-                reason="no_segments",
-                source_type="client",
-                source_name="openai",
-            ))
+            self.events.emit_nowait(
+                _PCSkipped(
+                    trace_context=tc,
+                    client_name="openai",
+                    model=payload.get("model", ""),
+                    reason="no_segments",
+                    source_type="client",
+                    source_name="openai",
+                )
+            )
             return payload
         # OpenAI prefix caching is automatic — just reconstruct the string.
         combined = "\n\n".join(s.text for s in segments)
@@ -192,20 +170,20 @@ class OpenAIClient(AbstractClient):
         payload["system"] = combined
         # Emit cache-applied event (fire-and-forget; OpenAI caching is implicit)
         cacheable_segs = [s for s in segments if s.cacheable]
-        seg_hashes = tuple(
-            _hashlib.sha256(s.text.encode()).hexdigest() for s in cacheable_segs
-        )
+        seg_hashes = tuple(_hashlib.sha256(s.text.encode()).hexdigest() for s in cacheable_segs)
         est_tokens = sum(len(s.text) // 4 for s in cacheable_segs)
-        self.events.emit_nowait(_PCApplied(
-            trace_context=tc,
-            client_name="openai",
-            model=payload.get("model", ""),
-            blocks_marked=0,  # OpenAI caching is implicit; no explicit blocks
-            est_tokens=est_tokens,
-            segment_hashes=seg_hashes,
-            source_type="client",
-            source_name="openai",
-        ))
+        self.events.emit_nowait(
+            _PCApplied(
+                trace_context=tc,
+                client_name="openai",
+                model=payload.get("model", ""),
+                blocks_marked=0,  # OpenAI caching is implicit; no explicit blocks
+                est_tokens=est_tokens,
+                segment_hashes=seg_hashes,
+                source_type="client",
+                source_name="openai",
+            )
+        )
         return payload
 
     def _is_capacity_error(self, error: Exception) -> bool:
@@ -214,9 +192,10 @@ class OpenAIClient(AbstractClient):
         Overrides base class with OpenAI-specific exception types.
         """
         from openai import RateLimitError, APIError
+
         if isinstance(error, RateLimitError):
             return True
-        if isinstance(error, APIError) and hasattr(error, 'status_code'):
+        if isinstance(error, APIError) and hasattr(error, "status_code"):
             if error.status_code in (502, 503):
                 return True
         return super()._is_capacity_error(error)
@@ -227,13 +206,12 @@ class OpenAIClient(AbstractClient):
             from openai import AsyncOpenAI
         except ImportError as exc:
             raise ImportError(
-                "OpenAIClient requires the 'openai' SDK. "
-                "Install with: pip install ai-parrot[openai]"
+                "OpenAIClient requires the 'openai' SDK. " "Install with: pip install ai-parrot[openai]"
             ) from exc
         return AsyncOpenAI(
             api_key=self.api_key,
             base_url=self.base_url,
-            timeout=config.get('OPENAI_TIMEOUT', 60),
+            timeout=config.get("OPENAI_TIMEOUT", 60),
         )
 
     async def _download_openai_file(self, file_id: str) -> Optional[bytes]:
@@ -314,43 +292,27 @@ class OpenAIClient(AbstractClient):
 
         return None
 
-    async def _upload_file(
-        self,
-        file_path: Union[str, Path],
-        purpose: str = 'fine-tune'
-    ) -> None:
+    async def _upload_file(self, file_path: Union[str, Path], purpose: str = "fine-tune") -> None:
         """Upload a file to OpenAI."""
-        with open(file_path, 'rb') as file:
-            await self.client.files.create(
-                file=file,
-                purpose=purpose
-            )
+        with open(file_path, "rb") as file:
+            await self.client.files.create(file=file, purpose=purpose)
 
-    async def _chat_completion(
-        self,
-        model: str,
-        messages: Any,
-        use_tools: bool = False,
-        **kwargs
-    ):
+    async def _chat_completion(self, model: str, messages: Any, use_tools: bool = False, **kwargs):
         from openai import APIConnectionError, RateLimitError, APIError
+
         retry_policy = AsyncRetrying(
             retry=retry_if_exception_type((APIConnectionError, RateLimitError, APIError)),
             wait=wait_exponential(multiplier=1, min=2, max=10),
             stop=stop_after_attempt(3),
-            reraise=True
+            reraise=True,
         )
         if use_tools:
             method = self.client.chat.completions.create
         else:
-            method = getattr(self.client.chat.completions, 'parse', self.client.chat.completions.create)
+            method = getattr(self.client.chat.completions, "parse", self.client.chat.completions.create)
         async for attempt in retry_policy:
             with attempt:
-                return await method(
-                    model=model,
-                    messages=messages,
-                    **kwargs
-                )
+                return await method(model=model, messages=messages, **kwargs)
 
     def _is_responses_model(self, model_str: str) -> bool:
         """Return True if the selected model must go through Responses API."""
@@ -364,8 +326,7 @@ class OpenAIClient(AbstractClient):
         are deprecated upstream (shutoff 2026-07-23). Branch retained until
         the question is resolved."""
         warnings.warn(
-            "Deep-research models are deprecated (shutoff 2026-07-23). "
-            "Pending decision in spec §8 Q1.",
+            "Deep-research models are deprecated (shutoff 2026-07-23). " "Pending decision in spec §8 Q1.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -373,7 +334,6 @@ class OpenAIClient(AbstractClient):
         if normalized in {"o4-mini", "o4-mini-deep-research"}:
             return "o4-mini-deep-research"
         return "o3-deep-research"
-
 
     def _prepare_responses_args(self, *, messages, args):
         """
@@ -486,8 +446,7 @@ class OpenAIClient(AbstractClient):
                 sys_content = m.get("content")
                 if isinstance(sys_content, list):
                     instructions = " ".join(
-                        part.get("text", "") if isinstance(part, dict) else str(part)
-                        for part in sys_content
+                        part.get("text", "") if isinstance(part, dict) else str(part) for part in sys_content
                     ).strip()
                 else:
                     instructions = sys_content
@@ -528,9 +487,7 @@ class OpenAIClient(AbstractClient):
     def _with_extra_body(payload: Dict[str, Any], extra_body: Dict[str, Any]) -> Dict[str, Any]:
         merged = dict(payload)
         existing_raw = merged.pop("extra_body", None)
-        existing = (
-            dict(existing_raw) if isinstance(existing_raw, dict) else {}
-        ) | extra_body
+        existing = (dict(existing_raw) if isinstance(existing_raw, dict) else {}) | extra_body
         if existing:
             merged["extra_body"] = existing
         return merged
@@ -543,6 +500,7 @@ class OpenAIClient(AbstractClient):
         so we can fall back to older-SDK-compatible shapes.
         """
         from openai import BadRequestError
+
         last_exc = None
         for payload in payloads:
             try:
@@ -555,15 +513,17 @@ class OpenAIClient(AbstractClient):
                 body = getattr(getattr(exc, "response", None), "json", lambda: {})()
                 code = (body.get("error") or {}).get("code", "")
                 param = (body.get("error") or {}).get("param", "")
-                if code == "unknown_parameter" or "Unknown parameter" in msg or param in {"response", "modalities", "video"}:
+                if (
+                    code == "unknown_parameter"
+                    or "Unknown parameter" in msg
+                    or param in {"response", "modalities", "video"}
+                ):
                     last_exc = exc
                     continue
                 raise  # other 400s should bubble up
         if last_exc:
             raise last_exc
-        raise RuntimeError(
-            "OpenAI responses.create call failed without response"
-        )
+        raise RuntimeError("OpenAI responses.create call failed without response")
 
     async def _call_responses_stream(self, payloads):
         """
@@ -571,6 +531,7 @@ class OpenAIClient(AbstractClient):
         the compatibility shims we use for responses.create().
         """
         from openai import BadRequestError
+
         last_exc = None
         for payload in payloads:
             try:
@@ -582,23 +543,19 @@ class OpenAIClient(AbstractClient):
                 body = getattr(getattr(exc, "response", None), "json", lambda: {})()
                 code = (body.get("error") or {}).get("code", "")
                 param = (body.get("error") or {}).get("param", "")
-                if code == "unknown_parameter" or "Unknown parameter" in msg or param in {"response", "modalities", "video"}:
+                if (
+                    code == "unknown_parameter"
+                    or "Unknown parameter" in msg
+                    or param in {"response", "modalities", "video"}
+                ):
                     last_exc = exc
                     continue
                 raise
         if last_exc:
             raise last_exc
-        raise RuntimeError(
-            "OpenAI responses.stream call failed without response"
-        )
+        raise RuntimeError("OpenAI responses.stream call failed without response")
 
-    async def _responses_completion(
-        self,
-        *,
-        model: str,
-        messages,
-        **args
-    ):
+    async def _responses_completion(self, *, model: str, messages, **args):
         """
         Adapter around OpenAI Responses API that mimics Chat Completions:
         returns an object with `.choices[0].message` where `message` has
@@ -637,8 +594,8 @@ class OpenAIClient(AbstractClient):
                     if isinstance(part, dict):
                         if part.get("type") == "output_text":
                             output_text += part.get("text", "") or ""
-                    elif (text := getattr(part, "text", None)):
-                            output_text += text
+                    elif text := getattr(part, "text", None):
+                        output_text += text
 
         # 4) Extract & normalize tool calls
         #    We shape them to look like Chat Completions tool_calls:
@@ -664,6 +621,7 @@ class OpenAIClient(AbstractClient):
                         def __init__(self, name, arguments):
                             self.name = name
                             self.arguments = arguments
+
                     class _ToolCall:
                         def __init__(self, id, function):
                             self.id = id
@@ -774,6 +732,7 @@ class OpenAIClient(AbstractClient):
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time_gpt
+
         _lc_tc_gpt = self._emit_before_call(
             client_name="openai",
             model=model_str,
@@ -793,9 +752,13 @@ class OpenAIClient(AbstractClient):
 
         # Add search instruction if lazy loading is enabled
         if lazy_loading and system_prompt:
-             system_prompt += "\n\nYou have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            system_prompt += (
+                "\n\nYou have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            )
         elif lazy_loading and not system_prompt:
-             system_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            system_prompt = (
+                "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            )
 
         if system_prompt:
             # FEAT-181: collapse List[CacheableSegment] → string before inserting
@@ -807,9 +770,7 @@ class OpenAIClient(AbstractClient):
 
         all_tool_calls = []
 
-        output_config = self._get_structured_config(
-            structured_output
-        )
+        output_config = self._get_structured_config(structured_output)
 
         # Build tools for deep research or regular use
         research_tools = []
@@ -819,16 +780,10 @@ class OpenAIClient(AbstractClient):
                 research_tools.append({"type": "web_search_preview"})
 
             if vector_store_ids:
-                research_tools.append({
-                    "type": "file_search",
-                    "vector_store_ids": vector_store_ids
-                })
+                research_tools.append({"type": "file_search", "vector_store_ids": vector_store_ids})
 
             if enable_code_interpreter:
-                research_tools.append({
-                    "type": "code_interpreter",
-                    "container": {"type": "auto", "memory_limit": "4g"}
-                })
+                research_tools.append({"type": "code_interpreter", "container": {"type": "auto", "memory_limit": "4g"}})
 
             self.logger.info(f"Deep research tools configured: {len(research_tools)} tools")
 
@@ -849,7 +804,7 @@ class OpenAIClient(AbstractClient):
                 if prepared_tools:
                     active_tool_names.add("search_tools")
             else:
-                 prepared_tools = self._prepare_tools()
+                prepared_tools = self._prepare_tools()
 
         args = {}
         # NOTE: spec §8 Q1 open — search-preview IDs deprecated (shutoff 2026-07-23).
@@ -866,34 +821,35 @@ class OpenAIClient(AbstractClient):
                 DeprecationWarning,
                 stacklevel=2,
             )
-            args['web_search_options'] = {
-                "web_search": True,
-                "web_search_model": "gpt-4o-mini"
-            }
+            args["web_search_options"] = {"web_search": True, "web_search_model": "gpt-4o-mini"}
 
         # Merge research tools with regular tools
         if deep_research and research_tools:
             # For deep research, add research-specific tools
-            args['tools'] = research_tools
+            args["tools"] = research_tools
         elif prepared_tools:
-            args['tools'] = prepared_tools
-            args['tool_choice'] = "auto"
-            args['parallel_tool_calls'] = True
+            args["tools"] = prepared_tools
+            args["tool_choice"] = "auto"
+            args["parallel_tool_calls"] = True
 
-        if output_config and output_config.format == OutputFormat.JSON and model_str not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS:
+        if (
+            output_config
+            and output_config.format == OutputFormat.JSON
+            and model_str not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS
+        ):
             self.logger.warning(
                 "Model %s does not support structured outputs; switching to %s",
                 model_str,
-                DEFAULT_STRUCTURED_OUTPUT_MODEL
+                DEFAULT_STRUCTURED_OUTPUT_MODEL,
             )
             model_str = DEFAULT_STRUCTURED_OUTPUT_MODEL
 
-        if model_str != 'gpt-5-nano':
-            args['max_tokens'] = max_tokens or self.max_tokens
+        if model_str != "gpt-5-nano":
+            args["max_tokens"] = max_tokens or self.max_tokens
         if temperature:
-            args['temperature'] = temperature
+            args["temperature"] = temperature
         if deep_research and background:
-            args['background'] = True
+            args["background"] = True
 
         # -------- ROUTING: Responses-only vs Chat -----------
         use_responses = self._is_responses_model(model_str)
@@ -904,21 +860,12 @@ class OpenAIClient(AbstractClient):
         try:
             if use_responses:
                 if output_config:
-                    args['response_format'] = resp_format
-                response = await self._responses_completion(
-                    model=model_str,
-                    messages=messages,
-                    **args
-                )
+                    args["response_format"] = resp_format
+                response = await self._responses_completion(model=model_str, messages=messages, **args)
             else:
                 if output_config:
-                    args['response_format'] = resp_format
-                response = await self._chat_completion(
-                    model=model_str,
-                    messages=messages,
-                    use_tools=_use_tools,
-                    **args
-                )
+                    args["response_format"] = resp_format
+                response = await self._chat_completion(model=model_str, messages=messages, use_tools=_use_tools, **args)
         except Exception as e:
             if self._should_use_fallback(model_str, e):
                 self.logger.warning(
@@ -930,17 +877,10 @@ class OpenAIClient(AbstractClient):
                 model_str = self._fallback_model
                 _used_fallback = True
                 if use_responses:
-                    response = await self._responses_completion(
-                        model=model_str,
-                        messages=messages,
-                        **args
-                    )
+                    response = await self._responses_completion(model=model_str, messages=messages, **args)
                 else:
                     response = await self._chat_completion(
-                        model=model_str,
-                        messages=messages,
-                        use_tools=_use_tools,
-                        **args
+                        model=model_str, messages=messages, use_tools=_use_tools, **args
                     )
             else:
                 raise
@@ -949,20 +889,26 @@ class OpenAIClient(AbstractClient):
 
         # ---------- Tool loop (works for both paths) ----------
         while getattr(result, "tool_calls", None):
-            messages.append({
-                "role": "assistant",
-                "content": result.content,
-                "tool_calls": [
-                    tc.model_dump() if hasattr(tc, "model_dump") else {
-                        "id": tc.id,
-                        "function": {
-                            "name": getattr(tc.function, "name", None),
-                            "arguments": getattr(tc.function, "arguments", "{}"),
-                        },
-                    }
-                    for tc in result.tool_calls
-                ]
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": result.content,
+                    "tool_calls": [
+                        (
+                            tc.model_dump()
+                            if hasattr(tc, "model_dump")
+                            else {
+                                "id": tc.id,
+                                "function": {
+                                    "name": getattr(tc.function, "name", None),
+                                    "arguments": getattr(tc.function, "arguments", "{}"),
+                                },
+                            }
+                        )
+                        for tc in result.tool_calls
+                    ],
+                }
+            )
 
             found_new_tools = False
 
@@ -974,11 +920,7 @@ class OpenAIClient(AbstractClient):
                     except json.JSONDecodeError:
                         tool_args = json_decoder(tool_call.function.arguments)
 
-                    tc = ToolCall(
-                        id=getattr(tool_call, "id", ""),
-                        name=tool_name,
-                        arguments=tool_args
-                    )
+                    tc = ToolCall(id=getattr(tool_call, "id", ""), name=tool_name, arguments=tool_args)
 
                     try:
                         start_time = time.time()
@@ -987,77 +929,77 @@ class OpenAIClient(AbstractClient):
 
                         # Lazy Loading Check
                         if lazy_loading and tool_name == "search_tools":
-                             new_tools = self._check_new_tools(tool_name, str(tool_result))
-                             if new_tools:
-                                 for nt in new_tools:
-                                     if nt not in active_tool_names:
-                                         active_tool_names.add(nt)
-                                         found_new_tools = True
+                            new_tools = self._check_new_tools(tool_name, str(tool_result))
+                            if new_tools:
+                                for nt in new_tools:
+                                    if nt not in active_tool_names:
+                                        active_tool_names.add(nt)
+                                        found_new_tools = True
 
                         tc.result = tool_result
                         tc.execution_time = execution_time
 
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": getattr(tool_call, "id", ""),
-                            "name": tool_name,
-                            "content": str(tool_result)
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": getattr(tool_call, "id", ""),
+                                "name": tool_name,
+                                "content": str(tool_result),
+                            }
+                        )
                     except Exception as e:
                         from parrot.core.exceptions import HumanInteractionInterrupt
+
                         if isinstance(e, HumanInteractionInterrupt):
                             e.session_id = session_id
                             e.messages = messages.copy()
                             e.tool_call_id = getattr(tool_call, "id", "")
                             e.agent_name = model_str
                             raise
-                        
+
                         tc.error = str(e)
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": getattr(tool_call, "id", ""),
-                            "name": tool_name,
-                            "content": str(e)
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": getattr(tool_call, "id", ""),
+                                "name": tool_name,
+                                "content": str(e),
+                            }
+                        )
 
                     all_tool_calls.append(tc)
 
                 except Exception as e:
-                    all_tool_calls.append(ToolCall(
-                        id=getattr(tool_call, "id", ""),
-                        name=tool_name,
-                        arguments={"_error": f"malformed tool args: {e}"}
-                    ))
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": getattr(tool_call, "id", ""),
-                        "name": tool_name,
-                        "content": f"Error decoding arguments: {e}"
-                    })
+                    all_tool_calls.append(
+                        ToolCall(
+                            id=getattr(tool_call, "id", ""),
+                            name=tool_name,
+                            arguments={"_error": f"malformed tool args: {e}"},
+                        )
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": getattr(tool_call, "id", ""),
+                            "name": tool_name,
+                            "content": f"Error decoding arguments: {e}",
+                        }
+                    )
 
             # Re-prepare tools if new ones found
             if lazy_loading and found_new_tools:
-                args['tools'] = self._prepare_tools(filter_names=list(active_tool_names))
+                args["tools"] = self._prepare_tools(filter_names=list(active_tool_names))
                 # Note: We keep tool_choice='auto'
 
             # continue via the same routed API
             if use_responses:
                 if output_config:
-                    args['response_format'] = resp_format
-                response = await self._responses_completion(
-                    model=model_str,
-                    messages=messages,
-                    **args
-                )
+                    args["response_format"] = resp_format
+                response = await self._responses_completion(model=model_str, messages=messages, **args)
             else:
                 if output_config:
-                    args['response_format'] = resp_format
-                response = await self._chat_completion(
-                    model=model_str,
-                    messages=messages,
-                    use_tools=_use_tools,
-                    **args
-                )
+                    args["response_format"] = resp_format
+                response = await self._chat_completion(model=model_str, messages=messages, use_tools=_use_tools, **args)
 
             result = response.choices[0].message
 
@@ -1071,15 +1013,14 @@ class OpenAIClient(AbstractClient):
                 if output_config.custom_parser:
                     final_output = output_config.custom_parser(response_text)
                 else:
-                    final_output = await self._parse_structured_output(
-                        response_text,
-                        output_config
-                    )
+                    final_output = await self._parse_structured_output(response_text, output_config)
             except Exception:  # pylint: disable=broad-except
                 final_output = response_text
 
         tools_used = [tc.name for tc in all_tool_calls]
-        assistant_response_text = result.content if isinstance(result.content, str) else self._json.dumps(result.content)
+        assistant_response_text = (
+            result.content if isinstance(result.content, str) else self._json.dumps(result.content)
+        )
         await self._update_conversation_memory(
             user_id,
             session_id,
@@ -1089,13 +1030,11 @@ class OpenAIClient(AbstractClient):
             turn_id,
             original_prompt,
             assistant_response_text,
-            tools_used
+            tools_used,
         )
 
         structured_payload = None
-        if final_output is not None and not (
-            isinstance(final_output, str) and final_output == response_text
-        ):
+        if final_output is not None and not (isinstance(final_output, str) and final_output == response_text):
             structured_payload = final_output
 
         ai_message = AIMessageFactory.from_openai(
@@ -1105,40 +1044,35 @@ class OpenAIClient(AbstractClient):
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            structured_output=structured_payload
+            structured_output=structured_payload,
         )
 
         ai_message.tool_calls = all_tool_calls
         if _used_fallback:
-            ai_message.metadata['used_fallback_model'] = True
-            ai_message.metadata['original_model'] = _original_model
-            ai_message.metadata['fallback_model'] = self._fallback_model
+            ai_message.metadata["used_fallback_model"] = True
+            ai_message.metadata["original_model"] = _original_model
+            ai_message.metadata["fallback_model"] = self._fallback_model
         # FEAT-176: lifecycle event — AfterClientCallEvent
-        _lc_gpt_usage = getattr(ai_message, 'usage', None)
+        _lc_gpt_usage = getattr(ai_message, "usage", None)
         await self._emit_after_call(
             _lc_tc_gpt,
             client_name="openai",
             model=model_str,
             duration_ms=(_lc_time_gpt.perf_counter() - _lc_t0_gpt) * 1000,
-            input_tokens=getattr(_lc_gpt_usage, 'prompt_tokens', None) if _lc_gpt_usage else None,
-            output_tokens=getattr(_lc_gpt_usage, 'completion_tokens', None) if _lc_gpt_usage else None,
-            finish_reason=getattr(ai_message, 'stop_reason', None),
+            input_tokens=getattr(_lc_gpt_usage, "prompt_tokens", None) if _lc_gpt_usage else None,
+            output_tokens=getattr(_lc_gpt_usage, "completion_tokens", None) if _lc_gpt_usage else None,
+            finish_reason=getattr(ai_message, "stop_reason", None),
         )
         return ai_message
 
-    async def resume(
-        self,
-        session_id: str,
-        user_input: str,
-        state: Dict[str, Any]
-    ) -> AIMessage:
+    async def resume(self, session_id: str, user_input: str, state: Dict[str, Any]) -> AIMessage:
         """Resume a suspended model execution.
-        
+
         Args:
             session_id: The session ID
             user_input: The user's input to inject as tool result
             state: The suspended state containing messages and tool_call_id
-            
+
         Returns:
             MessageResponse: The response from the LLM
         """
@@ -1147,43 +1081,40 @@ class OpenAIClient(AbstractClient):
         messages = state["messages"]
         tool_call_id = state["tool_call_id"]
         model_str = state.get("agent_name", self.model or self.default_model)
-        
+
         # Inject user input as tool result
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "name": "handoff_tool",
-            "content": user_input
-        })
+        messages.append({"role": "tool", "tool_call_id": tool_call_id, "name": "handoff_tool", "content": user_input})
 
         # Track tools used in this continuation
         all_tool_calls = []
         turn_id = str(uuid.uuid4())
-        
+
         # We need a dummy response to enter the same loop logic if we want to extract it,
         # but to keep it simple we just call the API again.
-        response = await self._chat_completion(
-            model=model_str,
-            messages=messages,
-            use_tools=True
-        )
+        response = await self._chat_completion(model=model_str, messages=messages, use_tools=True)
         result = response.choices[0].message
-        
+
         while getattr(result, "tool_calls", None):
-            messages.append({
-                "role": "assistant",
-                "content": result.content,
-                "tool_calls": [
-                    tc.model_dump() if hasattr(tc, "model_dump") else {
-                        "id": tc.id,
-                        "function": {
-                            "name": getattr(tc.function, "name", None),
-                            "arguments": getattr(tc.function, "arguments", "{}"),
-                        },
-                    }
-                    for tc in result.tool_calls
-                ]
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": result.content,
+                    "tool_calls": [
+                        (
+                            tc.model_dump()
+                            if hasattr(tc, "model_dump")
+                            else {
+                                "id": tc.id,
+                                "function": {
+                                    "name": getattr(tc.function, "name", None),
+                                    "arguments": getattr(tc.function, "arguments", "{}"),
+                                },
+                            }
+                        )
+                        for tc in result.tool_calls
+                    ],
+                }
+            )
 
             for tool_call in result.tool_calls:
                 tool_name = getattr(tool_call.function, "name", "unknown")
@@ -1203,43 +1134,46 @@ class OpenAIClient(AbstractClient):
                         tc.result = tool_result
                         tc.execution_time = execution_time
 
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": getattr(tool_call, "id", ""),
-                            "name": tool_name,
-                            "content": str(tool_result)
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": getattr(tool_call, "id", ""),
+                                "name": tool_name,
+                                "content": str(tool_result),
+                            }
+                        )
                     except Exception as e:
                         from parrot.core.exceptions import HumanInteractionInterrupt
+
                         if isinstance(e, HumanInteractionInterrupt):
                             e.session_id = session_id
                             e.messages = messages.copy()
                             e.tool_call_id = getattr(tool_call, "id", "")
                             e.agent_name = model_str
                             raise
-                        
+
                         tc.error = str(e)
-                        messages.append({
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": getattr(tool_call, "id", ""),
+                                "name": tool_name,
+                                "content": str(e),
+                            }
+                        )
+                    all_tool_calls.append(tc)
+                except Exception as e:
+                    messages.append(
+                        {
                             "role": "tool",
                             "tool_call_id": getattr(tool_call, "id", ""),
                             "name": tool_name,
-                            "content": str(e)
-                        })
-                    all_tool_calls.append(tc)
-                except Exception as e:
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": getattr(tool_call, "id", ""),
-                        "name": tool_name,
-                        "content": f"Error decoding arguments: {e}"
-                    })
+                            "content": f"Error decoding arguments: {e}",
+                        }
+                    )
 
             # Call API again after processing tools
-            response = await self._chat_completion(
-                model=model_str,
-                messages=messages,
-                use_tools=True
-            )
+            response = await self._chat_completion(model=model_str, messages=messages, use_tools=True)
             result = response.choices[0].message
 
         ai_message = AIMessageFactory.from_openai(
@@ -1248,7 +1182,7 @@ class OpenAIClient(AbstractClient):
             model=model_str,
             user_id="unknown",
             session_id=session_id,
-            turn_id=turn_id
+            turn_id=turn_id,
         )
         ai_message.tool_calls = all_tool_calls
         return ai_message
@@ -1306,6 +1240,7 @@ class OpenAIClient(AbstractClient):
         # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
         import time as _lc_time_gpts
         from parrot.core.events.lifecycle.events import ClientStreamChunkEvent as _GPTStreamChunkEvent
+
         _lc_tc_gpts = self._emit_before_call(
             client_name="openai",
             model=model_str,
@@ -1327,9 +1262,13 @@ class OpenAIClient(AbstractClient):
                     await self._upload_file(file)
 
         if lazy_loading and system_prompt:
-             system_prompt += "\n\nYou have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            system_prompt += (
+                "\n\nYou have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            )
         elif lazy_loading and not system_prompt:
-             system_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            system_prompt = (
+                "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            )
 
         if system_prompt:
             # FEAT-181: collapse List[CacheableSegment] → string before inserting
@@ -1343,15 +1282,9 @@ class OpenAIClient(AbstractClient):
             if enable_web_search:
                 research_tools.append({"type": "web_search_preview"})
             if vector_store_ids:
-                research_tools.append({
-                    "type": "file_search",
-                    "vector_store_ids": vector_store_ids
-                })
+                research_tools.append({"type": "file_search", "vector_store_ids": vector_store_ids})
             if enable_code_interpreter:
-                research_tools.append({
-                    "type": "code_interpreter",
-                    "container": {"type": "auto", "memory_limit": "4g"}
-                })
+                research_tools.append({"type": "code_interpreter", "container": {"type": "auto", "memory_limit": "4g"}})
             self.logger.info(f"Deep research streaming tools: {len(research_tools)} tools")
 
         # Prepare tools (Note: streaming with tools is more complex)
@@ -1369,33 +1302,37 @@ class OpenAIClient(AbstractClient):
                 if tools_payload:
                     active_tool_names.add("search_tools")
             else:
-                 tools_payload = self._prepare_tools()
+                tools_payload = self._prepare_tools()
 
         args: Dict[str, Any] = {}
 
         # Merge research tools with regular tools (same logic as ask)
         if deep_research and research_tools:
-            args['tools'] = research_tools
+            args["tools"] = research_tools
         elif tools_payload:
-            args['tools'] = tools_payload
-            args['tool_choice'] = "auto"
+            args["tools"] = tools_payload
+            args["tool_choice"] = "auto"
             args["parallel_tool_calls"] = True
 
         max_tokens_value = max_tokens if max_tokens is not None else self.max_tokens
         if max_tokens_value is not None:
-            args['max_tokens'] = max_tokens_value
+            args["max_tokens"] = max_tokens_value
 
         temperature_value = temperature if temperature is not None else self.temperature
         if temperature_value is not None:
-            args['temperature'] = temperature_value
+            args["temperature"] = temperature_value
 
         # -------- structured output config (normalize + model guard) --------
         output_config = self._get_structured_config(structured_output)
-        if output_config and output_config.format == OutputFormat.JSON and model_str not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS:
+        if (
+            output_config
+            and output_config.format == OutputFormat.JSON
+            and model_str not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS
+        ):
             self.logger.warning(
                 "Model %s does not support structured outputs; switching to %s",
                 model_str,
-                DEFAULT_STRUCTURED_OUTPUT_MODEL
+                DEFAULT_STRUCTURED_OUTPUT_MODEL,
             )
             model_str = DEFAULT_STRUCTURED_OUTPUT_MODEL
 
@@ -1417,9 +1354,7 @@ class OpenAIClient(AbstractClient):
                 attempts.extend(
                     (
                         {**payload_base, "response_format": resp_format},
-                        self._with_extra_body(
-                            payload_base, {"response": {"format": resp_format}}
-                        ),
+                        self._with_extra_body(payload_base, {"response": {"format": resp_format}}),
                         dict(payload_base),
                     )
                 )
@@ -1442,12 +1377,17 @@ class OpenAIClient(AbstractClient):
                             assistant_content += delta
                             # FEAT-176: per-chunk event
                             if _lc_has_chunk_subs_gpt:
-                                await self.events.emit(_GPTStreamChunkEvent(
-                                    trace_context=_lc_tc_gpts, client_name="openai",
-                                    model=model_str, chunk_index=_lc_chunk_idx_gpt,
-                                    chunk_size_bytes=len(delta.encode("utf-8")) if isinstance(delta, str) else 0,
-                                    source_type="client", source_name="openai",
-                                ))
+                                await self.events.emit(
+                                    _GPTStreamChunkEvent(
+                                        trace_context=_lc_tc_gpts,
+                                        client_name="openai",
+                                        model=model_str,
+                                        chunk_index=_lc_chunk_idx_gpt,
+                                        chunk_size_bytes=len(delta.encode("utf-8")) if isinstance(delta, str) else 0,
+                                        source_type="client",
+                                        source_name="openai",
+                                    )
+                                )
                                 _lc_chunk_idx_gpt += 1
                             yield delta
                     elif event_type == "response.output_text.done":
@@ -1486,9 +1426,7 @@ class OpenAIClient(AbstractClient):
             if resp_usage_obj is not None:
                 resp_usage = CompletionUsage.from_openai(resp_usage_obj)
             else:
-                resp_usage = CompletionUsage(
-                    prompt_tokens=0, completion_tokens=0, total_tokens=0
-                )
+                resp_usage = CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
             resp_ai_message = AIMessage(
                 input=prompt,
                 output=assistant_content,
@@ -1501,12 +1439,14 @@ class OpenAIClient(AbstractClient):
                 turn_id=turn_id,
             )
             # FEAT-176: lifecycle event — AfterClientCallEvent (Responses API path)
-            _lc_resp_usage = getattr(resp_ai_message, 'usage', None)
+            _lc_resp_usage = getattr(resp_ai_message, "usage", None)
             await self._emit_after_call(
-                _lc_tc_gpts, client_name="openai", model=model_str,
+                _lc_tc_gpts,
+                client_name="openai",
+                model=model_str,
                 duration_ms=(_lc_time_gpts.perf_counter() - _lc_t0_gpts) * 1000,
-                input_tokens=getattr(_lc_resp_usage, 'prompt_tokens', None) if _lc_resp_usage else None,
-                output_tokens=getattr(_lc_resp_usage, 'completion_tokens', None) if _lc_resp_usage else None,
+                input_tokens=getattr(_lc_resp_usage, "prompt_tokens", None) if _lc_resp_usage else None,
+                output_tokens=getattr(_lc_resp_usage, "completion_tokens", None) if _lc_resp_usage else None,
                 finish_reason=None,
             )
             yield resp_ai_message
@@ -1516,10 +1456,7 @@ class OpenAIClient(AbstractClient):
             chat_args["stream_options"] = {"include_usage": True}
             usage_data = None
             response_stream = None  # initialise; assigned by whichever branch runs
-            method = getattr(
-                self.client.chat.completions, "parse",
-                None
-            ) if output_config else None
+            method = getattr(self.client.chat.completions, "parse", None) if output_config else None
             if callable(method):
                 try:
                     response_stream = await method(  # pylint: disable=E1102 # noqa
@@ -1527,7 +1464,7 @@ class OpenAIClient(AbstractClient):
                         messages=messages,
                         stream=True,
                         response_format=(output_config.output_type if output_config else None),
-                        **chat_args
+                        **chat_args,
                     )
                 except TypeError:
                     # parse() in this SDK may not accept stream=True → fallback to create()
@@ -1538,7 +1475,7 @@ class OpenAIClient(AbstractClient):
                     messages=messages,
                     stream=True,
                     response_format=(output_config.output_type if output_config else None),
-                    **chat_args
+                    **chat_args,
                 )
 
             async for chunk in response_stream:
@@ -1547,25 +1484,28 @@ class OpenAIClient(AbstractClient):
                     assistant_content += text_chunk
                     # FEAT-176: per-chunk event
                     if _lc_has_chunk_subs_gpt:
-                        await self.events.emit(_GPTStreamChunkEvent(
-                            trace_context=_lc_tc_gpts, client_name="openai",
-                            model=model_str, chunk_index=_lc_chunk_idx_gpt,
-                            chunk_size_bytes=len(text_chunk.encode("utf-8")),
-                            source_type="client", source_name="openai",
-                        ))
+                        await self.events.emit(
+                            _GPTStreamChunkEvent(
+                                trace_context=_lc_tc_gpts,
+                                client_name="openai",
+                                model=model_str,
+                                chunk_index=_lc_chunk_idx_gpt,
+                                chunk_size_bytes=len(text_chunk.encode("utf-8")),
+                                source_type="client",
+                                source_name="openai",
+                            )
+                        )
                         _lc_chunk_idx_gpt += 1
                     yield text_chunk
                 # Capture usage from the final chunk (present when stream_options.include_usage=True)
-                if hasattr(chunk, 'usage') and chunk.usage is not None:
+                if hasattr(chunk, "usage") and chunk.usage is not None:
                     usage_data = chunk.usage
 
             # Build and yield final AIMessage for Chat Completions path
             if usage_data is not None:
                 chat_usage = CompletionUsage.from_openai(usage_data)
             else:
-                chat_usage = CompletionUsage(
-                    prompt_tokens=0, completion_tokens=0, total_tokens=0
-                )
+                chat_usage = CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
             chat_ai_message = AIMessage(
                 input=prompt,
                 output=assistant_content,
@@ -1578,22 +1518,21 @@ class OpenAIClient(AbstractClient):
                 turn_id=turn_id,
             )
             # FEAT-176: lifecycle event — AfterClientCallEvent (Chat Completions path)
-            _lc_chat_usage = getattr(chat_ai_message, 'usage', None)
+            _lc_chat_usage = getattr(chat_ai_message, "usage", None)
             await self._emit_after_call(
-                _lc_tc_gpts, client_name="openai", model=model_str,
+                _lc_tc_gpts,
+                client_name="openai",
+                model=model_str,
                 duration_ms=(_lc_time_gpts.perf_counter() - _lc_t0_gpts) * 1000,
-                input_tokens=getattr(_lc_chat_usage, 'prompt_tokens', None) if _lc_chat_usage else None,
-                output_tokens=getattr(_lc_chat_usage, 'completion_tokens', None) if _lc_chat_usage else None,
+                input_tokens=getattr(_lc_chat_usage, "prompt_tokens", None) if _lc_chat_usage else None,
+                output_tokens=getattr(_lc_chat_usage, "completion_tokens", None) if _lc_chat_usage else None,
                 finish_reason=None,
             )
             yield chat_ai_message
 
         # Update conversation memory if content was generated
         if assistant_content:
-            messages.append({
-                "role": "assistant",
-                "content": assistant_content
-            })
+            messages.append({"role": "assistant", "content": assistant_content})
             # Update conversation memory
             await self._update_conversation_memory(
                 user_id,
@@ -1604,7 +1543,7 @@ class OpenAIClient(AbstractClient):
                 turn_id,
                 prompt,
                 assistant_content,
-                []
+                [],
             )
 
     async def batch_ask(self, requests) -> List[AIMessage]:
@@ -1618,17 +1557,14 @@ class OpenAIClient(AbstractClient):
         return results
 
     def _encode_image_for_openai(
-        self,
-        image: Union[Path, bytes, "Image.Image"],
-        low_quality: bool = False
+        self, image: Union[Path, bytes, "Image.Image"], low_quality: bool = False
     ) -> Dict[str, Any]:
         """Encode image for OpenAI's vision API."""
         try:
             from PIL import Image
         except ImportError as exc:
             raise ImportError(
-                "Image methods on OpenAIClient require Pillow. "
-                "Install with: pip install Pillow"
+                "Image methods on OpenAIClient require Pillow. " "Install with: pip install Pillow"
             ) from exc
         if isinstance(image, Path):
             if not image.exists():
@@ -1636,18 +1572,18 @@ class OpenAIClient(AbstractClient):
             mime_type, _ = mimetypes.guess_type(str(image))
             mime_type = mime_type or "image/jpeg"
             with open(image, "rb") as f:
-                encoded_data = base64.b64encode(f.read()).decode('utf-8')
+                encoded_data = base64.b64encode(f.read()).decode("utf-8")
 
         elif isinstance(image, bytes):
             mime_type = "image/jpeg"
-            encoded_data = base64.b64encode(image).decode('utf-8')
+            encoded_data = base64.b64encode(image).decode("utf-8")
 
         elif isinstance(image, Image.Image):
             buffer = io.BytesIO()
             if image.mode in ("RGBA", "LA", "P"):
                 image = image.convert("RGB")
             image.save(buffer, format="JPEG")
-            encoded_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            encoded_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
             mime_type = "image/jpeg"
 
         else:
@@ -1655,10 +1591,7 @@ class OpenAIClient(AbstractClient):
 
         return {
             "type": "image_url",
-            "image_url": {
-                "url": f"data:{mime_type};base64,{encoded_data}",
-                "detail": "low" if low_quality else "auto"
-            }
+            "image_url": {"url": f"data:{mime_type};base64,{encoded_data}", "detail": "low" if low_quality else "auto"},
         }
 
     async def ask_to_image(
@@ -1673,7 +1606,7 @@ class OpenAIClient(AbstractClient):
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         no_memory: bool = False,
-        low_quality: bool = False
+        low_quality: bool = False,
     ) -> AIMessage:
         """Ask OpenAI a question about an image with optional conversation memory."""
         model = self._normalize_model(model)
@@ -1707,21 +1640,18 @@ class OpenAIClient(AbstractClient):
 
         response_format = None
         if structured_output:
-            if hasattr(structured_output, 'model_json_schema'):
+            if hasattr(structured_output, "model_json_schema"):
                 response_format = {
                     "type": "json_schema",
                     "json_schema": {
                         "name": structured_output.__name__.lower(),
-                        "schema": structured_output.model_json_schema()
-                    }
+                        "schema": structured_output.model_json_schema(),
+                    },
                 }
             elif isinstance(structured_output, dict):
                 response_format = {
                     "type": "json_schema",
-                    "json_schema": {
-                        "name": "response",
-                        "schema": structured_output
-                    }
+                    "json_schema": {"name": "response", "schema": structured_output},
                 }
         else:
             response_format = {"type": "json_object"}
@@ -1731,7 +1661,7 @@ class OpenAIClient(AbstractClient):
             messages=messages,
             max_tokens=max_tokens or self.max_tokens,
             temperature=temperature or self.temperature,
-            response_format=response_format
+            response_format=response_format,
         )
 
         result = response.choices[0].message
@@ -1754,9 +1684,7 @@ class OpenAIClient(AbstractClient):
                     except ValidationError:
                         final_output = result.content
 
-        assistant_message = {
-            "role": "assistant", "content": [{"type": "text", "text": result.content}]
-        }
+        assistant_message = {"role": "assistant", "content": [{"type": "text", "text": result.content}]}
         messages.append(assistant_message)
 
         # Update conversation memory
@@ -1769,7 +1697,7 @@ class OpenAIClient(AbstractClient):
             turn_id,
             prompt,
             assistant_response_text,
-            []
+            [],
         )
 
         usage = response.usage.model_dump() if response.usage else {}
@@ -1781,14 +1709,14 @@ class OpenAIClient(AbstractClient):
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            structured_output=final_output
+            structured_output=final_output,
         )
 
         ai_message.usage = CompletionUsage(
             prompt_tokens=usage.get("prompt_tokens", 0),
             completion_tokens=usage.get("completion_tokens", 0),
             total_tokens=usage.get("total_tokens", 0),
-            extra_usage=usage
+            extra_usage=usage,
         )
 
         ai_message.provider = "openai"
@@ -2030,7 +1958,10 @@ class OpenAIClient(AbstractClient):
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Product ID: {product_id}\nProduct Name: {product_name}\nReview: {review_text}"},
+            {
+                "role": "user",
+                "content": f"Product ID: {product_id}\nProduct Name: {product_name}\nReview: {review_text}",
+            },
         ]
 
         # Use structured output with response_format
@@ -2044,9 +1975,9 @@ class OpenAIClient(AbstractClient):
                 "json_schema": {
                     "name": "product_review_analysis",
                     "schema": ProductReview.model_json_schema(),
-                    "strict": True
-                }
-            }
+                    "strict": True,
+                },
+            },
         )
 
         return AIMessageFactory.from_openai(
@@ -2063,8 +1994,8 @@ class OpenAIClient(AbstractClient):
         self,
         *,
         image: Union[Path, bytes, "Image.Image"],
-        detections: List[DetectionBox],          # from parrot.models.detections
-        shelf_regions: List[ShelfRegion],        # "
+        detections: List[DetectionBox],  # from parrot.models.detections
+        shelf_regions: List[ShelfRegion],  # "
         reference_images: Optional[List[Union[Path, bytes, "Image.Image"]]] = None,
         model: Union[OpenAIModel, str] = OpenAIModel.GPT4_1_MINI,
         prompt: Optional[str] = None,
@@ -2072,7 +2003,7 @@ class OpenAIClient(AbstractClient):
         ocr_hints: bool = True,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
     ) -> List[IdentifiedProduct]:
         """
         Step-2: Identify products using the detected boxes + reference images.
@@ -2083,10 +2014,7 @@ class OpenAIClient(AbstractClient):
         try:
             from PIL import Image
         except ImportError as exc:
-            raise ImportError(
-                "image_identification() requires Pillow. "
-                "Install with: pip install Pillow"
-            ) from exc
+            raise ImportError("image_identification() requires Pillow. " "Install with: pip install Pillow") from exc
         model = self._normalize_model(model)
         try:
             _pytesseract = lazy_import("pytesseract", extra="ocr")
@@ -2100,7 +2028,7 @@ class OpenAIClient(AbstractClient):
             pad = 6
             x1 = max(0, box.x1 - pad)
             y1 = max(0, box.y1 - pad)
-            x2 = min(pil_img.width,  box.x2 + pad)
+            x2 = min(pil_img.width, box.x2 + pad)
             y2 = min(pil_img.height, box.y2 + pad)
             return pil_img.crop((x1, y1, x2, y2))
 
@@ -2120,8 +2048,10 @@ class OpenAIClient(AbstractClient):
             # left/center/right inside the shelf bbox
             if best:
                 mid = (box.x1 + box.x2) / 2.0
-                thirds = (best.bbox.x1 + (best.bbox.x2 - best.bbox.x1) / 3.0,
-                        best.bbox.x1 + 2 * (best.bbox.x2 - best.bbox.x1) / 3.0)
+                thirds = (
+                    best.bbox.x1 + (best.bbox.x2 - best.bbox.x1) / 3.0,
+                    best.bbox.x1 + 2 * (best.bbox.x2 - best.bbox.x1) / 3.0,
+                )
                 position = "left" if mid < thirds[0] else ("right" if mid > thirds[1] else "center")
             else:
                 position = "center"
@@ -2147,14 +2077,16 @@ class OpenAIClient(AbstractClient):
                 except Exception:
                     text_hint = ""
             shelf, pos = _shelf_and_position(det, shelf_regions)
-            crops.append({
-                "id": i,
-                "det": det,
-                "shelf": shelf,
-                "position": pos,
-                "ocr": text_hint,
-                "img_content": self._encode_image_for_openai(crop)
-            })
+            crops.append(
+                {
+                    "id": i,
+                    "det": det,
+                    "shelf": shelf,
+                    "position": pos,
+                    "ocr": text_hint,
+                    "img_content": self._encode_image_for_openai(crop),
+                }
+            )
 
         # --- build messages (full image + crops + references) ---
         # Put references first, then the full scene, then each crop.
@@ -2178,15 +2110,18 @@ class OpenAIClient(AbstractClient):
                 f"shelf:{c['shelf']} position:{c['position']} ocr:{c['ocr'][:80] or 'None'}"
             )
         if prompt:
-            text_block = prompt + "\n\nReturn ONLY JSON with top-level key 'items' that matches the provided schema." + "\n".join(meta_lines)
+            text_block = (
+                prompt
+                + "\n\nReturn ONLY JSON with top-level key 'items' that matches the provided schema."
+                + "\n".join(meta_lines)
+            )
         else:
             text_block = (
                 "Identify each detection by comparing with the reference images. "
                 "Prefer visual features (shape, control panel, ink tank layout) and use OCR hints only as supportive evidence. "
                 "Allowed product_type: ['printer','product_box','fact_tag','promotional_graphic','ink_bottle']. "
                 "Models to look for (if any): ['ET-2980','ET-3950','ET-4950']. "
-                "Return one item per detection id.\n"
-                + "\n".join(meta_lines)
+                "Return one item per detection id.\n" + "\n".join(meta_lines)
             )
         content_blocks.append({"type": "text", "text": text_block})
         # add crops
@@ -2211,8 +2146,16 @@ class OpenAIClient(AbstractClient):
                 "advertisement_type": {"type": ["string", "null"]},
             },
             "required": [
-                "detection_id","product_type","product_model","confidence","visual_features",
-                "reference_match","shelf_location","position_on_shelf","brand","advertisement_type"
+                "detection_id",
+                "product_type",
+                "product_model",
+                "confidence",
+                "visual_features",
+                "reference_match",
+                "shelf_location",
+                "position_on_shelf",
+                "brand",
+                "advertisement_type",
             ],
         }
         resp_format = {
@@ -2227,7 +2170,7 @@ class OpenAIClient(AbstractClient):
                         "items": {
                             "type": "array",
                             "items": item_schema,
-                            "minItems": len(detections),   # drop or lower if this causes 400s
+                            "minItems": len(detections),  # drop or lower if this causes 400s
                         }
                     },
                     "required": ["items"],
@@ -2245,7 +2188,7 @@ class OpenAIClient(AbstractClient):
             messages=messages,
             max_tokens=max_tokens or self.max_tokens,
             temperature=temperature or self.temperature,
-            response_format=resp_format
+            response_format=resp_format,
         )
 
         raw = response.choices[0].message.content or "{}"
@@ -2255,9 +2198,7 @@ class OpenAIClient(AbstractClient):
             items = data.get("items") or data.get("detections") or []
         except Exception:
             # fallback: try best-effort parse if model didn’t honor schema
-            data = self._json.loads(
-                raw
-            )
+            data = self._json.loads(raw)
             items = data.get("items") or data.get("detections") or []
 
         # --- build IdentifiedProduct list ---
@@ -2271,13 +2212,13 @@ class OpenAIClient(AbstractClient):
             shelf, pos = shelf_pos_map.get(det_id, ("unknown", "center"))
 
             # allow model to override if present
-            shelf = (it.get("shelf_location") or shelf)
-            pos = (it.get("position_on_shelf") or pos)
+            shelf = it.get("shelf_location") or shelf
+            pos = it.get("position_on_shelf") or pos
 
             # --- COERCION / DEFAULTS ---
             det_cls = det.class_name.lower()
             pt = (it.get("product_type") or "").strip().lower()
-            pm = (it.get("product_model") or None)
+            pm = it.get("product_model") or None
 
             # Default to detector class when empty
             if not pt:
@@ -2316,12 +2257,12 @@ class OpenAIClient(AbstractClient):
         self,
         prompt: Union[str, Any],
         *,
-        model_name: str = "sora-2",        # "sora-1" or "sora-2"
-        duration: Optional[int] = None,    # seconds (if your access supports it)
-        ratio: Optional[str] = None,       # "16:9", "9:16", "1:1", etc. (mapped to aspect_ratio)
+        model_name: str = "sora-2",  # "sora-1" or "sora-2"
+        duration: Optional[int] = None,  # seconds (if your access supports it)
+        ratio: Optional[str] = None,  # "16:9", "9:16", "1:1", etc. (mapped to aspect_ratio)
         output_path: Optional[Union[str, Path]] = None,
         poll_interval: float = 2.0,
-        timeout: float = 15 * 60,          # 15 minutes
+        timeout: float = 15 * 60,  # 15 minutes
         extra: Optional[Dict[str, Any]] = None,  # pass-through for future knobs (seed/fps/style/etc.)
     ):
         """
@@ -2338,6 +2279,7 @@ class OpenAIClient(AbstractClient):
         videos_res = getattr(self.client, "videos", None)
         if videos_res is None:
             import openai as _openai
+
             ver = getattr(_openai, "__version__", "unknown")
             raise RuntimeError(
                 f"openai=={ver} does not expose `client.videos`; "
@@ -2376,6 +2318,7 @@ class OpenAIClient(AbstractClient):
             retrieve = getattr(videos_res, "retrieve", None)
             if not callable(create) or not callable(retrieve):
                 import openai as _openai
+
                 ver = getattr(_openai, "__version__", "unknown")
                 raise RuntimeError(
                     f"`client.videos` exists but lacks required methods in openai=={ver} "
@@ -2417,14 +2360,16 @@ class OpenAIClient(AbstractClient):
             raise RuntimeError("Could not download video: no download method or URL available on video object.")
 
         # -------- 4) Build saved_files + usage + raw_dump --------
-        saved_files = [{
-            "path": str(out_path),
-            "mime_type": "video/mp4",
-            "type": "video",
-            "id": vid_id,
-            "model": getattr(video_obj, "model", model_name),
-            "duration": getattr(video_obj, "duration", None),
-        }]
+        saved_files = [
+            {
+                "path": str(out_path),
+                "mime_type": "video/mp4",
+                "type": "video",
+                "id": vid_id,
+                "model": getattr(video_obj, "model", model_name),
+                "duration": getattr(video_obj, "duration", None),
+            }
+        ]
 
         # usage is typically token-based for text; keep a minimal structure for consistency
         usage = getattr(video_obj, "usage", None) or {
@@ -2435,8 +2380,7 @@ class OpenAIClient(AbstractClient):
 
         # serialize the raw object if it’s a Pydantic-like model
         raw_dump = (
-            video_obj.model_dump() if hasattr(video_obj, "model_dump")
-            else getattr(video_obj, "__dict__", video_obj)
+            video_obj.model_dump() if hasattr(video_obj, "model_dump") else getattr(video_obj, "__dict__", video_obj)
         )
 
         execution_time = time.time() - start_ts
@@ -2521,9 +2465,7 @@ class OpenAIClient(AbstractClient):
                     kwargs["tools"] = tool_defs
 
             if not self.client:
-                raise RuntimeError(
-                    "OpenAIClient not initialised. Use async context manager."
-                )
+                raise RuntimeError("OpenAIClient not initialised. Use async context manager.")
 
             response = await self.client.chat.completions.create(**kwargs)
             raw_text = response.choices[0].message.content or ""
@@ -2537,9 +2479,7 @@ class OpenAIClient(AbstractClient):
                     output = await self._parse_structured_output(raw_text, config)
 
             usage = CompletionUsage.from_openai(response.usage)
-            return self._build_invoke_result(
-                output, output_type, resolved_model, usage, response
-            )
+            return self._build_invoke_result(output, output_type, resolved_model, usage, response)
         except InvokeError:
             raise
         except Exception as exc:

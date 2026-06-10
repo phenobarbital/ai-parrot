@@ -171,6 +171,23 @@ class AnthropicClient(AbstractClient):
             self.base_headers["x-api-key"] = self.api_key
         super().__init__(**kwargs)
 
+    # FEAT-232 observability: map the active backend to the ``client_name`` carried
+    # on lifecycle events, which ``resolve_gen_ai_system`` turns into the OTel
+    # ``gen_ai.provider.name`` / ``gen_ai.system`` value (see
+    # observability/attributes.py::PROVIDER_TO_GEN_AI_SYSTEM). Bedrock-served
+    # Claude is a distinct provider in OpenLIT (``aws.bedrock``); the direct and
+    # aws-workspace backends are both the Anthropic API (``anthropic``).
+    _BACKEND_TELEMETRY_NAME: dict[str, str] = {
+        "direct": "anthropic",
+        "bedrock": "anthropic-bedrock",
+        "aws": "anthropic",
+    }
+
+    @property
+    def _telemetry_client_name(self) -> str:
+        """Return the ``client_name`` for telemetry events given the active backend."""
+        return self._BACKEND_TELEMETRY_NAME.get(self._backend_name, "anthropic")
+
     async def get_client(self) -> "Union[AsyncAnthropic, AsyncAnthropicBedrock, AsyncAnthropicAWS]":
         """Build and return the appropriate SDK client for the active backend.
 
@@ -363,7 +380,7 @@ class AnthropicClient(AbstractClient):
         if not segments:
             self.events.emit_nowait(PromptCacheSkippedEvent(
                 trace_context=tc,
-                client_name="anthropic",
+                client_name=self._telemetry_client_name,
                 model=payload.get("model", ""),
                 reason="no_segments",
                 source_type="client",
@@ -380,7 +397,7 @@ class AnthropicClient(AbstractClient):
         est_tokens = sum(len(s.text) // 4 for s in cacheable_segs)
         self.events.emit_nowait(PromptCacheAppliedEvent(
             trace_context=tc,
-            client_name="anthropic",
+            client_name=self._telemetry_client_name,
             model=payload.get("model", ""),
             blocks_marked=sum(
                 1 for b in blocks if isinstance(b, dict) and "cache_control" in b
@@ -440,7 +457,7 @@ class AnthropicClient(AbstractClient):
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time
         _lc_tc = self._emit_before_call(
-            client_name="anthropic",
+            client_name=self._telemetry_client_name,
             model=model,
             temperature=temperature if temperature is not None else self.temperature,
             system_prompt=self._resolve_system_prompt(system_prompt),
@@ -671,7 +688,7 @@ class AnthropicClient(AbstractClient):
         _lc_usage = getattr(ai_message, 'usage', None)
         await self._emit_after_call(
             _lc_tc,
-            client_name="anthropic",
+            client_name=self._telemetry_client_name,
             model=model,
             duration_ms=(_lc_time.perf_counter() - _lc_t0) * 1000,
             input_tokens=getattr(_lc_usage, 'input_tokens', None) if _lc_usage else None,
@@ -848,7 +865,7 @@ class AnthropicClient(AbstractClient):
         import time as _lc_time_s
         _lc_model_s = model  # already resolved via _resolve_model above
         _lc_tc_s = self._emit_before_call(
-            client_name="anthropic",
+            client_name=self._telemetry_client_name,
             model=_lc_model_s or "",
             temperature=temperature if temperature is not None else self.temperature,
             system_prompt=self._resolve_system_prompt(system_prompt),
@@ -902,7 +919,7 @@ class AnthropicClient(AbstractClient):
                             if _lc_has_chunk_subs:
                                 await self.events.emit(ClientStreamChunkEvent(
                                     trace_context=_lc_tc_s,
-                                    client_name="anthropic",
+                                    client_name=self._telemetry_client_name,
                                     model=_lc_model_s or "",
                                     chunk_index=_lc_chunk_idx,
                                     chunk_size_bytes=len(text.encode("utf-8")),
@@ -1029,7 +1046,7 @@ class AnthropicClient(AbstractClient):
         _lc_stream_usage = getattr(ai_message, 'usage', None)
         await self._emit_after_call(
             _lc_tc_s,
-            client_name="anthropic",
+            client_name=self._telemetry_client_name,
             model=_lc_model_s or "",
             duration_ms=(_lc_time_s.perf_counter() - _lc_t0_s) * 1000,
             input_tokens=getattr(_lc_stream_usage, 'input_tokens', None) if _lc_stream_usage else None,

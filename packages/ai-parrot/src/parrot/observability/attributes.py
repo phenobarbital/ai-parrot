@@ -35,6 +35,14 @@ PROVIDER_TO_GEN_AI_SYSTEM: dict[str, str] = {
     "openai": "openai",
     "anthropic": "anthropic",
     "claude-agent": "anthropic",    # routes through Anthropic
+    # FEAT-232: Claude served through AWS Bedrock. OpenLIT's canonical provider
+    # value for Bedrock is ``aws.bedrock`` (GEN_AI_SYSTEM_AWS_BEDROCK), distinct
+    # from the direct Anthropic API. The Bedrock backend must emit one of these
+    # client_names (not the bare "anthropic") for the trace to be attributed to
+    # Bedrock in OpenLIT. The "aws" workspace backend stays "anthropic" — it is
+    # still the Anthropic API, only credentialed via an AWS workspace.
+    "anthropic-bedrock": "aws.bedrock",
+    "bedrock": "aws.bedrock",       # alias for the LLMFactory "bedrock:" route key
     "google": "gemini",             # default; override per route when Vertex
     "gemini-live": "gemini",
     "groq": "groq",

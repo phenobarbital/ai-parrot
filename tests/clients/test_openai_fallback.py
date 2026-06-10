@@ -13,9 +13,9 @@ def _make_openai_client(**attrs):
 
 class TestOpenAIFallbackModel:
     def test_fallback_model_default(self):
-        """_fallback_model defaults to gpt-4.1-nano."""
+        """_fallback_model defaults to gpt-5-nano."""
         client = _make_openai_client()
-        assert client._fallback_model == 'gpt-4.1-nano'
+        assert client._fallback_model == "gpt-5-nano"
 
 
 class TestOpenAIIsCapacityError:
@@ -82,7 +82,7 @@ class TestOpenAIShouldUseFallback:
     def test_returns_false_when_same_model(self):
         client = _make_openai_client()
         error = Exception("429 Rate limit exceeded")
-        assert client._should_use_fallback("gpt-4.1-nano", error) is False
+        assert client._should_use_fallback("gpt-5-nano", error) is False
 
     def test_returns_false_on_auth_error(self):
         client = _make_openai_client()
