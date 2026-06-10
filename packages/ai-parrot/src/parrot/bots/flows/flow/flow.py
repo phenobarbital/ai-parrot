@@ -716,6 +716,40 @@ class AgentsFlow(PersistenceMixin):
                 if tgt in incoming:
                     incoming[tgt].append(edge)
 
+        if explicit_mode:
+            # Structural validation (Kahn): every node must be reachable
+            # through an acyclic path. A cycle would otherwise leave its
+            # nodes unexecuted and end the run with a misleading
+            # "completed" status (FlowDefinition validates this itself;
+            # programmatic graphs are validated here).
+            unique_sources = {
+                nid: {e.from_ for e in in_edges}
+                for nid, in_edges in incoming.items()
+            }
+            in_degree = {nid: len(srcs) for nid, srcs in unique_sources.items()}
+            succ_sets: dict[str, set[str]] = {}
+            for tgt, srcs in unique_sources.items():
+                for src in srcs:
+                    succ_sets.setdefault(src, set()).add(tgt)
+            frontier = [nid for nid, deg in in_degree.items() if deg == 0]
+            visited = 0
+            while frontier:
+                current = frontier.pop()
+                visited += 1
+                for tgt in succ_sets.get(current, ()):
+                    in_degree[tgt] -= 1
+                    if in_degree[tgt] == 0:
+                        frontier.append(tgt)
+            if visited < len(nodes):
+                cyclic = sorted(
+                    nid for nid, deg in in_degree.items() if deg > 0
+                )
+                raise ValueError(
+                    f"Flow {self.name!r} contains a cycle: nodes {cyclic} "
+                    "are never reachable from an entry node. Break the "
+                    "cycle or use conditional edges with a terminal path."
+                )
+
         def _deps_for(node_id: str) -> DependencyResults:
             """Build dependency result dict for a node."""
             if explicit_mode:
@@ -831,6 +865,13 @@ class AgentsFlow(PersistenceMixin):
                         _spawn(tgt)
                     else:
                         skipped.add(tgt)
+                        try:
+                            # idle → blocked: the FSM's terminal marker for
+                            # "never ran" — post-run inspection can tell a
+                            # skipped node (blocked) from a pending one (idle).
+                            nodes[tgt].fsm.block()
+                        except Exception:  # noqa: BLE001 - telemetry only
+                            pass
                         self.logger.info(
                             "Node %r skipped (no incoming edge fired)", tgt
                         )

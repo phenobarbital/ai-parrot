@@ -274,6 +274,84 @@ class TestNodeEventHook:
 
 
 # ---------------------------------------------------------------------------
+# Structural validation + FSM lifecycle
+# ---------------------------------------------------------------------------
+
+
+class TestCycleValidation:
+    @pytest.mark.asyncio
+    async def test_full_cycle_raises(self) -> None:
+        flow = _flow()
+        flow.add_node(StubNode(node_id="x"))
+        flow.add_node(StubNode(node_id="y"))
+        flow.add_edge("x", "y")
+        flow.add_edge("y", "x")
+        with pytest.raises(ValueError, match="contains a cycle"):
+            await flow.run_flow(FlowContext(initial_task=""))
+
+    @pytest.mark.asyncio
+    async def test_downstream_cycle_raises(self) -> None:
+        """An entry node exists, but a downstream subgraph cycles."""
+        flow = _flow()
+        for nid in ("a", "b", "c"):
+            flow.add_node(StubNode(node_id=nid))
+        flow.add_edge("a", "b")
+        flow.add_edge("b", "c")
+        flow.add_edge("c", "b")
+        with pytest.raises(ValueError, match="contains a cycle"):
+            await flow.run_flow(FlowContext(initial_task=""))
+
+    @pytest.mark.asyncio
+    async def test_parallel_edges_same_pair_are_not_a_cycle(self) -> None:
+        """Two edges between the same pair (cond + on_error) must validate."""
+        flow = _flow()
+        flow.add_node(StubNode(node_id="a", result="go"))
+        flow.add_node(StubNode(node_id="b"))
+        flow.add_edge("a", "b", predicate=lambda r: r == "go")
+        flow.add_edge("a", "b", condition="on_error")
+        ctx = FlowContext(initial_task="")
+        result = await flow.run_flow(ctx)
+        assert _ran(ctx) == ["a", "b"]
+        assert result.status.value == "completed"
+
+
+class TestFsmLifecycle:
+    @staticmethod
+    def _capture_materialized(flow: AgentsFlow) -> dict:
+        captured: dict = {}
+        original = flow._materialize_nodes
+
+        def wrapper():
+            fresh = original()
+            captured.update(fresh)
+            return fresh
+
+        flow._materialize_nodes = wrapper  # type: ignore[method-assign]
+        return captured
+
+    @pytest.mark.asyncio
+    async def test_fsm_states_reflect_run_outcome(self) -> None:
+        """Executed → completed, failed → failed, skipped → blocked."""
+        flow = _pipeline_with_handler(fail_at="b")
+        captured = self._capture_materialized(flow)
+        await flow.run_flow(FlowContext(initial_task=""))
+
+        states = {nid: n.fsm.current_state.id for nid, n in captured.items()}
+        assert states["a"] == "completed"
+        assert states["b"] == "failed"
+        assert states["c"] == "blocked"        # skipped (upstream failed)
+        assert states["handler"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_original_nodes_keep_pristine_fsm(self) -> None:
+        """B-lite contract: run_flow never mutates the registered nodes."""
+        flow = _branch_merge_flow("left")
+        await flow.run_flow(FlowContext(initial_task=""))
+        for node in flow._nodes.values():
+            assert node.fsm.current_state.id == "idle"
+
+
+# ---------------------------------------------------------------------------
 # Backward compatibility — legacy successors mode untouched
 # ---------------------------------------------------------------------------
 
