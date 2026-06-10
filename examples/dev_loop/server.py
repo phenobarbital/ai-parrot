@@ -52,6 +52,7 @@ from parrot import conf
 from parrot.flows.dev_loop import (
     BugBrief,
     ClaudeCodeDispatcher,
+    DevLoopRunner,
     build_dev_loop_flow,
     flow_stream_ws,
 )
@@ -326,19 +327,19 @@ async def handle_run(request: web.Request) -> web.Response:
         return web.json_response({"error": str(exc)}, status=400)
 
     run_id = f"run-{uuid.uuid4().hex[:8]}"
-    flow = request.app["flow"]
+    runner: DevLoopRunner = request.app["runner"]
     started_at = time.time()
 
     async def _run() -> None:
         try:
             logger.info("Starting flow run_id=%s", run_id)
-            await flow.run_flow(
-                initial_task=f"resolve: {brief.summary[:120]}",
-                bug_brief=brief,
+            result = await runner.run(
+                brief,
                 run_id=run_id,
+                initial_task=f"resolve: {brief.summary[:120]}",
             )
-            logger.info("Flow run_id=%s finished in %.1fs",
-                        run_id, time.time() - started_at)
+            logger.info("Flow run_id=%s finished status=%s in %.1fs",
+                        run_id, result.status, time.time() - started_at)
         except Exception:
             logger.exception("Flow run_id=%s failed", run_id)
 
@@ -391,8 +392,13 @@ async def _on_startup(app: web.Application) -> None:
         redis_url=redis_url,
         name="dev-loop-demo",
     )
+    # Orchestrator-side run cap (FLOW_MAX_CONCURRENT_RUNS) — spec G5.
+    app["runner"] = DevLoopRunner(app["flow"])
     app["flow_tasks"] = set()
-    logger.info("Dev-loop flow ready")
+    logger.info(
+        "Dev-loop flow ready (max %d concurrent runs)",
+        app["runner"].max_concurrent_runs,
+    )
 
 
 async def _on_cleanup(app: web.Application) -> None:

@@ -1,9 +1,10 @@
 """FEAT-129 — Dev-Loop Orchestration: real-mode quickstart.
 
-Wires the five-node ``AgentsFlow`` (BugIntake → Research → Development →
-QA → DeploymentHandoff) with a real :class:`ClaudeCodeDispatcher`, a
-service-account ``JiraToolkit``, and the CloudWatch / Elasticsearch log
-toolkits, then runs it end-to-end against a sample :class:`BugBrief`.
+Wires the seven-node ``AgentsFlow`` (IntentClassifier → BugIntake →
+Research → Development → QA → DeploymentHandoff | FailureHandler) with a
+real :class:`ClaudeCodeDispatcher`, a service-account ``JiraToolkit``,
+and the CloudWatch / Elasticsearch log toolkits, then runs it end-to-end
+against a sample :class:`BugBrief` via :class:`DevLoopRunner`.
 
 Use ``server.py`` (next to this file) for a self-contained demo that does
 not need Claude / Jira / GitHub credentials.
@@ -38,6 +39,7 @@ from parrot import conf
 from parrot.flows.dev_loop import (
     BugBrief,
     ClaudeCodeDispatcher,
+    DevLoopRunner,
     FlowtaskCriterion,
     LogSource,
     ShellCriterion,
@@ -132,15 +134,19 @@ async def main() -> None:
     run_id = f"run-{uuid.uuid4().hex[:8]}"
     logger.info("Starting flow run_id=%s", run_id)
 
-    result = await flow.run_flow(
-        initial_task="resolve customer sync bug",
-        bug_brief=brief,
+    runner = DevLoopRunner(flow)
+    result = await runner.run(
+        brief,
         run_id=run_id,
+        initial_task="resolve customer sync bug",
     )
 
     logger.info("Flow run %s finished status=%s", run_id, result.status)
-    for agent_name, output in result.outputs.items():
-        logger.info("  %-22s -> %r", agent_name, output)
+    for node_id, response in result.responses.items():
+        logger.info("  %-22s -> %r", node_id, response)
+    if result.errors:
+        for node_id, error in result.errors.items():
+            logger.error("  %-22s !! %s", node_id, error)
 
 
 if __name__ == "__main__":
