@@ -23,6 +23,12 @@ from .import_reported_time_blocks import ImportReportedTimeBlocksType
 # FEAT-230: new Absence Management handlers
 from .time_off_request import RequestTimeOffType
 from .time_off_eligibility import TimeOffEligibilityType
+# FEAT-232: Payroll read handlers (composable-only WSDL routing)
+from .payroll import (
+    PayrollBalancesType,
+    PayrollResultsType,
+    CompanyPaymentDatesType,
+)
 
 __all__ = [
     "TimeBlockType",
@@ -50,4 +56,8 @@ __all__ = [
     # FEAT-230
     "RequestTimeOffType",
     "TimeOffEligibilityType",
+    # FEAT-232: Payroll
+    "PayrollBalancesType",
+    "PayrollResultsType",
+    "CompanyPaymentDatesType",
 ]

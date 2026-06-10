@@ -1,0 +1,72 @@
+{
+  "feature": "workday-composable-only-wsdl-routing",
+  "feature_id": "FEAT-233",
+  "spec": "sdd/specs/workday-composable-only-wsdl-routing.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-09T00:00:00Z",
+  "completed_at": "2026-06-10T00:00:00Z",
+  "tasks": [
+    {
+      "id": "TASK-1520",
+      "slug": "payroll-handlers-composable",
+      "title": "Payroll handlers in the Workday composable",
+      "feature_id": "FEAT-233",
+      "feature": "workday-composable-only-wsdl-routing",
+      "spec": "sdd/specs/workday-composable-only-wsdl-routing.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation: the toolkit migration (TASK-1515) cannot delegate payroll until these composable handlers exist. Touches service.py/config.py/handlers; coordinate but no parallel sibling in this feature.",
+      "assigned_to": null,
+      "started_at": "2026-06-10T00:00:00Z",
+      "completed_at": "2026-06-10T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-1520-payroll-handlers-composable.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1521",
+      "slug": "migrate-payroll-methods",
+      "title": "Migrate the 3 payroll toolkit methods to the composable",
+      "feature_id": "FEAT-233",
+      "feature": "workday-composable-only-wsdl-routing",
+      "spec": "sdd/specs/workday-composable-only-wsdl-routing.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1520"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on the composable payroll handlers (TASK-1514); modifies tool.py. Must precede the legacy deletion (TASK-1516).",
+      "assigned_to": null,
+      "started_at": "2026-06-10T00:00:00Z",
+      "completed_at": "2026-06-10T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-1521-migrate-payroll-methods.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1522",
+      "slug": "delete-legacy-soap-routing",
+      "title": "Delete the legacy SOAP routing block",
+      "feature_id": "FEAT-233",
+      "feature": "workday-composable-only-wsdl-routing",
+      "spec": "sdd/specs/workday-composable-only-wsdl-routing.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1521"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Cannot run until ALL methods (incl. payroll, TASK-1515) delegate to the composable \u2014 deleting wsdl_paths/_clients earlier breaks the 3 payroll methods. Same file as TASK-1515.",
+      "assigned_to": null,
+      "started_at": "2026-06-10T00:00:00Z",
+      "completed_at": "2026-06-10T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-1522-delete-legacy-soap-routing.md",
+      "verification": "verified"
+    }
+  ]
+}
