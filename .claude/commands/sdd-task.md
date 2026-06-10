@@ -166,6 +166,10 @@ mkdir -p "$(dirname "$INDEX")"
 > commit unrelated changes.** Other files may be modified or unstaged in the
 > working directory — do NOT touch them. Follow the exact sequence below.
 
+> **CRITICAL — Only commit task files and the index. NEVER commit unrelated changes.**
+> Other files may be modified or unstaged in the working directory — do NOT
+> touch them. Follow the exact sequence below.
+
 ```bash
 # 1. Unstage everything first to ensure a clean staging area
 git reset HEAD

@@ -277,7 +277,7 @@ agents-lite = [
 
 mcp = [
     "google-genai>=2.6.0",
-    "openai==2.8.1",
+    "openai==2.41.0",
     "yfinance==0.2.54",
     "youtube_search==2.1.2",
     "wikipedia==1.4.0",
@@ -344,7 +344,7 @@ claude-agent = [
 ]
 
 openai = [
-    "openai==2.8.1",
+    "openai==2.41.0",
     "tiktoken==0.9.0"
 ]
 
@@ -365,7 +365,7 @@ zai = [
 
 llms = [
     "google-genai>=2.6.0",
-    "openai==2.8.1",
+    "openai==2.41.0",
     "groq==0.33.0",
     # FIX-2: include both direct-API and Bedrock SDK so that `llms` covers all
     # Anthropic transports; bedrock pulls anthropic[aiohttp,aws] (boto3 stack).

@@ -1,6 +1,12 @@
 from typing import Dict, Optional, Any, List
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+)
 
 
 class OutputFormat(Enum):
@@ -40,11 +46,33 @@ class ModelConfig(BaseModel):
 
 
 class CompletionUsage(BaseModel):
-    """Unified completion usage tracking across different LLM providers."""
+    """Unified completion usage tracking across different LLM providers.
 
-    # Core usage metrics (common across all providers)
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
+    Speaks both token vocabularies. The canonical fields keep the OpenAI naming
+    (``prompt_tokens`` / ``completion_tokens``), but the model also accepts and
+    emits the OTel-GenAI / Anthropic naming (``input_tokens`` / ``output_tokens``)
+    so it interoperates with any framework regardless of which dialect it uses:
+
+    - **Construction** accepts either name (``CompletionUsage(input_tokens=17)``
+      or ``CompletionUsage(prompt_tokens=17)``) via field ``validation_alias``.
+    - **Read access** exposes both (``usage.input_tokens`` and
+      ``usage.prompt_tokens``).
+    - **Serialization** (``model_dump`` / ``model_dump_json``) includes both
+      vocabularies via computed fields.
+    """
+
+    # populate_by_name keeps the Python attribute names usable as kwargs even
+    # though validation_alias is declared on the fields below.
+    model_config = ConfigDict(populate_by_name=True)
+
+    # Core usage metrics (common across all providers). validation_alias lets the
+    # OTel/Anthropic ``input_tokens`` / ``output_tokens`` names populate them too.
+    prompt_tokens: int = Field(
+        0, validation_alias=AliasChoices("prompt_tokens", "input_tokens")
+    )
+    completion_tokens: int = Field(
+        0, validation_alias=AliasChoices("completion_tokens", "output_tokens")
+    )
     total_tokens: int = 0
 
     # Timing information (optional, provider-specific)
@@ -58,6 +86,24 @@ class CompletionUsage(BaseModel):
 
     # Provider-specific additional fields
     extra_usage: Dict[str, Any] = Field(default_factory=dict)
+
+    # GenAI SemConv aliases. The canonical fields use the OpenAI naming
+    # (prompt/completion); these computed fields expose the OTel GenAI naming
+    # (input/output) for read access AND serialization, so callers and the
+    # observability layer can read ``usage.input_tokens`` / ``usage.output_tokens``
+    # and any consumer dumping the model sees both vocabularies — matching
+    # ``gen_ai.usage.input_tokens`` / ``gen_ai.usage.output_tokens``.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def input_tokens(self) -> int:
+        """Alias for :attr:`prompt_tokens` (OTel GenAI ``input_tokens``)."""
+        return self.prompt_tokens
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def output_tokens(self) -> int:
+        """Alias for :attr:`completion_tokens` (OTel GenAI ``output_tokens``)."""
+        return self.completion_tokens
 
     @classmethod
     def from_openai(cls, usage: Any) -> "CompletionUsage":

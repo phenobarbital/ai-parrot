@@ -108,18 +108,31 @@ class ObservabilityConfig(BaseModel):
     # attribute 'edit'``; pymilvus→environs trips ``marshmallow.__version_info__``
     # on marshmallow 4.x) or fire even when the SDK is absent (``openai_agents``
     # raises ``DependencyConflict`` when ``openai-agents`` is not installed).
-    # These three are non-fatal but log ERROR-level noise on every boot, and
-    # AI-Parrot already traces LLM calls via its native GenAI subscriber, so the
-    # openai instrumentor is redundant. fastapi/starlette/tornado are transitive
-    # deps (chromadb, mcp) that AI-Parrot never serves — instrumenting them
-    # adds noise and can trigger "already instrumented" warnings. Forwarded to
-    # ``openlit.init(disabled_instrumentors=...)``. Override via
-    # ``OBSERVABILITY_OPENLIT_DISABLE`` (comma-separated); set to an empty string
-    # to disable nothing.
+    #
+    # CRITICAL — LLM SDK instrumentors are DISABLED on purpose. AI-Parrot already
+    # emits one GenAI span per LLM call via its native ``GenAIOpenTelemetrySubscriber``
+    # (with cost + the new ``gen_ai.provider.name`` SemConv attribute). If OpenLIT
+    # *also* instruments the same SDK, every call produces TWO GenAI spans that
+    # reach the OpenLIT collector — double-counted requests/tokens/cost, and the
+    # native span (which the collector also reads) is what surfaced the
+    # "Missing provider attribute on the trace" warning before the attribute fix.
+    # So we skip the SDKs we own natively: ``openai``, ``anthropic``, ``bedrock``
+    # (FEAT-232 Claude-on-Bedrock), ``groq``, ``vertexai``, ``google_ai_studio``.
+    #
+    # fastapi/starlette/tornado are transitive deps (chromadb, mcp) that AI-Parrot
+    # never serves — instrumenting them adds noise and can trigger "already
+    # instrumented" warnings. Forwarded to ``openlit.init(disabled_instrumentors=...)``.
+    # Override via ``OBSERVABILITY_OPENLIT_DISABLE`` (comma-separated); set to an
+    # empty string to disable nothing (e.g. to let OpenLIT own LLM tracing instead
+    # of the native subscriber).
     openlit_disabled_instrumentors: list[str] = Field(
         default_factory=lambda: [
-            "openai", "openai_agents", "milvus",
-            "fastapi", "starlette", "tornado",
+            # LLM SDKs traced natively by GenAIOpenTelemetrySubscriber — skip to
+            # avoid duplicate GenAI spans.
+            "openai", "openai_agents", "anthropic", "bedrock",
+            "groq", "vertexai", "google_ai_studio",
+            # Breaks / irrelevant transitive deps.
+            "milvus", "fastapi", "starlette", "tornado",
         ]
     )
 
