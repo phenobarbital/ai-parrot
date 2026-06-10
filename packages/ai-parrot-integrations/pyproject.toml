@@ -100,6 +100,13 @@ where = ["src"]
 include = ["parrot*"]
 namespaces = true
 
+# Non-Python data files (HTML login pages, voice UI assets). Without this
+# section setuptools ships only the .py modules, so the runtime fails to
+# locate parrot/integrations/telegram/static/*.html and parrot/voice/ui/*.
+[tool.setuptools.package-data]
+"parrot.integrations.telegram" = ["static/*.html"]
+"parrot.voice" = ["ui/*.html", "ui/*.js"]
+
 # Resolve botbuilder-dialogs↔aiogram emoji version clash (FEAT-205 / D3).
 # botbuilder-dialogs pins emoji==1.7.0; aiogram>=3.12 does not declare
 # a conflicting emoji requirement (tested with aiogram 3.28.2), so pinning

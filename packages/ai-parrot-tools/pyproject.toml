@@ -26,7 +26,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=0.25.10",
+    "ai-parrot>=0.25.11",
     "PyGithub>=2.1",
 ]
 
@@ -90,6 +90,11 @@ include = ["parrot_tools*"]
 "parrot_tools" = ["py.typed"]
 "parrot_tools.cloudsploit" = ["templates/*.html"]
 "parrot_tools.security.reports" = ["templates/*.html"]
+# Runtime-loaded data (Path(__file__).parent / ...): compliance mappings,
+# prebuilt scraping plans, and the AWS IAM policy referenced by inspector.py.
+"parrot_tools.security.reports.mappings" = ["*.yaml"]
+"parrot_tools.scraping.extraction_plans._prebuilt" = ["*.json"]
+"parrot_tools.aws.policies" = ["*.json"]
 
 [tool.uv.sources]
 ai-parrot = { workspace = true }
