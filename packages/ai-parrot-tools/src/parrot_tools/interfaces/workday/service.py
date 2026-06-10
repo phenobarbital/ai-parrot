@@ -39,6 +39,7 @@ from parrot_tools.interfaces.workday.config import WorkdayConfig, get_wsdl_path
 from parrot_tools.interfaces.workday.handlers import (
     ApplicantType,
     CandidateType,
+    CompanyPaymentDatesType,
     CostCenterType,
     CustomPunchFieldReportType,
     CustomPunchFieldReportRestType,
@@ -50,6 +51,8 @@ from parrot_tools.interfaces.workday.handlers import (
     JobRequisitionType,
     LocationType,
     OrganizationType,
+    PayrollBalancesType,
+    PayrollResultsType,
     PutTimeClockEventsType,
     RecruitingAgencyUsersType,
     ReferencesType,
@@ -244,6 +247,10 @@ class WorkdayService(SOAPClient):
             "put_time_clock_events": PutTimeClockEventsType(self),
             "import_time_clock_events": ImportTimeClockEventsType(self),
             "import_reported_time_blocks": ImportReportedTimeBlocksType(self),
+            # FEAT-232: Payroll read handlers
+            "get_payroll_balances": PayrollBalancesType(self),
+            "get_payroll_results": PayrollResultsType(self),
+            "get_company_payment_dates": CompanyPaymentDatesType(self),
             # FEAT-230: Absence Management handlers
             "request_time_off": RequestTimeOffType(self),
             "get_time_off_eligibility": TimeOffEligibilityType(self),

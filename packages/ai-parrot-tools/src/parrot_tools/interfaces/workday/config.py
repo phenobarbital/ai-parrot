@@ -42,6 +42,7 @@ from parrot.conf import (
     WORKDAY_WSDL_HUMAN_RESOURCES,
     WORKDAY_WSDL_INTEGRATIONS,
     WORKDAY_WSDL_PATH,
+    WORKDAY_WSDL_PAYROLL,
     WORKDAY_WSDL_RECRUITING,
     WORKDAY_WSDL_TIME,
     WORKDAY_WSDL_TIME_BLOCK_REPORT,
@@ -80,6 +81,10 @@ _WSDL_ROUTING: dict[str, Any] = {
     # FEAT-230: Absence Management write + eligibility ops
     "request_time_off": WORKDAY_WSDL_ABSENCE_MANAGEMENT,
     "get_time_off_eligibility": WORKDAY_WSDL_ABSENCE_MANAGEMENT,
+    # FEAT-232: Payroll read ops
+    "get_payroll_balances": WORKDAY_WSDL_PAYROLL,
+    "get_payroll_results": WORKDAY_WSDL_PAYROLL,
+    "get_company_payment_dates": WORKDAY_WSDL_PAYROLL,
 }
 
 
