@@ -547,11 +547,17 @@ class ResearchNode(Node):
                     brief.existing_issue_key, exc,
                 )
             else:
-                if result["status"] == "ok":
+                # Toolkit responses carry a "status" key; treat a missing
+                # key as success so a bare issue payload also counts as a hit.
+                status = (
+                    result.get("status", "ok")
+                    if isinstance(result, dict) else "ok"
+                )
+                if status == "ok":
                     return brief.existing_issue_key
                 self.logger.warning(
                     "existing_issue_key=%r returned %s; falling back",
-                    brief.existing_issue_key, result["status"],
+                    brief.existing_issue_key, status,
                 )
 
         # 2. Summary search inside the configured project.
