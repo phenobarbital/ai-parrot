@@ -1,6 +1,6 @@
-# TASK-1514: Payroll handlers in the Workday composable
+# TASK-1520: Payroll handlers in the Workday composable
 
-**Feature**: FEAT-232 — Workday Composable-Only WSDL Routing
+**Feature**: FEAT-233 — Workday Composable-Only WSDL Routing
 **Spec**: `sdd/specs/workday-composable-only-wsdl-routing.spec.md`
 **Status**: pending
 **Priority**: high
@@ -14,8 +14,8 @@
 
 Implements **Module 1**. The composable has NO payroll handlers today (only the
 `Worker` model carries payroll *fields*). Before the toolkit's payroll methods can
-delegate to the composable (TASK-1515) and the legacy SOAP path can be deleted
-(TASK-1516), the composable needs 3 read handlers for the Workday Payroll WSDL.
+delegate to the composable (TASK-1521) and the legacy SOAP path can be deleted
+(TASK-1522), the composable needs 3 read handlers for the Workday Payroll WSDL.
 
 ---
 
@@ -37,7 +37,7 @@ delegate to the composable (TASK-1515) and the legacy SOAP path can be deleted
 **Unresolved (decide here):** exact Workday Payroll operation names + payload shapes
 — verify against `env/workday/payroll_v45_2.wsdl` before coding (spec §8).
 
-**NOT in scope:** touching `workday/tool.py` (TASK-1515/1516); deleting legacy code.
+**NOT in scope:** touching `workday/tool.py` (TASK-1521/1516); deleting legacy code.
 
 ---
 

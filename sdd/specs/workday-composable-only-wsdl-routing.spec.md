@@ -5,7 +5,7 @@ base_branch: dev
 
 # Feature Specification: Workday Composable-Only WSDL Routing (retire legacy SOAP path)
 
-**Feature ID**: FEAT-232
+**Feature ID**: FEAT-233
 **Date**: 2026-06-09
 **Author**: Juan (raised by Jesus Lara)
 **Status**: approved
@@ -84,7 +84,7 @@ BEFORE (post-FEAT-230):
   22 methods ──▶ _get_composable(op) ──▶ WorkdayComposable (self-routes WSDL)   ✅
    3 payroll ──▶ _get_client_for_method ──▶ wsdl_paths[enum] ──▶ WorkdaySOAPClient  ⛔ legacy
 
-AFTER (FEAT-232):
+AFTER (FEAT-233):
   ALL methods ──▶ _get_composable(op) ──▶ WorkdayComposable.get_wsdl_path(op)
                                             ├─ get_payroll_balances ─┐
                                             ├─ get_payroll_results   ├─▶ WORKDAY_WSDL_PAYROLL
@@ -315,7 +315,7 @@ class WorkdayTypeBase(ABC):                            # line 11  (read base; re
 
 ## 8. Open Questions
 
-- [x] Scope of FEAT-232 — *Resolved with Jesus*: full retirement — build payroll
+- [x] Scope of FEAT-233 — *Resolved with Jesus*: full retirement — build payroll
   handlers in the composable, migrate the 3 methods, delete the entire legacy block.
 - [x] Is the Payroll WSDL available? — *Resolved*: yes, `WORKDAY_WSDL_PAYROLL`
   (`conf.py:623`, `payroll_v45_2.wsdl`); `WORKDAY_WSDL_PATHS["payroll"]` (`conf.py:655`).
@@ -334,7 +334,7 @@ class WorkdayTypeBase(ABC):                            # line 11  (read base; re
 - Order: M1 (payroll handlers) → M2 (migrate methods) → M3 (delete legacy).
 - Cross-feature dependencies: depends on FEAT-230 (merged). Shares
   `workday/tool.py` + `interfaces/workday/` with any other Workday work — coordinate.
-- Worktree branch: `feat-232-workday-composable-only-wsdl-routing`.
+- Worktree branch: `feat-233-workday-composable-only-wsdl-routing`.
 
 ---
 

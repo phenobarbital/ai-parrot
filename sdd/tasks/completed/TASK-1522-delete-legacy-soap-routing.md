@@ -1,11 +1,11 @@
-# TASK-1516: Delete the legacy SOAP routing block
+# TASK-1522: Delete the legacy SOAP routing block
 
-**Feature**: FEAT-232 — Workday Composable-Only WSDL Routing
+**Feature**: FEAT-233 — Workday Composable-Only WSDL Routing
 **Spec**: `sdd/specs/workday-composable-only-wsdl-routing.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-1515
+**Depends-on**: TASK-1521
 **Assigned-to**: unassigned
 
 ---
@@ -13,7 +13,7 @@
 ## Context
 
 Implements **Module 3** — the payoff. With all `wd_*` methods (incl. payroll, after
-TASK-1515) delegating to the composable, the legacy WSDL-routing scaffolding is dead
+TASK-1521) delegating to the composable, the legacy WSDL-routing scaffolding is dead
 code. Remove it so the composable is the single WSDL-routing source of truth — the
 end-state Jesus asked for (`self.wsdl_paths` no longer makes sense).
 
@@ -37,7 +37,7 @@ Reconcile:
   keep the `_composables` teardown (tool.py:689-691).
 - Remove now-unused imports (`SOAPClient`, `Enum`, `PurePath` if only used here, etc.).
 
-**NOT in scope:** changing any `wd_*` method body (done in TASK-1515); the composable.
+**NOT in scope:** changing any `wd_*` method body (done in TASK-1521); the composable.
 
 ---
 
@@ -89,9 +89,9 @@ class WorkdayToolkit(AbstractToolkit):
 ## Implementation Notes
 
 ### Key Constraints
-- Run ONLY after TASK-1515 — deleting `wsdl_paths`/`_clients` before payroll migrates breaks the 3 methods.
+- Run ONLY after TASK-1521 — deleting `wsdl_paths`/`_clients` before payroll migrates breaks the 3 methods.
 - Preserve `wd_start`/`wd_close` public behavior (no signature change).
-- After deletion, the full FEAT-230 + FEAT-232 test suite must still pass.
+- After deletion, the full FEAT-230 + FEAT-233 test suite must still pass.
 - Watch for orphaned imports (`Enum`, `SOAPClient`, `PurePath`) — remove if unused.
 
 ### Known Risks / Gotchas
@@ -108,7 +108,7 @@ class WorkdayToolkit(AbstractToolkit):
 - [ ] `WorkdaySOAPClient`, `wsdl_paths`, `_clients`, `soap_client`, `WorkdayService` enum, `METHOD_TO_SERVICE_MAP`, `_get_client_for_service`, `_get_client_for_method` are removed (`grep` empty in tool.py).
 - [ ] `wd_start` / `wd_close` operate only on `_composables`.
 - [ ] No orphaned imports; `ruff check` clean.
-- [ ] Full suite passes: `pytest packages/ai-parrot-tools/tests/workday -v` (FEAT-230 + FEAT-232).
+- [ ] Full suite passes: `pytest packages/ai-parrot-tools/tests/workday -v` (FEAT-230 + FEAT-233).
 - [ ] No breaking change to the public `wd_*` API.
 
 ---
@@ -132,7 +132,7 @@ def test_legacy_symbols_removed():
 
 ## Agent Instructions
 
-1. **Read the spec** (§3 Module 3, §6, §7 risks). 2. **Check deps** — TASK-1515 completed.
+1. **Read the spec** (§3 Module 3, §6, §7 risks). 2. **Check deps** — TASK-1521 completed.
 3. **Verify the Codebase Contract** (confirm no live references before deleting).
 4. **Update status** → in-progress. 5. **Implement** (delete + reconcile + prune imports).
 6. **Verify** criteria (incl. full suite). 7. **Move** to completed; **update index** → done.

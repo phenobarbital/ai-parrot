@@ -1,11 +1,11 @@
-# TASK-1515: Migrate the 3 payroll toolkit methods to the composable
+# TASK-1521: Migrate the 3 payroll toolkit methods to the composable
 
-**Feature**: FEAT-232 — Workday Composable-Only WSDL Routing
+**Feature**: FEAT-233 — Workday Composable-Only WSDL Routing
 **Spec**: `sdd/specs/workday-composable-only-wsdl-routing.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-1514
+**Depends-on**: TASK-1520
 **Assigned-to**: unassigned
 
 ---
@@ -14,9 +14,9 @@
 
 Implements **Module 2**. The 3 payroll methods are the only ones still on the
 legacy SOAP path (`_get_client_for_method` → `wsdl_paths` → `WorkdaySOAPClient`).
-Now that the composable has payroll handlers (TASK-1514), migrate these 3 to
+Now that the composable has payroll handlers (TASK-1520), migrate these 3 to
 delegate via `_get_composable(...)` like the other 22 methods, so the legacy block
-can be deleted (TASK-1516).
+can be deleted (TASK-1522).
 
 ---
 
@@ -32,8 +32,8 @@ can be deleted (TASK-1516).
   (tool.py:343) — no breaking change.
 - No `pandas.DataFrame` may cross the tool boundary (`json.dumps(result)` succeeds).
 
-**NOT in scope:** deleting the legacy block (TASK-1516); changing the 22 other
-methods; touching the composable handlers (TASK-1514).
+**NOT in scope:** deleting the legacy block (TASK-1522); changing the 22 other
+methods; touching the composable handlers (TASK-1520).
 
 ---
 
@@ -68,7 +68,7 @@ async def wd_get_company_payment_dates(self, start_date: str,
                                        end_date: str, ...): ...                  # line 1444 (MIGRATE)
 def _flatten_entries(self, ...): ...                   # ~line 1706 (DataFrame->dict helper, reuse)
 
-# composable (from TASK-1514): operation_types get_payroll_balances /
+# composable (from TASK-1520): operation_types get_payroll_balances /
 #   get_payroll_results / get_company_payment_dates are registered + WSDL-routed.
 async def fetch(self, operation_type, **params) -> pd.DataFrame   # service.py:266
 async def fetch_models(self, operation_type, **params) -> list    # service.py:291
@@ -76,7 +76,7 @@ async def fetch_models(self, operation_type, **params) -> list    # service.py:2
 
 ### Does NOT Exist
 - ~~`_get_client_for_method` is the right path going forward~~ — it is the LEGACY path being retired; use `_get_composable`.
-- ~~payroll handlers absent~~ — they exist after TASK-1514; if missing, TASK-1514 is incomplete (check deps first).
+- ~~payroll handlers absent~~ — they exist after TASK-1520; if missing, TASK-1520 is incomplete (check deps first).
 
 ---
 
@@ -137,7 +137,7 @@ async def test_payroll_methods_delegate_to_composable(monkeypatch):
 
 ## Agent Instructions
 
-1. **Read the spec** (§3 Module 2, §6). 2. **Check deps** — TASK-1514 completed.
+1. **Read the spec** (§3 Module 2, §6). 2. **Check deps** — TASK-1520 completed.
 3. **Verify the Codebase Contract**. 4. **Update status** → in-progress.
 5. **Implement**. 6. **Verify** criteria. 7. **Move** to completed; **update index** → done.
 8. **Fill Completion Note**.
