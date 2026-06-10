@@ -115,7 +115,7 @@ class TestRetriesPrOnce:
         )
 
         node = _build_node(jira)
-        result = await node.execute(prompt="", ctx=ctx)
+        result = await node.execute(ctx)
         assert result["status"] == "ready_to_deploy"
         assert result["pr_url"] == "https://github.com/x/y/pull/1"
         assert len(calls) == 2
@@ -157,7 +157,7 @@ class TestFinalPrFailure:
         )
 
         node = _build_node(jira)
-        result = await node.execute(prompt="", ctx=ctx)
+        result = await node.execute(ctx)
         assert result["status"] == "blocked"
         # First call -> Deployment Blocked transition (jira call inside
         # _mark_blocked); second jira_add_comment also called there.
@@ -188,7 +188,7 @@ class TestPushFailureBlocks:
             _should_not_be_called,
         )
         node = _build_node(jira)
-        result = await node.execute(prompt="", ctx=ctx)
+        result = await node.execute(ctx)
         assert result["status"] == "blocked"
         assert "push" in result["error"]
 

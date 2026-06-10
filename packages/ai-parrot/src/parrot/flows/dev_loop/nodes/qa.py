@@ -12,11 +12,12 @@ The node returns the report regardless of ``passed`` — the flow factory
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from parrot.bots.flows.core.node import Node
+from parrot.bots.flows.core.context import FlowContext
+from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import (
     AcceptanceCriterion,
@@ -27,6 +28,7 @@ from parrot.flows.dev_loop.models import (
     QAReport,
     ResearchOutput,
 )
+from parrot.flows.dev_loop.nodes.base import DevLoopNode
 
 
 _DEFAULT_LINT_COMMAND = "ruff check . && mypy --no-incremental"
@@ -47,7 +49,7 @@ class _QABrief(BaseModel):
     summary: str = ""
 
 
-class QANode(Node):
+class QANode(DevLoopNode):
     """Fourth node — runs deterministic acceptance verification."""
 
     def __init__(
@@ -61,15 +63,16 @@ class QANode(Node):
         object.__setattr__(self, "_dispatcher", dispatcher)
         object.__setattr__(self, "_lint_command", lint_command or _DEFAULT_LINT_COMMAND)
 
-    @property
-    def name(self) -> str:
-        return self.node_id
-
     # ------------------------------------------------------------------
     # Execute
     # ------------------------------------------------------------------
 
-    async def execute(self, prompt: str, ctx: Dict[str, Any]) -> QAReport:
+    async def execute(
+        self,
+        ctx: Union[FlowContext, Dict[str, Any]],
+        deps: Optional[DependencyResults] = None,
+        **kwargs: Any,
+    ) -> QAReport:
         """Dispatch ``sdd-qa`` and return the :class:`QAReport`.
 
         Manual criteria (``kind="manual"``) are filtered out before
@@ -81,8 +84,9 @@ class QANode(Node):
         ``False``. The flow factory routes the failure path elsewhere;
         the *node* never raises on ``passed=False``.
         """
-        research: ResearchOutput = ctx["research_output"]
-        brief: BugBrief = ctx["bug_brief"]
+        shared = self.shared_state(ctx)
+        research: ResearchOutput = shared["research_output"]
+        brief: BugBrief = shared["bug_brief"]
 
         manual: List[ManualCriterion] = [
             c for c in brief.acceptance_criteria
@@ -110,7 +114,7 @@ class QANode(Node):
                 brief=qa_brief,
                 profile=profile,
                 output_model=QAReport,
-                run_id=ctx["run_id"],
+                run_id=shared["run_id"],
                 node_id=self.name,
                 cwd=research.worktree_path,
             )
@@ -134,7 +138,7 @@ class QANode(Node):
             len(executable),
             len(manual),
         )
-        ctx["qa_report"] = report
+        shared["qa_report"] = report
         return report
 
     @staticmethod

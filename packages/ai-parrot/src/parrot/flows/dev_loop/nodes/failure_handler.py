@@ -16,17 +16,19 @@ returns a structured ``dict`` describing the outcome.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple, Union
 
-from parrot.bots.flows.core.node import Node
+from parrot.bots.flows.core.context import FlowContext
+from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.models import (
     BugBrief,
     QAReport,
     ResearchOutput,
 )
+from parrot.flows.dev_loop.nodes.base import DevLoopNode
 
 
-class FailureHandlerNode(Node):
+class FailureHandlerNode(DevLoopNode):
     """Terminal failure node — comment + transition + reassign on Jira."""
 
     def __init__(
@@ -38,18 +40,22 @@ class FailureHandlerNode(Node):
         super().__init__(node_id=name)
         object.__setattr__(self, "_jira", jira_toolkit)
 
-    @property
-    def name(self) -> str:
-        return self.node_id
-
     # ------------------------------------------------------------------
     # Execute
     # ------------------------------------------------------------------
 
     async def execute(
-        self, prompt: str, ctx: Dict[str, Any]
+        self,
+        ctx: Union[FlowContext, Dict[str, Any]],
+        deps: Optional[DependencyResults] = None,
+        **kwargs: Any,
     ) -> Dict[str, str]:
         """Escalate the run to a human via Jira. Never raises.
+
+        The failure context is taken from the shared state when present
+        (``failure_kind`` / ``failure_payload``); otherwise it is derived:
+        a failed ``qa_report`` becomes ``qa_failed``, and the first node
+        error recorded on the :class:`FlowContext` becomes ``node_error``.
 
         Returns:
             ``{"status": "escalated", "issue_key": "OPS-..."}`` on
@@ -59,10 +65,10 @@ class FailureHandlerNode(Node):
             ``{"status": "escalation_failed", "error": "..."}`` if any
             Jira call raises.
         """
-        brief: Optional[BugBrief] = ctx.get("bug_brief")
-        research: Optional[ResearchOutput] = ctx.get("research_output")
-        failure_kind: str = ctx.get("failure_kind", "node_error")
-        failure_payload: Any = ctx.get("failure_payload")
+        shared = self.shared_state(ctx)
+        brief: Optional[BugBrief] = shared.get("bug_brief")
+        research: Optional[ResearchOutput] = shared.get("research_output")
+        failure_kind, failure_payload = self._resolve_failure(ctx, shared)
 
         issue_key = research.jira_issue_key if research else None
         if not issue_key:
@@ -94,6 +100,50 @@ class FailureHandlerNode(Node):
             }
 
         return {"status": "escalated", "issue_key": issue_key}
+
+    # ------------------------------------------------------------------
+    # Internal — failure-context resolution
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_failure(
+        ctx: Union[FlowContext, Dict[str, Any]],
+        shared: Dict[str, Any],
+    ) -> Tuple[str, Any]:
+        """Determine ``(failure_kind, failure_payload)`` for this escalation.
+
+        Resolution order:
+
+        1. Explicit ``shared['failure_kind']`` / ``shared['failure_payload']``.
+        2. A failed :class:`QAReport` in ``shared['qa_report']`` →
+           ``("qa_failed", report)``.
+        3. The first error recorded on the :class:`FlowContext` →
+           ``("node_error", {node_id, exception_type, message})``.
+        4. Fallback ``("node_error", None)``.
+
+        Args:
+            ctx: The flow execution context (used for ``ctx.errors``).
+            shared: The shared state dict.
+
+        Returns:
+            Tuple of failure kind and payload.
+        """
+        if "failure_kind" in shared:
+            return shared["failure_kind"], shared.get("failure_payload")
+
+        qa_report = shared.get("qa_report")
+        if isinstance(qa_report, QAReport) and not qa_report.passed:
+            return "qa_failed", qa_report
+
+        errors = getattr(ctx, "errors", None) or {}
+        if errors:
+            node_id, exc = next(iter(errors.items()))
+            return "node_error", {
+                "node_id": node_id,
+                "exception_type": type(exc).__name__,
+                "message": str(exc),
+            }
+        return "node_error", shared.get("failure_payload")
 
     # ------------------------------------------------------------------
     # Internal — comment construction

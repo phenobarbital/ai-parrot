@@ -35,6 +35,14 @@ from parrot.core.events.lifecycle.events.tool import (
     ToolCallFailedEvent,
 )
 from parrot.core.events.lifecycle.events.message import MessageAddedEvent
+from parrot.core.events.lifecycle.events.flow import (
+    FlowStartedEvent,
+    FlowCompletedEvent,
+    NodeStartedEvent,
+    NodeCompletedEvent,
+    NodeFailedEvent,
+    NodeSkippedEvent,
+)
 
 __all__ = [
     # Agent domain
@@ -60,4 +68,11 @@ __all__ = [
     "ToolCallFailedEvent",
     # Message domain
     "MessageAddedEvent",
+    # Flow / node orchestration domain (FEAT-176 Phase 1.5)
+    "FlowStartedEvent",
+    "FlowCompletedEvent",
+    "NodeStartedEvent",
+    "NodeCompletedEvent",
+    "NodeFailedEvent",
+    "NodeSkippedEvent",
 ]

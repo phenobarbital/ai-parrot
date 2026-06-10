@@ -1,29 +1,15 @@
-"""Unit tests for parrot.flows.dev_loop.flow.build_dev_loop_flow (TASK-886, TASK-901).
+"""Unit tests for parrot.flows.dev_loop.flow.build_dev_loop_flow.
 
 These tests verify the *topology* of the assembled AgentsFlow rather
 than running it end-to-end (the full run path is exercised by the
-live integration tests in TASK-889). Topology checks: nodes registered,
-branching topology (FEAT-132), linear chain wired, QA conditional
-branch present (pass + fail), and the global error route from each
-middle node to the failure handler.
+live integration tests). Topology checks: nodes registered, branching
+topology (FEAT-132), linear chain wired, QA conditional branch present
+(pass + fail), and the global error route from each middle node to the
+failure handler.
 
-NOTE (FEAT-196 TASK-1314):
-The dev_loop nodes (IntentClassifierNode, ResearchNode, etc.) were written
-against the OLD ``parrot.bots.flow.node.Node`` ABC (plain Python class,
-no Pydantic, no ``node_id`` field).  After TASK-1313 repointed their
-import to ``parrot.bots.flows.core.node.Node`` (frozen Pydantic model
-requiring ``node_id``), constructing them with the old signature fails
-with a pydantic ValidationError ("node_id: Field required").
-
-Additionally, ``build_dev_loop_flow`` uses the OLD ``AgentsFlow`` API
-(``add_agent()``, ``task_flow()``, ``nodes`` dict, ``outgoing_transitions``),
-while ``parrot.bots.flows.AgentsFlow`` is the new DAG executor that
-only exposes ``add_node()`` / ``_nodes``.
-
-Full migration of dev_loop nodes + flow factory to the canonical
-``parrot.bots.flows.core.node.Node`` + new ``AgentsFlow`` API belongs to
-a separate task.  Until then all topology tests are marked xfail with
-``strict=True`` so any unexpected pass surfaces immediately.
+The factory builds on the FEAT-163 ``AgentsFlow`` executor using
+explicit conditional edges (``add_edge`` / ``FlowEdge``); assertions
+therefore inspect ``flow._nodes`` and ``flow._edges``.
 """
 
 from __future__ import annotations
@@ -33,17 +19,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from parrot.bots.flows.flow import FlowEdge
 from parrot.flows.dev_loop import (
     QAReport,
     WorkBrief,
     build_dev_loop_flow,
-)
-
-_XFAIL_REASON = (
-    "dev_loop nodes still use the old parrot.bots.flow.node.Node ABC "
-    "(plain Python, no node_id) and build_dev_loop_flow uses the old "
-    "AgentsFlow.add_agent() / task_flow() API. Full migration is a "
-    "separate task from TASK-1314."
 )
 
 
@@ -60,9 +40,8 @@ def flow():
 
 
 class TestNodeRegistration:
-    @pytest.mark.xfail(reason=_XFAIL_REASON, strict=True)
     def test_seven_nodes_registered(self, flow):
-        names = set(flow.nodes.keys())
+        names = set(flow._nodes.keys())
         assert names == {
             "intent_classifier",
             "bug_intake",
@@ -75,60 +54,46 @@ class TestNodeRegistration:
 
 
 class TestLinearChainTransitions:
-    @pytest.mark.xfail(reason=_XFAIL_REASON, strict=True)
     def test_intent_classifier_routes_to_bug_intake(self, flow):
         """bug path: intent_classifier -> bug_intake (conditional)."""
         targets = _outgoing_targets(flow, "intent_classifier")
         assert "bug_intake" in targets
 
-    @pytest.mark.xfail(reason=_XFAIL_REASON, strict=True)
     def test_intent_classifier_routes_to_research(self, flow):
         """non-bug path: intent_classifier -> research directly (conditional)."""
         targets = _outgoing_targets(flow, "intent_classifier")
         assert "research" in targets
 
-    @pytest.mark.xfail(reason=_XFAIL_REASON, strict=True)
     def test_bug_intake_routes_to_research(self, flow):
         """bug path continuation: bug_intake -> research (linear)."""
         targets = _outgoing_targets(flow, "bug_intake")
         assert "research" in targets
 
-    @pytest.mark.xfail(reason=_XFAIL_REASON, strict=True)
     def test_research_routes_to_development(self, flow):
         targets = _outgoing_targets(flow, "research")
         assert "development" in targets
 
-    @pytest.mark.xfail(reason=_XFAIL_REASON, strict=True)
     def test_development_routes_to_qa(self, flow):
         targets = _outgoing_targets(flow, "development")
         assert "qa" in targets
 
 
 class TestQABranching:
-    @pytest.mark.xfail(reason=_XFAIL_REASON, strict=True)
     def test_qa_pass_routes_to_handoff(self, flow):
-        # Find the QA->handoff transition; activate it with passed=True.
-        transitions = flow.nodes["qa"].outgoing_transitions
-        targets_for_pass = set()
         passing_report = QAReport(
             passed=True, criterion_results=[], lint_passed=True
         )
-        for t in transitions:
-            if t.predicate is not None and t.predicate(passing_report):
-                targets_for_pass.update(t.targets)
-        assert "deployment_handoff" in targets_for_pass
+        targets = _conditional_targets(flow, "qa", passing_report)
+        assert "deployment_handoff" in targets
+        assert "failure_handler" not in targets
 
-    @pytest.mark.xfail(reason=_XFAIL_REASON, strict=True)
     def test_qa_fail_routes_to_failure_handler(self, flow):
-        transitions = flow.nodes["qa"].outgoing_transitions
-        targets_for_fail = set()
         failing_report = QAReport(
             passed=False, criterion_results=[], lint_passed=False
         )
-        for t in transitions:
-            if t.predicate is not None and t.predicate(failing_report):
-                targets_for_fail.update(t.targets)
-        assert "failure_handler" in targets_for_fail
+        targets = _conditional_targets(flow, "qa", failing_report)
+        assert "failure_handler" in targets
+        assert "deployment_handoff" not in targets
 
 
 class TestErrorRoutes:
@@ -136,32 +101,18 @@ class TestErrorRoutes:
         "source",
         ["intent_classifier", "research", "development", "qa", "deployment_handoff"],
     )
-    @pytest.mark.xfail(reason=_XFAIL_REASON, strict=True)
     def test_error_transition_to_failure_handler(self, flow, source):
-        transitions = flow.nodes[source].outgoing_transitions
-        # An ON_ERROR transition has no predicate but its `condition`
-        # enum value is "on_error". We accept either signal.
-        from parrot.bots.flows.core.fsm import TransitionCondition  # noqa: PLC0415
-
-        error_targets = set()
-        for t in transitions:
-            if t.condition == TransitionCondition.ON_ERROR:
-                error_targets.update(t.targets)
+        error_targets = {
+            e.to
+            for e in _edges_from(flow, source)
+            if e.condition == "on_error"
+        }
         assert "failure_handler" in error_targets
 
 
 class TestKindRouting:
-    """FEAT-132: Verify the IntentClassifier-driven on_condition routing."""
+    """FEAT-132: Verify the IntentClassifier-driven conditional routing."""
 
-    def _get_conditional_targets(self, flow, source_name: str, result: Any) -> set:
-        """Collect targets for which predicates fire with *result*."""
-        targets: set = set()
-        for t in flow.nodes[source_name].outgoing_transitions:
-            if t.predicate is not None and t.predicate(result):
-                targets.update(t.targets)
-        return targets
-
-    @pytest.mark.xfail(reason=_XFAIL_REASON, strict=True)
     def test_routes_bug_through_bug_intake(self, flow):
         """kind='bug' should route intent_classifier -> bug_intake."""
         from parrot.flows.dev_loop import ShellCriterion
@@ -173,12 +124,11 @@ class TestKindRouting:
             escalation_assignee="oncall@example.com",
             reporter="reporter@example.com",
         )
-        targets = self._get_conditional_targets(flow, "intent_classifier", brief)
+        targets = _conditional_targets(flow, "intent_classifier", brief)
         assert "bug_intake" in targets
         assert "research" not in targets
 
     @pytest.mark.parametrize("kind", ["enhancement", "new_feature"])
-    @pytest.mark.xfail(reason=_XFAIL_REASON, strict=True)
     def test_routes_non_bug_skips_bug_intake(self, flow, kind):
         """kind != 'bug' should route intent_classifier -> research directly."""
         from parrot.flows.dev_loop import ShellCriterion
@@ -190,9 +140,33 @@ class TestKindRouting:
             escalation_assignee="oncall@example.com",
             reporter="reporter@example.com",
         )
-        targets = self._get_conditional_targets(flow, "intent_classifier", brief)
+        targets = _conditional_targets(flow, "intent_classifier", brief)
         assert "research" in targets
         assert "bug_intake" not in targets
+
+
+class TestEventPublisherWiring:
+    def test_publisher_attached_by_default(self, flow):
+        assert flow._event_publisher is not None
+        assert flow._event_publisher in flow._node_event_listeners
+
+    def test_lifecycle_adapter_attached_by_default(self, flow):
+        from parrot.bots.flows.flow.telemetry import FlowLifecycleAdapter
+        assert isinstance(flow._lifecycle_adapter, FlowLifecycleAdapter)
+        assert flow._lifecycle_adapter in flow._node_event_listeners
+
+    def test_publisher_and_adapter_can_be_disabled(self):
+        f = build_dev_loop_flow(
+            dispatcher=MagicMock(),
+            jira_toolkit=MagicMock(),
+            log_toolkits={},
+            redis_url="redis://localhost:6379/0",
+            publish_flow_events=False,
+            lifecycle_events=False,
+        )
+        assert f._event_publisher is None
+        assert f._lifecycle_adapter is None
+        assert f._node_event_listeners == []
 
 
 # ---------------------------------------------------------------------------
@@ -200,8 +174,19 @@ class TestKindRouting:
 # ---------------------------------------------------------------------------
 
 
+def _edges_from(flow, source_name: str) -> list[FlowEdge]:
+    return [e for e in flow._edges if e.from_ == source_name]
+
+
 def _outgoing_targets(flow, source_name: str) -> set[str]:
+    return {e.to for e in _edges_from(flow, source_name)}
+
+
+def _conditional_targets(flow, source_name: str, result: Any) -> set[str]:
+    """Collect targets whose on_condition predicates fire for *result*."""
     targets: set[str] = set()
-    for t in flow.nodes[source_name].outgoing_transitions:
-        targets.update(t.targets)
+    for e in _edges_from(flow, source_name):
+        if e.condition == "on_condition" and callable(e.predicate):
+            if e.predicate(result):
+                targets.add(e.to)
     return targets

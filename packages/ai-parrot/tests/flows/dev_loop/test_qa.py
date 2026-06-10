@@ -52,7 +52,7 @@ class TestPermissionMode:
             )
         )
         node = QANode(dispatcher=dispatcher)
-        await node.execute(prompt="", ctx=ctx)
+        await node.execute(ctx)
         profile: ClaudeCodeDispatchProfile = (
             dispatcher.dispatch.await_args.kwargs["profile"]
         )
@@ -75,7 +75,7 @@ class TestFailureDoesNotRaise:
         dispatcher = MagicMock()
         dispatcher.dispatch = AsyncMock(return_value=failing)
         node = QANode(dispatcher=dispatcher)
-        result = await node.execute(prompt="", ctx=ctx)
+        result = await node.execute(ctx)
         assert result.passed is False
         assert ctx["qa_report"] is result
 
@@ -89,7 +89,7 @@ class TestSuccessReturnsReport:
         dispatcher = MagicMock()
         dispatcher.dispatch = AsyncMock(return_value=passing)
         node = QANode(dispatcher=dispatcher)
-        result = await node.execute(prompt="", ctx=ctx)
+        result = await node.execute(ctx)
         assert result.passed is True
 
 
@@ -104,7 +104,7 @@ class TestDispatchValidationErrorPropagates:
         )
         node = QANode(dispatcher=dispatcher)
         with pytest.raises(DispatchOutputValidationError):
-            await node.execute(prompt="", ctx=ctx)
+            await node.execute(ctx)
 
 
 class TestCwd:
@@ -116,7 +116,7 @@ class TestCwd:
         dispatcher = MagicMock()
         dispatcher.dispatch = AsyncMock(return_value=passing)
         node = QANode(dispatcher=dispatcher)
-        await node.execute(prompt="", ctx=ctx)
+        await node.execute(ctx)
         assert (
             dispatcher.dispatch.await_args.kwargs["cwd"]
             == ctx["research_output"].worktree_path

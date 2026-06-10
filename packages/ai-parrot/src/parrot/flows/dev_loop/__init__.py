@@ -1,9 +1,11 @@
 """Dev-loop orchestration flow (FEAT-129).
 
-A 5-node ``AgentsFlow`` (BugIntake → Research → Development → QA →
-DeploymentHandoff) that takes a bug brief and produces a PR plus a
-Jira ticket transitioned to "Ready to Deploy". See
-``sdd/specs/dev-loop-orchestration.spec.md`` for the full spec.
+A seven-node ``AgentsFlow`` (IntentClassifier → [BugIntake] → Research →
+Development → QA → DeploymentHandoff | FailureHandler) that takes a work
+brief and produces a PR plus a Jira ticket transitioned to "Ready to
+Deploy". See ``sdd/specs/dev-loop-orchestration.spec.md`` for the full
+spec. Runs are hosted by :class:`DevLoopRunner`, which enforces the
+``FLOW_MAX_CONCURRENT_RUNS`` cap.
 """
 
 from parrot.flows.dev_loop.dispatcher import (
@@ -11,7 +13,8 @@ from parrot.flows.dev_loop.dispatcher import (
     DispatchExecutionError,
     DispatchOutputValidationError,
 )
-from parrot.flows.dev_loop.flow import build_dev_loop_flow
+from parrot.flows.dev_loop.flow import FlowEventPublisher, build_dev_loop_flow
+from parrot.flows.dev_loop.runner import DevLoopRunner
 from parrot.flows.dev_loop.nodes.intent_classifier import IntentClassifierNode
 from parrot.flows.dev_loop.streaming import (
     FlowStreamMultiplexer,
@@ -44,9 +47,11 @@ __all__ = [
     "ClaudeCodeDispatchProfile",
     "CriterionResult",
     "DevelopmentOutput",
+    "DevLoopRunner",
     "DispatchEvent",
     "DispatchExecutionError",
     "DispatchOutputValidationError",
+    "FlowEventPublisher",
     "FlowStreamMultiplexer",
     "FlowtaskCriterion",
     "IntentClassifierNode",

@@ -13,18 +13,20 @@ duplicate it.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Union
 
-from parrot.bots.flows.core.node import Node
+from parrot.bots.flows.core.context import FlowContext
+from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import (
     ClaudeCodeDispatchProfile,
     DevelopmentOutput,
     ResearchOutput,
 )
+from parrot.flows.dev_loop.nodes.base import DevLoopNode
 
 
-class DevelopmentNode(Node):
+class DevelopmentNode(DevLoopNode):
     """Third node — dispatches the implementation phase to ``sdd-worker``."""
 
     def __init__(
@@ -36,28 +38,31 @@ class DevelopmentNode(Node):
         super().__init__(node_id=name)
         object.__setattr__(self, "_dispatcher", dispatcher)
 
-    @property
-    def name(self) -> str:
-        return self.node_id
-
     # ------------------------------------------------------------------
     # Execute
     # ------------------------------------------------------------------
 
     async def execute(
-        self, prompt: str, ctx: Dict[str, Any]
+        self,
+        ctx: Union[FlowContext, Dict[str, Any]],
+        deps: Optional[DependencyResults] = None,
+        **kwargs: Any,
     ) -> DevelopmentOutput:
         """Dispatch ``sdd-worker`` inside the upstream worktree.
 
         Args:
-            prompt: Unused (the dispatcher builds its own prompt body).
-            ctx: Must contain ``"run_id"`` and ``"research_output"``
-                (a :class:`ResearchOutput` produced by ``ResearchNode``).
+            ctx: Flow context whose shared state must contain ``"run_id"``
+                and ``"research_output"`` (a :class:`ResearchOutput`
+                produced by ``ResearchNode``).
+            deps: Dependency results (unused — payloads travel in the
+                shared state).
+            **kwargs: Extra execution context (ignored).
 
         Returns:
             The validated :class:`DevelopmentOutput`.
         """
-        research: ResearchOutput = ctx["research_output"]
+        shared = self.shared_state(ctx)
+        research: ResearchOutput = shared["research_output"]
 
         profile = ClaudeCodeDispatchProfile(
             subagent="sdd-worker",
@@ -77,11 +82,11 @@ class DevelopmentNode(Node):
             brief=research,
             profile=profile,
             output_model=DevelopmentOutput,
-            run_id=ctx["run_id"],
+            run_id=shared["run_id"],
             node_id=self.name,
             cwd=research.worktree_path,
         )
-        ctx["development_output"] = dev_out
+        shared["development_output"] = dev_out
         return dev_out
 
 

@@ -36,6 +36,12 @@ from parrot.core.events.lifecycle.events import (
     AfterToolCallEvent,
     ToolCallFailedEvent,
     MessageAddedEvent,
+    FlowStartedEvent,
+    FlowCompletedEvent,
+    NodeStartedEvent,
+    NodeCompletedEvent,
+    NodeFailedEvent,
+    NodeSkippedEvent,
 )
 
 # Built-in subscribers
@@ -70,6 +76,12 @@ __all__ = [
     "ToolCallFailedEvent",
     # Concrete events — message
     "MessageAddedEvent",
+    "FlowStartedEvent",
+    "FlowCompletedEvent",
+    "NodeStartedEvent",
+    "NodeCompletedEvent",
+    "NodeFailedEvent",
+    "NodeSkippedEvent",
     # Registry + dispatch
     "EventRegistry",
     "AsyncSubscriber",

@@ -95,7 +95,7 @@ class TestValidation:
             }
         )
         with pytest.raises(ValueError, match="not in allowlist"):
-            await node.execute("", {"bug_brief": bad, "run_id": "r1"})
+            await node.execute({"bug_brief": bad, "run_id": "r1"})
 
     @pytest.mark.asyncio
     async def test_accepts_task_head(
@@ -108,7 +108,7 @@ class TestValidation:
                 ShellCriterion(name="task-run", command="task etl/x.yaml"),
             ],
         )
-        result = await node.execute("", {"bug_brief": brief, "run_id": "r1"})
+        result = await node.execute({"bug_brief": brief, "run_id": "r1"})
         assert result is brief
 
     @pytest.mark.asyncio
@@ -122,7 +122,7 @@ class TestValidation:
                 ShellCriterion(name="lint", command="ruff check ."),
             ],
         )
-        result = await node.execute("", {"bug_brief": brief, "run_id": "r1"})
+        result = await node.execute({"bug_brief": brief, "run_id": "r1"})
         assert result is brief
 
     @pytest.mark.asyncio
@@ -138,7 +138,7 @@ class TestValidation:
             }
         )
         with pytest.raises(ValueError, match="Invalid relative task_path"):
-            await node.execute("", {"bug_brief": bad, "run_id": "r1"})
+            await node.execute({"bug_brief": bad, "run_id": "r1"})
 
     @pytest.mark.asyncio
     async def test_flowtask_path_rejects_absolute(
@@ -153,7 +153,7 @@ class TestValidation:
             }
         )
         with pytest.raises(ValueError, match="Invalid relative task_path"):
-            await node.execute("", {"bug_brief": bad, "run_id": "r1"})
+            await node.execute({"bug_brief": bad, "run_id": "r1"})
 
     @pytest.mark.asyncio
     async def test_flowtask_relative_path_accepted(
@@ -166,7 +166,7 @@ class TestValidation:
                 FlowtaskCriterion(name="ok", task_path="etl/customers/sync.yaml"),
             ],
         )
-        result = await node.execute("", {"bug_brief": brief, "run_id": "r1"})
+        result = await node.execute({"bug_brief": brief, "run_id": "r1"})
         assert result is brief
 
 
@@ -181,7 +181,7 @@ class TestEmission:
         self, node: IntentClassifierNode, good_brief: WorkBrief
     ):
         """Exactly one XADD per execute call."""
-        await node.execute("", {"bug_brief": good_brief, "run_id": "r1"})
+        await node.execute({"bug_brief": good_brief, "run_id": "r1"})
         assert node._fake_redis.xadd.call_count == 1
 
     @pytest.mark.asyncio
@@ -189,7 +189,7 @@ class TestEmission:
         self, node: IntentClassifierNode, good_brief: WorkBrief
     ):
         """The XADD target stream key must be flow:{run_id}:flow."""
-        await node.execute("", {"bug_brief": good_brief, "run_id": "run-42"})
+        await node.execute({"bug_brief": good_brief, "run_id": "run-42"})
         call_args = node._fake_redis.xadd.await_args
         assert call_args.args[0] == "flow:run-42:flow"
 
@@ -198,7 +198,7 @@ class TestEmission:
         self, node: IntentClassifierNode, good_brief: WorkBrief
     ):
         """The event envelope's kind must be 'flow.intake_validated'."""
-        await node.execute("", {"bug_brief": good_brief, "run_id": "r1"})
+        await node.execute({"bug_brief": good_brief, "run_id": "r1"})
         call_args = node._fake_redis.xadd.await_args
         fields = call_args.args[1]
         envelope = json.loads(fields["event"])
@@ -216,7 +216,7 @@ class TestEmission:
                 ShellCriterion(name="ok", command="ruff check ."),
             ],
         )
-        await node.execute("", {"bug_brief": brief, "run_id": "r1"})
+        await node.execute({"bug_brief": brief, "run_id": "r1"})
         call_args = node._fake_redis.xadd.await_args
         fields = call_args.args[1]
         envelope = json.loads(fields["event"])
@@ -227,7 +227,7 @@ class TestEmission:
         self, node: IntentClassifierNode, good_brief: WorkBrief
     ):
         """When run_id is absent or empty, no XADD is issued."""
-        await node.execute("", {"bug_brief": good_brief, "run_id": ""})
+        await node.execute({"bug_brief": good_brief, "run_id": ""})
         assert node._fake_redis.xadd.call_count == 0
 
     @pytest.mark.asyncio
@@ -235,7 +235,7 @@ class TestEmission:
         self, node: IntentClassifierNode, good_brief: WorkBrief
     ):
         """When run_id is absent from ctx, no XADD is issued."""
-        await node.execute("", {"bug_brief": good_brief})
+        await node.execute({"bug_brief": good_brief})
         assert node._fake_redis.xadd.call_count == 0
 
 
@@ -251,7 +251,7 @@ class TestContextPropagation:
     ):
         """ctx['bug_brief'] is populated for back-compat with downstream nodes."""
         ctx: dict = {"bug_brief": good_brief, "run_id": ""}
-        await node.execute("", ctx)
+        await node.execute(ctx)
         assert ctx["bug_brief"] is good_brief
 
     @pytest.mark.asyncio
@@ -260,7 +260,7 @@ class TestContextPropagation:
     ):
         """ctx['work_brief'] is populated for forward-compat."""
         ctx: dict = {"bug_brief": good_brief, "run_id": ""}
-        await node.execute("", ctx)
+        await node.execute(ctx)
         assert ctx["work_brief"] is good_brief
 
     @pytest.mark.asyncio
@@ -275,7 +275,7 @@ class TestContextPropagation:
                 ShellCriterion(name="ok", command="ruff check ."),
             ],
         )
-        result = await node.execute("", {"bug_brief": brief, "run_id": ""})
+        result = await node.execute({"bug_brief": brief, "run_id": ""})
         assert result.kind == "enhancement"
 
     @pytest.mark.asyncio
@@ -290,7 +290,7 @@ class TestContextPropagation:
                 ShellCriterion(name="ok", command="pytest tests/"),
             ],
         )
-        result = await node.execute("", {"bug_brief": brief, "run_id": ""})
+        result = await node.execute({"bug_brief": brief, "run_id": ""})
         assert result.kind == "new_feature"
 
 
@@ -306,7 +306,7 @@ class TestBriefLoading:
     ):
         """Brief can be loaded from ctx['work_brief'] (new key)."""
         ctx: dict = {"work_brief": good_brief, "run_id": ""}
-        result = await node.execute("", ctx)
+        result = await node.execute(ctx)
         assert result.summary == good_brief.summary
 
     @pytest.mark.asyncio
@@ -314,7 +314,7 @@ class TestBriefLoading:
         self, node: IntentClassifierNode, good_brief: WorkBrief
     ):
         """Brief can be loaded from ctx['bug_brief'] (legacy key)."""
-        result = await node.execute("", {"bug_brief": good_brief, "run_id": ""})
+        result = await node.execute({"bug_brief": good_brief, "run_id": ""})
         assert result.summary == good_brief.summary
 
     @pytest.mark.asyncio
@@ -323,7 +323,7 @@ class TestBriefLoading:
     ):
         """Brief dict in ctx is coerced to WorkBrief."""
         result = await node.execute(
-            "", {"bug_brief": good_brief.model_dump(), "run_id": ""}
+            {"bug_brief": good_brief.model_dump(), "run_id": ""}
         )
         assert result.summary == good_brief.summary
 
@@ -331,12 +331,14 @@ class TestBriefLoading:
     async def test_loads_from_json_prompt(
         self, node: IntentClassifierNode, good_brief: WorkBrief
     ):
-        """Brief can be provided as a JSON string in the prompt arg."""
-        result = await node.execute(good_brief.model_dump_json(), {"run_id": ""})
+        """Brief can be provided as a JSON string via initial_task."""
+        result = await node.execute(
+            {"initial_task": good_brief.model_dump_json(), "run_id": ""}
+        )
         assert result.summary == good_brief.summary
 
     @pytest.mark.asyncio
     async def test_missing_brief_raises(self, node: IntentClassifierNode):
         """When no brief is available, ValueError is raised."""
         with pytest.raises(ValueError, match="requires ctx"):
-            await node.execute("", {"run_id": "r1"})
+            await node.execute({"run_id": "r1"})

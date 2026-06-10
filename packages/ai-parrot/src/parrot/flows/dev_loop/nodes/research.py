@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from parrot import conf
-from parrot.bots.flows.core.node import Node
+from parrot.bots.flows.core.context import FlowContext
+from parrot.bots.flows.core.types import DependencyResults
 from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import (
@@ -36,6 +37,7 @@ from parrot.flows.dev_loop.models import (
     ResearchOutput,
     WorkBrief,
 )
+from parrot.flows.dev_loop.nodes.base import DevLoopNode
 
 
 # Atlassian caps the description field at 32 767 chars; leave a 2K
@@ -83,7 +85,7 @@ def _plan_llm_default() -> str:
     return _summarizer_llm_default()
 
 
-class ResearchNode(Node):
+class ResearchNode(DevLoopNode):
     """Second node — Jira + log fetch + sdd-research dispatch.
 
     Args:
@@ -116,19 +118,23 @@ class ResearchNode(Node):
         object.__setattr__(self, "_plan_llm", plan_llm or _plan_llm_default())
         object.__setattr__(self, "_plan_client", None)
 
-    @property
-    def name(self) -> str:
-        return self.node_id
-
     # ------------------------------------------------------------------
     # Execute
     # ------------------------------------------------------------------
 
     async def execute(
-        self, prompt: str, ctx: Dict[str, Any]
+        self,
+        ctx: Union[FlowContext, Dict[str, Any]],
+        deps: Optional[DependencyResults] = None,
+        **kwargs: Any,
     ) -> ResearchOutput:
-        """Run the research phase. Returns a validated :class:`ResearchOutput`."""
-        brief: BugBrief = ctx["bug_brief"]
+        """Run the research phase. Returns a validated :class:`ResearchOutput`.
+
+        Reads ``bug_brief`` and ``run_id`` from the shared state; writes
+        ``jira_issue_key``, ``log_excerpts``, and ``research_output``.
+        """
+        shared = self.shared_state(ctx)
+        brief: BugBrief = shared["bug_brief"]
 
         # 1. Fetch logs first — cheap, deterministic, and the excerpts
         # become part of the Jira description.
@@ -149,11 +155,11 @@ class ResearchNode(Node):
             issue_key = existing_key
             self.logger.info(
                 "Re-using existing Jira ticket %s for run_id=%s",
-                issue_key, ctx.get("run_id", "?"),
+                issue_key, shared.get("run_id", "?"),
             )
             await self._comment_retriggered(
                 issue_key=issue_key,
-                run_id=ctx.get("run_id", ""),
+                run_id=shared.get("run_id", ""),
                 description=description,
             )
         else:
@@ -172,15 +178,15 @@ class ResearchNode(Node):
             issue_key = self._extract_issue_key(jira_resp)
             self.logger.info(
                 "Created new Jira ticket %s (kind=%s) for run_id=%s",
-                issue_key, getattr(brief, "kind", "bug"), ctx.get("run_id", "?"),
+                issue_key, getattr(brief, "kind", "bug"), shared.get("run_id", "?"),
             )
             # FEAT-132 G4: post plan-summary as first comment on new tickets.
-            run_id = ctx.get("run_id", "")
+            run_id = shared.get("run_id", "")
             plan = await self._build_plan_summary(brief, excerpts)
             await self._post_plan_summary_comment(
                 issue_key=issue_key, plan=plan, run_id=run_id
             )
-        ctx["jira_issue_key"] = issue_key
+        shared["jira_issue_key"] = issue_key
 
         # 3. Dispatch the sdd-research subagent.
         profile = ClaudeCodeDispatchProfile(
@@ -194,13 +200,13 @@ class ResearchNode(Node):
         # Stash the excerpts on the brief so the subagent gets them.
         # We pass the brief through as-is since BugBrief already carries
         # log_sources; the prompt builder embeds excerpts separately.
-        ctx["log_excerpts"] = excerpts
+        shared["log_excerpts"] = excerpts
 
         research_out: ResearchOutput = await self._dispatcher.dispatch(
             brief=brief,
             profile=profile,
             output_model=ResearchOutput,
-            run_id=ctx["run_id"],
+            run_id=shared["run_id"],
             node_id=self.name,
             cwd=cwd,
         )
@@ -217,7 +223,7 @@ class ResearchNode(Node):
         # mismatched branch).
         await self._ensure_worktree_safe(research_out.branch_name)
 
-        ctx["research_output"] = research_out
+        shared["research_output"] = research_out
         return research_out
 
     # ------------------------------------------------------------------
@@ -547,11 +553,17 @@ class ResearchNode(Node):
                     brief.existing_issue_key, exc,
                 )
             else:
-                if result["status"] == "ok":
+                # Toolkit responses carry a "status" key; treat a missing
+                # key as success so a bare issue payload also counts as a hit.
+                status = (
+                    result.get("status", "ok")
+                    if isinstance(result, dict) else "ok"
+                )
+                if status == "ok":
                     return brief.existing_issue_key
                 self.logger.warning(
                     "existing_issue_key=%r returned %s; falling back",
-                    brief.existing_issue_key, result["status"],
+                    brief.existing_issue_key, status,
                 )
 
         # 2. Summary search inside the configured project.

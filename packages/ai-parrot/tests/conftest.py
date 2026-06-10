@@ -356,8 +356,15 @@ def _install_navigator_stubs() -> None:
             # Return a sensible default for any other constant
             return None
 
-    parrot_conf = _ParrotConf("parrot.conf")
-    sys.modules.setdefault("parrot.conf", parrot_conf)
+    # Prefer the REAL parrot.conf when it is importable (same policy as
+    # _install_navconfig_stub): the stub's __getattr__ returns None for
+    # every constant, which silently breaks suites that read real settings
+    # (e.g. dev_loop's ACCEPTANCE_CRITERION_ALLOWLIST / conf.config).
+    try:
+        import parrot.conf  # noqa: F401
+    except Exception:  # noqa: BLE001 — any import failure → stub fallback
+        parrot_conf = _ParrotConf("parrot.conf")
+        sys.modules.setdefault("parrot.conf", parrot_conf)
 
     # parrot.plugins — required by parrot.tools.__init__
     parrot_plugins = types.ModuleType("parrot.plugins")

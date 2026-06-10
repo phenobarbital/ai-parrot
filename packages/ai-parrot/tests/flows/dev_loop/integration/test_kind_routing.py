@@ -126,7 +126,7 @@ async def test_end_to_end_bug_kind_creates_bug_ticket(
         return_value=MagicMock(response="Smoke plan step 1.")
     )
 
-    await node.execute("", {"bug_brief": brief, "run_id": "smoke-bug-1"})
+    await node.execute({"bug_brief": brief, "run_id": "smoke-bug-1"})
 
     kwargs = jira.jira_create_issue.call_args.kwargs
     assert kwargs["issuetype"] == "Bug", (
@@ -170,7 +170,7 @@ async def test_end_to_end_enhancement_kind_creates_story_ticket(
         return_value=MagicMock(response="Smoke enhancement plan.")
     )
 
-    await node.execute("", {"bug_brief": brief, "run_id": "smoke-enh-1"})
+    await node.execute({"bug_brief": brief, "run_id": "smoke-enh-1"})
 
     kwargs = jira.jira_create_issue.call_args.kwargs
     assert kwargs["issuetype"] == "Story", (
@@ -220,7 +220,7 @@ async def test_end_to_end_reused_ticket_skips_plan_comment(
         log_toolkits={},
     )
 
-    await node.execute("", {"bug_brief": brief, "run_id": "smoke-reuse-1"})
+    await node.execute({"bug_brief": brief, "run_id": "smoke-reuse-1"})
 
     # Assert no plan-summary comment was posted.
     bodies = [c.kwargs.get("body", "") for c in jira.jira_add_comment.call_args_list]

@@ -16,18 +16,53 @@ under `parrot/flows/dev_loop/`.
 ```
 examples/dev_loop/
 ├── README.md          ← this file
+├── e2e_demo.py        ← self-contained end-to-end demo (no external services)
 ├── quickstart.py      ← real-mode programmatic example (no UI)
 ├── server.py          ← aiohttp server: real flow + WS multiplexer
 └── static/
     └── index.html     ← vanilla-JS UI client (no build step)
 ```
 
-Both entry points wire the **real** flow — no fakes, no stubs. They differ
-only in how the run is triggered: `quickstart.py` calls `flow.run_flow(...)`
-once and exits; `server.py` exposes an HTTP + WebSocket surface so the UI
-client can start runs and visualise the merged event stream live.
+Both real-mode entry points wire the **real** flow — no fakes, no stubs.
+They differ only in how the run is triggered: `quickstart.py` runs the brief
+through `DevLoopRunner` once and exits; `server.py` exposes an HTTP +
+WebSocket surface so the UI client can start runs and visualise the merged
+event stream live.
 
-## Prerequisites
+## Zero-dependency demo — `e2e_demo.py`
+
+The fastest way to see the whole flow working. It executes the REAL engine
+(`AgentsFlow` scheduler, OR-join routing, `DevLoopRunner` semaphore, FEAT-176
+lifecycle telemetry) end-to-end, but every external service is simulated
+in-process: the Claude Code dispatcher returns canned subagent outputs, Jira
+calls are recorded in memory, Redis XADDs are captured by a fake client, and
+`git push` / `gh pr create` are no-ops returning a fake PR URL.
+
+**No Redis, no `claude` CLI, no Jira, no API keys.**
+
+```bash
+source .venv/bin/activate
+python examples/dev_loop/e2e_demo.py
+```
+
+It runs four scenarios and prints, for each: executed/failed/skipped nodes,
+the `FlowResult`, the simulated Jira audit trail, the captured
+`flow:{run_id}:flow` stream events, and the typed FEAT-176 lifecycle event
+timeline (one trace per run, per-node durations):
+
+1. **Bug, happy path** — `IntentClassifier → BugIntake → Research →
+   Development → QA → DeploymentHandoff`; `failure_handler` skip-propagated;
+   PR opened + Jira "Ready to Deploy".
+2. **Enhancement** — `bug_intake` is skip-propagated (kind routing).
+3. **QA fails** — `deployment_handoff` skipped; escalation comment +
+   "Needs Human Review" + reassignment.
+4. **Hard error in Development** — the `on_error` fan-in fires
+   `failure_handler`; `qa`/`deployment_handoff` are skipped; status `partial`.
+
+Use it as a template for wiring the flow into your own harness: everything
+specific to the simulation lives in the `Simulated*`/`Fake*` classes.
+
+## Prerequisites (real mode)
 
 | Requirement | Why |
 |---|---|

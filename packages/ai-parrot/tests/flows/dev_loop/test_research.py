@@ -194,7 +194,7 @@ class TestIssueTypeRouting:
         )
         node._jira.jira_create_issue = AsyncMock(return_value={"key": "X-1"})
         node._jira.jira_add_comment = AsyncMock(return_value={})
-        await node.execute("", {"bug_brief": brief, "run_id": "r1"})
+        await node.execute({"bug_brief": brief, "run_id": "r1"})
         kwargs = node._jira.jira_create_issue.call_args.kwargs
         assert kwargs["issuetype"] == expected
 
@@ -214,7 +214,7 @@ class TestPlanSummaryOnCreate:
         fake_response = MagicMock(response="Step 1.\nStep 2.")
         node._plan_client = MagicMock()
         node._plan_client.ask = AsyncMock(return_value=fake_response)
-        await node.execute("", {"bug_brief": good_brief, "run_id": "r2"})
+        await node.execute({"bug_brief": good_brief, "run_id": "r2"})
         bodies = [
             c.kwargs["body"]
             for c in node._jira.jira_add_comment.call_args_list
@@ -231,7 +231,7 @@ class TestPlanSummaryOnCreate:
         fake_response = MagicMock(response="Fix the ETL pipeline.")
         node._plan_client = MagicMock()
         node._plan_client.ask = AsyncMock(return_value=fake_response)
-        await node.execute("", {"bug_brief": good_brief, "run_id": "r2"})
+        await node.execute({"bug_brief": good_brief, "run_id": "r2"})
         bodies = [
             c.kwargs["body"]
             for c in node._jira.jira_add_comment.call_args_list
@@ -255,7 +255,7 @@ class TestPlanSummaryNotOnReuse:
             side_effect=AssertionError("jira_create_issue must not be called on reuse")
         )
         node._jira.jira_add_comment = AsyncMock(return_value={})
-        await node.execute("", {"bug_brief": brief, "run_id": "r3"})
+        await node.execute({"bug_brief": brief, "run_id": "r3"})
         bodies = [
             c.kwargs["body"]
             for c in node._jira.jira_add_comment.call_args_list
@@ -276,7 +276,7 @@ class TestPlanSummaryFallback:
         node._jira.jira_add_comment = AsyncMock(return_value={})
         node._plan_client = MagicMock()
         node._plan_client.ask = AsyncMock(side_effect=RuntimeError("llm-error"))
-        await node.execute("", {"bug_brief": good_brief, "run_id": "r4"})
+        await node.execute({"bug_brief": good_brief, "run_id": "r4"})
         bodies = [
             c.kwargs["body"]
             for c in node._jira.jira_add_comment.call_args_list
