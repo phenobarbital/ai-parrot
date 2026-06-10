@@ -176,7 +176,9 @@ class AgentsFlow(PersistenceMixin):
             (sync or async) invoked by the scheduler on node lifecycle
             transitions. ``event`` is one of ``"node_started"``,
             ``"node_completed"``, ``"node_failed"``, ``"node_skipped"``.
-            Exceptions raised by the callback are logged, never propagated.
+            ``info`` carries ``"flow"`` (name), ``"context"`` (the run's
+            FlowContext), and ``"error"`` on failures. Exceptions raised
+            by the callback are logged, never propagated.
         **kwargs: Forwarded to ``PersistenceMixin`` (and ultimately
             ``object.__init__``).
     """
@@ -573,6 +575,21 @@ class AgentsFlow(PersistenceMixin):
                 if edge.from_ in nodes:
                     has_successor.add(edge.from_)
             leaves = [nid for nid in nodes if nid not in has_successor]
+            if edges is not None and not any(nid in results for nid in leaves):
+                # Explicit mode is skip-aware: when every static leaf was
+                # skipped (e.g. an error-handler fan-in on the happy path),
+                # fall back to the terminal nodes of the path actually
+                # taken — executed nodes with no executed successor.
+                outgoing: dict[str, set[str]] = {}
+                for edge in edge_list:
+                    targets = (
+                        [edge.to] if isinstance(edge.to, str) else list(edge.to)
+                    )
+                    outgoing.setdefault(edge.from_, set()).update(targets)
+                leaves = [
+                    nid for nid in results
+                    if not any(t in results for t in outgoing.get(nid, ()))
+                ]
         else:
             # Leaf = node with empty successors set.
             leaves = [nid for nid, node in nodes.items() if not node.successors]
@@ -721,7 +738,10 @@ class AgentsFlow(PersistenceMixin):
             )
             active_count += 1
             self.logger.info("Dispatched node %r", node_id)
-            self._notify_node_event("node_started", node_id, {"flow": self.name})
+            self._notify_node_event(
+                "node_started", node_id,
+                {"flow": self.name, "context": ctx},
+            )
 
         def _edge_passes(edge: Any, source_result: Any, source_error: Optional[BaseException]) -> bool:
             """Evaluate whether a transition edge allows dispatch of its target.
@@ -815,7 +835,8 @@ class AgentsFlow(PersistenceMixin):
                             "Node %r skipped (no incoming edge fired)", tgt
                         )
                         self._notify_node_event(
-                            "node_skipped", tgt, {"flow": self.name}
+                            "node_skipped", tgt,
+                            {"flow": self.name, "context": ctx},
                         )
                     progress = True
 
@@ -863,7 +884,11 @@ class AgentsFlow(PersistenceMixin):
                 self.logger.warning("Node %r failed: %s", nid, event.error)
                 self._notify_node_event(
                     "node_failed", nid,
-                    {"flow": self.name, "error": str(event.error)},
+                    {
+                        "flow": self.name,
+                        "context": ctx,
+                        "error": str(event.error),
+                    },
                 )
             else:
                 results[nid] = event.result
@@ -871,7 +896,8 @@ class AgentsFlow(PersistenceMixin):
                 ctx.mark_completed(nid, result=event.result)
                 self.logger.info("Node %r completed", nid)
                 self._notify_node_event(
-                    "node_completed", nid, {"flow": self.name}
+                    "node_completed", nid,
+                    {"flow": self.name, "context": ctx},
                 )
 
             if explicit_mode:
