@@ -1,90 +1,147 @@
 {
   "pricing": {
-    "last_updated": "2026-05-18",
-    "source": "https://openai.com/api/pricing/",
+    "last_updated": "2026-06-10",
+    "source": "https://developers.openai.com/api/docs/pricing",
     "currency": "USD"
   },
   "models": {
-    "gpt-4o-2024-08-06": {
-      "input_per_1m": 2.50,
-      "output_per_1m": 10.00,
-      "cached_input_per_1m": 1.25,
-      "valid_from": "2024-08-06"
+    "gpt-5.5": {
+      "input_per_1m": 5.0,
+      "output_per_1m": 30.0,
+      "cached_input_per_1m": 0.5,
+      "valid_from": "2026-04-23"
     },
-    "gpt-4o-2024-11-20": {
-      "input_per_1m": 2.50,
-      "output_per_1m": 10.00,
-      "cached_input_per_1m": 1.25,
-      "valid_from": "2024-11-20"
+    "gpt-5.5-pro": {
+      "input_per_1m": 30.0,
+      "output_per_1m": 180.0,
+      "valid_from": "2026-04-23"
     },
-    "gpt-4o": {
-      "input_per_1m": 2.50,
-      "output_per_1m": 10.00,
-      "cached_input_per_1m": 1.25,
-      "valid_from": "2024-05-13"
+    "gpt-5.4": {
+      "input_per_1m": 2.5,
+      "output_per_1m": 15.0,
+      "cached_input_per_1m": 0.25,
+      "valid_from": "2026-03-05"
     },
-    "gpt-4o-mini-2024-07-18": {
-      "input_per_1m": 0.15,
-      "output_per_1m": 0.60,
+    "gpt-5.4-pro": {
+      "input_per_1m": 30.0,
+      "output_per_1m": 180.0,
+      "valid_from": "2026-03-05"
+    },
+    "gpt-5.4-mini": {
+      "input_per_1m": 0.75,
+      "output_per_1m": 4.5,
       "cached_input_per_1m": 0.075,
-      "valid_from": "2024-07-18"
+      "valid_from": "2026-03-05"
+    },
+    "gpt-5.4-nano": {
+      "input_per_1m": 0.2,
+      "output_per_1m": 1.25,
+      "cached_input_per_1m": 0.02,
+      "valid_from": "2026-03-05"
+    },
+    "gpt-5.3-codex": {
+      "input_per_1m": 1.75,
+      "output_per_1m": 14.0,
+      "cached_input_per_1m": 0.175,
+      "valid_from": "2026-01-01"
+    },
+    "gpt-5.2": {
+      "input_per_1m": 1.75,
+      "output_per_1m": 14.0,
+      "cached_input_per_1m": 0.175,
+      "valid_from": "2025-12-11"
+    },
+    "gpt-5.2-pro": {
+      "input_per_1m": 21.0,
+      "output_per_1m": 168.0,
+      "valid_from": "2025-12-11"
+    },
+    "gpt-5.1": {
+      "input_per_1m": 1.25,
+      "output_per_1m": 10.0,
+      "cached_input_per_1m": 0.125,
+      "valid_from": "2025-11-13"
+    },
+    "gpt-5": {
+      "input_per_1m": 1.25,
+      "output_per_1m": 10.0,
+      "cached_input_per_1m": 0.125,
+      "valid_from": "2025-10-06"
+    },
+    "gpt-5-pro": {
+      "input_per_1m": 15.0,
+      "output_per_1m": 120.0,
+      "valid_from": "2025-10-06"
+    },
+    "gpt-5-mini": {
+      "input_per_1m": 0.25,
+      "output_per_1m": 2.0,
+      "cached_input_per_1m": 0.025,
+      "valid_from": "2025-10-06"
+    },
+    "gpt-5-nano": {
+      "input_per_1m": 0.05,
+      "output_per_1m": 0.4,
+      "cached_input_per_1m": 0.005,
+      "valid_from": "2025-10-06"
+    },
+    "chat-latest": {
+      "input_per_1m": 5.0,
+      "output_per_1m": 30.0,
+      "cached_input_per_1m": 0.5,
+      "valid_from": "2026-06-10"
+    },
+    "gpt-4.1": {
+      "input_per_1m": 2.0,
+      "output_per_1m": 8.0,
+      "cached_input_per_1m": 0.5,
+      "valid_from": "2025-04-14"
+    },
+    "gpt-4.1-mini": {
+      "input_per_1m": 0.4,
+      "output_per_1m": 1.6,
+      "cached_input_per_1m": 0.1,
+      "valid_from": "2025-04-14"
     },
     "gpt-4o-mini": {
       "input_per_1m": 0.15,
-      "output_per_1m": 0.60,
+      "output_per_1m": 0.6,
       "cached_input_per_1m": 0.075,
       "valid_from": "2024-07-18"
     },
-    "o1-2024-12-17": {
-      "input_per_1m": 15.00,
-      "output_per_1m": 60.00,
-      "cached_input_per_1m": 7.50,
-      "valid_from": "2024-12-17"
-    },
-    "o1": {
-      "input_per_1m": 15.00,
-      "output_per_1m": 60.00,
-      "cached_input_per_1m": 7.50,
-      "valid_from": "2024-12-17"
-    },
-    "o1-mini-2024-09-12": {
-      "input_per_1m": 1.10,
-      "output_per_1m": 4.40,
-      "cached_input_per_1m": 0.55,
-      "valid_from": "2024-09-12"
-    },
-    "o1-mini": {
-      "input_per_1m": 1.10,
-      "output_per_1m": 4.40,
-      "cached_input_per_1m": 0.55,
-      "valid_from": "2024-09-12"
-    },
-    "o3-mini": {
-      "input_per_1m": 1.10,
-      "output_per_1m": 4.40,
-      "cached_input_per_1m": 0.55,
-      "valid_from": "2025-01-31"
-    },
     "o3": {
-      "input_per_1m": 10.00,
-      "output_per_1m": 40.00,
-      "cached_input_per_1m": 2.50,
+      "input_per_1m": 2.0,
+      "output_per_1m": 8.0,
+      "cached_input_per_1m": 0.5,
       "valid_from": "2025-04-16"
     },
-    "gpt-4-turbo": {
-      "input_per_1m": 10.00,
-      "output_per_1m": 30.00,
-      "valid_from": "2024-04-09"
+    "o3-pro": {
+      "input_per_1m": 20.0,
+      "output_per_1m": 80.0,
+      "valid_from": "2025-06-10"
     },
-    "gpt-4": {
-      "input_per_1m": 30.00,
-      "output_per_1m": 60.00,
-      "valid_from": "2023-06-13"
+    "gpt-realtime-2": {
+      "input_per_1m": 4.0,
+      "output_per_1m": 24.0,
+      "cached_input_per_1m": 0.4,
+      "valid_from": "2026-06-10"
     },
-    "gpt-3.5-turbo": {
-      "input_per_1m": 0.50,
-      "output_per_1m": 1.50,
-      "valid_from": "2023-03-01"
+    "gpt-realtime-1.5": {
+      "input_per_1m": 4.0,
+      "output_per_1m": 16.0,
+      "cached_input_per_1m": 0.4,
+      "valid_from": "2025-12-15"
+    },
+    "gpt-audio-1.5": {
+      "input_per_1m": 2.5,
+      "output_per_1m": 10.0,
+      "valid_from": "2025-12-15"
+    },
+    "gpt-image-2": {
+      "input_per_1m": 8.0,
+      "output_per_1m": 30.0,
+      "cached_input_per_1m": 2.0,
+      "valid_from": "2026-06-10"
     }
   }
 }

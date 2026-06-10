@@ -1,6 +1,5 @@
 from __future__ import annotations
 from typing import Any, AsyncIterator, List, Optional, Union
-import sys
 import logging
 import warnings
 import asyncio
@@ -616,7 +615,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 audio_data = self._extract_audio_data(response)
                 if audio_data is None:
                     # Log the response structure for debugging
-                    self.logger.error(f"Failed to extract audio data from response")
+                    self.logger.error("Failed to extract audio data from response")
                     self.logger.debug(f"Response type: {type(response)}")
                     if hasattr(response, 'candidates'):
                         self.logger.debug(f"Candidates count: {len(response.candidates) if response.candidates else 0}")

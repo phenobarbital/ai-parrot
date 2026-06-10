@@ -4,22 +4,13 @@ from __future__ import annotations
 
 import logging
 
-import pytest
-
 from parrot.observability.config import ObservabilityConfig
 
-_ENV_KEYS = [
-    "OBSERVABILITY_ENABLED", "OBSERVABILITY_BACKEND", "OBSERVABILITY_SERVICE_NAME",
-    "OBSERVABILITY_COST", "OBSERVABILITY_LOG_LEVEL", "OBSERVABILITY_SAMPLING",
-    "OBSERVABILITY_OPENLIT", "OTEL_EXPORTER_OTLP_ENDPOINT",
-    "OBSERVABILITY_PROM_PORT", "OBSERVABILITY_PROM_ADDR", "PARROT_PRICING_PATH",
-]
-
-
-@pytest.fixture(autouse=True)
-def _clean_env(monkeypatch):
-    for key in _ENV_KEYS:
-        monkeypatch.delenv(key, raising=False)
+# Environment hermeticity is provided by the package-level
+# ``_hermetic_observability_env`` autouse fixture in ``conftest.py``: it pins
+# ``ObservabilityConfig`` to the navconfig-free ``os.environ.get`` getter, so
+# these tests see a clean environment plus whatever they set via
+# ``monkeypatch.setenv`` — the repo's ``env/.env`` no longer bleeds through.
 
 
 def test_absent_env_uses_defaults() -> None:

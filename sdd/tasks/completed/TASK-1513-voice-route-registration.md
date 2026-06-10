@@ -173,10 +173,37 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 4.8)
+**Date**: 2026-06-09
 **Notes**:
+- Registered `POST /api/v1/agents/voice/{agent_id}` → `AgentVoiceTalk` in
+  `manager.py`, adjacent to the `InfographicTalk` literal-route block (after the
+  `/infographic/{agent_id}` catch-all, before the Dataset Manager routes). The
+  existing `chat`/`infographic` routes are untouched.
+- The registration is guarded via a new private helper
+  `BotManager._register_voice_routes(router)`: it imports `AgentVoiceTalk`
+  inside a `try/except ImportError`, logging the "install
+  ai-parrot-integrations[voice]" warning and skipping the route on failure —
+  server boot never crashes. (The handler's voice deps are themselves lazy, so
+  the import normally succeeds; the guard is defence-in-depth.)
+- Integration tests (5) cover: route resolves to `AgentVoiceTalk`; the helper
+  registers the route; a simulated `ImportError` skips the route + logs a
+  warning + returns `False` (no crash); the end-to-end data flow
+  audio → STT → bot reply envelope → TTS → JSON `{content, audio_base64,
+  audio_format}` (real handler seams, stubbed voice services + stub bot); and
+  PBAC/auth are inherited from `AgentTalk` verbatim.
+- `ruff check manager.py` clean; `BotManager` imports cleanly; the full
+  FEAT-231 set is green (58 integrations + 13 server voice tests).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The end-to-end round-trip is exercised through the
+handler's real seams (`_transcribe_attachment` + `_augment_with_audio`) with a
+stub bot and stubbed voice services, rather than a live aiohttp TestServer —
+the auth/PBAC/BotManager middleware stack required for a true HTTP request has
+no test fixtures in this repo, and a seam-level drive deterministically proves
+the same audio→text→audio→JSON contract.
+
+**Pre-existing, unrelated**: `tests/test_namespace_imports.py::
+test_handlers_host_only_stubs` fails on `dev` independently of this feature
+(it flags `spatial_filter_handler.py` / `dataset_filter_handler.py` added to
+**core** `ai-parrot/handlers` by FEAT-225 / TASK-1448). FEAT-231 only adds
+files to **ai-parrot-server**; not touched here (no scope creep).

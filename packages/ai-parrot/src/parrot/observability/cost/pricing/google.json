@@ -1,11 +1,59 @@
 {
   "pricing": {
-    "last_updated": "2026-05-18",
+    "last_updated": "2026-06-10",
     "source": "https://ai.google.dev/gemini-api/docs/pricing",
     "currency": "USD",
-    "notes": "Pricing for Gemini API via Google AI. Vertex AI pricing may differ per region. Provider key in CostCalculator: 'gemini'."
+    "notes": "Pricing for Gemini API via Google AI. Vertex AI pricing may differ per region. Provider key in CostCalculator: 'gemini'. The calculator uses a single rate per model; for size-tiered models (e.g. gemini-3.1-pro-preview) the <=200k-token tier is used and the >200k tier is noted per-model."
   },
   "models": {
+    "gemini-3.1-pro-preview": {
+      "input_per_1m": 2.00,
+      "output_per_1m": 12.00,
+      "cached_input_per_1m": 0.20,
+      "valid_from": "2025-11-18",
+      "note": "Prices are for prompts <=200k tokens; >200k tokens: input 4.00, output 18.00, cached 0.40."
+    },
+    "gemini-3.1-pro-preview-customtools": {
+      "input_per_1m": 2.00,
+      "output_per_1m": 12.00,
+      "cached_input_per_1m": 0.20,
+      "valid_from": "2025-11-18",
+      "note": "Prices are for prompts <=200k tokens; >200k tokens: input 4.00, output 18.00, cached 0.40."
+    },
+    "gemini-3.5-flash": {
+      "input_per_1m": 1.50,
+      "output_per_1m": 9.00,
+      "cached_input_per_1m": 0.15,
+      "valid_from": "2025-11-18"
+    },
+    "gemini-flash-latest": {
+      "input_per_1m": 1.50,
+      "output_per_1m": 9.00,
+      "cached_input_per_1m": 0.15,
+      "valid_from": "2025-11-18",
+      "note": "Alias resolving to the latest Flash model (currently gemini-3.5-flash)."
+    },
+    "gemini-3-flash-preview": {
+      "input_per_1m": 0.50,
+      "output_per_1m": 3.00,
+      "cached_input_per_1m": 0.05,
+      "valid_from": "2025-11-18",
+      "note": "Text/image/video input rate; audio input 1.00, audio cached 0.10."
+    },
+    "gemini-3.1-flash-lite": {
+      "input_per_1m": 0.25,
+      "output_per_1m": 1.50,
+      "cached_input_per_1m": 0.025,
+      "valid_from": "2025-11-18",
+      "note": "Text/image/video input rate; audio input 0.50, audio cached 0.05."
+    },
+    "gemini-3.1-flash-lite-preview": {
+      "input_per_1m": 0.25,
+      "output_per_1m": 1.50,
+      "cached_input_per_1m": 0.025,
+      "valid_from": "2025-11-18",
+      "note": "Text/image/video input rate; audio input 0.50, audio cached 0.05."
+    },
     "gemini-2.5-flash-preview-05-20": {
       "input_per_1m": 0.15,
       "output_per_1m": 3.50,

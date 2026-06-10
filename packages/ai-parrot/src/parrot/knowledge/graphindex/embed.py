@@ -10,11 +10,14 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-import faiss
 import numpy as np
 
 from parrot.embeddings.registry import EmbeddingRegistry
 from parrot.knowledge.graphindex.schema import UniversalNode
+from parrot.utils.faiss_logging import quiet_faiss_loader
+
+quiet_faiss_loader()  # silence faiss boot logs before the first import
+import faiss  # noqa: E402 — must follow quiet_faiss_loader()
 
 logger = logging.getLogger(__name__)
 

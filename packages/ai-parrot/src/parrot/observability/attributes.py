@@ -35,6 +35,14 @@ PROVIDER_TO_GEN_AI_SYSTEM: dict[str, str] = {
     "openai": "openai",
     "anthropic": "anthropic",
     "claude-agent": "anthropic",    # routes through Anthropic
+    # FEAT-232: Claude served through AWS Bedrock. OpenLIT's canonical provider
+    # value for Bedrock is ``aws.bedrock`` (GEN_AI_SYSTEM_AWS_BEDROCK), distinct
+    # from the direct Anthropic API. The Bedrock backend must emit one of these
+    # client_names (not the bare "anthropic") for the trace to be attributed to
+    # Bedrock in OpenLIT. The "aws" workspace backend stays "anthropic" — it is
+    # still the Anthropic API, only credentialed via an AWS workspace.
+    "anthropic-bedrock": "aws.bedrock",
+    "bedrock": "aws.bedrock",       # alias for the LLMFactory "bedrock:" route key
     "google": "gemini",             # default; override per route when Vertex
     "gemini-live": "gemini",
     "groq": "groq",
@@ -134,8 +142,15 @@ def build_before_client_attrs(event: BeforeClientCallEvent) -> dict[str, Any]:
     Returns:
         Dict of GenAI SemConv + parrot-specific OTel attribute key-value pairs.
     """
+    system = resolve_gen_ai_system(event.client_name)
     attrs: dict[str, Any] = {
-        "gen_ai.system": resolve_gen_ai_system(event.client_name),
+        # ``gen_ai.system`` is the legacy GenAI SemConv key; the newer convention
+        # (adopted by current OpenLIT, which dropped ``gen_ai.system`` entirely)
+        # reads the provider from ``gen_ai.provider.name``. Emit BOTH so the
+        # provider is populated regardless of which convention the collector /
+        # backend follows — otherwise OpenLIT shows ``provider=''``.
+        "gen_ai.system": system,
+        "gen_ai.provider.name": system,
         "gen_ai.request.model": event.model,
         # Custom extension — not part of OTel GenAI SemConv stable spec (May 2025)
         "gen_ai.request.has_tools": event.has_tools,
@@ -164,8 +179,10 @@ def build_after_client_attrs(
     Returns:
         Dict of GenAI SemConv + parrot-specific OTel attribute key-value pairs.
     """
+    system = resolve_gen_ai_system(event.client_name)
     attrs: dict[str, Any] = {
-        "gen_ai.system": resolve_gen_ai_system(event.client_name),
+        "gen_ai.system": system,
+        "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
         "gen_ai.response.model": event.model,
         "parrot.client.duration_ms": event.duration_ms,
     }
@@ -191,8 +208,10 @@ def build_client_failed_attrs(event: ClientCallFailedEvent) -> dict[str, Any]:
     Returns:
         Dict of OTel error + GenAI SemConv attribute key-value pairs.
     """
+    system = resolve_gen_ai_system(event.client_name)
     attrs: dict[str, Any] = {
-        "gen_ai.system": resolve_gen_ai_system(event.client_name),
+        "gen_ai.system": system,
+        "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
         "gen_ai.response.model": event.model,
         "parrot.client.duration_ms": event.duration_ms,
         "error.type": event.error_type,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 import asyncio
-from typing import AsyncIterator, Dict, List, Optional, Union, Any, TYPE_CHECKING
+from typing import AsyncIterator, Dict, List, Literal, Optional, Union, Any, TYPE_CHECKING
 from typing import List as TypingList
 import base64
 import io
@@ -21,11 +21,21 @@ from parrot.core.events.lifecycle.events import (
     PromptCacheAppliedEvent,
     PromptCacheSkippedEvent,
 )
+# FEAT-232: AWS / Bedrock conf constants
+from ..conf import (
+    AWS_ACCESS_KEY,
+    AWS_SECRET_KEY,
+    AWS_REGION_NAME,
+    AWS_SESSION_TOKEN,
+    ANTHROPIC_AWS_WORKSPACE_ID,
+    BEDROCK_AWS_REGION,
+)
 
 if TYPE_CHECKING:
     # Type-check-only imports — keep IDE/mypy support without forcing the
     # SDKs to be installed at runtime when this client is unused.
-    from anthropic import AsyncAnthropic
+    from anthropic import AsyncAnthropic, AsyncAnthropicBedrock, AsyncAnthropicAWS
+    from parrot.clients.anthropic_backends import AnthropicBackendProtocol
     from PIL import Image
 from ..models import (
     AIMessage,
@@ -45,6 +55,13 @@ from ..models.outputs import (
 )
 
 logging.getLogger("anthropic").setLevel(logging.WARNING)
+# Silence the underlying HTTP stack used by the Anthropic SDK; its DEBUG
+# traces (connect_tcp/start_tls) are pure noise for callers of this client.
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+# FEAT-232: backend selector type alias.
+AnthropicBackend = Literal["direct", "bedrock", "aws"]
 
 
 class AnthropicClient(AbstractClient):
@@ -63,31 +80,152 @@ class AnthropicClient(AbstractClient):
         self,
         api_key: str = None,
         base_url: str = "https://api.anthropic.com",
+        backend: AnthropicBackend = "direct",
+        aws_access_key: Optional[str] = None,
+        aws_secret_key: Optional[str] = None,
+        aws_session_token: Optional[str] = None,
+        aws_region: Optional[str] = None,
+        workspace_id: Optional[str] = None,
+        aws_profile: Optional[str] = None,
+        region_prefix: Optional[str] = None,
         **kwargs
     ):
+        """Initialise an Anthropic client.
+
+        Args:
+            api_key: Anthropic API key (direct backend only).  Defaults to the
+                ``ANTHROPIC_API_KEY`` navconfig / env value.
+            base_url: Base URL for the direct Anthropic API.
+            backend: Transport backend — ``"direct"`` (default), ``"bedrock"``,
+                or ``"aws"``.
+            aws_access_key: AWS access key ID.  Resolved: kwarg → conf/env → None
+                (SDK chain).
+            aws_secret_key: AWS secret access key.  Same resolution order.
+            aws_session_token: Optional STS session token.  Same resolution order.
+            aws_region: AWS region (e.g. ``"us-east-1"``).  For the ``bedrock``
+                backend, prefers the Bedrock-specific ``BEDROCK_AWS_REGION`` env
+                var over the general ``AWS_REGION_NAME`` to avoid region
+                pollution from other services.
+            workspace_id: Claude-on-AWS workspace ID (``aws`` backend only;
+                **mandatory** for that backend — the SDK raises at construction
+                without it).  Env/conf constant: ``ANTHROPIC_AWS_WORKSPACE_ID``.
+            aws_profile: Optional AWS named profile.  Passed through to the SDK
+                as-is; ``None`` → omitted.
+            region_prefix: Cross-region inference-profile prefix for the
+                ``bedrock`` backend (e.g. ``"us"``, ``"eu"``, ``"apac"``).
+                When provided, model IDs are translated to
+                ``"<prefix>.anthropic.<id>-vN:0"`` form.  ``None`` → no prefix.
+            **kwargs: Forwarded to :class:`~parrot.clients.base.AbstractClient`.
+        """
         self.api_key = api_key or config.get('ANTHROPIC_API_KEY')
         self.base_url = base_url
+        self.backend: AnthropicBackend = backend
+        self._backend_name: str = backend
+
+        # ── FEAT-232: credential resolution — kwarg → parrot.conf/env → None ─
+        # parrot.conf constants already back-fall to env vars via navconfig,
+        # so we only need one fallback level here.
+        _access_key = aws_access_key or AWS_ACCESS_KEY
+        _secret_key = aws_secret_key or AWS_SECRET_KEY
+        _session_token = aws_session_token or AWS_SESSION_TOKEN
+        # FIX-4: for Bedrock, prefer the Bedrock-specific region env var so that
+        # a general AWS_REGION_NAME set for other services (e.g. DynamoDB in
+        # eu-west-1) does not silently override the intended Bedrock region.
+        # Resolution order: explicit kwarg → BEDROCK_AWS_REGION → None (boto3 chain).
+        _bedrock_region = aws_region or BEDROCK_AWS_REGION
+        # For the aws-workspace backend keep using the general AWS_REGION_NAME fallback.
+        _region = aws_region or AWS_REGION_NAME
+        _workspace_id = workspace_id or ANTHROPIC_AWS_WORKSPACE_ID
+
+        # ── Instantiate the matching backend strategy ─────────────────────────
+        from .anthropic_backends import DirectBackend, BedrockBackend, AWSWorkspaceBackend
+        if backend == "bedrock":
+            self._backend: "AnthropicBackendProtocol" = BedrockBackend(
+                aws_region=_bedrock_region,
+                aws_access_key=_access_key,
+                aws_secret_key=_secret_key,
+                aws_session_token=_session_token,
+                region_prefix=region_prefix,
+            )
+        elif backend == "aws":
+            self._backend = AWSWorkspaceBackend(
+                aws_region=_region,
+                workspace_id=_workspace_id,
+                aws_access_key=_access_key,
+                aws_secret_key=_secret_key,
+                aws_session_token=_session_token,
+                aws_profile=aws_profile,
+            )
+        else:
+            self._backend = DirectBackend(api_key=self.api_key)
+
         # NOTE: no self.client = None — base class owns the per-loop cache as a property.
+        # FIX-3: x-api-key is only meaningful for the direct backend; Bedrock/AWS
+        # backends authenticate via SigV4 / SDK chain — sending "None" as a header
+        # value would be both incorrect and potentially confusing.
         self.base_headers = {
             "Content-Type": "application/json",
-            "x-api-key": self.api_key,
-            "anthropic-version": self.version
+            "anthropic-version": self.version,
         }
+        if self._backend_name == "direct" and self.api_key:
+            self.base_headers["x-api-key"] = self.api_key
         super().__init__(**kwargs)
 
-    async def get_client(self) -> "AsyncAnthropic":
-        """Initialize the Anthropic client."""
-        try:
-            from anthropic import AsyncAnthropic
-        except ImportError as exc:
-            raise ImportError(
-                "AnthropicClient requires the 'anthropic' SDK. "
-                "Install with: pip install ai-parrot[anthropic]"
-            ) from exc
-        return AsyncAnthropic(
-            api_key=self.api_key,
-            max_retries=2
+    # FEAT-232 observability: map the active backend to the ``client_name`` carried
+    # on lifecycle events, which ``resolve_gen_ai_system`` turns into the OTel
+    # ``gen_ai.provider.name`` / ``gen_ai.system`` value (see
+    # observability/attributes.py::PROVIDER_TO_GEN_AI_SYSTEM). Bedrock-served
+    # Claude is a distinct provider in OpenLIT (``aws.bedrock``); the direct and
+    # aws-workspace backends are both the Anthropic API (``anthropic``).
+    _BACKEND_TELEMETRY_NAME: dict[str, str] = {
+        "direct": "anthropic",
+        "bedrock": "anthropic-bedrock",
+        "aws": "anthropic",
+    }
+
+    @property
+    def _telemetry_client_name(self) -> str:
+        """Return the ``client_name`` for telemetry events given the active backend."""
+        return self._BACKEND_TELEMETRY_NAME.get(self._backend_name, "anthropic")
+
+    async def get_client(self) -> "Union[AsyncAnthropic, AsyncAnthropicBedrock, AsyncAnthropicAWS]":
+        """Build and return the appropriate SDK client for the active backend.
+
+        Delegates to the backend strategy object's ``build_client()`` method.
+        On ``backend="direct"`` this is byte-for-byte equivalent to the
+        pre-FEAT-232 behaviour (``AsyncAnthropic(api_key=…, max_retries=2)``).
+
+        Returns:
+            An ``AsyncAnthropic``, ``AsyncAnthropicBedrock``, or
+            ``AsyncAnthropicAWS`` instance depending on ``self.backend``.
+
+        Raises:
+            ImportError: When the required SDK extra is not installed.
+            ValueError: When mandatory fields for the ``"aws"`` backend are
+                missing (``aws_region`` / ``workspace_id``).
+        """
+        return await self._backend.build_client()
+
+    def _resolve_model(self, model) -> str:
+        """Resolve and translate a model argument for the active backend.
+
+        Applies the same ``model.value if isinstance(model, ClaudeModel)``
+        normalisation that all call sites used inline, then feeds the result
+        through ``self._backend.translate_model()`` so Bedrock IDs are applied
+        uniformly at every model-resolution site.
+
+        Args:
+            model: A model identifier — a :class:`~parrot.models.claude.ClaudeModel`
+                enum member, a plain string, or ``None``.  ``None`` / falsy
+                values fall back to ``self.model`` then ``self.default_model``.
+
+        Returns:
+            A resolved, backend-translated model ID string.
+        """
+        raw = (model.value if isinstance(model, ClaudeModel) else model) or (
+            self.model or self.default_model
         )
+        return self._backend.translate_model(raw)
 
     def _is_capacity_error(self, error: Exception) -> bool:
         """Detect Anthropic capacity errors using SDK exception types."""
@@ -97,6 +235,89 @@ class AnthropicClient(AbstractClient):
         if isinstance(error, APIStatusError) and error.status_code in (429, 503, 529):
             return True
         return super()._is_capacity_error(error)
+
+    # ── Model-capability guards ─────────────────────────────────────────────
+    # Adaptive-thinking-only models removed the legacy sampling parameters
+    # (``temperature`` / ``top_p`` / ``top_k``); sending any returns a 400.
+    # Fable 5 additionally rejects an explicit ``thinking={"type":"disabled"}``
+    # — the param must be omitted entirely. Mirrors the guard pattern in
+    # ``GoogleGenAIClient._requires_thinking``.
+    _ADAPTIVE_ONLY_PREFIXES: tuple = (
+        "claude-fable-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+    )
+
+    @staticmethod
+    def _model_str(model) -> str:
+        """Normalise a model identifier (str / ``ClaudeModel`` / None) to a str."""
+        if isinstance(model, ClaudeModel):
+            return model.value
+        return model or ""
+
+    @classmethod
+    def _rejects_sampling_params(cls, model) -> bool:
+        """Whether the model 400s on ``temperature`` / ``top_p`` / ``top_k``.
+
+        True for adaptive-thinking-only models (Fable 5, Opus 4.7, Opus 4.8),
+        which removed the sampling parameters.
+        """
+        m = cls._model_str(model)
+        return any(m.startswith(p) for p in cls._ADAPTIVE_ONLY_PREFIXES)
+
+    @classmethod
+    def _rejects_explicit_thinking_disabled(cls, model) -> bool:
+        """Whether an explicit ``thinking={"type": "disabled"}`` returns a 400.
+
+        Only Fable 5 rejects it (Opus 4.7/4.8 still accept ``disabled``); for
+        Fable 5 the ``thinking`` param must be omitted entirely instead.
+        """
+        return cls._model_str(model).startswith("claude-fable-5")
+
+    def _sanitize_payload_for_model(self, payload: dict) -> dict:
+        """Drop request params the target model rejects with a 400.
+
+        - Adaptive-only models (Fable 5, Opus 4.7/4.8): remove
+          ``temperature`` / ``top_p`` / ``top_k``.
+        - Fable 5: drop an explicit ``thinking={"type": "disabled"}`` (must be
+          omitted, not sent).
+
+        Applied just before every ``messages.create`` / ``messages.stream``
+        call so all payload-building paths are covered uniformly. Mutates and
+        returns ``payload``.
+        """
+        model = payload.get("model", "")
+        if self._rejects_sampling_params(model):
+            for param in ("temperature", "top_p", "top_k"):
+                if payload.pop(param, None) is not None:
+                    self.logger.debug(
+                        "AnthropicClient: dropped '%s' — %s is adaptive-only "
+                        "and rejects sampling params.", param, model,
+                    )
+        thinking = payload.get("thinking")
+        if (
+            isinstance(thinking, dict)
+            and thinking.get("type") == "disabled"
+            and self._rejects_explicit_thinking_disabled(model)
+        ):
+            payload.pop("thinking", None)
+            self.logger.debug(
+                "AnthropicClient: dropped thinking={type:disabled} — %s "
+                "requires the 'thinking' param omitted.", model,
+            )
+        return payload
+
+    async def _sdk_create(self, payload: dict):
+        """Sanitize then dispatch a non-streaming ``messages.create`` call."""
+        return await self.client.messages.create(
+            **self._sanitize_payload_for_model(payload)
+        )
+
+    def _sdk_stream(self, payload: dict):
+        """Sanitize then return a streaming ``messages.stream`` context manager."""
+        return self.client.messages.stream(
+            **self._sanitize_payload_for_model(payload)
+        )
 
     # ── FEAT-181: Prompt Caching ───────────────────────────────────────────
 
@@ -159,7 +380,7 @@ class AnthropicClient(AbstractClient):
         if not segments:
             self.events.emit_nowait(PromptCacheSkippedEvent(
                 trace_context=tc,
-                client_name="anthropic",
+                client_name=self._telemetry_client_name,
                 model=payload.get("model", ""),
                 reason="no_segments",
                 source_type="client",
@@ -176,7 +397,7 @@ class AnthropicClient(AbstractClient):
         est_tokens = sum(len(s.text) // 4 for s in cacheable_segs)
         self.events.emit_nowait(PromptCacheAppliedEvent(
             trace_context=tc,
-            client_name="anthropic",
+            client_name=self._telemetry_client_name,
             model=payload.get("model", ""),
             blocks_marked=sum(
                 1 for b in blocks if isinstance(b, dict) and "cache_control" in b
@@ -224,7 +445,7 @@ class AnthropicClient(AbstractClient):
             _use_tools = True
             self.logger.info("Deep research mode enabled: activating enhanced research prompt and tools")
 
-        model = (model.value if isinstance(model, ClaudeModel) else model) or (self.model or self.default_model)
+        model = self._resolve_model(model)
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
@@ -236,7 +457,7 @@ class AnthropicClient(AbstractClient):
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time
         _lc_tc = self._emit_before_call(
-            client_name="anthropic",
+            client_name=self._telemetry_client_name,
             model=model,
             temperature=temperature if temperature is not None else self.temperature,
             system_prompt=self._resolve_system_prompt(system_prompt),
@@ -313,16 +534,16 @@ class AnthropicClient(AbstractClient):
         while True:
             # Use the Anthropic SDK to create messages
             try:
-                response = await self.client.messages.create(**payload)
+                response = await self._sdk_create(payload)
             except Exception as e:
                 if self._should_use_fallback(payload["model"], e):
                     self.logger.warning(
                         "Model %s capacity error: %s. Retrying with fallback: %s",
                         payload["model"], e, self._fallback_model
                     )
-                    payload["model"] = self._fallback_model
+                    payload["model"] = self._backend.translate_model(self._fallback_model)
                     used_fallback = True
-                    response = await self.client.messages.create(**payload)
+                    response = await self._sdk_create(payload)
                 else:
                     raise
             # Convert Message object to dict for compatibility
@@ -467,7 +688,7 @@ class AnthropicClient(AbstractClient):
         _lc_usage = getattr(ai_message, 'usage', None)
         await self._emit_after_call(
             _lc_tc,
-            client_name="anthropic",
+            client_name=self._telemetry_client_name,
             model=model,
             duration_ms=(_lc_time.perf_counter() - _lc_t0) * 1000,
             input_tokens=getattr(_lc_usage, 'input_tokens', None) if _lc_usage else None,
@@ -496,8 +717,11 @@ class AnthropicClient(AbstractClient):
 
         messages = state["messages"]
         tool_call_id = state["tool_call_id"]
-        model = state.get("agent_name", self.model or self.default_model)
-        
+        # Preserve agent_name semantics; translate result through backend.
+        model = self._backend.translate_model(
+            state.get("agent_name", self.model or self.default_model)
+        )
+
         # Inject user input as tool result
         messages.append({
             "role": "user",
@@ -522,7 +746,7 @@ class AnthropicClient(AbstractClient):
 
         # Handle tool calls in a loop
         while True:
-            response = await self.client.messages.create(**payload)
+            response = await self._sdk_create(payload)
             result = response.model_dump()
 
             if result.get("stop_reason") == "tool_use":
@@ -633,11 +857,15 @@ class AnthropicClient(AbstractClient):
             system_prompt = f"{_sp}\n\n{research_prompt}" if _sp else research_prompt
             self.logger.info("Deep research mode enabled for streaming")
 
+        # FIX-5: resolve model BEFORE computing _lc_model_s so that lifecycle
+        # events log the actual Bedrock ID sent to the API, not the public alias.
+        model = self._resolve_model(model)
+
         # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
         import time as _lc_time_s
-        _lc_model_s = (model.value if isinstance(model, type(model)) and hasattr(model, 'value') else model) or (self.model or getattr(self, 'default_model', ''))
+        _lc_model_s = model  # already resolved via _resolve_model above
         _lc_tc_s = self._emit_before_call(
-            client_name="anthropic",
+            client_name=self._telemetry_client_name,
             model=_lc_model_s or "",
             temperature=temperature if temperature is not None else self.temperature,
             system_prompt=self._resolve_system_prompt(system_prompt),
@@ -657,9 +885,6 @@ class AnthropicClient(AbstractClient):
         retry_count = 0
         assistant_content = ""
         final_message = None
-        model = (
-            model.value if isinstance(model, ClaudeModel) else model
-        ) or (self.model or self.default_model)
         while retry_count <= retry_config.max_retries:
             try:
                 payload = {
@@ -687,14 +912,14 @@ class AnthropicClient(AbstractClient):
 
                 try:
                     # Use the Anthropic SDK's streaming API
-                    async with self.client.messages.stream(**payload) as stream:
+                    async with self._sdk_stream(payload) as stream:
                         async for text in stream.text_stream:
                             assistant_content += text
                             # FEAT-176: per-chunk event (short-circuited when no subscribers)
                             if _lc_has_chunk_subs:
                                 await self.events.emit(ClientStreamChunkEvent(
                                     trace_context=_lc_tc_s,
-                                    client_name="anthropic",
+                                    client_name=self._telemetry_client_name,
                                     model=_lc_model_s or "",
                                     chunk_index=_lc_chunk_idx,
                                     chunk_size_bytes=len(text.encode("utf-8")),
@@ -821,7 +1046,7 @@ class AnthropicClient(AbstractClient):
         _lc_stream_usage = getattr(ai_message, 'usage', None)
         await self._emit_after_call(
             _lc_tc_s,
-            client_name="anthropic",
+            client_name=self._telemetry_client_name,
             model=_lc_model_s or "",
             duration_ms=(_lc_time_s.perf_counter() - _lc_t0_s) * 1000,
             input_tokens=getattr(_lc_stream_usage, 'input_tokens', None) if _lc_stream_usage else None,
@@ -839,10 +1064,10 @@ class AnthropicClient(AbstractClient):
             "requests": [
                 {
                     "custom_id": req.custom_id,
-                    "params": {
+                    "params": self._sanitize_payload_for_model({
                         **req.params,
                         **({"betas": ["context-1m-2025-08-07"]} if context_1m else {})
-                    }
+                    })
                 }
                 for req in requests
             ]
@@ -1062,7 +1287,7 @@ class AnthropicClient(AbstractClient):
 
         # Prepare the payload
         payload = {
-            "model": model.value if isinstance(model, ClaudeModel) else model,
+            "model": self._resolve_model(model),
             "max_tokens": max_tokens or self.max_tokens,
             "temperature": temperature or self.temperature,
             "messages": messages
@@ -1119,7 +1344,7 @@ class AnthropicClient(AbstractClient):
         all_tool_calls = []
 
         # Make the API request using SDK
-        response = await self.client.messages.create(**payload)
+        response = await self._sdk_create(payload)
         result = response.model_dump()
 
         # Handle structured output
@@ -1227,7 +1452,7 @@ class AnthropicClient(AbstractClient):
         }]
 
         payload = {
-            "model": model.value if isinstance(model, Enum) else model,
+            "model": self._resolve_model(model),
             "max_tokens": self.max_tokens,
             "temperature": temperature or self.temperature,
             "messages": messages,
@@ -1238,7 +1463,7 @@ class AnthropicClient(AbstractClient):
             payload["betas"] = ["context-1m-2025-08-07"]
 
         # Make a stateless call to Claude using SDK
-        response = await self.client.messages.create(**payload)
+        response = await self._sdk_create(payload)
         result = response.model_dump()
 
         # Create AIMessage using factory
@@ -1314,7 +1539,7 @@ Requirements:
         }]
 
         payload = {
-            "model": model.value if isinstance(model, Enum) else model,
+            "model": self._resolve_model(model),
             "max_tokens": self.max_tokens,
             "temperature": temperature,
             "messages": messages,
@@ -1325,7 +1550,7 @@ Requirements:
             payload["betas"] = ["context-1m-2025-08-07"]
 
         # Make a stateless call to Claude using SDK
-        response = await self.client.messages.create(**payload)
+        response = await self._sdk_create(payload)
         result = response.model_dump()
 
         # Create AIMessage using factory
@@ -1384,7 +1609,7 @@ Requirements:
         }]
 
         payload = {
-            "model": model.value if isinstance(model, Enum) else model,
+            "model": self._resolve_model(model),
             "max_tokens": self.max_tokens,
             "temperature": temperature,
             "messages": messages,
@@ -1394,7 +1619,7 @@ Requirements:
         if context_1m:
             payload["betas"] = ["context-1m-2025-08-07"]
 
-        response = await self.client.messages.create(**payload)
+        response = await self._sdk_create(payload)
         result = response.model_dump()
 
         return AIMessageFactory.from_claude(
@@ -1459,7 +1684,7 @@ Format your response clearly with these sections.
         }]
 
         payload = {
-            "model": model.value if isinstance(model, Enum) else model,
+            "model": self._resolve_model(model),
             "max_tokens": self.max_tokens,
             "temperature": temperature,
             "messages": messages,
@@ -1469,7 +1694,7 @@ Format your response clearly with these sections.
         if context_1m:
             payload["betas"] = ["context-1m-2025-08-07"]
 
-        response = await self.client.messages.create(**payload)
+        response = await self._sdk_create(payload)
         structured_output = SentimentAnalysis if use_structured else None
         return AIMessageFactory.from_claude(
             response=response,
@@ -1560,14 +1785,14 @@ Provide your final answer with:
         }]
 
         payload = {
-            "model": model.value if isinstance(model, Enum) else model,
+            "model": self._resolve_model(model),
             "max_tokens": self.max_tokens,
             "temperature": temperature,
             "messages": messages,
             "system": system_prompt
         }
 
-        response = await self.client.messages.create(**payload)
+        response = await self._sdk_create(payload)
         result = response.model_dump()
 
         return AIMessageFactory.from_claude(

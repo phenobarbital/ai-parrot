@@ -61,11 +61,39 @@ def init_openlit(config: ObservabilityConfig) -> None:
             "Install with: pip install 'ai-parrot[observability-openlit]'"
         ) from exc
 
-    openlit.init(
-        otlp_endpoint=config.otlp_endpoint,
-        application_name=config.service_name,
-        disabled_instrumentors=config.openlit_disabled_instrumentors or None,
+    # Quiet OpenLIT's boot chatter: it logs one INFO line per supported library
+    # it scans (most are "not found, skipping") plus provider-reuse lines. Raise
+    # the whole ``openlit`` logger family to the configured level (WARNING by
+    # default) BEFORE init() so the catalogue scan stays silent. Child loggers
+    # (``openlit.otel.*``) with NOTSET level inherit this effective level.
+    logging.getLogger("openlit").setLevel(config.openlit_log_level)
+
+    # OpenLIT re-instruments libraries that an existing TracerProvider /
+    # instrumentor already covered (it logs "Detected existing TracerProvider,
+    # reusing it"), which makes OTel's BaseInstrumentor emit a benign
+    # "Attempting to instrument while already instrumented" WARNING from the
+    # ``opentelemetry.instrumentation.instrumentor`` logger. Our _INITIALIZED
+    # sentinel already prevents double init_openlit(), so this is pure boot
+    # noise. Suppress it ONLY for the duration of openlit.init() — never
+    # permanently — so genuine double-instrumentation later still surfaces.
+    instrumentor_logger = logging.getLogger(
+        "opentelemetry.instrumentation.instrumentor"
     )
+    previous_level = instrumentor_logger.level
+    instrumentor_logger.setLevel(max(config.openlit_log_level, logging.ERROR))
+    try:
+        openlit.init(
+            otlp_endpoint=config.otlp_endpoint,
+            application_name=config.service_name,
+            disabled_instrumentors=config.openlit_disabled_instrumentors or None,
+            # Let our native MetricsSubscriber own the GenAI metrics; OpenLIT
+            # reusing our MeterProvider would otherwise register duplicate
+            # same-named instruments and trigger OTel "conflicting metrics
+            # identities" warnings on every export.
+            disable_metrics=config.openlit_disable_metrics,
+        )
+    finally:
+        instrumentor_logger.setLevel(previous_level)
     _INITIALIZED = True
     logger.info(
         "OpenLIT initialized for %s → %s (disabled instrumentors: %s)",

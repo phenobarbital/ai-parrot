@@ -19,6 +19,8 @@ from navconfig.logging import logging
 from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
 
 try:
+    from parrot.utils.faiss_logging import quiet_faiss_loader
+    quiet_faiss_loader()
     import faiss
     FAISS_AVAILABLE = True
 except ImportError:

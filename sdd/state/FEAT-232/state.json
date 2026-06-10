@@ -1,0 +1,53 @@
+{
+  "feature_id": "FEAT-232",
+  "slug": "enable-anthropic-aws-bedrock",
+  "type": "feature",
+  "base_branch": "dev",
+  "mode": "enrichment",
+  "phase": "committed",
+  "started_at": "2026-06-10T00:00:00Z",
+  "updated_at": "2026-06-10T00:00:00Z",
+  "completed_at": null,
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Expand AnthropicClient to support AWS Bedrock and AWS-native (workspace) backends"
+  },
+  "consumed": {
+    "files_read": 7,
+    "grep_calls": 8,
+    "git_calls": 0,
+    "truncated": false
+  },
+  "phases": {
+    "research": {
+      "status": "complete",
+      "findings": 4
+    },
+    "synthesis": {
+      "status": "complete",
+      "overall_confidence": "medium"
+    },
+    "qa": {
+      "status": "complete",
+      "questions_total": 4,
+      "questions_answered": 4
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/enable-anthropic-aws-bedrock.proposal.md",
+      "commit_sha": "ac8389430d45b306cf1924d72252090ce5efa994"
+    }
+  },
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "run /sdd-spec FEAT-232"
+  }
+}
