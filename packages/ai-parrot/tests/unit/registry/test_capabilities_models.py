@@ -2,7 +2,7 @@
 import pytest
 from parrot.registry.capabilities.models import TraceEntry, RoutingType
 from parrot.registry.routing.models import StoreScore
-from parrot.tools.multistoresearch import StoreType
+from parrot.models import StoreType
 
 
 def test_default_store_rankings_is_none():

@@ -1,40 +1,19 @@
-from typing import Dict, Any, Optional, Union
+"""Store data models.
+
+``SearchResult`` and ``StoreConfig`` moved to :mod:`parrot.models.stores`
+(the dependency-free core models package) so that consumers can import the
+data contracts without triggering ``parrot.stores.__init__`` (which pulls in
+``AbstractStore`` and the heavy store/embedding backends). They are
+re-exported here for backward compatibility — existing
+``from parrot.stores.models import SearchResult, StoreConfig`` keeps working.
+"""
+
+from typing import Dict, Any
 from enum import Enum
-from dataclasses import dataclass, field
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field
 
-
-class SearchResult(BaseModel):
-    """Data model for a single document returned from a vector search.
-
-    ``score`` carries the raw value produced by the configured vector-store
-    metric (e.g. L2 / cosine distance / negative inner product). For
-    distance-based metrics (the common case) **lower means closer**. The
-    same value is also serialised as ``distance`` via a computed alias so
-    API consumers can use the unambiguous name without any input changes
-    on the producer side.
-    """
-    id: str
-    content: str
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    score: float = Field(
-        ...,
-        description=(
-            "Raw value from the configured metric. For L2 / cosine / "
-            "negative-inner-product, lower = closer. Also exposed as "
-            "``distance`` in serialised output."
-        ),
-    )
-    ensemble_score: float = None
-    search_source: str = None
-    similarity_rank: Optional[int] = None
-    mmr_rank: Optional[int] = None
-
-    @computed_field  # type: ignore[misc]
-    @property
-    def distance(self) -> float:
-        """Alias for :attr:`score` — same value, unambiguous name."""
-        return self.score
+# Re-exported from the canonical, dependency-free home.
+from ..models.stores import SearchResult, StoreConfig  # noqa: F401
 
 
 class Document(BaseModel):
@@ -57,22 +36,9 @@ class DistanceStrategy(str, Enum):
     COSINE = "COSINE"
 
 
-@dataclass
-class StoreConfig:
-    """Vector Store configuration dataclass."""
-    vector_store: str = 'postgres'  # postgres, faiss, arango, etc.
-    table: Optional[str] = None
-    schema: str = 'public'
-    embedding_model: Union[str, dict] = field(
-        default_factory=lambda: {
-            "model_name": "sentence-transformers/all-mpnet-base-v2",
-            "model_type": "huggingface"
-        }
-    )
-    dimension: int = 768
-    dsn: Optional[str] = None
-    distance_strategy: str = 'COSINE'
-    metric_type: str = 'COSINE'
-    index_type: str = 'IVF_FLAT'
-    auto_create: bool = False  # Auto-create collection on configure
-    extra: Dict[str, Any] = field(default_factory=dict)
+__all__ = (
+    "SearchResult",
+    "Document",
+    "DistanceStrategy",
+    "StoreConfig",
+)

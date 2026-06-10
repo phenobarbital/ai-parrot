@@ -39,7 +39,7 @@ except ImportError as _import_err:
 
 from parrot.rerankers.abstract import AbstractReranker
 from parrot.rerankers.models import RerankedDocument, RerankerConfig
-from parrot.stores.models import SearchResult
+from parrot.models.stores import SearchResult
 
 logger = logging.getLogger(__name__)
 

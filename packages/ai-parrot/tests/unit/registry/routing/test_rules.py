@@ -6,7 +6,7 @@ from parrot.registry.routing import (
     apply_rules,
     DEFAULT_STORE_RULES,
 )
-from parrot.tools.multistoresearch import StoreType
+from parrot.models import StoreType
 
 
 ALL_STORES = [StoreType.PGVECTOR, StoreType.FAISS, StoreType.ARANGO]

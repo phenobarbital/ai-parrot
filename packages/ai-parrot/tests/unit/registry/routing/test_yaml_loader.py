@@ -6,7 +6,7 @@ from parrot.registry.routing import (
     StoreFallbackPolicy,
     load_store_router_config,
 )
-from parrot.tools.multistoresearch import StoreType
+from parrot.models import StoreType
 
 
 def test_loads_valid_yaml(tmp_path):

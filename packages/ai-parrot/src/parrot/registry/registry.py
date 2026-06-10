@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 from aiohttp import web
 from ..bots.abstract import AbstractBot
 from ..mcp import MCPServerConfig
-from ..stores.models import StoreConfig
+from ..models.stores import StoreConfig
 from ..models.basic import ModelConfig, ToolConfig
 from ..conf import AGENTS_DIR
 from ..auth.models import PolicyRuleConfig

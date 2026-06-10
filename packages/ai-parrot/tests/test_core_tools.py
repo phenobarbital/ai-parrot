@@ -61,10 +61,6 @@ class TestCoreToolsDirectImport:
         from parrot.tools.agent import AgentTool
         assert AgentTool is not None
 
-    def test_multistoresearch_direct(self):
-        from parrot.tools.multistoresearch import MultiStoreSearchTool
-        assert MultiStoreSearchTool is not None
-
     def test_resttool_direct(self):
         from parrot.tools.resttool import RESTTool
         assert RESTTool is not None

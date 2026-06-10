@@ -7,9 +7,7 @@ Wraps :class:`ExcelStructureAnalyzer` and exposes three async tools:
 * ``query_cells`` — raw cell values for arbitrary ranges
 """
 from __future__ import annotations
-
-from typing import Dict, Optional
-
+from typing import Optional
 from .toolkit import AbstractToolkit
 from .dataset_manager.excel_analyzer import (
     ExcelStructureAnalyzer,

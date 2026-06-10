@@ -12,7 +12,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from parrot.registry.routing import StoreRouterConfig, StoreRouter, StoreRoutingDecision, StoreScore
-from parrot.tools.multistoresearch import StoreType
+from parrot.models import StoreType
 
 
 def _infer_store_type(store):

@@ -21,7 +21,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from parrot.tools.multistoresearch import StoreType  # source of truth for store identifiers
+from parrot.models import StoreType  # source of truth for store identifiers
 
 
 class StoreFallbackPolicy(str, Enum):
