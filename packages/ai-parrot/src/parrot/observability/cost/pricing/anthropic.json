@@ -1,6 +1,6 @@
 {
   "pricing": {
-    "last_updated": "2026-05-18",
+    "last_updated": "2026-06-10",
     "source": "https://www.anthropic.com/pricing",
     "currency": "USD"
   },
@@ -70,6 +70,54 @@
       "output_per_1m": 4.00,
       "cached_input_per_1m": 0.08,
       "valid_from": "2025-05-14"
+    },
+    "claude-fable-5": {
+      "input_per_1m": 10.00,
+      "output_per_1m": 50.00,
+      "cached_input_per_1m": 1.00,
+      "valid_from": "2026-05-26"
+    },
+    "claude-opus-4-8": {
+      "input_per_1m": 5.00,
+      "output_per_1m": 25.00,
+      "cached_input_per_1m": 0.50,
+      "valid_from": "2026-05-26"
+    },
+    "claude-opus-4-7": {
+      "input_per_1m": 5.00,
+      "output_per_1m": 25.00,
+      "cached_input_per_1m": 0.50,
+      "valid_from": "2026-03-13"
+    },
+    "claude-opus-4-6": {
+      "input_per_1m": 5.00,
+      "output_per_1m": 25.00,
+      "cached_input_per_1m": 0.50,
+      "valid_from": "2025-12-01"
+    },
+    "claude-opus-4-5": {
+      "input_per_1m": 5.00,
+      "output_per_1m": 25.00,
+      "cached_input_per_1m": 0.50,
+      "valid_from": "2025-11-01"
+    },
+    "claude-sonnet-4-6": {
+      "input_per_1m": 3.00,
+      "output_per_1m": 15.00,
+      "cached_input_per_1m": 0.30,
+      "valid_from": "2025-11-14"
+    },
+    "claude-sonnet-4-5": {
+      "input_per_1m": 3.00,
+      "output_per_1m": 15.00,
+      "cached_input_per_1m": 0.30,
+      "valid_from": "2025-09-29"
+    },
+    "claude-haiku-4-5": {
+      "input_per_1m": 1.00,
+      "output_per_1m": 5.00,
+      "cached_input_per_1m": 0.10,
+      "valid_from": "2025-10-01"
     }
   }
 }

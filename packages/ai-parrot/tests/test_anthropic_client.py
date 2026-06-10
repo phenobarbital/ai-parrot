@@ -219,6 +219,27 @@ def test_aws_backend_set():
     assert isinstance(client._backend, AWSWorkspaceBackend)
 
 
+def test_telemetry_client_name_per_backend():
+    """FEAT-232: lifecycle events carry a backend-specific client_name so OpenLIT
+    attributes Bedrock traces to gen_ai.provider.name='aws.bedrock' (via
+    resolve_gen_ai_system), while direct/aws stay 'anthropic'."""
+    from parrot.observability.attributes import resolve_gen_ai_system
+
+    direct = AnthropicClient(api_key="key")
+    assert direct._telemetry_client_name == "anthropic"
+    assert resolve_gen_ai_system(direct._telemetry_client_name) == "anthropic"
+
+    bedrock = AnthropicClient(backend="bedrock", aws_region="us-east-1")
+    assert bedrock._telemetry_client_name == "anthropic-bedrock"
+    assert resolve_gen_ai_system(bedrock._telemetry_client_name) == "aws.bedrock"
+
+    aws = AnthropicClient(
+        backend="aws", aws_region="us-east-1", workspace_id="wrkspc_x"
+    )
+    assert aws._telemetry_client_name == "anthropic"
+    assert resolve_gen_ai_system(aws._telemetry_client_name) == "anthropic"
+
+
 def test_resolve_model_identity_for_direct():
     """_resolve_model() returns the public ID unchanged for direct backend."""
     client = AnthropicClient()  # direct
