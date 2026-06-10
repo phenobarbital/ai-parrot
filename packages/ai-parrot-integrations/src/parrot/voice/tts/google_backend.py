@@ -22,7 +22,7 @@ from .backend import AbstractTTSBackend
 from .models import SynthesisResult
 
 if TYPE_CHECKING:
-    from parrot.clients.google.generation import GoogleGenAIClient
+    from parrot.clients.google import GoogleGenAIClient
 
 # Default voice when none is specified in the config
 _DEFAULT_VOICE = "Charon"
@@ -85,7 +85,7 @@ class GoogleTTSBackend(AbstractTTSBackend):
             A ``GoogleGenAIClient`` instance.
         """
         if self._client is None:
-            from parrot.clients.google.generation import GoogleGenAIClient
+            from parrot.clients.google import GoogleGenAIClient
 
             self.logger.debug(
                 "GoogleTTSBackend: creating GoogleGenAIClient lazily (kwargs=%s)",
