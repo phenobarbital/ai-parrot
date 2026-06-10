@@ -19,6 +19,7 @@ from .tree_ops import splice_subtree, delete_node, reindex_node_ids
 from .hybrid_search import HybridPageIndexSearch
 from .ingest import TwoStepIngester, IngestedMarkdown
 from .toolkit import PageIndexToolkit
+from .loader import PageIndexLoader
 
 __all__ = [
     "build_page_index",
@@ -38,4 +39,5 @@ __all__ = [
     "TwoStepIngester",
     "IngestedMarkdown",
     "PageIndexToolkit",
+    "PageIndexLoader",
 ]

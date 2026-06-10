@@ -36,6 +36,7 @@ from parrot.knowledge.graphindex.communities import (
     cohesion_for_community,
     detect_communities,
 )
+from parrot.knowledge.graphindex.loader import GraphIndexLoader
 
 __all__ = [
     "Provenance",
@@ -55,4 +56,5 @@ __all__ = [
     "CommunitiesResult",
     "cohesion_for_community",
     "detect_communities",
+    "GraphIndexLoader",
 ]
