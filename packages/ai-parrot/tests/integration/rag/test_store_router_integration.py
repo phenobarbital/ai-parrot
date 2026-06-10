@@ -20,10 +20,10 @@ from parrot.registry.routing import (
     StoreRouterConfig,
     StoreFallbackPolicy,
 )
-from parrot.tools.multistoresearch import StoreType
+from parrot.models import StoreType
 
 try:
-    from parrot.tools.multistoresearch import MultiStoreSearchTool
+    from parrot_tools.multistoresearch import MultiStoreSearchTool
     _MULTITOOL_AVAILABLE = True
 except ImportError:
     _MULTITOOL_AVAILABLE = False

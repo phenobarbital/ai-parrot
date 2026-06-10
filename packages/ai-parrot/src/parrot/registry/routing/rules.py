@@ -7,7 +7,7 @@ common cases; per-agent ``StoreRule`` lists can be merged on top.
 Usage::
 
     from parrot.registry.routing import apply_rules, DEFAULT_STORE_RULES
-    from parrot.tools.multistoresearch import StoreType
+    from parrot.models import StoreType
 
     scores = apply_rules(
         "what is the relationship between suppliers and warehouses?",
@@ -25,7 +25,7 @@ import re
 from typing import Optional
 
 from parrot.registry.routing.models import StoreRule, StoreScore
-from parrot.tools.multistoresearch import StoreType
+from parrot.models import StoreType
 
 _logger = logging.getLogger(__name__)
 

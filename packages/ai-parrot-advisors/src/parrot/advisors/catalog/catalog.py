@@ -17,7 +17,7 @@ from navconfig.logging import logging
 from sqlalchemy import text
 from ..models import ProductSpec, ProductFeature, ProductDimensions, FeatureType
 from ...stores.postgres import PgVectorStore
-from ...stores.models import SearchResult
+from ...models.stores import SearchResult
 
 
 @dataclass

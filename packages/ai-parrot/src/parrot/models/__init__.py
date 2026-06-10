@@ -101,6 +101,7 @@ from .conference import (
     ConferenceRound,
     ConferenceResult,
 )
+from .stores import StoreType, StoreConfig, SearchResult
 
 __all__ = (
     "OutputFormat",
@@ -191,4 +192,8 @@ __all__ = (
     "PeerVote",
     "ConferenceRound",
     "ConferenceResult",
+    # Store identifiers + data contracts
+    "StoreType",
+    "StoreConfig",
+    "SearchResult",
 )

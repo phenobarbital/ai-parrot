@@ -246,7 +246,7 @@ class HybridPageIndexSearch:
         top_k: int,
     ) -> list[dict[str, Any]]:
         try:
-            from parrot.stores.models import SearchResult
+            from parrot.models.stores import SearchResult
         except Exception as exc:
             logger.warning("Reranker unavailable: %s", exc)
             return candidates[:top_k]

@@ -28,7 +28,7 @@ from typing import Optional
 from parrot.clients.base import AbstractClient
 from parrot.rerankers.abstract import AbstractReranker
 from parrot.rerankers.models import RerankedDocument
-from parrot.stores.models import SearchResult
+from parrot.models.stores import SearchResult
 
 _SCORE_PROMPT_TEMPLATE = """\
 Rate the relevance of the following passage to the query on a scale of 0.0 to 1.0.

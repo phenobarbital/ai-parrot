@@ -9,7 +9,7 @@ from parrot.registry.routing import (
     StoreFallbackPolicy,
     NoSuitableStoreError,
 )
-from parrot.tools.multistoresearch import StoreType
+from parrot.models import StoreType
 
 
 @pytest.fixture

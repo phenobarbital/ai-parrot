@@ -8,7 +8,7 @@ import copy
 import importlib
 from typing import List, Dict, Any
 from ..stores import AbstractStore, supported_stores
-from ..stores.models import StoreConfig
+from ..models.stores import StoreConfig
 
 
 class VectorInterface:

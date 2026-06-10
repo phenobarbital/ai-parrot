@@ -227,7 +227,6 @@ __all__ = (
     "ToolExecutionEnvelope",
     # Core tools
     "VectorStoreSearchTool",
-    "MultiStoreSearchTool",
     "PythonREPLTool",
     "PythonPandasTool",
     "DatasetManager",
@@ -245,7 +244,6 @@ __all__ = (
 
 _LAZY_CORE_TOOLS = {
     "VectorStoreSearchTool": ".vectorstoresearch",
-    "MultiStoreSearchTool": ".multistoresearch",
     "PythonREPLTool": ".pythonrepl",
     "PythonPandasTool": ".pythonpandas",
     "OpenAPIToolkit": ".openapitoolkit",

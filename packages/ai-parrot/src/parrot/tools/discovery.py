@@ -52,7 +52,7 @@ def discover_from_registry(
 
         declared = getattr(package, "TOOL_REGISTRY", None)
         if declared and isinstance(declared, dict):
-            registry.update(declared)
+            registry |= declared
             logger.debug(
                 "Loaded %d tools from %s.TOOL_REGISTRY",
                 len(declared), source,

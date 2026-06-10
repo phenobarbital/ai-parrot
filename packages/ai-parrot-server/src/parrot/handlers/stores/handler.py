@@ -15,7 +15,8 @@ from parrot.handlers.jobs import JobManager, JobStatus
 from parrot.handlers.stores.helpers import VectorStoreHelper
 from parrot.interfaces.file.tmp import TempFileManager
 from parrot.stores import AbstractStore, supported_stores
-from parrot.stores.models import StoreConfig, SearchResult, Document
+from parrot.models.stores import StoreConfig, SearchResult
+from parrot.stores.models import Document
 
 # App-context keys (follow ScrapingHandler pattern)
 _JOB_MANAGER_KEY = "vectorstore_job_manager"

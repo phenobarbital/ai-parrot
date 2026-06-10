@@ -9,7 +9,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from parrot.stores.models import SearchResult
+from parrot.models.stores import SearchResult
 
 
 class RerankedDocument(BaseModel):

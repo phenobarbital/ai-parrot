@@ -12,7 +12,7 @@ Example:
 
         from parrot.rerankers import AbstractReranker
         from parrot.rerankers.models import RerankedDocument
-        from parrot.stores.models import SearchResult
+        from parrot.models.stores import SearchResult
 
         class MyReranker(AbstractReranker):
             async def rerank(
@@ -29,7 +29,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 from parrot.rerankers.models import RerankedDocument
-from parrot.stores.models import SearchResult
+from parrot.models.stores import SearchResult
 
 
 class AbstractReranker(ABC):

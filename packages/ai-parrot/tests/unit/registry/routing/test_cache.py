@@ -7,7 +7,7 @@ from parrot.registry.routing import (
     StoreRoutingDecision,
     StoreScore,
 )
-from parrot.tools.multistoresearch import StoreType
+from parrot.models import StoreType
 
 
 def _decision(path="fast"):

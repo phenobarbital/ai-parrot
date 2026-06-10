@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from navconfig.logging import logging
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 from ..stores import AbstractStore, supported_stores
-from ..stores.models import StoreConfig, SearchResult
+from ..models.stores import StoreConfig, SearchResult
 
 
 class VectorSearchArgs(AbstractToolArgsSchema):

@@ -9,7 +9,7 @@ from parrot.registry.routing import (
     StoreScore,
     StoreRoutingDecision,
 )
-from parrot.tools.multistoresearch import StoreType
+from parrot.models import StoreType
 
 
 class TestStoreRouterConfig:

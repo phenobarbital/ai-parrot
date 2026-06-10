@@ -1,7 +1,18 @@
-from typing import List, Dict, Any, Optional, Tuple, Union
+"""Multi-store search tool with BM25 reranking.
+
+Performs parallel searches across pgVector, FAISS, and ArangoDB, then
+applies BM25S (or rank_bm25 fallback) for intelligent reranking and
+priority selection.
+
+The concrete vector/graph store classes now ship from
+``ai-parrot-embeddings`` (``parrot.stores.*``). They are accepted as
+duck-typed instances here — any object exposing an async
+``similarity_search(query, limit=...)`` works — so this module never
+imports a concrete store at load time. ``StoreType`` is the core
+source-of-truth enum from ``parrot.models``.
+"""
+from typing import TYPE_CHECKING, List, Dict, Any, Optional, Tuple
 import asyncio
-from dataclasses import dataclass
-from enum import Enum
 import hashlib
 from pydantic import BaseModel, Field
 
@@ -14,27 +25,18 @@ except ImportError:
 from navconfig.logging import logging
 
 # Parrot imports
-from .abstract import AbstractTool
-from ..stores.models import SearchResult, Document
-# Import specific store classes for type hinting if needed, 
-# but we'll use duck typing or base classes to avoid circular imports if possible.
-from ..stores.postgres import PgVectorStore
-from ..stores.arango import ArangoDBStore
-# FAISSStore might be imported if needed for type hints, valid check below
-try:
-    from ..stores.faiss_store import FAISSStore
-except ImportError:
-    FAISSStore = Any 
+from parrot.tools.abstract import AbstractTool
+from parrot.models import StoreType
+from parrot.models.stores import SearchResult
 
-
-class StoreType(Enum):
-    """DB Store type"""
-    PGVECTOR = "pgvector"
-    FAISS = "faiss"
-    ARANGO = "arango"
+if TYPE_CHECKING:  # pragma: no cover — type hints only, never imported at runtime
+    from parrot.stores.postgres import PgVectorStore
+    from parrot.stores.arango import ArangoDBStore
+    from parrot.stores.faiss_store import FAISSStore
 
 
 class MultiStoreSearchSchema(BaseModel):
+    """Input schema for multi-store search tool"""
     query: str = Field(..., description="The search query")
     k: Optional[int] = Field(None, description="Number of results to return")
 
@@ -46,15 +48,13 @@ class MultiStoreSearchTool(AbstractTool):
     Performs parallel searches across pgVector, FAISS, and ArangoDB,
     then applies BM25S for intelligent reranking and priority selection.
     """
-
-    
     args_schema = MultiStoreSearchSchema
 
     def __init__(
         self,
-        pgvector_store: Optional[PgVectorStore] = None,
-        faiss_store: Optional[Any] = None,  # FAISSStore
-        arango_store: Optional[ArangoDBStore] = None,
+        pgvector_store: Optional["PgVectorStore"] = None,
+        faiss_store: Optional["FAISSStore"] = None,
+        arango_store: Optional["ArangoDBStore"] = None,
         k: int = 10,
         k_per_store: int = 20,  # Fetch more initially for better reranking
         bm25_weights: Optional[Dict[str, float]] = None,
@@ -79,12 +79,12 @@ class MultiStoreSearchTool(AbstractTool):
         # Default to enabled if store instance is provided
         self.enabled_stores = enable_stores or []
         if not enable_stores:
-             if self.pgvector_store:
-                 self.enabled_stores.append(StoreType.PGVECTOR)
-             if self.faiss_store:
-                 self.enabled_stores.append(StoreType.FAISS)
-             if self.arango_store:
-                 self.enabled_stores.append(StoreType.ARANGO)
+            if self.pgvector_store:
+                self.enabled_stores.append(StoreType.PGVECTOR)
+            if self.faiss_store:
+                self.enabled_stores.append(StoreType.FAISS)
+            if self.arango_store:
+                self.enabled_stores.append(StoreType.ARANGO)
 
         self._bm25 = None
         self.logger = logging.getLogger("MultiStoreSearchTool")
@@ -99,21 +99,21 @@ class MultiStoreSearchTool(AbstractTool):
         """Search pgVector store"""
         if not self.pgvector_store:
             return []
-            
+
         try:
             # PgVectorStore.similarity_search returns List[SearchResult]
             results = await self.pgvector_store.similarity_search(
                 query=query,
                 limit=k
             )
-            
+
             # Tag source and ensure consistent scoring
             for r in results:
                 r.search_source = 'pgvector'
                 # Ensure score is float
                 if not isinstance(r.score, float):
                     r.score = float(r.score) if r.score is not None else 0.0
-                     
+
             return results
         except Exception as e:
             self.logger.error(f"PgVector search error: {e}")
@@ -127,7 +127,7 @@ class MultiStoreSearchTool(AbstractTool):
         """Search FAISS store"""
         if not self.faiss_store:
             return []
-            
+
         try:
             # FAISSStore.similarity_search returns List[SearchResult]
             # method signature: similarity_search(query, k=..., limit=...)
@@ -156,7 +156,7 @@ class MultiStoreSearchTool(AbstractTool):
         """Search ArangoDB"""
         if not self.arango_store:
             return []
-            
+
         try:
             # ArangoDBStore.similarity_search returns List[SearchResult]
             # method signature: similarity_search(query, limit=...)
@@ -189,7 +189,7 @@ class MultiStoreSearchTool(AbstractTool):
         for result in results:
             if not result.content:
                 continue
-                
+
             # Simple tokenization - enhance with proper tokenizer if needed
             # Using simple split for now
             if tokens := result.content.lower().split():
@@ -226,7 +226,7 @@ class MultiStoreSearchTool(AbstractTool):
                 try:
                     retriever = bm25s.BM25()
                     retriever.index(corpus)
-                    
+
                     _ = retriever.retrieve(
                         bm25s.tokenize([query_tokens]),
                         k=len(corpus)
@@ -237,16 +237,16 @@ class MultiStoreSearchTool(AbstractTool):
                     # Here we might need to match indices if retrieve reorders.
                     # Actually bm25s often returns top-k. Since k=len(corpus), we get all.
                     # But the order might change.
-                    
+
                     # Simpler approach: calculate scores for each document manually if index doesn't preserve order ease
                     # Or trust that we provided corpus in order.
                     # Let's use rank_bm25 logic if bm25s usage is complex to map back 1:1 without IDs
                     # But let's try to use the scores if possible.
-                    
+
                     # If bm25s is complex, let's stick to rank_bm25 for reliability unless performance is critical
                     # Fallback block below uses rank_bm25
-                    raise ImportError("Force fallback to rank_bm25 for simplicity") 
-                    
+                    raise ImportError("Force fallback to rank_bm25 for simplicity")
+
                 except Exception:
                     # Fallback to standard logic
                     pass
@@ -259,15 +259,15 @@ class MultiStoreSearchTool(AbstractTool):
 
             for idx, result in enumerate(valid_results):
                 bm25_score = float(bm25_scores[idx])
-                
+
                 # Normalize BM25 score roughly (it's unbound, but usually 0-20ish)
                 # Sigmoid or simply scaling? Let's keep it simple.
                 # If we want to combine with cosine (0-1), we should scale bm25.
                 # For now, let's assume it provides a boost.
-                
+
                 source_weight = self.bm25_weights.get(getattr(result, 'search_source', 'unknown'), 1.0)
 
-                # Hybrid scoring: 
+                # Hybrid scoring:
                 # Original score (often Cosine 0-1) + scaled BM25 + source bias
                 # Scale bm25 by 0.1 to make it a booster rather than dominator
                 result.score = (
@@ -354,7 +354,7 @@ class MultiStoreSearchTool(AbstractTool):
         similarity_threshold: float = 0.95
     ) -> List[SearchResult]:
         """
-        Remove duplicate results. 
+        Remove duplicate results.
         Prioritizes:
         1. Exact ID match (if IDs exist)
         2. Content hash match
@@ -383,9 +383,9 @@ class MultiStoreSearchTool(AbstractTool):
                 content_sample = result.content.strip()
                 # SHA256 for robust hashing
                 content_hash = hashlib.sha256(content_sample.encode('utf-8')).hexdigest()
-                
+
                 if content_hash in seen_content_hashes:
-                   continue
+                    continue
                 seen_content_hashes.add(content_hash)
 
             unique_results.append(result)
