@@ -72,6 +72,35 @@ class CompletionEvent:
     error: Optional[BaseException] = None
 
 
+# ─── FlowEdge (programmatic conditional edges) ───────────────────────────────
+
+#: Edge conditions accepted by :meth:`AgentsFlow.add_edge`.
+EDGE_CONDITIONS = ("always", "on_success", "on_error", "on_timeout", "on_condition")
+
+
+@dataclass
+class FlowEdge:
+    """Programmatic transition edge between two nodes.
+
+    Counterpart of the declarative ``EdgeDefinition`` for flows built with
+    ``add_node()`` / ``add_edge()`` instead of a ``FlowDefinition``.
+
+    Attributes:
+        from_: Source node_id.
+        to: Target node_id.
+        condition: One of ``EDGE_CONDITIONS``. ``"on_condition"`` requires a
+            ``predicate``.
+        predicate: Either a CEL expression string or a Python callable
+            ``(source_result) -> bool`` evaluated against the source node's
+            result when ``condition == "on_condition"``.
+    """
+
+    from_: str
+    to: str
+    condition: str = "always"
+    predicate: Optional[Union[str, Callable[[Any], bool]]] = None
+
+
 # ─── NODE_REGISTRY + @register_node ──────────────────────────────────────────
 
 NODE_REGISTRY: dict[str, Type[Node]] = {}
@@ -143,6 +172,11 @@ class AgentsFlow(PersistenceMixin):
         agent_registry: Optional ``AgentRegistry`` bound to the flow's
             execution context. Used by ``from_definition`` (TASK-1068) for
             eager agent resolution.
+        on_node_event: Optional callback ``(event, node_id, info) -> None``
+            (sync or async) invoked by the scheduler on node lifecycle
+            transitions. ``event`` is one of ``"node_started"``,
+            ``"node_completed"``, ``"node_failed"``, ``"node_skipped"``.
+            Exceptions raised by the callback are logged, never propagated.
         **kwargs: Forwarded to ``PersistenceMixin`` (and ultimately
             ``object.__init__``).
     """
@@ -153,6 +187,9 @@ class AgentsFlow(PersistenceMixin):
         *,
         definition: Optional[FlowDefinition] = None,
         agent_registry: Optional[AgentRegistry] = None,
+        on_node_event: Optional[
+            Callable[[str, str, Dict[str, Any]], Any]
+        ] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -160,6 +197,8 @@ class AgentsFlow(PersistenceMixin):
         self._definition = definition
         self._agent_registry = agent_registry
         self._nodes: dict[str, Node] = {}
+        self._edges: list[FlowEdge] = []
+        self._on_node_event = on_node_event
         self.logger = logging.getLogger(f"parrot.flow.{name}")
 
     # ── Graph construction ────────────────────────────────────────────────
@@ -180,6 +219,98 @@ class AgentsFlow(PersistenceMixin):
             )
         self._nodes[node.node_id] = node
         self.logger.debug("Added node %r to flow %r", node.node_id, self.name)
+
+    def add_edge(
+        self,
+        from_: str,
+        to: str,
+        *,
+        condition: str = "always",
+        predicate: Optional[Union[str, Callable[[Any], bool]]] = None,
+    ) -> FlowEdge:
+        """Declare a transition edge between two programmatically-added nodes.
+
+        When at least one edge is declared, the scheduler switches to
+        explicit-edge mode: dependencies are derived from the edge list
+        (``Node.dependencies`` / ``Node.successors`` are no longer required)
+        and join semantics become OR-join with skip-propagation — a node is
+        dispatched once **all** incoming edges are resolved (source completed,
+        failed, or skipped) and **at least one** of them fired; if none fired,
+        the node is marked skipped and the skip propagates downstream.
+
+        Args:
+            from_: Source node_id.
+            to: Target node_id.
+            condition: One of ``EDGE_CONDITIONS``. Defaults to ``"always"``
+                (fires when the source completes without error). When a
+                ``predicate`` is supplied the condition is promoted to
+                ``"on_condition"`` automatically.
+            predicate: CEL expression string or Python callable
+                ``(source_result) -> bool``.
+
+        Returns:
+            The created :class:`FlowEdge`.
+
+        Raises:
+            ValueError: On unknown ``condition``, or ``"on_condition"``
+                without a ``predicate``.
+        """
+        if predicate is not None and condition == "always":
+            condition = "on_condition"
+        if condition not in EDGE_CONDITIONS:
+            raise ValueError(
+                f"Unknown edge condition {condition!r}. "
+                f"Expected one of {EDGE_CONDITIONS}"
+            )
+        if condition == "on_condition" and predicate is None:
+            raise ValueError(
+                "Edge condition 'on_condition' requires a predicate "
+                "(CEL string or callable)"
+            )
+        edge = FlowEdge(from_=from_, to=to, condition=condition, predicate=predicate)
+        self._edges.append(edge)
+        self.logger.debug(
+            "Added edge %r → %r (%s) to flow %r", from_, to, condition, self.name
+        )
+        return edge
+
+    # ── Node-event notification ───────────────────────────────────────────
+
+    def _notify_node_event(
+        self, event: str, node_id: str, info: Dict[str, Any]
+    ) -> None:
+        """Invoke the ``on_node_event`` callback, shielding the scheduler.
+
+        Sync callbacks run inline; coroutines are scheduled as fire-and-forget
+        tasks. Errors are logged and swallowed — telemetry must never break
+        the run.
+
+        Args:
+            event: Lifecycle event name (``node_started`` | ``node_completed``
+                | ``node_failed`` | ``node_skipped``).
+            node_id: The node the event refers to.
+            info: Extra payload (e.g. ``{"error": "..."}`` for failures).
+        """
+        callback = self._on_node_event
+        if callback is None:
+            return
+        try:
+            outcome = callback(event, node_id, info)
+            if asyncio.iscoroutine(outcome):
+                task = asyncio.ensure_future(outcome)
+                task.add_done_callback(self._log_event_task_error)
+        except Exception as exc:  # noqa: BLE001 - telemetry must not break runs
+            self.logger.warning(
+                "on_node_event callback raised for %s/%s: %s", event, node_id, exc
+            )
+
+    def _log_event_task_error(self, task: "asyncio.Task[Any]") -> None:
+        """Done-callback that logs (instead of raising) async event errors."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            self.logger.warning("async on_node_event callback raised: %s", exc)
 
     # ── Class-method factory (placeholder — TASK-1068) ────────────────────
 
@@ -398,6 +529,7 @@ class AgentsFlow(PersistenceMixin):
         errors: dict[str, BaseException],
         completed: set[str],
         failed: set[str],
+        edges: Optional[list[Any]] = None,
     ) -> FlowResult:
         """Build a FlowResult from scheduler state after the main loop exits.
 
@@ -407,6 +539,9 @@ class AgentsFlow(PersistenceMixin):
             errors: Mapping of node_id → exception.
             completed: Set of successfully completed node_ids.
             failed: Set of failed node_ids.
+            edges: Explicit-mode edge list used for leaf detection. ``None``
+                in definition/legacy modes (which use the definition's edges
+                or ``node.successors`` respectively).
 
         Returns:
             Populated FlowResult.
@@ -429,10 +564,12 @@ class AgentsFlow(PersistenceMixin):
             node_infos.append(info)
 
         # Identify leaf nodes: nodes with no outgoing edges to known nodes.
-        # In programmatic mode, use node.successors; in definition mode use edges.
-        if self._definition is not None:
+        # Explicit/definition modes use their edge lists; legacy programmatic
+        # mode uses node.successors.
+        if edges is not None or self._definition is not None:
+            edge_list = edges if edges is not None else self._definition.edges
             has_successor: set[str] = set()
-            for edge in self._definition.edges:
+            for edge in edge_list:
                 if edge.from_ in nodes:
                     has_successor.add(edge.from_)
             leaves = [nid for nid in nodes if nid not in has_successor]
@@ -519,27 +656,29 @@ class AgentsFlow(PersistenceMixin):
         # Fresh nodes per call (concurrent safety).
         nodes: dict[str, Node] = self._materialize_nodes()
 
-        # In programmatic mode (no definition), synthesize edges from node
-        # successors so the scheduler can dispatch downstream nodes.
-        # In definition mode, use the definition's declared edges.
+        # Edge resolution (three modes):
+        #   1. Definition-driven: use the definition's declared edges.
+        #   2. Explicit programmatic: edges added via add_edge() — enables
+        #      conditional routing, OR-join, and skip-propagation.
+        #   3. Legacy programmatic: synthesize "always" edges from
+        #      node.successors (backward compatible).
+        explicit_mode = self._definition is None and bool(self._edges)
         if self._definition is not None:
             edges = self._definition.edges
+        elif explicit_mode:
+            edges = list(self._edges)
+            for edge in edges:
+                if edge.from_ not in nodes or edge.to not in nodes:
+                    raise ValueError(
+                        f"Edge {edge.from_!r} → {edge.to!r} references a "
+                        f"node not added to flow {self.name!r}"
+                    )
         else:
             # Build a synthetic edge list from node.successors / node.dependencies.
-            # We represent edges as simple dicts to avoid importing EdgeDefinition.
-            class _SyntheticEdge:
-                """Minimal edge representation for programmatic flows."""
-
-                def __init__(self, from_: str, to: str) -> None:
-                    self.from_ = from_
-                    self.to = to
-                    self.condition = "always"
-                    self.predicate = None
-
             synthetic_edges: list[Any] = []
             for nid, node in nodes.items():
                 for succ in node.successors:
-                    synthetic_edges.append(_SyntheticEdge(from_=nid, to=succ))
+                    synthetic_edges.append(FlowEdge(from_=nid, to=succ))
             edges = synthetic_edges
 
         completion_queue: asyncio.Queue[CompletionEvent] = asyncio.Queue()
@@ -547,15 +686,29 @@ class AgentsFlow(PersistenceMixin):
         tasks: dict[str, asyncio.Task] = {}   # type: ignore[type-arg]
         completed: set[str] = set()
         failed: set[str] = set()
+        skipped: set[str] = set()
         results: dict[str, Any] = {}
         errors: dict[str, BaseException] = {}
         active_count = 0
 
+        # Incoming-edge index (explicit mode joins + derived dependencies).
+        incoming: dict[str, list[Any]] = {nid: [] for nid in nodes}
+        for edge in edges:
+            targets = [edge.to] if isinstance(edge.to, str) else list(edge.to)
+            for tgt in targets:
+                if tgt in incoming:
+                    incoming[tgt].append(edge)
+
         def _deps_for(node_id: str) -> DependencyResults:
             """Build dependency result dict for a node."""
+            if explicit_mode:
+                dep_ids: Set[str] = {e.from_ for e in incoming[node_id]}
+                dep_ids |= set(nodes[node_id].dependencies)
+            else:
+                dep_ids = set(nodes[node_id].dependencies)
             return {
                 dep: str(results[dep])
-                for dep in nodes[node_id].dependencies
+                for dep in dep_ids
                 if dep in results
             }
 
@@ -568,18 +721,22 @@ class AgentsFlow(PersistenceMixin):
             )
             active_count += 1
             self.logger.info("Dispatched node %r", node_id)
+            self._notify_node_event("node_started", node_id, {"flow": self.name})
 
         def _edge_passes(edge: Any, source_result: Any, source_error: Optional[BaseException]) -> bool:
             """Evaluate whether a transition edge allows dispatch of its target.
 
             Returns True if the edge condition is satisfied. Handles the four
-            built-in edge conditions plus CEL predicate evaluation.
+            built-in edge conditions plus predicate evaluation (CEL string or
+            Python callable).
             """
             condition = getattr(edge, "condition", "always")
             predicate = getattr(edge, "predicate", None)
 
             if condition == "always":
-                return True
+                # A failed source must not fire its normal-path edges; only
+                # on_error / on_timeout edges route failures.
+                return source_error is None
             if condition == "on_success":
                 return source_error is None
             if condition == "on_error":
@@ -589,6 +746,17 @@ class AgentsFlow(PersistenceMixin):
                 # treat as error for routing purposes.
                 return isinstance(source_error, asyncio.TimeoutError)
             if condition == "on_condition" and predicate:
+                if source_error is not None:
+                    return False
+                if callable(predicate):
+                    try:
+                        return bool(predicate(source_result))
+                    except Exception as exc:  # noqa: BLE001 - predicate guard
+                        self.logger.warning(
+                            "Predicate callable failed for edge %r → %r: %s",
+                            edge.from_, edge.to, exc,
+                        )
+                        return False
                 try:
                     evaluator = CELPredicateEvaluator(predicate)
                     return evaluator(source_result, error=source_error)
@@ -603,10 +771,63 @@ class AgentsFlow(PersistenceMixin):
 
             return True  # unknown condition: allow transition
 
-        # Initial dispatch — entry nodes (no dependencies).
-        for nid, node in nodes.items():
-            if not node.dependencies:
-                _spawn(nid)
+        # ── Explicit-mode join helpers (OR-join + skip-propagation) ──────
+
+        def _edge_resolved(edge: Any) -> bool:
+            """An edge is resolved once its source reached a terminal state."""
+            src = edge.from_
+            return src in completed or src in failed or src in skipped
+
+        def _edge_fired(edge: Any) -> bool:
+            """A resolved edge fired if its source ran and the condition holds."""
+            src = edge.from_
+            if src in skipped:
+                return False
+            if src in completed or src in failed:
+                return _edge_passes(edge, results.get(src), errors.get(src))
+            return False
+
+        def _resolve_ready_targets() -> None:
+            """Dispatch / skip every node whose incoming edges are all resolved.
+
+            Runs to a fixpoint so a skip cascades through its descendants in
+            the same pass (e.g. a failed node skips its whole success path,
+            which in turn resolves a downstream error-handler's fan-in).
+            """
+            progress = True
+            while progress:
+                progress = False
+                for tgt, in_edges in incoming.items():
+                    if not in_edges:
+                        continue  # entry node — dispatched at start
+                    if (
+                        tgt in completed or tgt in failed
+                        or tgt in skipped or tgt in tasks
+                    ):
+                        continue
+                    if not all(_edge_resolved(e) for e in in_edges):
+                        continue
+                    if any(_edge_fired(e) for e in in_edges):
+                        _spawn(tgt)
+                    else:
+                        skipped.add(tgt)
+                        self.logger.info(
+                            "Node %r skipped (no incoming edge fired)", tgt
+                        )
+                        self._notify_node_event(
+                            "node_skipped", tgt, {"flow": self.name}
+                        )
+                    progress = True
+
+        # Initial dispatch — entry nodes.
+        if explicit_mode:
+            for nid in nodes:
+                if not incoming[nid]:
+                    _spawn(nid)
+        else:
+            for nid, node in nodes.items():
+                if not node.dependencies:
+                    _spawn(nid)
 
         # Main event loop — drain completion events.
         while active_count > 0 or not completion_queue.empty():
@@ -637,13 +858,28 @@ class AgentsFlow(PersistenceMixin):
                     continue
                 errors[nid] = event.error
                 failed.add(nid)
+                if isinstance(event.error, Exception):
+                    ctx.mark_failed(nid, event.error)
                 self.logger.warning("Node %r failed: %s", nid, event.error)
+                self._notify_node_event(
+                    "node_failed", nid,
+                    {"flow": self.name, "error": str(event.error)},
+                )
             else:
                 results[nid] = event.result
                 completed.add(nid)
+                ctx.mark_completed(nid, result=event.result)
                 self.logger.info("Node %r completed", nid)
+                self._notify_node_event(
+                    "node_completed", nid, {"flow": self.name}
+                )
 
-            # Evaluate outgoing edges and dispatch newly ready nodes.
+            if explicit_mode:
+                # OR-join + skip-propagation over the whole graph.
+                _resolve_ready_targets()
+                continue
+
+            # Legacy AND-join: evaluate outgoing edges of the finished node.
             source_error = errors.get(nid)
             for edge in edges:
                 # Only edges from the just-completed node.
@@ -663,7 +899,10 @@ class AgentsFlow(PersistenceMixin):
                         _spawn(tgt)
 
         # Fire on_complete hooks sequentially; errors are logged, not re-raised.
-        aggregated = self._aggregate_result(nodes, results, errors, completed, failed)
+        aggregated = self._aggregate_result(
+            nodes, results, errors, completed, failed,
+            edges=edges if explicit_mode else None,
+        )
         for hook in on_complete:
             try:
                 await hook(ctx, aggregated)
@@ -922,6 +1161,8 @@ register_node("end")(EndNode)
 __all__ = [
     "AgentsFlow",
     "CompletionEvent",
+    "EDGE_CONDITIONS",
+    "FlowEdge",
     "NODE_REGISTRY",
     "register_node",
     # Node subclasses (TASK-1066)

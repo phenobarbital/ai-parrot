@@ -72,7 +72,14 @@ from .agents import (
 from .tools import ResultRetrievalTool
 
 # AgentsFlow executor (FEAT-163)
-from .flow import AgentsFlow, NODE_REGISTRY, register_node, CompletionEvent
+from .flow import (
+    AgentsFlow,
+    NODE_REGISTRY,
+    register_node,
+    CompletionEvent,
+    FlowEdge,
+    EDGE_CONDITIONS,
+)
 
 # Flow definition models (FEAT-196)
 from .flow.definition import (
@@ -134,6 +141,8 @@ __all__ = [
     "NODE_REGISTRY",
     "register_node",
     "CompletionEvent",
+    "FlowEdge",
+    "EDGE_CONDITIONS",
     # Flow definition
     "FlowDefinition",
     "NodeDefinition",

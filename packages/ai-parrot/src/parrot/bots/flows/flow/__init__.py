@@ -17,6 +17,8 @@ InteractiveDecisionNode from nodes.py is available as:
 """
 from .flow import (
     AgentsFlow,
+    EDGE_CONDITIONS,
+    FlowEdge,
     NODE_REGISTRY,
     register_node,
     CompletionEvent,
@@ -40,6 +42,8 @@ from .nodes import (
 
 __all__ = [
     "AgentsFlow",
+    "EDGE_CONDITIONS",
+    "FlowEdge",
     "NODE_REGISTRY",
     "register_node",
     "CompletionEvent",
