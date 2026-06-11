@@ -1660,31 +1660,60 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     response.code = data_response.code if hasattr(data_response, 'code') else None
                     # declared as "is_structured" response
                     response.is_structured = True
-                    # If data is large and stored as a variable, pull it from the Python tool context.
-                    # Multi-dataset path: data_variables (plural) with 2+ entries takes priority.
-                    if data_response.data_variables and len(data_response.data_variables) >= 2:
-                        missing_data_variables = await self._inject_multi_data_from_variables(
-                            response,
+                    # Anti-stale guard (cross-turn contamination): the REPL
+                    # namespace persists across turns, so a DataFrame computed
+                    # in a PRIOR turn is still resolvable. Conversation history
+                    # can nudge the model to re-declare such a stale variable
+                    # (e.g. a previous turn's map DataFrame), which would leak
+                    # the old data into this response. Accept only variables
+                    # produced this turn or naming a registered base dataset.
+                    allowed_multi, stale_multi = self._filter_declared_variables(
+                        data_response.data_variables, response.tool_calls
+                    )
+                    if stale_multi:
+                        self.logger.warning(
+                            "Ignoring stale/cross-turn data_variables not produced "
+                            "this turn: %s (declared=%s)",
+                            stale_multi,
                             data_response.data_variables,
                         )
-                    elif data_response.data_variables and len(data_response.data_variables) == 1:
-                        # Single entry in data_variables — treat same as data_variable
-                        if (
-                            response.data is None
-                            or (isinstance(response.data, pd.DataFrame) and response.data.empty)
-                        ):
-                            await self._inject_data_from_variable(
-                                response,
-                                data_response.data_variables[0],
+                    allowed_single = data_response.data_variable
+                    if allowed_single:
+                        _ok_single, _stale_single = self._filter_declared_variables(
+                            [allowed_single], response.tool_calls
+                        )
+                        if _stale_single:
+                            self.logger.warning(
+                                "Ignoring stale/cross-turn data_variable '%s' not "
+                                "produced this turn.",
+                                allowed_single,
                             )
-                    elif data_response.data_variable:
+                        allowed_single = _ok_single[0] if _ok_single else None
+                    # If data is large and stored as a variable, pull it from the Python tool context.
+                    # Multi-dataset path: data_variables (plural) with 2+ entries takes priority.
+                    if len(allowed_multi) >= 2:
+                        missing_data_variables = await self._inject_multi_data_from_variables(
+                            response,
+                            allowed_multi,
+                        )
+                    elif len(allowed_multi) == 1:
+                        # Single surviving entry — treat same as data_variable
                         if (
                             response.data is None
                             or (isinstance(response.data, pd.DataFrame) and response.data.empty)
                         ):
                             await self._inject_data_from_variable(
                                 response,
-                                data_response.data_variable,
+                                allowed_multi[0],
+                            )
+                    elif allowed_single:
+                        if (
+                            response.data is None
+                            or (isinstance(response.data, pd.DataFrame) and response.data.empty)
+                        ):
+                            await self._inject_data_from_variable(
+                                response,
+                                allowed_single,
                             )
                 elif isinstance(response.output, dict) and response.output.get("data_variable"):
                     await self._inject_data_from_variable(
@@ -2331,6 +2360,95 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 continue
         return None
 
+    def _current_turn_variable_names(self, tool_calls: Optional[List[Any]]) -> set:
+        """Collect variable names produced by THIS turn's tool calls.
+
+        Inspects the current turn's ``fetch_dataset`` results (the
+        ``python_variable``/``dataset`` they loaded) and the assignment
+        targets in ``python_repl_pandas`` code (parsed via AST). Returns a
+        deduplicated set of names — order is irrelevant for membership tests.
+
+        This is the basis for the anti-stale guard: the ``PythonPandasTool``
+        REPL namespace persists across conversation turns, so a DataFrame
+        computed in a PREVIOUS turn is still resolvable. Only names in the
+        set returned here (or registered base datasets, see
+        :meth:`_filter_declared_variables`) were actually produced now.
+        """
+        candidates: set = set()
+        if not tool_calls:
+            return candidates
+        for tc in tool_calls:
+            tc_name = getattr(tc, 'name', '') or ''
+            if tc_name == 'fetch_dataset':
+                result = getattr(tc, 'result', None)
+                if result is not None:
+                    data = result if isinstance(result, dict) else getattr(result, 'result', None)
+                    if isinstance(data, dict):
+                        var = data.get('python_variable') or data.get('dataset')
+                        if var:
+                            candidates.add(var)
+            elif tc_name == 'python_repl_pandas':
+                args = getattr(tc, 'arguments', {}) or {}
+                code = args.get('code', '') if isinstance(args, dict) else ''
+                if not code:
+                    continue
+                try:
+                    tree = ast.parse(code)
+                except SyntaxError:
+                    continue
+                for node in tree.body:
+                    if isinstance(node, ast.Assign):
+                        for target in node.targets:
+                            if isinstance(target, ast.Name):
+                                candidates.add(target.id)
+        return candidates
+
+    def _filter_declared_variables(
+        self, declared: Optional[List[str]], tool_calls: Optional[List[Any]]
+    ) -> tuple:
+        """Reject LLM-declared result variables that leak across turns.
+
+        The ``PythonPandasTool`` REPL namespace is shared across all turns of
+        a conversation, so a DataFrame computed in a PRIOR turn (e.g. a map
+        DataFrame from an earlier "show … on a map" question) stays live and
+        resolvable. When conversation history nudges the model to re-declare
+        such a stale variable in ``data_variable``/``data_variables``, the
+        explicit injection paths would otherwise resolve it and leak the
+        previous turn's data into this turn's response.
+
+        A declared variable is accepted only when it is EITHER:
+          * produced in the current turn's tool calls
+            (see :meth:`_current_turn_variable_names`), OR
+          * the name (or alias) of a registered base dataset — these are
+            legitimately referenced without any code this turn, per the
+            prompt's "data already in a loaded dataset variable" guidance.
+
+        Args:
+            declared: The variable names the LLM declared (may be ``None``).
+            tool_calls: The current turn's tool calls.
+
+        Returns:
+            ``(allowed, rejected)`` — two lists preserving the declared order.
+        """
+        if not declared:
+            return [], []
+        current = self._current_turn_variable_names(tool_calls)
+        base: set = set(self.dataframes.keys())
+        try:
+            alias_map = self._get_dataframe_alias_map()
+            base |= set(alias_map.keys())
+            base |= set(alias_map.values())
+        except Exception:  # pragma: no cover - defensive
+            pass
+        allowed: List[str] = []
+        rejected: List[str] = []
+        for var in declared:
+            if var in current or var in base:
+                allowed.append(var)
+            else:
+                rejected.append(var)
+        return allowed, rejected
+
     def _infer_data_variable_from_tools(
         self, tool_calls: List[Any], prefer_names: tuple = ()
     ) -> Optional[str]:
@@ -2364,34 +2482,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             return None
 
         # Collect candidate variable names produced by this turn's tool
-        # calls. We deduplicate with a set and do not track order —
-        # order is irrelevant when we require uniqueness.
-        candidates: set = set()
-
-        for tc in tool_calls:
-            tc_name = getattr(tc, 'name', '') or ''
-            if tc_name == 'fetch_dataset':
-                result = getattr(tc, 'result', None)
-                if result is not None:
-                    data = result if isinstance(result, dict) else getattr(result, 'result', None)
-                    if isinstance(data, dict):
-                        var = data.get('python_variable') or data.get('dataset')
-                        if var:
-                            candidates.add(var)
-            elif tc_name == 'python_repl_pandas':
-                args = getattr(tc, 'arguments', {}) or {}
-                code = args.get('code', '') if isinstance(args, dict) else ''
-                if not code:
-                    continue
-                try:
-                    tree = ast.parse(code)
-                except SyntaxError:
-                    continue
-                for node in tree.body:
-                    if isinstance(node, ast.Assign):
-                        for target in node.targets:
-                            if isinstance(target, ast.Name):
-                                candidates.add(target.id)
+        # calls (deduplicated; order is irrelevant since we require uniqueness).
+        candidates: set = self._current_turn_variable_names(tool_calls)
 
         # Keep only candidates that are currently live, non-empty DataFrames.
         live_dataframes = [
