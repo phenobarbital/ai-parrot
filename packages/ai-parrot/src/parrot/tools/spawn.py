@@ -142,9 +142,10 @@ class SpawnSubAgentTool(AbstractTool):
             routing_meta: Optional routing hints.  The ``"requires_grant"``
                 key is set to ``False`` by default (no enforcement yet).
         """
-        # Build routing_meta with requires_grant placeholder.
+        # Build routing_meta with requires_grant and requires_confirmation placeholders.
         effective_routing = dict(routing_meta or {})
         effective_routing.setdefault("requires_grant", False)
+        effective_routing.setdefault("requires_confirmation", False)  # FEAT-235
 
         super().__init__(
             name=name,
