@@ -93,6 +93,42 @@ async def test_skill_paths_discovers_and_registers(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_skill_paths_registers_list_skill_commands(tmp_path):
+    """Non-empty skill_paths: list_skill_commands tool is registered and
+    reports the discovered skills with their triggers."""
+    (tmp_path / "resumen.md").write_text(
+        "---\nname: resumen\ndescription: Summarize text\n"
+        "triggers:\n  - /resumen\n---\nSummarize the input text."
+    )
+    bot = MockBot(skill_paths=[tmp_path])
+    await bot._configure_skill_file_registry()
+
+    list_tool = next(
+        t for t in bot._tools
+        if hasattr(t, "name") and t.name == "list_skill_commands"
+    )
+    result = await list_tool._execute()
+    assert result.status == "done"
+    assert result.metadata["count"] == 1
+    assert "/resumen" in result.result
+
+
+@pytest.mark.asyncio
+async def test_empty_skill_dir_still_registers_tools(tmp_path):
+    """A registry with zero skills at configure() time still registers the
+    SkillFileToolkit so list_skill_commands and save_learned_skill remain
+    available for skills hot-added mid-session."""
+    empty_dir = tmp_path / "skills"
+    empty_dir.mkdir()
+    bot = MockBot(skill_paths=[empty_dir])
+    await bot._configure_skill_file_registry()
+
+    tool_names = [t.name for t in bot._tools if hasattr(t, "name")]
+    assert "list_skill_commands" in tool_names
+    assert "load_skill" in tool_names
+
+
+@pytest.mark.asyncio
 async def test_skill_paths_injects_prompt_layer(tmp_path):
     """Non-empty skill_paths with inject=True: prompt layer added."""
     (tmp_path / "test-skill.md").write_text(
