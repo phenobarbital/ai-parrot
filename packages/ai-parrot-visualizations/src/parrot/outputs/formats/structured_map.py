@@ -1,9 +1,12 @@
 """FEAT-221: Structured Map Output Mode renderer.
 
 Deterministically converts a per-dataset ``SpatialResult`` (in ``response.data``)
-into a :class:`~parrot.models.outputs.StructuredMapConfig`, sets ``response.data``
-to the per-layer payload, and returns ``(out_without_data, explanation)`` so the
-HTTP envelope mirrors the STRUCTURED_TABLE / STRUCTURED_CHART shape.
+into a :class:`~parrot.models.outputs.StructuredMapConfig` whose ``datasets`` key
+carries the per-layer GeoJSON/rows payloads, sets ``response.data`` to the flat
+tabular rows the payloads were built from, and returns
+``(out_without_data, explanation)`` so the HTTP envelope mirrors the
+STRUCTURED_TABLE / STRUCTURED_CHART shape (``data`` = tabular rows,
+``output`` = full presentation spec including the GeoJSON).
 
 Key design decisions (mirroring StructuredTableRenderer):
 - The **deterministic layer owns data + base schema** — no LLM involvement for
@@ -141,7 +144,11 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
 
     The renderer always:
 
-    - Sets ``response.data`` to the per-layer payload list.
+    - Sets ``response.data`` to the flat tabular rows (feature properties plus
+      ``latitude``/``longitude`` for Point geometries, ``_geometry`` otherwise,
+      and a ``layer`` discriminator when the result has multiple layers).
+    - Includes the per-layer payload list in the config's ``datasets`` key, so
+      the GeoJSON travels in ``output``.
     - Returns ``(out_without_data, explanation)`` — the structured-map config
       dict with the ``data`` key excluded, paired with the prose explanation.
     - Returns ``(None, error_message)`` on any unrecoverable error — never raises.
@@ -172,8 +179,9 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
         4. Optional LLM-refine pass for ambiguous column format hints.
         5. Compute ``MapViewport`` from feature bounds.
         6. Build ``MapQuery`` from originating ``SpatialFilterSpec`` (if present).
-        7. Build ``StructuredMapConfig``; exclude ``data`` from output.
-        8. Set ``response.data`` to the per-layer payload list; return ``(out, explanation)``.
+        7. Build ``StructuredMapConfig`` with the per-layer payloads in
+           ``datasets``; exclude ``data`` from output.
+        8. Set ``response.data`` to the flat tabular rows; return ``(out, explanation)``.
 
         On any error: return ``(None, error_message)`` — never raise.
 
@@ -315,11 +323,15 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
             # Step 6: Build MapQuery from SpatialFilterSpec (if present in response).
             query = self._extract_map_query(response)
 
-            # Step 7: Build StructuredMapConfig (with data list for potential validation skip).
+            # Step 7: Build StructuredMapConfig. The per-layer GeoJSON/rows
+            # payloads travel in `datasets` (serialized into output); `data`
+            # stays [] to skip the column-name validator (multi-layer footgun —
+            # see StructuredMapConfig._validate_column_names).
             try:
                 cfg = StructuredMapConfig(
                     layers=layers,
-                    data=[],  # data is in all_payloads; skip column-name validator
+                    data=[],
+                    datasets=all_payloads,
                     viewport=viewport,
                     query=query,
                     explanation=explanation,
@@ -331,10 +343,12 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
 
             # Step 8: Route envelope via shared base (data excluded; explanation wrapped).
             # cfg.data is [] by design so _route_envelope skips data routing; we
-            # route all_payloads explicitly below.
+            # route the flat tabular rows explicitly below.
             out, wrapped = self._route_envelope(response, cfg, explanation)
-            if all_payloads:
-                response.data = all_payloads
+            if spatial_result.layers:
+                response.data = self._build_tabular_rows(
+                    spatial_result, row_limit=effective_row_limit,
+                )
             return out, wrapped
 
         except Exception as exc:  # noqa: BLE001
@@ -462,6 +476,50 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
             "rows": rows,
             "truncated": len(features) > row_limit,
         }
+
+    # ── Tabular rows builder ───────────────────────────────────────────────────
+
+    @staticmethod
+    def _build_tabular_rows(
+        spatial_result: Any,
+        *,
+        row_limit: int,
+    ) -> List[Dict]:
+        """Flatten all layers' features into the tabular rows for ``response.data``.
+
+        Each row carries the feature's ``properties`` plus the geometry it was
+        built from: ``latitude``/``longitude`` columns for Point geometries, or
+        a ``_geometry`` key with the raw GeoJSON geometry otherwise. When the
+        result has more than one layer, a ``layer`` discriminator column is
+        added. Existing property keys are never overwritten.
+
+        Args:
+            spatial_result: A ``SpatialResult`` instance.
+            row_limit: Maximum rows to include per layer.
+
+        Returns:
+            Flat list of row dicts across all layers.
+        """
+        multi_layer = len(spatial_result.layers) > 1
+        rows: List[Dict] = []
+        for layer_result in spatial_result.layers.values():
+            for feat in layer_result.features[:row_limit]:
+                row = dict(feat.get("properties") or {})
+                geometry = feat.get("geometry")
+                if (
+                    isinstance(geometry, dict)
+                    and geometry.get("type") == "Point"
+                    and isinstance(geometry.get("coordinates"), (list, tuple))
+                    and len(geometry["coordinates"]) >= 2
+                ):
+                    row.setdefault("latitude", geometry["coordinates"][1])
+                    row.setdefault("longitude", geometry["coordinates"][0])
+                else:
+                    row.setdefault("_geometry", geometry)
+                if multi_layer:
+                    row.setdefault("layer", layer_result.layer)
+                rows.append(row)
+        return rows
 
     # ── Viewport computation ───────────────────────────────────────────────────
 

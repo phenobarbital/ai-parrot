@@ -744,8 +744,11 @@ class StructuredMapConfig(BaseModel):
 
     Attributes:
         layers: One ``MapLayer`` per dataset with data-schema + presentation hints.
-        data: Flat data rows or per-layer payloads — INPUT-ONLY; excluded from
-            ``output``, routed to ``response.data`` by the renderer.
+        data: Flat tabular rows — INPUT-ONLY; excluded from ``output``,
+            routed to ``response.data`` by the renderer.
+        datasets: Per-layer GeoJSON/rows payloads — INCLUDED in ``output``
+            (unlike ``data``); stripped from the FEAT-224 artifact definition
+            to keep chat storage lean.
         viewport: Viewport hints (bbox + optional center/zoom).
         query: Echoed ``SpatialFilterSpec`` parameters (point / radius / unit).
         base_layer: Optional base-tile/style hint for the frontend (e.g. an OSM
@@ -763,8 +766,16 @@ class StructuredMapConfig(BaseModel):
     data: List[dict] = Field(
         default_factory=list,
         description=(
-            "Per-layer payloads; INPUT-ONLY — excluded from ``output``, "
+            "Flat tabular rows; INPUT-ONLY — excluded from ``output``, "
             "routed to response.data by the renderer."
+        ),
+    )
+    datasets: List[dict] = Field(
+        default_factory=list,
+        description=(
+            "Per-layer GeoJSON/rows payloads [{dataset, layer, data_shape, payload}]; "
+            "INCLUDED in output (unlike ``data``). Stripped from the FEAT-224 "
+            "artifact definition to keep chat storage lean."
         ),
     )
     viewport: Optional[MapViewport] = Field(

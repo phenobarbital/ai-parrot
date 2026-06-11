@@ -129,7 +129,8 @@ async def test_structured_map_e2e_llm_mode(two_dataset_spatial_result):
     Verifies:
     - out is not None and 'data' is not in out.
     - out['layers'] has correct layer names.
-    - response.data is set (per-layer payloads).
+    - out['datasets'] carries the per-layer GeoJSON payloads.
+    - response.data is set (flat tabular rows).
     - explanation is passed through.
     """
     from parrot.outputs.formats import get_renderer
@@ -152,8 +153,14 @@ async def test_structured_map_e2e_llm_mode(two_dataset_spatial_result):
     assert "schools" in layer_names
     assert "malls" in layer_names
 
-    # response.data set
+    # GeoJSON payloads in output.datasets — one entry per layer
+    assert {entry["layer"] for entry in out["datasets"]} == layer_names
+    for entry in out["datasets"]:
+        assert isinstance(entry["payload"], dict)
+
+    # response.data set (flat tabular rows, not per-layer payloads)
     assert resp.data is not None
+    assert all("payload" not in row for row in resp.data)
 
     # Explanation
     assert explanation == "Found schools and malls within 5 miles."

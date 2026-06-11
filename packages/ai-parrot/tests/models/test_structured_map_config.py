@@ -167,6 +167,27 @@ def test_config_data_accessible_on_model():
     assert len(cfg.data) == 2
 
 
+def test_config_datasets_included_in_dump():
+    """datasets (per-layer GeoJSON payloads) defaults to [] and survives the dump."""
+    from parrot.models.outputs import StructuredMapConfig, MapLayer, MapColumn
+
+    layer = MapLayer(layer="schools", columns=[MapColumn(name="name", type="string", title="Name")])
+
+    cfg = StructuredMapConfig(layers=[layer])
+    assert cfg.datasets == []
+
+    payload = {
+        "dataset": "schools",
+        "layer": "schools",
+        "data_shape": "geojson",
+        "payload": {"type": "FeatureCollection", "features": []},
+    }
+    cfg = StructuredMapConfig(layers=[layer], data=[], datasets=[payload])
+    out = cfg.model_dump(mode="json", by_alias=True, exclude={"data"})
+    assert "data" not in out
+    assert out["datasets"] == [payload]
+
+
 def test_config_defaults():
     """viewport, query, base_layer, title, description, explanation default to None."""
     from parrot.models.outputs import StructuredMapConfig, MapLayer, MapColumn

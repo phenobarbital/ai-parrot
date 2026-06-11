@@ -49,10 +49,13 @@ def _attach_envelope(response: Any, output_mode: str, content: Any) -> None:
     art_type = _STRUCTURED_ARTIFACT_TYPE.get(output_mode)
     if art_type and isinstance(content, dict) and content:
         art_id = f"{output_mode}-{uuid.uuid4().hex[:8]}"
+        # Mirror data.py: strip `data` (rows) and `datasets` (STRUCTURED_MAP
+        # per-layer GeoJSON payloads) so the stored definition stays lean.
+        definition = {k: v for k, v in content.items() if k not in ("data", "datasets")}
         response.artifacts.append({
             "type": art_type,
             "artifactId": art_id,
-            "definition": content,
+            "definition": definition,
         })
         response.artifact_id = art_id
         response.output = content  # G6 mirror
@@ -192,7 +195,7 @@ async def test_e2e_table_envelope_end_to_end() -> None:
 @satellite_available
 @pytest.mark.asyncio
 async def test_e2e_map_envelope_end_to_end() -> None:
-    """E2E: STRUCTURED_MAP produces artifacts[].definition + per-layer payloads in data."""
+    """E2E: STRUCTURED_MAP — payloads in output.datasets, tabular rows in data."""
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
     from parrot.tools.dataset_manager.spatial import SpatialResult, SpatialLayerResult
@@ -219,14 +222,22 @@ async def test_e2e_map_envelope_end_to_end() -> None:
 
     assert content is not None, "renderer must return a config dict"
     assert "data" not in content, "definition must exclude data key"
+    # Per-layer GeoJSON payloads travel in output.datasets
+    assert isinstance(content["datasets"], list) and len(content["datasets"]) == 1
+    assert content["datasets"][0]["payload"]["type"] == "FeatureCollection"
 
     _attach_envelope(resp, "structured_map", content)
 
     _assert_artifact_envelope(resp, "map")
+    # The stored artifact definition stays lean — no GeoJSON payloads
+    assert "datasets" not in resp.artifacts[0]["definition"]
 
-    # G2: per-layer payloads in response.data
+    # Tabular rows (properties + coordinates) in response.data
     assert resp.data is not None
-    assert isinstance(resp.data, list) and len(resp.data) >= 1
+    assert isinstance(resp.data, list) and len(resp.data) == 1
+    assert resp.data[0]["name"] == "Place A"
+    assert resp.data[0]["latitude"] == 40.7
+    assert resp.data[0]["longitude"] == -74.0
 
 
 # ── Parametrized contract test ────────────────────────────────────────────────
