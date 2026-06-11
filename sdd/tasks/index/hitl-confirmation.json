@@ -72,7 +72,7 @@
       "feature_id": "FEAT-235",
       "feature": "hitl-confirmation",
       "spec": "sdd/specs/hitl-confirmation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Edits parrot/tools/manager.py (shared FEAT-211 dispatch hotspot). Needs the guard API from 1534. Keep sequential to avoid manager.py churn.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:47:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1536-toolmanager-integration.md"
+      "completed_at": "2026-06-11T22:57:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1536-toolmanager-integration.md"
     },
     {
       "id": "TASK-1537",
