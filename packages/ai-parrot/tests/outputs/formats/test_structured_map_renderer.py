@@ -179,7 +179,7 @@ async def test_render_data_excluded(two_layer_result):
 
 @pytest.mark.asyncio
 async def test_render_sets_response_data(two_layer_result):
-    """render() sets response.data to the per-layer payloads."""
+    """render() sets response.data to the flat tabular rows."""
     from parrot.outputs.formats import get_renderer
     from parrot.models.outputs import OutputMode
 
@@ -189,7 +189,11 @@ async def test_render_sets_response_data(two_layer_result):
 
     assert resp.data is not None
     assert isinstance(resp.data, list)
-    assert len(resp.data) > 0
+    # 2 school features + 1 mall feature = 3 flat rows
+    assert len(resp.data) == 3
+    for row in resp.data:
+        assert isinstance(row, dict)
+        assert "payload" not in row, "rows must be tabular, not per-layer payloads"
 
 
 @pytest.mark.asyncio
@@ -334,21 +338,22 @@ async def test_marker_color_marker_colors_wrapper(two_layer_result):
 
 @pytest.mark.asyncio
 async def test_render_geojson_data_shape(two_layer_result):
-    """data_shape=geojson passes features through as FeatureCollection."""
+    """data_shape=geojson passes features through as FeatureCollection in output.datasets."""
     from parrot.outputs.formats import get_renderer
     from parrot.models.outputs import OutputMode
 
     r = get_renderer(OutputMode.STRUCTURED_MAP)()
     resp = make_response(data=two_layer_result)
-    await r.render(resp)
+    out, _ = await r.render(resp)
 
     # Default data_shape is geojson (no profile in test)
-    payloads = resp.data
+    payloads = out["datasets"]
+    assert len(payloads) == 2
     for entry in payloads:
         assert "payload" in entry
         payload = entry["payload"]
-        # Should be FeatureCollection or rows dict
         assert isinstance(payload, dict)
+        assert payload["type"] == "FeatureCollection"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -534,8 +539,8 @@ class TestMapEnvelopeConformance:
         assert "data" not in out, "data key must be excluded from output via _route_envelope"
 
     @pytest.mark.asyncio
-    async def test_payloads_routed_to_response_data(self, two_layer_result):
-        """Per-layer payloads are routed to response.data after the retrofit."""
+    async def test_payloads_routed_to_output_datasets(self, two_layer_result):
+        """Per-layer payloads live in output.datasets; response.data is tabular rows."""
         from parrot.outputs.formats import get_renderer
         from parrot.models.outputs import OutputMode
 
@@ -544,11 +549,16 @@ class TestMapEnvelopeConformance:
         out, _ = await r.render(resp)
 
         assert out is not None
-        assert isinstance(resp.data, list) and len(resp.data) > 0
-        # Each entry is a per-layer payload dict
-        for entry in resp.data:
+        # GeoJSON payloads travel in output.datasets
+        assert isinstance(out["datasets"], list) and len(out["datasets"]) == 2
+        for entry in out["datasets"]:
             assert "dataset" in entry
             assert "payload" in entry
+        # response.data carries the flat tabular rows the payloads were built from
+        assert isinstance(resp.data, list) and len(resp.data) == 3
+        for row in resp.data:
+            assert "dataset" not in row
+            assert "payload" not in row
 
     @pytest.mark.asyncio
     async def test_existing_behavior_preserved(self, two_layer_result):
@@ -571,8 +581,9 @@ class TestMapEnvelopeConformance:
         # Layers present
         assert "layers" in out
         assert len(out["layers"]) == 2
-        # Payload entries available on response.data
-        assert isinstance(resp.data, list) and len(resp.data) == 2
+        # Payload entries available on output.datasets; tabular rows on response.data
+        assert isinstance(out["datasets"], list) and len(out["datasets"]) == 2
+        assert isinstance(resp.data, list) and len(resp.data) == 3
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -618,3 +629,133 @@ async def test_render_accepts_dataframe_converted_warehouses():
     assert out is not None
     assert "layers" in out and len(out["layers"]) == 1
     assert explanation == "3 warehouses."
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tabular rows contract — response.data carries the data the GeoJSON was built
+# from (properties + coordinates), NOT the GeoJSON itself.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_tabular_rows_point_coordinates(two_layer_result):
+    """Point features yield latitude/longitude columns in response.data rows."""
+    from parrot.outputs.formats import get_renderer
+    from parrot.models.outputs import OutputMode
+
+    r = get_renderer(OutputMode.STRUCTURED_MAP)()
+    resp = make_response(data=two_layer_result)
+    await r.render(resp)
+
+    school_row = next(row for row in resp.data if row.get("name") == "PS 1")
+    assert school_row["latitude"] == 40.7
+    assert school_row["longitude"] == -74.0
+    assert school_row["enrollment"] == 500
+    assert "_geometry" not in school_row
+
+
+@pytest.mark.asyncio
+async def test_tabular_rows_layer_discriminator(two_layer_result):
+    """Multi-layer results add a 'layer' column to every row."""
+    from parrot.outputs.formats import get_renderer
+    from parrot.models.outputs import OutputMode
+
+    r = get_renderer(OutputMode.STRUCTURED_MAP)()
+    resp = make_response(data=two_layer_result)
+    await r.render(resp)
+
+    assert {row["layer"] for row in resp.data} == {"schools", "malls"}
+
+
+@pytest.mark.asyncio
+async def test_tabular_rows_single_layer_no_discriminator():
+    """Single-layer results do NOT add a 'layer' column."""
+    from parrot.outputs.formats import get_renderer
+    from parrot.models.outputs import OutputMode
+    from parrot.tools.dataset_manager.spatial import SpatialResult, SpatialLayerResult
+
+    spatial = SpatialResult(
+        layers={
+            "stores": SpatialLayerResult(
+                layer="stores",
+                features=[
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-73.9, 40.8]},
+                        "properties": {"name": "Store A"},
+                    },
+                ],
+                total_count=1,
+            ),
+        }
+    )
+    r = get_renderer(OutputMode.STRUCTURED_MAP)()
+    resp = make_response(data=spatial)
+    await r.render(resp)
+
+    assert len(resp.data) == 1
+    assert "layer" not in resp.data[0]
+
+
+@pytest.mark.asyncio
+async def test_tabular_rows_non_point_geometry():
+    """Non-Point geometries are preserved under a '_geometry' key (no lat/lon)."""
+    from parrot.outputs.formats import get_renderer
+    from parrot.models.outputs import OutputMode
+    from parrot.tools.dataset_manager.spatial import SpatialResult, SpatialLayerResult
+
+    polygon = {
+        "type": "Polygon",
+        "coordinates": [[[-74.0, 40.7], [-74.0, 40.8], [-73.9, 40.8], [-74.0, 40.7]]],
+    }
+    spatial = SpatialResult(
+        layers={
+            "zones": SpatialLayerResult(
+                layer="zones",
+                features=[
+                    {
+                        "type": "Feature",
+                        "geometry": polygon,
+                        "properties": {"name": "Zone 1"},
+                    },
+                ],
+                total_count=1,
+            ),
+        }
+    )
+    r = get_renderer(OutputMode.STRUCTURED_MAP)()
+    resp = make_response(data=spatial)
+    await r.render(resp)
+
+    row = resp.data[0]
+    assert row["_geometry"] == polygon
+    assert "latitude" not in row
+    assert "longitude" not in row
+
+
+def test_tabular_rows_property_keys_win():
+    """Existing property keys (latitude/longitude/layer) are never overwritten."""
+    from parrot.outputs.formats.structured_map import StructuredMapRenderer
+    from parrot.tools.dataset_manager.spatial import SpatialResult, SpatialLayerResult
+
+    spatial = SpatialResult(
+        layers={
+            "a": SpatialLayerResult(
+                layer="a",
+                features=[
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-74.0, 40.7]},
+                        "properties": {"latitude": "original", "layer": "custom"},
+                    },
+                ],
+                total_count=1,
+            ),
+            "b": SpatialLayerResult(layer="b", features=[], total_count=0),
+        }
+    )
+    rows = StructuredMapRenderer._build_tabular_rows(spatial, row_limit=1000)
+
+    assert rows[0]["latitude"] == "original"
+    assert rows[0]["layer"] == "custom"
+    assert rows[0]["longitude"] == -74.0

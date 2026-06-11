@@ -2007,8 +2007,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     # G2 safety net: the renderer already excludes rows, but strip
                     # any stray `data` key defensively so the envelope definition
                     # never carries rows (rows live in response.data only).
+                    # `datasets` (STRUCTURED_MAP per-layer GeoJSON payloads) is
+                    # also stripped to keep the stored artifact lean.
                     _definition = {
-                        _k: _v for _k, _v in content.items() if _k != "data"
+                        _k: _v for _k, _v in content.items()
+                        if _k not in ("data", "datasets")
                     }
                     response.artifacts.append({
                         "type": _art_type,
