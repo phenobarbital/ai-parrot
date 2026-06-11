@@ -5028,9 +5028,22 @@ class DatasetManager(AbstractToolkit):
                 in this ``DatasetManager`` instance OR lacks a spatial profile.
         """
         import asyncio
-        from .spatial.contracts import SpatialResult, SpatialLayerResult
+        from .spatial.contracts import (
+            SpatialResult,
+            SpatialLayerResult,
+            SpatialFilterSpec,
+        )
         from .spatial.registry import get_spatial_profile, validate_profiles_exist
         from .spatial.compiler import SpatialCompiler
+
+        # Coerce a dict spec into the Pydantic model. The tool framework may pass
+        # ``spec`` as a raw dict (e.g. the LLM emits JSON args like
+        # {"point": [...], "radius": 100, "unit": "km", "datasets": [...]})
+        # rather than a constructed SpatialFilterSpec; without this, the
+        # ``spec.datasets`` access below raises AttributeError and the spatial
+        # query (Path A) fails for the map renderer.
+        if isinstance(spec, dict):
+            spec = SpatialFilterSpec(**spec)
 
         compiler = SpatialCompiler()
 
