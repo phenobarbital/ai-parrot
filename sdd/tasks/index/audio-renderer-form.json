@@ -14,7 +14,7 @@
       "feature_id": "FEAT-236",
       "feature": "audio-renderer-form",
       "spec": "sdd/specs/audio-renderer-form.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation model task; TASK-1540/1541 import VoiceMode and the new fields from it. Must land first.",
       "assigned_to": null,
       "started_at": "2026-06-11T23:49:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1539-voicemode-model-extensions.md"
+      "completed_at": "2026-06-11T23:57:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1539-voicemode-model-extensions.md"
     },
     {
       "id": "TASK-1540",
