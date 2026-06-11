@@ -24,6 +24,7 @@ from .submissions import (
     FormSubmission,
     FormSubmissionStorage,
 )
+from .rule_evaluator import RuleEvaluator, RuleResolution
 from .validators import FormValidator, ValidationResult
 
 __all__ = [
@@ -52,4 +53,7 @@ __all__ = [
     # CSRF helpers for remote events endpoint (FEAT-188)
     "issue_form_csrf_token",
     "validate_form_csrf_token",
+    # Rule evaluator (FEAT-234)
+    "RuleEvaluator",
+    "RuleResolution",
 ]

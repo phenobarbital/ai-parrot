@@ -21,8 +21,47 @@ from ..tools.field_helpers import get_form_field_schema_snippets
 from .registry import register_field_control
 
 
+# ---------------------------------------------------------------------------
+# Rule capability buckets (FEAT-234)
+# Each constant is a list of string values from the respective enums.
+# They are intentionally kept as plain lists (not enum references) so they
+# serialise cleanly via FieldControlMetadata.model_dump().
+# ---------------------------------------------------------------------------
+
+# Operators applicable to any text-like field
+_TEXT_OPERATORS: list[str] = ["eq", "neq", "in", "not_in", "is_empty", "is_not_empty"]
+# Operators applicable to numeric fields (superset of text)
+_NUMERIC_OPERATORS: list[str] = [
+    "eq", "neq", "gt", "lt", "gte", "lte", "in", "not_in", "is_empty", "is_not_empty"
+]
+# Operators for boolean fields
+_BOOLEAN_OPERATORS: list[str] = ["eq", "neq", "is_empty", "is_not_empty"]
+# Operators for date/time fields (same as numeric for ordering)
+_DATE_OPERATORS: list[str] = ["eq", "neq", "gt", "lt", "gte", "lte", "is_empty", "is_not_empty"]
+# Operators for selection fields
+_SELECT_OPERATORS: list[str] = ["eq", "neq", "in", "not_in", "is_empty", "is_not_empty"]
+
+# Standard visibility/requirement effects applicable to all non-container fields
+_STANDARD_EFFECTS: list[str] = ["show", "hide", "require", "disable"]
+# Extended effects that include set/calc/cascade (applicable to simple value fields)
+_EXTENDED_EFFECTS: list[str] = [
+    "show", "hide", "require", "disable", "set", "calc", "reload_options", "cascade_clear"
+]
+
+# Operations for numeric types (arithmetic + comparison helpers)
+_NUMERIC_OPERATIONS: list[str] = [
+    "add", "subtract", "multiply", "divide", "percent", "copy", "format"
+]
+# Operations for text types (string manipulation)
+_TEXT_OPERATIONS: list[str] = ["copy", "concat", "format"]
+# Operations for date types
+_DATE_OPERATIONS: list[str] = ["copy", "date_diff", "format"]
+
+
 # Per-type metadata that is NOT part of `_FIELD_SCHEMA_SNIPPETS` and must be
 # encoded here. See spec §3 Module 4 for the categorization rationale.
+# Keys `supported_operators`, `supported_effects`, `supported_operations` are
+# added for FEAT-234 capability advertising.
 _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
     FieldType.TEXT: {
         "label": "Text",
@@ -32,6 +71,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "input",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _TEXT_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": _TEXT_OPERATIONS,
     },
     FieldType.TEXT_AREA: {
         "label": "Text Area",
@@ -41,6 +83,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "input",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _TEXT_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": _TEXT_OPERATIONS,
     },
     FieldType.NUMBER: {
         "label": "Number",
@@ -50,6 +95,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "input",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _NUMERIC_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": _NUMERIC_OPERATIONS,
     },
     FieldType.INTEGER: {
         "label": "Integer",
@@ -59,6 +107,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "input",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _NUMERIC_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": _NUMERIC_OPERATIONS,
     },
     FieldType.BOOLEAN: {
         "label": "Boolean",
@@ -68,6 +119,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "toggle",
         "supports_constraints": False,
         "is_container": False,
+        "supported_operators": _BOOLEAN_OPERATORS,
+        "supported_effects": _STANDARD_EFFECTS,
+        "supported_operations": ["copy", "set"],
     },
     FieldType.DATE: {
         "label": "Date",
@@ -77,6 +131,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "datetime",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _DATE_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": _DATE_OPERATIONS,
     },
     FieldType.DATETIME: {
         "label": "Date & Time",
@@ -86,6 +143,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "datetime",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _DATE_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": _DATE_OPERATIONS,
     },
     FieldType.TIME: {
         "label": "Time",
@@ -95,6 +155,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "datetime",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _DATE_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": _DATE_OPERATIONS,
     },
     FieldType.SELECT: {
         "label": "Select",
@@ -104,6 +167,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "select",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _SELECT_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": ["copy", "lookup", "reload_options"],
     },
     FieldType.MULTI_SELECT: {
         "label": "Multi Select",
@@ -113,6 +179,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "multiselect",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _SELECT_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": ["copy", "lookup", "aggregate"],
     },
     FieldType.FILE: {
         "label": "File",
@@ -122,6 +191,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "upload",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": ["is_empty", "is_not_empty"],
+        "supported_effects": _STANDARD_EFFECTS,
+        "supported_operations": [],
     },
     FieldType.IMAGE: {
         "label": "Image",
@@ -131,6 +203,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "upload",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": ["is_empty", "is_not_empty"],
+        "supported_effects": _STANDARD_EFFECTS,
+        "supported_operations": [],
     },
     FieldType.COLOR: {
         "label": "Color",
@@ -140,6 +215,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "color",
         "supports_constraints": False,
         "is_container": False,
+        "supported_operators": ["eq", "neq", "is_empty", "is_not_empty"],
+        "supported_effects": _STANDARD_EFFECTS,
+        "supported_operations": ["copy"],
     },
     FieldType.URL: {
         "label": "URL",
@@ -149,6 +227,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "input",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _TEXT_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": _TEXT_OPERATIONS,
     },
     FieldType.EMAIL: {
         "label": "Email",
@@ -158,6 +239,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "input",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _TEXT_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": _TEXT_OPERATIONS,
     },
     FieldType.PHONE: {
         "label": "Phone",
@@ -167,6 +251,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "input",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _TEXT_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": _TEXT_OPERATIONS,
     },
     FieldType.PASSWORD: {
         "label": "Password",
@@ -176,6 +263,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "input",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": ["is_empty", "is_not_empty"],
+        "supported_effects": _STANDARD_EFFECTS,
+        "supported_operations": [],
     },
     FieldType.HIDDEN: {
         "label": "Hidden",
@@ -185,6 +275,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "hidden",
         "supports_constraints": False,
         "is_container": False,
+        "supported_operators": _TEXT_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": ["copy", "set"],
     },
     FieldType.GROUP: {
         "label": "Group",
@@ -194,6 +287,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "container",
         "supports_constraints": False,
         "is_container": True,
+        "supported_operators": [],
+        "supported_effects": ["show", "hide"],
+        "supported_operations": [],
     },
     FieldType.ARRAY: {
         "label": "Array",
@@ -203,6 +299,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "repeater",
         "supports_constraints": False,
         "is_container": True,
+        "supported_operators": [],
+        "supported_effects": ["show", "hide"],
+        "supported_operations": [],
     },
     # New field types (FEAT-167)
     FieldType.SIGNATURE: {
@@ -213,6 +312,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "signature",
         "supports_constraints": False,
         "is_container": False,
+        "supported_operators": ["is_empty", "is_not_empty"],
+        "supported_effects": _STANDARD_EFFECTS,
+        "supported_operations": [],
     },
     FieldType.DYNAMIC_SELECT: {
         "label": "Dynamic Select",
@@ -222,6 +324,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "select",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _SELECT_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": ["copy", "lookup", "reload_options"],
     },
     FieldType.TRANSFER_LIST: {
         "label": "Transfer List",
@@ -231,6 +336,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "transfer-list",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _SELECT_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": ["copy", "aggregate"],
     },
     FieldType.REMOTE_RESPONSE: {
         "label": "Remote Response",
@@ -240,6 +348,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "display",
         "supports_constraints": False,
         "is_container": False,
+        "supported_operators": _TEXT_OPERATORS,
+        "supported_effects": _STANDARD_EFFECTS,
+        "supported_operations": ["copy"],
     },
     FieldType.AVAILABILITY: {
         "label": "Availability",
@@ -249,6 +360,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "availability",
         "supports_constraints": False,
         "is_container": False,
+        "supported_operators": _DATE_OPERATORS,
+        "supported_effects": _STANDARD_EFFECTS,
+        "supported_operations": _DATE_OPERATIONS,
     },
     FieldType.LOCATION: {
         "label": "Location",
@@ -258,6 +372,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "select",
         "supports_constraints": False,
         "is_container": False,
+        "supported_operators": _SELECT_OPERATORS,
+        "supported_effects": _STANDARD_EFFECTS,
+        "supported_operations": ["copy"],
     },
     FieldType.TAGS: {
         "label": "Tags",
@@ -267,6 +384,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "tags",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _SELECT_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": ["copy", "concat"],
     },
     FieldType.NPS: {
         "label": "NPS",
@@ -276,6 +396,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "rating",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _NUMERIC_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": _NUMERIC_OPERATIONS,
     },
     FieldType.LIKERT: {
         "label": "Likert Scale",
@@ -285,6 +408,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "rating",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _NUMERIC_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": _NUMERIC_OPERATIONS,
     },
     FieldType.RANKING: {
         "label": "Ranking",
@@ -294,6 +420,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "rating",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": _NUMERIC_OPERATORS,
+        "supported_effects": _EXTENDED_EFFECTS,
+        "supported_operations": _NUMERIC_OPERATIONS,
     },
     # Phase 3 — FEAT-170
     FieldType.REST: {
@@ -307,6 +436,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "upload",
         "supports_constraints": True,
         "is_container": False,
+        "supported_operators": ["is_empty", "is_not_empty"],
+        "supported_effects": _STANDARD_EFFECTS,
+        "supported_operations": [],
     },
     # Phase 4 — FEAT-224
     FieldType.AUDIO: {
@@ -317,6 +449,9 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "render_hint": "audio-recorder",
         "supports_constraints": False,
         "is_container": False,
+        "supported_operators": ["is_empty", "is_not_empty"],
+        "supported_effects": _STANDARD_EFFECTS,
+        "supported_operations": [],
     },
 }
 
@@ -338,6 +473,9 @@ def _seed() -> None:
             render_hint=meta["render_hint"],
             supports_constraints=meta["supports_constraints"],
             is_container=meta["is_container"],
+            supported_operators=meta.get("supported_operators", []),
+            supported_effects=meta.get("supported_effects", []),
+            supported_operations=meta.get("supported_operations", []),
         )
 
 

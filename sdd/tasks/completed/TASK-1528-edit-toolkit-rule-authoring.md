@@ -159,10 +159,8 @@ class TestEditToolkitRules:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-12
+**Notes**: Added add_dependency, update_dependency, remove_dependency, add_post_dependency, remove_post_dependency to EditToolkit. All use rule-integrity validation before mutating. _replace_field_in_form and _check_rules helpers added. All methods dispatchable via execute_tool. CreateFormTool system prompt updated with depends_on/post_depends schema + toolkit system prompt updated with new tool names. 17 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -17,6 +17,7 @@ try:
         AuthConfig,
         BearerAuth,
         ConditionOperator,
+        DependencyOperation,
         DependencyRule,
         FieldCondition,
         FieldConstraints,
@@ -33,6 +34,7 @@ try:
         LocalizedString,
         NoAuth,
         OptionsSource,
+        PostDependency,
         RenderedForm,
         SectionItem,
         StyleSchema,
@@ -58,6 +60,8 @@ try:
         FormSubmissionStorage,
         FormValidator,
         PostgresFormStorage,
+        RuleEvaluator,
+        RuleResolution,
         SubmissionForwarder,
         ValidationResult,
     )
@@ -65,6 +69,7 @@ try:
         CreateFormTool,
         DatabaseFormTool,
         RequestFormTool,
+        get_dependency_rule_snippets,
         get_form_field_schema_snippets,
         list_supported_form_field_types,
     )

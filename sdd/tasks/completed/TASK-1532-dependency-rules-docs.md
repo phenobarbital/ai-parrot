@@ -124,10 +124,8 @@ formdesigner pages). Keep examples runnable/constructable against the real model
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-12
+**Notes**: Created `docs/formdesigner-conditional-sections.md` with 11 sections: pre-dependencies (logic gates, effects, operators), DependencyOperation vocabulary with all 11 op kinds, PostDependency forward effects, an end-to-end JSON + Python example covering xor/arithmetic/set patterns, EditToolkit CRUD authoring guide, control-registry capability metadata, get_dependency_rule_snippets, RuleEvaluator server-side evaluation, YAML serialization, JSON Schema x-extensions round-trip, open questions (reload_options/aggregate/lookup/nested trees), validation, and legacy parrot.forms re-exports. All examples use shipped model signatures.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None.

@@ -154,10 +154,8 @@ class TestControlCapabilities:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-12
+**Notes**: Added optional `supported_operators`, `supported_effects`, `supported_operations` fields to `FieldControlMetadata` with empty-list defaults (backward-compatible). Updated `register_field_control` to accept these as keyword-only optional args. Populated capability metadata for all 29 built-in `FieldType`s in `_BUILTIN_METADATA`. Updated `_seed()` to pass capability fields through. Added `get_dependency_rule_snippets()` to `tools/field_helpers.py` returning 4 valid skeleton PostDependency dicts and 1 depends_on skeleton. Exported from `tools/__init__.py`. Updated `test_metadata_dump_keys.py` contract to include the 3 new fields. 35 tests pass across all controls tests (21 new + 14 pre-existing).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `test_metadata_dump_keys.py` EXPECTED_KEYS updated to include the 3 new capability fields — necessary contract bump since the test guards the exact field set.

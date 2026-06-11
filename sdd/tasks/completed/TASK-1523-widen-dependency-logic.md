@@ -140,10 +140,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-12
+**Notes**: Widened DependencyRule.logic Literal from "and"|"or" to "and"|"or"|"xor"|"not". Default remains "and". Forward reference to DependencyOperation added. model_rebuild() called at module level. 51 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Implemented together with TASK-1524/1525 in a single code commit since all three tasks modify the same file (constraints.py). Tests cover all three model-layer tasks in one test file.

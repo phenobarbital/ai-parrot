@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-12T00:00:00Z",
-  "completed_at": "2026-06-11T23:32:13+00:00",
+  "completed_at": null,
   "tasks": [
     {
       "id": "TASK-1523",
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundational Literal widening on core/constraints.py; every other task depends on it. Must land first.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": "2026-06-11T23:32:13+00:00",
-      "file": "sdd/tasks/active/TASK-1523-widen-dependency-logic.md"
+      "completed_at": "2026-06-11T22:14:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1523-widen-dependency-logic.md"
     },
     {
       "id": "TASK-1524",
@@ -42,8 +42,8 @@
       "parallelism_notes": "Edits core/constraints.py (same file as TASK-1523/1525) and core/__init__.py; serialize with the model trio.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": "2026-06-11T23:32:13+00:00",
-      "file": "sdd/tasks/active/TASK-1524-dependency-operation-model.md"
+      "completed_at": "2026-06-11T22:14:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1524-dependency-operation-model.md"
     },
     {
       "id": "TASK-1525",
@@ -63,8 +63,8 @@
       "parallelism_notes": "Edits core/constraints.py + core/schema.py; completes the model layer that all downstream tasks consume.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": "2026-06-11T23:32:13+00:00",
-      "file": "sdd/tasks/active/TASK-1525-postdependency-model-schema.md"
+      "completed_at": "2026-06-11T22:14:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1525-postdependency-model-schema.md"
     },
     {
       "id": "TASK-1526",
@@ -85,8 +85,8 @@
       "parallelism_notes": "Critical path — authoring (TASK-1528) and the evaluator (TASK-1530) depend on this. Edits services/validators.py only.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": "2026-06-11T23:32:13+00:00",
-      "file": "sdd/tasks/active/TASK-1526-rule-validation-cycle-detection.md"
+      "completed_at": "2026-06-11T22:17:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1526-rule-validation-cycle-detection.md"
     },
     {
       "id": "TASK-1527",
@@ -107,8 +107,8 @@
       "parallelism_notes": "Touches only renderers/jsonschema.py + its tests; independent of validator/evaluator/tools. Parallelizable after the model layer.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": "2026-06-11T23:32:13+00:00",
-      "file": "sdd/tasks/active/TASK-1527-jsonschema-post-depends-renderer.md"
+      "completed_at": "2026-06-11T22:18:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1527-jsonschema-post-depends-renderer.md"
     },
     {
       "id": "TASK-1528",
@@ -127,8 +127,8 @@
       "parallelism_notes": "Needs the rule-integrity validation from TASK-1526 to reject invalid rules at authoring time. Edits tools/edit_toolkit.py + tools/create_form.py.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": "2026-06-11T23:32:13+00:00",
-      "file": "sdd/tasks/active/TASK-1528-edit-toolkit-rule-authoring.md"
+      "completed_at": "2026-06-11T22:21:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1528-edit-toolkit-rule-authoring.md"
     },
     {
       "id": "TASK-1529",
@@ -149,8 +149,8 @@
       "parallelism_notes": "Touches controls/registry.py, controls/builtin.py, tools/field_helpers.py — disjoint from validator/renderer/evaluator. Parallelizable after the model layer.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": "2026-06-11T23:32:13+00:00",
-      "file": "sdd/tasks/active/TASK-1529-control-registry-rule-metadata.md"
+      "completed_at": "2026-06-11T22:29:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1529-control-registry-rule-metadata.md"
     },
     {
       "id": "TASK-1530",
@@ -169,8 +169,8 @@
       "parallelism_notes": "New file services/rule_evaluator.py + services/__init__.py export; disjoint from tools (TASK-1528). Parallelizable with TASK-1528 after TASK-1526.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": "2026-06-11T23:32:13+00:00",
-      "file": "sdd/tasks/active/TASK-1530-rule-evaluator-service.md"
+      "completed_at": "2026-06-11T22:33:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1530-rule-evaluator-service.md"
     },
     {
       "id": "TASK-1531",
@@ -190,8 +190,8 @@
       "parallelism_notes": "Touches extractors/yaml.py, extractors/jsonschema.py, parrot.forms/__init__.py; depends on the evaluator only for its legacy re-export. Disjoint files from other tasks.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": "2026-06-11T23:32:13+00:00",
-      "file": "sdd/tasks/active/TASK-1531-extractor-roundtrip-reexports.md"
+      "completed_at": "2026-06-11T22:37:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1531-extractor-roundtrip-reexports.md"
     },
     {
       "id": "TASK-1532",
@@ -215,8 +215,8 @@
       "parallelism_notes": "Docs-only; runs last to document shipped behavior. No code-file conflicts.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": "2026-06-11T23:32:13+00:00",
-      "file": "sdd/tasks/active/TASK-1532-dependency-rules-docs.md"
+      "completed_at": "2026-06-11T22:39:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1532-dependency-rules-docs.md"
     }
   ]
 }

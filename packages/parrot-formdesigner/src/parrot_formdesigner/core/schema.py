@@ -15,7 +15,7 @@ from typing import Any, Literal, Union
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from .auth import AuthConfig
-from .constraints import DependencyRule, FieldConstraints
+from .constraints import DependencyRule, FieldConstraints, PostDependency
 from .events import FormEventsConfig
 from .options import FieldOption, OptionsSource
 from .types import FieldType, LocalizedString
@@ -39,7 +39,12 @@ class FormField(BaseModel):
         constraints: Validation constraints applied to this field.
         options: Static list of options for select/multi-select fields.
         options_source: Dynamic options source configuration.
-        depends_on: Dependency rule controlling conditional visibility.
+        depends_on: Pre-dependency rule controlling conditional visibility
+            (references only earlier fields in the form layout).
+        post_depends: Forward effects this field has on later fields — e.g.
+            computed values, cascades, or visibility changes on controls
+            declared *after* this field. ``None`` (default) means no forward
+            effects. Validated by :class:`~parrot_formdesigner.services.FormValidator`.
         children: Child fields for GROUP type fields.
         item_template: Template for items in ARRAY type fields.
         meta: Arbitrary metadata for renderer-specific extensions.
@@ -59,12 +64,13 @@ class FormField(BaseModel):
     options: list[FieldOption] | None = None
     options_source: OptionsSource | None = None
     depends_on: DependencyRule | None = None
+    post_depends: list[PostDependency] | None = None
     children: list[FormField] | None = None
     item_template: FormField | None = None
     meta: dict[str, Any] | None = None
 
 
-# Required for self-referential model resolution
+# Required for self-referential model resolution (also resolves PostDependency forward ref)
 FormField.model_rebuild()
 
 

@@ -181,10 +181,8 @@ class TestRuleEvaluator:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-12
+**Notes**: Created `services/rule_evaluator.py` with `RuleResolution(BaseModel)` and `RuleEvaluator` class. `resolve(form, answers, *, locale)` evaluates pre-deps (depends_on) and post-deps in topological order. All 4 logic gates (and/or/xor/not) implemented. All 11 DependencyOperation kinds implemented: copy, add, subtract, multiply, divide, percent, concat, format, date_diff, lookup (safe no-op with TODO), aggregate (conservative sum/avg/min/max/count). Post-dependency effects: show/hide/require/disable/set/calc/reload_options (sentinel __reload__ with TODO)/cascade_clear. Topological sort uses DFS from depends_on edges. All operations are safe-on-missing (no exception on None/missing operands). Exported RuleEvaluator, RuleResolution from services/__init__.py. 31 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None. TODOs left as specified: `reload_options` timing (open question §8) uses `__reload__` sentinel; `lookup` server-side table not yet specified; ARRAY aggregation scope uses flat operand list.

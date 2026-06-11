@@ -172,10 +172,8 @@ class TestRuleIntegrity:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-12
+**Notes**: Added validate_rules() method for reference/ordering/type-compat checks, _validate_operation() helper, and extended _detect_circular_dependencies() to include post_depends and operation edges. Wired validate_rules into validate(). check_schema() now also calls validate_rules. 17 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -143,10 +143,8 @@ class TestJsonSchemaPostDepends:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-12
+**Notes**: Added x-post-depends emission in _field_to_property() after x-depends-on. Updated module docstring listing x- keys. Legacy x-depends-on output unchanged. 7 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

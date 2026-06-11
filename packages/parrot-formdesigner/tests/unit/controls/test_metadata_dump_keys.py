@@ -27,6 +27,10 @@ EXPECTED_KEYS = {
     "render_hint",
     "supports_constraints",
     "is_container",
+    # FEAT-234: rule capability metadata (optional, default [])
+    "supported_operators",
+    "supported_effects",
+    "supported_operations",
 }
 
 
