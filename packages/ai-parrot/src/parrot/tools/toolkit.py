@@ -244,6 +244,21 @@ class AbstractToolkit(ABC):
     #: Separator inserted between ``tool_prefix`` and the method name.
     prefix_separator: str = "_"
 
+    #: Names of methods (pre-prefix) whose generated tools will have
+    #: ``routing_meta["requires_confirmation"] = True`` (FEAT-235).
+    #:
+    #: Declare this as a class attribute (frozenset or set) on a toolkit
+    #: subclass to mark specific tool methods for HITL confirmation::
+    #:
+    #:     class WorkdayToolkit(AbstractToolkit):
+    #:         confirming_tools: frozenset[str] = frozenset({"checkin", "checkout"})
+    #:
+    #:         async def checkin(self, employee_id: int) -> str: ...
+    #:         async def checkout(self, employee_id: int) -> str: ...
+    #:
+    #: An empty frozenset (default) means no toolkit-level confirmation marking.
+    confirming_tools: frozenset = frozenset()
+
     def __init__(self, **kwargs):
         """
         Initialize the toolkit.
@@ -519,6 +534,15 @@ class AbstractToolkit(ABC):
         # Copy permission requirements from method to tool
         if hasattr(bound_method, '_required_permissions'):
             tool._required_permissions = bound_method._required_permissions
+
+        # Apply toolkit-level confirmation marking (FEAT-235).
+        # Use the original (unprefixed) method name for lookup so the
+        # confirming_tools set stays stable regardless of tool_prefix.
+        method_name = getattr(bound_method, '__name__', name)
+        if method_name in self.confirming_tools:
+            if tool.routing_meta is None:
+                tool.routing_meta = {}
+            tool.routing_meta["requires_confirmation"] = True
 
         return tool
 
