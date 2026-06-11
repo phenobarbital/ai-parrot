@@ -137,7 +137,7 @@
       "feature_id": "FEAT-234",
       "feature": "formdesigner-conditional-sections",
       "spec": "sdd/specs/formdesigner-conditional-sections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -149,8 +149,8 @@
       "parallelism_notes": "Touches controls/registry.py, controls/builtin.py, tools/field_helpers.py — disjoint from validator/renderer/evaluator. Parallelizable after the model layer.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1529-control-registry-rule-metadata.md"
+      "completed_at": "2026-06-11T22:29:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1529-control-registry-rule-metadata.md"
     },
     {
       "id": "TASK-1530",
