@@ -200,7 +200,7 @@
       "feature_id": "FEAT-234",
       "feature": "formdesigner-conditional-sections",
       "spec": "sdd/specs/formdesigner-conditional-sections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -215,8 +215,8 @@
       "parallelism_notes": "Docs-only; runs last to document shipped behavior. No code-file conflicts.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1532-dependency-rules-docs.md"
+      "completed_at": "2026-06-11T22:39:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1532-dependency-rules-docs.md"
     }
   ]
 }
