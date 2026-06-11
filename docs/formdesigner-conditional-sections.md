@@ -114,7 +114,7 @@ op = DependencyOperation(
 | `"format"` | Positional string template. | `template` (`"{0} {1}"`) |
 | `"date_diff"` | Days (or weeks) between two ISO date operands. | `unit` (`"days"` / `"weeks"`) |
 | `"lookup"` | Server-side table lookup (see open questions below). | — |
-| `"aggregate"` | Numeric aggregate over flat operand list. | `func` (`"sum"` / `"avg"` / `"min"` / `"max"` / `"count"`) |
+| `"aggregate"` | Numeric aggregate over flat operand list. | `fn` (`"sum"` / `"avg"` / `"min"` / `"max"` / `"count"`) |
 
 ### 2.2 Inline operation example (arithmetic)
 

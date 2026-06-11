@@ -572,6 +572,42 @@ class TestPostDependencies:
         assert result.computed.get("total") == 15.0
 
     @pytest.mark.asyncio
+    async def test_post_calc_does_not_fire_when_condition_false(self) -> None:
+        """ISSUE-1: calc effect must NOT fire when its conditions evaluate to False."""
+        f_trigger = _field("trigger")
+        f_qty = FormField(
+            field_id="qty",
+            field_type=FieldType.INTEGER,
+            label="qty",
+            post_depends=[
+                PostDependency(
+                    target="total",
+                    effect="calc",
+                    conditions=[_cond("trigger", "eq", "yes")],
+                    logic="and",
+                    operation=DependencyOperation(
+                        op="copy",
+                        operands=["qty"],
+                        target="total",
+                    ),
+                )
+            ],
+        )
+        f_total = _field("total", FieldType.NUMBER)
+        form = _form(f_trigger, f_qty, f_total)
+        evaluator = RuleEvaluator()
+
+        # trigger = "no" → condition is False → calc must NOT fire → total absent
+        result = await evaluator.resolve(form, {"trigger": "no", "qty": 42})
+        assert "total" not in result.computed, (
+            "calc must not fire when its condition evaluates to False (ISSUE-1)"
+        )
+
+        # trigger = "yes" → condition is True → calc fires → total == 42
+        result2 = await evaluator.resolve(form, {"trigger": "yes", "qty": 42})
+        assert result2.computed.get("total") == 42
+
+    @pytest.mark.asyncio
     async def test_post_reload_options_sets_sentinel(self) -> None:
         """reload_options sets __reload__ sentinel in computed (open question placeholder)."""
         f1 = FormField(

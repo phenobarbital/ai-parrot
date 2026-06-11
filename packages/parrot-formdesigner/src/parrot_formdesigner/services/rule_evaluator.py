@@ -257,7 +257,8 @@ def _apply_operation(
                 if not template:
                     return " ".join(str(v) for v in operand_values if v is not None)
                 # Simple positional replacement: {0}, {1}, ...
-                return template.format(*[v if v is not None else "" for v in operand_values])
+                # Force all values to plain str to prevent attribute traversal via {0.attr}
+                return template.format(*[str(v) if v is not None else "" for v in operand_values])
 
             case "date_diff":
                 if len(operand_values) < 2:
@@ -292,7 +293,7 @@ def _apply_operation(
             case "aggregate":
                 # TODO(FEAT-234 open question): ARRAY-operand aggregation scope
                 # Conservative implementation: numeric sum over flat operand values.
-                func = (dep_op.options or {}).get("func", "sum")
+                func = (dep_op.options or {}).get("fn", "sum")
                 nums_agg = [float(v) for v in operand_values if v is not None]
                 if not nums_agg:
                     return None
@@ -440,7 +441,6 @@ class RuleEvaluator:
             values, and cleared fields.
         """
         all_fields = list(form.iter_all_fields())
-        field_map: dict[str, FormField] = {f.field_id: f for f in all_fields}
 
         # Initialise resolution with form defaults
         visible: dict[str, bool] = {}
@@ -460,7 +460,7 @@ class RuleEvaluator:
 
         for field in ordered:
             await self._apply_post_dependencies(
-                field, answers, visible, required, computed, cleared, field_map
+                field, answers, visible, required, computed, cleared
             )
 
         return RuleResolution(
@@ -528,7 +528,6 @@ class RuleEvaluator:
         required: dict[str, bool],
         computed: dict[str, Any],
         cleared: list[str],
-        field_map: dict[str, FormField],
     ) -> None:
         """Apply ``FormField.post_depends`` (post-dependencies) to resolution dicts.
 
@@ -539,7 +538,6 @@ class RuleEvaluator:
             required: Mutable required dict to update.
             computed: Mutable computed dict for operation results.
             cleared: Mutable list of cleared field ids.
-            field_map: Full field id → FormField map.
         """
         post_list: list[PostDependency] | None = field.post_depends
         if not post_list:
@@ -568,16 +566,13 @@ class RuleEvaluator:
                 case "require":
                     if fired:
                         required[target] = True
-                case "disable":
-                    if fired:
-                        visible[target] = False
                 case "set":
                     if fired and post.operation is not None:
                         result = _apply_operation(post.operation, answers)
                         if result is not None:
                             computed[target] = result
                 case "calc":
-                    if post.operation is not None:
+                    if fired and post.operation is not None:
                         result = _apply_operation(post.operation, answers)
                         if result is not None:
                             computed[target] = result

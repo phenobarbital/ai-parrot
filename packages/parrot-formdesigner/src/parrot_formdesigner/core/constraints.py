@@ -150,6 +150,9 @@ class FieldCondition(BaseModel):
         value: The value to compare against (not required for IS_EMPTY/IS_NOT_EMPTY).
     """
 
+    # model_config intentionally omits extra="forbid" for forward-compatible
+    # unknown keys — existing forms with unrecognised condition keys must round-trip unchanged.
+
     field_id: str
     operator: ConditionOperator
     value: Any = None
@@ -169,6 +172,9 @@ class DependencyRule(BaseModel):
         operations: Optional list of :class:`DependencyOperation` instances
             that compute or assign values when the rule is triggered.
     """
+
+    # model_config intentionally omits extra="forbid" for forward-compatible
+    # unknown keys — existing forms with unrecognised rule keys must round-trip unchanged.
 
     conditions: list[FieldCondition]
     logic: Literal["and", "or", "xor", "not"] = "and"
