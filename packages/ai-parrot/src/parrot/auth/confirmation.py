@@ -27,14 +27,17 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, Optional, Type
+from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Type
 
 from pydantic import BaseModel, Field, ValidationError
 
 if TYPE_CHECKING:
     from parrot.auth.permission import PermissionContext
     from parrot.human.manager import HumanInteractionManager
+    from parrot.human.models import WaitStrategy
     from parrot.tools.abstract import AbstractTool
+
+from parrot.tools.abstract import AbstractToolArgsSchema
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -97,7 +100,7 @@ class ConfirmationDecision(BaseModel):
     """
 
     allowed: bool
-    status: str = "confirmed"
+    status: Literal["confirmed", "cancelled", "timeout", "not_required"] = "confirmed"
     reason: str
     parameters: Optional[Dict[str, Any]] = None
 
@@ -329,8 +332,10 @@ def build_form_schema(tool: "AbstractTool", parameters: dict) -> dict:
                 if field_name in parameters:
                     field_def["default"] = parameters[field_name]
                 schema["fields"][field_name] = field_def
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.getLogger(__name__).debug(
+                "JSON schema extraction failed for tool %r: %s", tool.name, exc
+            )
 
     if not schema["fields"] and parameters:
         # Last resort: plain key listing so form_schema is non-empty
@@ -358,7 +363,7 @@ def revalidate_edit(tool: "AbstractTool", edited: dict) -> dict:
         ValidationError: If the edited values do not pass schema validation.
     """
     args_schema: Optional[Type] = getattr(tool, "args_schema", None)
-    if args_schema is None or args_schema.__name__ == "AbstractToolArgsSchema":
+    if args_schema is None or args_schema is AbstractToolArgsSchema:
         # No schema to validate against — pass through
         return edited
 
@@ -541,6 +546,11 @@ class ConfirmationGuard:
         if raw_strategy == WaitStrategy.SUSPEND or raw_strategy == "suspend":
             wait_strategy = WaitStrategy.SUSPEND
         else:
+            if raw_strategy not in (WaitStrategy.BLOCK, "block", None):
+                self.logger.warning(
+                    "Unrecognized wait_strategy %r for tool %r; defaulting to BLOCK",
+                    raw_strategy, tool.name,
+                )
             wait_strategy = WaitStrategy.BLOCK
 
         # Determine interaction type: FORM when allow_edit is set
@@ -591,7 +601,7 @@ class ConfirmationGuard:
         args_hash: str,
         window_seconds: int,
         channel: str,
-        wait_strategy: Any,
+        wait_strategy: "WaitStrategy",
     ) -> ConfirmationDecision:
         """Ask the human for Yes/No approval.
 
@@ -635,6 +645,14 @@ class ConfirmationGuard:
             result = await self.human_manager.request_human_input(  # type: ignore[union-attr]
                 interaction,
                 channel=channel,
+            )
+        except asyncio.TimeoutError:
+            self.logger.warning("Confirmation timed out for tool %r", tool.name)
+            return ConfirmationDecision(
+                allowed=False,
+                status="timeout",
+                reason="Confirmation request timed out",
+                parameters=None,
             )
         except Exception as exc:
             self.logger.warning(
@@ -697,7 +715,7 @@ class ConfirmationGuard:
         args_hash: str,
         window_seconds: int,
         channel: str,
-        wait_strategy: Any,
+        wait_strategy: "WaitStrategy",
     ) -> ConfirmationDecision:
         """Ask the human to edit parameters via a FORM interaction.
 
@@ -723,6 +741,8 @@ class ConfirmationGuard:
         form_schema = build_form_schema(tool, parameters)
         retries_left = self.config.max_edit_retries + 1  # first attempt + retries
 
+        # Note: SUSPEND exits via HumanInteractionInterrupt on the first iteration;
+        # the retry loop only applies to the BLOCK path.
         while retries_left > 0:
             retries_left -= 1
             interaction = HumanInteraction(
@@ -750,6 +770,14 @@ class ConfirmationGuard:
                     interaction,
                     channel=channel,
                 )
+            except asyncio.TimeoutError:
+                self.logger.warning("Confirmation timed out for tool %r", tool.name)
+                return ConfirmationDecision(
+                    allowed=False,
+                    status="timeout",
+                    reason="Confirmation request timed out",
+                    parameters=None,
+                )
             except Exception as exc:
                 self.logger.warning(
                     "HITL form confirmation request failed for tool %r: %s — cancelling",
@@ -773,7 +801,7 @@ class ConfirmationGuard:
 
             # FORM result: consolidated_value is the edited dict, or None/False = cancel
             edited = result.consolidated_value
-            if not edited:
+            if edited is None or edited is False:
                 return ConfirmationDecision(
                     allowed=False,
                     status="cancelled",

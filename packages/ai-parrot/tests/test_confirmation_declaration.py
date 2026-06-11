@@ -109,15 +109,11 @@ def test_tool_with_only_confirm_template():
 
 
 def test_spawn_sets_confirmation_default():
-    """SpawnSubAgentTool sets requires_confirmation=False by default in routing_meta."""
-    # We can't easily instantiate SpawnSubAgentTool without a bot_manager,
-    # but we can test the setdefault logic directly by inspecting spawn.py's pattern
-    # through the routing_meta construction it uses.
-    routing: dict = {}
-    routing.setdefault("requires_grant", False)
-    routing.setdefault("requires_confirmation", False)  # FEAT-235
-    assert routing["requires_confirmation"] is False
-    assert routing["requires_grant"] is False
+    """spawn.py source includes the requires_confirmation setdefault (FEAT-235)."""
+    import inspect
+    from parrot.tools import spawn
+    src = inspect.getsource(spawn)
+    assert 'setdefault("requires_confirmation", False)' in src
 
 
 def test_spawn_caller_routing_meta_not_overridden():

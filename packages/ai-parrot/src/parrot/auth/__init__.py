@@ -64,6 +64,7 @@ from .confirmation import (
     ConfirmationWindowStore,
     InMemoryConfirmationWindowStore,
     ConfirmationGuard,
+    compute_args_hash,
 )
 
 __all__ = [
@@ -110,4 +111,5 @@ __all__ = [
     "ConfirmationWindowStore",
     "InMemoryConfirmationWindowStore",
     "ConfirmationGuard",
+    "compute_args_hash",
 ]
