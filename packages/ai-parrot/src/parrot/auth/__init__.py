@@ -57,6 +57,14 @@ from .grants import (
     GrantGuard,
     GuardDecision,
 )
+# Confirmation (per-call HITL review — FEAT-235)
+from .confirmation import (
+    ConfirmationConfig,
+    ConfirmationDecision,
+    ConfirmationWindowStore,
+    InMemoryConfirmationWindowStore,
+    ConfirmationGuard,
+)
 
 __all__ = [
     # Data models
@@ -96,4 +104,10 @@ __all__ = [
     "InMemoryGrantStore",
     "GrantGuard",
     "GuardDecision",
+    # Confirmation (per-call HITL review — FEAT-235)
+    "ConfirmationConfig",
+    "ConfirmationDecision",
+    "ConfirmationWindowStore",
+    "InMemoryConfirmationWindowStore",
+    "ConfirmationGuard",
 ]
