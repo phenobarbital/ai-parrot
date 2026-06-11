@@ -14,14 +14,14 @@
       "feature_id": "FEAT-235",
       "feature": "hitl-confirmation",
       "spec": "sdd/specs/hitl-confirmation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation in parrot/auth/confirmation.py; every other task depends on these models. Must land first.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-11T22:47:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1533-confirmation-models-and-window-store.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-235",
       "feature": "hitl-confirmation",
       "spec": "sdd/specs/hitl-confirmation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1533"],
+      "depends_on": [
+        "TASK-1533"
+      ],
       "parallel": false,
       "parallelism_notes": "Edits confirmation.py (same file as 1533/1535). Sequential.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-11T22:47:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1534-confirmation-guard-core.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-235",
       "feature": "hitl-confirmation",
       "spec": "sdd/specs/hitl-confirmation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1534"],
+      "depends_on": [
+        "TASK-1534"
+      ],
       "parallel": false,
       "parallelism_notes": "Edits confirmation.py and the guard's confirm() flow added in 1534. Sequential after 1534.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-11T22:47:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1535-briefing-renderer-and-edit-revalidation.md"
     },
@@ -68,14 +72,16 @@
       "feature_id": "FEAT-235",
       "feature": "hitl-confirmation",
       "spec": "sdd/specs/hitl-confirmation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1534"],
+      "depends_on": [
+        "TASK-1534"
+      ],
       "parallel": false,
       "parallelism_notes": "Edits parrot/tools/manager.py (shared FEAT-211 dispatch hotspot). Needs the guard API from 1534. Keep sequential to avoid manager.py churn.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-11T22:47:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1536-toolmanager-integration.md"
     },
@@ -86,14 +92,16 @@
       "feature_id": "FEAT-235",
       "feature": "hitl-confirmation",
       "spec": "sdd/specs/hitl-confirmation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1533"],
+      "depends_on": [
+        "TASK-1533"
+      ],
       "parallel": true,
       "parallelism_notes": "Touches decorators.py / spawn.py / toolkit.py only — NO overlap with confirmation.py or manager.py. Can run in a separate worktree once 1533 fixes the well-known key names. Per-spec default still applies; parallelizable if desired.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-11T22:47:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1537-declaration-surface.md"
     },
@@ -104,14 +112,18 @@
       "feature_id": "FEAT-235",
       "feature": "hitl-confirmation",
       "spec": "sdd/specs/hitl-confirmation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-1535", "TASK-1536", "TASK-1537"],
+      "depends_on": [
+        "TASK-1535",
+        "TASK-1536",
+        "TASK-1537"
+      ],
       "parallel": false,
       "parallelism_notes": "Capstone: exports + demo + e2e tests + docs. Depends on guard, manager wiring, and declaration surface all being complete.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-11T22:47:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1538-exports-demo-agent-and-docs.md"
     }
