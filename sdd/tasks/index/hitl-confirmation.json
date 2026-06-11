@@ -112,7 +112,7 @@
       "feature_id": "FEAT-235",
       "feature": "hitl-confirmation",
       "spec": "sdd/specs/hitl-confirmation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Capstone: exports + demo + e2e tests + docs. Depends on guard, manager wiring, and declaration surface all being complete.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:47:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1538-exports-demo-agent-and-docs.md"
+      "completed_at": "2026-06-11T23:04:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1538-exports-demo-agent-and-docs.md"
     }
   ]
 }
