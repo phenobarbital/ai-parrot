@@ -32,7 +32,7 @@
       "feature_id": "FEAT-235",
       "feature": "hitl-confirmation",
       "spec": "sdd/specs/hitl-confirmation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Edits confirmation.py (same file as 1533/1535). Sequential.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:47:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1534-confirmation-guard-core.md"
+      "completed_at": "2026-06-11T22:53:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1534-confirmation-guard-core.md"
     },
     {
       "id": "TASK-1535",
