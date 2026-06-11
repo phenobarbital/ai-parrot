@@ -117,7 +117,7 @@
       "feature_id": "FEAT-234",
       "feature": "formdesigner-conditional-sections",
       "spec": "sdd/specs/formdesigner-conditional-sections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -127,8 +127,8 @@
       "parallelism_notes": "Needs the rule-integrity validation from TASK-1526 to reject invalid rules at authoring time. Edits tools/edit_toolkit.py + tools/create_form.py.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1528-edit-toolkit-rule-authoring.md"
+      "completed_at": "2026-06-11T22:21:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1528-edit-toolkit-rule-authoring.md"
     },
     {
       "id": "TASK-1529",
