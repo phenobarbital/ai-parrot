@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-234
 **Date**: 2026-06-11
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.4.0
 
 ---
@@ -521,15 +521,15 @@ class CreateFormTool(AbstractTool)                        # line 226
 - [x] Where is evaluation authoritative? — *Resolved in brainstorm*: Schema is always declarative
       for clients; an optional Python `RuleEvaluator` is authoritative server-side at
       validation/submission. (Reflected in §2 Overview + §3 Module 7 + §5.)
-- [ ] `NOT` semantics with multiple conditions — define precisely (negate the whole AND-group, or
+- [x] `NOT` semantics with multiple conditions — define precisely (negate the whole AND-group, or
       require exactly one condition?). *Proposed default*: `not` negates the AND-combination of
-      `conditions`; finalize during Module 1. — *Owner: Jesus*
-- [ ] Operation evaluation timing for `reload_options`/lookup — synchronous at submit vs async hint
-      to client only. — *Owner: Jesus*
-- [ ] Which renderers must interpret operations/post-deps in v1 vs treat as pass-through hints.
-      *Proposed default*: JSON Schema renderer interprets in v1; others pass-through. — *Owner: Jesus*
-- [ ] Operation operand referencing inside ARRAY/repeated sections — addressing scheme for
-      `field_id` within array items (aggregation scope). — *Owner: Jesus*
+      `conditions`; finalize during Module 1. — *Owner: Jesus*: accept proposed
+- [x] Operation evaluation timing for `reload_options`/lookup — synchronous at submit vs async hint
+      to client only. — *Owner: Jesus*: async hint
+- [x] Which renderers must interpret operations/post-deps in v1 vs treat as pass-through hints.
+      *Proposed default*: JSON Schema renderer interprets in v1; others pass-through. — *Owner: Jesus*: JSON schema for v1
+- [x] Operation operand referencing inside ARRAY/repeated sections — addressing scheme for
+      `field_id` within array items (aggregation scope). — *Owner: Jesus*: accept suggestion
 
 ---
 

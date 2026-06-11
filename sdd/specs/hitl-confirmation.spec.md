@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-235
 **Date**: 2026-06-12
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.0
 
 > Input: `sdd/proposals/hitl-confirmation.brainstorm.md` (Recommended Option A —

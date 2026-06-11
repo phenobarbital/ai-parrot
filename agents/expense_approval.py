@@ -360,7 +360,10 @@ class ExpenseApprovalAgent(Agent):
 
     agent_id: str = "expense_approval"
     llm: str = "anthropic"
-    model: str = config.get("EXPENSE_APPROVAL_LLM", fallback="claude-sonnet-4-6")
+    model: str = config.get(
+        "EXPENSE_APPROVAL_LLM",
+        fallback="gemini-3.5-flash",
+    )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._quick_tool = QuickTeamsApprovalTool()

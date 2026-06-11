@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-236
 **Date**: 2026-06-12
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 
 ---
@@ -680,17 +680,17 @@ def _seed_default_renderers() -> None: ...  # line 37 — seeds "audio" via Audi
 - [x] Confirm transcribed answers before storing? — *Resolved with user*:
       **Confirm only low-confidence** — auto-advance when STT confidence ≥
       `stt_confirm_threshold` (default 0.6), otherwise emit `confirm_request`.
-- [ ] Should the `MAX_QUESTIONS = 10` cap be raised or made
+- [x] Should the `MAX_QUESTIONS = 10` cap be raised or made
       per-session-configurable now that fallback fields keep more questions in
       the flow, and what is the exact behavior when a required field would be
-      truncated? — *Owner: Jesus*
-- [ ] For `PROMPT_SELECT`, should the server also attempt best-effort voice→
+      truncated? — *Owner: Jesus*: per-form be configurable, by default 10
+- [x] For `PROMPT_SELECT`, should the server also attempt best-effort voice→
       option fuzzy matching as a convenience (selection still canonical), and if
       so what confidence gate applies? — *Owner: Jesus* (deferrable — Non-Goal
-      for this iteration).
-- [ ] Should `VISUAL_FALLBACK` answers reuse the existing REST resolver /
+      for this iteration).: best-effort, in low confidence we can also uses an LLM to review and refine the text
+- [x] Should `VISUAL_FALLBACK` answers reuse the existing REST resolver /
       `blob_storage` pipeline for file/REST payloads, or collect a reference
-      only and resolve at final submission? — *Owner: Jesus*
+      only and resolve at final submission? — *Owner: Jesus*: yes, re-use
 
 ---
 

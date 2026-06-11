@@ -494,11 +494,11 @@ from parrot.human... import HumanInteractionInterrupt             # verify exact
 - [x] Rejection/timeout behavior — *Owner: Jesus Lara*: return a cancelled/timeout
   `ToolResult` to the LLM; the agent keeps running.
 - [ ] Guard ordering when a tool requires BOTH grant and confirmation — *Owner:
-  spec*: proposed grant→confirm; confirm spec must lock this and test it.
+  spec*: proposed grant→confirm; confirm spec must lock this and test it.: proposed
 - [ ] Edit-before-execute parsing on free-text channels (Telegram/CLI) vs. FORM
   channels (web) — *Owner: spec*: how does a plain-text reply map to corrected
   fields when no FORM UI exists? (FORM on web/Teams; fall back to "approve/cancel
-  only" on text-only channels?)
-- [ ] Bounded retries on invalid edited values before auto-cancel — *Owner: spec*.
+  only" on text-only channels?): accept suggestions
+- [ ] Bounded retries on invalid edited values before auto-cancel — *Owner: spec*.: invalid edited
 - [ ] Does confirmation apply to non-`AbstractTool` callables, or only
-  `AbstractTool` (as Grant does today)? — *Owner: spec*.
+  `AbstractTool` (as Grant does today)? — *Owner: spec*.: AbstractTool and AbstractToolkit
