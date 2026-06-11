@@ -159,7 +159,7 @@
       "feature_id": "FEAT-234",
       "feature": "formdesigner-conditional-sections",
       "spec": "sdd/specs/formdesigner-conditional-sections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -169,8 +169,8 @@
       "parallelism_notes": "New file services/rule_evaluator.py + services/__init__.py export; disjoint from tools (TASK-1528). Parallelizable with TASK-1528 after TASK-1526.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1530-rule-evaluator-service.md"
+      "completed_at": "2026-06-11T22:33:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1530-rule-evaluator-service.md"
     },
     {
       "id": "TASK-1531",
