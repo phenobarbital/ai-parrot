@@ -14,7 +14,7 @@
       "feature_id": "FEAT-234",
       "feature": "formdesigner-conditional-sections",
       "spec": "sdd/specs/formdesigner-conditional-sections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundational Literal widening on core/constraints.py; every other task depends on it. Must land first.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1523-widen-dependency-logic.md"
+      "completed_at": "2026-06-11T22:14:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1523-widen-dependency-logic.md"
     },
     {
       "id": "TASK-1524",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-234",
       "feature": "formdesigner-conditional-sections",
       "spec": "sdd/specs/formdesigner-conditional-sections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Edits core/constraints.py (same file as TASK-1523/1525) and core/__init__.py; serialize with the model trio.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1524-dependency-operation-model.md"
+      "completed_at": "2026-06-11T22:14:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1524-dependency-operation-model.md"
     },
     {
       "id": "TASK-1525",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-234",
       "feature": "formdesigner-conditional-sections",
       "spec": "sdd/specs/formdesigner-conditional-sections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Edits core/constraints.py + core/schema.py; completes the model layer that all downstream tasks consume.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1525-postdependency-model-schema.md"
+      "completed_at": "2026-06-11T22:14:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1525-postdependency-model-schema.md"
     },
     {
       "id": "TASK-1526",

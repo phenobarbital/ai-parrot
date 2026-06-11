@@ -160,10 +160,8 @@ class TestDependencyOperation:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-12
+**Notes**: DependencyOperation model with all 11 op kinds (copy/add/subtract/multiply/divide/percent/concat/format/date_diff/lookup/aggregate). Validators for non-empty operands/target. Operations field added to DependencyRule. Exported from core/__init__.py. 51 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Implemented together with TASK-1523/1525 in a single commit since they share constraints.py.

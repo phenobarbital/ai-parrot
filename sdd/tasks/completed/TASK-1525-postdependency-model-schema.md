@@ -172,10 +172,8 @@ class TestPostDependency:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-12
+**Notes**: PostDependency model with 7 effects, optional conditions/logic/operation fields. model_validator enforces operation required for set/calc. FormField.post_depends added as optional list. FormField.model_rebuild() updated. Exported from core/__init__.py. 51 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Implemented together with TASK-1523/1524 in a single commit.
