@@ -12,7 +12,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..core.constraints import ConditionOperator, DependencyRule, FieldCondition, FieldConstraints
+from ..core.constraints import (
+    ConditionOperator,
+    DependencyOperation,
+    DependencyRule,
+    FieldCondition,
+    FieldConstraints,
+    PostDependency,
+)
 from ..core.options import FieldOption
 from ..core.schema import FormField, FormSchema, FormSection, SubmitAction
 from ..core.types import FieldType, LocalizedString
@@ -304,6 +311,18 @@ class YamlExtractor:
         if "depends_on" in field_config and field_config["depends_on"]:
             depends_on = self._parse_dependency_rule(field_config["depends_on"])
 
+        # Parse post_depends (FEAT-234)
+        post_depends: list[PostDependency] | None = None
+        raw_post = field_config.get("post_depends")
+        if raw_post and isinstance(raw_post, list):
+            parsed_posts = [
+                self._parse_post_dependency(pd)
+                for pd in raw_post
+                if isinstance(pd, dict)
+            ]
+            parsed_posts = [p for p in parsed_posts if p is not None]
+            post_depends = parsed_posts or None
+
         # Parse children (GROUP fields)
         children = None
         if "children" in field_config and field_config["children"]:
@@ -333,6 +352,7 @@ class YamlExtractor:
             constraints=constraints if constraints and self._has_constraints(constraints) else None,
             options=options or None,
             depends_on=depends_on,
+            post_depends=post_depends,
             children=children or None,
             item_template=item_template,
             meta=meta,
@@ -448,11 +468,106 @@ class YamlExtractor:
         logic = data.get("logic", "and")
         effect = data.get("effect", "show")
 
+        # Parse inline operations (FEAT-234 — TASK-1523)
+        operations: list[DependencyOperation] | None = None
+        raw_ops = data.get("operations")
+        if raw_ops and isinstance(raw_ops, list):
+            parsed_ops = [
+                self._parse_dependency_operation(op)
+                for op in raw_ops
+                if isinstance(op, dict)
+            ]
+            parsed_ops = [o for o in parsed_ops if o is not None]
+            operations = parsed_ops or None
+
         return DependencyRule(
             conditions=conditions,
             logic=logic,
             effect=effect,
+            operations=operations,
         )
+
+    def _parse_dependency_operation(self, data: dict[str, Any]) -> DependencyOperation | None:
+        """Parse an operation block into a DependencyOperation (FEAT-234).
+
+        Args:
+            data: Operation dict from YAML.
+
+        Returns:
+            DependencyOperation instance or None.
+        """
+        if not isinstance(data, dict):
+            return None
+        op = data.get("op")
+        operands = data.get("operands", [])
+        target = data.get("target", "")
+        options = data.get("options")
+        if not op or not target:
+            return None
+        try:
+            return DependencyOperation(
+                op=op,
+                operands=list(operands) if operands else [],
+                target=target,
+                options=options,
+            )
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _parse_post_dependency(self, data: dict[str, Any]) -> PostDependency | None:
+        """Parse a post_depends entry into a PostDependency (FEAT-234).
+
+        Args:
+            data: PostDependency dict from YAML.
+
+        Returns:
+            PostDependency instance or None.
+        """
+        if not isinstance(data, dict):
+            return None
+        target = data.get("target", "")
+        effect = data.get("effect", "show")
+        logic = data.get("logic", "and")
+        if not target:
+            return None
+
+        # Parse optional conditions
+        conditions: list[FieldCondition] | None = None
+        raw_conds = data.get("conditions")
+        if raw_conds and isinstance(raw_conds, list):
+            parsed_conds = []
+            for cond in raw_conds:
+                if isinstance(cond, dict):
+                    field_id = cond.get("field_id", "")
+                    op_str = str(cond.get("operator", "eq")).lower()
+                    try:
+                        operator = ConditionOperator(op_str)
+                    except ValueError:
+                        operator = ConditionOperator.EQ
+                    value = cond.get("value")
+                    parsed_conds.append(FieldCondition(
+                        field_id=field_id,
+                        operator=operator,
+                        value=value,
+                    ))
+            conditions = parsed_conds or None
+
+        # Parse optional operation (for set/calc effects)
+        operation: DependencyOperation | None = None
+        raw_op = data.get("operation")
+        if raw_op and isinstance(raw_op, dict):
+            operation = self._parse_dependency_operation(raw_op)
+
+        try:
+            return PostDependency(
+                target=target,
+                effect=effect,
+                conditions=conditions,
+                logic=logic,
+                operation=operation,
+            )
+        except Exception:  # noqa: BLE001
+            return None
 
     def _parse_submit_action(self, data: dict[str, Any]) -> SubmitAction | None:
         """Parse a submit action block.

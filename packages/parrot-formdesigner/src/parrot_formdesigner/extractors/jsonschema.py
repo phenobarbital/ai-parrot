@@ -10,7 +10,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..core.constraints import FieldConstraints
+from ..core.constraints import (
+    DependencyRule,
+    FieldConstraints,
+    PostDependency,
+)
 from ..core.options import FieldOption, OptionsSource
 from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType
@@ -269,6 +273,30 @@ class JsonSchemaExtractor:
                     label="Item",
                 )
 
+        # Reconstruct depends_on from x-depends-on extension (TASK-1527 round-trip, FEAT-234)
+        depends_on: DependencyRule | None = None
+        x_depends_on = prop.get("x-depends-on")
+        if x_depends_on and isinstance(x_depends_on, dict):
+            try:
+                depends_on = DependencyRule.model_validate(x_depends_on)
+            except Exception:  # noqa: BLE001
+                logger.warning("Could not reconstruct depends_on for field '%s'", name)
+
+        # Reconstruct post_depends from x-post-depends extension (TASK-1527 round-trip, FEAT-234)
+        post_depends: list[PostDependency] | None = None
+        x_post_depends = prop.get("x-post-depends")
+        if x_post_depends and isinstance(x_post_depends, list):
+            parsed_posts = []
+            for pd_data in x_post_depends:
+                if isinstance(pd_data, dict):
+                    try:
+                        parsed_posts.append(PostDependency.model_validate(pd_data))
+                    except Exception:  # noqa: BLE001
+                        logger.warning(
+                            "Could not reconstruct a post_depends entry for field '%s'", name
+                        )
+            post_depends = parsed_posts or None
+
         return FormField(
             field_id=name,
             field_type=field_type,
@@ -281,6 +309,8 @@ class JsonSchemaExtractor:
             options_source=options_source,
             children=children if children else None,
             item_template=item_template,
+            depends_on=depends_on,
+            post_depends=post_depends,
         )
 
     def _map_type(self, prop: dict[str, Any]) -> FieldType:
