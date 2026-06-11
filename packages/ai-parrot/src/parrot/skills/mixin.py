@@ -41,8 +41,9 @@ class SkillRegistryMixin:
       :func:`~parrot.skills.prompt.render_skills_prompt_layer` when
       :attr:`inject_skills_into_prompt` is ``True`` (FEAT-188).
     - :class:`~parrot.skills.tools.SkillFileToolkit` registration exposing
-      ``load_skill`` / ``read_skill_asset`` / ``save_learned_skill`` for
-      on-demand skill body and asset retrieval (FEAT-188).
+      ``list_skill_commands`` / ``load_skill`` / ``read_skill_asset`` /
+      ``save_learned_skill`` for skill discovery, on-demand body and asset
+      retrieval (FEAT-188).
 
     Usage::
 
@@ -234,14 +235,14 @@ class SkillRegistryMixin:
                     )
 
         # --- FEAT-188: file-based skill tools registration ---
-        # Register the SkillFileToolkit (load_skill / read_skill_asset /
-        # save_learned_skill) whenever file-based skills were discovered —
-        # whether via the agents_dir convention OR explicit skill_paths.
-        # Gating this on skill_paths alone left agents_dir-based agents with a
-        # <available_skills> prompt index promising load_skill() but no tool to
-        # honour it, so the model fell back to the DB-backed read_skill/
-        # list_skills (empty registry) and failed to load the skill body.
-        if self._skill_file_registry is not None and self._skill_file_registry.list_skills():
+        # Register the SkillFileToolkit (list_skill_commands / load_skill /
+        # read_skill_asset / save_learned_skill) whenever a file registry
+        # exists — whether populated via the agents_dir convention, explicit
+        # skill_paths, or still empty. An empty registry must still expose the
+        # tools: save_learned_skill can hot-add skills mid-session and
+        # list_skill_commands reads the live registry, so gating on a
+        # non-empty registry at configure() time would hide them forever.
+        if self._skill_file_registry is not None:
             from .tools import SkillFileToolkit
             toolkit = SkillFileToolkit(
                 file_registry=self._skill_file_registry,
