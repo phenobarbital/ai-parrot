@@ -9,7 +9,7 @@ import re
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .types import LocalizedString
 
@@ -160,10 +160,166 @@ class DependencyRule(BaseModel):
 
     Attributes:
         conditions: List of field conditions that must be evaluated.
-        logic: Whether conditions are combined with AND or OR logic.
+        logic: How conditions are combined. One of:
+            - ``"and"``: all conditions must be true (default; backward-compatible).
+            - ``"or"``: at least one condition must be true.
+            - ``"xor"``: exactly one condition must be true.
+            - ``"not"``: negates the AND-combination of conditions (i.e. NOT(all true)).
         effect: The effect applied when conditions are met.
+        operations: Optional list of :class:`DependencyOperation` instances
+            that compute or assign values when the rule is triggered.
     """
 
     conditions: list[FieldCondition]
-    logic: Literal["and", "or"] = "and"
+    logic: Literal["and", "or", "xor", "not"] = "and"
     effect: Literal["show", "hide", "require", "disable"] = "show"
+    operations: list["DependencyOperation"] | None = None
+
+
+class DependencyOperation(BaseModel):
+    """An operation that computes or assigns a value from referenced field values.
+
+    Used within :class:`DependencyRule` (as one of ``operations``) and
+    :class:`PostDependency` (as ``operation``) to express derived/calculated
+    field values.
+
+    Attributes:
+        op: The operation kind. One of:
+            - ``"copy"`` — copy a source field value to ``target``.
+            - ``"add"`` / ``"subtract"`` / ``"multiply"`` / ``"divide"`` — arithmetic.
+            - ``"percent"`` — compute a percentage.
+            - ``"concat"`` — concatenate string operand values.
+            - ``"format"`` — apply a format string (use ``options["template"]``).
+            - ``"date_diff"`` — compute the difference between two dates
+              (unit via ``options["unit"]``, e.g. ``"days"``).
+            - ``"lookup"`` — look up a value via an external tool reference
+              (tool ref in ``options["tool_ref"]``).
+            - ``"aggregate"`` — aggregate values across repeated-section items
+              (function in ``options["fn"]``, e.g. ``"sum"`` / ``"avg"`` / ``"count"``).
+        operands: List of ``field_id`` strings whose current values are the
+            inputs. Must be non-empty.
+        target: The ``field_id`` that receives the computed value.
+        options: Optional operation-specific configuration (e.g. ``{"unit": "days"}``
+            for ``date_diff``, ``{"template": "{} {}"}`` for ``format``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    op: Literal[
+        "copy",
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "percent",
+        "concat",
+        "format",
+        "date_diff",
+        "lookup",
+        "aggregate",
+    ]
+    operands: list[str]
+    target: str
+    options: dict[str, Any] | None = None
+
+    @field_validator("operands")
+    @classmethod
+    def _non_empty_operands(cls, v: list[str]) -> list[str]:
+        """Validate that operands list is non-empty.
+
+        Args:
+            v: The operands list.
+
+        Returns:
+            The operands list unchanged.
+
+        Raises:
+            ValueError: If operands is empty.
+        """
+        if not v:
+            raise ValueError("operands must contain at least one field_id")
+        return v
+
+    @field_validator("target")
+    @classmethod
+    def _non_empty_target(cls, v: str) -> str:
+        """Validate that target is non-empty.
+
+        Args:
+            v: The target field_id.
+
+        Returns:
+            The target unchanged.
+
+        Raises:
+            ValueError: If target is empty.
+        """
+        if not v or not v.strip():
+            raise ValueError("target must be a non-empty field_id")
+        return v
+
+
+class PostDependency(BaseModel):
+    """A forward dependency: how a field's answered value affects a later field.
+
+    ``PostDependency`` declares that the *owning* field's value has a forward
+    effect on a control declared **after** it.  Ordering is validated by
+    :class:`~parrot_formdesigner.services.FormValidator`.
+
+    Attributes:
+        target: The ``field_id`` of the field to affect (must be declared
+            *after* the owning field in the form layout).
+        effect: The effect to apply.  ``"set"`` and ``"calc"`` require an
+            ``operation``; the others are pure visibility/state changes.
+            One of:
+
+            - ``"set"`` — assign a computed value to ``target`` (requires ``operation``).
+            - ``"calc"`` — calculate and assign a derived value (requires ``operation``).
+            - ``"reload_options"`` — hint to clients to refresh the options list of
+              ``target`` (async hint; evaluation timing is renderer-specific).
+            - ``"show"`` / ``"hide"`` — control visibility of ``target``.
+            - ``"require"`` — make ``target`` required.
+            - ``"cascade_clear"`` — clear the value of ``target``.
+        conditions: Optional gating conditions evaluated against the *owning*
+            field's value (and context). If ``None``, the effect always applies.
+        logic: How ``conditions`` are combined (same semantics as
+            :attr:`DependencyRule.logic`). Default ``"and"``.
+        operation: Required when ``effect`` is ``"set"`` or ``"calc"``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    target: str
+    effect: Literal[
+        "set",
+        "calc",
+        "reload_options",
+        "show",
+        "hide",
+        "require",
+        "cascade_clear",
+    ]
+    conditions: list[FieldCondition] | None = None
+    logic: Literal["and", "or", "xor", "not"] = "and"
+    operation: DependencyOperation | None = None
+
+    @model_validator(mode="after")
+    def _require_operation_for_set_calc(self) -> "PostDependency":
+        """Enforce that set/calc effects carry an operation.
+
+        Returns:
+            Self, unchanged.
+
+        Raises:
+            ValueError: If ``effect`` is ``"set"`` or ``"calc"`` and
+                ``operation`` is ``None``.
+        """
+        if self.effect in ("set", "calc") and self.operation is None:
+            raise ValueError(
+                f"effect={self.effect!r} requires an 'operation' (DependencyOperation)"
+            )
+        return self
+
+
+# Resolve forward reference in DependencyRule.operations
+DependencyRule.model_rebuild()

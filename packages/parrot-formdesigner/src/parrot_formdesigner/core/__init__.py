@@ -7,9 +7,11 @@ types, constraints, options, schema, style models, and lifecycle event models.
 from .auth import ApiKeyAuth, AuthConfig, BearerAuth, NoAuth
 from .constraints import (
     ConditionOperator,
+    DependencyOperation,
     DependencyRule,
     FieldCondition,
     FieldConstraints,
+    PostDependency,
 )
 from .events import (
     EventResolution,
@@ -55,6 +57,8 @@ __all__ = [
     "ConditionOperator",
     "FieldCondition",
     "DependencyRule",
+    "DependencyOperation",
+    "PostDependency",
     # Options
     "FieldOption",
     "OptionsSource",
