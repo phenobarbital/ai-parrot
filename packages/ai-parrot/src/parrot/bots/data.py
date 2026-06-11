@@ -1195,6 +1195,95 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             return None
         return result
 
+    def _spatial_result_from_datasets(
+        self, datasets: List[Dict[str, Any]],
+    ) -> Optional[Any]:
+        """Build a MULTI-layer ``SpatialResult`` from a multi-dataset payload.
+
+        FEAT-221: :meth:`_spatial_result_from_dataframe` converts a single result
+        DataFrame for the STRUCTURED_MAP fallback, but when the agent produces
+        SEVERAL DataFrames in one turn (e.g. one layer per category so each can
+        be colored differently), ``_inject_multi_data_from_variables`` sets
+        ``response.data`` to a list of ``DatasetResult`` dicts. The map renderer
+        then rejects the list (``response.data must be a SpatialResult``).
+
+        This converts each dataset entry into its own layer and merges them into
+        one multi-layer ``SpatialResult`` so the map renders. Entries with no
+        resolvable geometry/lat-lon are skipped (not every layer in a multi-
+        dataset turn need be mappable). As a fallback, a flat list of row dicts
+        (not wrapped in ``DatasetResult``) is treated as a single layer.
+
+        Args:
+            datasets: ``response.data`` as a list — either ``DatasetResult``
+                dicts (each with a ``data`` list of record dicts and a
+                ``name``/``variable``) or a flat list of row dicts.
+
+        Returns:
+            A multi-layer ``SpatialResult`` with at least one feature, or
+            ``None`` when no entry yields a mappable layer.
+        """
+        try:
+            from ..tools.dataset_manager.spatial.contracts import SpatialResult
+        except ImportError:
+            self.logger.debug(
+                "SpatialResult unavailable; skipping multi-dataset STRUCTURED_MAP "
+                "conversion."
+            )
+            return None
+
+        if not datasets:
+            return None
+
+        # Dataset-shaped entries carry a nested ``data`` list; a flat list of row
+        # dicts does not. Treat the latter as a single anonymous layer.
+        dataset_shaped = [
+            e for e in datasets if isinstance(e, dict) and isinstance(e.get("data"), list)
+        ]
+        if not dataset_shaped:
+            if all(isinstance(e, dict) for e in datasets):
+                return self._spatial_result_from_dataframe(pd.DataFrame(datasets))
+            return None
+
+        merged_layers: Dict[str, Any] = {}
+        for entry in dataset_shaped:
+            rows = entry.get("data")
+            if not rows:
+                continue
+            name = str(
+                entry.get("name") or entry.get("variable") or f"layer_{len(merged_layers)}"
+            )
+            try:
+                df = pd.DataFrame(rows)
+            except Exception:  # noqa: BLE001
+                continue
+            if df.empty:
+                continue
+            try:
+                layer_result = SpatialResult.from_dataframe(
+                    df, dataset=name, layer=name,
+                )
+            except ValueError:
+                # This dataset has no geometry/lat-lon pair — skip its layer.
+                self.logger.debug(
+                    "Multi-dataset STRUCTURED_MAP: dataset '%s' has no resolvable "
+                    "coordinates/geometry — skipping layer.", name,
+                )
+                continue
+            for layer_key, layer_val in layer_result.layers.items():
+                # Guard against key collisions across datasets.
+                key = (
+                    layer_key
+                    if layer_key not in merged_layers
+                    else f"{layer_key}_{len(merged_layers)}"
+                )
+                merged_layers[key] = layer_val
+
+        if not merged_layers:
+            return None
+        if not any(layer.features for layer in merged_layers.values()):
+            return None
+        return SpatialResult(version=2, layers=merged_layers)
+
     @staticmethod
     def _client_uses_split_structured_with_tools(client: Any) -> bool:
         """Return True when the LLM client splits a tool-using call and a
@@ -1920,6 +2009,40 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     else:
                         self.logger.warning(
                             "STRUCTURED_MAP: result DataFrame has no resolvable "
+                            "coordinates/geometry; map cannot be rendered."
+                        )
+                # Multi-layer fallback: when the agent produced SEVERAL DataFrames
+                # (e.g. one layer per category to color them separately),
+                # response.data is the list of DatasetResult dicts assembled by
+                # _inject_multi_data_from_variables. Merge them into one
+                # multi-layer SpatialResult so the renderer accepts it instead of
+                # rejecting the list ("response.data must be a SpatialResult").
+                elif (
+                    output_mode == OutputMode.STRUCTURED_MAP
+                    and isinstance(response.data, list)
+                    and response.data
+                ):
+                    spatial_result = self._spatial_result_from_datasets(
+                        response.data
+                    )
+                    if spatial_result is not None:
+                        feature_count = sum(
+                            len(lyr.features)
+                            for lyr in spatial_result.layers.values()
+                        )
+                        self.logger.info(
+                            "STRUCTURED_MAP: converted %d dataset(s) to a "
+                            "multi-layer SpatialResult (%d layer(s), %d feature(s)) "
+                            "— agent returned multiple DataFrames instead of "
+                            "calling the spatial_filter tool.",
+                            len(response.data),
+                            len(spatial_result.layers),
+                            feature_count,
+                        )
+                        response.data = spatial_result
+                    else:
+                        self.logger.warning(
+                            "STRUCTURED_MAP: multi-dataset result has no resolvable "
                             "coordinates/geometry; map cannot be rendered."
                         )
 
