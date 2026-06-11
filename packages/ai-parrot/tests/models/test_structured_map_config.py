@@ -98,6 +98,38 @@ def test_map_layer_alias_fields():
     assert dumped["capped"] is True
 
 
+def test_map_layer_marker_color_default_none():
+    """MapLayer.marker_color defaults to None."""
+    from parrot.models.outputs import MapLayer, MapColumn
+
+    layer = MapLayer(
+        layer="schools",
+        columns=[MapColumn(name="name", type="string", title="Name")],
+    )
+    assert layer.marker_color is None
+
+
+def test_map_layer_marker_color_alias():
+    """MapLayer.marker_color round-trips via the camelCase alias."""
+    from parrot.models.outputs import MapLayer, MapColumn
+
+    layer = MapLayer(
+        layer="schools",
+        columns=[MapColumn(name="name", type="string", title="Name")],
+        marker_color="red",
+    )
+    dumped = layer.model_dump(mode="json", by_alias=True)
+    assert dumped["markerColor"] == "red"
+
+    # Accepts the alias on input too (populate_by_name).
+    from_alias = MapLayer(
+        layer="schools",
+        columns=[MapColumn(name="name", type="string", title="Name")],
+        markerColor="#1f77b4",
+    )
+    assert from_alias.marker_color == "#1f77b4"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TASK-1445 — MapViewport model
 # ─────────────────────────────────────────────────────────────────────────────
