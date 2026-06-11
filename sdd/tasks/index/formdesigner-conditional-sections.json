@@ -95,7 +95,7 @@
       "feature_id": "FEAT-234",
       "feature": "formdesigner-conditional-sections",
       "spec": "sdd/specs/formdesigner-conditional-sections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -107,8 +107,8 @@
       "parallelism_notes": "Touches only renderers/jsonschema.py + its tests; independent of validator/evaluator/tools. Parallelizable after the model layer.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1527-jsonschema-post-depends-renderer.md"
+      "completed_at": "2026-06-11T22:18:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1527-jsonschema-post-depends-renderer.md"
     },
     {
       "id": "TASK-1528",
