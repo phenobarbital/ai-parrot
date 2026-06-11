@@ -13,8 +13,9 @@ dependency:
 
 - :class:`SkillRegistryToolkit` — DB-backed registry (search/read/list/
   document/update), sharing a :class:`~parrot.skills.store.SkillRegistry`.
-- :class:`SkillFileToolkit` — file-based skills (load/read_asset/save_learned),
-  sharing a :class:`~parrot.skills.file_registry.SkillFileRegistry`.
+- :class:`SkillFileToolkit` — file-based skills (list_commands/load/read_asset/
+  save_learned), sharing a
+  :class:`~parrot.skills.file_registry.SkillFileRegistry`.
 """
 import asyncio
 from typing import Dict, List, Optional, Type
@@ -378,6 +379,8 @@ class SkillFileToolkit(AbstractToolkit):
 
     Tiers:
 
+    - ``list_skill_commands`` (Tier 1): live listing of every registered skill
+      with its description and ``/trigger`` commands.
     - ``load_skill`` (Tier 2): full skill body + asset manifest for composite
       skills.
     - ``read_skill_asset`` (Tier 2): sandboxed reader for a bundled asset.
@@ -406,6 +409,46 @@ class SkillFileToolkit(AbstractToolkit):
         # Only expose save_learned_skill when we have somewhere to write.
         if learned_dir is None:
             self.exclude_tools = ("save_learned_skill",)
+
+    async def list_skill_commands(self) -> ToolResult:
+        """List all available skills with their descriptions and /trigger
+        commands. Use to tell the user which skills and slash-commands are
+        available. Reads the live registry, so skills learned during the
+        current session are included.
+        """
+        skills = self._file_registry.list_skills()
+        if not skills:
+            return ToolResult(
+                status="done",
+                result="No skills available.",
+                metadata={"count": 0, "skills": []},
+            )
+
+        lines = [f"**{len(skills)} skills available:**"]
+        for skill in skills:
+            triggers = (
+                ", ".join(skill.triggers)
+                if skill.triggers
+                else "(no trigger — load with load_skill)"
+            )
+            lines.append(f"- {skill.name}: {skill.description} — {triggers}")
+
+        return ToolResult(
+            status="done",
+            result="\n".join(lines),
+            metadata={
+                "count": len(skills),
+                "skills": [
+                    {
+                        "name": s.name,
+                        "description": s.description,
+                        "triggers": list(s.triggers),
+                        "category": s.category,
+                    }
+                    for s in skills
+                ],
+            },
+        )
 
     @tool_schema(LoadSkillArgs)
     async def load_skill(self, name: str) -> ToolResult:

@@ -59,10 +59,11 @@ each initialized once with its shared registry — never instantiate skill tools
 individually:
 
 - **`SkillFileToolkit`** — file-based skills, shares a `SkillFileRegistry`.
-  Tools: `load_skill` (body + asset manifest), `read_skill_asset` (sandboxed
-  reader for a composite skill's bundled asset; path-traversal rejected,
-  `SKILL.md` reserved for `load_skill`), `save_learned_skill` (only when a
-  `learned_dir` is configured).
+  Tools: `list_skill_commands` (live listing of skills with descriptions and
+  `/trigger` commands), `load_skill` (body + asset manifest),
+  `read_skill_asset` (sandboxed reader for a composite skill's bundled asset;
+  path-traversal rejected, `SKILL.md` reserved for `load_skill`),
+  `save_learned_skill` (only when a `learned_dir` is configured).
 - **`SkillRegistryToolkit`** — DB-backed skill registry, shares a
   `SkillRegistry` store + `agent_id`. Tools: `search_skills`, `read_skill`,
   `list_skills`, and the write tools `document_skill` / `update_skill` (exposed
