@@ -73,7 +73,7 @@
       "feature_id": "FEAT-234",
       "feature": "formdesigner-conditional-sections",
       "spec": "sdd/specs/formdesigner-conditional-sections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -85,8 +85,8 @@
       "parallelism_notes": "Critical path — authoring (TASK-1528) and the evaluator (TASK-1530) depend on this. Edits services/validators.py only.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:10:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1526-rule-validation-cycle-detection.md"
+      "completed_at": "2026-06-11T22:17:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1526-rule-validation-cycle-detection.md"
     },
     {
       "id": "TASK-1527",
