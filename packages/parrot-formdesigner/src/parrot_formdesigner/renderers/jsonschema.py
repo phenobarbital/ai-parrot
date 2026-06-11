@@ -119,7 +119,10 @@ class JsonSchemaRenderer(AbstractFormRenderer):
     Extensions used:
     - x-field-type: original FieldType value
     - x-section: section metadata (section_id, title, description)
-    - x-depends-on: conditional visibility rule (serialized DependencyRule)
+    - x-depends-on: conditional visibility rule (serialized DependencyRule, including
+      any ``operations`` on the rule)
+    - x-post-depends: forward effects (serialized list of PostDependency objects,
+      present only when ``field.post_depends`` is non-empty)
     - x-options-source: dynamic options source configuration
     - x-placeholder: placeholder text
     - x-read-only: read-only flag
@@ -406,9 +409,13 @@ class JsonSchemaRenderer(AbstractFormRenderer):
         if ft == FieldType.ARRAY and field.item_template:
             prop["items"] = self._field_to_property(field.item_template, locale, prefilled)
 
-        # Dependency rule
+        # Pre-dependency rule (serialized including any operations)
         if field.depends_on:
             prop["x-depends-on"] = field.depends_on.model_dump()
+
+        # Forward effects (post-dependencies) — emitted as x-post-depends when present
+        if field.post_depends:
+            prop["x-post-depends"] = [p.model_dump() for p in field.post_depends]
 
         # Placeholder
         if field.placeholder:
