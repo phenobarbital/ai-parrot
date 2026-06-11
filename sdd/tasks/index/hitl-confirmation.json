@@ -14,7 +14,7 @@
       "feature_id": "FEAT-235",
       "feature": "hitl-confirmation",
       "spec": "sdd/specs/hitl-confirmation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation in parrot/auth/confirmation.py; every other task depends on these models. Must land first.",
       "assigned_to": null,
       "started_at": "2026-06-11T22:47:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1533-confirmation-models-and-window-store.md"
+      "completed_at": "2026-06-11T22:52:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1533-confirmation-models-and-window-store.md"
     },
     {
       "id": "TASK-1534",
