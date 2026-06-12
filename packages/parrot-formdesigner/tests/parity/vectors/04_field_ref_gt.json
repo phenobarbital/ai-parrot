@@ -1,0 +1,23 @@
+{
+  "name": "field-ref-gt-match",
+  "description": "FieldRefCondition GT operator — numeric answer greater than value",
+  "form": {
+    "form_id": "parity-04",
+    "title": {"en": "Parity 04"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "score", "field_type": "number", "label": {"en": "Score"}},
+        {"field_id": "bonus", "field_type": "text", "label": {"en": "Bonus"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "score", "operator": "gt", "value": 80}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"score": 95}, "location_vars": {}, "visit_context": {}},
+  "expected": {"bonus": {"effect": "show", "matched": true}}
+}

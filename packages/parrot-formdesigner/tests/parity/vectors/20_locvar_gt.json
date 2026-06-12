@@ -1,0 +1,23 @@
+{
+  "name": "locvar-gt-match",
+  "description": "LocationVarCondition GT — employee_count greater than threshold",
+  "form": {
+    "form_id": "parity-20",
+    "title": {"en": "Parity 20"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "q1", "field_type": "text", "label": {"en": "Q1"}},
+        {"field_id": "hr_module", "field_type": "text", "label": {"en": "HR Module"},
+          "depends_on": {
+            "conditions": [{"source": "location_variable", "key": "employee_count", "operator": "gt", "value": 50}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {}, "location_vars": {"employee_count": 120}, "visit_context": {}},
+  "expected": {"hr_module": {"effect": "show", "matched": true}}
+}

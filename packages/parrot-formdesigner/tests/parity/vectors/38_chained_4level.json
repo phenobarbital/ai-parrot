@@ -1,0 +1,39 @@
+{
+  "name": "chained-4level-all-conditions-met",
+  "description": "4-field chain: q4 depends on q3 depends on q2 depends on q1",
+  "form": {
+    "form_id": "parity-38",
+    "title": {"en": "Parity 38"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "q1", "field_type": "select", "label": {"en": "Q1"}},
+        {"field_id": "q2", "field_type": "select", "label": {"en": "Q2"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "q1", "operator": "eq", "value": "a"}],
+            "logic": "and", "effect": "show"
+          }
+        },
+        {"field_id": "q3", "field_type": "text", "label": {"en": "Q3"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "q2", "operator": "eq", "value": "b"}],
+            "logic": "and", "effect": "show"
+          }
+        },
+        {"field_id": "q4", "field_type": "text_area", "label": {"en": "Q4"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "q3", "operator": "is_not_empty"}],
+            "logic": "and", "effect": "require"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"q1": "a", "q2": "b", "q3": "hello"}, "location_vars": {}, "visit_context": {}},
+  "expected": {
+    "q2": {"effect": "show", "matched": true},
+    "q3": {"effect": "show", "matched": true},
+    "q4": {"effect": "require", "matched": true}
+  }
+}

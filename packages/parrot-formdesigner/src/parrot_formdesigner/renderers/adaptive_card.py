@@ -80,6 +80,8 @@ _AC_FALLBACK_TYPES = frozenset({
     FieldType.AVAILABILITY,
     # Phase 3 — FEAT-170
     FieldType.REST,
+    # FEAT-300 — formula fields (evaluator is FEAT-301)
+    FieldType.FORMULA,
 })
 
 
@@ -150,11 +152,17 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         locale: str = "en",
         prefilled: dict[str, Any] | None = None,
         errors: dict[str, str] | None = None,
+        evaluation_context: Any | None = None,
     ) -> RenderedForm:
         """Render a complete FormSchema as an Adaptive Card.
 
         In WIZARD layout mode, renders only the first section.
         In all other modes, renders all sections in one card.
+
+        FEAT-301: Pre-resolved visibility state is ALWAYS embedded (not opt-in).
+        The ``data.logic_state`` key on the returned card payload carries the
+        field-level visibility map; individual elements also receive
+        ``isVisible: False`` when their pre-resolved effect is ``"hide"``.
 
         Args:
             form: The form schema.
@@ -162,10 +170,18 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             locale: Locale for i18n label resolution.
             prefilled: Pre-filled field values.
             errors: Field-level error messages.
+            evaluation_context: Optional :class:`~parrot_formdesigner.services
+                .rule_evaluator.EvaluationContext`.  When ``None``, an empty
+                context is used (all fields visible by default).
 
         Returns:
             RenderedForm with Adaptive Card dict as content.
         """
+        from ..services.rule_evaluator import (
+            DEFAULT_EVALUATOR,
+            EvaluationContext,
+        )
+
         style = style or StyleSchema()
         prefilled = prefilled or {}
         errors = errors or {}
@@ -218,11 +234,64 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
                         ),
                     ))
 
+        # FEAT-301: Pre-resolve visibility state — ALWAYS ON (RESUELTO §8).
+        # Embed the logic state map into the card payload under "data".
+        ctx: EvaluationContext = (
+            evaluation_context
+            if isinstance(evaluation_context, EvaluationContext)
+            else EvaluationContext()
+        )
+        evaluator = DEFAULT_EVALUATOR
+        logic_state = evaluator.evaluate_form(form, ctx)
+        logic_state_map = {
+            fid: {"effect": r.effect, "matched": r.matched}
+            for fid, r in logic_state.items()
+        }
+        # Embed the pre-resolved state in card["data"]["logic_state"].
+        card.setdefault("data", {})["logic_state"] = logic_state_map
+
+        # Apply isVisible: False for fields whose pre-resolved effect is "hide".
+        # This ensures the initial card state is correct on first paint.
+        hidden_ids = {fid for fid, r in logic_state.items() if r.effect == "hide"}
+        if hidden_ids:
+            self._apply_initial_visibility(card, hidden_ids)
+
         return RenderedForm(
             content=card,
             content_type=self.CONTENT_TYPE,
             warnings=warnings,
         )
+
+    def _apply_initial_visibility(
+        self,
+        card: dict[str, Any],
+        hidden_ids: set[str],
+    ) -> None:
+        """Set ``isVisible: False`` on card elements whose field_id is hidden.
+
+        Traverses the card ``body`` recursively to find elements with an
+        ``id`` matching a hidden field ID and sets ``isVisible: False``.
+
+        Args:
+            card: The Adaptive Card dict (mutated in place).
+            hidden_ids: Set of field IDs whose pre-resolved effect is ``"hide"``.
+        """
+        def _walk(elements: list[dict[str, Any]]) -> None:
+            for element in elements:
+                if not isinstance(element, dict):
+                    continue
+                elem_id = element.get("id", "")
+                if elem_id and elem_id in hidden_ids:
+                    element["isVisible"] = False
+                # Recurse into nested containers
+                if "items" in element:
+                    _walk(element["items"])
+                if "columns" in element:
+                    for col in element["columns"]:
+                        if isinstance(col, dict) and "items" in col:
+                            _walk(col["items"])
+
+        _walk(card.get("body", []))
 
     async def render_section(
         self,
@@ -235,6 +304,7 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         errors: dict[str, str] | None = None,
         show_back: bool = False,
         show_skip: bool = False,
+        evaluation_context: Any | None = None,
     ) -> RenderedForm:
         """Render a single section as a wizard step Adaptive Card.
 
@@ -247,6 +317,9 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             errors: Field-level error messages.
             show_back: Whether to include a Back button.
             show_skip: Whether to include a Skip button.
+            evaluation_context: Optional EvaluationContext for pre-resolving
+                conditional logic state (defaults to an empty context — the
+                embed is ALWAYS ON, spec FEAT-301 §8).
 
         Returns:
             RenderedForm with wizard step card as content.
@@ -289,6 +362,23 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         )
 
         card = self._wrap_card(body, actions)
+
+        # Pre-resolved logic state — ALWAYS ON (spec FEAT-301 §8), same as render()
+        from ..services.rule_evaluator import DEFAULT_EVALUATOR, EvaluationContext
+        ctx = (
+            evaluation_context
+            if isinstance(evaluation_context, EvaluationContext)
+            else EvaluationContext()
+        )
+        logic_state = DEFAULT_EVALUATOR.evaluate_form(form, ctx)
+        card.setdefault("data", {})["logic_state"] = {
+            fid: {"effect": r.effect, "matched": r.matched}
+            for fid, r in logic_state.items()
+        }
+        hidden_ids = {fid for fid, r in logic_state.items() if r.effect == "hide"}
+        if hidden_ids:
+            self._apply_initial_visibility(card, hidden_ids)
+
         return RenderedForm(
             content=card,
             content_type=self.CONTENT_TYPE,

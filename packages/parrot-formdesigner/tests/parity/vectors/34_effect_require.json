@@ -1,0 +1,23 @@
+{
+  "name": "effect-require",
+  "description": "effect=require: when matched, field becomes required",
+  "form": {
+    "form_id": "parity-34",
+    "title": {"en": "Parity 34"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "has_allergy", "field_type": "select", "label": {"en": "Has Allergy"}},
+        {"field_id": "allergy_detail", "field_type": "text_area", "label": {"en": "Allergy Detail"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "has_allergy", "operator": "eq", "value": "yes"}],
+            "logic": "and", "effect": "require"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"has_allergy": "yes"}, "location_vars": {}, "visit_context": {}},
+  "expected": {"allergy_detail": {"effect": "require", "matched": true}}
+}

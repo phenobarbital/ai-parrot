@@ -1,0 +1,23 @@
+{
+  "name": "visit-context-not-in-match",
+  "description": "VisitContextCondition NOT_IN — visit_type not in completed states",
+  "form": {
+    "form_id": "parity-60",
+    "title": {"en": "Parity 60"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "q1", "field_type": "text", "label": {"en": "Q1"}},
+        {"field_id": "action_items", "field_type": "text_area", "label": {"en": "Action Items"},
+          "depends_on": {
+            "conditions": [{"source": "visit_context", "key": "status", "operator": "not_in", "value": ["completed", "cancelled"]}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {}, "location_vars": {}, "visit_context": {"status": "in_progress"}},
+  "expected": {"action_items": {"effect": "show", "matched": true}}
+}

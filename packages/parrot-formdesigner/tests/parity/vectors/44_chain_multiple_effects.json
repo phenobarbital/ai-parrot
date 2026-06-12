@@ -1,0 +1,32 @@
+{
+  "name": "chain-multiple-effects",
+  "description": "Chain: q2 requires based on q1, q3 disables based on q2",
+  "form": {
+    "form_id": "parity-44",
+    "title": {"en": "Parity 44"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "q1", "field_type": "select", "label": {"en": "Q1"}},
+        {"field_id": "q2", "field_type": "text", "label": {"en": "Q2"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "q1", "operator": "eq", "value": "yes"}],
+            "logic": "and", "effect": "require"
+          }
+        },
+        {"field_id": "q3", "field_type": "text_area", "label": {"en": "Q3"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "q2", "operator": "eq", "value": "locked"}],
+            "logic": "and", "effect": "disable"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"q1": "yes", "q2": "locked"}, "location_vars": {}, "visit_context": {}},
+  "expected": {
+    "q2": {"effect": "require", "matched": true},
+    "q3": {"effect": "disable", "matched": true}
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "field-ref-not-in-match",
+  "description": "FieldRefCondition NOT_IN operator — answer not in excluded list",
+  "form": {
+    "form_id": "parity-09",
+    "title": {"en": "Parity 09"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "payment_method", "field_type": "select", "label": {"en": "Payment"}},
+        {"field_id": "card_number", "field_type": "text", "label": {"en": "Card Number"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "payment_method", "operator": "not_in", "value": ["cash", "check"]}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"payment_method": "credit_card"}, "location_vars": {}, "visit_context": {}},
+  "expected": {"card_number": {"effect": "show", "matched": true}}
+}

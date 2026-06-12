@@ -1,0 +1,23 @@
+{
+  "name": "field-ref-is-not-empty-match",
+  "description": "FieldRefCondition IS_NOT_EMPTY operator — answer has content",
+  "form": {
+    "form_id": "parity-11",
+    "title": {"en": "Parity 11"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "company_name", "field_type": "text", "label": {"en": "Company"}},
+        {"field_id": "company_details", "field_type": "text_area", "label": {"en": "Company Details"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "company_name", "operator": "is_not_empty"}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"company_name": "Acme Corp"}, "location_vars": {}, "visit_context": {}},
+  "expected": {"company_details": {"effect": "show", "matched": true}}
+}

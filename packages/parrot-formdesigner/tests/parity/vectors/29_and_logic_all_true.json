@@ -1,0 +1,27 @@
+{
+  "name": "and-logic-all-conditions-true",
+  "description": "AND logic: both conditions true → matched",
+  "form": {
+    "form_id": "parity-29",
+    "title": {"en": "Parity 29"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "has_insurance", "field_type": "select", "label": {"en": "Has Insurance"}},
+        {"field_id": "age", "field_type": "number", "label": {"en": "Age"}},
+        {"field_id": "coverage_details", "field_type": "text_area", "label": {"en": "Coverage"},
+          "depends_on": {
+            "conditions": [
+              {"source": "field", "field_id": "has_insurance", "operator": "eq", "value": "yes"},
+              {"source": "field", "field_id": "age", "operator": "gte", "value": 18}
+            ],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"has_insurance": "yes", "age": 25}, "location_vars": {}, "visit_context": {}},
+  "expected": {"coverage_details": {"effect": "show", "matched": true}}
+}

@@ -10,6 +10,7 @@ from parrot_formdesigner.core.constraints import (
     DependencyRule,
     FieldCondition,
     FieldConstraints,
+    FieldRefCondition,
 )
 from parrot_formdesigner.core.options import FieldOption
 from parrot_formdesigner.core.schema import (
@@ -233,7 +234,7 @@ async def test_relevant_xpath_for_simple_dependency():
                         label={"en": "Child"},
                         depends_on=DependencyRule(
                             conditions=[
-                                FieldCondition(
+                                FieldRefCondition(
                                     field_id="parent",
                                     operator=ConditionOperator.EQ,
                                     value="show",

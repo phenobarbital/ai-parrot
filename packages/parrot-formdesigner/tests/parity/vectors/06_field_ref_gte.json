@@ -1,0 +1,23 @@
+{
+  "name": "field-ref-gte-match",
+  "description": "FieldRefCondition GTE operator — numeric answer >= threshold",
+  "form": {
+    "form_id": "parity-06",
+    "title": {"en": "Parity 06"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "rating", "field_type": "number", "label": {"en": "Rating"}},
+        {"field_id": "review_detail", "field_type": "text_area", "label": {"en": "Review Detail"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "rating", "operator": "gte", "value": 4}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"rating": 4}, "location_vars": {}, "visit_context": {}},
+  "expected": {"review_detail": {"effect": "show", "matched": true}}
+}

@@ -262,4 +262,34 @@ def setup_form_api(
         )
         logger.info("setup_form_api: audio WS endpoint mounted at %s/forms/{form_id}/audio/ws", bp)
 
+    # FEAT-301 — server-side rule evaluation endpoint
+    app.router.add_post(
+        f"{bp}/forms/{{form_id}}/evaluate", _wrap_auth(handler.evaluate_form)
+    )
+
+    # FEAT-300 — publish, question-bank, version history, import-report
+    # Note: /versions and /import-report routes are registered BEFORE the
+    # generic /{form_id} catch-all to avoid shadowing issues if the router
+    # were order-sensitive (aiohttp matches on specificity, but belt-and-braces).
+    app.router.add_post(
+        f"{bp}/forms/{{form_id}}/publish", _wrap_auth(handler.publish_form)
+    )
+    app.router.add_get(
+        f"{bp}/fields", _wrap_auth(handler.list_fields)
+    )
+    app.router.add_post(
+        f"{bp}/fields", _wrap_auth(handler.create_field)
+    )
+    app.router.add_get(
+        f"{bp}/forms/{{form_id}}/versions", _wrap_auth(handler.list_versions)
+    )
+    app.router.add_get(
+        f"{bp}/forms/{{form_id}}/versions/{{version}}",
+        _wrap_auth(handler.get_version),
+    )
+    app.router.add_get(
+        f"{bp}/forms/{{form_id}}/import-report",
+        _wrap_auth(handler.get_import_report),
+    )
+
     logger.info("setup_form_api: mounted on %s", bp)

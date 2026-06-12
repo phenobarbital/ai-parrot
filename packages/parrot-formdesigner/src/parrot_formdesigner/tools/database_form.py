@@ -181,7 +181,13 @@ class DatabaseFormTool(AbstractTool):
         try:
             svc = cls(**(service_kwargs or {}))
             raw = await svc.fetch(formid=formid, orgid=orgid, **extra)
-            form = svc.to_form_schema(raw)
+            # FEAT-300: services exposing import_with_report() also produce
+            # a per-field ImportDiffReport consumed by GET .../import-report.
+            import_report = None
+            if hasattr(svc, "import_with_report"):
+                form, import_report = svc.import_with_report(raw)
+            else:
+                form = svc.to_form_schema(raw)
         except json.JSONDecodeError as exc:
             self.logger.error("Malformed JSON for formid=%s: %s", formid, exc)
             msg = str(exc)
@@ -236,5 +242,12 @@ class DatabaseFormTool(AbstractTool):
             success=True,
             status="success",
             result={"form_id": form.form_id, "title": str(form.title)},
-            metadata={"form": form.model_dump()},
+            metadata={
+                "form": form.model_dump(),
+                "import_report": (
+                    import_report.model_dump(mode="json")
+                    if import_report is not None
+                    else None
+                ),
+            },
         )

@@ -1,0 +1,50 @@
+{
+  "name": "nn-visit-type-gating",
+  "description": "Networkninja-style: different form sections shown based on visit type from context",
+  "_nn_source": "Derived from networkninja visit_context-based form branching",
+  "form": {
+    "form_id": "parity-53",
+    "title": {"en": "Flexible Visit Form"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "Visit Questions"},
+      "fields": [
+        {
+          "field_id": "Q4001",
+          "field_type": "select",
+          "label": {"en": "Was the manager present?"}
+        },
+        {
+          "field_id": "Q4002_manager_signature",
+          "field_type": "file",
+          "label": {"en": "Manager Signature"},
+          "depends_on": {
+            "conditions": [
+              {"source": "visit_context", "key": "visit_type", "operator": "eq", "value": "formal_audit"},
+              {"source": "field", "field_id": "Q4001", "operator": "eq", "value": "yes"}
+            ],
+            "logic": "and", "effect": "require"
+          }
+        },
+        {
+          "field_id": "Q4003_informal_note",
+          "field_type": "text_area",
+          "label": {"en": "Informal Note"},
+          "depends_on": {
+            "conditions": [{"source": "visit_context", "key": "visit_type", "operator": "neq", "value": "formal_audit"}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {
+    "answers": {"Q4001": "yes"},
+    "location_vars": {},
+    "visit_context": {"visit_type": "formal_audit"}
+  },
+  "expected": {
+    "Q4002_manager_signature": {"effect": "require", "matched": true},
+    "Q4003_informal_note": {"effect": "show", "matched": false}
+  }
+}

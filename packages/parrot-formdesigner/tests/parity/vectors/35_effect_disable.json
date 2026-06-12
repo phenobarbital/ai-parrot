@@ -1,0 +1,23 @@
+{
+  "name": "effect-disable",
+  "description": "effect=disable: when matched, field should be disabled",
+  "form": {
+    "form_id": "parity-35",
+    "title": {"en": "Parity 35"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "locked", "field_type": "select", "label": {"en": "Locked"}},
+        {"field_id": "edit_field", "field_type": "text", "label": {"en": "Edit Field"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "locked", "operator": "eq", "value": "yes"}],
+            "logic": "and", "effect": "disable"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"locked": "yes"}, "location_vars": {}, "visit_context": {}},
+  "expected": {"edit_field": {"effect": "disable", "matched": true}}
+}

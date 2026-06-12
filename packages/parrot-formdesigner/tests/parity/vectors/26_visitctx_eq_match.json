@@ -1,0 +1,23 @@
+{
+  "name": "visit-context-eq-match",
+  "description": "VisitContextCondition EQ — visit_type matches audit",
+  "form": {
+    "form_id": "parity-26",
+    "title": {"en": "Parity 26"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "q1", "field_type": "text", "label": {"en": "Q1"}},
+        {"field_id": "audit_notes", "field_type": "text_area", "label": {"en": "Audit Notes"},
+          "depends_on": {
+            "conditions": [{"source": "visit_context", "key": "visit_type", "operator": "eq", "value": "audit"}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {}, "location_vars": {}, "visit_context": {"visit_type": "audit"}},
+  "expected": {"audit_notes": {"effect": "show", "matched": true}}
+}

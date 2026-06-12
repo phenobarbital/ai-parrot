@@ -1,0 +1,23 @@
+{
+  "name": "field-ref-neq-match",
+  "description": "FieldRefCondition NEQ operator — answer differs from value",
+  "form": {
+    "form_id": "parity-03",
+    "title": {"en": "Parity 03"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "q1", "field_type": "text", "label": {"en": "Q1"}},
+        {"field_id": "q2", "field_type": "text", "label": {"en": "Q2"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "q1", "operator": "neq", "value": "no"}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"q1": "yes"}, "location_vars": {}, "visit_context": {}},
+  "expected": {"q2": {"effect": "show", "matched": true}}
+}

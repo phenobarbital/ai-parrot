@@ -1,0 +1,23 @@
+{
+  "name": "effect-hide",
+  "description": "effect=hide: when matched, field should be hidden",
+  "form": {
+    "form_id": "parity-33",
+    "title": {"en": "Parity 33"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "user_type", "field_type": "select", "label": {"en": "User Type"}},
+        {"field_id": "admin_panel", "field_type": "text", "label": {"en": "Admin Panel"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "user_type", "operator": "neq", "value": "admin"}],
+            "logic": "and", "effect": "hide"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"user_type": "guest"}, "location_vars": {}, "visit_context": {}},
+  "expected": {"admin_panel": {"effect": "hide", "matched": true}}
+}

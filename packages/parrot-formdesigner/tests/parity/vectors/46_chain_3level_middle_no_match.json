@@ -1,0 +1,32 @@
+{
+  "name": "chained-3level-middle-no-match",
+  "description": "3-field chain: q2 condition not met → q2 shows (default) → q3 also shows (default)",
+  "form": {
+    "form_id": "parity-46",
+    "title": {"en": "Parity 46"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "q1", "field_type": "select", "label": {"en": "Q1"}},
+        {"field_id": "q2", "field_type": "text", "label": {"en": "Q2"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "q1", "operator": "eq", "value": "yes"}],
+            "logic": "and", "effect": "show"
+          }
+        },
+        {"field_id": "q3", "field_type": "text_area", "label": {"en": "Q3"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "q2", "operator": "is_not_empty"}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"q1": "no", "q2": "some value"}, "location_vars": {}, "visit_context": {}},
+  "expected": {
+    "q2": {"effect": "show", "matched": false},
+    "q3": {"effect": "show", "matched": true}
+  }
+}

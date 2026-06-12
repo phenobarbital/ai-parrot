@@ -29,6 +29,7 @@ from ..core.constraints import (
     ConditionOperator,
     DependencyRule,
     FieldConstraints,
+    FieldRefCondition,
 )
 from ..core.options import FieldOption
 from ..core.schema import FormField, FormSchema, FormSection, FormSubsection, RenderedForm
@@ -91,6 +92,8 @@ _FIELD_TO_XFORMS: dict[FieldType, tuple[str, str | None]] = {
     FieldType.RANKING: ("range", "integer"),         # <xf:range>
     # Phase 3 — FEAT-170
     FieldType.REST: ("input", "string"),             # fallback: plain text
+    # FEAT-300 — formula fields (evaluator is FEAT-301; render as read-only input)
+    FieldType.FORMULA: ("input", "string"),          # fallback: plain text placeholder
 }
 
 
@@ -134,8 +137,10 @@ def _relevant_xpath(rule: DependencyRule | None) -> str | None:
     """Build the XPath expression for an ``<xf:bind relevant=...>``.
 
     Supports only the simple single-condition equality case
-    (``field_id == value``). Returns ``None`` for anything more complex —
-    a logger.debug message records the skip.
+    (``field_id == value``) for ``FieldRefCondition`` variants. Returns
+    ``None`` for anything more complex — a logger.debug message records the
+    skip. FEAT-301: non-field condition variants (LocationVarCondition,
+    VisitContextCondition) cannot be expressed in XPath and are skipped.
     """
     if rule is None or not rule.conditions:
         return None
@@ -146,6 +151,13 @@ def _relevant_xpath(rule: DependencyRule | None) -> str | None:
         )
         return None
     cond = rule.conditions[0]
+    # FEAT-301: only FieldRefCondition carries field_id; other variants are skipped.
+    if not isinstance(cond, FieldRefCondition):
+        logger.debug(
+            "Skipping `relevant` for non-field condition source: %s",
+            getattr(cond, "source", "unknown"),
+        )
+        return None
     if cond.operator != ConditionOperator.EQ:
         logger.debug(
             "Skipping `relevant` for non-eq operator: %s", cond.operator

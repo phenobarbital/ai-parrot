@@ -1,0 +1,23 @@
+{
+  "name": "field-ref-in-match",
+  "description": "FieldRefCondition IN operator — answer in allowed list",
+  "form": {
+    "form_id": "parity-08",
+    "title": {"en": "Parity 08"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "category", "field_type": "select", "label": {"en": "Category"}},
+        {"field_id": "subcategory", "field_type": "select", "label": {"en": "Subcategory"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "category", "operator": "in", "value": ["electronics", "computers", "phones"]}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"category": "computers"}, "location_vars": {}, "visit_context": {}},
+  "expected": {"subcategory": {"effect": "show", "matched": true}}
+}

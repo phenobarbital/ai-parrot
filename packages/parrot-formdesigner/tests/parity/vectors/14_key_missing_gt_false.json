@@ -1,0 +1,23 @@
+{
+  "name": "key-missing-gt-false",
+  "description": "Key-missing semantics: absent key + GT → matched=false",
+  "form": {
+    "form_id": "parity-14",
+    "title": {"en": "Parity 14"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "score", "field_type": "number", "label": {"en": "Score"}},
+        {"field_id": "bonus", "field_type": "text", "label": {"en": "Bonus"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "score", "operator": "gt", "value": 50}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {}, "location_vars": {}, "visit_context": {}},
+  "expected": {"bonus": {"effect": "show", "matched": false}}
+}

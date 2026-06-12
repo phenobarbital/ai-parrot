@@ -1,0 +1,23 @@
+{
+  "name": "locvar-key-missing-eq-false",
+  "description": "LocationVarCondition EQ with missing key — key-missing → EQ=false (no raise)",
+  "form": {
+    "form_id": "parity-25",
+    "title": {"en": "Parity 25"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "q1", "field_type": "text", "label": {"en": "Q1"}},
+        {"field_id": "flagship_section", "field_type": "text", "label": {"en": "Flagship"},
+          "depends_on": {
+            "conditions": [{"source": "location_variable", "key": "store_type", "operator": "eq", "value": "flagship"}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {}, "location_vars": {}, "visit_context": {}},
+  "expected": {"flagship_section": {"effect": "show", "matched": false}}
+}

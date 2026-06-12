@@ -1,0 +1,23 @@
+{
+  "name": "visit-context-in-match",
+  "description": "VisitContextCondition IN — visit status in active states",
+  "form": {
+    "form_id": "parity-28",
+    "title": {"en": "Parity 28"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "q1", "field_type": "text", "label": {"en": "Q1"}},
+        {"field_id": "active_section", "field_type": "text", "label": {"en": "Active Section"},
+          "depends_on": {
+            "conditions": [{"source": "visit_context", "key": "status", "operator": "in", "value": ["in_progress", "pending", "scheduled"]}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {}, "location_vars": {}, "visit_context": {"status": "pending"}},
+  "expected": {"active_section": {"effect": "show", "matched": true}}
+}

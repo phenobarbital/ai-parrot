@@ -1,0 +1,26 @@
+{
+  "name": "or-logic-all-conditions-false",
+  "description": "OR logic: all conditions false → not matched",
+  "form": {
+    "form_id": "parity-32",
+    "title": {"en": "Parity 32"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "channel", "field_type": "select", "label": {"en": "Channel"}},
+        {"field_id": "extra_info", "field_type": "text_area", "label": {"en": "Extra Info"},
+          "depends_on": {
+            "conditions": [
+              {"source": "field", "field_id": "channel", "operator": "eq", "value": "online"},
+              {"source": "field", "field_id": "channel", "operator": "eq", "value": "mobile"}
+            ],
+            "logic": "or", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"channel": "in_store"}, "location_vars": {}, "visit_context": {}},
+  "expected": {"extra_info": {"effect": "show", "matched": false}}
+}

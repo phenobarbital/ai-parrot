@@ -1,0 +1,23 @@
+{
+  "name": "field-ref-lt-match",
+  "description": "FieldRefCondition LT operator — numeric answer less than value",
+  "form": {
+    "form_id": "parity-05",
+    "title": {"en": "Parity 05"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "age", "field_type": "number", "label": {"en": "Age"}},
+        {"field_id": "minor_consent", "field_type": "text", "label": {"en": "Minor Consent"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "age", "operator": "lt", "value": 18}],
+            "logic": "and", "effect": "require"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"age": 15}, "location_vars": {}, "visit_context": {}},
+  "expected": {"minor_consent": {"effect": "require", "matched": true}}
+}

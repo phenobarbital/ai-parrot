@@ -9,13 +9,24 @@ Uses yaml_rs (Rust) when available, falls back to PyYAML.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
-from ..core.constraints import ConditionOperator, DependencyRule, FieldCondition, FieldConstraints
+from ..core.constraints import (
+    ConditionOperator,
+    DependencyRule,
+    FieldCondition,
+    FieldConstraints,
+    FieldRefCondition,
+    LocationVarCondition,
+    VisitContextCondition,
+)
 from ..core.options import FieldOption
 from ..core.schema import FormField, FormSchema, FormSection, SubmitAction
 from ..core.types import FieldType, LocalizedString
+
+logger = logging.getLogger(__name__)
 
 # Try yaml_rs first, then PyYAML
 try:
@@ -429,18 +440,51 @@ class YamlExtractor:
         conditions: list[FieldCondition] = []
         for cond in conditions_data:
             if isinstance(cond, dict):
-                field_id = cond.get("field_id", "")
                 op_str = str(cond.get("operator", "eq")).lower()
                 try:
                     operator = ConditionOperator(op_str)
                 except ValueError:
                     operator = ConditionOperator.EQ
                 value = cond.get("value")
-                conditions.append(FieldCondition(
-                    field_id=field_id,
-                    operator=operator,
-                    value=value,
-                ))
+                source = cond.get("source", "field")
+                if source == "field":
+                    field_id = cond.get("field_id", "")
+                    conditions.append(FieldRefCondition(
+                        field_id=field_id,
+                        operator=operator,
+                        value=value,
+                    ))
+                elif source == "location_variable":
+                    key = cond.get("key", "")
+                    if not key:
+                        logger.warning(
+                            "LocationVarCondition in YAML missing 'key' — skipping"
+                        )
+                        continue
+                    conditions.append(LocationVarCondition(
+                        source="location_variable",
+                        key=key,
+                        operator=operator,
+                        value=value,
+                    ))
+                elif source == "visit_context":
+                    key = cond.get("key", "")
+                    if not key:
+                        logger.warning(
+                            "VisitContextCondition in YAML missing 'key' — skipping"
+                        )
+                        continue
+                    conditions.append(VisitContextCondition(
+                        source="visit_context",
+                        key=key,
+                        operator=operator,
+                        value=value,
+                    ))
+                else:
+                    logger.warning(
+                        "Unknown condition source %r in YAML — skipping", source
+                    )
+                    continue
 
         if not conditions:
             return None

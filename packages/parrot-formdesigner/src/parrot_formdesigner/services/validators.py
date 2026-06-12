@@ -792,11 +792,16 @@ class FormValidator:
             all_fields.extend(self._collect_fields(section))
 
         # Build adjacency list: field_id -> set of referenced field_ids
+        # FEAT-301: Only FieldRefCondition variants carry field_id (the other
+        # variants — LocationVarCondition / VisitContextCondition — reference
+        # external keys, not form fields, so they don't create intra-form edges).
+        from ..core.constraints import FieldRefCondition  # noqa: PLC0415
+
         graph: dict[str, set[str]] = {f.field_id: set() for f in all_fields}
         for field in all_fields:
             if field.depends_on:
                 for condition in field.depends_on.conditions:
-                    if condition.field_id in graph:
+                    if isinstance(condition, FieldRefCondition) and condition.field_id in graph:
                         graph[field.field_id].add(condition.field_id)
 
         # DFS cycle detection

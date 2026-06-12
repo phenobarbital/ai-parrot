@@ -17,6 +17,7 @@ from aiohttp import web
 from pydantic import ValidationError
 from navigator.responses import JSONResponse
 from ..core.events import FormEventAbort, FormEventName
+
 from ..core.schema import FormField, FormSchema, RenderedForm
 from ..renderers.jsonschema import JsonSchemaRenderer
 from ..services.auth_context import AuthContext
@@ -29,9 +30,12 @@ from ._utils import _bump_version, _deep_merge, _loc_to_str
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
 
+    from ..services.form_version import FormVersionService
     from ..services.forwarder import SubmissionForwarder
     from ..services.partial_saves import PartialSaveStore
+    from ..services.question_bank import QuestionBankService
     from ..services.submissions import FormSubmissionStorage
+    from ..tools.services.networkninja import ImportDiffReport
 
 
 class FormAPIHandler:
@@ -81,6 +85,16 @@ class FormAPIHandler:
         self._db_tool = DatabaseFormTool(
             registry=self.registry
         )
+
+        # FEAT-300 — form version service (lazy-init so tests can override)
+        self._version_service: "FormVersionService | None" = None
+
+        # FEAT-300 — per-tenant QuestionBankService cache (one instance per tenant)
+        self._question_banks: "dict[str, QuestionBankService]" = {}
+
+        # FEAT-300 — per-form import diff reports (populated by import flows).
+        # Keyed by (tenant, form_id) to prevent cross-tenant leaks (review M3).
+        self._import_reports: "dict[tuple[str, str], ImportDiffReport]" = {}
 
     def _get_llm_client(self) -> "AbstractClient | None":
         """Return the configured LLM client, lazily creating a GoogleGenAI default.
@@ -896,6 +910,10 @@ class FormAPIHandler:
             )
 
         body["version"] = _bump_version(existing.version)
+        # published_version is immutable from the API surface — only
+        # FormVersionService.publish() may set it (review M1).
+        body.pop("published_version", None)
+        body["published_version"] = existing.published_version
 
         try:
             form = FormSchema.model_validate(body)
@@ -942,6 +960,9 @@ class FormAPIHandler:
         merged["version"] = _bump_version(existing.version)
         # Prevent form_id change via PATCH
         merged["form_id"] = form_id
+        # published_version is immutable from the API surface — only
+        # FormVersionService.publish() may set it (review M1).
+        merged["published_version"] = existing.published_version
 
         try:
             form = FormSchema.model_validate(merged)
@@ -972,6 +993,20 @@ class FormAPIHandler:
         if existing is None:
             return JSONResponse(
                 {"error": f"Form '{form_id}' not found"}, status=404
+            )
+
+        # Spec invariant (FEAT-300 §8, Vision IQ parity): a form with ≥1
+        # response can never be deleted — only deactivated.
+        version_svc = self._get_version_service()
+        if not await version_svc.can_delete(form_id, tenant=tenant):
+            return web.json_response(
+                {
+                    "error": (
+                        f"Form '{form_id}' has responses and cannot be deleted. "
+                        "Deactivate it instead."
+                    )
+                },
+                status=409,
             )
 
         await self.registry.unregister(form_id, tenant=tenant)
@@ -1305,10 +1340,299 @@ class FormAPIHandler:
                 {"error": "Form load succeeded but form_id missing"},
                 status=500,
             )
+
+        # FEAT-300: persist the per-field ImportDiffReport so
+        # GET /forms/{form_id}/import-report can serve it (review H2).
+        report_data = result.metadata.get("import_report")
+        if report_data:
+            from ..tools.services.networkninja import ImportDiffReport
+            self._import_reports[(tenant, form_id)] = (
+                ImportDiffReport.model_validate(report_data)
+            )
+
         title = (result.result or {}).get("title", "")
         prefix = request.app.get("_form_prefix", "")
         return JSONResponse({
             "form_id": form_id,
             "title": title,
             "url": f"{prefix}/forms/{form_id}",
+        })
+
+    # ------------------------------------------------------------------
+    # FEAT-300 helpers — version service + question bank
+    # ------------------------------------------------------------------
+
+    def _get_version_service(self) -> "FormVersionService":
+        """Return the shared FormVersionService, initialising it lazily.
+
+        Returns:
+            Configured ``FormVersionService`` instance.
+        """
+        if self._version_service is None:
+            from ..services.form_version import FormVersionService
+            self._version_service = FormVersionService(self.registry)
+        return self._version_service
+
+    def _make_question_bank(self, tenant: str) -> "QuestionBankService":
+        """Return a tenant-scoped QuestionBankService, creating it on first call.
+
+        One service instance is cached per tenant so in-memory state (and DB
+        connections when a storage backend is configured) is shared across
+        requests within the same handler lifetime.
+
+        Args:
+            tenant: Tenant slug for this request.
+
+        Returns:
+            ``QuestionBankService`` backed by the registry's storage (or
+            in-memory when no storage backend is configured).
+        """
+        if tenant not in self._question_banks:
+            from ..services.question_bank import QuestionBankService
+            self._question_banks[tenant] = QuestionBankService(
+                storage=self.registry.storage,  # type: ignore[arg-type]
+                tenant=tenant,
+            )
+        return self._question_banks[tenant]
+
+    # ------------------------------------------------------------------
+    # FEAT-300 — publish / question-bank / version / import-report endpoints
+    # ------------------------------------------------------------------
+
+    async def publish_form(self, request: web.Request) -> web.Response:
+        """POST /api/v1/forms/{form_id}/publish — Publish current form as immutable snapshot.
+
+        Bumps the form's semver minor tag and freezes the current state as a
+        published snapshot. Returns ``409`` when the computed tag already
+        exists (immutability guard). Returns ``404`` when the form is not found.
+
+        Args:
+            request: Incoming HTTP request (path param: ``form_id``).
+
+        Returns:
+            ``{"form_id": str, "version": str}`` on success (200),
+            ``{"error": str}`` on 404 (not found) or 409 (frozen conflict).
+        """
+        form_id = request.match_info["form_id"]
+        tenant = self._get_tenant(request)
+        svc = self._get_version_service()
+        try:
+            version = await svc.publish(form_id, tenant=tenant)
+        except KeyError as exc:
+            return web.json_response({"error": str(exc)}, status=404)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=409)
+        except Exception as exc:
+            self.logger.exception("publish_form failed for '%s': %s", form_id, exc)
+            return web.json_response({"error": str(exc)}, status=500)
+        self.logger.info("Published form '%s' → version '%s'", form_id, version)
+        return web.json_response({"form_id": form_id, "version": version})
+
+    async def list_fields(self, request: web.Request) -> web.Response:
+        """GET /api/v1/fields — List all reusable fields for the current tenant.
+
+        Args:
+            request: Incoming HTTP request.
+
+        Returns:
+            ``{"fields": [<ReusableField>, ...]}`` (200).
+        """
+        tenant = self._get_tenant(request)
+        svc = self._make_question_bank(tenant)
+        fields = await svc.list_fields()
+        return web.json_response(
+            {"fields": [f.model_dump(mode="json") for f in fields]}
+        )
+
+    async def create_field(self, request: web.Request) -> web.Response:
+        """POST /api/v1/fields — Add a field definition to the question bank.
+
+        Args:
+            request: Incoming HTTP request with ``FormField`` JSON body.
+
+        Returns:
+            ``ReusableField`` JSON (201 Created), ``400`` on bad JSON, ``422``
+            on validation errors.
+        """
+        tenant = self._get_tenant(request)
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        from ..core.schema import FormField
+        try:
+            field_def = FormField.model_validate(body)
+        except ValidationError as exc:
+            return web.json_response({"error": exc.errors(include_url=False)}, status=422)
+
+        svc = self._make_question_bank(tenant)
+        entry = await svc.create_field(field_def)
+        return web.json_response(entry.model_dump(mode="json"), status=201)
+
+    async def list_versions(self, request: web.Request) -> web.Response:
+        """GET /api/v1/forms/{form_id}/versions — List published version history.
+
+        Each entry includes ``version``, ``published_at`` (ISO-8601),
+        ``published_by`` (``null`` when not tracked), and ``is_current``
+        (``True`` for the form's active published version).
+
+        Args:
+            request: Incoming HTTP request (path param: ``form_id``).
+
+        Returns:
+            ``{"form_id": str, "versions": [...]}`` (200), ``404`` if not found.
+        """
+        form_id = request.match_info["form_id"]
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_id, tenant=tenant)
+        if form is None:
+            return web.json_response({"error": f"Form '{form_id}' not found"}, status=404)
+
+        svc = self._get_version_service()
+        meta_list = await svc.list_versions(form_id, tenant=tenant)
+        current_version = form.published_version or form.version
+
+        return web.json_response({
+            "form_id": form_id,
+            "versions": [
+                {
+                    "version": m.version,
+                    "published_at": m.published_at.isoformat(),
+                    "published_by": None,
+                    "is_current": m.version == current_version,
+                }
+                for m in meta_list
+            ],
+        })
+
+    async def get_version(self, request: web.Request) -> web.Response:
+        """GET /api/v1/forms/{form_id}/versions/{version} — Retrieve a frozen snapshot.
+
+        Returns the immutable ``FormSchema`` snapshot for the requested semver
+        tag. Returns ``404`` when the form or version is not found.
+
+        Args:
+            request: Incoming HTTP request (path params: ``form_id``, ``version``).
+
+        Returns:
+            Full ``FormSchema`` JSON (200) or ``{"error": str}`` (404).
+        """
+        form_id = request.match_info["form_id"]
+        version = request.match_info["version"]
+        tenant = self._get_tenant(request)
+        svc = self._get_version_service()
+        snap = await svc.get_published(form_id, version=version, tenant=tenant)
+        if snap is None:
+            return web.json_response(
+                {"error": f"Version '{version}' of form '{form_id}' not found"},
+                status=404,
+            )
+        return web.json_response(snap.model_dump(mode="json"))
+
+    async def get_import_report(self, request: web.Request) -> web.Response:
+        """GET /api/v1/forms/{form_id}/import-report — Latest ImportDiffReport.
+
+        Returns the per-field mapping report generated when this form was last
+        imported from an external source (e.g. Networkninja). Returns ``404``
+        when no import history exists for this form.
+
+        Args:
+            request: Incoming HTTP request (path param: ``form_id``).
+
+        Returns:
+            ``ImportDiffReport`` JSON (200) or ``{"error": str}`` (404).
+        """
+        form_id = request.match_info["form_id"]
+        tenant = self._get_tenant(request)
+        report = self._import_reports.get((tenant, form_id))
+        if report is None:
+            return web.json_response(
+                {"error": f"No import report found for form '{form_id}'"},
+                status=404,
+            )
+        return web.json_response(report.model_dump(mode="json"))
+
+    async def evaluate_form(self, request: web.Request) -> web.Response:
+        """POST /api/v1/forms/{form_id}/evaluate — Server-side rule evaluation.
+
+        Evaluates all ``DependencyRule`` conditions in the form against the
+        provided context (current answers + location variables + visit context)
+        and returns a per-field visibility/effect map.
+
+        **Intended uses**:
+
+        1. **Thin/server-driven clients** (Adaptive Card / Teams) that cannot
+           run a local rule evaluator and need the server to drive visibility.
+        2. **Authoritative re-validation at submit** — the client sends the
+           final answer set and the server confirms the visibility state used
+           for validation.  Any divergence between client-side and server-side
+           evaluation is surfaced here.
+
+        **Note on ``location_vars``**: In the request body, ``location_vars``
+        is for testing/preview only.  In production, the server injects the
+        location variable snapshot into the form payload when the form is
+        served for a visit (so the client always has a consistent snapshot).
+
+        Body (all keys optional — missing keys default to ``{}``):
+            ``{"answers": {"field_id": <value>, ...},``
+            ``"location_vars": {"key": <value>, ...},``
+            ``"visit_context": {"key": <value>, ...}}``
+
+        Returns:
+            200: ``{"results": {"field_id": {"effect": "show"|"hide"|..., "matched": bool}}}``
+            400: ``{"error": "..."}`` — malformed JSON body or non-dict values.
+            404: ``{"error": "..."}`` — form not found.
+
+        Args:
+            request: Incoming HTTP request (path param: ``form_id``).
+        """
+        from ..services.rule_evaluator import EvaluationContext, DEFAULT_EVALUATOR
+
+        form_id = request.match_info["form_id"]
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_id, tenant=tenant)
+        if form is None:
+            return web.json_response(
+                {"error": f"Form '{form_id}' not found"}, status=404
+            )
+
+        # Parse body — all keys optional
+        try:
+            raw_body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        if not isinstance(raw_body, dict):
+            return web.json_response(
+                {"error": "Request body must be a JSON object"}, status=400
+            )
+
+        answers = raw_body.get("answers", {})
+        location_vars = raw_body.get("location_vars", {})
+        visit_context = raw_body.get("visit_context", {})
+
+        if not isinstance(answers, dict) or not isinstance(location_vars, dict) or not isinstance(visit_context, dict):
+            return web.json_response(
+                {"error": "answers, location_vars, and visit_context must be objects"},
+                status=400,
+            )
+
+        try:
+            context = EvaluationContext(
+                answers=answers,
+                location_vars=location_vars,
+                visit_context=visit_context,
+            )
+        except Exception as exc:
+            return web.json_response({"error": f"Invalid context: {exc}"}, status=422)
+
+        evaluator = DEFAULT_EVALUATOR
+        results = evaluator.evaluate_form(form, context)
+
+        return web.json_response({
+            "results": {
+                field_id: {"effect": r.effect, "matched": r.matched}
+                for field_id, r in results.items()
+            }
         })

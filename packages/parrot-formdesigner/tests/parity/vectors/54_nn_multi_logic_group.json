@@ -1,0 +1,44 @@
+{
+  "name": "nn-multi-logic-group-combined",
+  "description": "Networkninja-style: multiple independent logic groups on different questions",
+  "_nn_source": "Derived from networkninja question_blocks with multiple question_logic_groups entries",
+  "form": {
+    "form_id": "parity-54",
+    "title": {"en": "Multi-Logic Store Check"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "Questions"},
+      "fields": [
+        {"field_id": "Q5001", "field_type": "select", "label": {"en": "Cleanliness OK?"}},
+        {"field_id": "Q5002", "field_type": "select", "label": {"en": "Stock levels OK?"}},
+        {"field_id": "Q5001_detail", "field_type": "text_area", "label": {"en": "Cleanliness Issue Detail"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "Q5001", "operator": "eq", "value": "no"}],
+            "logic": "and", "effect": "require"
+          }
+        },
+        {"field_id": "Q5002_reorder", "field_type": "number", "label": {"en": "Units to Reorder"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "Q5002", "operator": "eq", "value": "no"}],
+            "logic": "and", "effect": "require"
+          }
+        },
+        {"field_id": "Q5003_escalate", "field_type": "select", "label": {"en": "Escalate to Regional?"},
+          "depends_on": {
+            "conditions": [
+              {"source": "field", "field_id": "Q5001", "operator": "eq", "value": "no"},
+              {"source": "field", "field_id": "Q5002", "operator": "eq", "value": "no"}
+            ],
+            "logic": "or", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"Q5001": "yes", "Q5002": "no"}, "location_vars": {}, "visit_context": {}},
+  "expected": {
+    "Q5001_detail": {"effect": "show", "matched": false},
+    "Q5002_reorder": {"effect": "require", "matched": true},
+    "Q5003_escalate": {"effect": "show", "matched": true}
+  }
+}

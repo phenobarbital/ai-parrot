@@ -10,6 +10,10 @@ from .constraints import (
     DependencyRule,
     FieldCondition,
     FieldConstraints,
+    FieldRefCondition,
+    LocationVarCondition,
+    LocationVariableBinding,
+    VisitContextCondition,
 )
 from .events import (
     EventResolution,
@@ -27,6 +31,7 @@ from .schema import (
     FormSchema,
     FormSection,
     FormSubsection,
+    FormType,
     MetadataSource,
     RenderedForm,
     SectionItem,
@@ -54,6 +59,10 @@ __all__ = [
     "FieldConstraints",
     "ConditionOperator",
     "FieldCondition",
+    "FieldRefCondition",
+    "LocationVarCondition",
+    "VisitContextCondition",
+    "LocationVariableBinding",
     "DependencyRule",
     # Options
     "FieldOption",
@@ -65,6 +74,7 @@ __all__ = [
     "FormSection",
     "SubmitAction",
     "FormSchema",
+    "FormType",
     "FormMetadataField",
     "MetadataSource",
     "BUILTIN_METADATA_SOURCE_NAMES",

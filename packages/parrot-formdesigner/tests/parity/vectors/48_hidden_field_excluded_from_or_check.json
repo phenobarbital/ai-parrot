@@ -1,0 +1,35 @@
+{
+  "name": "hidden-field-excluded-from-or-check",
+  "description": "q2 is hidden → q3 uses OR: q2 OR q1; q2 masked, q1 present → only q1 evaluated",
+  "form": {
+    "form_id": "parity-48",
+    "title": {"en": "Parity 48"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "q1", "field_type": "select", "label": {"en": "Q1"}},
+        {"field_id": "q2", "field_type": "text", "label": {"en": "Q2"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "q1", "operator": "eq", "value": "hide_it"}],
+            "logic": "and", "effect": "hide"
+          }
+        },
+        {"field_id": "q3", "field_type": "text_area", "label": {"en": "Q3"},
+          "depends_on": {
+            "conditions": [
+              {"source": "field", "field_id": "q2", "operator": "is_not_empty"},
+              {"source": "field", "field_id": "q1", "operator": "eq", "value": "hide_it"}
+            ],
+            "logic": "or", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"q1": "hide_it", "q2": "some_value"}, "location_vars": {}, "visit_context": {}},
+  "expected": {
+    "q2": {"effect": "hide", "matched": true},
+    "q3": {"effect": "show", "matched": true}
+  }
+}

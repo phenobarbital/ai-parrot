@@ -64,6 +64,8 @@ _WEBAPP_FIELD_TYPES = {
     FieldType.TAGS,
     # Phase 3 — FEAT-170
     FieldType.REST,
+    # FEAT-300 — formula fields (evaluator is FEAT-301)
+    FieldType.FORMULA,
 }
 
 # File-type fields that cannot be handled inline even if forced

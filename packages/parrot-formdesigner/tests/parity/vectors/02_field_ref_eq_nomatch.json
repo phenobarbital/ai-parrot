@@ -1,0 +1,23 @@
+{
+  "name": "field-ref-eq-no-match",
+  "description": "FieldRefCondition EQ operator — answer does not match",
+  "form": {
+    "form_id": "parity-02",
+    "title": {"en": "Parity 02"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "q1", "field_type": "text", "label": {"en": "Q1"}},
+        {"field_id": "q2", "field_type": "text", "label": {"en": "Q2"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "q1", "operator": "eq", "value": "yes"}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"q1": "no"}, "location_vars": {}, "visit_context": {}},
+  "expected": {"q2": {"effect": "show", "matched": false}}
+}

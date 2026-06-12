@@ -1,0 +1,23 @@
+{
+  "name": "field-ref-is-empty-match",
+  "description": "FieldRefCondition IS_EMPTY operator — answer is empty string",
+  "form": {
+    "form_id": "parity-10",
+    "title": {"en": "Parity 10"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "optional_text", "field_type": "text", "label": {"en": "Optional"}},
+        {"field_id": "fill_hint", "field_type": "text", "label": {"en": "Fill Hint"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "optional_text", "operator": "is_empty"}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"optional_text": ""}, "location_vars": {}, "visit_context": {}},
+  "expected": {"fill_hint": {"effect": "show", "matched": true}}
+}

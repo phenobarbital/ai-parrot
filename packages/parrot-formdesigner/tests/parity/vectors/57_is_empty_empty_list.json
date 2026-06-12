@@ -1,0 +1,23 @@
+{
+  "name": "is-empty-empty-list",
+  "description": "IS_EMPTY: empty list answer → is_empty=true",
+  "form": {
+    "form_id": "parity-57",
+    "title": {"en": "Parity 57"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "selections", "field_type": "multi_select", "label": {"en": "Selections"}},
+        {"field_id": "empty_hint", "field_type": "text", "label": {"en": "Empty Hint"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "selections", "operator": "is_empty"}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"selections": []}, "location_vars": {}, "visit_context": {}},
+  "expected": {"empty_hint": {"effect": "show", "matched": true}}
+}

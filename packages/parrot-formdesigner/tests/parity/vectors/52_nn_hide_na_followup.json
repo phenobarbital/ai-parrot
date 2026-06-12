@@ -1,0 +1,48 @@
+{
+  "name": "nn-hide-na-followup",
+  "description": "Networkninja-style: hide follow-up when main answer is N/A",
+  "_nn_source": "Derived from networkninja NA-gating pattern in question_logic_groups",
+  "form": {
+    "form_id": "parity-52",
+    "title": {"en": "Product Audit"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "Product Check"},
+      "fields": [
+        {
+          "field_id": "Q3001",
+          "field_type": "select",
+          "label": {"en": "Are product labels compliant?"},
+          "options": [
+            {"value": "yes", "label": {"en": "Yes"}},
+            {"value": "no", "label": {"en": "No"}},
+            {"value": "na", "label": {"en": "N/A"}}
+          ]
+        },
+        {
+          "field_id": "Q3001_comment",
+          "field_type": "text_area",
+          "label": {"en": "Comment"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "Q3001", "operator": "eq", "value": "na"}],
+            "logic": "and", "effect": "hide"
+          }
+        },
+        {
+          "field_id": "Q3001_fix_date",
+          "field_type": "date",
+          "label": {"en": "Target Fix Date"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "Q3001", "operator": "eq", "value": "no"}],
+            "logic": "and", "effect": "require"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"Q3001": "na"}, "location_vars": {}, "visit_context": {}},
+  "expected": {
+    "Q3001_comment": {"effect": "hide", "matched": true},
+    "Q3001_fix_date": {"effect": "show", "matched": false}
+  }
+}

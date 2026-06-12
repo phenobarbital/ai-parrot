@@ -1,0 +1,23 @@
+{
+  "name": "visit-context-key-missing-is-empty",
+  "description": "VisitContextCondition IS_EMPTY with missing key — always true",
+  "form": {
+    "form_id": "parity-27",
+    "title": {"en": "Parity 27"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "q1", "field_type": "text", "label": {"en": "Q1"}},
+        {"field_id": "visit_date_q", "field_type": "date", "label": {"en": "Visit Date"},
+          "depends_on": {
+            "conditions": [{"source": "visit_context", "key": "visit_date", "operator": "is_empty"}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {}, "location_vars": {}, "visit_context": {}},
+  "expected": {"visit_date_q": {"effect": "show", "matched": true}}
+}

@@ -1,0 +1,45 @@
+{
+  "name": "nn-require-if-location-tier",
+  "description": "Networkninja-style: extra audit fields required for high-tier stores",
+  "_nn_source": "Derived from networkninja location_variable-based logic groups (store tier gating)",
+  "form": {
+    "form_id": "parity-51",
+    "title": {"en": "Premium Store Audit"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "General"},
+      "fields": [
+        {
+          "field_id": "Q2001",
+          "field_type": "select",
+          "label": {"en": "Is the VIP lounge available?"},
+          "depends_on": {
+            "conditions": [{"source": "location_variable", "key": "tier", "operator": "in", "value": ["gold", "platinum"]}],
+            "logic": "and", "effect": "show"
+          }
+        },
+        {
+          "field_id": "Q2001_capacity",
+          "field_type": "number",
+          "label": {"en": "Current lounge capacity"},
+          "depends_on": {
+            "conditions": [
+              {"source": "location_variable", "key": "tier", "operator": "in", "value": ["gold", "platinum"]},
+              {"source": "field", "field_id": "Q2001", "operator": "eq", "value": "yes"}
+            ],
+            "logic": "and", "effect": "require"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {
+    "answers": {"Q2001": "yes"},
+    "location_vars": {"tier": "platinum"},
+    "visit_context": {}
+  },
+  "expected": {
+    "Q2001": {"effect": "show", "matched": true},
+    "Q2001_capacity": {"effect": "require", "matched": true}
+  }
+}

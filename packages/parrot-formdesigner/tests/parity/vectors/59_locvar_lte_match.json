@@ -1,0 +1,23 @@
+{
+  "name": "locvar-lte-match",
+  "description": "LocationVarCondition LTE — floor_area_sqm <= threshold → compact form",
+  "form": {
+    "form_id": "parity-59",
+    "title": {"en": "Parity 59"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "q1", "field_type": "text", "label": {"en": "Q1"}},
+        {"field_id": "compact_layout", "field_type": "text", "label": {"en": "Compact Layout Note"},
+          "depends_on": {
+            "conditions": [{"source": "location_variable", "key": "floor_area_sqm", "operator": "lte", "value": 200}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {}, "location_vars": {"floor_area_sqm": 150}, "visit_context": {}},
+  "expected": {"compact_layout": {"effect": "show", "matched": true}}
+}

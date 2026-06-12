@@ -244,6 +244,17 @@ _FIELD_SCHEMA_SNIPPETS: dict[str, dict[str, Any]] = {
             }
         },
     },
+    # FEAT-300 — computed fields (expression evaluator in FEAT-301)
+    FieldType.FORMULA.value: {
+        "field_id": "total_price",
+        "field_type": "formula",
+        "label": "Total Price",
+        "required": False,
+        "meta": {
+            "expression": None,  # FEAT-301 will populate the BEDMAS expression
+            "render_as": "readonly",
+        },
+    },
 }
 
 

@@ -1,0 +1,40 @@
+{
+  "name": "multi-section-chain",
+  "description": "Chain spanning two sections: q2 in s1, q3 in s2 depends on q2",
+  "form": {
+    "form_id": "parity-42",
+    "title": {"en": "Parity 42"},
+    "sections": [
+      {
+        "section_id": "s1",
+        "title": {"en": "Section 1"},
+        "fields": [
+          {"field_id": "q1", "field_type": "select", "label": {"en": "Q1"}},
+          {"field_id": "q2", "field_type": "text", "label": {"en": "Q2"},
+            "depends_on": {
+              "conditions": [{"source": "field", "field_id": "q1", "operator": "eq", "value": "yes"}],
+              "logic": "and", "effect": "show"
+            }
+          }
+        ]
+      },
+      {
+        "section_id": "s2",
+        "title": {"en": "Section 2"},
+        "fields": [
+          {"field_id": "q3", "field_type": "text_area", "label": {"en": "Q3"},
+            "depends_on": {
+              "conditions": [{"source": "field", "field_id": "q2", "operator": "is_not_empty"}],
+              "logic": "and", "effect": "show"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "context": {"answers": {"q1": "yes", "q2": "detail"}, "location_vars": {}, "visit_context": {}},
+  "expected": {
+    "q2": {"effect": "show", "matched": true},
+    "q3": {"effect": "show", "matched": true}
+  }
+}

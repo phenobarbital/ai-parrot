@@ -1,0 +1,23 @@
+{
+  "name": "field-ref-lte-match",
+  "description": "FieldRefCondition LTE operator — numeric answer <= threshold",
+  "form": {
+    "form_id": "parity-07",
+    "title": {"en": "Parity 07"},
+    "sections": [{
+      "section_id": "s1",
+      "title": {"en": "S1"},
+      "fields": [
+        {"field_id": "items_count", "field_type": "number", "label": {"en": "Items"}},
+        {"field_id": "small_order_msg", "field_type": "text", "label": {"en": "Small Order"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "items_count", "operator": "lte", "value": 5}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"items_count": 5}, "location_vars": {}, "visit_context": {}},
+  "expected": {"small_order_msg": {"effect": "show", "matched": true}}
+}

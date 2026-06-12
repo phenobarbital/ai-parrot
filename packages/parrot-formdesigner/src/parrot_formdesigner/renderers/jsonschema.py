@@ -56,6 +56,8 @@ _TYPE_MAP: dict[FieldType, str] = {
     FieldType.RANKING: "integer",
     # Phase 3 — FEAT-170
     FieldType.REST: "object",
+    # FEAT-300 — formula fields (evaluator is FEAT-301)
+    FieldType.FORMULA: "number",
 }
 
 # FieldType → JSON Schema "format" keyword (where applicable)
@@ -78,6 +80,8 @@ _FORMAT_MAP: dict[FieldType, str] = {
     FieldType.RANKING: "ranking",
     # Phase 3 — FEAT-170
     FieldType.REST: "rest",
+    # FEAT-300 — formula fields
+    FieldType.FORMULA: "formula",
 }
 
 

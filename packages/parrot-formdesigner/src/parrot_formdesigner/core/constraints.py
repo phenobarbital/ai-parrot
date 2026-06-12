@@ -3,13 +3,23 @@
 This module defines the data models for field-level constraints (min/max,
 patterns, file size limits) and the dependency rule system that controls
 conditional visibility and behavior.
+
+FEAT-301: ``FieldCondition`` is now a **discriminated union** by ``source``:
+- ``FieldRefCondition``       — conditions over another field's answer (legacy path)
+- ``LocationVarCondition``    — conditions over Org Graph location variables
+- ``VisitContextCondition``   — conditions over visit-level metadata
+
+Backward compat: pre-existing serialized forms that have plain
+``{"field_id": ..., "operator": ..., "value": ...}`` dicts (no ``source`` key)
+are automatically upgraded to ``FieldRefCondition`` by the
+``DependencyRule._inject_legacy_source`` validator.
 """
 
 import re
 from enum import Enum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .types import LocalizedString
 
@@ -141,18 +151,95 @@ class ConditionOperator(str, Enum):
     IS_NOT_EMPTY = "is_not_empty"
 
 
-class FieldCondition(BaseModel):
-    """A single condition referencing another field's value.
+# ---------------------------------------------------------------------------
+# FEAT-301 — FieldCondition discriminated union (RESUELTO §8)
+# ---------------------------------------------------------------------------
+
+class FieldRefCondition(BaseModel):
+    """Condition over another field's answer (the pre-existing behavior).
+
+    This is the backward-compatible variant: ``field_id`` is preserved
+    so existing serialized forms parse without migration.
 
     Attributes:
-        field_id: The ID of the field to evaluate.
+        source: Discriminator, always ``"field"``.
+        field_id: The ID of the field whose answer to evaluate.
         operator: The comparison operator to apply.
         value: The value to compare against (not required for IS_EMPTY/IS_NOT_EMPTY).
     """
 
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["field"] = "field"
     field_id: str
     operator: ConditionOperator
     value: Any = None
+
+
+class LocationVarCondition(BaseModel):
+    """Condition over an Org Graph location variable (store > program merge).
+
+    The variable values are pre-fetched from ``ai-parrot`` Org Graph service
+    (FEAT-302) and passed in ``EvaluationContext.location_vars`` at request time.
+
+    Attributes:
+        source: Discriminator, always ``"location_variable"``.
+        key: Location variable key, e.g. ``"store_type"``.
+        operator: The comparison operator to apply.
+        value: The value to compare against.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["location_variable"]
+    key: str
+    operator: ConditionOperator
+    value: Any = None
+
+
+class VisitContextCondition(BaseModel):
+    """Condition over visit-level metadata (date, type, etc.).
+
+    Attributes:
+        source: Discriminator, always ``"visit_context"``.
+        key: Visit context key, e.g. ``"visit_type"`` or ``"visit_date"``.
+        operator: The comparison operator to apply.
+        value: The value to compare against.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["visit_context"]
+    key: str
+    operator: ConditionOperator
+    value: Any = None
+
+
+# The public ``FieldCondition`` type — a discriminated union on ``source``.
+# Legacy dicts without ``source`` are handled by DependencyRule's before-validator.
+FieldCondition = Annotated[
+    Union[FieldRefCondition, LocationVarCondition, VisitContextCondition],
+    Field(discriminator="source"),
+]
+
+
+class LocationVariableBinding(BaseModel):
+    """Immutable key-value pair from the Org Graph for a location/store node.
+
+    These come from the ``ai-parrot`` Org Graph service (FEAT-302) and are
+    passed in ``EvaluationContext.location_vars`` at request time.
+
+    Attributes:
+        key: Variable name, e.g. ``"store_type"``.
+        scope: Org node identifier, e.g. store ID or program ID.
+        value: Resolved value; type depends on the variable definition.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    scope: str
+    value: Any
 
 
 class DependencyRule(BaseModel):
@@ -167,3 +254,25 @@ class DependencyRule(BaseModel):
     conditions: list[FieldCondition]
     logic: Literal["and", "or"] = "and"
     effect: Literal["show", "hide", "require", "disable"] = "show"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _inject_legacy_source(cls, data: Any) -> Any:
+        """Inject ``source="field"`` into legacy condition dicts without a discriminator.
+
+        Backward-compat shim: pre-existing serialized forms store conditions as
+        plain dicts ``{"field_id": ..., "operator": ..., "value": ...}`` without
+        a ``source`` key.  The discriminated union requires ``source`` to dispatch,
+        so we inject it here before Pydantic processes the conditions.
+
+        Args:
+            data: Raw dict or already-validated model instance.
+
+        Returns:
+            The (potentially mutated) data dict.
+        """
+        if isinstance(data, dict):
+            for cond in data.get("conditions") or []:
+                if isinstance(cond, dict) and "source" not in cond:
+                    cond["source"] = "field"
+        return data

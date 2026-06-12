@@ -1,0 +1,48 @@
+{
+  "name": "nn-show-if-yes-answer",
+  "description": "Networkninja-style: show follow-up if main question answered yes (logic_group pattern)",
+  "_nn_source": "Derived from networkninja question_logic_groups show_if pattern",
+  "form": {
+    "form_id": "parity-50",
+    "title": {"en": "Store Audit Form"},
+    "sections": [{
+      "section_id": "main",
+      "title": {"en": "Main Questions"},
+      "fields": [
+        {
+          "field_id": "Q1001",
+          "field_type": "select",
+          "label": {"en": "Is the store display compliant?"},
+          "options": [
+            {"value": "yes", "label": {"en": "Yes"}},
+            {"value": "no", "label": {"en": "No"}},
+            {"value": "na", "label": {"en": "N/A"}}
+          ]
+        },
+        {
+          "field_id": "Q1001_detail",
+          "field_type": "text_area",
+          "label": {"en": "Describe the compliance issue"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "Q1001", "operator": "eq", "value": "no"}],
+            "logic": "and", "effect": "require"
+          }
+        },
+        {
+          "field_id": "Q1001_photo",
+          "field_type": "file",
+          "label": {"en": "Upload evidence photo"},
+          "depends_on": {
+            "conditions": [{"source": "field", "field_id": "Q1001", "operator": "eq", "value": "no"}],
+            "logic": "and", "effect": "show"
+          }
+        }
+      ]
+    }]
+  },
+  "context": {"answers": {"Q1001": "no"}, "location_vars": {}, "visit_context": {}},
+  "expected": {
+    "Q1001_detail": {"effect": "require", "matched": true},
+    "Q1001_photo": {"effect": "show", "matched": true}
+  }
+}
