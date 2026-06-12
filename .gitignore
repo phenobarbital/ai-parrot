@@ -332,3 +332,6 @@ data/whatsapp/whatsapp.db
 sdd/specs/migrate-github-release.spec.md
 packages/ai-parrot/src/parrot/_version.py
 .codex
+
+# Downloaded TTS model weights (make install-supertonic) — large LFS assets
+/models/

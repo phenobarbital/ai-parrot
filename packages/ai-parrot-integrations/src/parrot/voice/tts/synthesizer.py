@@ -79,13 +79,13 @@ class VoiceSynthesizer:
                 )
                 self._backend = GoogleTTSBackend(voice=self.config.voice)
             elif backend_name == "supertonic":
-                from .supertonic_backend import SupertonicTTSBackend
+                from .supertonic_inference import SupertonicONNXBackend
 
                 self.logger.info(
-                    "VoiceSynthesizer: creating SupertonicTTSBackend (voice=%s)",
+                    "VoiceSynthesizer: creating SupertonicONNXBackend (voice=%s)",
                     self.config.voice,
                 )
-                self._backend = SupertonicTTSBackend(voice=self.config.voice)
+                self._backend = SupertonicONNXBackend(voice=self.config.voice)
             elif backend_name in ("elevenlabs", "openai"):
                 raise ValueError(
                     f"TTS backend not implemented: '{backend_name}'. "

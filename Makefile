@@ -5,7 +5,8 @@
 		develop develop-fast develop-ml setup dev release format lint test clean distclean lock sync \
 		generate-registry check-registry \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
-		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor
+		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor \
+		install-supertonic
 
 # Python version to use
 PYTHON_VERSION := 3.11
@@ -18,6 +19,12 @@ HAS_UV := $(shell command -v uv 2> /dev/null)
 HAS_PIP := $(shell command -v pip 2> /dev/null)
 HAS_NVIDIA := $(shell command -v nvidia-smi 2> /dev/null)
 HAS_FFMPEG := $(shell command -v ffmpeg 2> /dev/null)
+
+# Supertonic TTS weights (FEAT-231). Pulled from Hugging Face into a
+# git-ignored local dir. Override on the CLI, e.g.:
+#   make install-supertonic SUPERTONIC_REPO=Supertone/supertonic-2 SUPERTONIC_DIR=models/supertonic-2
+SUPERTONIC_REPO ?= Supertone/supertonic-3
+SUPERTONIC_DIR ?= models/supertonic-3
 
 # Experimental OpenAI Codex SDK source install.
 CODEX_SDK_VERSION ?= 0.1.11
@@ -249,6 +256,35 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'; \
 print(f'Using device: {device}'); \
 model = whisperx.load_model('tiny', device, compute_type='float16' if device == 'cuda' else 'float32'); \
 print('✓ WhisperX model loaded successfully')"
+
+# ============================================================
+# Voice / TTS model assets
+# ============================================================
+
+# Install the voice-supertonic extra (onnxruntime) and download the
+# Supertonic ONNX weights from Hugging Face. Uses huggingface-cli (already
+# shipped via huggingface_hub) so NO git-lfs is required. The demo
+# audio_samples/ and img/ folders are skipped to save bandwidth.
+#
+# Weights land in $(SUPERTONIC_DIR) (~415 MB for supertonic-3). After the
+# download, point SUPERTONIC_MODEL_PATH at that directory.
+install-supertonic:
+	@echo "Installing voice-supertonic extra (onnxruntime)..."
+	uv sync --package ai-parrot-integrations --extra voice-supertonic
+	@echo "Downloading Supertonic weights '$(SUPERTONIC_REPO)' -> $(SUPERTONIC_DIR) (~415 MB)..."
+	@mkdir -p $(SUPERTONIC_DIR)
+	uv run huggingface-cli download $(SUPERTONIC_REPO) \
+		--local-dir $(SUPERTONIC_DIR) \
+		--exclude "audio_samples/*" "img/*"
+	@echo ""
+	@echo "✅ Supertonic weights downloaded to $(SUPERTONIC_DIR)"
+	@echo "   Point the backend at them (add to your env/.env):"
+	@echo "     export SUPERTONIC_MODEL_PATH=$(CURDIR)/$(SUPERTONIC_DIR)"
+	@echo ""
+	@echo "   Note: supertonic-3 ships 4 ONNX graphs (text_encoder, duration_predictor,"
+	@echo "   vector_estimator, vocoder) + voice_styles/. The default SupertonicTTSBackend"
+	@echo "   loads a SINGLE session — provide a deployment inference_fn for the full"
+	@echo "   multi-graph pipeline (see FEAT-231 §8 R-deps)."
 
 # Build and publish all packages
 release: lint test clean check-registry
@@ -748,6 +784,7 @@ help:
 	@echo "    install-uv          - Install uv package manager"
 	@echo "    install-codex-sdk-editable - Install experimental Codex SDK from source"
 	@echo "    install-whisperx    - Install WhisperX with system deps"
+	@echo "    install-supertonic  - Install voice-supertonic extra + download TTS weights"
 	@echo "    check-deps          - Check system dependencies (GPU, FFmpeg)"
 	@echo "    cuda-info           - Show GPU/CUDA information"
 	@echo "    install-go          - Install Go toolchain"
