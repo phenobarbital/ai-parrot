@@ -60,6 +60,7 @@ from ..handlers.agents.users import UserAgentHandler
 # FEAT-149: Ephemeral user agent handler + tool catalog
 from ..handlers.agents.ephemeral import EphemeralUserAgentHandler
 from ..handlers.tools_catalog import ToolCatalogHandler
+from ..handlers.prompt import PromptTunerHandler
 from ..handlers.stream import StreamHandler
 from ..registry import agent_registry, AgentRegistry, BotConfigStorage
 # Crew:
@@ -1582,6 +1583,25 @@ class BotManager:
         router.add_view(
             '/api/v1/tools/catalog',
             ToolCatalogHandler,
+        )
+        # Prompt fine-tuning console (in-memory system-prompt editing).
+        # Literal action sub-routes MUST precede the bare {agent_name} route so
+        # aiohttp resolves /suggest, /test and /save before the catch-all.
+        router.add_view(
+            '/api/v1/agents/prompt/{agent_name}/suggest',
+            PromptTunerHandler,
+        )
+        router.add_view(
+            '/api/v1/agents/prompt/{agent_name}/test',
+            PromptTunerHandler,
+        )
+        router.add_view(
+            '/api/v1/agents/prompt/{agent_name}/save',
+            PromptTunerHandler,
+        )
+        router.add_view(
+            '/api/v1/agents/prompt/{agent_name}',
+            PromptTunerHandler,
         )
         # Data Analyst creation route:
         router.add_view(
