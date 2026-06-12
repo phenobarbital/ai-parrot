@@ -34,7 +34,10 @@ Expected on-disk layout (as produced by ``make install-supertonic``)::
 
 ``SUPERTONIC_MODEL_PATH`` (or ``model_dir=``) should point at ``<model_dir>``
 (the directory that *contains* ``onnx/`` and ``voice_styles/``). Pointing it
-directly at the ``onnx/`` directory is also tolerated.
+directly at the ``onnx/`` directory is also tolerated. When neither is given,
+the backend falls back to ``<BASE_DIR>/models/supertonic-3`` — exactly where
+``make install-supertonic`` puts the weights — so a standard checkout works
+with no configuration at all.
 
 Added by FEAT-231 follow-up (Supertonic 4-graph inference wiring).
 """
@@ -645,23 +648,26 @@ class SupertonicONNXBackend(SupertonicTTSBackend):
         self._pipeline: Optional[SupertonicPipeline] = None
 
     def _resolve_model_dir(self) -> str:
-        """Resolve the model directory (constructor arg or env), validated.
+        """Resolve the model directory, validated.
+
+        Resolution order:
+            1. the ``model_dir=`` constructor argument,
+            2. the ``SUPERTONIC_MODEL_PATH`` environment variable,
+            3. ``<BASE_DIR>/models/supertonic-3`` — where
+               ``make install-supertonic`` downloads the weights, so a standard
+               checkout needs no configuration.
 
         Raises:
-            ValueError: If unconfigured or the directory does not exist.
+            ValueError: If the resolved directory does not exist.
         """
-        path = self.model_path or os.environ.get(
-            "SUPERTONIC_MODEL_PATH"
-        ) or os.path.join(BASE_DIR, "models", "supertonic-3")
-        if not path:
-            raise ValueError(
-                "Supertonic model weights not configured. Pass model_dir=... or "
-                "set the SUPERTONIC_MODEL_PATH environment variable to the "
-                "Supertonic model directory (run `make install-supertonic`)."
-            )
+        path = self.model_path or os.environ.get("SUPERTONIC_MODEL_PATH") or str(BASE_DIR / "models" / "supertonic-3")
         path = os.path.expanduser(path)
         if not os.path.isdir(path):
-            raise ValueError(f"Supertonic model directory not found: {path}")
+            raise ValueError(
+                f"Supertonic model directory not found: {path}. Run "
+                "`make install-supertonic`, pass model_dir=..., or set "
+                "SUPERTONIC_MODEL_PATH."
+            )
         return path
 
     def _ensure_session(self) -> None:
@@ -674,7 +680,7 @@ class SupertonicONNXBackend(SupertonicTTSBackend):
         Raises:
             ImportError: If ``onnxruntime`` (the ``voice-supertonic`` extra) is
                 not installed.
-            ValueError: If the model directory is unconfigured or missing.
+            ValueError: If the resolved model directory does not exist.
         """
         if self._inference_fn is not None:
             return

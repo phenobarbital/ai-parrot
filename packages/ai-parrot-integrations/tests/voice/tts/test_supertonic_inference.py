@@ -203,9 +203,65 @@ async def test_backend_wires_pipeline_and_returns_wav(tmp_path, fake_onnx):
         assert wav.getframerate() == 24000
 
 
-def test_backend_missing_dir_raises(monkeypatch):
-    """Unconfigured / missing model dir raises ValueError (no silent degrade)."""
-    monkeypatch.delenv("SUPERTONIC_MODEL_PATH", raising=False)
-    backend = SupertonicONNXBackend(model_dir=None)
-    with pytest.raises(ValueError):
+def test_backend_missing_dir_raises(tmp_path):
+    """A configured-but-missing model dir raises ValueError (no silent degrade)."""
+    backend = SupertonicONNXBackend(model_dir=str(tmp_path / "nope"))
+    with pytest.raises(ValueError, match="not found"):
         backend._ensure_session()
+
+
+def test_backend_defaults_to_base_dir(tmp_path, fake_onnx, monkeypatch):
+    """With no arg/env, resolution falls back to <BASE_DIR>/models/supertonic-3."""
+    import parrot.voice.tts.supertonic_inference as mod
+
+    monkeypatch.delenv("SUPERTONIC_MODEL_PATH", raising=False)
+    target = tmp_path / "models" / "supertonic-3"
+    target.mkdir(parents=True)
+    _build_model_dir(target)
+    monkeypatch.setattr(mod, "BASE_DIR", tmp_path)
+
+    backend = SupertonicONNXBackend(model_dir=None)
+    backend._ensure_session()
+    assert backend._pipeline is not None
+    assert backend.sample_rate == 24000
+
+
+# ---------------------------------------------------------------------------
+# TTSConfig total_step / speed plumbing
+# ---------------------------------------------------------------------------
+
+
+def test_ttsconfig_supertonic_params_defaults_and_bounds():
+    """TTSConfig exposes total_step/speed with upstream defaults and bounds."""
+    from pydantic import ValidationError
+
+    from parrot.voice.tts.models import TTSConfig
+
+    cfg = TTSConfig(backend="supertonic")
+    assert cfg.total_step == 8
+    assert cfg.speed == 1.05
+
+    assert TTSConfig(total_step=20, speed=0.8).total_step == 20
+    for bad in ({"total_step": 0}, {"total_step": 51}, {"speed": 0.0}, {"speed": 3.5}):
+        with pytest.raises(ValidationError):
+            TTSConfig(**bad)
+
+
+def test_synthesizer_passes_supertonic_params():
+    """VoiceSynthesizer forwards total_step/speed/voice to the ONNX backend."""
+    from parrot.voice.tts.models import TTSConfig
+    from parrot.voice.tts.synthesizer import VoiceSynthesizer
+
+    synth = VoiceSynthesizer(TTSConfig(backend="supertonic", voice="F2", total_step=12, speed=0.9))
+    backend = synth._get_backend()
+    assert backend._total_step == 12
+    assert backend._speed == 0.9
+    assert backend.voice == "F2"
+
+
+def test_pipeline_honours_total_step(tmp_path, fake_onnx):
+    """A custom total_step changes the flow-matching loop count."""
+    model_dir = _build_model_dir(tmp_path)
+    pipeline = SupertonicPipeline(str(model_dir), total_step=3)
+    pipeline.synthesize_pcm("Hello world", voice="M1", language="en")
+    assert len(fake_onnx["vector_estimator"]) == 3
