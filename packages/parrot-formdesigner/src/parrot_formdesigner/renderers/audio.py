@@ -106,6 +106,9 @@ def classify_voice_mode(field: FormField) -> VoiceMode:
         return VoiceMode.VISUAL_FALLBACK
     if field_type in _PROMPT_SELECT_TYPES:
         return VoiceMode.PROMPT_SELECT
+    # Everything else (text-like fields, plus FieldType.AUDIO — which is itself a
+    # voice-recorded answer) defaults to VOICE. AUDIO is intentionally VOICE, not
+    # VISUAL_FALLBACK: it is answered by speaking/recording, not a visual control.
     return VoiceMode.VOICE
 
 
