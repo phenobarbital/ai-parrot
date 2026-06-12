@@ -13,8 +13,14 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # =============================================================================
 
 class ProgramCreateInput(BaseModel):
-    dry_run: bool = Field(default=True, description="Safety guardrail. Set to True to get plan. Present plan to user for approval.")
     """Input for creating a new Navigator program."""
+
+    # NOTE: no ``dry_run`` field. It used to live here but the create_program
+    # method never read it (the method's real gate is ``confirm_execution``,
+    # which is NOT LLM-facing). Exposing dry_run only made the model narrate a
+    # phantom "dry run" and ask for confirmation in text. Confirmation is now
+    # handled out-of-band by the HITL ConfirmationGuard (approval buttons),
+    # which injects ``confirm_execution=True`` once the human approves.
 
     program_name: str = Field(
         description="Display name of the program (e.g., 'Retail360', 'Pokemon')"

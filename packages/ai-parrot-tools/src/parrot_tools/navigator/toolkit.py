@@ -80,7 +80,6 @@ class NavigatorToolkit(PostgresToolkit):
         dsn: str = "",
         default_client_id: int = 1,
         user_id: Optional[int] = None,
-        confirm_execution: bool = False,
         page_index: Optional[Any] = None,
         builder_groups: Optional[List[str]] = None,
         **kwargs: Any,
