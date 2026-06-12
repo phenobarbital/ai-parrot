@@ -202,9 +202,29 @@ def test_classify_meta_override():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Opus 4.8)
+**Date**: 2026-06-12
+**Notes**: Added `classify_voice_mode(field)` with `_PROMPT_SELECT_TYPES` /
+`_VISUAL_FALLBACK_TYPES` frozensets and a VOICE default for everything else
+(incl. AUDIO), plus a case-insensitive `meta["voice_mode"]` override that warns
+and falls back on an invalid value. Replaced `_SKIP_FIELD_TYPES` with
+`{HIDDEN}` only — REST/ARRAY/select fields are now kept as questions.
+`_field_to_questions` tags each question with `voice_mode`, derived
+`render_mode` (via `_RENDER_MODE_BY_VOICE`), and `sensitive=True` for PASSWORD;
+`split_into_questions` and `_synthesize_questions` now use `model_copy` so the
+new voice fields are preserved through re-indexing/synthesis. Added the single
+reusable `synthesize_with_fallback(text, *, config, language)` implementing
+SuperTonic→Google→None at synthesis time (catches ImportError/ValueError/
+RuntimeError, never raises) and `build_audio_synthesizer(config)` returning a
+SuperTonic-configured `VoiceSynthesizer` (or None if the voice stack is
+unimportable). Both use lazy in-function imports so forms without the voice
+extra still import. 54 renderer tests pass; full formdesigner suite 139 passed;
+ruff clean.
+**Deviations from spec**: Minor, in-scope: (1) options are now populated for
+ANY field that defines `field.options` (previously only SELECT/MULTI/DYNAMIC)
+so PROMPT_SELECT types like ranking/likert/nps can enumerate options downstream
+— strictly additive. (2) `FieldType.AUDIO`, not listed in the spec §2 table,
+defaults to VOICE (the documented catch-all). Two reusable helpers were
+provided (`build_audio_synthesizer` + `synthesize_with_fallback`) as the task
+explicitly allowed ("expose a small async helper ... keep the fallback logic in
+ONE place").
