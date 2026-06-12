@@ -6,14 +6,12 @@ All TTS/STT services are mocked — no GPU, network, or external API calls.
 
 from __future__ import annotations
 
-import json
 import pytest
 from aiohttp import web
 from unittest.mock import AsyncMock, MagicMock
 
 from parrot_formdesigner.api.routes import setup_form_api
 from parrot_formdesigner.api.render import _seed_default_renderers
-from parrot_formdesigner.audio.models import AudioFormManifest
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
 
@@ -128,7 +126,7 @@ class TestRenderEndpoint:
         self, aiohttp_client, sample_form: FormSchema
     ) -> None:
         """Audio render endpoint returns a valid AudioFormManifest JSON."""
-        from parrot_formdesigner.api.render import _RENDERERS, _seed_default_renderers, handle_render
+        from parrot_formdesigner.api.render import _seed_default_renderers, handle_render
         from parrot_formdesigner.services.registry import FormRegistry
 
         _seed_default_renderers()
@@ -156,7 +154,7 @@ class TestRenderEndpoint:
         self, aiohttp_client, sample_form: FormSchema
     ) -> None:
         """Manifest total_questions counts only non-hidden fields."""
-        from parrot_formdesigner.api.render import _RENDERERS, _seed_default_renderers, handle_render
+        from parrot_formdesigner.api.render import _seed_default_renderers, handle_render
         from parrot_formdesigner.services.registry import FormRegistry
 
         _seed_default_renderers()
@@ -179,7 +177,7 @@ class TestRenderEndpoint:
         self, aiohttp_client, sample_form: FormSchema
     ) -> None:
         """Manifest ws_endpoint contains the form ID and audio/ws path."""
-        from parrot_formdesigner.api.render import _RENDERERS, _seed_default_renderers, handle_render
+        from parrot_formdesigner.api.render import _seed_default_renderers, handle_render
         from parrot_formdesigner.services.registry import FormRegistry
 
         _seed_default_renderers()
@@ -203,7 +201,7 @@ class TestRenderEndpoint:
         self, aiohttp_client
     ) -> None:
         """Requesting render for a non-existent form returns 404."""
-        from parrot_formdesigner.api.render import _RENDERERS, _seed_default_renderers, handle_render
+        from parrot_formdesigner.api.render import _seed_default_renderers, handle_render
         from parrot_formdesigner.services.registry import FormRegistry
 
         _seed_default_renderers()
@@ -427,3 +425,281 @@ class TestAudioRendererSeed:
         _seed_default_renderers()
         for key in ("html", "adaptive", "xml", "pdf", "audio"):
             assert key in _RENDERERS, f"Missing renderer: {key}"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-236 TASK-1543: hybrid voice-flow integration tests
+# ---------------------------------------------------------------------------
+
+
+def _make_audio_app(
+    form: FormSchema,
+    synthesizer: AsyncMock,
+    transcriber: AsyncMock,
+    token_validator: AsyncMock,
+) -> web.Application:
+    """Build an aiohttp app with the audio WS mounted for ``form``."""
+    registry = AsyncMock()
+    registry.get.return_value = form
+    app = web.Application()
+    setup_form_api(
+        app,
+        registry,
+        synthesizer=synthesizer,
+        transcriber=transcriber,
+        token_validator=token_validator,
+    )
+    return app
+
+
+@pytest.fixture
+def mixed_app(
+    mixed_mode_form: FormSchema,
+    mock_synthesizer: AsyncMock,
+    mock_transcriber: AsyncMock,
+    mock_token_validator: AsyncMock,
+) -> web.Application:
+    """App serving the mixed-mode form (VOICE / PROMPT_SELECT / VISUAL_FALLBACK)."""
+    return _make_audio_app(
+        mixed_mode_form, mock_synthesizer, mock_transcriber, mock_token_validator
+    )
+
+
+async def _start(ws) -> dict:
+    """Send start_session and return the first question message."""
+    await ws.send_json({"type": "start_session", "form_id": "mixed-mode-form"})
+    await ws.receive_json()  # session_started
+    return await ws.receive_json()  # first question
+
+
+class TestHybridVoiceFlows:
+    """End-to-end hybrid voice flows over a real (in-process) WebSocket."""
+
+    @pytest.mark.asyncio
+    async def test_ws_prompt_select_flow(
+        self, aiohttp_client, mixed_app: web.Application
+    ) -> None:
+        """PROMPT_SELECT question carries options; answer_selection advances."""
+        client = await aiohttp_client(mixed_app)
+        async with client.ws_connect(
+            "/api/v1/forms/mixed-mode-form/audio/ws", protocols=["t"]
+        ) as ws:
+            q1 = await _start(ws)
+            assert q1["field_id"] == "name"
+            assert q1["voice_mode"] == "voice"
+
+            await ws.send_json({"type": "answer_text", "field_id": "name", "value": "Alice"})
+            await ws.receive_json()  # answer_accepted
+            q2 = await ws.receive_json()  # color (PROMPT_SELECT)
+            assert q2["field_id"] == "color"
+            assert q2["voice_mode"] == "prompt_select"
+            assert q2["render_mode"] == "select"
+            assert q2["options"]
+
+            await ws.send_json(
+                {"type": "answer_selection", "field_id": "color", "value": "red"}
+            )
+            ack = await ws.receive_json()
+            assert ack["type"] == "answer_accepted"
+            assert ack["source"] == "selection"
+
+    @pytest.mark.asyncio
+    async def test_ws_multi_select_values(
+        self, aiohttp_client, mock_synthesizer: AsyncMock,
+        mock_transcriber: AsyncMock, mock_token_validator: AsyncMock,
+    ) -> None:
+        """answer_selection {values:[...]} is stored for a multi_select field."""
+        from parrot_formdesigner.core.options import FieldOption
+
+        form = FormSchema(
+            form_id="multi-form", title="Multi",
+            sections=[FormSection(section_id="s1", fields=[
+                FormField(
+                    field_id="tags", field_type=FieldType.MULTI_SELECT,
+                    label="Pick tags", required=True,
+                    options=[
+                        FieldOption(value="a", label="A"),
+                        FieldOption(value="b", label="B"),
+                        FieldOption(value="c", label="C"),
+                    ],
+                ),
+            ])],
+        )
+        app = _make_audio_app(
+            form, mock_synthesizer, mock_transcriber, mock_token_validator
+        )
+        client = await aiohttp_client(app)
+        async with client.ws_connect(
+            "/api/v1/forms/multi-form/audio/ws", protocols=["t"]
+        ) as ws:
+            await ws.send_json({"type": "start_session", "form_id": "multi-form"})
+            await ws.receive_json()  # session_started
+            q = await ws.receive_json()
+            assert q["voice_mode"] == "prompt_select"
+
+            await ws.send_json(
+                {"type": "answer_selection", "field_id": "tags", "values": ["a", "c"]}
+            )
+            ack = await ws.receive_json()
+            assert ack["type"] == "answer_accepted"
+            assert ack["value"] == "a,c"
+            complete = await ws.receive_json()
+            assert complete["type"] == "form_complete"
+
+    @pytest.mark.asyncio
+    async def test_ws_visual_fallback_flow(
+        self, aiohttp_client, mixed_app: web.Application
+    ) -> None:
+        """A required REST field is completed via answer_payload → form_complete."""
+        client = await aiohttp_client(mixed_app)
+        async with client.ws_connect(
+            "/api/v1/forms/mixed-mode-form/audio/ws", protocols=["t"]
+        ) as ws:
+            await _start(ws)  # name
+            await ws.send_json({"type": "answer_text", "field_id": "name", "value": "Alice"})
+            await ws.receive_json()  # accepted
+            await ws.receive_json()  # color
+            await ws.send_json(
+                {"type": "answer_selection", "field_id": "color", "value": "blue"}
+            )
+            await ws.receive_json()  # accepted
+            q3 = await ws.receive_json()  # doc (REST, VISUAL_FALLBACK)
+            assert q3["field_id"] == "doc"
+            assert q3["voice_mode"] == "visual_fallback"
+            assert q3["render_mode"] == "visual"
+            assert q3.get("fallback_html")
+
+            await ws.send_json(
+                {"type": "answer_payload", "field_id": "doc", "value": "blob://doc-1"}
+            )
+            await ws.receive_json()  # accepted
+            complete = await ws.receive_json()
+            assert complete["type"] == "form_complete"
+            assert complete["answers"]["doc"]["value"] == "blob://doc-1"
+
+    @pytest.mark.asyncio
+    async def test_ws_low_confidence_confirm(
+        self, aiohttp_client, mixed_app: web.Application,
+        mock_transcriber: AsyncMock,
+    ) -> None:
+        """Low-confidence speech → confirm_request; confirm true stores it."""
+        mock_transcriber.transcribe.return_value = MagicMock(
+            text="Alice", confidence=0.2, language="en",
+        )
+        client = await aiohttp_client(mixed_app)
+        async with client.ws_connect(
+            "/api/v1/forms/mixed-mode-form/audio/ws", protocols=["t"]
+        ) as ws:
+            await _start(ws)  # name
+            await ws.send_bytes(b"fake-audio-frame")
+            await ws.receive_json()  # transcription
+            confirm = await ws.receive_json()
+            assert confirm["type"] == "confirm_request"
+            assert confirm["field_id"] == "name"
+
+            await ws.send_json(
+                {"type": "confirm_answer", "field_id": "name", "confirmed": True}
+            )
+            ack = await ws.receive_json()
+            assert ack["type"] == "answer_accepted"
+            assert ack["value"] == "Alice"
+
+    @pytest.mark.asyncio
+    async def test_ws_low_confidence_reject_reprompts(
+        self, aiohttp_client, mixed_app: web.Application,
+        mock_transcriber: AsyncMock,
+    ) -> None:
+        """confirm false re-sends the same question and stores nothing."""
+        mock_transcriber.transcribe.return_value = MagicMock(
+            text="Alice", confidence=0.2, language="en",
+        )
+        client = await aiohttp_client(mixed_app)
+        async with client.ws_connect(
+            "/api/v1/forms/mixed-mode-form/audio/ws", protocols=["t"]
+        ) as ws:
+            await _start(ws)  # name
+            await ws.send_bytes(b"fake-audio-frame")
+            await ws.receive_json()  # transcription
+            await ws.receive_json()  # confirm_request
+
+            await ws.send_json(
+                {"type": "confirm_answer", "field_id": "name", "confirmed": False}
+            )
+            requeued = await ws.receive_json()
+            assert requeued["type"] == "question"
+            assert requeued["field_id"] == "name"
+
+    @pytest.mark.asyncio
+    async def test_ws_high_confidence_auto_advance(
+        self, aiohttp_client, mixed_app: web.Application,
+        mock_transcriber: AsyncMock,
+    ) -> None:
+        """High-confidence speech auto-advances (no confirm_request)."""
+        mock_transcriber.transcribe.return_value = MagicMock(
+            text="Alice", confidence=0.96, language="en",
+        )
+        client = await aiohttp_client(mixed_app)
+        async with client.ws_connect(
+            "/api/v1/forms/mixed-mode-form/audio/ws", protocols=["t"]
+        ) as ws:
+            await _start(ws)  # name
+            await ws.send_bytes(b"fake-audio-frame")
+            await ws.receive_json()  # transcription
+            nxt = await ws.receive_json()
+            # Next message is answer_accepted, then the next question — never a
+            # confirm_request.
+            assert nxt["type"] in ("answer_accepted", "question")
+            assert nxt["type"] != "confirm_request"
+
+    @pytest.mark.asyncio
+    async def test_ws_sensitive_no_audio(
+        self, aiohttp_client, mock_synthesizer: AsyncMock,
+        mock_transcriber: AsyncMock, mock_token_validator: AsyncMock,
+    ) -> None:
+        """A password question is delivered without TTS audio."""
+        form = FormSchema(
+            form_id="pw-form", title="PW",
+            sections=[FormSection(section_id="s1", fields=[
+                FormField(
+                    field_id="pw", field_type=FieldType.PASSWORD,
+                    label="Choose a password", required=True,
+                ),
+            ])],
+        )
+        app = _make_audio_app(
+            form, mock_synthesizer, mock_transcriber, mock_token_validator
+        )
+        client = await aiohttp_client(app)
+        async with client.ws_connect(
+            "/api/v1/forms/pw-form/audio/ws", protocols=["t"]
+        ) as ws:
+            await ws.send_json({"type": "start_session", "form_id": "pw-form"})
+            await ws.receive_json()  # session_started
+            q = await ws.receive_json()
+            assert q["field_id"] == "pw"
+            assert q["sensitive"] is True
+            assert "audio" not in q
+
+    @pytest.mark.asyncio
+    async def test_ws_supertonic_to_google_degradation(
+        self, aiohttp_client, mixed_app: web.Application,
+        mock_synthesizer: AsyncMock,
+    ) -> None:
+        """When the synthesizer fails, questions still deliver (text-only)."""
+        mock_synthesizer.synthesize.side_effect = RuntimeError(
+            "SuperTonic weights unavailable"
+        )
+        client = await aiohttp_client(mixed_app)
+        async with client.ws_connect(
+            "/api/v1/forms/mixed-mode-form/audio/ws", protocols=["t"]
+        ) as ws:
+            q1 = await _start(ws)
+            # Degraded to text-only: the question is delivered without audio,
+            # and the session is fully usable.
+            assert q1["type"] == "question"
+            assert q1["field_id"] == "name"
+            assert "audio" not in q1
+
+            await ws.send_json({"type": "answer_text", "field_id": "name", "value": "Bob"})
+            ack = await ws.receive_json()
+            assert ack["type"] == "answer_accepted"
