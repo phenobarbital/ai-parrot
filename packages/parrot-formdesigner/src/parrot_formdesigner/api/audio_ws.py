@@ -62,6 +62,42 @@ MAX_QUESTIONS = 10
 # in transcription / confirm_request messages (FEAT-236).
 _SENSITIVE_MASK = "[hidden]"
 
+# Minimum plausible size (bytes) for a real audio recording. A complete WebM/OGG
+# container with at least one frame of media is comfortably larger than this; a
+# payload below it is almost always an empty/instant recording.
+_MIN_AUDIO_BYTES = 256
+
+
+def _sniff_audio_suffix(data: bytes) -> Optional[str]:
+    """Detect the audio container from leading magic bytes.
+
+    libav sniffs the real format from content (the temp-file suffix is only
+    cosmetic for decoding), but matching the suffix to the actual container
+    keeps the temp file honest and lets us reject non-audio payloads early.
+
+    Args:
+        data: The raw bytes received on the WebSocket binary frame.
+
+    Returns:
+        A file suffix (e.g. ``".webm"``) for a recognized container, or
+        ``None`` if the bytes do not match any known audio container.
+    """
+    if len(data) < 12:
+        return None
+    # Matroska / WebM: EBML magic.
+    if data[:4] == b"\x1a\x45\xdf\xa3":
+        return ".webm"
+    # OGG (Opus/Vorbis): "OggS".
+    if data[:4] == b"OggS":
+        return ".ogg"
+    # MP4 / M4A (AAC): "....ftyp" at offset 4.
+    if data[4:8] == b"ftyp":
+        return ".mp4"
+    # WAV (PCM): "RIFF"...."WAVE".
+    if data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        return ".wav"
+    return None
+
 
 class AudioFormWSHandler:
     """WebSocket handler for interactive audio form sessions.
@@ -639,19 +675,64 @@ class AudioFormWSHandler:
             )
             return
 
+        # Validate the incoming payload before touching the transcriber. A
+        # too-small or non-container frame is an empty/instant recording or a
+        # partial MediaRecorder chunk — decoding it raises a cryptic libav EBML
+        # error, so reject it here with an actionable message instead.
+        suffix = _sniff_audio_suffix(audio_bytes)
+        self.logger.debug(
+            "Received audio frame: %d bytes, magic=%s, detected=%s",
+            len(audio_bytes),
+            audio_bytes[:8].hex(" ") if audio_bytes else "(empty)",
+            suffix or "unknown",
+        )
+        if len(audio_bytes) < _MIN_AUDIO_BYTES:
+            await self._send_error(
+                ws,
+                "EMPTY_AUDIO",
+                "No audio captured. Hold the record button and speak, then "
+                "release to send.",
+            )
+            return
+        if suffix is None:
+            await self._send_error(
+                ws,
+                "UNSUPPORTED_AUDIO",
+                "Unrecognized audio format. Send a complete WebM, OGG, MP4 or "
+                "WAV recording as a single binary frame.",
+            )
+            return
+
         # Write audio bytes to a temp file for transcription.
         tmp_path: Optional[Path] = None
         try:
             with tempfile.NamedTemporaryFile(
-                suffix=".ogg", delete=False, prefix="audio_form_"
+                suffix=suffix, delete=False, prefix="audio_form_"
             ) as tmp:
                 tmp.write(audio_bytes)
                 tmp_path = Path(tmp.name)
 
-            result = await self.transcriber.transcribe(
-                tmp_path,
-                language=manifest.locale if manifest.locale != "en" else None,
-            )
+            try:
+                result = await self.transcriber.transcribe(
+                    tmp_path,
+                    language=manifest.locale if manifest.locale != "en" else None,
+                )
+            except Exception as exc:  # noqa: BLE001 — surface decode failures cleanly
+                # A malformed/truncated container (e.g. a partial recording)
+                # raises deep inside libav. Convert it to a clean, recoverable
+                # client error rather than tearing down the session turn.
+                self.logger.warning(
+                    "Failed to decode/transcribe audio frame (%d bytes, %s): %s",
+                    len(audio_bytes),
+                    suffix,
+                    exc,
+                )
+                await self._send_error(
+                    ws,
+                    "AUDIO_DECODE_ERROR",
+                    "Could not decode the audio. Please re-record the answer.",
+                )
+                return
 
             transcript = result.text
             confidence = result.confidence

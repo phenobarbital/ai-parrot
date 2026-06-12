@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import Any, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class VideoResolution(str, Enum):
@@ -119,8 +119,8 @@ class VideoGenInput(BaseModel):
         description="Custom prompt for reference image generation when ``generate_image_first=True``.",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "prompt": "A cinematic shot of a majestic lion in the savannah.",
                 "negative_prompt": "cartoon, drawing, low quality",
@@ -132,6 +132,7 @@ class VideoGenInput(BaseModel):
                 "number_of_videos": 1,
             }
         }
+    )
 
 
 class VideoGenerationPrompt(BaseModel):
@@ -182,8 +183,8 @@ class VideoGenerationPrompt(BaseModel):
         description="Whether to include generated audio (VEO 3.1 generates native audio)."
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "prompt": "A cinematic shot of a majestic lion in the savannah",
                 "model": "veo-3.1-generate-preview",
@@ -195,6 +196,7 @@ class VideoGenerationPrompt(BaseModel):
                 "include_audio": True,
             }
         }
+    )
 
 
 def validate_aspect_ratio(aspect_ratio: str) -> bool:

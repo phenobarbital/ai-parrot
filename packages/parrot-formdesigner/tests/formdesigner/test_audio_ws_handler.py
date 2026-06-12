@@ -15,6 +15,12 @@ from parrot_formdesigner.audio.models import (
     VoiceMode,
 )
 
+# A minimal-but-valid-looking audio frame: EBML/WebM magic header padded past
+# the handler's minimum-size guard. The transcriber is mocked in these tests,
+# so the bytes are never actually decoded — they only need to pass the
+# payload-sniffing guard in _handle_answer_audio (FEAT-236 hardening).
+_FAKE_WEBM = b"\x1a\x45\xdf\xa3" + b"\x00" * 512
+
 
 @pytest.fixture
 def mock_registry() -> AsyncMock:
@@ -571,7 +577,7 @@ class TestLowConfidenceConfirmation:
         q2 = AudioQuestion(index=1, field_id="x", field_type="text", label="X")
         state = _session_with([q, q2])
         ws = _fresh_ws()
-        await handler._handle_answer_audio(ws, b"audio-bytes", state, {})
+        await handler._handle_answer_audio(ws, _FAKE_WEBM, state, {})
         assert "confirm_request" in _sent_types(ws)
         assert state.current_index == 0
         assert state.pending is not None
@@ -589,7 +595,7 @@ class TestLowConfidenceConfirmation:
         q2 = AudioQuestion(index=1, field_id="x", field_type="text", label="X")
         state = _session_with([q, q2])
         ws = _fresh_ws()
-        await handler._handle_answer_audio(ws, b"audio-bytes", state, {})
+        await handler._handle_answer_audio(ws, _FAKE_WEBM, state, {})
         assert "confirm_request" not in _sent_types(ws)
         assert state.answers["name"].value == "alice"
         assert state.current_index == 1
@@ -739,7 +745,7 @@ class TestReviewHardening:
         q2 = AudioQuestion(index=1, field_id="x", field_type="text", label="X")
         state = _session_with([q, q2])
         ws = _fresh_ws()
-        await handler._handle_answer_audio(ws, b"audio", state, {})
+        await handler._handle_answer_audio(ws, _FAKE_WEBM, state, {})
         trans = next(
             c[0][0] for c in ws.send_json.call_args_list
             if c[0][0]["type"] == "transcription"
