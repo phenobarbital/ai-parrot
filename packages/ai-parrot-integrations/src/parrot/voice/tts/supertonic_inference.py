@@ -47,9 +47,8 @@ import os
 import re
 from typing import Optional
 from unicodedata import normalize
-
 import numpy as np
-
+from navconfig import BASE_DIR
 from .supertonic_backend import SupertonicTTSBackend
 
 logger = logging.getLogger(__name__)
@@ -651,7 +650,9 @@ class SupertonicONNXBackend(SupertonicTTSBackend):
         Raises:
             ValueError: If unconfigured or the directory does not exist.
         """
-        path = self.model_path or os.environ.get("SUPERTONIC_MODEL_PATH")
+        path = self.model_path or os.environ.get(
+            "SUPERTONIC_MODEL_PATH"
+        ) or os.path.join(BASE_DIR, "models", "supertonic-3")
         if not path:
             raise ValueError(
                 "Supertonic model weights not configured. Pass model_dir=... or "
