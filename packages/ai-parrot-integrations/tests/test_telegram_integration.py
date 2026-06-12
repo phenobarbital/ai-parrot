@@ -466,6 +466,7 @@ class TestGetBotCommands:
         assert "whoami" in cmd_names
         assert "commands" in cmd_names
         assert "clear" in cmd_names
+        assert "tool" in cmd_names
         assert "skill" in cmd_names
         assert "function" in cmd_names
         assert "question" in cmd_names
