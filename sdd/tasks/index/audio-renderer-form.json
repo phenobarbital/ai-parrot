@@ -73,7 +73,7 @@
       "feature_id": "FEAT-236",
       "feature": "audio-renderer-form",
       "spec": "sdd/specs/audio-renderer-form.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "Modifies api/routes.py; reuses build_audio_synthesizer (1540) and the handler (1541).",
       "assigned_to": null,
       "started_at": "2026-06-11T23:49:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1542-routes-supertonic-wiring.md"
+      "completed_at": "2026-06-12T00:36:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1542-routes-supertonic-wiring.md"
     },
     {
       "id": "TASK-1543",
