@@ -178,6 +178,22 @@ class ToolkitTool(AbstractTool):
             hook_kwargs["_permission_context"] = pctx
             await toolkit._pre_execute(self.name, **hook_kwargs)
 
+        if isinstance(toolkit, AbstractToolkit):
+            kwargs = await toolkit._prepare_kwargs(self.name, kwargs)
+
+        sig = inspect.signature(self.bound_method)
+        params = sig.parameters
+        has_var_keyword = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+        )
+        if not has_var_keyword:
+            unknown = set(kwargs) - set(params)
+            if unknown:
+                self.logger.debug(
+                    "Ignoring unknown kwargs for %s: %s", self.name, unknown
+                )
+            kwargs = {k: v for k, v in kwargs.items() if k in params}
+
         result = await self.bound_method(**kwargs)
 
         if isinstance(toolkit, AbstractToolkit):
@@ -317,6 +333,23 @@ class AbstractToolkit(ABC):
         Override in subclasses if needed.
         """
         pass
+
+    async def _prepare_kwargs(self, tool_name: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Hook called before argument filtering, allowing subclasses to inject or modify kwargs.
+
+        Unlike ``_pre_execute``, the dict returned here IS the one forwarded to
+        the bound method (after unknown-key stripping). Use this to inject params
+        that the LLM may have forgotten — e.g. ``confirm_execution=True`` after
+        the user has already approved a pending action.
+
+        Args:
+            tool_name: Name of the tool about to be executed.
+            kwargs: Current kwargs dict (mutable copy).
+
+        Returns:
+            The (possibly modified) kwargs dict.
+        """
+        return kwargs
 
     async def _pre_execute(self, tool_name: str, **kwargs) -> None:
         """Lifecycle hook called before every tool execution.

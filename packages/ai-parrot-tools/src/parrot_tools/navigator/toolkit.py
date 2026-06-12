@@ -110,6 +110,7 @@ class NavigatorToolkit(PostgresToolkit):
         )
 
         # Navigator-specific state (before super().__init__)
+        self._pending_confirmations: Dict[str, Any] = {}
         self.default_client_id = default_client_id
         self.user_id = user_id
         self._page_index = page_index
@@ -138,6 +139,33 @@ class NavigatorToolkit(PostgresToolkit):
         """Close the underlying DB connection and clear permissions cache."""
         await super().stop()
         self._invalidate_permissions()
+
+    # ── Confirm-execution state ─────────────────────────────────
+
+    _CONFIRM_STATUS = "confirm_execution"
+
+    async def _post_execute(self, tool_name: str, result: Any, **kwargs: Any) -> Any:
+        """Store pending confirmation state when a tool returns confirm_execution."""
+        if isinstance(result, dict) and result.get("status") == self._CONFIRM_STATUS:
+            self._pending_confirmations[tool_name] = dict(kwargs)
+            self.logger.debug(
+                "Stored pending confirmation for %s: %s", tool_name, list(kwargs.keys())
+            )
+        elif tool_name in self._pending_confirmations:
+            del self._pending_confirmations[tool_name]
+        return result
+
+    async def _prepare_kwargs(self, tool_name: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Inject confirm_execution=True when a pending confirmation exists for this tool."""
+        pending = self._pending_confirmations.get(tool_name)
+        if pending is not None and not kwargs.get("confirm_execution", False):
+            kwargs = dict(kwargs)
+            kwargs["confirm_execution"] = True
+            self.logger.debug(
+                "Auto-injecting confirm_execution=True for %s (user approved pending action)",
+                tool_name,
+            )
+        return kwargs
 
     def _invalidate_permissions(self) -> None:
         """Clear cached permissions (call when user groups may have changed)."""

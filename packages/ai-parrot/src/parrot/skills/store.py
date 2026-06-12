@@ -754,7 +754,7 @@ If nothing worth saving, respond with {{"confidence": 0.0}}"""
 ### {r.skill.metadata.name}
 {r.skill.metadata.description}
 
-{r.content[:1000]}
+{r.content[:2000]}
 """
             section_tokens = len(skill_section) // 4  # Rough estimate
             if tokens_used + section_tokens > max_tokens:
