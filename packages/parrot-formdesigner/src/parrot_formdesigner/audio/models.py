@@ -171,6 +171,10 @@ class AudioSessionState(BaseModel):
         manifest: The session manifest (set after start_session).
         completed: True when all required questions have been answered
             and the form has been submitted.
+        config: The resolved AudioSessionConfig for this session (FEAT-236),
+            set at start_session. None until the session starts.
+        pending: A low-confidence speech answer awaiting a confirm/repeat
+            turn (FEAT-236). None when no answer is pending confirmation.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -182,3 +186,5 @@ class AudioSessionState(BaseModel):
     answers: dict[str, AudioAnswer] = Field(default_factory=dict)
     manifest: Optional[AudioFormManifest] = None
     completed: bool = False
+    config: Optional[AudioSessionConfig] = None
+    pending: Optional[AudioAnswer] = None

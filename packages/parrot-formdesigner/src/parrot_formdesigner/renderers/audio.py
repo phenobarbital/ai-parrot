@@ -193,7 +193,11 @@ async def synthesize_with_fallback(
         try:
             result = await synth.synthesize(text, language=language)
             return result.audio
-        except (ImportError, ValueError, RuntimeError) as exc:
+        except Exception as exc:  # noqa: BLE001 — never raise (FEAT-231 contract)
+            # Backends raise a variety of types when misconfigured (missing
+            # extra/weights → ImportError/ValueError/RuntimeError; live provider
+            # errors → domain-specific exceptions). Catch broadly so a TTS
+            # failure always degrades to the next backend / text-only.
             logger.warning("TTS backend %s unavailable: %s", backend, exc)
         finally:
             await synth.close()

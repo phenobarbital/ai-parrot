@@ -1,10 +1,17 @@
-"""Tests for AudioFormWSHandler (FEAT-224 TASK-1463)."""
+"""Tests for AudioFormWSHandler (FEAT-224 TASK-1463, FEAT-236 TASK-1541)."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from parrot_formdesigner.api.audio_ws import AudioFormWSHandler
-from parrot_formdesigner.audio.models import AudioSessionState, AudioAnswer
+from parrot_formdesigner.audio.models import (
+    AudioAnswer,
+    AudioFormManifest,
+    AudioQuestion,
+    AudioSessionConfig,
+    AudioSessionState,
+    VoiceMode,
+)
 
 
 @pytest.fixture
@@ -377,3 +384,293 @@ class TestNavigation:
 
         call_args = mock_ws.send_json.call_args[0][0]
         assert call_args["type"] == "pong"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-236 TASK-1541: per-VoiceMode dispatch + fallback handlers
+# ---------------------------------------------------------------------------
+
+
+def _fresh_ws() -> AsyncMock:
+    ws = AsyncMock()
+    ws.send_json = AsyncMock()
+    return ws
+
+
+def _sent_types(ws: AsyncMock) -> list[str]:
+    return [c[0][0]["type"] for c in ws.send_json.call_args_list]
+
+
+def _session_with(questions: list[AudioQuestion]) -> AudioSessionState:
+    manifest = AudioFormManifest(
+        form_id="f1", title="T", total_questions=len(questions),
+        questions=questions, ws_endpoint="/ws",
+    )
+    state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+    state.manifest = manifest
+    state.current_index = 0
+    state.config = AudioSessionConfig(form_id="f1")
+    return state
+
+
+class TestVoiceModeQuestionDelivery:
+    """_send_question carries VoiceMode metadata and visual fallback HTML."""
+
+    @pytest.mark.asyncio
+    async def test_question_message_includes_voice_mode(
+        self, handler: AudioFormWSHandler
+    ) -> None:
+        q = AudioQuestion(
+            index=0, field_id="color", field_type="select", label="Color?",
+            voice_mode=VoiceMode.PROMPT_SELECT, render_mode="select",
+            options=[{"value": "red", "label": "Red"}],
+        )
+        ws = _fresh_ws()
+        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_id="f1"))
+        msg = ws.send_json.call_args[0][0]
+        assert msg["voice_mode"] == "prompt_select"
+        assert msg["render_mode"] == "select"
+        assert msg["sensitive"] is False
+        assert msg["options"]
+
+    @pytest.mark.asyncio
+    async def test_visual_fallback_question_has_fallback_html(
+        self, handler: AudioFormWSHandler
+    ) -> None:
+        q = AudioQuestion(
+            index=0, field_id="doc", field_type="rest", label="Upload",
+            required=True, voice_mode=VoiceMode.VISUAL_FALLBACK,
+            render_mode="visual",
+        )
+        ws = _fresh_ws()
+        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_id="f1"))
+        msg = ws.send_json.call_args[0][0]
+        assert msg["voice_mode"] == "visual_fallback"
+        assert msg.get("fallback_html")
+
+    @pytest.mark.asyncio
+    async def test_sensitive_password_no_audio(
+        self, handler: AudioFormWSHandler
+    ) -> None:
+        q = AudioQuestion(
+            index=0, field_id="pw", field_type="password", label="Password?",
+            sensitive=True,
+        )
+        ws = _fresh_ws()
+        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_id="f1"))
+        msg = ws.send_json.call_args[0][0]
+        assert msg["sensitive"] is True
+        assert "audio" not in msg
+        handler.synthesizer.synthesize.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_prompt_select_enumerates_options_in_tts(
+        self, handler: AudioFormWSHandler
+    ) -> None:
+        q = AudioQuestion(
+            index=0, field_id="color", field_type="select", label="Color?",
+            voice_mode=VoiceMode.PROMPT_SELECT, render_mode="select",
+            options=[{"value": "red", "label": "Red"}, {"value": "blue", "label": "Blue"}],
+        )
+        ws = _fresh_ws()
+        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_id="f1"))
+        # The injected synthesizer is called with the enumerated narration text.
+        spoken = handler.synthesizer.synthesize.call_args[0][0]
+        assert "Red" in spoken and "Blue" in spoken
+
+
+class TestSelectionAndPayloadHandlers:
+    """answer_selection and answer_payload handlers."""
+
+    @pytest.mark.asyncio
+    async def test_answer_selection_single(self, handler: AudioFormWSHandler) -> None:
+        q = AudioQuestion(
+            index=0, field_id="color", field_type="select", label="Color?",
+            voice_mode=VoiceMode.PROMPT_SELECT, render_mode="select",
+            options=[{"value": "red", "label": "Red"}, {"value": "blue", "label": "Blue"}],
+        )
+        q2 = AudioQuestion(index=1, field_id="x", field_type="text", label="X")
+        state = _session_with([q, q2])
+        ws = _fresh_ws()
+        await handler._handle_answer_selection(
+            ws=ws, data={"field_id": "color", "value": "red"},
+            session=state, request=MagicMock(), audio_cache={},
+        )
+        assert state.answers["color"].value == "red"
+        assert state.answers["color"].source == "selection"
+        assert state.current_index == 1
+
+    @pytest.mark.asyncio
+    async def test_answer_selection_multi(self, handler: AudioFormWSHandler) -> None:
+        q = AudioQuestion(
+            index=0, field_id="tags", field_type="multi_select", label="Tags?",
+            voice_mode=VoiceMode.PROMPT_SELECT, render_mode="select",
+            options=[{"value": "a", "label": "A"}, {"value": "b", "label": "B"}],
+        )
+        q2 = AudioQuestion(index=1, field_id="x", field_type="text", label="X")
+        state = _session_with([q, q2])
+        ws = _fresh_ws()
+        await handler._handle_answer_selection(
+            ws=ws, data={"field_id": "tags", "values": ["a", "b"]},
+            session=state, request=MagicMock(), audio_cache={},
+        )
+        assert state.answers["tags"].value == "a,b"
+        assert state.answers["tags"].source == "selection"
+
+    @pytest.mark.asyncio
+    async def test_answer_selection_invalid_rejected(
+        self, handler: AudioFormWSHandler
+    ) -> None:
+        q = AudioQuestion(
+            index=0, field_id="color", field_type="select", label="Color?",
+            voice_mode=VoiceMode.PROMPT_SELECT, render_mode="select",
+            options=[{"value": "red", "label": "Red"}],
+        )
+        state = _session_with([q])
+        ws = _fresh_ws()
+        await handler._handle_answer_selection(
+            ws=ws, data={"field_id": "color", "value": "green"},
+            session=state, request=MagicMock(), audio_cache={},
+        )
+        assert "answer_rejected" in _sent_types(ws)
+        assert "color" not in state.answers
+        assert state.current_index == 0
+
+    @pytest.mark.asyncio
+    async def test_answer_payload_completes_rest(
+        self, handler: AudioFormWSHandler
+    ) -> None:
+        q = AudioQuestion(
+            index=0, field_id="doc", field_type="rest", label="Upload",
+            required=True, voice_mode=VoiceMode.VISUAL_FALLBACK, render_mode="visual",
+        )
+        q2 = AudioQuestion(index=1, field_id="x", field_type="text", label="X")
+        state = _session_with([q, q2])
+        ws = _fresh_ws()
+        await handler._handle_answer_payload(
+            ws=ws, data={"field_id": "doc", "value": "blob://123"},
+            session=state, request=MagicMock(), audio_cache={},
+        )
+        assert state.answers["doc"].value == "blob://123"
+        assert state.current_index == 1
+
+
+class TestLowConfidenceConfirmation:
+    """Low-confidence STT read-back gate."""
+
+    @pytest.mark.asyncio
+    async def test_low_confidence_emits_confirm_request_no_advance(
+        self, handler: AudioFormWSHandler, mock_transcriber: AsyncMock
+    ) -> None:
+        mock_transcriber.transcribe.return_value = MagicMock(
+            text="alice", confidence=0.2, language="en"
+        )
+        q = AudioQuestion(index=0, field_id="name", field_type="text", label="Name?", required=True)
+        q2 = AudioQuestion(index=1, field_id="x", field_type="text", label="X")
+        state = _session_with([q, q2])
+        ws = _fresh_ws()
+        await handler._handle_answer_audio(ws, b"audio-bytes", state, {})
+        assert "confirm_request" in _sent_types(ws)
+        assert state.current_index == 0
+        assert state.pending is not None
+        assert state.pending.value == "alice"
+        assert "name" not in state.answers
+
+    @pytest.mark.asyncio
+    async def test_high_confidence_auto_advances(
+        self, handler: AudioFormWSHandler, mock_transcriber: AsyncMock
+    ) -> None:
+        mock_transcriber.transcribe.return_value = MagicMock(
+            text="alice", confidence=0.95, language="en"
+        )
+        q = AudioQuestion(index=0, field_id="name", field_type="text", label="Name?", required=True)
+        q2 = AudioQuestion(index=1, field_id="x", field_type="text", label="X")
+        state = _session_with([q, q2])
+        ws = _fresh_ws()
+        await handler._handle_answer_audio(ws, b"audio-bytes", state, {})
+        assert "confirm_request" not in _sent_types(ws)
+        assert state.answers["name"].value == "alice"
+        assert state.current_index == 1
+
+    @pytest.mark.asyncio
+    async def test_confirm_true_stores_and_advances(
+        self, handler: AudioFormWSHandler
+    ) -> None:
+        q = AudioQuestion(index=0, field_id="name", field_type="text", label="Name?", required=True)
+        q2 = AudioQuestion(index=1, field_id="x", field_type="text", label="X")
+        state = _session_with([q, q2])
+        state.pending = AudioAnswer(
+            field_id="name", value="alice", source="speech",
+            confidence=0.2, raw_transcript="alice",
+        )
+        ws = _fresh_ws()
+        await handler._handle_confirm_answer(
+            ws=ws, data={"field_id": "name", "confirmed": True},
+            session=state, request=MagicMock(), audio_cache={},
+        )
+        assert state.answers["name"].value == "alice"
+        assert state.current_index == 1
+        assert state.pending is None
+
+    @pytest.mark.asyncio
+    async def test_confirm_false_resends_same_question(
+        self, handler: AudioFormWSHandler
+    ) -> None:
+        q = AudioQuestion(index=0, field_id="name", field_type="text", label="Name?", required=True)
+        state = _session_with([q])
+        state.pending = AudioAnswer(
+            field_id="name", value="alice", source="speech",
+            confidence=0.2, raw_transcript="alice",
+        )
+        ws = _fresh_ws()
+        await handler._handle_confirm_answer(
+            ws=ws, data={"field_id": "name", "confirmed": False},
+            session=state, request=MagicMock(), audio_cache={},
+        )
+        assert "name" not in state.answers
+        assert state.current_index == 0
+        assert state.pending is None
+        last = ws.send_json.call_args[0][0]
+        assert last["type"] == "question"
+        assert last["field_id"] == "name"
+
+    @pytest.mark.asyncio
+    async def test_confirm_without_pending_errors(
+        self, handler: AudioFormWSHandler
+    ) -> None:
+        q = AudioQuestion(index=0, field_id="name", field_type="text", label="Name?")
+        state = _session_with([q])
+        ws = _fresh_ws()
+        await handler._handle_confirm_answer(
+            ws=ws, data={"field_id": "name", "confirmed": True},
+            session=state, request=MagicMock(), audio_cache={},
+        )
+        assert "error" in _sent_types(ws)
+
+
+class TestGracefulSynthesis:
+    """The handler never crashes when synthesis fails."""
+
+    @pytest.mark.asyncio
+    async def test_injected_synth_failure_degrades_to_text_only(
+        self, handler: AudioFormWSHandler
+    ) -> None:
+        handler.synthesizer.synthesize.side_effect = RuntimeError("no weights")
+        q = AudioQuestion(index=0, field_id="name", field_type="text", label="Name?")
+        ws = _fresh_ws()
+        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_id="f1"))
+        msg = ws.send_json.call_args[0][0]
+        assert msg["type"] == "question"
+        assert "audio" not in msg
+
+    @pytest.mark.asyncio
+    async def test_no_synth_no_auto_is_text_only(
+        self, handler: AudioFormWSHandler
+    ) -> None:
+        handler.synthesizer = None  # type: ignore[assignment]
+        assert handler._auto_synthesize is False
+        q = AudioQuestion(index=0, field_id="name", field_type="text", label="Name?")
+        ws = _fresh_ws()
+        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_id="f1"))
+        msg = ws.send_json.call_args[0][0]
+        assert "audio" not in msg
