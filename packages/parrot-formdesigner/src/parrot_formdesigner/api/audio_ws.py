@@ -45,7 +45,7 @@ from ..renderers.audio import (
 )
 
 if TYPE_CHECKING:
-    from parrot.voice.handler import AuthenticatedUser, TokenValidator
+    from parrot.core.ws_auth import AuthenticatedUser, TokenValidator
     from parrot.voice.tts.synthesizer import VoiceSynthesizer
     from parrot.voice.transcriber.faster_whisper_backend import FasterWhisperBackend
 
@@ -146,7 +146,20 @@ class AudioFormWSHandler:
         Returns:
             Completed WebSocketResponse.
         """
-        ws = web.WebSocketResponse(heartbeat=30.0, max_msg_size=self._max_msg_size)
+        # Browsers cannot set an Authorization header on a WebSocket, so the
+        # JWT is smuggled in as a Sec-WebSocket-Protocol subprotocol. The
+        # handshake response MUST echo back one of the client's offered
+        # subprotocols, or strict clients abort the connection immediately.
+        offered_protocols = [
+            proto.strip()
+            for proto in request.headers.get("Sec-WebSocket-Protocol", "").split(",")
+            if proto.strip()
+        ]
+        ws = web.WebSocketResponse(
+            heartbeat=30.0,
+            max_msg_size=self._max_msg_size,
+            protocols=offered_protocols,
+        )
         await ws.prepare(request)
 
         # Step 1: Authenticate
@@ -238,7 +251,7 @@ class AudioFormWSHandler:
                 "AudioFormWSHandler: no token_validator configured — "
                 "accepting anonymous connection (not for production use)"
             )
-            from parrot.voice.handler import AuthenticatedUser  # type: ignore[import-untyped]
+            from parrot.core.ws_auth import AuthenticatedUser  # type: ignore[import-untyped]
             return AuthenticatedUser(user_id="anonymous", username="anonymous")
 
         # Try Sec-WebSocket-Protocol header (token passed as subprotocol).

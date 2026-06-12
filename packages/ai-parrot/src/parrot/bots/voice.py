@@ -73,7 +73,11 @@ Key behaviors for voice interaction:
 Remember: Respond in a way that sounds natural when spoken aloud."""
 
 
-class VoiceBot(A2AEnabledMixin, MCPEnabledMixin, BaseBot):
+# NOTE: MCPEnabledMixin is intentionally NOT listed here — BaseBot already
+# inherits it via AbstractBot, so its capabilities (and cooperative __init__)
+# remain in the MRO. Listing it again before BaseBot makes the C3 linearization
+# impossible (an ancestor cannot precede its descendant) → TypeError on import.
+class VoiceBot(A2AEnabledMixin, BaseBot):
     """
     Bot with native voice interaction capabilities.
 

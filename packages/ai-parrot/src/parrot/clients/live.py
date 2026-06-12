@@ -832,7 +832,6 @@ class GeminiLiveClient(AbstractClient):
                                         session_id=session_id,
                                         turn_id=turn_id,
                                         user_id=user_id,
-                                        metadata=metadata,
                                     )
 
                             # Check for turn complete (After processing content)

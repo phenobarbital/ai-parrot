@@ -61,6 +61,11 @@ from parrot_formdesigner.api import setup_form_api
 from parrot_formdesigner.ui import setup_form_ui
 from parrot_formdesigner.services.registry import FormRegistry
 from parrot_formdesigner.services.storage import PostgresFormStorage
+# Audio form voice modes (FEAT-224/FEAT-236): STT transcriber + WS JWT validator.
+# TokenValidator is shared WS auth infra in parrot.core (not parrot.voice.handler)
+# so we don't drag in the VoiceBot / Gemini Live stack.
+from parrot.voice.transcriber.faster_whisper_backend import FasterWhisperBackend
+from parrot.core.ws_auth import TokenValidator
 from parrot_pipelines.handlers import PlanogramComplianceHandler
 
 
@@ -278,11 +283,23 @@ class Main(AppHandler):
         form_llm_client = LLMFactory.create(
             "google"
         )
+        # FEAT-236: pass transcriber + token_validator so the audio WS endpoint
+        # (/api/v1/forms/{form_id}/audio/ws) is actually mounted. Without any of
+        # synthesizer/transcriber/token_validator the route guard in
+        # setup_form_api skips registration. The Whisper model loads lazily on
+        # the first audio frame, and TokenValidator() validates the WS JWT
+        # against navigator_auth's SECRET_KEY (same token as the login session).
         setup_form_api(
             self.app,
             form_registry,
             client=form_llm_client,
             base_path="/api/v1",
+            transcriber=FasterWhisperBackend(
+                model_size=config.get("WHISPER_MODEL_SIZE", fallback="base"),
+                device=config.get("WHISPER_DEVICE", fallback="cuda"),
+                compute_type=config.get("WHISPER_COMPUTE_TYPE", fallback="float16"),
+            ),
+            token_validator=TokenValidator(),
         )
         setup_form_ui(
             self.app,
@@ -304,6 +321,11 @@ class Main(AppHandler):
         # session cookie. fnmatch pattern; '*' spans the signature + id.html.
         auth.add_exclude_list('/api/v1/artifacts/public/*')
         auth.add_exclude_list(github_hook.url)
+        # FEAT-236: the audio form WebSocket authenticates itself via the
+        # Sec-WebSocket-Protocol subprotocol (a browser WS cannot send an
+        # Authorization: Bearer header). Exclude it from the auth/ABAC chain so
+        # the upgrade reaches AudioFormWSHandler, which does its own JWT check.
+        auth.add_exclude_list('/api/v1/forms/*/audio/ws')
 
         # PBAC setup — navigator-auth Rust evaluator bug is now fixed.
         # setup_pbac() MUST be called BEFORE BotManager.setup(app) so that

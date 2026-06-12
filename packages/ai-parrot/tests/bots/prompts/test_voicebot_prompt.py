@@ -10,7 +10,9 @@ from pathlib import Path
 from parrot.bots.prompts.builder import PromptBuilder
 
 
-VOICE_BOT_SOURCE = Path(__file__).resolve().parents[3] / "parrot" / "bots" / "voice.py"
+VOICE_BOT_SOURCE = (
+    Path(__file__).resolve().parents[3] / "src" / "parrot" / "bots" / "voice.py"
+)
 
 
 class TestVoiceBotUsesVoicePreset:

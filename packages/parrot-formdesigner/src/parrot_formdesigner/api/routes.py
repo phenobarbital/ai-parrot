@@ -43,7 +43,7 @@ from .handlers import FormAPIHandler
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
-    from parrot.voice.handler import TokenValidator
+    from parrot.core.ws_auth import TokenValidator
     from parrot.voice.tts.synthesizer import VoiceSynthesizer
     from parrot.voice.transcriber.faster_whisper_backend import FasterWhisperBackend
 
