@@ -43,18 +43,72 @@ def sample_audio_form() -> FormSchema:
 
 
 @pytest.fixture
+def mixed_mode_form() -> FormSchema:
+    """A form exercising all three FEAT-236 VoiceModes.
+
+    A TEXT question (VOICE), a SELECT question (PROMPT_SELECT), and a required
+    REST question (VISUAL_FALLBACK) so the hybrid flow can be exercised
+    end-to-end (spec §4 fixtures).
+    """
+    from parrot_formdesigner.core.options import FieldOption
+
+    return FormSchema(
+        form_id="mixed-mode-form",
+        title="Mixed Mode Form",
+        sections=[
+            FormSection(
+                section_id="s1",
+                title="Mixed",
+                fields=[
+                    FormField(
+                        field_id="name",
+                        field_type=FieldType.TEXT,
+                        label="What is your name?",
+                        required=True,
+                    ),
+                    FormField(
+                        field_id="color",
+                        field_type=FieldType.SELECT,
+                        label="Favorite color?",
+                        options=[
+                            FieldOption(value="red", label="Red"),
+                            FieldOption(value="green", label="Green"),
+                            FieldOption(value="blue", label="Blue"),
+                        ],
+                    ),
+                    FormField(
+                        field_id="doc",
+                        field_type=FieldType.REST,
+                        label="Upload supporting document",
+                        required=True,
+                    ),
+                ],
+            )
+        ],
+    )
+
+
+@pytest.fixture
 def mock_synthesizer() -> AsyncMock:
-    """Mock VoiceSynthesizer returning dummy audio bytes."""
+    """Mock VoiceSynthesizer returning dummy WAV audio bytes (FEAT-236).
+
+    Configure ``synth.synthesize.side_effect`` in a test to simulate a backend
+    that raises (exercising graceful degradation to text-only).
+    """
     synth = AsyncMock()
     synth.synthesize.return_value = MagicMock(
-        audio=b"fake-tts-audio", mime_format="audio/ogg"
+        audio=b"fake-tts-wav", mime_format="audio/wav"
     )
     return synth
 
 
 @pytest.fixture
 def mock_transcriber() -> AsyncMock:
-    """Mock FasterWhisperBackend returning fixed transcription."""
+    """Mock FasterWhisperBackend returning fixed transcription.
+
+    Configure ``transcriber.transcribe.return_value`` in a test to set a
+    specific ``.confidence`` for the low-confidence read-back gate (FEAT-236).
+    """
     transcriber = AsyncMock()
     transcriber.transcribe.return_value = MagicMock(
         text="hello world", confidence=0.95, language="en",

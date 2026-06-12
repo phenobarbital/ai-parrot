@@ -169,9 +169,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Opus 4.8)
+**Date**: 2026-06-12
+**Notes**: Added `VoiceMode(str, Enum)` with `VOICE`/`PROMPT_SELECT`/
+`VISUAL_FALLBACK` near the top of `audio/models.py`. Extended `AudioQuestion`
+with `voice_mode` (default `VOICE`), `render_mode` (`Literal["voice","select",
+"visual"]`, default `"voice"`), `sensitive` (default `False`), `fallback_html`
+(default `None`). Extended `AudioSessionConfig` with `tts_backend`
+(`Literal["supertonic","google"]`, default `"supertonic"`), `enumerate_options`
+(default `True`), `stt_confirm_threshold` (`Field(default=0.6, ge=0.0, le=1.0)`),
+and changed `tts_mime_format` default `"audio/ogg"` → `"audio/wav"`. Extended
+`AudioAnswer.source` to `Literal["text","speech","selection"]`. All additive /
+backward-compatible; `extra="forbid"` preserved. Updated the pre-existing
+FEAT-224 `test_defaults` assertion (mime now `audio/wav`) since the default
+change is in-scope for this task. 27 tests pass; ruff clean.
+**Deviations from spec**: none

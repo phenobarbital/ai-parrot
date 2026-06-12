@@ -9,6 +9,7 @@ from parrot_formdesigner.audio.models import (
     AudioQuestion,
     AudioSessionConfig,
     AudioSessionState,
+    VoiceMode,
 )
 
 
@@ -19,9 +20,31 @@ class TestAudioSessionConfig:
         """AudioSessionConfig has correct default values."""
         cfg = AudioSessionConfig(form_id="f1")
         assert cfg.locale == "en"
-        assert cfg.tts_mime_format == "audio/ogg"
+        assert cfg.tts_mime_format == "audio/wav"
         assert cfg.auto_advance is True
         assert cfg.tts_voice is None
+
+    def test_supertonic_defaults(self):
+        """FEAT-236: SuperTonic-first defaults and STT confirm threshold."""
+        cfg = AudioSessionConfig(form_id="x")
+        assert cfg.tts_backend == "supertonic"
+        assert cfg.stt_confirm_threshold == 0.6
+        assert cfg.enumerate_options is True
+        assert cfg.tts_mime_format == "audio/wav"
+
+    def test_stt_confirm_threshold_bounds(self):
+        """stt_confirm_threshold is bounded to the 0.0–1.0 range."""
+        assert AudioSessionConfig(form_id="x", stt_confirm_threshold=0.0)
+        assert AudioSessionConfig(form_id="x", stt_confirm_threshold=1.0)
+        with pytest.raises(ValidationError):
+            AudioSessionConfig(form_id="x", stt_confirm_threshold=1.5)
+        with pytest.raises(ValidationError):
+            AudioSessionConfig(form_id="x", stt_confirm_threshold=-0.1)
+
+    def test_tts_backend_rejects_unknown(self):
+        """tts_backend only accepts 'supertonic' or 'google'."""
+        with pytest.raises(ValidationError):
+            AudioSessionConfig(form_id="x", tts_backend="elevenlabs")
 
     def test_requires_form_id(self):
         """AudioSessionConfig raises ValidationError when form_id is missing."""
@@ -40,6 +63,22 @@ class TestAudioSessionConfig:
             AudioSessionConfig(form_id="f1", unknown_field="x")
 
 
+class TestVoiceMode:
+    """Tests for the FEAT-236 VoiceMode taxonomy enum."""
+
+    def test_voice_mode_enum_values(self):
+        """VoiceMode exposes VOICE, PROMPT_SELECT, VISUAL_FALLBACK."""
+        assert {m.value for m in VoiceMode} >= {
+            "voice", "prompt_select", "visual_fallback"
+        }
+
+    def test_voice_mode_is_str_enum(self):
+        """VoiceMode members compare equal to their string values."""
+        assert VoiceMode.VOICE == "voice"
+        assert VoiceMode.PROMPT_SELECT == "prompt_select"
+        assert VoiceMode.VISUAL_FALLBACK == "visual_fallback"
+
+
 class TestAudioQuestion:
     """Tests for AudioQuestion model."""
 
@@ -49,6 +88,32 @@ class TestAudioQuestion:
         assert q.required is False
         assert q.audio_prompt is None
         assert q.options is None
+
+    def test_voice_fields_default(self):
+        """FEAT-236: new voice fields default to VOICE / 'voice' / False / None."""
+        q = AudioQuestion(index=0, field_id="f", field_type="text", label="L")
+        assert q.voice_mode == VoiceMode.VOICE
+        assert q.render_mode == "voice"
+        assert q.sensitive is False
+        assert q.fallback_html is None
+
+    def test_voice_fields_custom(self):
+        """FEAT-236: voice fields accept explicit VISUAL_FALLBACK values."""
+        q = AudioQuestion(
+            index=0, field_id="f", field_type="rest", label="L",
+            voice_mode=VoiceMode.VISUAL_FALLBACK, render_mode="visual",
+            sensitive=True, fallback_html="<input name='f'>",
+        )
+        assert q.voice_mode == VoiceMode.VISUAL_FALLBACK
+        assert q.render_mode == "visual"
+        assert q.sensitive is True
+        assert q.fallback_html == "<input name='f'>"
+
+    def test_render_mode_rejects_unknown(self):
+        """render_mode only accepts voice/select/visual."""
+        with pytest.raises(ValidationError):
+            AudioQuestion(index=0, field_id="f", field_type="text",
+                          label="L", render_mode="audio")  # type: ignore[arg-type]
 
     def test_with_options(self):
         """AudioQuestion stores options list for SELECT fields."""
@@ -127,6 +192,11 @@ class TestAudioAnswer:
         """AudioAnswer source defaults to 'text'."""
         a = AudioAnswer(field_id="name", value="Bob")
         assert a.source == "text"
+
+    def test_selection_source(self):
+        """FEAT-236: AudioAnswer accepts source='selection'."""
+        a = AudioAnswer(field_id="color", value="red", source="selection")
+        assert a.source == "selection"
 
     def test_invalid_source(self):
         """AudioAnswer rejects invalid source values."""

@@ -146,9 +146,21 @@ from parrot_formdesigner.renderers.audio import build_audio_synthesizer  # rende
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Opus 4.8)
+**Date**: 2026-06-12
+**Notes**: In `setup_form_api`'s existing audio mount block, the
+`AudioFormWSHandler` is now constructed with `auto_synthesize=(synthesizer is
+None)`. So when audio is intended (transcriber/token_validator provided) but no
+explicit synthesizer is injected, the handler lazily synthesizes via the
+SuperTonic-first `synthesize_with_fallback` (TASK-1540/1541) — and an injected
+synthesizer still takes precedence (auto stays off). No new params; the mount
+gate is unchanged. No ONNX model is loaded at setup time (no synthesizer object
+is constructed there; `VoiceSynthesizer`/SuperTonic load lazily on first
+`synthesize()`). Updated the docstring to document `synthesizer`/`transcriber`/
+`token_validator` and the `SUPERTONIC_MODEL_PATH` + `voice-supertonic` extra
+contract with graceful Google/text-only fallback. Added 3 wiring tests
+(transcriber-only → auto on + no synth; explicit synth precedence; setup loads
+no ONNX). 11 route tests pass; ruff clean.
+**Deviations from spec**: Removed a pre-existing unused `import pytest` from
+`test_audio_routes.py` (file already in scope) to satisfy the "no lint errors"
+acceptance criterion.

@@ -122,6 +122,20 @@ def setup_form_api(
             partial form answer caching.  When ``None``, the partial save
             endpoints (POST/GET/DELETE ``/forms/{form_id}/partial``) will
             return 503.
+        synthesizer: Optional ``VoiceSynthesizer`` for audio-form TTS. When
+            provided it is used as-is (tests/overrides). When ``None`` but audio
+            is intended (``transcriber`` or ``token_validator`` given), the
+            audio handler synthesizes lazily via the SuperTonic-first fallback
+            (SuperTonic → Google → text-only). SuperTonic requires the
+            ``ai-parrot-integrations[voice-supertonic]`` extra and the
+            ``SUPERTONIC_MODEL_PATH`` env var pointing at the ONNX weights; when
+            unavailable the session degrades gracefully to Google, then to
+            text-only. No model is loaded at route-setup time (the backend loads
+            lazily on first synthesis).
+        transcriber: Optional ``FasterWhisperBackend`` for audio-form STT.
+            Providing it (or ``token_validator``) mounts the audio WS endpoint.
+        token_validator: Optional ``TokenValidator`` for audio-form WebSocket
+            JWT authentication. Providing it mounts the audio WS endpoint.
     """
     # Stash the registry on the app for the dispatcher / operations handler.
     # Guard: skip if already set (FormRegistry.__init__ sets it when app= is
@@ -240,10 +254,17 @@ def setup_form_api(
         _wrap_auth(handler.remote_event),
     )
 
-    # Audio WebSocket endpoint (FEAT-224) — NOT wrapped with _wrap_auth.
-    # JWT auth is handled inside AudioFormWSHandler via TokenValidator because
-    # navigator-auth decorators return HTTP 401, which is incompatible with
-    # the WebSocket upgrade handshake.
+    # Audio WebSocket endpoint (FEAT-224, FEAT-236) — NOT wrapped with
+    # _wrap_auth. JWT auth is handled inside AudioFormWSHandler via
+    # TokenValidator because navigator-auth decorators return HTTP 401, which is
+    # incompatible with the WebSocket upgrade handshake.
+    #
+    # FEAT-236: when audio is intended (transcriber/token_validator provided)
+    # but no explicit ``synthesizer`` is injected, the handler synthesizes TTS
+    # via the SuperTonic-first fallback helper (``auto_synthesize=True``). No
+    # ONNX model is loaded here — ``VoiceSynthesizer`` is lazy and the backend
+    # only loads on first ``synthesize()``. An explicitly-injected
+    # ``synthesizer`` takes precedence over the lazy build.
     if synthesizer is not None or transcriber is not None or token_validator is not None:
         from .audio_ws import AudioFormWSHandler
         from ..services.validators import FormValidator
@@ -255,6 +276,7 @@ def setup_form_api(
             validator=FormValidator(),
             token_validator=token_validator,
             submission_storage=submission_storage,
+            auto_synthesize=synthesizer is None,
         )
         app.router.add_get(
             f"{bp}/forms/{{form_id}}/audio/ws",

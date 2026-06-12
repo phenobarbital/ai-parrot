@@ -151,9 +151,31 @@ async def test_ws_low_confidence_confirm(handler, mock_transcriber, fake_ws):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Opus 4.8)
+**Date**: 2026-06-12
+**Notes**: Added the `mixed_mode_form` fixture (TEXT/VOICE + SELECT/
+PROMPT_SELECT + required REST/VISUAL_FALLBACK) to `conftest.py`, and documented
+the existing `mock_synthesizer` (now WAV bytes; set `.side_effect` to simulate a
+failing backend) and `mock_transcriber` (set `.return_value` for a specific
+`.confidence`). Implemented 8 integration tests in `test_audio_integration.py`
+under `TestHybridVoiceFlows`: `test_ws_prompt_select_flow`,
+`test_ws_multi_select_values`, `test_ws_visual_fallback_flow` (required REST →
+`form_complete`), `test_ws_low_confidence_confirm`,
+`test_ws_low_confidence_reject_reprompts`, `test_ws_high_confidence_auto_advance`,
+`test_ws_sensitive_no_audio`, `test_ws_supertonic_to_google_degradation`. Full
+formdesigner suite: 165 passed; all FEAT-236-touched files ruff-clean.
+**Deviations from spec**: (1) Tests use the package's established integration
+pattern — a real in-process aiohttp test client (`aiohttp_client` + `ws_connect`,
+loopback only, all TTS/STT mocked) — rather than the "fake-WS harness" the task
+text references; `test_audio_ws_handler.py` actually uses direct method calls
+with an `AsyncMock` ws (not a queue-based harness), and `test_audio_integration.py`
+already uses `ws_connect`, so this is the consistent, proven approach (no
+external network). (2) The degradation test injects a synthesizer that raises and
+asserts text-only delivery (per the task note "asserts text-only/Google path,
+not real audio"); the SuperTonic→Google backend chain itself is unit-tested in
+TASK-1540. (3) `ruff --fix` removed several pre-existing unused imports (`json`,
+`AudioFormManifest`, `_RENDERERS`×4) from `test_audio_integration.py` (a file in
+scope) to satisfy the no-lint AC. Two pre-existing unused `import pytest`
+warnings remain in `test_audio_control_metadata.py` and `test_audio_fieldtype.py`
+— these files are unrelated to FEAT-236 and were left untouched per file-fidelity
+discipline; all FEAT-236-touched files are lint-clean.
