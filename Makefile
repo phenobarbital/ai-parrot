@@ -281,10 +281,9 @@ install-supertonic:
 	@echo "   Point the backend at them (add to your env/.env):"
 	@echo "     export SUPERTONIC_MODEL_PATH=$(CURDIR)/$(SUPERTONIC_DIR)"
 	@echo ""
-	@echo "   Note: supertonic-3 ships 4 ONNX graphs (text_encoder, duration_predictor,"
-	@echo "   vector_estimator, vocoder) + voice_styles/. The default SupertonicTTSBackend"
-	@echo "   loads a SINGLE session — provide a deployment inference_fn for the full"
-	@echo "   multi-graph pipeline (see FEAT-231 §8 R-deps)."
+	@echo "   The 4-graph pipeline (text_encoder, duration_predictor, vector_estimator,"
+	@echo "   vocoder) is wired in SupertonicONNXBackend, so TTSConfig(backend='supertonic')"
+	@echo "   works out of the box. Voices: M1-M5, F1-F5 (TTSConfig(voice='F1'), default M1)."
 
 # Build and publish all packages
 release: lint test clean check-registry
