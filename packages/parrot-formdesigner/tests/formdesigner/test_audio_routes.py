@@ -1,6 +1,5 @@
-"""Tests for audio route registration (FEAT-224 TASK-1464)."""
+"""Tests for audio route registration (FEAT-224 TASK-1464, FEAT-236 TASK-1542)."""
 
-import pytest
 from aiohttp import web
 from unittest.mock import MagicMock
 
@@ -97,3 +96,47 @@ class TestAudioRouteRegistration:
             transcriber=MagicMock(),
             token_validator=MagicMock(),
         )
+
+
+def _audio_handler(app: web.Application):
+    """Return the mounted AudioFormWSHandler instance (or None)."""
+    for r in app.router.routes():
+        resource = getattr(r, "resource", None)
+        if resource and "/audio/ws" in getattr(resource, "canonical", ""):
+            return r.handler.__self__  # bound method → handler instance
+    return None
+
+
+class TestSuperTonicLazyWiring:
+    """FEAT-236 TASK-1542: SuperTonic-first lazy synthesizer wiring."""
+
+    def test_setup_mounts_audio_ws_when_transcriber_only(self) -> None:
+        """Transcriber-only mounts the WS with auto_synthesize enabled."""
+        app = web.Application()
+        setup_form_api(app, MagicMock(), transcriber=MagicMock())
+        handler = _audio_handler(app)
+        assert handler is not None
+        assert handler.synthesizer is None
+        assert handler._auto_synthesize is True
+
+    def test_explicit_synthesizer_takes_precedence(self) -> None:
+        """An injected synthesizer is used as-is; auto_synthesize stays off."""
+        app = web.Application()
+        synth = MagicMock()
+        setup_form_api(app, MagicMock(), synthesizer=synth, transcriber=MagicMock())
+        handler = _audio_handler(app)
+        assert handler is not None
+        assert handler.synthesizer is synth
+        assert handler._auto_synthesize is False
+
+    def test_route_setup_does_not_load_onnx_model(self, monkeypatch) -> None:
+        """Route setup loads no ONNX model (no SUPERTONIC_MODEL_PATH needed)."""
+        monkeypatch.delenv("SUPERTONIC_MODEL_PATH", raising=False)
+        app = web.Application()
+        # Must not raise and must not construct/load any synthesizer eagerly.
+        setup_form_api(app, MagicMock(), token_validator=MagicMock())
+        handler = _audio_handler(app)
+        assert handler is not None
+        # No synthesizer object was built at setup time — lazy on first synth.
+        assert handler.synthesizer is None
+        assert handler._auto_synthesize is True
