@@ -207,7 +207,11 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # /clear command to reset conversation
         self.router.message.register(self.handle_clear, Command("clear"))
 
-        # /skill <name> [args] — invoke a tool by name
+        # /tool <name> [args] — invoke a tool by name
+        self.router.message.register(self.handle_tool, Command("tool"))
+
+        # /skill <name> [args] — invoke a skill (file-based or DB-backed)
+        # declared via SkillRegistryMixin
         self.router.message.register(self.handle_skill, Command("skill"))
 
         # /function <method> [key=val ...] — invoke agent method with kwargs
@@ -853,7 +857,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             ("whoami", "Agent name and description"),
             ("commands", "List all available commands"),
             ("clear", "Reset conversation memory"),
-            ("skill", "Call a tool by name"),
+            ("tool", "Call a tool by name"),
+            ("skill", "Invoke a skill by name"),
             ("function", "Call an agent method"),
             ("question", "Ask the LLM directly (no tools)"),
             ("call", "Call an agent method (legacy)"),
@@ -1641,7 +1646,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             "/whoami - Agent name and description\n"
             "/commands - List all available commands\n"
             "/clear - Reset conversation memory\n"
-            "/skill <name> [args] - Call a tool by name\n"
+            "/tool <name> [args] - Call a tool by name\n"
+            "/skill <name> [args] - Invoke a skill by name\n"
             "/function <method> [key=val ...] - Call agent method\n"
             "/question <text> - Ask the LLM directly (no tools)\n"
             "/call <method> [args] - Call agent method (legacy)\n"
@@ -1768,15 +1774,26 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         for bc in self.get_bot_commands():
             text += f"/{bc.command} - {bc.description}\n"
 
-        # Available tools (for /skill)
+        # Available tools (for /tool)
         if hasattr(self.agent, "get_available_tools"):
             tools = self.agent.get_available_tools()
             if tools:
-                text += f"\n*Tools (/skill):* {len(tools)} available\n"
+                text += f"\n*Tools (/tool):* {len(tools)} available\n"
                 for tool_name in tools[:15]:
                     text += f"• `{tool_name}`\n"
                 if len(tools) > 15:
                     text += f"... and {len(tools) - 15} more\n"
+
+        # Available skills (for /skill)
+        skills = self._list_agent_skills()
+        if skills:
+            text += f"\n*Skills (/skill):* {len(skills)} available\n"
+            for skill in skills[:15]:
+                triggers = ", ".join(skill["triggers"]) if skill["triggers"] else ""
+                suffix = f" ({triggers})" if triggers else ""
+                text += f"• `{skill['name']}`{suffix}\n"
+            if len(skills) > 15:
+                text += f"... and {len(skills) - 15} more\n"
 
         # Callable methods (for /function)
         callable_methods = self._get_callable_methods()
@@ -1789,8 +1806,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         await self._send_safe_message(message, text)
 
-    async def handle_skill(self, message: Message) -> None:
-        """Handle /skill <name> [args] — invoke a tool by name."""
+    async def handle_tool(self, message: Message) -> None:
+        """Handle /tool <name> [args] — invoke a tool by name."""
         chat_id = message.chat.id
         if not self._is_authorized(chat_id):
             await message.answer("⛔ You are not authorized to use this bot.")
@@ -1800,14 +1817,14 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             return
 
         text = message.text or ""
-        parts = text.split(maxsplit=2)  # ["/skill", "tool_name", "args..."]
+        parts = text.split(maxsplit=2)  # ["/tool", "tool_name", "args..."]
 
         if len(parts) < 2:
             # Show available tools
             tools = []
             if hasattr(self.agent, "get_available_tools"):
                 tools = self.agent.get_available_tools()
-            usage = "Usage: /skill <tool_name> [arguments]\n\n"
+            usage = "Usage: /tool <tool_name> [arguments]\n\n"
             if tools:
                 usage += "Available tools:\n"
                 for t in tools[:20]:
@@ -1831,7 +1848,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if not tool:
             await message.answer(
                 f"❌ Tool `{tool_name}` not found.\n"
-                f"Use /skill without arguments to see available tools."
+                f"Use /tool without arguments to see available tools."
             )
             return
 
@@ -1858,6 +1875,190 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             typing_task.cancel()
             self.logger.error("Error calling tool %s: %s", tool_name, e, exc_info=True)
             await message.answer(f"❌ Error calling tool `{tool_name}`: {str(e)[:200]}")
+        finally:
+            typing_task.cancel()
+
+    def _list_agent_skills(self) -> list[dict]:
+        """Collect skills declared via ``SkillRegistryMixin``.
+
+        Merges file-based skills (``agent._skill_file_registry``) and
+        DB-backed skills (``agent._skill_registry``) into a single, de-duplicated
+        list of ``{"name", "description", "triggers", "source"}`` dicts. File
+        skills win on name collisions because they expose richer ``/trigger``
+        metadata.
+
+        Returns:
+            List of skill descriptor dicts (possibly empty).
+        """
+        skills: list[dict] = []
+        seen: set[str] = set()
+
+        # File-based skills (SkillFileRegistry) — eager, synchronous listing.
+        file_registry = getattr(self.agent, "_skill_file_registry", None)
+        if file_registry is not None and hasattr(file_registry, "list_skills"):
+            try:
+                for skill in file_registry.list_skills():
+                    if skill.name in seen:
+                        continue
+                    seen.add(skill.name)
+                    skills.append(
+                        {
+                            "name": skill.name,
+                            "description": getattr(skill, "description", "") or "",
+                            "triggers": list(getattr(skill, "triggers", []) or []),
+                            "source": "file",
+                        }
+                    )
+            except Exception as exc:  # pragma: no cover - defensive
+                self.logger.debug("Failed to list file skills: %s", exc)
+
+        # DB-backed skills (SkillRegistry) — in-memory ``_skills`` index, if any.
+        registry = getattr(self.agent, "_skill_registry", None)
+        cached = getattr(registry, "_skills", None) if registry else None
+        if isinstance(cached, dict):
+            for entry in cached.values():
+                name = getattr(getattr(entry, "metadata", None), "name", None)
+                if not name or name in seen:
+                    continue
+                seen.add(name)
+                meta = entry.metadata
+                skills.append(
+                    {
+                        "name": name,
+                        "description": getattr(meta, "description", "") or "",
+                        "triggers": list(getattr(meta, "triggers", []) or []),
+                        "source": "registry",
+                    }
+                )
+
+        return skills
+
+    async def _resolve_skill_definition(self, name: str):
+        """Resolve a file-based ``SkillDefinition`` by name or trigger.
+
+        Tries an exact name match first, then a trigger match (with or without a
+        leading ``/``). Returns ``None`` when no file skill matches.
+        """
+        file_registry = getattr(self.agent, "_skill_file_registry", None)
+        if file_registry is None:
+            return None
+
+        skill = None
+        if hasattr(file_registry, "get_by_name"):
+            skill = file_registry.get_by_name(name)
+        if skill is None and hasattr(file_registry, "get"):
+            trigger = name if name.startswith("/") else f"/{name}"
+            skill = file_registry.get(trigger)
+        return skill
+
+    async def handle_skill(self, message: Message) -> None:
+        """Handle /skill <name> [args] — invoke a skill by name.
+
+        Skills are behavioral instructions declared via ``SkillRegistryMixin``
+        (file-based and/or DB-backed). Invoking a skill loads its body and runs
+        the agent with that skill active so the instruction shapes the reply.
+        """
+        chat_id = message.chat.id
+        if not self._is_authorized(chat_id):
+            await message.answer("⛔ You are not authorized to use this bot.")
+            return
+
+        if not await self._check_authentication(message):
+            return
+
+        text = message.text or ""
+        parts = text.split(maxsplit=2)  # ["/skill", "skill_name", "args..."]
+
+        skills = self._list_agent_skills()
+
+        if len(parts) < 2:
+            # Show available skills.
+            usage = "Usage: /skill <skill_name> [arguments]\n\n"
+            if skills:
+                usage += "Available skills:\n"
+                for s in skills[:20]:
+                    triggers = ", ".join(s["triggers"]) if s["triggers"] else ""
+                    suffix = f" ({triggers})" if triggers else ""
+                    usage += f"• `{s['name']}`{suffix}\n"
+                if len(skills) > 20:
+                    usage += f"... and {len(skills) - 20} more\n"
+            else:
+                usage += "No skills registered on this agent.\n"
+            await message.answer(usage, parse_mode=None)
+            return
+
+        skill_name = parts[1]
+        args_text = parts[2] if len(parts) > 2 else ""
+
+        # Resolve a file-based skill first (richest activation path).
+        skill_def = await self._resolve_skill_definition(skill_name)
+
+        # Fall back to a DB-backed skill body when no file skill matched.
+        db_skill_body: Optional[str] = None
+        if skill_def is None:
+            registry = getattr(self.agent, "_skill_registry", None)
+            if registry is not None:
+                try:
+                    listed = await registry.list_skills()
+                    match = next(
+                        (
+                            s for s in listed
+                            if s.get("name", "").lower() == skill_name.lower()
+                        ),
+                        None,
+                    )
+                    if match:
+                        db_skill_body = await registry.read_skill(match["skill_id"])
+                except Exception as exc:
+                    self.logger.debug("DB skill lookup failed: %s", exc)
+
+        if skill_def is None and db_skill_body is None:
+            await message.answer(
+                f"❌ Skill `{skill_name}` not found.\n"
+                f"Use /skill without arguments to see available skills."
+            )
+            return
+
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+        try:
+            self.logger.info(
+                "Chat %s: Invoking skill %s(%s)", chat_id, skill_name, args_text
+            )
+            question = args_text or (
+                f"Apply the '{skill_name}' skill."
+            )
+            with telegram_chat_scope(chat_id):
+                if skill_def is not None:
+                    # Activate the file skill so its body is injected as a
+                    # transient prompt layer for this single ask().
+                    setattr(self.agent, "_active_skill", skill_def)
+                    response = await self.agent.ask(
+                        question,
+                        output_mode=OutputMode.TELEGRAM,
+                    )
+                else:
+                    # DB-backed skill: prepend the skill body as instruction.
+                    framed = (
+                        f"Follow these skill instructions:\n\n{db_skill_body}\n\n"
+                        f"User request: {question}"
+                    )
+                    response = await self.agent.ask(
+                        framed,
+                        output_mode=OutputMode.TELEGRAM,
+                    )
+            typing_task.cancel()
+            parsed = self._parse_response(response)
+            await self._send_parsed_response(
+                message, parsed, prefix=f"🧠 *{skill_name}* skill:\n\n"
+            )
+        except Exception as e:
+            typing_task.cancel()
+            self.logger.error(
+                "Error invoking skill %s: %s", skill_name, e, exc_info=True
+            )
+            await message.answer(
+                f"❌ Error invoking skill `{skill_name}`: {str(e)[:200]}"
+            )
         finally:
             typing_task.cancel()
 
