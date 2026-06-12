@@ -14,7 +14,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
-from ..audio.models import AudioFormManifest, AudioQuestion
+from ..audio.models import (
+    AudioFormManifest,
+    AudioQuestion,
+    AudioSessionConfig,
+    VoiceMode,
+)
 from ..core.schema import FormField, FormSchema, RenderedForm
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
@@ -25,17 +30,174 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Field types that should be excluded from the audio question list.
-# HIDDEN fields are invisible; ARRAY fields cannot be voiced as a single Q.
-# REST fields require file upload interaction that is not voice-compatible.
-_SKIP_FIELD_TYPES: frozenset[FieldType] = frozenset(
-    {FieldType.HIDDEN, FieldType.ARRAY, FieldType.REST}
-)
+# Field types that should be excluded from the audio question list (FEAT-236).
+# Only HIDDEN is dropped — it is never user-visible. Every other field becomes
+# a question tagged with its VoiceMode so no required field is ever lost.
+_SKIP_FIELD_TYPES: frozenset[FieldType] = frozenset({FieldType.HIDDEN})
 
 # Field types that carry options (SELECT / MULTI_SELECT).
 _SELECT_TYPES: frozenset[FieldType] = frozenset(
     {FieldType.SELECT, FieldType.MULTI_SELECT, FieldType.DYNAMIC_SELECT}
 )
+
+# FEAT-236 voice-capability taxonomy (spec §2 pillar 2). Field types not listed
+# in either set default to VoiceMode.VOICE (narrate + spoken/typed answer).
+_PROMPT_SELECT_TYPES: frozenset[FieldType] = frozenset(
+    {
+        FieldType.SELECT,
+        FieldType.MULTI_SELECT,
+        FieldType.DYNAMIC_SELECT,
+        FieldType.BOOLEAN,
+        FieldType.RANKING,
+        FieldType.LIKERT,
+        FieldType.NPS,
+        FieldType.COLOR,
+    }
+)
+_VISUAL_FALLBACK_TYPES: frozenset[FieldType] = frozenset(
+    {
+        FieldType.REST,
+        FieldType.REMOTE_RESPONSE,
+        FieldType.FILE,
+        FieldType.IMAGE,
+        FieldType.LOCATION,
+        FieldType.SIGNATURE,
+        FieldType.TRANSFER_LIST,
+        FieldType.AVAILABILITY,
+        FieldType.ARRAY,
+    }
+)
+
+# Maps a VoiceMode to the client-facing render hint carried on the question.
+_RENDER_MODE_BY_VOICE: dict[VoiceMode, str] = {
+    VoiceMode.VOICE: "voice",
+    VoiceMode.PROMPT_SELECT: "select",
+    VoiceMode.VISUAL_FALLBACK: "visual",
+}
+
+
+def classify_voice_mode(field: FormField) -> VoiceMode:
+    """Classify a FormField into a VoiceMode (FEAT-236).
+
+    A per-field override in ``field.meta["voice_mode"]`` (case-insensitive
+    match against the VoiceMode values) wins over the default FieldType table.
+    An invalid override logs a warning and falls back to the default.
+
+    Args:
+        field: The FormField to classify.
+
+    Returns:
+        The VoiceMode for this field.
+    """
+    if field.meta:
+        override = field.meta.get("voice_mode")
+        if override is not None:
+            try:
+                return VoiceMode(str(override).strip().lower())
+            except ValueError:
+                logger.warning(
+                    "Invalid voice_mode override %r on field %s; using default",
+                    override,
+                    field.field_id,
+                )
+
+    field_type = field.field_type
+    if field_type in _VISUAL_FALLBACK_TYPES:
+        return VoiceMode.VISUAL_FALLBACK
+    if field_type in _PROMPT_SELECT_TYPES:
+        return VoiceMode.PROMPT_SELECT
+    return VoiceMode.VOICE
+
+
+def build_audio_synthesizer(
+    config: AudioSessionConfig | None = None,
+) -> "VoiceSynthesizer | None":
+    """Build a VoiceSynthesizer preferring SuperTonic, else None (FEAT-236).
+
+    Constructs a ``VoiceSynthesizer`` configured with the preferred TTS backend
+    (``config.tts_backend``, default ``"supertonic"``). The backend itself is
+    created lazily on first ``synthesize()`` — no model is loaded here. Returns
+    ``None`` when the ``parrot.voice`` TTS stack is not importable at all
+    (text-only session). The SuperTonic→Google→text-only fallback at synthesis
+    time lives in :func:`synthesize_with_fallback`.
+
+    Args:
+        config: Optional session config carrying ``tts_backend``,
+            ``tts_voice`` and ``tts_mime_format``.
+
+    Returns:
+        A configured ``VoiceSynthesizer``, or ``None`` if voice TTS is
+        unavailable.
+    """
+    try:
+        from parrot.voice.tts.models import TTSConfig
+        from parrot.voice.tts.synthesizer import VoiceSynthesizer
+    except ImportError as exc:
+        logger.warning(
+            "parrot.voice TTS stack unavailable (%s); audio runs text-only", exc
+        )
+        return None
+
+    backend = config.tts_backend if config is not None else "supertonic"
+    voice = config.tts_voice if config is not None else None
+    mime_format = config.tts_mime_format if config is not None else "audio/wav"
+    return VoiceSynthesizer(
+        TTSConfig(backend=backend, voice=voice, mime_format=mime_format)
+    )
+
+
+async def synthesize_with_fallback(
+    text: str,
+    *,
+    config: AudioSessionConfig | None = None,
+    language: str | None = None,
+) -> bytes | None:
+    """Synthesize ``text`` to audio bytes, SuperTonic→Google→text-only.
+
+    The single reusable place for the FEAT-236 graceful-degradation contract
+    (shared by the renderer and the WebSocket handler). Tries the preferred
+    backend first (default SuperTonic), then Google. Any
+    ``ImportError``/``ValueError``/``RuntimeError`` raised by a backend (missing
+    extra, unconfigured weights, no ``inference_fn``) is caught and the next
+    backend is tried. Returns ``None`` when no backend is usable — the caller
+    delivers the question text-only. NEVER raises for a missing/misconfigured
+    backend (FEAT-231 contract).
+
+    Args:
+        text: The text to synthesize.
+        config: Optional session config (preferred backend, voice, mime).
+        language: Optional BCP 47 language hint for the backend.
+
+    Returns:
+        Raw audio bytes, or ``None`` for a text-only fallback.
+    """
+    try:
+        from parrot.voice.tts.models import TTSConfig
+        from parrot.voice.tts.synthesizer import VoiceSynthesizer
+    except ImportError as exc:
+        logger.warning(
+            "parrot.voice TTS stack unavailable (%s); text-only synthesis", exc
+        )
+        return None
+
+    preferred = config.tts_backend if config is not None else "supertonic"
+    voice = config.tts_voice if config is not None else None
+    mime_format = config.tts_mime_format if config is not None else "audio/wav"
+
+    # Preferred backend first, then Google as a fallback (deduplicated).
+    backends = [preferred] + [b for b in ("google",) if b != preferred]
+    for backend in backends:
+        synth = VoiceSynthesizer(
+            TTSConfig(backend=backend, voice=voice, mime_format=mime_format)
+        )
+        try:
+            result = await synth.synthesize(text, language=language)
+            return result.audio
+        except (ImportError, ValueError, RuntimeError) as exc:
+            logger.warning("TTS backend %s unavailable: %s", backend, exc)
+        finally:
+            await synth.close()
+    return None
 
 
 def _resolve(value: LocalizedString | None, locale: str = "en") -> str:
@@ -122,18 +284,9 @@ class AudioFormRenderer(AbstractFormRenderer):
         for field in form.iter_all_fields():
             new_questions = self._field_to_questions(field, locale=locale)
             for q in new_questions:
-                q_with_index = AudioQuestion(
-                    index=index,
-                    field_id=q.field_id,
-                    field_type=q.field_type,
-                    label=q.label,
-                    description=q.description,
-                    required=q.required,
-                    audio_prompt=q.audio_prompt,
-                    constraints=q.constraints,
-                    options=q.options,
-                )
-                questions.append(q_with_index)
+                # model_copy preserves the FEAT-236 voice fields
+                # (voice_mode / render_mode / sensitive / fallback_html).
+                questions.append(q.model_copy(update={"index": index}))
                 index += 1
 
         return questions
@@ -147,7 +300,8 @@ class AudioFormRenderer(AbstractFormRenderer):
         """Convert a single FormField into one or more AudioQuestion objects.
 
         GROUP fields expand their children into individual questions.
-        HIDDEN and ARRAY fields are skipped (return empty list).
+        Only HIDDEN fields are skipped (return empty list); every other field
+        becomes a question tagged with its VoiceMode (FEAT-236).
 
         Args:
             field: The FormField to convert.
@@ -170,7 +324,7 @@ class AudioFormRenderer(AbstractFormRenderer):
         description = _resolve(field.description, locale) or None
 
         options: list[dict] | None = None
-        if field.field_type in _SELECT_TYPES and field.options:
+        if field.options:
             options = [
                 {
                     "value": opt.value,
@@ -187,6 +341,10 @@ class AudioFormRenderer(AbstractFormRenderer):
                 self.logger.warning("Failed to serialize field constraints: %s", exc)
                 constraints = None
 
+        voice_mode = classify_voice_mode(field)
+        render_mode = _RENDER_MODE_BY_VOICE[voice_mode]
+        sensitive = field.field_type == FieldType.PASSWORD
+
         return [
             AudioQuestion(
                 index=0,  # re-indexed by caller
@@ -198,6 +356,9 @@ class AudioFormRenderer(AbstractFormRenderer):
                 audio_prompt=None,
                 constraints=constraints,
                 options=options,
+                voice_mode=voice_mode,
+                render_mode=render_mode,
+                sensitive=sensitive,
             )
         ]
 
@@ -277,18 +438,8 @@ class AudioFormRenderer(AbstractFormRenderer):
                     q.label,
                     language=locale if locale != "en" else None,
                 )
-                updated = AudioQuestion(
-                    index=q.index,
-                    field_id=q.field_id,
-                    field_type=q.field_type,
-                    label=q.label,
-                    description=q.description,
-                    required=q.required,
-                    audio_prompt=synthesis.audio,
-                    constraints=q.constraints,
-                    options=q.options,
-                )
-                result.append(updated)
+                # model_copy preserves the FEAT-236 voice fields.
+                result.append(q.model_copy(update={"audio_prompt": synthesis.audio}))
             except Exception as exc:
                 self.logger.warning(
                     "TTS synthesis failed for field %s: %s", q.field_id, exc
