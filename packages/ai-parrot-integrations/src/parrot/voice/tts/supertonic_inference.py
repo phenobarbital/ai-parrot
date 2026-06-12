@@ -38,6 +38,7 @@ directly at the ``onnx/`` directory is also tolerated.
 
 Added by FEAT-231 follow-up (Supertonic 4-graph inference wiring).
 """
+
 from __future__ import annotations
 
 import json
@@ -58,9 +59,38 @@ logger = logging.getLogger(__name__)
 # rather than crashing a live synthesis request.
 AVAILABLE_LANGS = frozenset(
     {
-        "en", "ko", "ja", "ar", "bg", "cs", "da", "de", "el", "es", "et", "fi",
-        "fr", "hi", "hr", "hu", "id", "it", "lt", "lv", "nl", "pl", "pt", "ro",
-        "ru", "sk", "sl", "sv", "tr", "uk", "vi", "na",
+        "en",
+        "ko",
+        "ja",
+        "ar",
+        "bg",
+        "cs",
+        "da",
+        "de",
+        "el",
+        "es",
+        "et",
+        "fi",
+        "fr",
+        "hi",
+        "hr",
+        "hu",
+        "id",
+        "it",
+        "lt",
+        "lv",
+        "nl",
+        "pl",
+        "pt",
+        "ro",
+        "ru",
+        "sk",
+        "sl",
+        "sv",
+        "tr",
+        "uk",
+        "vi",
+        "na",
     }
 )
 
@@ -89,10 +119,23 @@ _EMOJI_RE = re.compile(
 )
 
 _CHAR_REPLACEMENTS = {
-    "–": "-", "‑": "-", "—": "-", "_": " ",
-    "“": '"', "”": '"', "‘": "'", "’": "'",
-    "´": "'", "`": "'",
-    "[": " ", "]": " ", "|": " ", "/": " ", "#": " ", "→": " ", "←": " ",
+    "–": "-",
+    "‑": "-",
+    "—": "-",
+    "_": " ",
+    "“": '"',
+    "”": '"',
+    "‘": "'",
+    "’": "'",
+    "´": "'",
+    "`": "'",
+    "[": " ",
+    "]": " ",
+    "|": " ",
+    "/": " ",
+    "#": " ",
+    "→": " ",
+    "←": " ",
 }
 _EXPR_REPLACEMENTS = {"@": " at ", "e.g.,": "for example, ", "i.e.,": "that is, "}
 
@@ -125,9 +168,7 @@ def length_to_mask(lengths: np.ndarray, max_len: Optional[int] = None) -> np.nda
     return mask.reshape(-1, 1, width)
 
 
-def get_latent_mask(
-    wav_lengths: np.ndarray, base_chunk_size: int, chunk_compress_factor: int
-) -> np.ndarray:
+def get_latent_mask(wav_lengths: np.ndarray, base_chunk_size: int, chunk_compress_factor: int) -> np.ndarray:
     """Mask the latent sequence to the per-item audio length.
 
     Args:
@@ -227,9 +268,7 @@ class UnicodeProcessor:
             lang = "en"
         return f"<{lang}>{text}</{lang}>"
 
-    def __call__(
-        self, text_list: list[str], lang_list: list[str]
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def __call__(self, text_list: list[str], lang_list: list[str]) -> tuple[np.ndarray, np.ndarray]:
         """Tokenise a batch of strings.
 
         Args:
@@ -240,16 +279,12 @@ class UnicodeProcessor:
             ``(text_ids, text_mask)`` — int64 ids ``(B, L)`` and the
             float32 length mask ``(B, 1, L)``.
         """
-        processed = [
-            self._preprocess_text(t, lang) for t, lang in zip(text_list, lang_list)
-        ]
+        processed = [self._preprocess_text(t, lang) for t, lang in zip(text_list, lang_list)]
         lengths = np.array([len(t) for t in processed], dtype=np.int64)
         text_ids = np.zeros((len(processed), int(lengths.max())), dtype=np.int64)
         for i, t in enumerate(processed):
             codepoints = np.array([ord(c) for c in t], dtype=np.uint16)
-            text_ids[i, : len(codepoints)] = [
-                self._lookup(int(cp)) for cp in codepoints
-            ]
+            text_ids[i, : len(codepoints)] = [self._lookup(int(cp)) for cp in codepoints]
         return text_ids, length_to_mask(lengths)
 
 
@@ -285,12 +320,8 @@ def load_voice_style(path: str) -> Style:
         raw = json.load(fh)
     ttl_dims = raw["style_ttl"]["dims"]
     dp_dims = raw["style_dp"]["dims"]
-    ttl = np.array(raw["style_ttl"]["data"], dtype=np.float32).reshape(
-        1, ttl_dims[1], ttl_dims[2]
-    )
-    dp = np.array(raw["style_dp"]["data"], dtype=np.float32).reshape(
-        1, dp_dims[1], dp_dims[2]
-    )
+    ttl = np.array(raw["style_ttl"]["data"], dtype=np.float32).reshape(1, ttl_dims[1], ttl_dims[2])
+    dp = np.array(raw["style_dp"]["data"], dtype=np.float32).reshape(1, dp_dims[1], dp_dims[2])
     return Style(ttl, dp)
 
 
@@ -351,9 +382,7 @@ class SupertonicPipeline:
         self.total_step = total_step
         self.speed = speed
 
-        self.onnx_dir, self.voice_styles_dir = self._resolve_dirs(
-            model_dir, onnx_subdir, voice_styles_subdir
-        )
+        self.onnx_dir, self.voice_styles_dir = self._resolve_dirs(model_dir, onnx_subdir, voice_styles_subdir)
 
         with open(os.path.join(self.onnx_dir, _CFG_JSON), "r", encoding="utf-8") as fh:
             self.cfgs = json.load(fh)
@@ -362,22 +391,17 @@ class SupertonicPipeline:
         self.chunk_compress_factor = int(self.cfgs["ttl"]["chunk_compress_factor"])
         self.latent_dim = int(self.cfgs["ttl"]["latent_dim"])
 
-        self.text_processor = UnicodeProcessor(
-            os.path.join(self.onnx_dir, _INDEXER_JSON)
-        )
+        self.text_processor = UnicodeProcessor(os.path.join(self.onnx_dir, _INDEXER_JSON))
 
         providers = ["CPUExecutionProvider"]
         if use_gpu:  # pragma: no cover - not exercised in CI
             self.logger.warning(
-                "SupertonicPipeline: use_gpu requested; falling back to CPU "
-                "(GPU execution is not yet validated)."
+                "SupertonicPipeline: use_gpu requested; falling back to CPU " "(GPU execution is not yet validated)."
             )
         opts = ort.SessionOptions()
 
         def _load(name: str) -> "ort.InferenceSession":
-            return ort.InferenceSession(
-                os.path.join(self.onnx_dir, name), sess_options=opts, providers=providers
-            )
+            return ort.InferenceSession(os.path.join(self.onnx_dir, name), sess_options=opts, providers=providers)
 
         self.logger.info("SupertonicPipeline: loading ONNX graphs from %s", self.onnx_dir)
         self.dp_ort = _load(_DP_ONNX)
@@ -394,9 +418,7 @@ class SupertonicPipeline:
     # -- resolution helpers --------------------------------------------------
 
     @staticmethod
-    def _resolve_dirs(
-        model_dir: str, onnx_subdir: str, voice_styles_subdir: str
-    ) -> tuple[str, str]:
+    def _resolve_dirs(model_dir: str, onnx_subdir: str, voice_styles_subdir: str) -> tuple[str, str]:
         """Locate the onnx/ and voice_styles/ directories.
 
         Accepts either the repo root (containing ``onnx/``) or the ``onnx``
@@ -435,9 +457,7 @@ class SupertonicPipeline:
         candidate = os.path.join(self.voice_styles_dir, name)
         if os.path.isfile(candidate):
             return candidate
-        raise ValueError(
-            f"Supertonic voice style '{name}' not found in {self.voice_styles_dir}"
-        )
+        raise ValueError(f"Supertonic voice style '{name}' not found in {self.voice_styles_dir}")
 
     def _get_style(self, voice: Optional[str]) -> Style:
         """Return the (cached) :class:`Style` for a voice id."""
@@ -459,14 +479,10 @@ class SupertonicPipeline:
         latent_len = int((wav_len_max + chunk_size - 1) // chunk_size)
         latent_dim = self.latent_dim * self.chunk_compress_factor
         noisy = np.random.randn(bsz, latent_dim, latent_len).astype(np.float32)
-        latent_mask = get_latent_mask(
-            wav_lengths, self.base_chunk_size, self.chunk_compress_factor
-        )
+        latent_mask = get_latent_mask(wav_lengths, self.base_chunk_size, self.chunk_compress_factor)
         return noisy * latent_mask, latent_mask
 
-    def _infer_chunk(
-        self, text: str, lang: str, style: Style
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def _infer_chunk(self, text: str, lang: str, style: Style) -> tuple[np.ndarray, np.ndarray]:
         """Run the four graphs for one (single-item) text chunk.
 
         Returns:
@@ -476,9 +492,7 @@ class SupertonicPipeline:
         text_ids, text_mask = self.text_processor([text], [lang])
 
         # 1) Duration predictor -> seconds, scaled by speed.
-        duration, *_ = self.dp_ort.run(
-            None, {"text_ids": text_ids, "style_dp": style.dp, "text_mask": text_mask}
-        )
+        duration, *_ = self.dp_ort.run(None, {"text_ids": text_ids, "style_dp": style.dp, "text_mask": text_mask})
         duration = duration / self.speed
 
         # 2) Text encoder -> text embedding.
@@ -536,9 +550,7 @@ class SupertonicPipeline:
         """
         lang = (language or "en").split("-")[0].lower()
         if lang not in AVAILABLE_LANGS:
-            self.logger.warning(
-                "SupertonicPipeline: language '%s' unsupported; using 'en'.", language
-            )
+            self.logger.warning("SupertonicPipeline: language '%s' unsupported; using 'en'.", language)
             lang = "en"
 
         style = self._get_style(voice)
@@ -554,9 +566,7 @@ class SupertonicPipeline:
                 wav_cat = wav
                 total_seconds = float(duration[0])
             else:
-                silence = np.zeros(
-                    (1, int(silence_duration * self.sample_rate)), dtype=np.float32
-                )
+                silence = np.zeros((1, int(silence_duration * self.sample_rate)), dtype=np.float32)
                 wav_cat = np.concatenate([wav_cat, silence, wav], axis=1)
                 total_seconds += float(duration[0]) + silence_duration
 

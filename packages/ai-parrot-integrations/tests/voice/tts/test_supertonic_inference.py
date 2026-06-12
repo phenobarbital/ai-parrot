@@ -12,6 +12,7 @@ Tests cover:
 ONNX sessions are faked (no real weights / no onnxruntime graph load), so the
 suite runs anywhere.
 """
+
 import io
 import json
 import wave
@@ -25,7 +26,6 @@ from parrot.voice.tts.supertonic_inference import (
     UnicodeProcessor,
     chunk_text,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fake ONNX sessions + model dir
