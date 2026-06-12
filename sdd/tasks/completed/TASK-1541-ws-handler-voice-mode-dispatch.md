@@ -208,9 +208,40 @@ class HTML5Renderer(AbstractFormRenderer):  # renderers/html5.py:78
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Opus 4.8)
+**Date**: 2026-06-12
+**Notes**: Added `answer_selection`/`answer_payload`/`confirm_answer` to the
+`_dispatch_text` handlers dict and implemented `_handle_answer_selection`
+(single `value` + multi `values[]`, validates against `options`, stores
+`source="selection"`, multi joined as comma string), `_handle_answer_payload`
+(VISUAL_FALLBACK → `source="text"`), and `_handle_confirm_answer`
+(`confirmed:true` stores the pending transcript + advances; `false` discards +
+re-sends the same question). `_handle_answer_audio` now gates on
+`session.config.stt_confirm_threshold`: below threshold it stores a PENDING
+`AudioAnswer` and emits `confirm_request` without advancing; at/above (or
+`confidence None`) it keeps auto-advance. `_send_question` carries
+`voice_mode`/`render_mode`/`sensitive` always, `fallback_html` for
+VISUAL_FALLBACK (via `HTML5Renderer._registry[ft].render`, minimal `<input>`
+fallback when no renderer — REST has none), enumerates PROMPT_SELECT option
+labels into the narration when `enumerate_options`, and mutes audio for
+`sensitive` questions. Synthesis routed through a new `_synthesize` helper:
+injected `self.synthesizer` wins (tests/overrides); otherwise the SuperTonic-
+first `synthesize_with_fallback` is used only when the new
+`auto_synthesize=True` flag is set (default False → no network for callers that
+pass no synthesizer). Config parsed from `start_session` via
+`_build_session_config`. 15 new handler tests; full formdesigner suite 154
+passed; ruff clean.
+**Deviations from spec**: (1) Two files were modified beyond the task's
+"Files to Create/Modify" table, both sanctioned/required: `audio/models.py`
+(added `AudioSessionState.config` + `.pending`) is explicitly directed by this
+task's Codebase Contract ("Prefer extending AudioSessionState with config:...
+pending:..."); `renderers/audio.py` had `synthesize_with_fallback`'s `except`
+broadened from `(ImportError, ValueError, RuntimeError)` to `Exception` because
+the live Google backend (creds present in this env) raises a domain-specific
+`SpeechGenerationError` — the narrow catch would have let it propagate and
+break the "never raises" contract the helper documents. (2) Sensitive questions
+carry NO TTS audio at all (not "narrate the label only"): the task AC and test
+name (`no_audio`) require it, and it is the safer posture for passwords. (3)
+Added an `auto_synthesize` opt-in constructor flag so the no-injected-
+synthesizer fallback does not fire (and hit a real backend) until TASK-1542
+wires it on — keeps existing FEAT-224 tests network-free.
