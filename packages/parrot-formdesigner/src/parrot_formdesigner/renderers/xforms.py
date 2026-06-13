@@ -91,6 +91,8 @@ _FIELD_TO_XFORMS: dict[FieldType, tuple[str, str | None]] = {
     FieldType.RANKING: ("range", "integer"),         # <xf:range>
     # Phase 3 — FEAT-170
     FieldType.REST: ("input", "string"),             # fallback: plain text
+    # FEAT-300 — formula fields (evaluator is FEAT-301; render as read-only input)
+    FieldType.FORMULA: ("input", "string"),          # fallback: plain text placeholder
 }
 
 

@@ -80,6 +80,8 @@ _AC_FALLBACK_TYPES = frozenset({
     FieldType.AVAILABILITY,
     # Phase 3 — FEAT-170
     FieldType.REST,
+    # FEAT-300 — formula fields (evaluator is FEAT-301)
+    FieldType.FORMULA,
 })
 
 

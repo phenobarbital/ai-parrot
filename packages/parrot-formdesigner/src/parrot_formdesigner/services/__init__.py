@@ -14,9 +14,11 @@ from .event_registry import (
     list_form_events,
     register_form_event,
 )
+from .form_version import FormVersionService, VersionMeta
 from .forwarder import ForwardResult, SubmissionForwarder
 from .metadata_callbacks import MetadataCallbackInput, MetadataCallbackOutput
 from .metadata_enricher import MetadataResolutionError, enrich_submission
+from .question_bank import QuestionBankService, ReusableField, ReusableFieldRef
 from .registry import FormRegistry, FormStorage
 from .storage import PostgresFormStorage
 from .submissions import (
@@ -30,6 +32,7 @@ from .validators import FormValidator, ValidationResult
 __all__ = [
     "CORE_METADATA_COLUMNS",
     "FormCache",
+    "FormVersionService",
     "ForwardResult",
     "FormRegistry",
     "FormStorage",
@@ -40,8 +43,12 @@ __all__ = [
     "MetadataCallbackOutput",
     "MetadataResolutionError",
     "PostgresFormStorage",
+    "QuestionBankService",
+    "ReusableField",
+    "ReusableFieldRef",
     "SubmissionForwarder",
     "ValidationResult",
+    "VersionMeta",
     "enrich_submission",
     # Lifecycle event registry (FEAT-188)
     "register_form_event",

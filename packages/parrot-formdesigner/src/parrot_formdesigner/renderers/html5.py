@@ -332,15 +332,17 @@ class HTML5Renderer(AbstractFormRenderer):
         def depends_on_json(dep: DependencyRule) -> str:
             return dep.model_dump_json()
 
-        # Collect render warnings for new field types rendered as fallbacks
+        # Collect render warnings for new field types rendered as fallbacks.
+        # FORMULA fields are rendered as read-only placeholders (evaluator is FEAT-301).
         warnings: list[RenderWarning] = []
-        _new_types = {
-            FieldType.SIGNATURE, FieldType.DYNAMIC_SELECT, FieldType.TRANSFER_LIST,
-            FieldType.REMOTE_RESPONSE, FieldType.AVAILABILITY, FieldType.LOCATION,
-            FieldType.TAGS, FieldType.NPS, FieldType.LIKERT, FieldType.RANKING,
-        }
-        # HTML5 renders all new types natively; no warnings needed here.
-        # (warnings are emitted only for renderers that use FallbackRenderer)
+        for _field in form.iter_all_fields():
+            if _field.field_type == FieldType.FORMULA:
+                warnings.append(RenderWarning(
+                    field_id=_field.field_id,
+                    field_type=FieldType.FORMULA.value,
+                    renderer="html5",
+                    reason="formula evaluation not available (FEAT-301) — rendered as read-only placeholder",
+                ))
 
         template = self._env.get_template("form.html.j2")
         rendered_html = template.render(
@@ -743,6 +745,14 @@ class HTML5Renderer(AbstractFormRenderer):
                 # directly to avoid event-loop re-entrancy issues.
                 parts.append(self._render_audio_field(field, value, locale, error))
             # else: fallback — no audio renderer registered, render nothing
+        # FEAT-300 — FORMULA: read-only placeholder (evaluator is FEAT-301)
+        elif ft == FieldType.FORMULA:
+            parts.append(
+                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_formula_placeholder(field))
 
         else:
             parts.append(
@@ -1473,3 +1483,35 @@ class HTML5Renderer(AbstractFormRenderer):
 
         parts.append("</div>")
         return "\n".join(parts)
+
+    def _render_formula_placeholder(self, field: FormField) -> str:
+        """Render a FORMULA field as a read-only placeholder.
+
+        The formula evaluator ships in FEAT-301; this stub renders a disabled
+        text input so the form remains valid HTML.  A ``RenderWarning`` is
+        emitted at the top-level ``render()`` call.
+
+        Args:
+            field: FORMULA FormField.
+
+        Returns:
+            HTML string for the read-only formula placeholder.
+        """
+        meta = field.meta or {}
+        expression = meta.get("expression")
+        result_type = meta.get("result_type", "")
+        title = "formula field — expression unavailable (FEAT-301)"
+        if expression:
+            # expression will be user-supplied once FEAT-301 lands — escape it
+            title = f"formula: {expression}"
+        result_label = f" ({result_type})" if result_type else ""
+        safe_id = html.escape(str(field.field_id), quote=True)
+        safe_title = html.escape(str(title), quote=True)
+        safe_label = html.escape(str(result_label), quote=True)
+        tw = "block w-full border border-gray-200 bg-gray-50 rounded-md px-3 py-2 text-sm text-gray-500 cursor-not-allowed"
+        return (
+            f'<input type="text" id="{safe_id}" name="{safe_id}" '
+            f'class="{tw}" disabled readonly '
+            f'placeholder="[formula{safe_label}]" title="{safe_title}" '
+            f'data-formula="true">'
+        )
