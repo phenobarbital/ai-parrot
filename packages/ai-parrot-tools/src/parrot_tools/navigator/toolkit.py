@@ -23,6 +23,7 @@ from parrot.bots.database.models import TableMetadata
 from parrot.bots.database.toolkits.postgres import PostgresToolkit
 from parrot.tools.decorators import tool_schema
 from .schemas import (
+    ExecuteSqlInput,
     ProgramCreateInput,
     ProgramUpdateInput,
     ModuleCreateInput,
@@ -50,10 +51,19 @@ class NavigatorToolkit(PostgresToolkit):
     via asyncdb pool.  All write tools require ``read_only=False``
     (default for NavigatorToolkit: always False).
 
+    Args:
+        confirm_execution: When ``True``, all write tools skip the dry-run
+            confirmation step and execute immediately.  Useful for scripted
+            or trusted contexts where human-in-the-loop approval is handled
+            externally.  Defaults to ``False`` (safe, interactive mode).
+
     Example usage::
 
         toolkit = NavigatorToolkit(dsn="postgres://user:pw@host/db")
         tools = toolkit.get_tools()  # nav_create_program, nav_get_program, …
+
+        # Skip all dry-run gates (e.g. in an automated pipeline):
+        toolkit = NavigatorToolkit(dsn="...", confirm_execution=True)
     """
 
     tool_prefix: str = "nav"
@@ -80,6 +90,7 @@ class NavigatorToolkit(PostgresToolkit):
         dsn: str = "",
         default_client_id: int = 1,
         user_id: Optional[int] = None,
+        confirm_execution: bool = False,
         page_index: Optional[Any] = None,
         builder_groups: Optional[List[str]] = None,
         **kwargs: Any,
@@ -93,14 +104,15 @@ class NavigatorToolkit(PostgresToolkit):
             )
 
         # Block raw CRUD + schema tools inherited from PostgresToolkit/SQLToolkit.
-        # NavigatorToolkit intentionally exposes only its own business-logic tools
-        # (nav_create_program, nav_get_module, …) — not bare database primitives.
-        # Exposing nav_insert_row / nav_execute_query etc. to the LLM would bypass
-        # authorization guardrails (_check_program_access, _require_superuser, …).
+        # NavigatorToolkit exposes only its own business-logic tools.
+        # execute_sql is NOT in this list: NavigatorToolkit.execute_sql provides a
+        # clean LLM-facing override (just sql + returning) that shadows the parent's
+        # version (which has tuple/Any params incompatible with JSON schema).
+        # Python MRO ensures getattr(self, 'execute_sql') always returns the override.
         # CRITICAL: must be set before super().__init__ which calls _generate_tools().
         _raw_inherited: tuple[str, ...] = (
             "insert_row", "upsert_row", "update_row", "delete_row", "select_rows",
-            "execute_query", "execute_sql", "search_schema", "explain_query",
+            "execute_query", "search_schema", "explain_query",
             "generate_query", "validate_query", "reload_metadata",
         )
         self.exclude_tools = (
@@ -110,6 +122,7 @@ class NavigatorToolkit(PostgresToolkit):
 
         # Navigator-specific state (before super().__init__)
         self._pending_confirmations: Dict[str, Any] = {}
+        self._auto_confirm: bool = confirm_execution
         self.default_client_id = default_client_id
         self.user_id = user_id
         self._page_index = page_index
@@ -155,15 +168,30 @@ class NavigatorToolkit(PostgresToolkit):
         return result
 
     async def _prepare_kwargs(self, tool_name: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        """Inject confirm_execution=True when a pending confirmation exists for this tool."""
-        pending = self._pending_confirmations.get(tool_name)
-        if pending is not None and not kwargs.get("confirm_execution", False):
+        """Inject confirm_execution=True when auto-confirm is on or a pending confirmation exists.
+
+        Always overrides whatever the model passed — the model is never trusted to
+        set confirm_execution=True directly (that would bypass HITL approval).
+        """
+        if self._auto_confirm:
+            kwargs = dict(kwargs)
+            kwargs["confirm_execution"] = True
+        elif self._pending_confirmations.get(tool_name) is not None:
             kwargs = dict(kwargs)
             kwargs["confirm_execution"] = True
             self.logger.debug(
                 "Auto-injecting confirm_execution=True for %s (user approved pending action)",
                 tool_name,
             )
+        elif kwargs.get("confirm_execution", False):
+            # Model tried to bypass HITL — force dry-run instead.
+            self.logger.warning(
+                "Model passed confirm_execution=True for %s without HITL approval — "
+                "resetting to False to trigger dry-run.",
+                tool_name,
+            )
+            kwargs = dict(kwargs)
+            kwargs["confirm_execution"] = False
         return kwargs
 
     def _invalidate_permissions(self) -> None:
@@ -579,6 +607,30 @@ class NavigatorToolkit(PostgresToolkit):
             params.append(ids)
             return idx + 1
         return idx
+
+    # =========================================================================
+    # SQL EXECUTION (LLM-facing override with clean schema)
+    # =========================================================================
+
+    @tool_schema(ExecuteSqlInput)
+    async def execute_sql(  # type: ignore[override]
+        self,
+        sql: str,
+        params: tuple = (),
+        conn: Optional[Any] = None,
+        returning: bool = False,
+        single_row: bool = False,
+    ) -> Any:
+        """Execute a raw SQL statement (DDL or DML).
+
+        Use for CREATE SCHEMA, CREATE TABLE, and other DDL operations that
+        cannot be expressed through the Navigator CRUD tools.
+        DDL statements (CREATE, ALTER, DROP) return None on success — that is normal.
+        For queries that return rows (SELECT or INSERT … RETURNING), pass returning=True.
+        """
+        return await super().execute_sql(
+            sql, params, conn=conn, returning=returning, single_row=single_row
+        )
 
     # =========================================================================
     # PROGRAMS
