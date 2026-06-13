@@ -91,19 +91,37 @@ def _to_comparable(value: Any) -> Any:
     return str(value)
 
 
-def _eval_condition(condition: FieldCondition, answers: dict[str, Any]) -> bool:
+def _eval_condition(
+    condition: FieldCondition,
+    answers: dict[str, Any],
+    location_vars: dict[str, Any] | None = None,
+    visit_context: dict[str, Any] | None = None,
+) -> bool:
     """Evaluate a single :class:`~parrot_formdesigner.core.constraints.FieldCondition`.
 
     Args:
         condition: The condition to evaluate.
         answers: Current answer dict keyed by ``field_id``.
+        location_vars: Org-graph location variables (FEAT-301), keyed by name.
+        visit_context: Visit-level metadata (FEAT-301), keyed by name.
 
     Returns:
         ``True`` if the condition is satisfied, ``False`` otherwise.
-        Never raises — missing field answers return ``False`` for relational
-        operators and ``True`` for ``is_empty``.
+        Never raises — a missing source value returns ``False`` for relational
+        operators and ``True`` for ``is_empty`` (key-missing semantics).
+
+    The value source is selected by ``condition.source``:
+    ``"field"`` (default) → ``answers[field_id]``;
+    ``"location_variable"`` → ``location_vars[key]``;
+    ``"visit_context"`` → ``visit_context[key]``.
     """
-    raw = answers.get(condition.field_id)
+    source = getattr(condition, "source", "field") or "field"
+    if source == "location_variable":
+        raw = (location_vars or {}).get(condition.key)
+    elif source == "visit_context":
+        raw = (visit_context or {}).get(condition.key)
+    else:
+        raw = answers.get(condition.field_id)
     op = condition.operator
     expected = condition.value
 
@@ -162,6 +180,8 @@ def _eval_logic(
     conditions: list[FieldCondition],
     logic: str,
     answers: dict[str, Any],
+    location_vars: dict[str, Any] | None = None,
+    visit_context: dict[str, Any] | None = None,
 ) -> bool:
     """Evaluate a list of conditions under the given logic gate.
 
@@ -176,7 +196,7 @@ def _eval_logic(
     if not conditions:
         # No conditions → rule always fires (spec §8: empty condition list = unconditional)
         return True
-    results = [_eval_condition(c, answers) for c in conditions]
+    results = [_eval_condition(c, answers, location_vars, visit_context) for c in conditions]
     match logic:
         case "and":
             return all(results)
@@ -428,6 +448,8 @@ class RuleEvaluator:
         answers: dict[str, Any],
         *,
         locale: str = "en",
+        location_vars: dict[str, Any] | None = None,
+        visit_context: dict[str, Any] | None = None,
     ) -> RuleResolution:
         """Resolve all conditional-section rules for ``form`` against ``answers``.
 
@@ -456,11 +478,12 @@ class RuleEvaluator:
         ordered = _topo_order(all_fields)
 
         for field in ordered:
-            await self._apply_pre_dependency(field, answers, visible, required, computed)
+            await self._apply_pre_dependency(field, answers, visible, required, computed, location_vars, visit_context)
 
         for field in ordered:
             await self._apply_post_dependencies(
-                field, answers, visible, required, computed, cleared
+                field, answers, visible, required, computed, cleared,
+                location_vars, visit_context,
             )
 
         return RuleResolution(
@@ -477,6 +500,8 @@ class RuleEvaluator:
         visible: dict[str, bool],
         required: dict[str, bool],
         computed: dict[str, Any],
+        location_vars: dict[str, Any] | None = None,
+        visit_context: dict[str, Any] | None = None,
     ) -> None:
         """Apply ``FormField.depends_on`` (pre-dependency) to resolution dicts.
 
@@ -491,7 +516,7 @@ class RuleEvaluator:
         if rule is None:
             return
 
-        fired = _eval_logic(rule.conditions, rule.logic, answers)
+        fired = _eval_logic(rule.conditions, rule.logic, answers, location_vars, visit_context)
 
         # Apply visibility/required effect
         effect = rule.effect
@@ -528,6 +553,8 @@ class RuleEvaluator:
         required: dict[str, bool],
         computed: dict[str, Any],
         cleared: list[str],
+        location_vars: dict[str, Any] | None = None,
+        visit_context: dict[str, Any] | None = None,
     ) -> None:
         """Apply ``FormField.post_depends`` (post-dependencies) to resolution dicts.
 
@@ -549,7 +576,7 @@ class RuleEvaluator:
         for post in post_list:
             # Evaluate conditions (if any)
             if post.conditions:
-                fired = _eval_logic(post.conditions, post.logic, answers)
+                fired = _eval_logic(post.conditions, post.logic, answers, location_vars, visit_context)
             else:
                 # No conditions: post-dep fires if the owner field has a non-empty value
                 fired = owner_answer is not None and owner_answer != "" and owner_answer != []

@@ -156,6 +156,12 @@ class FieldCondition(BaseModel):
     field_id: str
     operator: ConditionOperator
     value: Any = None
+    # FEAT-301: condition source discriminator. "field" (default) reads from
+    # answers[field_id] — fully backward compatible. "location_variable" /
+    # "visit_context" read from the eval context's location_vars / visit_context
+    # using `key`. Legacy serialized conditions (no source) deserialize as field.
+    source: str = "field"
+    key: str | None = None
 
 
 class DependencyRule(BaseModel):
