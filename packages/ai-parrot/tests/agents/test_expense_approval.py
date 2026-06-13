@@ -72,21 +72,52 @@ def _wire_tool(tool, *, approver="boss@corp.com", policy_id="pol-1", timeout=60.
 # ---------------------------------------------------------------------------
 
 
-def test_build_policy_contiguous_tiers_and_email_tier2(monkeypatch):
-    monkeypatch.setenv("EXPENSE_TIER2_EMAILS", "finance@corp.com, oncall@corp.com")
+def test_build_policy_three_tiers_with_second_approver(monkeypatch):
+    monkeypatch.setenv("EXPENSE_TIER3_EMAILS", "finance@corp.com")
+    monkeypatch.delenv("EXPENSE_NOTIFY_PROVIDER", raising=False)
     agent = m.ExpenseApprovalAgent.__new__(m.ExpenseApprovalAgent)
-    policy = agent._build_policy("boss@corp.com", tier1_timeout=120.0, tier2_timeout=3600.0)
+    policy = agent._build_policy(
+        "boss_a@corp.com",
+        tier1_timeout=120.0,
+        tier3_timeout=3600.0,
+        second_approver="boss_b@corp.com",
+        tier2_timeout=90.0,
+    )
 
-    assert [t.level for t in policy.tiers] == [1, 2]
-    tier1, tier2 = policy.tiers
+    assert [t.level for t in policy.tiers] == [1, 2, 3]
+    tier1, tier2, tier3 = policy.tiers
     assert tier1.action_type == EscalationActionType.INTERACT
     assert tier1.channel_type == "teams"
-    assert tier1.target_humans == ["boss@corp.com"]
+    assert tier1.target_humans == ["boss_a@corp.com"]
     assert tier1.timeout == 120.0
-    assert tier2.action_type == EscalationActionType.NOTIFY
-    assert tier2.action_metadata["kind"] == "email"
-    assert tier2.action_metadata["to"] == ["finance@corp.com", "oncall@corp.com"]
-    assert "{question}" in tier2.action_metadata["subject_template"]
+
+    assert tier2.action_type == EscalationActionType.INTERACT
+    assert tier2.channel_type == "teams"
+    assert tier2.target_humans == ["boss_b@corp.com"]
+    assert tier2.timeout == 90.0
+
+    assert tier3.action_type == EscalationActionType.NOTIFY
+    assert tier3.action_metadata["kind"] == "notify"
+    assert tier3.action_metadata["provider"] == "email"
+    # Final notification reaches both managers + the extra address.
+    assert tier3.action_metadata["to"] == [
+        "boss_a@corp.com", "boss_b@corp.com", "finance@corp.com",
+    ]
+    # The requesting employee is copied on the final notification.
+    assert tier3.action_metadata["cc_originator"] is True
+
+
+def test_build_policy_collapses_to_two_tiers_without_second_approver(monkeypatch):
+    monkeypatch.setenv("EXPENSE_TIER3_EMAILS", "")
+    agent = m.ExpenseApprovalAgent.__new__(m.ExpenseApprovalAgent)
+    policy = agent._build_policy(
+        "boss_a@corp.com", tier1_timeout=120.0, tier3_timeout=3600.0
+    )
+
+    assert [t.level for t in policy.tiers] == [1, 2]
+    assert policy.tiers[0].action_type == EscalationActionType.INTERACT
+    assert policy.tiers[1].action_type == EscalationActionType.NOTIFY
+    assert policy.tiers[1].action_metadata["to"] == ["boss_a@corp.com"]
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +151,26 @@ async def test_quick_tool_blocks_and_passes_correct_interaction(fake_manager):
     assert interaction.severity == Severity.NORMAL
     assert interaction.source_agent == "expense_approval"
     assert "approved" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_quick_tool_wires_originator_and_notify_channel(fake_manager):
+    """The interaction carries originator + notify wiring for user updates."""
+    fake_manager.request_human_input = AsyncMock(
+        return_value=InteractionResult(
+            interaction_id="i1", status=InteractionStatus.COMPLETED,
+            consolidated_value=True,
+        )
+    )
+    tool = _wire_tool(m.QuickTeamsApprovalTool())
+    tool.user_notify_channel = "web"
+    await tool._execute(
+        amount=40.0, reason="x", requestor="alice@corp.com",
+    )
+    interaction = fake_manager.request_human_input.call_args[0][0]
+    assert interaction.originator == "alice@corp.com"
+    assert interaction.notify_channel == "web"
+    assert interaction.notify_recipient == "alice@corp.com"
 
 
 @pytest.mark.asyncio

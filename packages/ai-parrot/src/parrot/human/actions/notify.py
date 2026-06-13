@@ -11,24 +11,37 @@ import logging
 from typing import Any, Dict, Optional
 
 from .base import EscalationAction
-from .backends import EmailBackend, WebhookBackend, ActionBackendError
+from .backends import (
+    ActionBackendError,
+    EmailBackend,
+    NotifyBackend,
+    WebhookBackend,
+)
 
 
 class NotifyAction(EscalationAction):
-    """Dispatches one-way escalation notifications to Email or Webhook backends.
+    """Dispatches one-way escalation notifications to a backend.
 
     The backend is selected by ``tier.action_metadata["kind"]`` (or the legacy
     ``"channel"`` key).  Supported kinds:
 
+    - ``"notify"`` → :class:`~parrot.human.actions.backends.NotifyBackend`
+      (async-notify; the delivery channel is the ``provider`` attribute —
+      email / ses / sms / telegram / teams). **Recommended.**
     - ``"email"`` → :class:`~parrot.human.actions.backends.EmailBackend`
+      (async-notify email provider; kept for backwards compatibility).
     - ``"webhook"`` → :class:`~parrot.human.actions.backends.WebhookBackend`
 
-    When a backend fails, the exception is caught and a dict with
-    ``error=True`` is returned so the manager can advance to the next tier.
+    When a backend fails it raises :class:`ActionBackendError`, which is
+    re-raised so the manager can advance to the next tier.
 
     Args:
-        email_cfg: Keyword arguments forwarded to :class:`EmailBackend.__init__`.
+        email_cfg: Keyword arguments forwarded to :class:`EmailBackend.__init__`
+            (SMTP-flavoured options for the legacy ``"email"`` kind).
         webhook_cfg: Keyword arguments forwarded to :class:`WebhookBackend.__init__`.
+        notify_cfg: Keyword arguments forwarded to :class:`NotifyBackend.__init__`
+            (``default_provider``, ``default_from``, ``provider_options``) for
+            the ``"notify"`` kind.
     """
 
     def __init__(
@@ -36,9 +49,11 @@ class NotifyAction(EscalationAction):
         *,
         email_cfg: Optional[Dict[str, Any]] = None,
         webhook_cfg: Optional[Dict[str, Any]] = None,
+        notify_cfg: Optional[Dict[str, Any]] = None,
     ) -> None:
         self._email_cfg: Dict[str, Any] = email_cfg or {}
         self._webhook_cfg: Dict[str, Any] = webhook_cfg or {}
+        self._notify_cfg: Dict[str, Any] = notify_cfg or {}
         self._cache: Dict[str, Any] = {}
         self.logger = logging.getLogger("parrot.human.actions.notify")
 
@@ -46,7 +61,7 @@ class NotifyAction(EscalationAction):
         """Return a cached backend instance for the given *kind*.
 
         Args:
-            kind: One of ``"email"``, ``"webhook"``.
+            kind: One of ``"notify"``, ``"email"``, ``"webhook"``.
 
         Returns:
             The cached backend instance.
@@ -56,7 +71,9 @@ class NotifyAction(EscalationAction):
         """
         if kind in self._cache:
             return self._cache[kind]
-        if kind == "email":
+        if kind == "notify":
+            self._cache[kind] = NotifyBackend(**self._notify_cfg)
+        elif kind == "email":
             self._cache[kind] = EmailBackend(**self._email_cfg)
         elif kind == "webhook":
             self._cache[kind] = WebhookBackend(**self._webhook_cfg)

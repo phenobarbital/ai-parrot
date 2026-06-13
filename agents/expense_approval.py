@@ -5,11 +5,20 @@ through a **tiered escalation policy** managed by
 :class:`parrot.human.manager.HumanInteractionManager`:
 
 - **Tier 1 — Microsoft Teams approval (interactive).** The agent sends a
-  proactive Adaptive Card (✅ Approve / ❌ Reject / ⏫ Escalate) to a manager
-  on Teams and waits for the decision.
-- **Tier 2 — Email escalation (one-way NOTIFY).** When Tier 1 **times out**
-  *or* the approver taps **Escalate**, a notification email is sent to the
-  finance / on-call addresses and the agent resumes with the escalation result.
+  proactive Adaptive Card (✅ Approve / ❌ Reject / ⏫ Escalate) to the *first*
+  manager on Teams and waits for the decision.
+- **Tier 2 — Second manager approval (interactive).** When Tier 1 **times out**
+  *or* the approver taps **Escalate**, the request is escalated to a *second*
+  manager on Teams. The requesting employee is told their case moved on.
+- **Tier 3 — Notification escalation (one-way NOTIFY via async-notify).** When
+  Tier 2 also times out, a notification is sent to **both** managers with a
+  **copy to the requesting employee**, through async-notify — so switching the
+  delivery channel (email → SES → SMS → Telegram) is a single ``provider``
+  attribute, not a code change.
+
+Throughout the chain the **requesting employee** receives interim "tu caso fue
+escalado, espera" status notices via ``notify_channel`` (their conversation
+channel and/or an async-notify provider).
 
 A plain **Reject** is *not* an escalation — it resolves Tier 1 with a "denied"
 decision that the agent reports back to the caller.
@@ -40,9 +49,18 @@ Tier 2 — SMTP email:
 
 Policy & approvers:
     ``EXPENSE_TIER1_APPROVER`` (Teams email of the first-level approver),
-    ``EXPENSE_TIER2_EMAILS`` (comma-separated Tier 2 escalation emails),
+    ``EXPENSE_TIER2_APPROVER`` (Teams email of the second-level approver;
+        when unset, the policy collapses to a 2-tier Tier1 → notify chain),
+    ``EXPENSE_TIER3_EMAILS`` (comma-separated extra notification recipients
+        added alongside both managers on the final NOTIFY tier),
+    ``EXPENSE_NOTIFY_PROVIDER`` (async-notify provider for the final tier:
+        ``email`` (default), ``ses``, ``telegram``, ``sms``/``twilio`` …),
+    ``EXPENSE_USER_NOTIFY_CHANNEL`` (how to send interim status to the
+        employee: an async-notify provider like ``email`` (default) or the
+        name of a registered HumanChannel such as ``web``/``telegram``),
     ``EXPENSE_TIER1_TIMEOUT`` (seconds before escalating, default ``180``),
-    ``EXPENSE_TIER2_TIMEOUT`` (seconds for the email tier, default ``3600``).
+    ``EXPENSE_TIER2_TIMEOUT`` (seconds for the second manager, default ``180``),
+    ``EXPENSE_TIER3_TIMEOUT`` (seconds for the notify tier, default ``3600``).
 
 LLM:
     ``EXPENSE_APPROVAL_LLM`` (optional model override).
@@ -110,29 +128,39 @@ plainly and tell the user to try again later.
 """
 
 
-def _smtp_email_cfg() -> dict:
-    """Build the :class:`EmailBackend` kwargs from ``HITL_SMTP_*`` env vars.
+def _notify_cfg() -> dict:
+    """Build the :class:`NotifyBackend` config for the final NOTIFY tier.
+
+    Maps the ``HITL_SMTP_*`` env vars onto async-notify email provider
+    options. Switching the actual delivery channel is done per-tier via
+    ``action_metadata["provider"]`` (see :meth:`_build_policy`), so these
+    options apply when that provider is ``email``.
 
     Returns:
-        A dict suitable for ``NotifyAction(email_cfg=...)`` /
-        ``EmailBackend(**cfg)``.
+        A dict suitable for ``NotifyAction(notify_cfg=...)`` /
+        ``NotifyBackend(**cfg)``.
     """
     return {
-        "host": config.get("HITL_SMTP_HOST", fallback="localhost"),
-        "port": int(config.get("HITL_SMTP_PORT", fallback=25)),
-        "username": config.get("HITL_SMTP_USERNAME", fallback=None),
-        "password": config.get("HITL_SMTP_PASSWORD", fallback=None),
+        "default_provider": config.get(
+            "EXPENSE_NOTIFY_PROVIDER", fallback="email"
+        ),
         "default_from": config.get(
             "HITL_SMTP_FROM", fallback="parrot-hitl@parrot.local"
         ),
-        "use_tls": config.getboolean("HITL_SMTP_STARTTLS", fallback=False),
-        "use_ssl": config.getboolean("HITL_SMTP_SSL", fallback=False),
+        "provider_options": {
+            "hostname": config.get("HITL_SMTP_HOST", fallback="localhost"),
+            "port": int(config.get("HITL_SMTP_PORT", fallback=25)),
+            "username": config.get("HITL_SMTP_USERNAME", fallback=None),
+            "password": config.get("HITL_SMTP_PASSWORD", fallback=None),
+            "use_tls": config.getboolean("HITL_SMTP_STARTTLS", fallback=False),
+            "use_ssl": config.getboolean("HITL_SMTP_SSL", fallback=False),
+        },
     }
 
 
-def _tier2_emails() -> List[str]:
-    """Parse ``EXPENSE_TIER2_EMAILS`` (comma-separated) into a clean list."""
-    raw = config.get("EXPENSE_TIER2_EMAILS", fallback="") or ""
+def _tier3_emails() -> List[str]:
+    """Parse ``EXPENSE_TIER3_EMAILS`` (comma-separated) into a clean list."""
+    raw = config.get("EXPENSE_TIER3_EMAILS", fallback="") or ""
     return [addr.strip() for addr in raw.split(",") if addr.strip()]
 
 
@@ -179,6 +207,10 @@ class _TeamsApprovalToolBase(AbstractTool):
         self.approver_email: Optional[str] = None
         self.tier1_timeout: float = 180.0
         self.source_agent: str = "expense_approval"
+        # How to keep the requesting employee informed while their case is
+        # escalated. ``user_notify_channel`` may be an async-notify provider
+        # (e.g. 'email') or the name of a registered HumanChannel ('web').
+        self.user_notify_channel: Optional[str] = None
 
     def _build_interaction(
         self,
@@ -206,6 +238,11 @@ class _TeamsApprovalToolBase(AbstractTool):
             policy_id=self.policy_id,
             severity=sev,
             source_agent=self.source_agent,
+            # Originator wiring: the employee is the requestor. They are CC'd on
+            # the final NOTIFY tier and receive interim status notifications.
+            originator=requestor,
+            notify_channel=self.user_notify_channel,
+            notify_recipient=requestor,
         )
 
     def _preflight_error(self, manager: Any) -> Optional[str]:
@@ -382,33 +419,69 @@ class ExpenseApprovalAgent(Agent):
         return [self._quick_tool, self._escalating_tool]
 
     def _build_policy(
-        self, approver_email: str, tier1_timeout: float, tier2_timeout: float
+        self,
+        approver_email: str,
+        tier1_timeout: float,
+        tier3_timeout: float,
+        second_approver: Optional[str] = None,
+        tier2_timeout: float = 180.0,
     ) -> EscalationPolicy:
-        """Assemble the Teams-then-email escalation policy."""
-        return EscalationPolicy(
-            name="expense-teams-then-email",
-            tiers=[
-                EscalationTier(
-                    level=1,
-                    name="Teams Approval",
-                    channel_type="teams",
-                    action_type=EscalationActionType.INTERACT,
-                    target_humans=[approver_email],
-                    timeout=tier1_timeout,
-                ),
+        """Assemble the manager-A → manager-B → notify escalation policy.
+
+        When ``second_approver`` is provided the policy has three tiers
+        (Teams A → Teams B → notify both + CC user). When it is ``None`` the
+        policy collapses to two tiers (Teams A → notify), preserving the
+        original single-approver behaviour.
+
+        The final NOTIFY tier uses ``kind="notify"`` so delivery flows through
+        async-notify; ``provider`` selects the channel and ``cc_originator``
+        copies the requesting employee.
+        """
+        provider = config.get("EXPENSE_NOTIFY_PROVIDER", fallback="email")
+
+        tiers: List[EscalationTier] = [
+            EscalationTier(
+                level=1,
+                name="Teams Approval (Manager A)",
+                channel_type="teams",
+                action_type=EscalationActionType.INTERACT,
+                target_humans=[approver_email],
+                timeout=tier1_timeout,
+            ),
+        ]
+
+        # Recipients of the final notification: both managers + any extras.
+        notify_to: List[str] = [approver_email]
+        if second_approver:
+            notify_to.append(second_approver)
+            tiers.append(
                 EscalationTier(
                     level=2,
-                    name="Email Escalation",
-                    action_type=EscalationActionType.NOTIFY,
+                    name="Teams Approval (Manager B)",
+                    channel_type="teams",
+                    action_type=EscalationActionType.INTERACT,
+                    target_humans=[second_approver],
                     timeout=tier2_timeout,
-                    action_metadata={
-                        "kind": "email",
-                        "to": _tier2_emails(),
-                        "subject_template": "Expense escalation: {question}",
-                    },
-                ),
-            ],
+                )
+            )
+        notify_to.extend(e for e in _tier3_emails() if e not in notify_to)
+
+        tiers.append(
+            EscalationTier(
+                level=len(tiers) + 1,
+                name="Notification Escalation",
+                action_type=EscalationActionType.NOTIFY,
+                timeout=tier3_timeout,
+                action_metadata={
+                    "kind": "notify",
+                    "provider": provider,
+                    "to": notify_to,
+                    "cc_originator": True,
+                    "subject_template": "Expense escalation: {question}",
+                },
+            )
         )
+        return EscalationPolicy(name="expense-tiered-approval", tiers=tiers)
 
     async def configure(self, app: Any = None) -> None:
         """Wire the Teams channel, email tier and escalation policy.
@@ -458,16 +531,17 @@ class ExpenseApprovalAgent(Agent):
                     exc, exc_info=True,
                 )
 
-        # 2. Tier 2 — configure the email backend on the NOTIFY action.
+        # 2. Final tier — configure the async-notify backend on the NOTIFY
+        #    action. The delivery channel is the tier's ``provider`` attribute.
         try:
             manager.set_action(
                 EscalationActionType.NOTIFY,
-                NotifyAction(email_cfg=_smtp_email_cfg()),
+                NotifyAction(notify_cfg=_notify_cfg()),
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
-                "ExpenseApprovalAgent: failed to configure email NOTIFY "
-                "action: %s", exc, exc_info=True,
+                "ExpenseApprovalAgent: failed to configure NOTIFY action: %s",
+                exc, exc_info=True,
             )
 
         # 3. Build + register the escalation policy.
@@ -480,12 +554,19 @@ class ExpenseApprovalAgent(Agent):
             )
             return
 
-        tier1_timeout = float(
-            config.get("EXPENSE_TIER1_TIMEOUT", fallback=180))
-        tier2_timeout = float(
-            config.get("EXPENSE_TIER2_TIMEOUT", fallback=3600))
+        second_approver = config.get("EXPENSE_TIER2_APPROVER", fallback=None)
+        tier1_timeout = float(config.get("EXPENSE_TIER1_TIMEOUT", fallback=180))
+        tier2_timeout = float(config.get("EXPENSE_TIER2_TIMEOUT", fallback=180))
+        tier3_timeout = float(config.get("EXPENSE_TIER3_TIMEOUT", fallback=3600))
+        user_notify_channel = config.get(
+            "EXPENSE_USER_NOTIFY_CHANNEL", fallback="email"
+        )
         self._policy = self._build_policy(
-            approver_email, tier1_timeout, tier2_timeout
+            approver_email,
+            tier1_timeout,
+            tier3_timeout,
+            second_approver=second_approver,
+            tier2_timeout=tier2_timeout,
         )
         manager.register_policy(self._policy)
 
@@ -494,9 +575,14 @@ class ExpenseApprovalAgent(Agent):
             tool.policy_id = self._policy.policy_id
             tool.approver_email = approver_email
             tool.tier1_timeout = tier1_timeout
+            tool.user_notify_channel = user_notify_channel
 
         self.logger.info(
             "ExpenseApprovalAgent: escalation policy '%s' registered "
-            "(approver=%s, tier1_timeout=%ss).",
-            self._policy.policy_id, approver_email, tier1_timeout,
+            "(approver_a=%s, approver_b=%s, tiers=%d, notify_provider=%s).",
+            self._policy.policy_id,
+            approver_email,
+            second_approver or "—",
+            len(self._policy.tiers),
+            config.get("EXPENSE_NOTIFY_PROVIDER", fallback="email"),
         )

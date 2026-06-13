@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from parrot.human.actions.notify import NotifyAction
-from parrot.human.actions.backends import ActionBackendError, EmailBackendError
+from parrot.human.actions.backends import ActionBackendError
 from parrot.human.models import EscalationActionType, EscalationTier, HumanInteraction
 
 
@@ -84,8 +84,9 @@ class TestNotifyActionDispatcher:
         """Backend failure is re-raised so the manager can advance the chain."""
         tier = _tier({"kind": "email", "to": []})
         action = NotifyAction()
-        # EmailBackend raises EmailBackendError (an ActionBackendError) on empty 'to'
-        with pytest.raises(EmailBackendError):
+        # EmailBackend (async-notify backed) raises NotifyBackendError — an
+        # ActionBackendError subclass — on an empty 'to' list.
+        with pytest.raises(ActionBackendError):
             await action.execute(interaction, tier)
 
     async def test_default_kind_is_email(self, interaction):
