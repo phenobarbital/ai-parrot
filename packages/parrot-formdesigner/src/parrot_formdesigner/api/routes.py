@@ -49,9 +49,13 @@ if TYPE_CHECKING:
 
     from ..services.blob_storage import AbstractBlobStorage
     from ..services.forwarder import SubmissionForwarder
+    from ..services.org_graph import OrgGraphService
     from ..services.partial_saves import PartialSaveStore
+    from ..services.project_service import ProjectService
+    from ..services.rbac import RBACService
     from ..services.rest_field_resolver import RestFieldResolver
     from ..services.submissions import FormSubmissionStorage
+    from ..services.workday_sync import WorkdayIdentitySyncAdapter
 
 
 logger = logging.getLogger(__name__)
@@ -99,6 +103,11 @@ def setup_form_api(
     synthesizer: "VoiceSynthesizer | None" = None,
     transcriber: "FasterWhisperBackend | None" = None,
     token_validator: "TokenValidator | None" = None,
+    org_graph_service: "OrgGraphService | None" = None,
+    project_service: "ProjectService | None" = None,
+    rbac_service: "RBACService | None" = None,
+    workday_adapter: "WorkdayIdentitySyncAdapter | None" = None,
+    rbac_enforcing: bool = False,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
 
@@ -136,6 +145,13 @@ def setup_form_api(
             Providing it (or ``token_validator``) mounts the audio WS endpoint.
         token_validator: Optional ``TokenValidator`` for audio-form WebSocket
             JWT authentication. Providing it mounts the audio WS endpoint.
+        org_graph_service: Optional ``OrgGraphService`` for ``GET /org/graph``.
+        project_service: Optional ``ProjectService`` for org project endpoints.
+        rbac_service: Optional ``RBACService`` for RBAC policy endpoints.
+        workday_adapter: Optional ``WorkdayIdentitySyncAdapter`` for
+            ``POST /org/sync/workday``.
+        rbac_enforcing: When ``False`` (default), RBAC gate-keeping on existing
+            form endpoints runs in shadow mode (log only, never block).
     """
     # Stash the registry on the app for the dispatcher / operations handler.
     # Guard: skip if already set (FormRegistry.__init__ sets it when app= is
@@ -174,6 +190,11 @@ def setup_form_api(
         submission_storage=submission_storage,
         forwarder=forwarder,
         partial_store=partial_store,
+        org_graph_service=org_graph_service,
+        project_service=project_service,
+        rbac_service=rbac_service,
+        workday_adapter=workday_adapter,
+        rbac_enforcing=rbac_enforcing,
     )
 
     bp = base_path.rstrip("/")
@@ -306,6 +327,25 @@ def setup_form_api(
     app.router.add_get(
         f"{bp}/forms/{{form_id}}/import-report",
         _wrap_auth(handler.get_import_report),
+    )
+
+    # FEAT-302 — Org Graph + RBAC + Projects + Workday sync
+    app.router.add_get(
+        f"{bp}/org/graph", _wrap_auth(handler.get_org_graph)
+    )
+    app.router.add_post(
+        f"{bp}/org/projects", _wrap_auth(handler.create_project)
+    )
+    app.router.add_post(
+        f"{bp}/org/cost-centers/{{project_id}}/workday-map",
+        _wrap_auth(handler.map_project_workday),
+    )
+    app.router.add_post(
+        f"{bp}/org/users/{{user_id}}/assign",
+        _wrap_auth(handler.assign_user_role),
+    )
+    app.router.add_post(
+        f"{bp}/org/sync/workday", _wrap_auth(handler.sync_workday_identities)
     )
 
     logger.info("setup_form_api: mounted on %s", bp)
