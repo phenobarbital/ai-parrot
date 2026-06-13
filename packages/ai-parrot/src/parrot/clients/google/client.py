@@ -792,6 +792,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if 'properties' in cleaned and cleaned.get('type') != 'object':
             cleaned['type'] = 'object'
 
+        # Ensure objects always have a properties key (Gemini requires it).
+        # This handles cases where `type: object` was set via anyOf processing
+        # AFTER the earlier type-check block ran, so properties: {} was never added.
+        if cleaned.get('type') == 'object' and 'properties' not in cleaned:
+            cleaned['properties'] = {}
+
         # Gemini requires every array schema to carry an `items` schema and does
         # NOT understand `prefixItems` (the draft-2020-12 keyword Pydantic v2
         # emits for fixed-length tuples, e.g. `Tuple[float, float]`). Since
@@ -1109,10 +1115,22 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         "required": []
                     }
                 try:
+                    fixed_schema = self._fix_tool_schema(schema)
+                    # Diagnostic: log the exact schema for tools known to cause issues
+                    if tool_name in ("nav_execute_sql", "nav_create_program"):
+                        import json as _json
+                        try:
+                            self.logger.debug(
+                                "SCHEMA DECL [%s]: %s",
+                                tool_name,
+                                _json.dumps(fixed_schema, default=str)[:800],
+                            )
+                        except Exception:
+                            pass
                     declaration = types.FunctionDeclaration(
                         name=tool_name,
                         description=tool_description,
-                        parameters=self._fix_tool_schema(schema)
+                        parameters=fixed_schema
                     )
                     declarations_by_category[category].append(declaration)
                 except Exception as e:
@@ -1657,10 +1675,43 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 final_text = self._safe_extract_text(current_response)
                 self.logger.notice(f"🎯 Final Response from Gemini: {final_text[:200]}...")
                 if not final_text and all_tool_calls:
-                    self.logger.warning(
-                        "Final response is empty after tool execution. "
-                        "Skipping forced synthesis to avoid unnecessary delays."
-                    )
+                    # Detect MALFORMED_FUNCTION_CALL — happens when the model tries to
+                    # call a tool whose name or schema doesn't match the declared tools
+                    # (e.g. a skill body that references a tool with the wrong name).
+                    finish_reason_str = ""
+                    try:
+                        if (hasattr(current_response, 'candidates')
+                                and current_response.candidates):
+                            fr = getattr(current_response.candidates[0], 'finish_reason', None)
+                            finish_reason_str = str(fr) if fr else ""
+                    except Exception:
+                        pass
+
+                    if "MALFORMED_FUNCTION_CALL" in finish_reason_str:
+                        skill_calls = [tc for tc in all_tool_calls if tc.name == "load_skill"]
+                        if skill_calls:
+                            skill_name = (
+                                skill_calls[0].arguments.get("name", "unknown")
+                                if isinstance(skill_calls[0].arguments, dict)
+                                else "unknown"
+                            )
+                            self.logger.error(
+                                "Skill '%s' loaded but subsequent tool call was malformed "
+                                "(tool name in skill content does not match any declared tool). "
+                                "Returning error to user.",
+                                skill_name,
+                            )
+                        else:
+                            self.logger.error(
+                                "MALFORMED_FUNCTION_CALL after tools %s — "
+                                "model tried to call a tool not in the declared schema.",
+                                [tc.name for tc in all_tool_calls],
+                            )
+                    else:
+                        self.logger.warning(
+                            "Final response is empty after tool execution. "
+                            "Skipping forced synthesis to avoid unnecessary delays."
+                        )
                     # try:
                     #     synthesis_prompt = """
                     # Please now generate the complete response based on all the information gathered from the tools.
@@ -1853,6 +1904,43 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                 current_config.max_output_tokens = 8192
                                 continue
                             elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
+                                # Diagnose: try to extract which tool was attempted
+                                try:
+                                    cand = current_response.candidates[0]
+                                    n_cands = len(current_response.candidates)
+                                    content = getattr(cand, 'content', None)
+                                    self.logger.error(
+                                        "MALFORMED details: candidates=%d, content=%s",
+                                        n_cands,
+                                        type(content).__name__ if content else "None",
+                                    )
+                                    if content and hasattr(content, 'parts'):
+                                        for p in (content.parts or []):
+                                            if hasattr(p, 'function_call') and p.function_call:
+                                                fc = p.function_call
+                                                self.logger.error(
+                                                    "MALFORMED call: tool=%s args=%s",
+                                                    getattr(fc, 'name', '?'),
+                                                    dict(fc.args) if hasattr(fc.args, 'items') else str(fc.args),
+                                                )
+                                            elif hasattr(p, 'text') and p.text:
+                                                self.logger.error(
+                                                    "MALFORMED part text: %s", str(p.text)[:200]
+                                                )
+                                    # Also log what we sent (function responses)
+                                    for part in next_prompt_parts:
+                                        try:
+                                            fr = getattr(part, 'function_response', None)
+                                            if fr:
+                                                self.logger.error(
+                                                    "MALFORMED context — sent FunctionResponse: name=%s response_keys=%s",
+                                                    getattr(fr, 'name', '?'),
+                                                    list((getattr(fr, 'response', None) or {}).keys()),
+                                                )
+                                        except Exception:
+                                            pass
+                                except Exception as _diag_exc:
+                                    self.logger.error("MALFORMED diagnostic failed: %s", _diag_exc)
                                 self.logger.warning(
                                     "Malformed function call detected. Retrying..."
                                 )
@@ -3283,9 +3371,31 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     return f"Final result: {final_tc.result['result']}"
                 elif 'expression' in final_tc.result:
                     return final_tc.result['expression']
-            # Return string representation of result if available
-            elif final_tc.result:
-                return str(final_tc.result)[:2000]
+            # Plain strings from intermediate tools (e.g. load_skill body) must not
+            # be surfaced as the final answer — fall through to the sentinel below.
+
+        # Detect skill-loading failure: load_skill was called (returned content)
+        # but the model could not call the next tool (MALFORMED_FUNCTION_CALL).
+        skill_tc = next(
+            (tc for tc in all_tool_calls if tc.name == "load_skill"),
+            None,
+        )
+        if skill_tc is not None and isinstance(skill_tc.result, str):
+            skill_name = (
+                skill_tc.arguments.get("name", "unknown")
+                if isinstance(skill_tc.arguments, dict)
+                else "unknown"
+            )
+            self.logger.error(
+                "Skill '%s' loaded but subsequent tool call was malformed — "
+                "the skill may reference a tool not declared in the current toolset.",
+                skill_name,
+            )
+            return (
+                f"Error: skill `{skill_name}` was loaded but could not execute the next step. "
+                "The skill may reference a tool that is not available in the current configuration. "
+                "Please check the skill definition and try again."
+            )
 
         # Last resort: the LLM exhausted its tool-calling budget without
         # synthesizing a final answer. Surface a clear failure message

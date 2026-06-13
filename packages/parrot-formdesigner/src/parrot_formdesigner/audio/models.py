@@ -8,9 +8,30 @@ Added by FEAT-224 (FormDesigner Audio Renderer).
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class VoiceMode(str, Enum):
+    """How a question participates in the audio form flow.
+
+    Introduced by FEAT-236 (Audio Renderer Form) to replace the prior
+    "silently drop non-voiceable fields" behavior with an explicit
+    voice-capability taxonomy so that no required field is ever lost.
+
+    Members:
+        VOICE: Narrate the question and accept a spoken or typed answer.
+        PROMPT_SELECT: Narrate the question; the answer comes from a UI
+            selection (radio/selector), not free speech.
+        VISUAL_FALLBACK: Too complex to voice; render a single-field
+            visual fallback inline to complete the answer.
+    """
+
+    VOICE = "voice"
+    PROMPT_SELECT = "prompt_select"
+    VISUAL_FALLBACK = "visual_fallback"
 
 
 class AudioSessionConfig(BaseModel):
@@ -19,19 +40,30 @@ class AudioSessionConfig(BaseModel):
     Attributes:
         form_id: Unique identifier of the form to render in audio mode.
         locale: BCP 47 language tag for TTS and label resolution.
+        tts_backend: Preferred TTS backend. Defaults to "supertonic" (a
+            sub-second ONNX backend) with a graceful fallback to "google"
+            at synthesis time (FEAT-236).
         tts_voice: Optional voice name to pass to the TTS backend.
-        tts_mime_format: MIME type of the TTS audio output.
+        tts_mime_format: MIME type of the TTS audio output. Defaults to
+            "audio/wav" since the SuperTonic backend emits WAV.
         auto_advance: When True, advance to the next question immediately
             after a valid answer without waiting for explicit confirmation.
+        enumerate_options: When True, read the option labels aloud for
+            PROMPT_SELECT questions (e.g. "Choose one: red, green, blue").
+        stt_confirm_threshold: STT confidence below which a speech answer
+            triggers a read-back confirmation turn before being stored.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     form_id: str
     locale: str = "en"
+    tts_backend: Literal["supertonic", "google"] = "supertonic"
     tts_voice: Optional[str] = None
-    tts_mime_format: str = "audio/ogg"
+    tts_mime_format: str = "audio/wav"
     auto_advance: bool = True
+    enumerate_options: bool = True
+    stt_confirm_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
 
 
 class AudioQuestion(BaseModel):
@@ -49,6 +81,15 @@ class AudioQuestion(BaseModel):
         constraints: Optional validation constraints dict.
         options: Option list for SELECT/MULTI_SELECT fields, each entry
             has at least 'value' and 'label' keys.
+        voice_mode: The VoiceMode taxonomy classification for this
+            question (FEAT-236).
+        render_mode: Client-facing render hint derived from voice_mode —
+            "voice" (speak + answer), "select" (UI selection), or
+            "visual" (single-field visual fallback).
+        sensitive: When True, the client must mute TTS read-back of the
+            value (e.g. password fields).
+        fallback_html: Pre-rendered single-field HTML for VISUAL_FALLBACK
+            questions, or None.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -62,6 +103,10 @@ class AudioQuestion(BaseModel):
     audio_prompt: Optional[bytes] = None
     constraints: Optional[dict] = None
     options: Optional[list[dict]] = None
+    voice_mode: VoiceMode = VoiceMode.VOICE
+    render_mode: Literal["voice", "select", "visual"] = "voice"
+    sensitive: bool = False
+    fallback_html: Optional[str] = None
 
 
 class AudioFormManifest(BaseModel):
@@ -96,7 +141,8 @@ class AudioAnswer(BaseModel):
         field_id: The field_id this answer corresponds to.
         value: The answer text (either typed or transcribed).
         source: Origin of the answer — 'text' for keyboard input,
-            'speech' for STT-transcribed audio.
+            'speech' for STT-transcribed audio, 'selection' for a UI
+            selection on a PROMPT_SELECT question (FEAT-236).
         confidence: STT confidence score (0.0–1.0) when source='speech'.
         raw_transcript: Raw unprocessed transcript when source='speech'.
     """
@@ -105,7 +151,7 @@ class AudioAnswer(BaseModel):
 
     field_id: str
     value: str
-    source: Literal["text", "speech"] = "text"
+    source: Literal["text", "speech", "selection"] = "text"
     confidence: Optional[float] = None
     raw_transcript: Optional[str] = None
 
@@ -125,6 +171,10 @@ class AudioSessionState(BaseModel):
         manifest: The session manifest (set after start_session).
         completed: True when all required questions have been answered
             and the form has been submitted.
+        config: The resolved AudioSessionConfig for this session (FEAT-236),
+            set at start_session. None until the session starts.
+        pending: A low-confidence speech answer awaiting a confirm/repeat
+            turn (FEAT-236). None when no answer is pending confirmation.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -136,3 +186,5 @@ class AudioSessionState(BaseModel):
     answers: dict[str, AudioAnswer] = Field(default_factory=dict)
     manifest: Optional[AudioFormManifest] = None
     completed: bool = False
+    config: Optional[AudioSessionConfig] = None
+    pending: Optional[AudioAnswer] = None

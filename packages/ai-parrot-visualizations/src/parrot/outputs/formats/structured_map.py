@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -54,6 +55,31 @@ _HARD_TYPES: frozenset[str] = frozenset({"number", "datetime", "boolean"})
 #: Allowed finer format hints the LLM may add to ambiguous columns.
 _ALLOWED_FORMATS: frozenset[str] = frozenset(
     {"currency", "percent", "email", "uri", "enum", "id", "code"}
+)
+
+#: Closed set of canonical marker color names accepted from the LLM (FEAT-221
+#: piggyback). Anything outside this set (or a valid hex string) is dropped —
+#: the frontend then falls back to its default marker color (fail-open).
+_NAMED_COLORS: frozenset[str] = frozenset(
+    {
+        "red", "blue", "green", "orange", "purple", "yellow", "pink", "brown",
+        "black", "white", "gray", "grey", "cyan", "magenta", "teal", "navy",
+        "lime", "olive", "maroon", "gold", "violet", "indigo", "turquoise",
+        "darkred", "darkblue", "darkgreen", "lightblue", "lightgreen",
+    }
+)
+
+#: 3- or 6-digit hex color, e.g. ``#f00`` or ``#1f77b4``.
+_HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+#: Keys the LLM may use to apply a single color to every layer.
+_DEFAULT_COLOR_KEYS: Tuple[str, ...] = ("default", "all", "*")
+
+#: Fenced block the LLM appends to its explanation to carry marker colors.
+#: Distinct tag (``mapcolors``) so it never collides with other code/JSON blocks.
+_MAPCOLORS_BLOCK_RE = re.compile(
+    r"```mapcolors\s*(?P<body>\{.*?\})\s*```",
+    re.DOTALL | re.IGNORECASE,
 )
 
 # ── System Prompt ─────────────────────────────────────────────────────────────
@@ -93,6 +119,23 @@ BOTH PATHS:
 - Do NOT render HTML, do NOT return GeoJSON inline, do NOT retype the rows in your
   answer — the backend builds the map from the tool output (Path A) or the named
   DataFrame (Path B).
+
+MARKER COLORS (optional — only when the user asks for one):
+- If, and ONLY if, the user's question specifies a color for the map markers/pins
+  (e.g. "show the stores in red", "pinta las escuelas de azul y los centros
+  comerciales de verde"), append ONE fenced block to the END of your explanation:
+
+      ```mapcolors
+      {"default": "red"}
+      ```
+
+  - Use the key "default" to color ALL markers with a single color.
+  - To color per dataset/layer, key the color by the dataset name, e.g.
+    {"schools": "blue", "malls": "green"}.
+  - Values MUST be a basic CSS color name (red, blue, green, orange, purple,
+    yellow, pink, gray, black, teal, navy, ...) or a hex string ("#1f77b4").
+- If the user does NOT mention any color, OMIT the block entirely — never invent
+  colors. The frontend will use its default marker styling.
 """
 
 # Column-format-hint refine contract (FEAT-221). Distinct from the generation
@@ -203,6 +246,12 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
             # Step 1: Capture explanation from the producing agent.
             explanation: Optional[str] = getattr(response, "response", None) or None
 
+            # Step 1b: Extract optional marker colors the LLM emitted in the same
+            # generation call (piggyback — no extra LLM call). Strips the fenced
+            # ```mapcolors``` block from the explanation so it never leaks to the
+            # user. Fail-open: no block / malformed → empty mapping.
+            marker_colors, explanation = self._extract_marker_colors(explanation)
+
             # Step 2: Read the SpatialResult from response.data.
             spatial_result = getattr(response, "data", None)
             if spatial_result is None:
@@ -297,6 +346,12 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
                     )
                     label_field = profile.label_col
 
+                # Resolve the per-layer marker color from the LLM-supplied mapping
+                # (matches by dataset name, layer id, or a "default"/"all"/"*" key).
+                marker_color = self._resolve_layer_color(
+                    marker_colors, dataset_name, layer_result.layer
+                )
+
                 map_layer = MapLayer(
                     layer=layer_result.layer,
                     columns=columns,
@@ -306,6 +361,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
                     total_count=layer_result.total_count,
                     capped=layer_result.capped,
                     geodesic=layer_result.geodesic,
+                    marker_color=marker_color,
                 )
                 layers.append(map_layer)
                 all_payloads.append(
@@ -615,6 +671,124 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
             )
         except Exception:
             return None
+
+    # ── Marker color extraction (piggyback) ──────────────────────────────────────
+
+    def _extract_marker_colors(
+        self, explanation: Optional[str]
+    ) -> Tuple[Dict[str, str], Optional[str]]:
+        """Extract LLM-supplied marker colors from the explanation text.
+
+        The map system prompt instructs the LLM to append a single fenced
+        ``​```mapcolors {...}```​`` block to its explanation **only** when the
+        user requested marker colors.  This rides on the same generation call —
+        no extra LLM round-trip.  The block is parsed into a
+        ``{layer_or_default: canonical_color}`` mapping and stripped from the
+        explanation so it never reaches the user.
+
+        Color values are validated against a closed set of CSS color names plus
+        hex strings; unknown values are dropped (fail-open).
+
+        Args:
+            explanation: The producing agent's explanation text (may be None).
+
+        Returns:
+            Tuple of ``(colors, cleaned_explanation)``.  ``colors`` is possibly
+            empty; ``cleaned_explanation`` has the block removed (or the original
+            text unchanged when no block was present).  Never raises.
+        """
+        if not isinstance(explanation, str) or "```mapcolors" not in explanation.lower():
+            return {}, explanation
+
+        match = _MAPCOLORS_BLOCK_RE.search(explanation)
+        if match is None:
+            return {}, explanation
+
+        cleaned = _MAPCOLORS_BLOCK_RE.sub("", explanation).strip() or None
+
+        try:
+            raw = json.loads(match.group("body"))
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.debug(
+                "StructuredMapRenderer: malformed ```mapcolors``` block — ignored (%s)",
+                exc,
+            )
+            return {}, cleaned
+
+        # Accept either a bare mapping or {"marker_colors": {...}}.
+        if isinstance(raw, dict) and isinstance(raw.get("marker_colors"), dict):
+            raw = raw["marker_colors"]
+        if not isinstance(raw, dict):
+            return {}, cleaned
+
+        colors: Dict[str, str] = {}
+        for key, value in raw.items():
+            normalized = self._normalize_color(value)
+            if normalized is not None:
+                colors[str(key)] = normalized
+            else:
+                logger.debug(
+                    "StructuredMapRenderer: dropped unsupported marker color %r "
+                    "for key %r",
+                    value, key,
+                )
+        return colors, cleaned
+
+    @staticmethod
+    def _normalize_color(value: Any) -> Optional[str]:
+        """Normalize a single color value to a canonical form, or None.
+
+        Accepts a closed set of CSS color names (case-insensitive) or a 3-/6-digit
+        hex string.  Anything else returns ``None`` (the layer then has no color
+        and the frontend uses its default).
+
+        Args:
+            value: The raw color value from the LLM (any type).
+
+        Returns:
+            A lowercased color name / hex string, or ``None`` when unsupported.
+        """
+        if not isinstance(value, str):
+            return None
+        candidate = value.strip()
+        if not candidate:
+            return None
+        if _HEX_COLOR_RE.match(candidate):
+            return candidate.lower()
+        lowered = candidate.lower()
+        if lowered in _NAMED_COLORS:
+            return lowered
+        return None
+
+    @staticmethod
+    def _resolve_layer_color(
+        colors: Dict[str, str],
+        dataset_name: str,
+        layer_id: str,
+    ) -> Optional[str]:
+        """Pick the color for one layer from the parsed color mapping.
+
+        Resolution order: exact dataset name → layer id → a ``default``/``all``/``*``
+        key → the single value when the mapping has exactly one entry.  Matching
+        is case-insensitive.
+
+        Args:
+            colors: Parsed ``{key: canonical_color}`` mapping (may be empty).
+            dataset_name: The dataset key from the ``SpatialResult.layers`` dict.
+            layer_id: The ``SpatialLayerResult.layer`` discriminator.
+
+        Returns:
+            A canonical color string, or ``None`` when nothing matches.
+        """
+        if not colors:
+            return None
+        lookup = {str(k).lower(): v for k, v in colors.items()}
+        for key in (dataset_name, layer_id, *_DEFAULT_COLOR_KEYS):
+            if key is not None and str(key).lower() in lookup:
+                return lookup[str(key).lower()]
+        if len(colors) == 1:
+            return next(iter(colors.values()))
+        return None
 
     # ── LLM-refine pass ────────────────────────────────────────────────────────
 

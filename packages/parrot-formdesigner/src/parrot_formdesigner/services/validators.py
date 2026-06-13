@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel
 
+from ..core.constraints import ConditionOperator, DependencyOperation
 from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType, LocalizedString
 from .auth_context import AuthContext
@@ -131,10 +132,16 @@ class FormValidator:
         errors: dict[str, list[str]] = {}
         sanitized: dict[str, Any] = {}
 
-        # Detect circular dependencies first
+        # Detect circular dependencies first (includes post_depends and operation edges)
         circular_errors = self._detect_circular_dependencies(form)
         if circular_errors:
             errors["__circular__"] = circular_errors
+            return ValidationResult(is_valid=False, errors=errors, sanitized_data=sanitized)
+
+        # Rule-integrity pass: validate references, ordering, and operator/type compatibility
+        rule_errors = self.validate_rules(form)
+        if rule_errors:
+            errors["__rules__"] = rule_errors
             return ValidationResult(is_valid=False, errors=errors, sanitized_data=sanitized)
 
         # Collect all fields from all sections
@@ -759,12 +766,202 @@ class FormValidator:
                 nested.extend(self._collect_nested_fields(child))
         return nested
 
+    # ------------------------------------------------------------------
+    # Rule-integrity pass (FEAT-234)
+    # ------------------------------------------------------------------
+
+    # Field types that support numeric comparison operators and arithmetic ops
+    _NUMERIC_FIELD_TYPES: frozenset[FieldType] = frozenset(
+        {FieldType.NUMBER, FieldType.INTEGER}
+    )
+    # Operators that require numeric field types
+    _NUMERIC_OPERATORS: frozenset[ConditionOperator] = frozenset(
+        {
+            ConditionOperator.GT,
+            ConditionOperator.LT,
+            ConditionOperator.GTE,
+            ConditionOperator.LTE,
+        }
+    )
+    # Operation kinds that require numeric operands
+    _ARITHMETIC_OPS: frozenset[str] = frozenset(
+        {"add", "subtract", "multiply", "divide", "percent"}
+    )
+
+    def validate_rules(self, form: FormSchema) -> list[str]:
+        """Validate rule integrity for all fields in the form.
+
+        Checks:
+        - Every ``field_id`` referenced in ``depends_on.conditions``,
+          ``post_depends.conditions``, operation ``operands``, and
+          ``post_depends.target`` / operation ``target`` resolves to a real
+          field in the form.
+        - **Ordering**: ``depends_on`` conditions may only reference fields
+          declared *earlier*; ``post_depends.target`` (and set/calc operation
+          targets) may only reference fields declared *later*.
+        - **Operator/type compatibility** (best-effort): numeric operators
+          (``gt/lt/gte/lte``) and arithmetic operations must reference numeric
+          field types; unknown field types pass silently.
+
+        Args:
+            form: FormSchema to validate.
+
+        Returns:
+            List of human-readable error strings (empty when all rules pass).
+        """
+        errors: list[str] = []
+
+        # Build ordered field list and a fast-lookup dict
+        all_fields: list[FormField] = []
+        for section in form.sections:
+            all_fields.extend(self._collect_fields(section))
+
+        field_map: dict[str, FormField] = {f.field_id: f for f in all_fields}
+        field_order: dict[str, int] = {f.field_id: i for i, f in enumerate(all_fields)}
+
+        for field in all_fields:
+            fid = field.field_id
+            pos = field_order[fid]
+
+            # --- pre-dependency checks ---
+            if field.depends_on:
+                rule = field.depends_on
+                for cond in rule.conditions:
+                    ref = cond.field_id
+                    if ref not in field_map:
+                        errors.append(
+                            f"Field '{fid}': depends_on condition references unknown"
+                            f" field_id '{ref}'"
+                        )
+                        continue
+
+                    # Ordering: depends_on must reference earlier fields
+                    if field_order.get(ref, -1) >= pos:
+                        errors.append(
+                            f"Field '{fid}': depends_on condition references field"
+                            f" '{ref}' which is declared at the same position or later"
+                            f" (pre-dependency must reference earlier fields)"
+                        )
+
+                    # Operator/type compatibility
+                    ref_field = field_map[ref]
+                    if (
+                        cond.operator in self._NUMERIC_OPERATORS
+                        and ref_field.field_type not in self._NUMERIC_FIELD_TYPES
+                    ):
+                        errors.append(
+                            f"Field '{fid}': depends_on uses numeric operator"
+                            f" '{cond.operator.value}' on non-numeric field '{ref}'"
+                            f" (type={ref_field.field_type.value!r})"
+                        )
+
+                # Operations on the rule
+                for op in rule.operations or []:
+                    errors.extend(
+                        self._validate_operation(op, fid, field_map, field_order, pos)
+                    )
+
+            # --- post-dependency checks ---
+            for post in field.post_depends or []:
+                target = post.target
+                if target not in field_map:
+                    errors.append(
+                        f"Field '{fid}': post_depends targets unknown field_id '{target}'"
+                    )
+                else:
+                    # Ordering: post_depends.target must be declared later
+                    if field_order[target] <= pos:
+                        errors.append(
+                            f"Field '{fid}': post_depends targets field '{target}'"
+                            f" which is declared at the same position or earlier"
+                            f" (post-dependency must target a later field)"
+                        )
+
+                # Conditions on the post-dependency
+                for cond in post.conditions or []:
+                    ref = cond.field_id
+                    if ref not in field_map:
+                        errors.append(
+                            f"Field '{fid}': post_depends condition references unknown"
+                            f" field_id '{ref}'"
+                        )
+                        continue
+                    ref_field = field_map[ref]
+                    if (
+                        cond.operator in self._NUMERIC_OPERATORS
+                        and ref_field.field_type not in self._NUMERIC_FIELD_TYPES
+                    ):
+                        errors.append(
+                            f"Field '{fid}': post_depends condition uses numeric operator"
+                            f" '{cond.operator.value}' on non-numeric field '{ref}'"
+                            f" (type={ref_field.field_type.value!r})"
+                        )
+
+                # Operation on the post-dependency
+                if post.operation:
+                    errors.extend(
+                        self._validate_operation(
+                            post.operation, fid, field_map, field_order, pos
+                        )
+                    )
+
+        return errors
+
+    def _validate_operation(
+        self,
+        op: DependencyOperation,
+        owner_fid: str,
+        field_map: dict[str, FormField],
+        field_order: dict[str, int],
+        owner_pos: int,
+    ) -> list[str]:
+        """Validate a single DependencyOperation for reference existence and type compatibility.
+
+        Args:
+            op: The operation to validate.
+            owner_fid: The field_id of the field that owns this operation.
+            field_map: Mapping of all field_ids to FormField objects.
+            field_order: Mapping of field_id to 0-based declaration order.
+            owner_pos: Declaration order of the owning field.
+
+        Returns:
+            List of error strings (empty when valid).
+        """
+        errors: list[str] = []
+
+        # Check operands reference known fields
+        for ref in op.operands:
+            if ref not in field_map:
+                errors.append(
+                    f"Field '{owner_fid}': operation '{op.op}' references unknown"
+                    f" operand field_id '{ref}'"
+                )
+                continue
+            # Arithmetic ops: operands must be numeric
+            if op.op in self._ARITHMETIC_OPS:
+                ref_field = field_map[ref]
+                if ref_field.field_type not in self._NUMERIC_FIELD_TYPES:
+                    errors.append(
+                        f"Field '{owner_fid}': arithmetic operation '{op.op}'"
+                        f" references non-numeric operand field '{ref}'"
+                        f" (type={ref_field.field_type.value!r})"
+                    )
+
+        # Check target references a known field
+        if op.target not in field_map:
+            errors.append(
+                f"Field '{owner_fid}': operation '{op.op}' targets unknown"
+                f" field_id '{op.target}'"
+            )
+
+        return errors
+
     def check_schema(self, form: FormSchema) -> list[str]:
         """Check a form schema for structural issues without submitted data.
 
-        Currently detects circular dependency references in ``depends_on`` rules.
-        This is the public API for structural validation; callers should prefer
-        this method over ``_detect_circular_dependencies``.
+        Detects circular dependency references (including ``post_depends`` and
+        operation edges) and validates rule integrity (references, ordering,
+        type compatibility).
 
         Args:
             form: FormSchema to analyze.
@@ -772,13 +969,21 @@ class FormValidator:
         Returns:
             List of human-readable error strings (empty if no issues found).
         """
-        return self._detect_circular_dependencies(form)
+        return self._detect_circular_dependencies(form) + self.validate_rules(form)
 
     def _detect_circular_dependencies(self, form: FormSchema) -> list[str]:
-        """Detect circular dependency references in FormField.depends_on rules.
+        """Detect circular dependency references across depends_on, post_depends, and operations.
 
-        Builds a directed graph where an edge A -> B means field A depends on
-        field B (i.e., A.depends_on references B). Uses DFS cycle detection.
+        Builds a directed graph where an edge A -> B means field A has a
+        dependency on field B.  Edge sources:
+
+        - ``A.depends_on.conditions``: A depends on condition field B.
+        - ``A.post_depends[*].target``: A has a forward effect on target B
+          (edge: A -> B, for forward-cycle detection).
+        - ``A.depends_on.operations[*].operands``: A's operation reads from B.
+        - ``A.post_depends[*].operation.operands``: same for post-dep operations.
+
+        Uses DFS cycle detection.
 
         Args:
             form: FormSchema to analyze.
@@ -793,11 +998,34 @@ class FormValidator:
 
         # Build adjacency list: field_id -> set of referenced field_ids
         graph: dict[str, set[str]] = {f.field_id: set() for f in all_fields}
+        known: set[str] = set(graph.keys())
+
         for field in all_fields:
+            fid = field.field_id
+
+            # Pre-dependency conditions: A -> condition.field_id
             if field.depends_on:
                 for condition in field.depends_on.conditions:
-                    if condition.field_id in graph:
-                        graph[field.field_id].add(condition.field_id)
+                    if condition.field_id in known:
+                        graph[fid].add(condition.field_id)
+                # Pre-dep operations: A -> operand (and target -> A)
+                for op in field.depends_on.operations or []:
+                    for operand in op.operands:
+                        if operand in known:
+                            graph[fid].add(operand)
+                    if op.target in known:
+                        # target receives from A's operation: target -> A (reverse edge)
+                        graph[op.target].add(fid)
+
+            # Post-dependency: A -> target (forward effect)
+            for post in field.post_depends or []:
+                if post.target in known:
+                    graph[fid].add(post.target)
+                # Post-dep operation operands: A -> operand
+                if post.operation:
+                    for operand in post.operation.operands:
+                        if operand in known:
+                            graph[fid].add(operand)
 
         # DFS cycle detection
         UNVISITED, VISITING, VISITED = 0, 1, 2

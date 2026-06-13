@@ -9,6 +9,7 @@ wrappers (Telegram, etc.).
 Mirrors the structure of ``parrot.voice.transcriber.transcriber.VoiceTranscriber``.
 Added by FEAT-213 (Telegram Voice Reply TTS Output).
 """
+
 from __future__ import annotations
 
 import logging
@@ -79,13 +80,19 @@ class VoiceSynthesizer:
                 )
                 self._backend = GoogleTTSBackend(voice=self.config.voice)
             elif backend_name == "supertonic":
-                from .supertonic_backend import SupertonicTTSBackend
+                from .supertonic_inference import SupertonicONNXBackend
 
                 self.logger.info(
-                    "VoiceSynthesizer: creating SupertonicTTSBackend (voice=%s)",
+                    "VoiceSynthesizer: creating SupertonicONNXBackend " "(voice=%s, total_step=%d, speed=%.2f)",
                     self.config.voice,
+                    self.config.total_step,
+                    self.config.speed,
                 )
-                self._backend = SupertonicTTSBackend(voice=self.config.voice)
+                self._backend = SupertonicONNXBackend(
+                    voice=self.config.voice,
+                    total_step=self.config.total_step,
+                    speed=self.config.speed,
+                )
             elif backend_name in ("elevenlabs", "openai"):
                 raise ValueError(
                     f"TTS backend not implemented: '{backend_name}'. "

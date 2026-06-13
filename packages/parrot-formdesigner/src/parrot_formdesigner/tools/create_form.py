@@ -85,12 +85,40 @@ __FIELD_TYPES__
 Field snippet reference by type:
 __FIELD_SNIPPETS__
 
+Optional dependency rules on fields:
+
+  "depends_on": {
+    "conditions": [{"field_id": "other_field_id", "operator": "eq", "value": "some_value"}],
+    "logic": "and",
+    "effect": "show",
+    "operations": null
+  }
+
+  Valid logic values: "and", "or", "xor", "not"
+  Valid effect values: "show", "hide", "require", "disable"
+  "depends_on" must only reference field_ids declared EARLIER in the form.
+
+  "post_depends": [
+    {
+      "target": "later_field_id",
+      "effect": "cascade_clear",
+      "conditions": null,
+      "logic": "and",
+      "operation": null
+    }
+  ]
+
+  Valid post_depends effect values: "set", "calc", "reload_options", "show", "hide", "require", "cascade_clear"
+  "post_depends" must only target field_ids declared LATER in the form.
+  "set" and "calc" effects require an "operation" with: {"op": "copy|add|subtract|...", "operands": ["field_id"], "target": "field_id"}
+
 IMPORTANT:
 - Respond with ONLY valid JSON. No markdown, no explanations.
 - Use snake_case for all IDs.
 - field_type must be one of the exact values listed above.
 - For select/multi_select fields, always include an options array.
 - Generate meaningful field IDs that match the label.
+- Dependency rules are optional. Only include them when the prompt explicitly requests conditional behavior.
 """
 _SYSTEM_PROMPT = _SYSTEM_PROMPT_TEMPLATE.replace("__FIELD_TYPES__", _FIELD_TYPE_VALUES).replace(
     "__FIELD_SNIPPETS__", _FIELD_SNIPPETS_JSON
@@ -135,6 +163,11 @@ You MUST follow this workflow to edit the form:
    - update_form_title(title) — to RENAME the form (change form.title)
    - update_form_description(description) — to change the form description
    - update_form_meta(patch) — to update the form-level meta dict ONLY (NOT title or description)
+   - add_dependency(field_id, rule) — to set a depends_on rule on a field (references earlier fields)
+   - update_dependency(field_id, patch) — to partially update an existing depends_on rule
+   - remove_dependency(field_id) — to clear the depends_on rule from a field
+   - add_post_dependency(field_id, post) — to add a post_depends entry (targets later fields)
+   - remove_post_dependency(field_id, target) — to remove a post_depends entry by target
 4. Call done() IMMEDIATELY when all requested edits are complete.
 
 CRITICAL RULES:

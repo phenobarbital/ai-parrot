@@ -8,6 +8,7 @@ and the VoiceSynthesizer service.
 Added by FEAT-213 (Telegram Voice Reply TTS Output).
 Mirrors the structure of ``parrot.voice.transcriber.models`` for symmetry.
 """
+
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -32,10 +33,15 @@ class TTSConfig(BaseModel):
             delegates language selection to the backend.
         mime_format: MIME type of the desired audio output. Telegram
             voice notes prefer ``"audio/ogg"`` (OGG/Opus).
+        total_step: Supertonic only — number of flow-matching denoising
+            steps. Higher is smoother but slower; ignored by other backends.
+        speed: Supertonic only — speech-rate multiplier (``>1`` = faster);
+            ignored by other backends.
 
     Example::
 
         cfg = TTSConfig(backend="google", voice="Charon", language="en-US")
+        cfg = TTSConfig(backend="supertonic", voice="F1", total_step=8, speed=1.05)
     """
 
     backend: Literal["google", "elevenlabs", "openai", "supertonic"] = Field(
@@ -57,6 +63,21 @@ class TTSConfig(BaseModel):
         default="audio/ogg",
         description="Desired audio MIME type. Telegram voice notes prefer 'audio/ogg'",
     )
+    total_step: int = Field(
+        default=8,
+        ge=1,
+        le=50,
+        description=(
+            "Supertonic only: flow-matching denoising steps "
+            "(higher = smoother but slower). Ignored by other backends."
+        ),
+    )
+    speed: float = Field(
+        default=1.05,
+        gt=0.0,
+        le=3.0,
+        description=("Supertonic only: speech-rate multiplier (>1 = faster). " "Ignored by other backends."),
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -69,6 +90,13 @@ class TTSConfig(BaseModel):
                 },
                 {
                     "backend": "google",
+                    "mime_format": "audio/wav",
+                },
+                {
+                    "backend": "supertonic",
+                    "voice": "F1",
+                    "total_step": 8,
+                    "speed": 1.05,
                     "mime_format": "audio/wav",
                 },
             ]

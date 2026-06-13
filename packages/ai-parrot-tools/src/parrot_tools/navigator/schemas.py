@@ -9,12 +9,48 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # =============================================================================
+# SQL EXECUTION SCHEMA
+# =============================================================================
+
+class ExecuteSqlInput(BaseModel):
+    """Input for executing a raw SQL statement (DDL or DML)."""
+
+    sql: str = Field(
+        description=(
+            "SQL statement to execute. Use $1, $2, … placeholders for parameters. "
+            "DDL statements (CREATE, ALTER, DROP) return None on success — that is normal."
+        )
+    )
+    returning: bool = Field(
+        default=False,
+        description=(
+            "When True, fetch and return rows (use for SELECT or INSERT … RETURNING). "
+            "When False (default), execute without returning rows (DDL, DML)."
+        )
+    )
+
+
+# =============================================================================
 # PROGRAM SCHEMAS
 # =============================================================================
 
 class ProgramCreateInput(BaseModel):
-    dry_run: bool = Field(default=True, description="Safety guardrail. Set to True to get plan. Present plan to user for approval.")
     """Input for creating a new Navigator program."""
+
+    # NOTE: confirm_execution is intentionally included here (unlike the old
+    # dry_run field) so that the model does NOT generate a MALFORMED_FUNCTION_CALL
+    # by trying to pass confirm_execution (which it does for every other nav tool).
+    # The field default is False; the NavigatorToolkit._prepare_kwargs hook always
+    # overrides the model's value — HITL approval is the only authority that can
+    # set confirm_execution=True.
+    confirm_execution: bool = Field(
+        default=False,
+        description=(
+            "Do NOT set this manually. Leave it as False (or omit it). "
+            "The HITL guard intercepts the call, shows a confirmation to the user, "
+            "and injects confirm_execution=True automatically on approval."
+        ),
+    )
 
     program_name: str = Field(
         description="Display name of the program (e.g., 'Retail360', 'Pokemon')"

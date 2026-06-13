@@ -44,6 +44,7 @@ from ..api.operations import (
     _apply_update_form_meta,
     _apply_update_section_meta,
 )
+from ..core.constraints import DependencyRule, PostDependency
 from ..core.schema import FormField, FormSchema, FormSection
 
 class EditToolkit(AbstractToolkit):
@@ -387,6 +388,210 @@ class EditToolkit(AbstractToolkit):
         except Exception as exc:
             self.logger.error("remove_field unexpected error: %s", exc)
             return {"error": str(exc)}
+
+    # ------------------------------------------------------------------
+    # Dependency / post-dependency CRUD (FEAT-234)
+    # ------------------------------------------------------------------
+
+    async def add_dependency(self, field_id: str, rule: dict) -> dict:
+        """Set or replace the ``depends_on`` rule on a field.
+
+        Validates the rule dict via :class:`DependencyRule` and runs the
+        form-level rule-integrity pass before applying.  Returns an error dict
+        (form unchanged) if validation fails.
+
+        Args:
+            field_id: ID of the field to update.
+            rule: Dict representation of a :class:`DependencyRule`.
+
+        Returns:
+            Success dict with the updated ``depends_on``, or an error dict.
+        """
+        try:
+            validated_rule = DependencyRule.model_validate(rule)
+        except ValidationError as exc:
+            return {"error": f"Invalid DependencyRule: {exc.errors()}"}
+
+        field, section = self._find_field_and_section(field_id)
+        if field is None:
+            return {"error": f"Field '{field_id}' not found."}
+
+        # Build a temporary form copy with the new rule applied to validate integrity
+        updated_field = field.model_copy(update={"depends_on": validated_rule})
+        temp_form = self._replace_field_in_form(self._form, section.section_id, field_id, updated_field)
+
+        rule_errors = await self._check_rules(temp_form)
+        if rule_errors:
+            return {"error": "Rule integrity check failed", "details": rule_errors}
+
+        self._form = temp_form
+        return {
+            "success": True,
+            "field_id": field_id,
+            "depends_on": validated_rule.model_dump(mode="json"),
+        }
+
+    async def update_dependency(self, field_id: str, patch: dict) -> dict:
+        """Merge-patch the existing ``depends_on`` rule on a field.
+
+        The ``patch`` is merged into the current rule dict.  If the field has
+        no existing rule, ``patch`` is used as the full new rule.
+
+        Args:
+            field_id: ID of the field to update.
+            patch: Partial dict to merge into the existing DependencyRule.
+
+        Returns:
+            Success dict with the updated ``depends_on``, or an error dict.
+        """
+        field, section = self._find_field_and_section(field_id)
+        if field is None:
+            return {"error": f"Field '{field_id}' not found."}
+
+        current = field.depends_on.model_dump() if field.depends_on else {}
+        merged = {**current, **patch}
+        return await self.add_dependency(field_id, merged)
+
+    async def remove_dependency(self, field_id: str) -> dict:
+        """Clear the ``depends_on`` rule from a field.
+
+        Args:
+            field_id: ID of the field to clear.
+
+        Returns:
+            Success dict, or error dict if the field is not found.
+        """
+        field, section = self._find_field_and_section(field_id)
+        if field is None:
+            return {"error": f"Field '{field_id}' not found."}
+
+        updated_field = field.model_copy(update={"depends_on": None})
+        self._form = self._replace_field_in_form(
+            self._form, section.section_id, field_id, updated_field
+        )
+        return {"success": True, "field_id": field_id, "depends_on": None}
+
+    async def add_post_dependency(self, field_id: str, post: dict) -> dict:
+        """Append a :class:`PostDependency` to a field's ``post_depends`` list.
+
+        Validates the post-dependency dict and runs rule-integrity before
+        applying.  Returns an error dict (form unchanged) if validation fails.
+
+        Args:
+            field_id: ID of the field to update.
+            post: Dict representation of a :class:`PostDependency`.
+
+        Returns:
+            Success dict with the full updated ``post_depends`` list, or an error dict.
+        """
+        try:
+            validated_post = PostDependency.model_validate(post)
+        except ValidationError as exc:
+            return {"error": f"Invalid PostDependency: {exc.errors()}"}
+
+        field, section = self._find_field_and_section(field_id)
+        if field is None:
+            return {"error": f"Field '{field_id}' not found."}
+
+        existing = list(field.post_depends or [])
+        existing.append(validated_post)
+        updated_field = field.model_copy(update={"post_depends": existing})
+        temp_form = self._replace_field_in_form(self._form, section.section_id, field_id, updated_field)
+
+        rule_errors = await self._check_rules(temp_form)
+        if rule_errors:
+            return {"error": "Rule integrity check failed", "details": rule_errors}
+
+        self._form = temp_form
+        return {
+            "success": True,
+            "field_id": field_id,
+            "post_depends": [p.model_dump(mode="json") for p in existing],
+        }
+
+    async def remove_post_dependency(self, field_id: str, target: str) -> dict:
+        """Remove a specific post-dependency (by target field_id) from a field.
+
+        Args:
+            field_id: ID of the owning field.
+            target: The ``target`` field_id of the PostDependency to remove.
+
+        Returns:
+            Success dict with the remaining ``post_depends`` list, or an error dict.
+        """
+        field, section = self._find_field_and_section(field_id)
+        if field is None:
+            return {"error": f"Field '{field_id}' not found."}
+
+        existing = list(field.post_depends or [])
+        updated = [p for p in existing if p.target != target]
+        if len(updated) == len(existing):
+            return {
+                "error": f"No post_depends with target='{target}' found on field '{field_id}'."
+            }
+
+        updated_field = field.model_copy(update={"post_depends": updated or None})
+        self._form = self._replace_field_in_form(
+            self._form, section.section_id, field_id, updated_field
+        )
+        return {
+            "success": True,
+            "field_id": field_id,
+            "removed_target": target,
+            "post_depends": [p.model_dump(mode="json") for p in updated],
+        }
+
+    # ------------------------------------------------------------------
+    # Private helpers for dependency CRUD
+    # ------------------------------------------------------------------
+
+    def _replace_field_in_form(
+        self,
+        form: FormSchema,
+        section_id: str,
+        field_id: str,
+        new_field: FormField,
+    ) -> FormSchema:
+        """Return a deep copy of *form* with *field_id* replaced by *new_field*.
+
+        Args:
+            form: The source FormSchema.
+            section_id: Section containing the field.
+            field_id: The field to replace.
+            new_field: The replacement FormField.
+
+        Returns:
+            A new FormSchema with the field swapped.
+        """
+        new_sections = []
+        for section in form.sections:
+            if section.section_id != section_id:
+                new_sections.append(section)
+                continue
+            new_fields = [
+                new_field if (isinstance(f, FormField) and f.field_id == field_id) else f
+                for f in section.fields
+            ]
+            new_sections.append(section.model_copy(update={"fields": new_fields}))
+        return form.model_copy(update={"sections": new_sections})
+
+    async def _check_rules(self, form: FormSchema) -> list[str]:
+        """Run rule-integrity validation on a form copy.
+
+        Lazy-imports FormValidator to avoid a hard circular dependency.
+
+        Args:
+            form: The form to validate.
+
+        Returns:
+            List of error strings (empty when valid).
+        """
+        from ..services.validators import FormValidator
+
+        validator = FormValidator()
+        cycle_errors = validator._detect_circular_dependencies(form)
+        rule_errors = validator.validate_rules(form)
+        return cycle_errors + rule_errors
 
     async def add_section(
         self, section: dict, position: int | None = None

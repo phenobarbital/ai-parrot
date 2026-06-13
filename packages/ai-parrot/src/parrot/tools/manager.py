@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from ..auth.permission import PermissionContext
     from ..auth.resolver import AbstractPermissionResolver
     from ..auth.grants import GrantGuard
+    from ..auth.confirmation import ConfirmationGuard
 
 
 @dataclass
@@ -249,6 +250,9 @@ class ToolManager(MCPToolManagerMixin):
         # Grant guard for bounded approval windows (optional — FEAT-211)
         self._grant_guard: Optional["GrantGuard"] = None
 
+        # Confirmation guard for per-call HITL review (optional — FEAT-235)
+        self._confirmation_guard: Optional["ConfirmationGuard"] = None
+
         # Initialize MCP capabilities (from Mixin)
         self._init_mcp()
 
@@ -328,6 +332,34 @@ class ToolManager(MCPToolManagerMixin):
             The GrantGuard instance, or None if no guard is configured.
         """
         return self._grant_guard
+
+    # ── Confirmation Guard Methods (FEAT-235) ──────────────────────────────────
+
+    def set_confirmation_guard(self, guard: "ConfirmationGuard") -> None:
+        """Set the confirmation guard for per-call HITL tool-call review.
+
+        When set, tools with ``routing_meta["requires_confirmation"] = True``
+        will require human confirmation (approve / cancel / edit) before
+        execution.  Tools without this flag are unaffected.
+
+        The confirm check runs **after** the grant check (order: grant → confirm).
+        This is purely additive: without a guard configured, ``execute_tool``
+        behaves identically to today.
+
+        Args:
+            guard: The ConfirmationGuard instance to use for confirmation decisions.
+        """
+        self._confirmation_guard = guard
+        self.logger.debug("Confirmation guard set: %s", guard.__class__.__name__)
+
+    @property
+    def confirmation_guard(self) -> Optional["ConfirmationGuard"]:
+        """Return the current confirmation guard, or None if not configured.
+
+        Returns:
+            The ConfirmationGuard instance, or None if no guard is configured.
+        """
+        return self._confirmation_guard
 
     # ── Tool Search ────────────────────────────────────────────────────────────
 
@@ -1216,6 +1248,29 @@ class ToolManager(MCPToolManagerMixin):
                             result=None,
                         )
                 # === End grant guard ===
+
+                # === Confirmation guard check (FEAT-235) ===
+                # If a ConfirmationGuard is configured and the tool requires
+                # confirmation, ask the human before dispatching to tool.execute().
+                # Dispatch order is locked: grant → confirm.
+                # This is purely additive: without a guard the path is unchanged.
+                if self._confirmation_guard is not None:
+                    confirm_decision = await self._confirmation_guard.confirm(
+                        tool=tool,
+                        parameters=parameters,
+                        permission_context=permission_context,
+                    )
+                    if not confirm_decision.allowed:
+                        return ToolResult(
+                            success=False,
+                            status=confirm_decision.status,  # "cancelled" | "timeout"
+                            error=f"Confirmation {confirm_decision.status}: {confirm_decision.reason}",
+                            result=None,
+                        )
+                    if confirm_decision.parameters is not None:
+                        # Use the (possibly edited and re-validated) parameters
+                        parameters = confirm_decision.parameters
+                # === End confirmation guard ===
 
                 # Propagate permission context and resolver to tool.execute()
                 # for Layer 2 enforcement

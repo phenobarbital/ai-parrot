@@ -213,6 +213,125 @@ async def test_render_viewport_bbox(two_layer_result):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Marker colors (piggyback — FEAT-221)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _layers_by_id(out):
+    return {layer["layer"]: layer for layer in out["layers"]}
+
+
+@pytest.mark.asyncio
+async def test_marker_color_default_applies_to_all_layers(two_layer_result):
+    """A 'default' color is applied to every layer."""
+    from parrot.outputs.formats import get_renderer
+    from parrot.models.outputs import OutputMode
+
+    r = get_renderer(OutputMode.STRUCTURED_MAP)()
+    text = 'Here is your map.\n```mapcolors\n{"default": "red"}\n```'
+    resp = make_response(data=two_layer_result, response_text=text)
+    out, explanation = await r.render(resp)
+
+    layers = _layers_by_id(out)
+    assert layers["schools"]["markerColor"] == "red"
+    assert layers["malls"]["markerColor"] == "red"
+    # The fenced block is stripped from the explanation shown to the user.
+    assert "mapcolors" not in (explanation or "")
+    assert explanation == "Here is your map."
+
+
+@pytest.mark.asyncio
+async def test_marker_color_per_layer(two_layer_result):
+    """Per-dataset colors are matched by dataset name."""
+    from parrot.outputs.formats import get_renderer
+    from parrot.models.outputs import OutputMode
+
+    r = get_renderer(OutputMode.STRUCTURED_MAP)()
+    text = '```mapcolors\n{"schools": "blue", "malls": "green"}\n```'
+    resp = make_response(data=two_layer_result, response_text=text)
+    out, _ = await r.render(resp)
+
+    layers = _layers_by_id(out)
+    assert layers["schools"]["markerColor"] == "blue"
+    assert layers["malls"]["markerColor"] == "green"
+
+
+@pytest.mark.asyncio
+async def test_marker_color_hex_accepted(two_layer_result):
+    """Hex color values are accepted and lowercased."""
+    from parrot.outputs.formats import get_renderer
+    from parrot.models.outputs import OutputMode
+
+    r = get_renderer(OutputMode.STRUCTURED_MAP)()
+    text = '```mapcolors\n{"default": "#1F77B4"}\n```'
+    resp = make_response(data=two_layer_result, response_text=text)
+    out, _ = await r.render(resp)
+
+    assert all(layer["markerColor"] == "#1f77b4" for layer in out["layers"])
+
+
+@pytest.mark.asyncio
+async def test_marker_color_invalid_dropped(two_layer_result):
+    """Unsupported color names are dropped (fail-open → no color)."""
+    from parrot.outputs.formats import get_renderer
+    from parrot.models.outputs import OutputMode
+
+    r = get_renderer(OutputMode.STRUCTURED_MAP)()
+    text = '```mapcolors\n{"schools": "definitely-not-a-color"}\n```'
+    resp = make_response(data=two_layer_result, response_text=text)
+    out, _ = await r.render(resp)
+
+    layers = _layers_by_id(out)
+    assert layers["schools"]["markerColor"] is None
+    assert layers["malls"]["markerColor"] is None
+
+
+@pytest.mark.asyncio
+async def test_marker_color_absent_when_no_block(two_layer_result):
+    """No fenced block → no marker color (default behaviour preserved)."""
+    from parrot.outputs.formats import get_renderer
+    from parrot.models.outputs import OutputMode
+
+    r = get_renderer(OutputMode.STRUCTURED_MAP)()
+    resp = make_response(data=two_layer_result, response_text="A plain map.")
+    out, explanation = await r.render(resp)
+
+    assert all(layer["markerColor"] is None for layer in out["layers"])
+    assert explanation == "A plain map."
+
+
+@pytest.mark.asyncio
+async def test_marker_color_malformed_block_ignored(two_layer_result):
+    """A malformed JSON block is ignored without raising."""
+    from parrot.outputs.formats import get_renderer
+    from parrot.models.outputs import OutputMode
+
+    r = get_renderer(OutputMode.STRUCTURED_MAP)()
+    text = '```mapcolors\n{not valid json}\n```'
+    resp = make_response(data=two_layer_result, response_text=text)
+    out, explanation = await r.render(resp)
+
+    assert out is not None
+    assert all(layer["markerColor"] is None for layer in out["layers"])
+    # Block is still stripped even when its body fails to parse.
+    assert "mapcolors" not in (explanation or "")
+
+
+@pytest.mark.asyncio
+async def test_marker_color_marker_colors_wrapper(two_layer_result):
+    """A {"marker_colors": {...}} wrapper object is unwrapped."""
+    from parrot.outputs.formats import get_renderer
+    from parrot.models.outputs import OutputMode
+
+    r = get_renderer(OutputMode.STRUCTURED_MAP)()
+    text = '```mapcolors\n{"marker_colors": {"default": "purple"}}\n```'
+    resp = make_response(data=two_layer_result, response_text=text)
+    out, _ = await r.render(resp)
+
+    assert all(layer["markerColor"] == "purple" for layer in out["layers"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # data_shape support
 # ─────────────────────────────────────────────────────────────────────────────
 

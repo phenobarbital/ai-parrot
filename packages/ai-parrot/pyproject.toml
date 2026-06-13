@@ -50,6 +50,10 @@ dependencies = [
     "xmltodict>=0.14.2",
     "tiktoken>=0.9.0",
     "psutil>=5.9",
+    # Text splitters live in core (parrot.loaders.splitters) — Rust-backed
+    # chunking used by AbstractLoader. Moved here from ai-parrot-loaders to
+    # break the circular import (loaders depends on core).
+    "semantic-text-splitter>=0.30,<1.0",
     # Navigator stack (core)
     "navconfig[default]>=2.1.3",
     # navigator-auth<=0.20.9 passes a `PolicyEffect` enum (not a str) to the

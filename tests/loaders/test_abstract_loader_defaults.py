@@ -1,6 +1,6 @@
 """Tests for AbstractLoader default changes (TASK-636).
 
-Verifies the new defaults: chunk_size=512, chunk_overlap=50,
+Verifies the current defaults: chunk_size=2048, chunk_overlap=200,
 min_chunk_size=30, full_document=True, SemanticTextSplitter as default,
 and removal of token_size.
 """
@@ -22,16 +22,16 @@ class TestAbstractLoaderDefaults:
     @patch.object(AbstractLoader, '_setup_llm')
     @patch.object(AbstractLoader, '_setup_device')
     def test_default_chunk_size_512(self, mock_device, mock_llm):
-        """Default chunk_size is 512."""
+        """Default chunk_size is 2048."""
         loader = ConcreteTestLoader()
-        assert loader.chunk_size == 512
+        assert loader.chunk_size == 2048
 
     @patch.object(AbstractLoader, '_setup_llm')
     @patch.object(AbstractLoader, '_setup_device')
     def test_default_chunk_overlap_50(self, mock_device, mock_llm):
-        """Default chunk_overlap is 50."""
+        """Default chunk_overlap is 200."""
         loader = ConcreteTestLoader()
-        assert loader.chunk_overlap == 50
+        assert loader.chunk_overlap == 200
 
     @patch.object(AbstractLoader, '_setup_llm')
     @patch.object(AbstractLoader, '_setup_device')

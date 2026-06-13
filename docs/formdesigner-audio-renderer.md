@@ -6,6 +6,30 @@
 
 ---
 
+> **🆕 FEAT-236 — Audio Renderer Form (Voice Modes)**
+>
+> Esta guía cubre la implementación original del Audio Renderer (FEAT-224):
+> backend Google TTS, protocolo WebSocket básico, y campos de respuesta
+> `text`/`speech`.
+>
+> FEAT-236 amplió esta base con:
+> - **SuperTonic TTS** como backend preferido (sub-segundo, ONNX) con
+>   fallback automático a Google.
+> - **Taxonomía `VoiceMode`** — cada pregunta se clasifica como `VOICE`,
+>   `PROMPT_SELECT`, o `VISUAL_FALLBACK`: ya no se descarta ningún campo
+>   requerido.
+> - **Nuevos mensajes WebSocket**: `answer_selection`, `answer_payload`,
+>   `confirm_answer` (cliente) y `confirm_request` (servidor).
+> - **Campos nuevos en `question`**: `voice_mode`, `render_mode`,
+>   `sensitive`, `fallback_html`.
+> - **Compuerta de confianza STT**: respuestas con baja confianza activan
+>   un turno de confirmación antes de almacenarse.
+>
+> **→ Guía completa de FEAT-236:**
+> [`audio-form-voice-modes.md`](audio-form-voice-modes.md)
+
+---
+
 ## Índice
 
 1. [¿Qué es el Audio Renderer?](#1-qué-es-el-audio-renderer)
@@ -126,6 +150,12 @@ class AudioFormRenderer(AbstractFormRenderer):
 **Comportamiento clave:**
 
 - Los campos de tipo `HIDDEN`, `ARRAY` y `REST` se omiten automáticamente.
+  > **⚠️ Actualizado en FEAT-236**: solo `HIDDEN` se omite. Los campos
+  > `REST`, `ARRAY`, `FILE`, `IMAGE`, `LOCATION`, etc. ya no se descartan;
+  > en su lugar se clasifican como `VoiceMode.VISUAL_FALLBACK` y se
+  > entregan con un `fallback_html` inline para que el usuario los complete
+  > visualmente dentro de la sesión. Ningún campo requerido se pierde.
+  > Ver [§5 de la guía FEAT-236](audio-form-voice-modes.md#5-voicemode-taxonomy).
 - Los campos de tipo `GROUP` se expanden: sus hijos se añaden como preguntas
   independientes.
 - Los campos `SELECT`, `MULTI_SELECT` y `DYNAMIC_SELECT` incluyen la lista
@@ -235,6 +265,22 @@ class AudioSessionState(BaseModel):
     completed: bool = False
 ```
 
+> **🆕 Modelos extendidos en FEAT-236** — los modelos anteriores son la
+> definición baseline. FEAT-236 añadió:
+>
+> - **`VoiceMode`** — enum `VOICE | PROMPT_SELECT | VISUAL_FALLBACK`.
+> - **`AudioQuestion`** — campos nuevos: `voice_mode`, `render_mode`,
+>   `sensitive`, `fallback_html`.
+> - **`AudioSessionConfig`** — campos nuevos: `tts_backend`,
+>   `enumerate_options`, `stt_confirm_threshold`.
+> - **`AudioAnswer.source`** — nuevo valor `"selection"` además de
+>   `"text"` y `"speech"`.
+> - **`AudioSessionState`** — campo nuevo `pending` (respuesta de STT
+>   con baja confianza en espera de confirmación).
+>
+> Definiciones completas:
+> [`audio-form-voice-modes.md §4`](audio-form-voice-modes.md#4-rest-endpoint--audio-manifest)
+
 ---
 
 ## 4. Configuración del servidor
@@ -261,6 +307,21 @@ setup_form_api(
     # Storage de envíos (opcional).
     submission_storage=my_submission_storage,
 )
+
+# ── FEAT-236: configuración SuperTonic-first (recomendada) ───────────────────
+# Omite el parámetro synthesizer= para activar el modo auto_synthesize.
+# El handler intentará SuperTonic → Google → texto solo, en ese orden.
+# Requiere la variable de entorno SUPERTONIC_MODEL_PATH apuntando al
+# directorio con los pesos ONNX.
+#
+# setup_form_api(
+#     app, registry,
+#     transcriber=FasterWhisperBackend(model_size="base"),
+#     token_validator=TokenValidator(secret_key=os.environ["JWT_SECRET"]),
+#     # sin synthesizer= → auto_synthesize=True internamente
+# )
+#
+# Ver guía completa: audio-form-voice-modes.md §3
 ```
 
 Esto registra la ruta:
@@ -328,6 +389,13 @@ Accept-Language: es   (opcional, determina el locale de las preguntas)
 > **Nota**: el campo `audio_prompt` (bytes TTS) está **excluido** del JSON.
 > El audio llega por WebSocket en base64 dentro del mensaje `question`.
 
+> **🆕 FEAT-236** — el manifiesto incluye campos adicionales por pregunta:
+> `voice_mode` (`"voice"` | `"prompt_select"` | `"visual_fallback"`),
+> `render_mode` (`"voice"` | `"select"` | `"visual"`), `sensitive`
+> (boolean), y `fallback_html` (HTML inline para campos complejos).
+> Ver payload completo:
+> [`audio-form-voice-modes.md §4`](audio-form-voice-modes.md#42-response--full-payload-with-voicemode)
+
 ---
 
 ## 6. Protocolo WebSocket
@@ -381,6 +449,17 @@ Si ninguno de los dos mecanismos funciona, el servidor envía:
 
 Todos los mensajes de texto son JSON con un campo `"type"`.
 
+> **🆕 FEAT-236** añade tres nuevos tipos de mensaje:
+> - **`answer_selection`** — respuesta de selección UI para preguntas
+>   `PROMPT_SELECT` (radio/checkbox/dropdown).
+> - **`answer_payload`** — valor recogido de un campo `VISUAL_FALLBACK`
+>   renderizado inline.
+> - **`confirm_answer`** — confirma o rechaza una transcripción STT con
+>   baja confianza después de recibir `confirm_request`.
+>
+> Ver referencia completa:
+> [`audio-form-voice-modes.md §7.1`](audio-form-voice-modes.md#71-client--server-messages)
+
 #### `start_session`
 
 Inicia la sesión de audio para un formulario. **Debe ser el primer mensaje**
@@ -398,6 +477,11 @@ después de autenticarse.
 |-------|------|-----------|-------------|
 | `form_id` | string | Sí* | ID del formulario. Si se omite, usa el de la URL. |
 | `locale` | string | No | BCP 47 (ej. `"es"`, `"en-US"`). Default: `"en"`. |
+
+> **🆕 FEAT-236** — `start_session` acepta seis campos adicionales
+> opcionales: `tts_backend`, `tts_voice`, `tts_mime_format`,
+> `auto_advance`, `enumerate_options`, `stt_confirm_threshold`.
+> Ver [`audio-form-voice-modes.md §6`](audio-form-voice-modes.md#6-start_session--extended-payload).
 
 ---
 
@@ -547,6 +631,14 @@ sintetizador disponible.
 | `audio` | Solo si hay TTS | Base64 del audio WAV/OGG para reproducir. |
 | `options` | Solo para SELECT | `[{"value": "…", "label": "…"}]`. |
 
+> **🆕 FEAT-236** — el mensaje `question` incluye cuatro campos nuevos
+> siempre presentes: `voice_mode`, `render_mode`, `sensitive`, y
+> `fallback_html` (solo para `VISUAL_FALLBACK`). El frontend debe ramificar
+> su lógica de renderizado según `render_mode`: `"voice"` → input de
+> texto/micrófono; `"select"` → radio/checkbox; `"visual"` → inyectar
+> `fallback_html`.
+> Ver [`audio-form-voice-modes.md §7.2`](audio-form-voice-modes.md#72-server--client-messages).
+
 **Reproducir el audio TTS** (ejemplo):
 
 ```javascript
@@ -595,6 +687,34 @@ Confirma que la respuesta fue validada y almacenada.
 ```
 
 `source` es `"text"` o `"speech"`.
+
+> **🆕 FEAT-236** — `source` puede ser también `"selection"` cuando la
+> respuesta provino de un `answer_selection` (pregunta `PROMPT_SELECT`).
+> Para campos sensibles (`sensitive: true`), el campo `value` se omite
+> de la respuesta.
+
+---
+
+#### `confirm_request` *(nuevo en FEAT-236)*
+
+Enviado cuando la confianza STT está por debajo del umbral configurado
+(`stt_confirm_threshold`). La sesión se pausa hasta recibir `confirm_answer`.
+
+```json
+{
+  "type": "confirm_request",
+  "field_id": "nombre",
+  "transcript": "Juan García López",
+  "confidence": 0.38
+}
+```
+
+El cliente debe mostrar el transcript al usuario y pedir confirmación.
+Responder con `confirm_answer { confirmed: true }` para aceptar, o
+`{ confirmed: false }` para descartar y re-enviar la misma pregunta.
+
+Ver flujo completo:
+[`audio-form-voice-modes.md §8.4`](audio-form-voice-modes.md#84-stt-confidence-gate)
 
 ---
 
@@ -1205,6 +1325,13 @@ document.addEventListener("audio-recorded", async (e) => {
 | `INVALID_INDEX` | `to_index` fuera de rango en `go_back` | No |
 | `INTERNAL_ERROR` | Excepción no capturada en el servidor | No |
 
+> **🆕 FEAT-236** añade tres nuevos códigos de error:
+> `NO_PENDING_ANSWER` (se envió `confirm_answer` sin un `confirm_request`
+> previo), `FIELD_MISMATCH` (`confirm_answer.field_id` no coincide con la
+> respuesta pendiente), y `WRONG_FIELD` (se respondió a un campo distinto
+> al de la pregunta activa). Ver tabla completa en
+> [`audio-form-voice-modes.md §10`](audio-form-voice-modes.md#10-error-codes).
+
 ---
 
 ## 10. Consideraciones de seguridad
@@ -1285,4 +1412,17 @@ capa de servicio y conecta sus callbacks al estado del componente.
 
 ---
 
-*Documento generado para parrot-formdesigner — FEAT-224 Audio Renderer.*
+---
+
+## Ver también
+
+| Documento | Descripción |
+|-----------|-------------|
+| [`audio-form-voice-modes.md`](audio-form-voice-modes.md) | **Guía completa FEAT-236** — SuperTonic TTS, taxonomía VoiceMode, flujos híbridos, protocolo WebSocket extendido, cliente de referencia JS y componente React/TypeScript |
+| [`voice_chat.md`](voice_chat.md) | Integración de voz conversacional (FEAT-231 AgentTalk) — diferente al modo formulario |
+| [`whisperx.md`](whisperx.md) | Configuración del backend STT (WhisperX / FasterWhisper) |
+
+---
+
+*Documento generado para parrot-formdesigner — FEAT-224 Audio Renderer.*  
+*Ver [`audio-form-voice-modes.md`](audio-form-voice-modes.md) para las extensiones FEAT-236.*

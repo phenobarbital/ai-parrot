@@ -48,6 +48,16 @@ class FieldControlMetadata(BaseModel):
         supports_constraints: Whether the control supports validation
             constraints (min/max length, regex, etc.).
         is_container: Whether the control nests other fields (groups, arrays).
+        supported_operators: List of ``ConditionOperator`` values meaningful for
+            this control type (used in ``depends_on.conditions`` and
+            ``post_depends.conditions``).  Empty list = all operators accepted.
+            Optional — omit for extension types.
+        supported_effects: List of pre-dependency ``effect`` values applicable
+            to this control (``"show" | "hide" | "require" | "disable"``).
+            Empty list = all effects applicable.  Optional.
+        supported_operations: List of :class:`DependencyOperation` ``op`` values
+            that make semantic sense for this control type (e.g. arithmetic ops
+            only for numeric types).  Empty list = all ops applicable.  Optional.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -61,6 +71,10 @@ class FieldControlMetadata(BaseModel):
     render_hint: str
     supports_constraints: bool
     is_container: bool = False
+    # Rule capability metadata (FEAT-234) — optional with safe defaults
+    supported_operators: list[str] = []
+    supported_effects: list[str] = []
+    supported_operations: list[str] = []
 
 
 # Module-level registry — preserves registration order for stable iteration.
@@ -78,6 +92,9 @@ def register_field_control(
     render_hint: str,
     supports_constraints: bool,
     is_container: bool = False,
+    supported_operators: list[str] | None = None,
+    supported_effects: list[str] | None = None,
+    supported_operations: list[str] | None = None,
 ) -> None:
     """Register (or overwrite) a control entry in the toolbar registry.
 
@@ -94,6 +111,12 @@ def register_field_control(
         render_hint: UI hint (e.g. ``"input"``, ``"select"``, ``"container"``).
         supports_constraints: Whether the control supports validation constraints.
         is_container: Whether the control nests other fields. Defaults to ``False``.
+        supported_operators: ``ConditionOperator`` values meaningful for this type.
+            ``None`` (default) and ``[]`` both mean "all operators applicable".
+        supported_effects: Dependency ``effect`` values applicable to this type.
+            ``None`` (default) and ``[]`` both mean "all effects applicable".
+        supported_operations: ``DependencyOperation.op`` values that make sense
+            for this type.  ``None`` (default) and ``[]`` both mean "all ops".
     """
     type_id = field_type.value if isinstance(field_type, FieldType) else field_type
     if type_id in _REGISTRY:
@@ -110,6 +133,9 @@ def register_field_control(
         render_hint=render_hint,
         supports_constraints=supports_constraints,
         is_container=is_container,
+        supported_operators=supported_operators or [],
+        supported_effects=supported_effects or [],
+        supported_operations=supported_operations or [],
     )
 
 

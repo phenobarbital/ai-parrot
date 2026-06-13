@@ -280,6 +280,44 @@ class HumanInteractionManager:
     # Public API: long-polling mode
     # ------------------------------------------------------------------
 
+    async def _terminate_no_applicable_tier(
+        self, interaction: HumanInteraction
+    ) -> InteractionResult:
+        """Resolve an interaction whose policy yielded no applicable starting tier.
+
+        ``_resolve_interaction_policy`` leaves ``current_tier_level`` at 0 when
+        ``select_starting_tier`` returns ``None`` (every tier blocked by its
+        severity floor / business-hours window). Both the blocking and the
+        suspend entry points funnel through here so the behaviour is identical:
+        emit ``hitl.chain.exhausted``, persist a terminal TIMEOUT result, and
+        return it without dispatching to any channel.
+
+        Returns:
+            The persisted terminal :class:`InteractionResult` (status TIMEOUT).
+        """
+        self.logger.warning(
+            "Interaction %s has policy %s but no applicable starting tier; "
+            "terminating immediately.",
+            interaction.interaction_id,
+            interaction.policy_id,
+        )
+        # Emit hitl.chain.exhausted when no applicable starting tier is found
+        # (Issue 6).
+        await self._emit(
+            "hitl.chain.exhausted",
+            HitlChainExhaustedEvent(
+                interaction_id=interaction.interaction_id,
+                policy_id=interaction.policy_id or "",
+            ),
+        )
+        result = InteractionResult(
+            interaction_id=interaction.interaction_id,
+            status=InteractionStatus.TIMEOUT,
+            timed_out=True,
+        )
+        await self._persist_result(result)
+        return result
+
     async def request_human_input(
         self,
         interaction: HumanInteraction,
@@ -302,28 +340,7 @@ class HumanInteractionManager:
 
         # 1b. If policy set but no applicable starting tier, terminate immediately.
         if interaction.policy and interaction.current_tier_level == 0:
-            self.logger.warning(
-                "Interaction %s has policy %s but no applicable starting tier; "
-                "terminating immediately.",
-                interaction.interaction_id,
-                interaction.policy_id,
-            )
-            # Emit hitl.chain.exhausted when no applicable starting tier is found
-            # (Issue 6).
-            await self._emit(
-                "hitl.chain.exhausted",
-                HitlChainExhaustedEvent(
-                    interaction_id=interaction.interaction_id,
-                    policy_id=interaction.policy_id or "",
-                ),
-            )
-            result = InteractionResult(
-                interaction_id=interaction.interaction_id,
-                status=InteractionStatus.TIMEOUT,
-                timed_out=True,
-            )
-            await self._persist_result(result)
-            return result
+            return await self._terminate_no_applicable_tier(interaction)
 
         # 2. Persist
         await self._persist_interaction(interaction)
@@ -395,7 +412,7 @@ class HumanInteractionManager:
                 )
                 # Leave current_tier_level at 0 — caller handles this.
                 return
-            interaction.current_tier_level = starting_tier.level - 1
+            interaction.current_tier_level = starting_tier.level
             # Adjust targets/timeout from starting tier
             interaction.target_humans = (
                 starting_tier.target_humans or interaction.target_humans
@@ -505,6 +522,14 @@ class HumanInteractionManager:
                 only expiry guarantee in that mode.
         """
         await self._resolve_interaction_policy(interaction)
+
+        # If policy set but no applicable starting tier, terminate immediately:
+        # persist the terminal TIMEOUT result and return the id so the caller
+        # resolves it on its next get_result poll (no dispatch, no timeout task).
+        if interaction.policy and interaction.current_tier_level == 0:
+            await self._terminate_no_applicable_tier(interaction)
+            return interaction.interaction_id
+
         await self._persist_interaction(interaction)
 
         if channel in self.channels:

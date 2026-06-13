@@ -220,10 +220,8 @@ class AIMessage(BaseModel):
         ),
     )
 
-    class Config:
-        """Pydantic configuration for AIMessage."""
-        # Allow arbitrary types for output field (pandas DataFrames, etc.)
-        arbitrary_types_allowed = True
+    # Allow arbitrary types for output field (pandas DataFrames, etc.)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @property
     def content(self) -> Any:
@@ -1102,16 +1100,17 @@ class AgentResponse(BaseModel):
         default=None, description="Unique identifier for the conversation turn"
     )
 
-    class Config:
-        """Pydantic configuration for AgentResponse."""
+    # Pydantic configuration for AgentResponse.
+    model_config = ConfigDict(
         # Allow arbitrary types for output field (pandas DataFrames, etc.)
-        arbitrary_types_allowed = False
+        arbitrary_types_allowed=False,
         # Allow extra fields if needed
-        extra = "allow"
+        extra="allow",
         # Use enum values
-        use_enum_values = True
+        use_enum_values=True,
         # Validate assignment
-        validate_assignment = True
+        validate_assignment=True,
+    )
 
     @property
     def content(self) -> Any:

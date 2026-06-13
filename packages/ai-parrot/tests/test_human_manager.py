@@ -278,6 +278,61 @@ class TestRequestHumanInput:
         assert result.consolidated_value is False
         assert result.timed_out is True
 
+    @pytest.mark.asyncio
+    async def test_level1_policy_start_does_not_terminate_immediately(
+        self, manager, mock_channel
+    ):
+        """Regression: a valid Tier-1 policy start must dispatch, not terminate.
+
+        Reproduces the off-by-one where ``_resolve_interaction_policy`` seeded
+        ``current_tier_level = starting_tier.level - 1``. For a level-1 start
+        that yielded 0, which collided with the "no applicable starting tier"
+        sentinel at the top of ``request_human_input`` and aborted the whole
+        interaction with an immediate TIMEOUT (never sending the card, never
+        escalating to Tier 2).
+        """
+        policy = EscalationPolicy(
+            name="teams-then-email",
+            tiers=[
+                EscalationTier(
+                    level=1,
+                    name="Teams Approval",
+                    channel_type="test",
+                    action_type=EscalationActionType.INTERACT,
+                    target_humans=["approver@corp.com"],
+                    timeout=0.2,
+                ),
+                EscalationTier(
+                    level=2,
+                    name="Email Escalation",
+                    action_type=EscalationActionType.NOTIFY,
+                    timeout=3600.0,
+                    action_metadata={"kind": "email", "to": ["finance@corp.com"]},
+                ),
+            ],
+        )
+        manager._policies[policy.policy_id] = policy
+
+        interaction = HumanInteraction(
+            question="Approve USD 500.00?",
+            interaction_type=InteractionType.APPROVAL,
+            policy_id=policy.policy_id,
+            severity=Severity.NORMAL,
+            timeout_action=TimeoutAction.CANCEL,
+        )
+
+        result = await manager.request_human_input(interaction, channel="test")
+
+        # The starting tier (level 1) must seed a 1-based cursor so the guard
+        # does NOT mistake it for "no applicable tier".
+        assert interaction.current_tier_level == 1
+        # The card was actually dispatched to the Tier-1 approver — proving the
+        # request was NOT killed by the no-tier guard *before* dispatch (the bug
+        # returned immediately, so send_interaction was never called).
+        mock_channel.send_interaction.assert_called_once()
+        # It timed out for real (no responder) rather than being aborted up front.
+        assert result.timed_out is True
+
 
 class TestAsyncMode:
     """Test suspend/resume mode."""
@@ -293,6 +348,62 @@ class TestAsyncMode:
         )
         assert iid == interaction.interaction_id
         manager._redis.setex.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_no_applicable_tier_terminates_without_dispatch(
+        self, manager, mock_channel
+    ):
+        """SUSPEND path must terminate (not dispatch) when no tier applies.
+
+        Mirrors the guard on the BLOCK path: when every tier is gated out by
+        its severity floor, ``request_human_input_async`` must persist a
+        terminal TIMEOUT result and return the id WITHOUT sending a card or
+        scheduling a timeout task — so the caller resolves it on its next poll.
+        """
+        policy = EscalationPolicy(
+            name="critical-only",
+            tiers=[
+                EscalationTier(
+                    level=1,
+                    name="Critical Tier",
+                    action_type=EscalationActionType.NOTIFY,
+                    min_severity=Severity.CRITICAL,
+                    action_metadata={"kind": "email", "to": ["soc@corp.com"]},
+                ),
+            ],
+        )
+        manager._policies[policy.policy_id] = policy
+
+        interaction = HumanInteraction(
+            question="Approve?",
+            interaction_type=InteractionType.APPROVAL,
+            policy_id=policy.policy_id,
+            severity=Severity.LOW,  # below the tier's CRITICAL floor
+        )
+
+        # Back the mocked redis with a tiny in-memory store so the persisted
+        # terminal result can be read back via get_result.
+        store: dict = {}
+        manager._redis.setex = AsyncMock(
+            side_effect=lambda key, ttl, val: store.__setitem__(key, val)
+        )
+        manager._redis.get = AsyncMock(side_effect=lambda key: store.get(key))
+
+        iid = await manager.request_human_input_async(
+            interaction, channel="test"
+        )
+
+        assert iid == interaction.interaction_id
+        # No tier applied -> the 1-based cursor was never seeded.
+        assert interaction.current_tier_level == 0
+        # Nothing was dispatched and no timeout task was scheduled.
+        mock_channel.send_interaction.assert_not_called()
+        assert interaction.interaction_id not in manager._timeout_tasks
+        # A terminal TIMEOUT result is available for the caller's next poll.
+        result = await manager.get_result(interaction.interaction_id)
+        assert result is not None
+        assert result.status == InteractionStatus.TIMEOUT
+        assert result.timed_out is True
 
 
 class TestClose:
@@ -837,8 +948,11 @@ class TestStartingTierSelection:
             severity=Severity.NORMAL,
         )
         await mgr._resolve_interaction_policy(interaction)
-        # NORMAL qualifies for L1 (min_severity=NORMAL <= NORMAL)
-        assert interaction.current_tier_level == 0  # level-1 means starts at 0
+        # NORMAL qualifies for L1 (min_severity=NORMAL <= NORMAL); current_tier_level
+        # is 1-based, so starting at tier level 1 means current_tier_level == 1.
+        # (0 is reserved as the "no applicable tier" sentinel — see
+        # test_no_applicable_tier_leaves_level_zero.)
+        assert interaction.current_tier_level == 1
 
     async def test_no_applicable_tier_leaves_level_zero(self, mgr_with_redis):
         """When no tier is applicable, current_tier_level stays 0."""

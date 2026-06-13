@@ -55,10 +55,17 @@ def test_ttsconfig_accepts_supertonic():
 
 
 def test_synthesizer_dispatches_supertonic():
-    """VoiceSynthesizer._get_backend() builds a SupertonicTTSBackend lazily."""
+    """VoiceSynthesizer._get_backend() builds the ONNX backend lazily.
+
+    The wired backend is ``SupertonicONNXBackend`` (a ``SupertonicTTSBackend``
+    subclass); construction must not load any ONNX graph.
+    """
     synth = VoiceSynthesizer(TTSConfig(backend="supertonic"))
     backend = synth._get_backend()
-    assert backend.__class__.__name__ == "SupertonicTTSBackend"
+    assert backend.__class__.__name__ == "SupertonicONNXBackend"
+    assert isinstance(backend, SupertonicTTSBackend)
+    # Lazy: no pipeline built until the first synthesize() call.
+    assert backend._inference_fn is None
 
 
 # ---------------------------------------------------------------------------

@@ -260,3 +260,85 @@ def get_form_field_schema_snippets() -> dict[str, dict[str, Any]]:
     """
 
     return deepcopy(_FIELD_SCHEMA_SNIPPETS)
+
+
+def get_dependency_rule_snippets() -> dict[str, Any]:
+    """Return skeleton dicts for building ``depends_on`` and ``post_depends`` rules.
+
+    The returned skeletons are minimal but *valid* — each one can be passed
+    directly to the corresponding Pydantic model constructor.  They are
+    intended for use by LLMs and designer UIs that need a quick-start
+    template when adding conditional logic to form fields.
+
+    Returns:
+        A dictionary with two top-level keys:
+
+        - ``"depends_on"`` — a skeleton ``DependencyRule`` dict.
+        - ``"post_depends"`` — a list containing one skeleton
+          ``PostDependency`` dict for each common effect category.
+
+    Example::
+
+        snippets = get_dependency_rule_snippets()
+        from parrot_formdesigner.core import DependencyRule
+        rule = DependencyRule(**snippets["depends_on"])
+    """
+
+    return deepcopy(
+        {
+            "depends_on": {
+                "conditions": [
+                    {
+                        "field_id": "<source_field_id>",
+                        "operator": "eq",
+                        "value": "<expected_value>",
+                    }
+                ],
+                "logic": "and",
+                "effect": "show",
+            },
+            "post_depends": [
+                # Visibility effect — show/hide a target field
+                {
+                    "target": "<target_field_id>",
+                    "effect": "show",
+                    "conditions": [
+                        {
+                            "field_id": "<source_field_id>",
+                            "operator": "eq",
+                            "value": "<expected_value>",
+                        }
+                    ],
+                    "logic": "and",
+                },
+                # Requirement effect — make a target field required
+                {
+                    "target": "<target_field_id>",
+                    "effect": "require",
+                    "conditions": [
+                        {
+                            "field_id": "<source_field_id>",
+                            "operator": "neq",
+                            "value": "<excluded_value>",
+                        }
+                    ],
+                    "logic": "and",
+                },
+                # Calculation effect — write a computed value to a target field
+                {
+                    "target": "<target_field_id>",
+                    "effect": "calc",
+                    "operation": {
+                        "op": "add",
+                        "operands": ["<field_a>", "<field_b>"],
+                        "target": "<target_field_id>",
+                    },
+                },
+                # Cascade-clear — clear a downstream field when this one changes
+                {
+                    "target": "<downstream_field_id>",
+                    "effect": "cascade_clear",
+                },
+            ],
+        }
+    )

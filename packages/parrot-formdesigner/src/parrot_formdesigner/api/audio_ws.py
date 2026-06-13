@@ -20,13 +20,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import html
 import json
 import logging
 import os
 import tempfile
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from aiohttp import WSMsgType, web
 
@@ -34,12 +35,17 @@ from ..audio.models import (
     AudioAnswer,
     AudioFormManifest,
     AudioQuestion,
+    AudioSessionConfig,
     AudioSessionState,
+    VoiceMode,
 )
-from ..renderers.audio import AudioFormRenderer
+from ..renderers.audio import (
+    AudioFormRenderer,
+    synthesize_with_fallback,
+)
 
 if TYPE_CHECKING:
-    from parrot.voice.handler import AuthenticatedUser, TokenValidator
+    from parrot.core.ws_auth import AuthenticatedUser, TokenValidator
     from parrot.voice.tts.synthesizer import VoiceSynthesizer
     from parrot.voice.transcriber.faster_whisper_backend import FasterWhisperBackend
 
@@ -51,6 +57,46 @@ logger = logging.getLogger(__name__)
 
 # Maximum audio questions per session (spec open question resolved: 10 max).
 MAX_QUESTIONS = 10
+
+# Client-facing placeholder used in lieu of a sensitive (e.g. password) value
+# in transcription / confirm_request messages (FEAT-236).
+_SENSITIVE_MASK = "[hidden]"
+
+# Minimum plausible size (bytes) for a real audio recording. A complete WebM/OGG
+# container with at least one frame of media is comfortably larger than this; a
+# payload below it is almost always an empty/instant recording.
+_MIN_AUDIO_BYTES = 256
+
+
+def _sniff_audio_suffix(data: bytes) -> Optional[str]:
+    """Detect the audio container from leading magic bytes.
+
+    libav sniffs the real format from content (the temp-file suffix is only
+    cosmetic for decoding), but matching the suffix to the actual container
+    keeps the temp file honest and lets us reject non-audio payloads early.
+
+    Args:
+        data: The raw bytes received on the WebSocket binary frame.
+
+    Returns:
+        A file suffix (e.g. ``".webm"``) for a recognized container, or
+        ``None`` if the bytes do not match any known audio container.
+    """
+    if len(data) < 12:
+        return None
+    # Matroska / WebM: EBML magic.
+    if data[:4] == b"\x1a\x45\xdf\xa3":
+        return ".webm"
+    # OGG (Opus/Vorbis): "OggS".
+    if data[:4] == b"OggS":
+        return ".ogg"
+    # MP4 / M4A (AAC): "....ftyp" at offset 4.
+    if data[4:8] == b"ftyp":
+        return ".mp4"
+    # WAV (PCM): "RIFF"...."WAVE".
+    if data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        return ".wav"
+    return None
 
 
 class AudioFormWSHandler:
@@ -71,6 +117,12 @@ class AudioFormWSHandler:
         validator: FormValidator for answer validation.
         token_validator: TokenValidator for JWT authentication.
         submission_storage: Optional storage backend for form submissions.
+        auto_synthesize: When True and no explicit ``synthesizer`` is injected,
+            the handler synthesizes TTS via the SuperTonic-first fallback helper
+            (SuperTonic → Google → text-only). Defaults to False so callers that
+            pass no synthesizer get a silent (text-only) session unless they
+            opt in. Wired on by ``setup_form_api`` when audio is intended
+            (FEAT-236 TASK-1542).
 
     Example::
 
@@ -97,6 +149,7 @@ class AudioFormWSHandler:
         token_validator: Optional["TokenValidator"] = None,
         submission_storage: Optional["FormSubmissionStorage"] = None,
         max_msg_size: int = 10 * 1024 * 1024,
+        auto_synthesize: bool = False,
     ) -> None:
         """Initialize the AudioFormWSHandler."""
         self.registry = registry
@@ -106,6 +159,11 @@ class AudioFormWSHandler:
         self._token_validator = token_validator
         self._submission_storage = submission_storage
         self._max_msg_size = max_msg_size
+        self._auto_synthesize = auto_synthesize
+        # Per-session working VoiceSynthesizer cache (session_id → synth) for the
+        # auto_synthesize path, so the chosen backend is reused across a
+        # session's questions instead of being rebuilt per narration (FEAT-236).
+        self._session_synths: dict[str, Any] = {}
         self.logger = logging.getLogger(__name__)
 
     # -------------------------------------------------------------------------
@@ -124,7 +182,20 @@ class AudioFormWSHandler:
         Returns:
             Completed WebSocketResponse.
         """
-        ws = web.WebSocketResponse(heartbeat=30.0, max_msg_size=self._max_msg_size)
+        # Browsers cannot set an Authorization header on a WebSocket, so the
+        # JWT is smuggled in as a Sec-WebSocket-Protocol subprotocol. The
+        # handshake response MUST echo back one of the client's offered
+        # subprotocols, or strict clients abort the connection immediately.
+        offered_protocols = [
+            proto.strip()
+            for proto in request.headers.get("Sec-WebSocket-Protocol", "").split(",")
+            if proto.strip()
+        ]
+        ws = web.WebSocketResponse(
+            heartbeat=30.0,
+            max_msg_size=self._max_msg_size,
+            protocols=offered_protocols,
+        )
         await ws.prepare(request)
 
         # Step 1: Authenticate
@@ -178,6 +249,10 @@ class AudioFormWSHandler:
                     break
 
         finally:
+            # Release any per-session synthesizer built lazily in auto mode.
+            cached_synth = self._session_synths.pop(session.session_id, None)
+            if cached_synth is not None:
+                await self._close_synth(cached_synth)
             self.logger.debug(
                 "AudioFormWSHandler: session %s closed", session.session_id
             )
@@ -212,7 +287,7 @@ class AudioFormWSHandler:
                 "AudioFormWSHandler: no token_validator configured — "
                 "accepting anonymous connection (not for production use)"
             )
-            from parrot.voice.handler import AuthenticatedUser  # type: ignore[import-untyped]
+            from parrot.core.ws_auth import AuthenticatedUser  # type: ignore[import-untyped]
             return AuthenticatedUser(user_id="anonymous", username="anonymous")
 
         # Try Sec-WebSocket-Protocol header (token passed as subprotocol).
@@ -277,6 +352,9 @@ class AudioFormWSHandler:
         handlers: dict[str, Any] = {
             "start_session": self._handle_start_session,
             "answer_text": self._handle_answer_text,
+            "answer_selection": self._handle_answer_selection,
+            "answer_payload": self._handle_answer_payload,
+            "confirm_answer": self._handle_confirm_answer,
             "skip_question": self._handle_skip_question,
             "go_back": self._handle_go_back,
             "repeat_question": self._handle_repeat_question,
@@ -303,6 +381,45 @@ class AudioFormWSHandler:
     # Message handlers
     # -------------------------------------------------------------------------
 
+    def _build_session_config(
+        self,
+        form_id: str,
+        locale: str,
+        data: dict[str, Any],
+    ) -> AudioSessionConfig:
+        """Build an AudioSessionConfig from the start_session payload (FEAT-236).
+
+        Only the documented keys are read; any omitted key uses the model
+        default. Invalid values fall back to defaults rather than failing the
+        session.
+
+        Args:
+            form_id: The form being started.
+            locale: Resolved session locale.
+            data: The raw start_session message payload.
+
+        Returns:
+            A populated AudioSessionConfig.
+        """
+        kwargs: dict[str, Any] = {"form_id": form_id, "locale": locale}
+        for key in (
+            "tts_backend",
+            "tts_voice",
+            "tts_mime_format",
+            "auto_advance",
+            "enumerate_options",
+            "stt_confirm_threshold",
+        ):
+            if key in data and data[key] is not None:
+                kwargs[key] = data[key]
+        try:
+            return AudioSessionConfig(**kwargs)
+        except Exception as exc:  # noqa: BLE001 — never fail the session on config
+            self.logger.warning(
+                "Invalid audio session config (%s); using defaults", exc
+            )
+            return AudioSessionConfig(form_id=form_id, locale=locale)
+
     async def _handle_start_session(
         self,
         *,
@@ -315,6 +432,11 @@ class AudioFormWSHandler:
         """Handle start_session message: load form, build manifest, send Q1."""
         form_id = data.get("form_id") or session.form_id
         locale = data.get("locale", "en")
+
+        # Build the per-session config from the start_session payload (FEAT-236),
+        # falling back to defaults for any omitted key.
+        config = self._build_session_config(form_id, locale, data)
+        session.config = config
 
         # Load form
         form = await self.registry.get(form_id, tenant=None)
@@ -355,7 +477,9 @@ class AudioFormWSHandler:
         session.manifest = manifest
         session.current_index = 0
 
-        # Pre-synthesize all questions if synthesizer available.
+        # Pre-synthesize all questions only when an explicit synthesizer is
+        # injected. In auto_synthesize mode questions are synthesized on demand
+        # in _send_question (one at a time) to avoid bulk backend calls.
         if self.synthesizer is not None:
             await self._presynthize_to_cache(questions, audio_cache, locale=locale)
 
@@ -368,7 +492,9 @@ class AudioFormWSHandler:
 
         # Deliver first question.
         if questions:
-            await self._send_question(ws, questions[0], audio_cache)
+            await self._send_question(
+                ws, questions[0], audio_cache, config=config, session=session
+            )
         else:
             await self._finish_session(ws, session)
 
@@ -390,6 +516,139 @@ class AudioFormWSHandler:
         )
         if accepted:
             await self._advance_session(ws, session, request, audio_cache)
+
+    async def _handle_answer_selection(
+        self,
+        *,
+        ws: web.WebSocketResponse,
+        data: dict[str, Any],
+        session: AudioSessionState,
+        request: web.Request,
+        audio_cache: dict[int, str],
+    ) -> None:
+        """Handle answer_selection for a PROMPT_SELECT question (FEAT-236).
+
+        Accepts ``{field_id, value}`` (single) or ``{field_id, values: [...]}``
+        (multi). The ``field_id`` must match the current question. Validates each
+        value against the question's ``options`` and stores an
+        ``AudioAnswer(source="selection")``. Multi values are stored as a
+        comma-joined string.
+        """
+        field_id = data.get("field_id", "")
+        question = await self._current_question(ws, session, field_id)
+        if question is None:
+            return  # error already sent by _current_question
+
+        allowed = {opt.get("value") for opt in (question.options or [])}
+
+        if "values" in data:
+            raw_values = data.get("values") or []
+            values = [str(v) for v in raw_values]
+            if question.required and not values:
+                await self._reject_answer(
+                    ws, field_id, "Select at least one option"
+                )
+                return
+            if allowed and any(v not in allowed for v in values):
+                await self._reject_answer(
+                    ws, field_id, "One or more selected values are not valid options"
+                )
+                return
+            value = ",".join(values)
+        else:
+            value = str(data.get("value", ""))
+            if allowed and value not in allowed:
+                await self._reject_answer(
+                    ws, field_id, f"'{value}' is not a valid option"
+                )
+                return
+
+        accepted = await self._accept_answer(
+            ws, session, field_id, value, source="selection"
+        )
+        if accepted:
+            await self._advance_session(ws, session, request, audio_cache)
+
+    async def _handle_answer_payload(
+        self,
+        *,
+        ws: web.WebSocketResponse,
+        data: dict[str, Any],
+        session: AudioSessionState,
+        request: web.Request,
+        audio_cache: dict[int, str],
+    ) -> None:
+        """Handle answer_payload for a VISUAL_FALLBACK question (FEAT-236).
+
+        Accepts ``{field_id, value}`` collected after the client completes the
+        inline single-field visual render. The ``field_id`` must match the
+        current question. Stores ``source="text"`` and advances. A required REST
+        field can be completed this way.
+        """
+        field_id = data.get("field_id", "")
+        if await self._current_question(ws, session, field_id) is None:
+            return  # error already sent by _current_question
+        value = str(data.get("value", ""))
+
+        accepted = await self._accept_answer(
+            ws, session, field_id, value, source="text"
+        )
+        if accepted:
+            await self._advance_session(ws, session, request, audio_cache)
+
+    async def _handle_confirm_answer(
+        self,
+        *,
+        ws: web.WebSocketResponse,
+        data: dict[str, Any],
+        session: AudioSessionState,
+        request: web.Request,
+        audio_cache: dict[int, str],
+    ) -> None:
+        """Handle confirm_answer for a low-confidence transcript (FEAT-236).
+
+        ``{field_id, confirmed: bool}`` — on ``true`` the pending transcript is
+        stored and the session advances; on ``false`` the pending transcript is
+        discarded and the SAME question is re-sent (no advance).
+        """
+        pending = session.pending
+        if pending is None:
+            await self._send_error(
+                ws, "NO_PENDING_ANSWER", "No answer is awaiting confirmation"
+            )
+            return
+
+        client_field_id = data.get("field_id", "")
+        if client_field_id and client_field_id != pending.field_id:
+            await self._send_error(
+                ws,
+                "FIELD_MISMATCH",
+                f"confirm_answer for '{client_field_id}' but the pending "
+                f"answer is for '{pending.field_id}'",
+            )
+            return
+
+        confirmed = bool(data.get("confirmed", False))
+        session.pending = None
+
+        if confirmed:
+            accepted = await self._accept_answer(
+                ws, session, pending.field_id, pending.value,
+                source="speech", confidence=pending.confidence,
+                raw_transcript=pending.raw_transcript,
+            )
+            if accepted:
+                await self._advance_session(ws, session, request, audio_cache)
+        else:
+            # Re-send the current (same) question; nothing is stored.
+            if session.manifest is not None and session.current_index < len(
+                session.manifest.questions
+            ):
+                current_q = session.manifest.questions[session.current_index]
+                await self._send_question(
+                    ws, current_q, audio_cache,
+                    config=session.config, session=session,
+                )
 
     async def _handle_answer_audio(
         self,
@@ -416,30 +675,108 @@ class AudioFormWSHandler:
             )
             return
 
+        # Validate the incoming payload before touching the transcriber. A
+        # too-small or non-container frame is an empty/instant recording or a
+        # partial MediaRecorder chunk — decoding it raises a cryptic libav EBML
+        # error, so reject it here with an actionable message instead.
+        suffix = _sniff_audio_suffix(audio_bytes)
+        self.logger.debug(
+            "Received audio frame: %d bytes, magic=%s, detected=%s",
+            len(audio_bytes),
+            audio_bytes[:8].hex(" ") if audio_bytes else "(empty)",
+            suffix or "unknown",
+        )
+        if len(audio_bytes) < _MIN_AUDIO_BYTES:
+            await self._send_error(
+                ws,
+                "EMPTY_AUDIO",
+                "No audio captured. Hold the record button and speak, then "
+                "release to send.",
+            )
+            return
+        if suffix is None:
+            await self._send_error(
+                ws,
+                "UNSUPPORTED_AUDIO",
+                "Unrecognized audio format. Send a complete WebM, OGG, MP4 or "
+                "WAV recording as a single binary frame.",
+            )
+            return
+
         # Write audio bytes to a temp file for transcription.
         tmp_path: Optional[Path] = None
         try:
             with tempfile.NamedTemporaryFile(
-                suffix=".ogg", delete=False, prefix="audio_form_"
+                suffix=suffix, delete=False, prefix="audio_form_"
             ) as tmp:
                 tmp.write(audio_bytes)
                 tmp_path = Path(tmp.name)
 
-            result = await self.transcriber.transcribe(
-                tmp_path,
-                language=manifest.locale if manifest.locale != "en" else None,
-            )
+            try:
+                result = await self.transcriber.transcribe(
+                    tmp_path,
+                    language=manifest.locale if manifest.locale != "en" else None,
+                )
+            except Exception as exc:  # noqa: BLE001 — surface decode failures cleanly
+                # A malformed/truncated container (e.g. a partial recording)
+                # raises deep inside libav. Convert it to a clean, recoverable
+                # client error rather than tearing down the session turn.
+                self.logger.warning(
+                    "Failed to decode/transcribe audio frame (%d bytes, %s): %s",
+                    len(audio_bytes),
+                    suffix,
+                    exc,
+                )
+                await self._send_error(
+                    ws,
+                    "AUDIO_DECODE_ERROR",
+                    "Could not decode the audio. Please re-record the answer.",
+                )
+                return
 
             transcript = result.text
             confidence = result.confidence
+
+            # Never echo a sensitive (e.g. password) value back to the client;
+            # the real transcript is still stored server-side (FEAT-236).
+            display_text = _SENSITIVE_MASK if current_q.sensitive else transcript
 
             # Send transcription back to client.
             await ws.send_json({
                 "type": "transcription",
                 "field_id": current_q.field_id,
-                "text": transcript,
+                "text": display_text,
                 "confidence": confidence,
             })
+
+            # Low-confidence read-back gate (FEAT-236): when the STT confidence
+            # is below the configured threshold, hold the transcript as PENDING
+            # and ask the client to confirm before storing. Do NOT advance.
+            threshold = (
+                session.config.stt_confirm_threshold
+                if session.config is not None
+                else 0.6
+            )
+            if confidence is None:
+                self.logger.debug(
+                    "STT returned no confidence for field %s; auto-advancing",
+                    current_q.field_id,
+                )
+            if confidence is not None and confidence < threshold:
+                session.pending = AudioAnswer(
+                    field_id=current_q.field_id,
+                    value=transcript,
+                    source="speech",
+                    confidence=confidence,
+                    raw_transcript=transcript,
+                )
+                await ws.send_json({
+                    "type": "confirm_request",
+                    "field_id": current_q.field_id,
+                    "transcript": display_text,
+                    "confidence": confidence,
+                })
+                return
 
             # Validate and store the answer.
             accepted = await self._accept_answer(
@@ -518,7 +855,10 @@ class AudioFormWSHandler:
             return
 
         session.current_index = target
-        await self._send_question(ws, manifest.questions[target], audio_cache)
+        await self._send_question(
+            ws, manifest.questions[target], audio_cache,
+            config=session.config, session=session,
+        )
 
     async def _handle_repeat_question(
         self,
@@ -539,7 +879,9 @@ class AudioFormWSHandler:
             return
 
         current_q = manifest.questions[session.current_index]
-        await self._send_question(ws, current_q, audio_cache)
+        await self._send_question(
+            ws, current_q, audio_cache, config=session.config, session=session
+        )
 
     async def _handle_end_session(
         self,
@@ -570,6 +912,62 @@ class AudioFormWSHandler:
     # Answer validation helpers
     # -------------------------------------------------------------------------
 
+    def _question_for_field(
+        self,
+        session: AudioSessionState,
+        field_id: str,
+    ) -> Optional[AudioQuestion]:
+        """Return the manifest question for ``field_id`` (or None)."""
+        if session.manifest is None:
+            return None
+        for q in session.manifest.questions:
+            if q.field_id == field_id:
+                return q
+        return None
+
+    async def _current_question(
+        self,
+        ws: web.WebSocketResponse,
+        session: AudioSessionState,
+        field_id: str,
+    ) -> Optional[AudioQuestion]:
+        """Return the current question iff ``field_id`` matches it.
+
+        Enforces in-order answering for the FEAT-236 hybrid handlers: sends an
+        error and returns None when the session has not started, is complete, or
+        the client answered a field that is not the current question.
+        """
+        if session.manifest is None:
+            await self._send_error(
+                ws, "SESSION_NOT_STARTED", "Call start_session first"
+            )
+            return None
+        if session.current_index >= len(session.manifest.questions):
+            await self._send_error(ws, "SESSION_COMPLETE", "All questions answered")
+            return None
+        current = session.manifest.questions[session.current_index]
+        if field_id != current.field_id:
+            await self._send_error(
+                ws,
+                "WRONG_FIELD",
+                f"Expected an answer for '{current.field_id}', got '{field_id}'",
+            )
+            return None
+        return current
+
+    async def _reject_answer(
+        self,
+        ws: web.WebSocketResponse,
+        field_id: str,
+        reason: str,
+    ) -> None:
+        """Send an answer_rejected message for ``field_id``."""
+        await ws.send_json({
+            "type": "answer_rejected",
+            "field_id": field_id,
+            "reason": reason,
+        })
+
     async def _accept_answer(
         self,
         ws: web.WebSocketResponse,
@@ -577,7 +975,7 @@ class AudioFormWSHandler:
         field_id: str,
         value: str,
         *,
-        source: str = "text",
+        source: Literal["text", "speech", "selection"] = "text",
         confidence: Optional[float] = None,
         raw_transcript: Optional[str] = None,
     ) -> bool:
@@ -588,7 +986,7 @@ class AudioFormWSHandler:
             session: Current session state.
             field_id: Field ID being answered.
             value: Answer value string.
-            source: 'text' or 'speech'.
+            source: 'text', 'speech' or 'selection'.
             confidence: STT confidence (speech only).
             raw_transcript: Raw transcript (speech only).
 
@@ -598,20 +996,17 @@ class AudioFormWSHandler:
         answer = AudioAnswer(
             field_id=field_id,
             value=value,
-            source=source,  # type: ignore[arg-type]
+            source=source,
             confidence=confidence,
             raw_transcript=raw_transcript,
         )
 
+        # Look up the answered question (for required + sensitive handling).
+        question = self._question_for_field(session, field_id)
+
         # Validate the answer if a form registry and manifest are available.
         if self.validator is not None and session.manifest is not None:
-            # Look up the current question's required flag for basic validation.
-            current_q: Optional[Any] = None
-            for q in session.manifest.questions:
-                if q.field_id == field_id:
-                    current_q = q
-                    break
-            if current_q is not None and current_q.required and not value.strip():
+            if question is not None and question.required and not value.strip():
                 await ws.send_json({
                     "type": "answer_rejected",
                     "field_id": field_id,
@@ -621,12 +1016,15 @@ class AudioFormWSHandler:
 
         session.answers[field_id] = answer
 
-        await ws.send_json({
+        # Never echo a sensitive (e.g. password) value back to the client.
+        ack: dict[str, Any] = {
             "type": "answer_accepted",
             "field_id": field_id,
-            "value": value,
             "source": source,
-        })
+        }
+        if question is None or not question.sensitive:
+            ack["value"] = value
+        await ws.send_json(ack)
         return True
 
     # -------------------------------------------------------------------------
@@ -651,7 +1049,9 @@ class AudioFormWSHandler:
             await self._finish_session(ws, session)
         else:
             next_q = manifest.questions[session.current_index]
-            await self._send_question(ws, next_q, audio_cache)
+            await self._send_question(
+                ws, next_q, audio_cache, config=session.config, session=session
+            )
 
     async def _advance_session_no_request(
         self,
@@ -670,7 +1070,9 @@ class AudioFormWSHandler:
             await self._finish_session(ws, session)
         else:
             next_q = manifest.questions[session.current_index]
-            await self._send_question(ws, next_q, audio_cache)
+            await self._send_question(
+                ws, next_q, audio_cache, config=session.config, session=session
+            )
 
     async def _finish_session(
         self,
@@ -720,26 +1122,48 @@ class AudioFormWSHandler:
         ws: web.WebSocketResponse,
         question: AudioQuestion,
         audio_cache: dict[int, str],
+        *,
+        config: Optional[AudioSessionConfig] = None,
+        session: Optional[AudioSessionState] = None,
     ) -> None:
-        """Send a question message with optional base64 TTS audio.
+        """Send a question message with VoiceMode metadata and optional audio.
+
+        Carries ``voice_mode``/``render_mode``/``sensitive`` always, ``options``
+        for selection questions, and ``fallback_html`` for VISUAL_FALLBACK
+        questions. Sensitive questions (e.g. password) are delivered without TTS
+        audio. PROMPT_SELECT questions optionally enumerate their option labels
+        in the narration (FEAT-236).
 
         Args:
             ws: Active WebSocket.
             question: The AudioQuestion to send.
             audio_cache: Per-session cache of pre-synthesized audio (base64).
+            config: The session config (locale, enumerate_options, backend).
+            session: The session, used to key the per-session synthesizer cache
+                in auto_synthesize mode.
         """
-        audio_b64 = audio_cache.get(question.index)
-
-        # If not pre-synthesized, try on-demand synthesis.
-        if audio_b64 is None and self.synthesizer is not None:
-            try:
-                result = await self.synthesizer.synthesize(question.label)
-                audio_b64 = base64.b64encode(result.audio).decode()
-                audio_cache[question.index] = audio_b64
-            except Exception as exc:
-                self.logger.warning(
-                    "On-demand TTS failed for q%d: %s", question.index, exc
+        # Sensitive questions are never narrated — mute TTS read-back entirely.
+        audio_b64: Optional[str] = None
+        if not question.sensitive:
+            audio_b64 = audio_cache.get(question.index)
+            if audio_b64 is None:
+                tts_text = self._narration_text(question, config)
+                language = (
+                    config.locale
+                    if config is not None and config.locale != "en"
+                    else None
                 )
+                audio_bytes = await self._synthesize(
+                    tts_text, config=config, language=language, session=session
+                )
+                if audio_bytes:
+                    audio_b64 = base64.b64encode(audio_bytes).decode()
+                    audio_cache[question.index] = audio_b64
+
+        # Single-field visual fallback HTML for VISUAL_FALLBACK questions.
+        fallback_html = question.fallback_html
+        if question.voice_mode == VoiceMode.VISUAL_FALLBACK and not fallback_html:
+            fallback_html = await self._build_fallback_html(question, config)
 
         msg: dict[str, Any] = {
             "type": "question",
@@ -748,6 +1172,9 @@ class AudioFormWSHandler:
             "label": question.label,
             "required": question.required,
             "field_type": question.field_type,
+            "voice_mode": question.voice_mode.value,
+            "render_mode": question.render_mode,
+            "sensitive": question.sensitive,
         }
         if question.description:
             msg["description"] = question.description
@@ -755,8 +1182,183 @@ class AudioFormWSHandler:
             msg["audio"] = audio_b64
         if question.options:
             msg["options"] = question.options
+        if fallback_html:
+            msg["fallback_html"] = fallback_html
 
         await ws.send_json(msg)
+
+    async def _synthesize(
+        self,
+        text: str,
+        *,
+        config: Optional[AudioSessionConfig] = None,
+        language: Optional[str] = None,
+        session: Optional[AudioSessionState] = None,
+    ) -> Optional[bytes]:
+        """Synthesize TTS audio for ``text``, degrading gracefully (FEAT-236).
+
+        An explicitly-injected ``self.synthesizer`` (tests/overrides) takes
+        precedence. Otherwise, when ``auto_synthesize`` is enabled, the
+        SuperTonic-first fallback is used, reusing a per-session synthesizer when
+        a ``session`` is given. Any backend failure degrades to text-only
+        (returns ``None``) — never raises.
+        """
+        if self.synthesizer is not None:
+            try:
+                result = await self.synthesizer.synthesize(text, language=language)
+                return result.audio
+            except Exception as exc:  # noqa: BLE001 — graceful degradation
+                self.logger.warning("Injected TTS synthesizer failed: %s", exc)
+                return None
+        if self._auto_synthesize:
+            if session is None:
+                # No session to key a cache on → one-shot fallback.
+                return await synthesize_with_fallback(
+                    text, config=config, language=language
+                )
+            return await self._auto_synthesize_cached(
+                session, text, config=config, language=language
+            )
+        return None
+
+    async def _auto_synthesize_cached(
+        self,
+        session: AudioSessionState,
+        text: str,
+        *,
+        config: Optional[AudioSessionConfig] = None,
+        language: Optional[str] = None,
+    ) -> Optional[bytes]:
+        """SuperTonic-first synthesis reusing a per-session backend (FEAT-236).
+
+        Mirrors :func:`synthesize_with_fallback` but keeps the first
+        working ``VoiceSynthesizer`` open and cached on the handler keyed by
+        ``session_id`` so subsequent questions reuse the same backend instead of
+        rebuilding it. Never raises — degrades to text-only (``None``).
+        """
+        sid = session.session_id
+        cached = self._session_synths.get(sid)
+        if cached is not None:
+            try:
+                result = await cached.synthesize(text, language=language)
+                return result.audio
+            except Exception as exc:  # noqa: BLE001 — rebuild on failure
+                self.logger.warning(
+                    "Cached TTS backend failed (%s); rebuilding", exc
+                )
+                await self._close_synth(cached)
+                self._session_synths.pop(sid, None)
+
+        try:
+            from parrot.voice.tts.models import TTSConfig
+            from parrot.voice.tts.synthesizer import VoiceSynthesizer
+        except ImportError as exc:
+            self.logger.warning(
+                "parrot.voice TTS stack unavailable (%s); text-only", exc
+            )
+            return None
+
+        preferred = config.tts_backend if config is not None else "supertonic"
+        voice = config.tts_voice if config is not None else None
+        mime_format = config.tts_mime_format if config is not None else "audio/wav"
+        backends = [preferred] + [b for b in ("google",) if b != preferred]
+        for backend in backends:
+            candidate = VoiceSynthesizer(
+                TTSConfig(backend=backend, voice=voice, mime_format=mime_format)
+            )
+            try:
+                result = await candidate.synthesize(text, language=language)
+                # Keep the working backend open for reuse this session.
+                self._session_synths[sid] = candidate
+                return result.audio
+            except Exception as exc:  # noqa: BLE001 — never raise (FEAT-231)
+                self.logger.warning("TTS backend %s unavailable: %s", backend, exc)
+                await self._close_synth(candidate)
+        return None
+
+    async def _close_synth(self, synth: Any) -> None:
+        """Close a VoiceSynthesizer, swallowing any teardown error."""
+        try:
+            await synth.close()
+        except Exception:  # noqa: BLE001 — best-effort cleanup
+            pass
+
+    def _narration_text(
+        self,
+        question: AudioQuestion,
+        config: Optional[AudioSessionConfig],
+    ) -> str:
+        """Build the TTS narration text for a question.
+
+        For PROMPT_SELECT questions with ``enumerate_options`` enabled, appends
+        the option labels so the user hears the choices.
+        """
+        text = question.label
+        enumerate_options = (
+            config.enumerate_options if config is not None else True
+        )
+        if (
+            question.voice_mode == VoiceMode.PROMPT_SELECT
+            and enumerate_options
+            and question.options
+        ):
+            labels = [
+                str(opt.get("label") or opt.get("value") or "")
+                for opt in question.options
+            ]
+            labels = [label for label in labels if label]
+            if labels:
+                text = f"{text} Options: {', '.join(labels)}."
+        return text
+
+    async def _build_fallback_html(
+        self,
+        question: AudioQuestion,
+        config: Optional[AudioSessionConfig],
+    ) -> str:
+        """Render single-field HTML for a VISUAL_FALLBACK question (FEAT-236).
+
+        Uses the HTML5Renderer's per-field renderer when one exists for the
+        field type, otherwise returns a minimal ``<input>`` and logs.
+        """
+        locale = config.locale if config is not None else "en"
+        try:
+            from ..core.options import FieldOption
+            from ..core.schema import FormField
+            from ..core.types import FieldType
+            from ..renderers.html5 import HTML5Renderer
+
+            field_type = FieldType(question.field_type)
+            options = None
+            if question.options:
+                options = [
+                    FieldOption(
+                        value=opt.get("value", ""),
+                        label=opt.get("label") or opt.get("value", ""),
+                    )
+                    for opt in question.options
+                ]
+            field = FormField(
+                field_id=question.field_id,
+                field_type=field_type,
+                label=question.label,
+                required=question.required,
+                options=options,
+            )
+            renderer = HTML5Renderer()
+            field_renderer = renderer._registry.get(field_type)
+            if field_renderer is not None:
+                rendered = await field_renderer.render(field, locale=locale)
+                if rendered:
+                    return str(rendered)
+        except Exception as exc:  # noqa: BLE001 — never fail question delivery
+            self.logger.warning(
+                "Visual fallback render failed for field %s: %s",
+                question.field_id,
+                exc,
+            )
+        safe_field_id = html.escape(question.field_id, quote=True)
+        return f'<input type="text" name="{safe_field_id}" />'
 
     # -------------------------------------------------------------------------
     # TTS pre-synthesis
@@ -780,6 +1382,9 @@ class AudioFormWSHandler:
             return
 
         for q in questions:
+            # Sensitive questions are never narrated (FEAT-236) — skip entirely.
+            if q.sensitive:
+                continue
             try:
                 result = await self.synthesizer.synthesize(
                     q.label,
