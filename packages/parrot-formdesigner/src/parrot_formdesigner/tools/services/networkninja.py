@@ -11,9 +11,13 @@ import logging
 import os
 from typing import Any, Literal, cast
 
+from datetime import datetime, timezone
+
+from pydantic import BaseModel, ConfigDict
+
 from ...core.constraints import ConditionOperator, DependencyRule, FieldCondition
 from ...core.options import FieldOption
-from ...core.schema import FormField, FormSchema, FormSection
+from ...core.schema import FormField, FormSchema, FormSection, FormType
 from ...core.types import FieldType
 from .abstract import AbstractFormService
 
@@ -41,6 +45,57 @@ GROUP BY f.formid, f.form_name, f.description, f.client_id, f.client_name,
 # ---------------------------------------------------------------------------
 # DB field type → FieldType mapping
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# ImportDiffReport models (FEAT-300 TASK-006)
+# ---------------------------------------------------------------------------
+
+
+class ImportDiffEntry(BaseModel):
+    """Per-field entry in an ImportDiffReport.
+
+    Attributes:
+        column_name: The source ``column_name`` from ``form_metadata``.
+        source_data_type: The raw ``data_type`` string from the source.
+        mapped_field_type: The resolved ``FieldType.value`` string, or
+            ``None`` when mapping failed.
+        status: One of ``"mapeado"`` (fully mapped), ``"aproximado"``
+            (approximate mapping with meta hint), or
+            ``"requiere_intervencion"`` (manual review needed).
+        note: Human-readable note about the mapping decision.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    column_name: str
+    source_data_type: str
+    mapped_field_type: str | None = None
+    status: str  # "mapeado" | "aproximado" | "requiere_intervencion"
+    note: str = ""
+
+
+class ImportDiffReport(BaseModel):
+    """Aggregate report for a single networkninja form import.
+
+    Attributes:
+        form_id: The ``FormSchema.form_id`` produced by the import.
+        source: Always ``"networkninja"``.
+        imported_at: UTC timestamp of the import.
+        fields: One entry per imported field column.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    form_id: str
+    source: str = "networkninja"
+    imported_at: datetime
+    fields: list[ImportDiffEntry] = []
+
+
+# ---------------------------------------------------------------------------
+# Field type mapping table
+# ---------------------------------------------------------------------------
+
 
 #: Maps DB ``data_type`` strings to ``(FieldType, extra_kwargs)`` tuples.
 #: A ``None`` value means "explicitly unsupported — skip with warning".
@@ -74,8 +129,33 @@ _FIELD_TYPE_MAP: dict[str, tuple[FieldType, dict[str, Any]] | None] = {
         FieldType.IMAGE,
         {"read_only": True, "meta": {"render_as": "display_image"}},
     ),
-    # Explicitly unsupported — skip with warning
-    "FIELD_SIGNATURE_CAPTURE": None,
+    # FEAT-300: FIELD_SIGNATURE_CAPTURE now maps to SIGNATURE (was None)
+    "FIELD_SIGNATURE_CAPTURE": (FieldType.SIGNATURE, {}),
+    # FEAT-300: 9 new verified-live data_types
+    "FIELD_FORMULA": (
+        FieldType.FORMULA,
+        {"meta": {"expression": None, "result_type": None}},
+    ),
+    "FIELD_IMAGE_UPLOAD": (
+        FieldType.FILE,
+        {"meta": {"accept": "image/*"}},
+    ),
+    "FIELD_AGREEMENT_CHECKBOX": (
+        FieldType.BOOLEAN,
+        {"meta": {"render_as": "agreement"}},
+    ),
+    "FIELD_DURATION": (
+        FieldType.TEXT,
+        {"meta": {"render_as": "duration"}},
+    ),
+    "FIELD_DATETIME": (FieldType.DATETIME, {}),
+    "FIELD_TIME": (FieldType.TIME, {}),
+    "FIELD_HYPERLINK": (FieldType.URL, {}),
+    "FIELD_PHONENUMBER": (FieldType.PHONE, {}),
+    "FIELD_TOTAL": (
+        FieldType.FORMULA,
+        {"meta": {"render_as": "total", "expression": None, "result_type": None}},
+    ),
 }
 
 # Field types that carry selectable options
@@ -170,7 +250,26 @@ class NetworkninjaFormService(AbstractFormService):
         Returns:
             Fully constructed FormSchema.
         """
-        return self._build_form_schema(raw)
+        schema, _ = self._build_form_schema_with_report(raw)
+        return schema
+
+    def import_with_report(
+        self, raw: dict[str, Any]
+    ) -> tuple[FormSchema, ImportDiffReport]:
+        """Transform a raw row into a FormSchema plus an ImportDiffReport.
+
+        The form is always returned (never aborted).  Unmappable fields are
+        included in the report with ``status="requiere_intervencion"`` and
+        the form is left as draft (``published_version=None``).
+
+        Args:
+            raw: Dict with keys: formid, form_name, description, orgid,
+                 question_blocks (JSON string or list), metadata (list of dicts).
+
+        Returns:
+            Tuple of ``(FormSchema, ImportDiffReport)``.
+        """
+        return self._build_form_schema_with_report(raw)
 
     # ------------------------------------------------------------------
     # DSN resolution
@@ -204,12 +303,41 @@ class NetworkninjaFormService(AbstractFormService):
     # Form building pipeline
     # ------------------------------------------------------------------
 
-    def _build_form_schema(self, row: dict[str, Any]) -> FormSchema:
+    def _build_form_schema_with_report(
+        self, row: dict[str, Any]
+    ) -> tuple[FormSchema, ImportDiffReport]:
+        """Internal pipeline that produces both the FormSchema and the diff report.
+
+        Args:
+            row: DB result row dict.
+
+        Returns:
+            ``(FormSchema, ImportDiffReport)`` pair.
+        """
+        report_entries: list[ImportDiffEntry] = []
+        schema = self._build_form_schema(row, report_entries=report_entries)
+        form_id = schema.form_id
+        report = ImportDiffReport(
+            form_id=form_id,
+            source="networkninja",
+            imported_at=datetime.now(timezone.utc),
+            fields=report_entries,
+        )
+        return schema, report
+
+    def _build_form_schema(
+        self,
+        row: dict[str, Any],
+        report_entries: list[ImportDiffEntry] | None = None,
+    ) -> FormSchema:
         """Transform a DB result row into a FormSchema.
 
         Args:
             row: Dict with keys: formid, form_name, description, orgid,
                  question_blocks (JSON string or list), metadata (list of dicts).
+            report_entries: Optional list to accumulate ``ImportDiffEntry``
+                objects.  When provided, all mapped and unmapped fields are
+                recorded here; the import NEVER aborts.
 
         Returns:
             Fully constructed FormSchema.
@@ -222,12 +350,15 @@ class NetworkninjaFormService(AbstractFormService):
         raw_metadata: list[dict[str, Any]] = row.get("metadata") or []
         meta_index = self._build_metadata_index(raw_metadata)
 
-        # Parse question_blocks — stored as JSON text (not JSONB), must json.loads()
+        # Parse question_blocks — may be:
+        #   a) A JSON string (most rows) — must json.loads()
+        #   b) Already a list (JSONB-native)
+        #   c) Legacy double-encoding: JSON string wrapping a list that uses
+        #      old keys (question_block_id, question_block_type, etc.)
         question_blocks_raw = row.get("question_blocks") or "[]"
-        if isinstance(question_blocks_raw, str):
-            question_blocks: list[dict[str, Any]] = json.loads(question_blocks_raw)
-        else:
-            question_blocks = list(question_blocks_raw)
+        question_blocks: list[dict[str, Any]] = self._normalize_question_blocks(
+            question_blocks_raw
+        )
 
         # Build question_id → column_name reverse index (for conditional resolution)
         question_id_index = self._build_question_id_index(question_blocks, meta_index)
@@ -237,11 +368,21 @@ class NetworkninjaFormService(AbstractFormService):
             question_blocks, question_id_index, meta_index
         )
 
+        # Derive form_type from block_type (FEAT-300):
+        # any block with block_type == "survey" → FormType.SURVEY; else SIMPLE.
+        # PRODUCT is never detected from networkninja (FEAT-302 only).
+        form_type = FormType.SIMPLE
+        for block in question_blocks:
+            if block.get("block_type") == "survey":
+                form_type = FormType.SURVEY
+                break
+
         # Build sections — each question_block → one FormSection
         sections: list[FormSection] = []
         for block in question_blocks:
             section = self._map_block_to_section(
-                block, meta_index, question_id_index, select_options
+                block, meta_index, question_id_index, select_options,
+                report_entries=report_entries,
             )
             if section is not None:
                 sections.append(section)
@@ -251,7 +392,55 @@ class NetworkninjaFormService(AbstractFormService):
             title=form_name,
             description=description,
             sections=sections,
+            form_type=form_type,
         )
+
+    @staticmethod
+    def _normalize_question_blocks(
+        raw: str | list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Normalize legacy and current question_blocks formats.
+
+        Handles:
+        - ``str`` → ``json.loads()``
+        - Legacy keys: ``question_block_id`` → ``block_id``,
+          ``question_block_type`` → ``block_type``,
+          ``question_block_logic_groups`` → ``block_logic_groups``.
+        - Missing/null ``block_type`` → ``"simple"``.
+
+        Args:
+            raw: Raw question_blocks value from the DB row.
+
+        Returns:
+            Normalised list of block dicts.
+        """
+        if isinstance(raw, str):
+            try:
+                blocks = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return []
+        else:
+            blocks = list(raw)
+
+        normalised: list[dict[str, Any]] = []
+        for block in blocks:
+            b: dict[str, Any] = dict(block)  # shallow copy for safety
+
+            # Legacy key migration
+            if "block_id" not in b and "question_block_id" in b:
+                b["block_id"] = b.pop("question_block_id")
+            if "block_type" not in b and "question_block_type" in b:
+                b["block_type"] = b.pop("question_block_type")
+            if "block_logic_groups" not in b and "question_block_logic_groups" in b:
+                b["block_logic_groups"] = b.pop("question_block_logic_groups")
+
+            # Default missing/null block_type to "simple"
+            if not b.get("block_type"):
+                b["block_type"] = "simple"
+
+            normalised.append(b)
+
+        return normalised
 
     # ------------------------------------------------------------------
     # Index builders
@@ -414,6 +603,7 @@ class NetworkninjaFormService(AbstractFormService):
         meta_index: dict[str, dict[str, Any]],
         question_id_index: dict[str, str],
         select_options: dict[str, list[FieldOption]],
+        report_entries: list[ImportDiffEntry] | None = None,
     ) -> FormSection | None:
         """Map a question_block dict to a FormSection.
 
@@ -422,11 +612,12 @@ class NetworkninjaFormService(AbstractFormService):
             meta_index: Active metadata lookup.
             question_id_index: question_id → column_name reverse index.
             select_options: Pre-collected options keyed by column_name.
+            report_entries: Optional accumulator for ``ImportDiffEntry`` objects.
 
         Returns:
             FormSection if the block has at least one mappable field, else None.
         """
-        block_id = block.get("question_block_id") or block.get("block_id", "")
+        block_id = block.get("block_id") or block.get("question_block_id", "")
         block_title: str | None = (
             block.get("block_description") or block.get("block_name") or None
         )
@@ -435,7 +626,8 @@ class NetworkninjaFormService(AbstractFormService):
         fields: list[FormField] = []
         for question in block.get("questions") or []:
             field = self._map_question_to_field(
-                question, meta_index, question_id_index, select_options
+                question, meta_index, question_id_index, select_options,
+                report_entries=report_entries,
             )
             if field is not None:
                 fields.append(field)
@@ -455,17 +647,24 @@ class NetworkninjaFormService(AbstractFormService):
         meta_index: dict[str, dict[str, Any]],
         question_id_index: dict[str, str],
         select_options: dict[str, list[FieldOption]],
+        report_entries: list[ImportDiffEntry] | None = None,
     ) -> FormField | None:
         """Map a question dict to a FormField.
 
-        Skips questions whose column is not in active metadata or whose
-        data_type is unsupported.
+        When ``report_entries`` is provided the import NEVER aborts on an
+        unmappable data_type — instead a ``requiere_intervencion`` entry is
+        recorded and the question is skipped (field returns ``None``).
+
+        Formula fields (``FIELD_FORMULA`` / ``FIELD_TOTAL``) always produce a
+        ``requiere_intervencion`` entry because the expression is unavailable
+        at the networkninja source.
 
         Args:
             question: Single question dict from a question block.
             meta_index: Active metadata lookup.
             question_id_index: question_id → column_name reverse index.
             select_options: Pre-collected options keyed by column_name.
+            report_entries: Optional accumulator for ``ImportDiffEntry`` objects.
 
         Returns:
             FormField if mappable, else None.
@@ -486,20 +685,35 @@ class NetworkninjaFormService(AbstractFormService):
         # Resolve field type from mapping table
         if data_type not in _FIELD_TYPE_MAP:
             self.logger.warning(
-                "Skipping question column '%s': unknown data_type '%s'",
-                col_name,
-                data_type,
+                "Unknown data_type '%s' for column '%s'",
+                data_type, col_name,
             )
+            if report_entries is not None:
+                report_entries.append(ImportDiffEntry(
+                    column_name=col_name,
+                    source_data_type=data_type,
+                    mapped_field_type=None,
+                    status="requiere_intervencion",
+                    note=f"data_type '{data_type}' is not in the mapping table — manual review required",
+                ))
             return None
 
         mapping = _FIELD_TYPE_MAP[data_type]
         if mapping is None:
-            # Explicitly unsupported (e.g., FIELD_SIGNATURE_CAPTURE)
+            # Should never happen after FEAT-300 (FIELD_SIGNATURE_CAPTURE now maps),
+            # but kept as a safety net for future explicitly-unsupported entries.
             self.logger.warning(
-                "Skipping question column '%s': unsupported data_type '%s'",
-                col_name,
-                data_type,
+                "Explicitly unsupported data_type '%s' for column '%s'",
+                data_type, col_name,
             )
+            if report_entries is not None:
+                report_entries.append(ImportDiffEntry(
+                    column_name=col_name,
+                    source_data_type=data_type,
+                    mapped_field_type=None,
+                    status="requiere_intervencion",
+                    note=f"data_type '{data_type}' is explicitly unsupported — manual review required",
+                ))
             return None
 
         field_type, extra_kwargs = mapping
@@ -523,6 +737,43 @@ class NetworkninjaFormService(AbstractFormService):
         if data_type in _OPTION_FIELD_TYPES:
             collected = select_options.get(col_name)
             options = collected if collected else None
+
+        # --- ImportDiffReport entry ---
+        if report_entries is not None:
+            is_formula = data_type in ("FIELD_FORMULA", "FIELD_TOTAL")
+            is_approximate = bool(extra_kwargs.get("meta", {}).get("render_as"))
+
+            if is_formula:
+                # Formula expressions are never available from networkninja
+                report_entries.append(ImportDiffEntry(
+                    column_name=col_name,
+                    source_data_type=data_type,
+                    mapped_field_type=field_type.value,
+                    status="requiere_intervencion",
+                    note=(
+                        "formula expression unavailable at networkninja source "
+                        "(options=[]); meta.expression=None; evaluator is FEAT-301"
+                    ),
+                ))
+            elif is_approximate:
+                report_entries.append(ImportDiffEntry(
+                    column_name=col_name,
+                    source_data_type=data_type,
+                    mapped_field_type=field_type.value,
+                    status="aproximado",
+                    note=(
+                        f"mapped to {field_type.value} with render_as hint "
+                        f"{extra_kwargs['meta'].get('render_as')!r}"
+                    ),
+                ))
+            else:
+                report_entries.append(ImportDiffEntry(
+                    column_name=col_name,
+                    source_data_type=data_type,
+                    mapped_field_type=field_type.value,
+                    status="mapeado",
+                    note="",
+                ))
 
         return FormField(
             field_id=field_id,

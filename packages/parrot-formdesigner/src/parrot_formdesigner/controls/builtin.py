@@ -453,6 +453,20 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "supported_effects": _STANDARD_EFFECTS,
         "supported_operations": [],
     },
+    # FEAT-300 — formula fields (inert stub; evaluator in FEAT-301)
+    FieldType.FORMULA: {
+        "label": "Formula",
+        "description": (
+            "Computed field — result derived from a BEDMAS expression over "
+            "other field values. Expression evaluation is FEAT-301. "
+            "Renders as a read-only placeholder until the evaluator ships."
+        ),
+        "category": "advanced",
+        "icon": "formula",
+        "render_hint": "readonly",
+        "supports_constraints": False,
+        "is_container": False,
+    },
 }
 
 

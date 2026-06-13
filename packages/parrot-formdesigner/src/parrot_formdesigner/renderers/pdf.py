@@ -55,6 +55,8 @@ _PDF_FALLBACK_NEW_TYPES = frozenset({
     FieldType.DYNAMIC_SELECT,
     # Phase 3 — FEAT-170
     FieldType.REST,
+    # FEAT-300 — formula fields (evaluator is FEAT-301)
+    FieldType.FORMULA,
 })
 
 

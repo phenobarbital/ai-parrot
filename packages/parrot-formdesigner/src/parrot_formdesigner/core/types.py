@@ -51,3 +51,5 @@ class FieldType(str, Enum):
     REST = "rest"
     # Phase 4 — audio form renderer (FEAT-224)
     AUDIO = "audio"
+    # FEAT-300 — formula fields (inert stub; evaluator in FEAT-301)
+    FORMULA = "formula"

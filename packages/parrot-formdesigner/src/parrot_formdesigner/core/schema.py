@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import datetime
+from enum import Enum
 from typing import Any, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -19,6 +20,24 @@ from .constraints import DependencyRule, FieldConstraints, PostDependency
 from .events import FormEventsConfig
 from .options import FieldOption, OptionsSource
 from .types import FieldType, LocalizedString
+
+
+class FormType(str, Enum):
+    """Discriminator for the form's structural type.
+
+    Attributes:
+        SIMPLE: A straightforward form with a linear set of questions
+            (no survey blocks). This is the default.
+        PRODUCT: A form bound to one or more product programmes
+            (activated via FEAT-302 ``product_bindings``).
+        SURVEY: A form composed of survey-style question blocks
+            (imported from ``networkninja.forms.question_blocks`` where
+            ``block_type == "survey"``).
+    """
+
+    SIMPLE = "simple"
+    PRODUCT = "product"
+    SURVEY = "survey"
 
 
 class FormField(BaseModel):
@@ -290,6 +309,10 @@ class FormSchema(BaseModel):
     tenant: str | None = None
     metadata: list[FormMetadataField] | None = None
     events: FormEventsConfig | None = None
+    # FEAT-300 — Form Builder Parity
+    form_type: FormType = FormType.SIMPLE
+    product_bindings: list[str] | None = None
+    published_version: str | None = None
 
     def iter_all_fields(self) -> Iterator[FormField]:
         """Yield every ``FormField`` across all sections, flattening subsections."""
