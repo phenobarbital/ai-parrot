@@ -792,6 +792,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if 'properties' in cleaned and cleaned.get('type') != 'object':
             cleaned['type'] = 'object'
 
+        # Ensure objects always have a properties key (Gemini requires it).
+        # This handles cases where `type: object` was set via anyOf processing
+        # AFTER the earlier type-check block ran, so properties: {} was never added.
+        if cleaned.get('type') == 'object' and 'properties' not in cleaned:
+            cleaned['properties'] = {}
+
         # Gemini requires every array schema to carry an `items` schema and does
         # NOT understand `prefixItems` (the draft-2020-12 keyword Pydantic v2
         # emits for fixed-length tuples, e.g. `Tuple[float, float]`). Since
