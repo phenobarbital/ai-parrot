@@ -32,9 +32,13 @@ if TYPE_CHECKING:
 
     from ..services.form_version import FormVersionService
     from ..services.forwarder import SubmissionForwarder
+    from ..services.org_graph import OrgGraphService
     from ..services.partial_saves import PartialSaveStore
+    from ..services.project_service import ProjectService
     from ..services.question_bank import QuestionBankService
+    from ..services.rbac import RBACService
     from ..services.submissions import FormSubmissionStorage
+    from ..services.workday_sync import WorkdayIdentitySyncAdapter
     from ..tools.services.networkninja import ImportDiffReport
 
 
@@ -56,6 +60,16 @@ class FormAPIHandler:
         forwarder: Optional submission forwarder for endpoint-bound submits.
         partial_store: Optional Redis-backed store for ephemeral partial form
             answers.  When ``None``, partial save endpoints return 503.
+        org_graph_service: Optional ``OrgGraphService`` for ``GET /org/graph``.
+            When ``None``, the endpoint returns 501 Not Implemented.
+        project_service: Optional ``ProjectService`` for org project endpoints.
+        rbac_service: Optional ``RBACService`` for policy management endpoints.
+        workday_adapter: Optional ``WorkdayIdentitySyncAdapter`` for
+            ``POST /org/sync/workday``.
+        rbac_enforcing: When ``False`` (default), RBAC gate-keeping on existing
+            form endpoints runs in **shadow mode** — it logs permission checks
+            but never blocks requests. Set to ``True`` only when nav-auth
+            policies are fully configured. Consistent with ``Policy.enforcing=False``.
     """
 
     def __init__(
@@ -65,12 +79,23 @@ class FormAPIHandler:
         submission_storage: "FormSubmissionStorage | None" = None,
         forwarder: "SubmissionForwarder | None" = None,
         partial_store: "PartialSaveStore | None" = None,
+        org_graph_service: "OrgGraphService | None" = None,
+        project_service: "ProjectService | None" = None,
+        rbac_service: "RBACService | None" = None,
+        workday_adapter: "WorkdayIdentitySyncAdapter | None" = None,
+        rbac_enforcing: bool = False,
     ) -> None:
         self.registry = registry
         self._client = client
         self._submission_storage = submission_storage
         self._forwarder = forwarder
         self._partial_store = partial_store
+        # FEAT-302 — Org Graph services
+        self._org_graph_service = org_graph_service
+        self._project_service = project_service
+        self._rbac_service = rbac_service
+        self._workday_adapter = workday_adapter
+        self.rbac_enforcing = rbac_enforcing
         self.schema_renderer = JsonSchemaRenderer()
         self.validator = FormValidator()
         self.logger = logging.getLogger(__name__)
@@ -715,6 +740,8 @@ class FormAPIHandler:
 
     async def create_form(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms — Create a form from a natural language prompt."""
+        # FEAT-302: RBAC gate-keeping (shadow mode by default)
+        await self._rbac_shadow_gate(request, "create_form")
         # _create_tool was initialised with the client available at construction
         # time. Check its client directly rather than calling _get_llm_client()
         # again, so the guard accurately reflects the tool's actual state.
@@ -769,6 +796,8 @@ class FormAPIHandler:
         LLM along with the user's edit prompt, and returns the updated form.
         The LLM is instructed to strictly preserve the FormSchema JSON structure.
         """
+        # FEAT-302: RBAC gate-keeping (shadow mode by default)
+        await self._rbac_shadow_gate(request, "edit_form")
         if self._create_tool.client is None:
             return JSONResponse(
                 {"error": "No LLM client configured for form editing"},
@@ -891,6 +920,8 @@ class FormAPIHandler:
         ``FormValidator.check_schema()`` before persisting. Automatically bumps
         the form version.
         """
+        # FEAT-302: RBAC gate-keeping (shadow mode by default)
+        await self._rbac_shadow_gate(request, "update_form")
         form_id = request.match_info["form_id"]
         tenant = self._get_tenant(request)
         existing = await self.registry.get(form_id, tenant=tenant)
@@ -937,6 +968,8 @@ class FormAPIHandler:
         element-by-element. ``form_id`` cannot be changed via PATCH.
         Runs structural validation after merging. Automatically bumps version.
         """
+        # FEAT-302: RBAC gate-keeping (shadow mode by default)
+        await self._rbac_shadow_gate(request, "patch_form")
         form_id = request.match_info["form_id"]
         tenant = self._get_tenant(request)
         existing = await self.registry.get(form_id, tenant=tenant)
@@ -987,6 +1020,8 @@ class FormAPIHandler:
         resolve correctly). Returns ``204 No Content`` on success, ``404``
         when no form with the given id exists.
         """
+        # FEAT-302: RBAC gate-keeping (shadow mode by default)
+        await self._rbac_shadow_gate(request, "delete_form")
         form_id = request.match_info["form_id"]
         tenant = self._get_tenant(request)
         existing = await self.registry.get(form_id, tenant=tenant)
@@ -1552,3 +1587,391 @@ class FormAPIHandler:
                 status=404,
             )
         return web.json_response(report.model_dump(mode="json"))
+
+    # ------------------------------------------------------------------
+    # FEAT-302 — RBAC shadow-mode gate-keeping helper
+    # ------------------------------------------------------------------
+
+    async def _rbac_shadow_gate(
+        self,
+        request: web.Request,
+        codename: str,
+    ) -> None:
+        """Log RBAC gate-keeping check in shadow mode (never blocks).
+
+        When ``self.rbac_enforcing`` is ``False`` (default), this method
+        only logs a DEBUG message with the permission check result.
+        This is consistent with ``Policy.enforcing=False`` (nav-auth shadow
+        mode) — gate-keeping is visible in logs but never blocks deployments.
+
+        When ``self.rbac_enforcing`` is ``True`` and the user lacks the
+        permission, ``web.HTTPForbidden`` is raised.
+
+        Args:
+            request: Incoming aiohttp request.
+            codename: Permission codename to check (e.g. "create_form").
+        """
+        if self._rbac_service is None:
+            return
+
+        user = getattr(request, "user", None)
+        user_id = str(getattr(user, "id", "anonymous")) if user else "anonymous"
+        tenant = self._get_tenant(request)
+        # H-4: _get_programs() returns program SLUGS, not numeric IDs. There is
+        # no reliable numeric program_id in the slug-only session, so the gate
+        # resolves at tenant+user granularity (program_id=0). RBACService.resolve
+        # filters policies by user+tenant, so program scoping is not required here.
+        program_id = 0
+
+        try:
+            ctx = await self._rbac_service.resolve(
+                user_id, program_id=program_id, tenant=tenant
+            )
+            allowed = ctx.has_permission(codename)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug(
+                "_rbac_shadow_gate: resolution failed for %s/%s: %s",
+                user_id,
+                codename,
+                exc,
+            )
+            return
+
+        if allowed:
+            self.logger.debug(
+                "_rbac_shadow_gate: ALLOW user=%s codename=%s tenant=%s",
+                user_id, codename, tenant,
+            )
+        else:
+            if self.rbac_enforcing:
+                self.logger.warning(
+                    "_rbac_shadow_gate: DENY (enforcing) user=%s codename=%s tenant=%s",
+                    user_id, codename, tenant,
+                )
+                raise web.HTTPForbidden(
+                    reason=f"Permission denied: {codename}"
+                )
+            else:
+                self.logger.debug(
+                    "_rbac_shadow_gate: WOULD-DENY (shadow) user=%s codename=%s tenant=%s",
+                    user_id, codename, tenant,
+                )
+
+    # ------------------------------------------------------------------
+    # FEAT-302 — Org Graph endpoints
+    # ------------------------------------------------------------------
+
+    async def get_org_graph(self, request: web.Request) -> web.Response:
+        """GET /api/v1/org/graph — Return the org graph for the session's org.
+
+        Calls ``OrgGraphService.get_graph()`` using the org_id extracted from
+        the navigator-auth session (``request.user.organizations[0].org_id``).
+
+        Args:
+            request: Incoming HTTP request with navigator-auth session.
+
+        Returns:
+            200: Serialized ``OrgGraph`` as JSON.
+            400: Missing org_id in session.
+            501: OrgGraphService not configured.
+        """
+        if self._org_graph_service is None:
+            return JSONResponse(
+                {"error": "OrgGraphService not configured"}, status=501
+            )
+
+        org_id = self._get_org_id(request)
+        if org_id is None:
+            return JSONResponse(
+                {"error": "org_id not found in session"}, status=400
+            )
+
+        tenant = self._get_tenant(request)
+        try:
+            graph = await self._org_graph_service.get_graph(org_id, tenant=tenant)
+        except KeyError as exc:
+            return JSONResponse({"error": str(exc)}, status=404)
+        except Exception as exc:
+            self.logger.exception("get_org_graph failed: %s", exc)
+            return JSONResponse({"error": "Internal server error"}, status=500)
+
+        return JSONResponse(graph.model_dump(mode="json"), status=200)
+
+    async def create_project(self, request: web.Request) -> web.Response:
+        """POST /api/v1/org/projects — Create a fieldsync project.
+
+        Request body::
+
+            {
+                "accounting_code": "ACC-001",
+                "name": "Q1 Campaign",
+                "client_id": 42,
+                "org_id": 7
+            }
+
+        Args:
+            request: Incoming HTTP request.
+
+        Returns:
+            201: Created ``Project`` as JSON.
+            400: Invalid/missing fields.
+            409: Duplicate accounting_code for client.
+            501: ProjectService not configured.
+        """
+        if self._project_service is None:
+            return JSONResponse(
+                {"error": "ProjectService not configured"}, status=501
+            )
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        accounting_code = body.get("accounting_code")
+        if not accounting_code:
+            return JSONResponse(
+                {"error": "accounting_code is required"}, status=400
+            )
+
+        client_id = body.get("client_id")
+        if client_id is None:
+            return JSONResponse({"error": "client_id is required"}, status=400)
+        # H-2: reject non-numeric client_id with 400, not 500.
+        try:
+            client_id_int = int(client_id)
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {"error": "client_id must be an integer"}, status=400
+            )
+
+        # C-4 (write isolation): org_id comes from the authenticated session,
+        # NEVER from the request body — a caller cannot create a project under
+        # another tenant's org.
+        org_id = self._get_org_id(request)
+        if org_id is None:
+            return JSONResponse(
+                {"error": "org_id not found in session"}, status=400
+            )
+
+        tenant = self._get_tenant(request)
+        try:
+            project = await self._project_service.create_project(
+                accounting_code=str(accounting_code),
+                name=body.get("name"),
+                client_id=client_id_int,
+                org_id=org_id,
+                tenant=tenant,
+            )
+        except Exception as exc:
+            from ..services.project_service import DuplicateAccountingCodeError
+
+            if isinstance(exc, DuplicateAccountingCodeError):
+                return JSONResponse({"error": str(exc)}, status=409)
+            self.logger.exception("create_project failed: %s", exc)
+            return JSONResponse({"error": "Internal server error"}, status=500)
+
+        return JSONResponse(project.model_dump(mode="json"), status=201)
+
+    async def map_project_workday(self, request: web.Request) -> web.Response:
+        """POST /api/v1/org/cost-centers/{project_id}/workday-map
+
+        Maps a fieldsync project to a Workday cost center code.
+
+        Request body::
+
+            {"workday_code": "WD-99001"}
+
+        Args:
+            request: Incoming HTTP request (path param: ``project_id``).
+
+        Returns:
+            200: ``WorkdayCostCenterMapping`` as JSON.
+            400: Missing workday_code.
+            404: Project not found.
+            501: ProjectService not configured.
+        """
+        if self._project_service is None:
+            return JSONResponse(
+                {"error": "ProjectService not configured"}, status=501
+            )
+
+        project_id_str = request.match_info.get("project_id", "")
+        try:
+            project_id = int(project_id_str)
+        except (ValueError, TypeError):
+            return JSONResponse(
+                {"error": f"Invalid project_id: {project_id_str!r}"}, status=400
+            )
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        workday_code = body.get("workday_code")
+        if not workday_code:
+            return JSONResponse({"error": "workday_code is required"}, status=400)
+
+        tenant = self._get_tenant(request)
+        try:
+            mapping = await self._project_service.map_to_workday(
+                project_id, str(workday_code), tenant=tenant
+            )
+        except Exception as exc:
+            from ..services.project_service import ProjectNotFoundError
+
+            if isinstance(exc, ProjectNotFoundError):
+                return JSONResponse({"error": str(exc)}, status=404)
+            self.logger.exception("map_project_workday failed: %s", exc)
+            return JSONResponse({"error": "Internal server error"}, status=500)
+
+        return JSONResponse(mapping.model_dump(mode="json"), status=200)
+
+    async def assign_user_role(self, request: web.Request) -> web.Response:
+        """POST /api/v1/org/users/{user_id}/assign — Assign a role to a user.
+
+        Compiles the given scope + codename to an ABAC policy and persists it
+        in ``fieldsync.auth_policies``. NEVER writes to ``auth.user_permissions``.
+
+        Request body::
+
+            {
+                "codename": "edit_form",
+                "scope": "own",
+                "program_id": 7
+            }
+
+        Args:
+            request: Incoming HTTP request (path param: ``user_id``).
+
+        Returns:
+            200: ``PermissionRecord`` as JSON.
+            400: Missing/invalid fields.
+            501: RBACService not configured.
+        """
+        if self._rbac_service is None:
+            return JSONResponse(
+                {"error": "RBACService not configured"}, status=501
+            )
+
+        user_id = request.match_info.get("user_id", "")
+        if not user_id:
+            return JSONResponse({"error": "user_id is required"}, status=400)
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        codename = body.get("codename")
+        scope_str = body.get("scope")
+        program_id = body.get("program_id")
+
+        if not codename:
+            return JSONResponse({"error": "codename is required"}, status=400)
+        if not scope_str:
+            return JSONResponse({"error": "scope is required"}, status=400)
+        if program_id is None:
+            return JSONResponse({"error": "program_id is required"}, status=400)
+
+        from ..services.rbac import RBACScope
+
+        try:
+            scope = RBACScope(scope_str)
+        except ValueError:
+            valid = [s.value for s in RBACScope]
+            return JSONResponse(
+                {"error": f"Invalid scope {scope_str!r}; valid: {valid}"},
+                status=400,
+            )
+
+        tenant = self._get_tenant(request)
+
+        # H-1: assigning roles is a privileged action — ALWAYS enforce (never
+        # shadow-only). The caller must hold the "manage_roles" permission.
+        caller = getattr(request, "user", None)
+        caller_id = str(getattr(caller, "id", "anonymous")) if caller else "anonymous"
+        try:
+            caller_ctx = await self._rbac_service.resolve(
+                caller_id, program_id=int(program_id), tenant=tenant
+            )
+            if not caller_ctx.has_permission("manage_roles"):
+                return JSONResponse(
+                    {"error": "Permission denied: manage_roles required"},
+                    status=403,
+                )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "assign_user_role: privilege check failed for %s: %s",
+                caller_id, exc,
+            )
+            return JSONResponse(
+                {"error": "Permission denied: manage_roles required"},
+                status=403,
+            )
+
+        try:
+            record = await self._rbac_service.assign_role(
+                user_id,
+                program_id=int(program_id),
+                codename=str(codename),
+                scope=scope,
+                tenant=tenant,
+            )
+        except Exception as exc:
+            self.logger.exception("assign_user_role failed: %s", exc)
+            return JSONResponse({"error": "Internal server error"}, status=500)
+
+        return JSONResponse(record.model_dump(mode="json"), status=200)
+
+    async def sync_workday_identities(self, request: web.Request) -> web.Response:
+        """POST /api/v1/org/sync/workday — Trigger Workday identity sync (stub).
+
+        Calls ``WorkdayIdentitySyncAdapter.sync_user()`` which is a stub in
+        FEAT-302 (FEAT-026/027 not available). Always returns 202 Accepted.
+
+        Request body::
+
+            {"user_id": "user-abc", "action": "provision", "org_id": 7}
+
+        Args:
+            request: Incoming HTTP request.
+
+        Returns:
+            202: Stub acceptance dict as JSON.
+            400: Missing/invalid fields.
+            501: WorkdayIdentitySyncAdapter not configured.
+        """
+        if self._workday_adapter is None:
+            return JSONResponse(
+                {"error": "WorkdayIdentitySyncAdapter not configured"}, status=501
+            )
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        user_id = body.get("user_id")
+        action = body.get("action")
+        org_id = body.get("org_id")
+
+        if not user_id:
+            return JSONResponse({"error": "user_id is required"}, status=400)
+        if action not in ("provision", "deprovision"):
+            return JSONResponse(
+                {"error": "action must be 'provision' or 'deprovision'"}, status=400
+            )
+        if org_id is None:
+            return JSONResponse({"error": "org_id is required"}, status=400)
+
+        try:
+            result = await self._workday_adapter.sync_user(
+                str(user_id), action=action, org_id=int(org_id)
+            )
+        except Exception as exc:
+            self.logger.exception("sync_workday_identities failed: %s", exc)
+            return JSONResponse({"error": "Internal server error"}, status=500)
+
+        return JSONResponse(result, status=202)
