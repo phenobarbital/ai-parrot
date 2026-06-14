@@ -4,6 +4,16 @@ Provides validation, registry, caching, and storage for FormSchema objects.
 """
 
 from .cache import FormCache
+from .claims_forms import (
+    ClaimCategory,
+    ClaimEventConfig,
+    ClaimExceptionConfig,
+    ClaimExceptionThresholdType,
+    ClaimScope,
+    ClaimsFormService,
+    ClaimTypeConfig,
+    PayPeriodConfig,
+)
 from .csrf import (
     issue_form_csrf_token,
     validate_form_csrf_token,
@@ -63,4 +73,14 @@ __all__ = [
     # Rule evaluator (FEAT-234)
     "RuleEvaluator",
     "RuleResolution",
+    # Claims / T&E form design (FEAT-304). Domain/payroll/lifecycle logic
+    # lives in the FieldSync app (apps/claims), not in this package.
+    "ClaimsFormService",
+    "ClaimCategory",
+    "ClaimScope",
+    "ClaimEventConfig",
+    "ClaimExceptionThresholdType",
+    "ClaimTypeConfig",
+    "PayPeriodConfig",
+    "ClaimExceptionConfig",
 ]

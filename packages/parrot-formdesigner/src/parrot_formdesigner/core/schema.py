@@ -33,11 +33,16 @@ class FormType(str, Enum):
         SURVEY: A form composed of survey-style question blocks
             (imported from ``networkninja.forms.question_blocks`` where
             ``block_type == "survey"``).
+        CLAIMS_CONFIG: A configuration form for the Claims / T&E engine
+            (FEAT-304) — Claim Type definitions, Pay Period management, and
+            Claim Exception thresholds. Tags forms produced by
+            :class:`~parrot_formdesigner.services.claims_forms.ClaimsFormService`.
     """
 
     SIMPLE = "simple"
     PRODUCT = "product"
     SURVEY = "survey"
+    CLAIMS_CONFIG = "claims_config"
 
 
 class FormField(BaseModel):
