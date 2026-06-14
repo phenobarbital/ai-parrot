@@ -15,14 +15,14 @@
       "feature_id": "FEAT-303",
       "feature": "visit-event-lifecycle",
       "spec": "sdd/specs/visit-event-lifecycle.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Base module — models/storage/state machine; all others build on it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-14T07:51:25+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-303-1-event-shift-visit-models.md"
     },
@@ -33,7 +33,7 @@
       "feature_id": "FEAT-303",
       "feature": "visit-event-lifecycle",
       "spec": "sdd/specs/visit-event-lifecycle.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,7 +42,7 @@
       "parallel": false,
       "parallelism_notes": "VisitService core flow; TASK-303-4 depends on its checkout.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-14T07:51:25+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-303-2-checkin-checkout-geofence.md"
     },
@@ -53,7 +53,7 @@
       "feature_id": "FEAT-303",
       "feature": "visit-event-lifecycle",
       "spec": "sdd/specs/visit-event-lifecycle.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -62,7 +62,7 @@
       "parallel": true,
       "parallelism_notes": "New file missed_reasons.py; parallelizable with 303-2 after 303-1 (extends VisitService — coordinate merge).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-14T07:51:25+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-303-3-missed-reasons-adhoc.md"
     },
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-303",
       "feature": "visit-event-lifecycle",
       "spec": "sdd/specs/visit-event-lifecycle.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,7 +83,7 @@
       "parallel": false,
       "parallelism_notes": "Integrates all into handlers.py + routes.py — waits for 303-2 and 303-3.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-14T07:51:25+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-303-4-payroll-hook-api.md"
     }
