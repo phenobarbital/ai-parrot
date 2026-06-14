@@ -1171,6 +1171,15 @@ class HumanInteractionManager:
                 interaction, next_tier.channel_type or channel
             )
 
+            # Keep the requesting user informed that their case moved to the
+            # next reviewer (e.g. "tu solicitud fue escalada a … espera").
+            await self._notify_originator(
+                interaction,
+                self._build_user_escalation_message(
+                    interaction, next_tier, "interact"
+                ),
+            )
+
             # Start a new timeout for THIS level.
             self._timeout_tasks[interaction.interaction_id] = asyncio.create_task(
                 self._handle_timeout(interaction, channel)
@@ -1178,6 +1187,13 @@ class HumanInteractionManager:
         else:
             # For non-INTERACT actions (like TICKET, NOTIFY), resume agent immediately
             # as per fire-and-forget policy.
+            # Tell the user we have handed the case off to the responsibles.
+            await self._notify_originator(
+                interaction,
+                self._build_user_escalation_message(
+                    interaction, next_tier, "notify"
+                ),
+            )
             self.logger.info(
                 "Escalated to Tier %d (%s) for interaction %s. "
                 "Resuming agent with action metadata.",
@@ -1201,10 +1217,126 @@ class HumanInteractionManager:
                 # Suspend/resume mode — publish event for Orchestrator
                 await self._trigger_rehydration(interaction, result)
 
+    # ------------------------------------------------------------------
+    # Originator (requesting user) notifications
+    # ------------------------------------------------------------------
+
+    def _build_user_escalation_message(
+        self,
+        interaction: HumanInteraction,
+        tier: Optional[Any],
+        landed: str,
+    ) -> str:
+        """Build the status message shown to the requesting user.
+
+        Args:
+            interaction: The interaction being escalated.
+            tier: The tier just entered (``None`` for chain exhaustion).
+            landed: ``"interact"`` (escalated to another reviewer),
+                ``"notify"`` (handed off via NOTIFY/TICKET), or
+                ``"exhausted"`` (no decision reached).
+
+        Returns:
+            A user-facing status string. A NOTIFY tier may override the text
+            via ``action_metadata["user_message"]``.
+        """
+        name = getattr(tier, "name", "") or ""
+        if tier is not None:
+            override = (tier.action_metadata or {}).get("user_message")
+            if override:
+                return str(override)
+        if landed == "interact":
+            return (
+                f"Tu solicitud fue escalada a {name}. Por favor espera un "
+                "momento mientras la revisan."
+            )
+        if landed == "notify":
+            suffix = f" ({name})" if name else ""
+            return (
+                f"Hemos notificado a los responsables{suffix}. Te avisaremos "
+                "en cuanto haya una decisión."
+            )
+        return (
+            "No recibimos una respuesta a tiempo; tu solicitud sigue "
+            "pendiente de revisión y te avisaremos cuando se resuelva."
+        )
+
+    async def _notify_originator(
+        self, interaction: HumanInteraction, message: str
+    ) -> None:
+        """Best-effort status notification to the requesting end-user.
+
+        Resolves ``interaction.notify_channel`` to either a registered
+        :class:`HumanChannel` (an in-conversation notice) or an async-notify
+        provider (an out-of-band email/SMS/Telegram notice). Never raises —
+        a failed user notification must not interrupt the escalation flow.
+        """
+        channel_name = interaction.notify_channel
+        if not channel_name or not message:
+            return
+        recipient = interaction.notify_recipient or interaction.originator
+        if not recipient:
+            self.logger.debug(
+                "notify_originator: no recipient for interaction %s",
+                interaction.interaction_id,
+            )
+            return
+
+        # 1) In-conversation path — a registered HumanChannel.
+        channel = self.channels.get(channel_name)
+        if channel is not None:
+            try:
+                await channel.send_notification(recipient, message)
+            except Exception:
+                self.logger.exception(
+                    "notify_originator: HumanChannel %r failed for interaction %s",
+                    channel_name,
+                    interaction.interaction_id,
+                )
+            return
+
+        # 2) Out-of-band path — treat the name as an async-notify provider.
+        try:
+            await self._send_async_notify(
+                channel_name,
+                recipient,
+                message,
+                interaction.notify_provider_options,
+            )
+        except Exception:
+            self.logger.exception(
+                "notify_originator: async-notify provider %r failed for "
+                "interaction %s",
+                channel_name,
+                interaction.interaction_id,
+            )
+
+    async def _send_async_notify(
+        self,
+        provider: str,
+        recipient: str,
+        message: str,
+        provider_options: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Send a single message to *recipient* via an async-notify provider."""
+        from notify import Notify  # lazy: optional dependency
+        from .actions.backends import NotifyBackend
+
+        provider = provider.lower()
+        recipients = NotifyBackend._build_recipients(provider, [recipient])
+        sender = Notify(provider, **(provider_options or {}))
+        async with sender as conn:
+            await conn.send(recipient=recipients, message=message)
+
     async def _finish_with_timeout(self, interaction: HumanInteraction) -> None:
         """Resolve the interaction as timed out."""
         result = self._build_timeout_result(interaction)
         await self._persist_result(result)
+        # Final courtesy notice to the requesting user.
+        await self._notify_originator(
+            interaction,
+            self._build_user_escalation_message(interaction, None, "exhausted"),
+        )
         future = self._pending_futures.pop(interaction.interaction_id, None)
         if future is not None and not future.done():
             future.set_result(result)

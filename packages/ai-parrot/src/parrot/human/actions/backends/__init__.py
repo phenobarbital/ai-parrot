@@ -11,9 +11,11 @@ from .base import (
     ActionBackend,
     ActionBackendError,
     EmailBackendError,
+    NotifyBackendError,
     ZammadBackendError,
     WebhookBackendError,
 )
+from .notify_provider import NotifyBackend
 from .email import EmailBackend
 from .webhook import WebhookBackend
 from .zammad import ZammadBackend
@@ -22,8 +24,10 @@ __all__ = [
     "ActionBackend",
     "ActionBackendError",
     "EmailBackendError",
+    "NotifyBackendError",
     "ZammadBackendError",
     "WebhookBackendError",
+    "NotifyBackend",
     "EmailBackend",
     "WebhookBackend",
     "ZammadBackend",

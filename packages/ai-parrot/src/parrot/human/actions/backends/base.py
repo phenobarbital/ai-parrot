@@ -19,6 +19,10 @@ class EmailBackendError(ActionBackendError):
     """Raised when the email backend fails to send a message."""
 
 
+class NotifyBackendError(ActionBackendError):
+    """Raised when the async-notify backend fails to deliver a notification."""
+
+
 class ZammadBackendError(ActionBackendError):
     """Raised when the Zammad backend fails to create a ticket."""
 

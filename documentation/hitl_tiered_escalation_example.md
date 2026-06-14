@@ -398,6 +398,119 @@ manager = HumanInteractionManager(
 Subscriber exceptions are caught and logged; they never abort the manager
 flow.
 
+---
+
+## 11. async-notify NOTIFY — Channel as an Attribute
+
+The `NOTIFY` action now delivers through **async-notify**, so the delivery
+channel is a single `provider` attribute on the tier instead of a hard-wired
+SMTP backend. Switching email → SES → Twilio SMS → Telegram → Teams is a
+configuration change, not new code.
+
+Select it with `kind: "notify"` and a `provider`:
+
+```python
+EscalationTier(
+    level=3,
+    name="Notify both managers",
+    action_type=EscalationActionType.NOTIFY,
+    timeout=3600,
+    action_metadata={
+        "kind": "notify",
+        "provider": "email",          # email | ses | telegram | teams | sms/twilio | slack
+        "to": ["manager_a@example.com", "manager_b@example.com"],
+        "cc": ["audit@example.com"],   # optional
+        "cc_originator": True,          # also CC the requesting user (see §12)
+        "subject_template": "Expense escalation: {question}",
+        # Optional per-tier connection overrides (creds, bot_token, …):
+        # "provider_options": {"hostname": "smtp.acme.com", "port": 587},
+    },
+)
+```
+
+Wire connection-level options (creds, default sender, default provider) once on
+the action:
+
+```python
+from parrot.human.actions.notify import NotifyAction
+
+manager.set_action(
+    EscalationActionType.NOTIFY,
+    NotifyAction(notify_cfg={
+        "default_provider": "email",
+        "default_from": "parrot-hitl@acme.com",
+        "provider_options": {
+            "hostname": "smtp.acme.com", "port": 587,
+            "username": "...", "password": "...",
+        },
+    }),
+)
+```
+
+To deliver over Telegram instead, the only change is the tier attribute —
+`"provider": "telegram"` with `"to": ["<chat_id>"]` — and the matching
+`provider_options` (e.g. a `bot_token`). The address strings are wrapped into
+the right async-notify recipient model automatically (`Actor` for
+email/SES/Teams, `Chat` for Telegram, `Channel` for Slack).
+
+**Back-compat**: `kind: "email"` still works and now routes through
+async-notify's email provider; `NotifyAction(email_cfg=...)` keeps its
+SMTP-flavoured signature.
+
+---
+
+## 12. Keeping the Requesting User Informed
+
+Escalation used to be silent for the **person who made the request**: while a
+manager was being chased, the user just waited and — if the whole chain timed
+out — received a bare timeout. The interaction now carries *originator* fields
+so the manager can push interim "tu caso fue escalado, espera" status notices
+and copy the user on the final notification.
+
+```python
+from parrot.human.models import HumanInteraction, InteractionType
+
+interaction = HumanInteraction(
+    question="Approve USD 5,000 expense for Alice?",
+    interaction_type=InteractionType.APPROVAL,
+    policy_id="expense-tiered-approval",
+    timeout_action="escalate",
+    # ── originator wiring ──────────────────────────────────────────────
+    originator="alice@corp.com",      # used for audit + cc_originator
+    notify_channel="web",              # a HumanChannel name OR an async-notify provider
+    notify_recipient="alice-session",  # session id / chat id / email; defaults to originator
+)
+```
+
+`notify_channel` is resolved two ways, best-effort (a failed user notice never
+interrupts the escalation):
+
+1. **In-conversation** — if it matches a registered `HumanChannel` (`web`,
+   `telegram`, `teams`), the manager calls that channel's
+   `send_notification(recipient, message)` so the notice appears in the
+   conversation the user is already in.
+2. **Out-of-band** — otherwise it is treated as an async-notify provider
+   (`email`, `sms`, `telegram`, …) and delivered via `notify_provider_options`.
+
+The manager emits a user notice at each transition:
+
+| Transition                        | Default message (Spanish)                                   |
+|-----------------------------------|-------------------------------------------------------------|
+| Escalated to another INTERACT tier| *"Tu solicitud fue escalada a {tier}. Por favor espera…"*    |
+| Landed on a NOTIFY/TICKET tier    | *"Hemos notificado a los responsables… te avisaremos."*     |
+| Chain exhausted (no decision)     | *"No recibimos una respuesta a tiempo… te avisaremos…"*     |
+
+A NOTIFY tier can override its message with
+`action_metadata["user_message"]`. Combined with `cc_originator: True` on the
+final tier (§11), this produces the canonical flow: **manager A times out →
+user told it moved to manager B → manager B times out → email to both managers
+with the user on CC**.
+
+See `agents/expense_approval.py` for the full three-tier reference
+implementation (Teams A → Teams B → async-notify email, CC the employee).
+
+---
+
 For deeper details on the policy DSL, tier semantics, and the V2 roadmap
 (audit storage, Zendesk, LiveChat), see
 `sdd/specs/hitl-escalation-tier.spec.md`.
