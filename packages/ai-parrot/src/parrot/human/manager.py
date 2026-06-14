@@ -1167,32 +1167,40 @@ class HumanInteractionManager:
             # consistent if we crash between dispatch and task scheduling.
             interaction.target_humans = next_tier.target_humans
             interaction.timeout = next_tier.timeout
+
+            # Register the timeout task BEFORE dispatch to close the race
+            # window where a human responds before the task is registered.
+            self._timeout_tasks[interaction.interaction_id] = asyncio.create_task(
+                self._handle_timeout(interaction, channel)
+            )
+
             await self._dispatch_to_channel(
                 interaction, next_tier.channel_type or channel
             )
 
             # Keep the requesting user informed that their case moved to the
-            # next reviewer (e.g. "tu solicitud fue escalada a … espera").
-            await self._notify_originator(
-                interaction,
-                self._build_user_escalation_message(
-                    interaction, next_tier, "interact"
-                ),
-            )
-
-            # Start a new timeout for THIS level.
-            self._timeout_tasks[interaction.interaction_id] = asyncio.create_task(
-                self._handle_timeout(interaction, channel)
+            # next reviewer. Fire-and-forget so network I/O cannot block the
+            # escalation path or orphan the timeout task.
+            asyncio.create_task(
+                self._notify_originator(
+                    interaction,
+                    self._build_user_escalation_message(
+                        interaction, next_tier, "interact"
+                    ),
+                )
             )
         else:
             # For non-INTERACT actions (like TICKET, NOTIFY), resume agent immediately
             # as per fire-and-forget policy.
             # Tell the user we have handed the case off to the responsibles.
-            await self._notify_originator(
-                interaction,
-                self._build_user_escalation_message(
-                    interaction, next_tier, "notify"
-                ),
+            # Fire-and-forget so network I/O cannot delay agent resumption.
+            asyncio.create_task(
+                self._notify_originator(
+                    interaction,
+                    self._build_user_escalation_message(
+                        interaction, next_tier, "notify"
+                    ),
+                )
             )
             self.logger.info(
                 "Escalated to Tier %d (%s) for interaction %s. "
@@ -1318,12 +1326,21 @@ class HumanInteractionManager:
         message: str,
         provider_options: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Send a single message to *recipient* via an async-notify provider."""
+        """Send a single message to *recipient* via an async-notify provider.
+
+        Args:
+            provider: async-notify provider name (e.g. ``"email"``, ``"telegram"``).
+            recipient: Address/ID of the recipient on the given provider.
+            message: Plain-text message body.
+            provider_options: Optional connection kwargs (hostname, port, token…)
+                forwarded verbatim to the async-notify provider constructor.
+                Must NOT contain secrets persisted anywhere — supply from env vars.
+        """
         from notify import Notify  # lazy: optional dependency
-        from .actions.backends import NotifyBackend
+        from .actions.backends.notify_provider import build_recipients
 
         provider = provider.lower()
-        recipients = NotifyBackend._build_recipients(provider, [recipient])
+        recipients = build_recipients(provider, [recipient])
         sender = Notify(provider, **(provider_options or {}))
         async with sender as conn:
             await conn.send(recipient=recipients, message=message)
@@ -1332,16 +1349,24 @@ class HumanInteractionManager:
         """Resolve the interaction as timed out."""
         result = self._build_timeout_result(interaction)
         await self._persist_result(result)
-        # Final courtesy notice to the requesting user.
-        await self._notify_originator(
-            interaction,
-            self._build_user_escalation_message(interaction, None, "exhausted"),
-        )
+
+        # Unblock the waiting agent FIRST — do not let notification I/O
+        # (which can hang for tens of seconds on a slow SMTP server) delay
+        # the caller that is awaiting this future.
         future = self._pending_futures.pop(interaction.interaction_id, None)
         if future is not None and not future.done():
             future.set_result(result)
         else:
             await self._trigger_rehydration(interaction, result)
+
+        # Final courtesy notice to the requesting user — fire-and-forget so
+        # network latency cannot affect the already-resolved future.
+        asyncio.create_task(
+            self._notify_originator(
+                interaction,
+                self._build_user_escalation_message(interaction, None, "exhausted"),
+            )
+        )
 
     async def _escalate(
         self, interaction: HumanInteraction, channel: str

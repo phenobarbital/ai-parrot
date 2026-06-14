@@ -455,13 +455,15 @@ class HumanInteraction(BaseModel):
             "etc. Defaults to ``originator`` when omitted."
         ),
     )
-    notify_provider_options: Dict[str, Any] = Field(
-        default_factory=dict,
+    notify_provider_options: Optional[Dict[str, Any]] = Field(
+        default=None,
+        exclude=True,  # Never persisted — may contain credentials (tokens, passwords).
         description=(
-            "Optional connection kwargs forwarded to the async-notify provider "
-            "when ``notify_channel`` resolves to one (e.g. SMTP creds, a "
-            "Telegram bot_token). Ignored for in-conversation HumanChannel "
-            "notifications."
+            "Runtime-only connection kwargs forwarded to the async-notify provider "
+            "when ``notify_channel`` resolves to one (e.g. SMTP hostname/port, a "
+            "Telegram bot_token). Intentionally excluded from serialization so "
+            "credentials are never written to Redis. Populate from environment "
+            "variables or a secrets manager at call time."
         ),
     )
 

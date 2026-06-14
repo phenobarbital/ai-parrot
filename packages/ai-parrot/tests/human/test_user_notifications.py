@@ -6,8 +6,7 @@ the user-facing status messages emitted while a case is escalated tier to tier.
 """
 from __future__ import annotations
 
-import sys
-import types
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -21,6 +20,8 @@ from parrot.human.models import (
     InteractionStatus,
 )
 
+
+# notify_log fixture is provided by tests/human/conftest.py
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -58,42 +59,6 @@ def _mock_redis():
     redis.publish = AsyncMock()
     redis.close = AsyncMock()
     return redis
-
-
-@pytest.fixture
-def notify_log(monkeypatch):
-    log: list = []
-
-    class _Conn:
-        def __init__(self, provider, opts):
-            self.provider = provider
-            self.opts = opts
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *exc):
-            return False
-
-        async def send(self, **kwargs):
-            log.append({"provider": self.provider, **kwargs})
-
-    notify_mod = types.ModuleType("notify")
-    notify_mod.Notify = lambda provider, **opts: _Conn(provider, opts)
-    models_mod = types.ModuleType("notify.models")
-    models_mod.Actor = type(
-        "Actor", (), {"__init__": lambda self, name=None, account=None: setattr(self, "account", account or {})}
-    )
-    models_mod.Chat = type(
-        "Chat", (), {"__init__": lambda self, chat_id=None: setattr(self, "chat_id", chat_id)}
-    )
-    models_mod.Channel = type(
-        "Channel", (), {"__init__": lambda self, channel_id=None: setattr(self, "channel_id", channel_id)}
-    )
-    notify_mod.models = models_mod
-    monkeypatch.setitem(sys.modules, "notify", notify_mod)
-    monkeypatch.setitem(sys.modules, "notify.models", models_mod)
-    return log
 
 
 # ── _notify_originator ────────────────────────────────────────────────────────
@@ -214,6 +179,8 @@ class TestEscalationNotifiesUser:
         )
 
         await mgr._escalate_to_next_tier(interaction, "web", cause="timeout")
+        # Give the fire-and-forget notification task a chance to run.
+        await asyncio.sleep(0)
 
         msgs = [m for (r, m) in channel.notifications if r == "emp"]
         assert msgs and "Mgr B" in msgs[0]
@@ -241,6 +208,7 @@ class TestEscalationNotifiesUser:
         )
 
         await mgr._escalate_to_next_tier(interaction, "web", cause="timeout")
+        await asyncio.sleep(0)
 
         msgs = [m for (r, m) in channel.notifications if r == "emp"]
         assert msgs and "responsables" in msgs[0]

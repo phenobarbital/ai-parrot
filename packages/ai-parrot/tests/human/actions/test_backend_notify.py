@@ -19,56 +19,7 @@ from parrot.human.models import (
 )
 
 
-# ── Fake async-notify ─────────────────────────────────────────────────────────
-
-@pytest.fixture
-def notify_log(monkeypatch):
-    """Install a fake ``notify`` module and return the captured-send log."""
-    log: list = []
-
-    class _Conn:
-        def __init__(self, provider, opts):
-            self.provider = provider
-            self.opts = opts
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *exc):
-            return False
-
-        async def send(self, **kwargs):
-            log.append({"provider": self.provider, "opts": self.opts, **kwargs})
-            return [types.SimpleNamespace(message_id="1")]
-
-    def _notify(provider, **opts):
-        return _Conn(provider, opts)
-
-    notify_mod = types.ModuleType("notify")
-    notify_mod.Notify = _notify
-    models_mod = types.ModuleType("notify.models")
-
-    class Actor:
-        def __init__(self, name=None, account=None):
-            self.name = name
-            self.account = account or {}
-
-    class Chat:
-        def __init__(self, chat_id=None):
-            self.chat_id = chat_id
-
-    class Channel:
-        def __init__(self, channel_id=None):
-            self.channel_id = channel_id
-
-    models_mod.Actor = Actor
-    models_mod.Chat = Chat
-    models_mod.Channel = Channel
-    notify_mod.models = models_mod
-
-    monkeypatch.setitem(sys.modules, "notify", notify_mod)
-    monkeypatch.setitem(sys.modules, "notify.models", models_mod)
-    return log
+# notify_log fixture is provided by tests/human/conftest.py
 
 
 @pytest.fixture
@@ -198,6 +149,40 @@ class TestNotifyBackend:
         tier = _tier({"kind": "notify", "provider": "email", "to": ["a@x.com"]})
         with pytest.raises(NotifyBackendError, match="failed"):
             await NotifyBackend().execute(interaction, tier)
+
+    async def test_sms_provider_accepts_phone_number(self, notify_log, interaction):
+        """SMS recipients (phone numbers) must NOT be rejected by the '@' guard."""
+        from parrot.human.actions.backends import NotifyBackend
+
+        tier = _tier({"kind": "notify", "provider": "sms", "to": ["+34612345678"]})
+        result = await NotifyBackend().execute(interaction, tier)
+
+        assert result["status"] == "sent"
+        sent = notify_log[0]
+        assert sent["provider"] == "sms"
+        # Recipient built as Actor with phone as address (no '@' needed).
+        assert sent["recipient"][0].account["address"] == "+34612345678"
+
+    async def test_cc_originator_non_email_skips_at_check(self, notify_log, interaction):
+        """Non-email originator IDs must not trigger the '@' validation on email provider."""
+        from parrot.human.actions.backends import NotifyBackend
+
+        # Originator is a session ID (no '@'). With email provider + cc_originator=True,
+        # it must NOT raise — it should be appended to CC without '@' validation.
+        session_interaction = HumanInteraction(
+            question="Approve?",
+            source_agent="exp-agent",
+            originator="sess-abc123",  # NOT an email address
+        )
+        tier = _tier({
+            "kind": "notify", "provider": "email",
+            "to": ["mgr@x.com"],
+            "cc_originator": True,
+        })
+        # The originator has no '@' so it should NOT be CC'd on an email provider.
+        result = await NotifyBackend().execute(session_interaction, tier)
+        assert result["status"] == "sent"
+        assert "sess-abc123" not in result["cc"]
 
 
 class TestEmailBackendCompat:

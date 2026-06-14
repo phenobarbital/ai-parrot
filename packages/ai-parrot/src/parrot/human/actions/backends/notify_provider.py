@@ -38,6 +38,8 @@ _CHAT_PROVIDERS = {"telegram"}
 _CHANNEL_PROVIDERS = {"slack"}
 # Providers where a recipient list is required to deliver anything.
 _RECIPIENT_REQUIRED = {"email", "ses", "smtp", "teams", "telegram", "slack", "sms", "twilio"}
+# Providers that use email-format addresses (require "@") — others use phone numbers or IDs.
+_EMAIL_PROVIDERS = {"email", "ses", "smtp"}
 
 
 class NotifyBackend(ActionBackend):
@@ -72,7 +74,7 @@ class NotifyBackend(ActionBackend):
     # ── recipient building ────────────────────────────────────────────────
 
     @staticmethod
-    def _build_recipients(provider: str, addresses: List[str]) -> List[Any]:
+    def build_recipients(provider: str, addresses: List[str]) -> List[Any]:
         """Wrap raw address strings into async-notify recipient models."""
         from notify.models import Actor, Chat, Channel
 
@@ -111,8 +113,12 @@ class NotifyBackend(ActionBackend):
                 return template.format(
                     interaction=interaction, tier=tier, question=interaction.question
                 )
-            except (KeyError, AttributeError, IndexError):
-                pass
+            except (KeyError, AttributeError, IndexError) as exc:
+                logger = logging.getLogger("parrot.human.actions.backends.notify")
+                logger.warning(
+                    "NotifyBackend: body_template rendering failed: %s; using default body.",
+                    exc,
+                )
         body_lines = [
             f"Interaction ID: {interaction.interaction_id}",
             f"Question: {interaction.question}",
@@ -136,7 +142,12 @@ class NotifyBackend(ActionBackend):
         if meta.get("cc_originator") and interaction.originator:
             origin = interaction.originator
             if origin not in to and origin not in cc:
-                cc.append(origin)
+                # For email-based providers, only append the originator if it
+                # looks like an email address. Non-email identifiers (session IDs,
+                # Telegram chat IDs) are silently skipped to avoid '@' validation
+                # failures when the NOTIFY tier uses an email provider.
+                if provider not in _EMAIL_PROVIDERS or "@" in str(origin):
+                    cc.append(origin)
 
         if provider in _RECIPIENT_REQUIRED and not to:
             raise NotifyBackendError(
@@ -144,8 +155,9 @@ class NotifyBackend(ActionBackend):
                 "Provide at least one recipient in action_metadata['to']."
             )
 
-        # Light validation for address-based providers.
-        if provider not in _CHAT_PROVIDERS and provider not in _CHANNEL_PROVIDERS:
+        # For email-based providers, validate that all addresses contain "@".
+        # SMS/Twilio use phone numbers; Telegram/Slack use IDs — no "@" needed.
+        if provider in _EMAIL_PROVIDERS:
             for addr in to + cc:
                 if "@" not in str(addr):
                     raise NotifyBackendError(
@@ -194,8 +206,8 @@ class NotifyBackend(ActionBackend):
                 "'pip install async-notify[all]'."
             ) from exc
 
-        recipients = self._build_recipients(provider, to)
-        cc_recipients = self._build_recipients(provider, cc) if cc else None
+        recipients = self.build_recipients(provider, to)
+        cc_recipients = self.build_recipients(provider, cc) if cc else None
 
         send_kwargs: Dict[str, Any] = {"message": body}
         if subject:
@@ -240,3 +252,8 @@ class NotifyBackend(ActionBackend):
             "cc": cc,
             "status": "sent",
         }
+
+
+# Module-level alias so callers outside the class (e.g. manager._send_async_notify)
+# can import a stable public name without depending on a private static method.
+build_recipients = NotifyBackend.build_recipients

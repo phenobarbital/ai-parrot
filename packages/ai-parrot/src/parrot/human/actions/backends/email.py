@@ -30,7 +30,9 @@ class EmailBackend(NotifyBackend):
         password: SMTP auth password (optional).
         default_from: Default ``From`` address.
         use_tls: STARTTLS after connect (port 587 style).
-        use_ssl: Implicit TLS on connect (port 465 style).
+        use_ssl: Implicit TLS on connect (port 465 style). Currently ignored by
+            async-notify's email provider (which uses STARTTLS). Included for
+            future compatibility.
     """
 
     def __init__(
@@ -44,14 +46,22 @@ class EmailBackend(NotifyBackend):
         use_tls: bool = False,
         use_ssl: bool = False,
     ) -> None:
-        provider_options = {
+        # Build provider options, omitting None credentials to avoid triggering
+        # spurious authentication on open relays.
+        provider_options: dict = {
             "hostname": host,
             "port": port,
-            "username": username,
-            "password": password,
             "use_tls": use_tls,
             "use_ssl": use_ssl,
         }
+        if username is not None:
+            provider_options["username"] = username
+        if password is not None:
+            provider_options["password"] = password
+        # NOTE: async-notify's email provider currently hardcodes STARTTLS
+        # internally. use_ssl=True (implicit TLS / port 465) is not honoured
+        # by the underlying library and will be silently ignored. Use port 587
+        # with use_tls=True (STARTTLS) for encrypted connections.
         super().__init__(
             default_provider="email",
             default_from=default_from,
