@@ -1,0 +1,91 @@
+{
+  "feature": "visit-event-lifecycle",
+  "feature_id": "FEAT-303",
+  "spec": "sdd/specs/visit-event-lifecycle.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-14T00:00:00Z",
+  "completed_at": null,
+  "implementation_repo": "ai-parrot monorepo (packages/parrot-formdesigner) — branch base: main; SDD state stays in fieldsync",
+  "tasks": [
+    {
+      "id": "TASK-303-1",
+      "slug": "event-shift-visit-models",
+      "title": "Event/Shift/Visit models + state machine + EventStorage (JSONB)",
+      "feature_id": "FEAT-303",
+      "feature": "visit-event-lifecycle",
+      "spec": "sdd/specs/visit-event-lifecycle.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Base module — models/storage/state machine; all others build on it.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-303-1-event-shift-visit-models.md"
+    },
+    {
+      "id": "TASK-303-2",
+      "slug": "checkin-checkout-geofence",
+      "title": "Check-in/out + geofence validation + recap submission",
+      "feature_id": "FEAT-303",
+      "feature": "visit-event-lifecycle",
+      "spec": "sdd/specs/visit-event-lifecycle.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-303-1"
+      ],
+      "parallel": false,
+      "parallelism_notes": "VisitService core flow; TASK-303-4 depends on its checkout.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-303-2-checkin-checkout-geofence.md"
+    },
+    {
+      "id": "TASK-303-3",
+      "slug": "missed-reasons-adhoc",
+      "title": "Missed Reasons (per-tenant) + ad-hoc stops",
+      "feature_id": "FEAT-303",
+      "feature": "visit-event-lifecycle",
+      "spec": "sdd/specs/visit-event-lifecycle.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-303-1"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file missed_reasons.py; parallelizable with 303-2 after 303-1 (extends VisitService — coordinate merge).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-303-3-missed-reasons-adhoc.md"
+    },
+    {
+      "id": "TASK-303-4",
+      "slug": "payroll-hook-api",
+      "title": "PayrollHook interface + visit API endpoints",
+      "feature_id": "FEAT-303",
+      "feature": "visit-event-lifecycle",
+      "spec": "sdd/specs/visit-event-lifecycle.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-303-2",
+        "TASK-303-3"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Integrates all into handlers.py + routes.py — waits for 303-2 and 303-3.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-303-4-payroll-hook-api.md"
+    }
+  ]
+}
