@@ -77,3 +77,18 @@ class VisitAlreadyCheckedInError(ValueError):
             "Use checkout() to complete the visit."
         )
         self.visit_id = visit_id
+
+
+class GeofenceConfigError(ValueError):
+    """Raised when an Event has no valid geofence configuration at checkout.
+
+    A missing/malformed geofence MUST hard-block checkout — never silently
+    allow submission without a geofence check (FEAT-303 spec invariant 5).
+    """
+
+    def __init__(self, event_id: str) -> None:
+        self.event_id = event_id
+        super().__init__(
+            f"Event {event_id!r} has no valid geofence configuration; "
+            "checkout is blocked until it is configured."
+        )

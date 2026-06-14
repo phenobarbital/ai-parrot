@@ -2027,7 +2027,6 @@ class FormAPIHandler:
         visit_service = self._get_visit_service()
         # Ensure tenant is in payload
         body.setdefault("tenant", tenant)
-        event = await visit_service._event_storage.load("__nonexistent__", tenant=tenant)
 
         # Use EventService for proper validation
         from ..services.visit.event_service import EventService
@@ -2081,7 +2080,6 @@ class FormAPIHandler:
                          accuracy_m=body.get("accuracy_m"))
 
         visit_service = self._get_visit_service()
-        visit_service._tenant = tenant
 
         try:
             visit = await visit_service.checkin(event_id, shift_id, coord, tenant=tenant)
@@ -2130,7 +2128,6 @@ class FormAPIHandler:
         submission_data = body.get("submission_data") or {}
 
         visit_service = self._get_visit_service()
-        visit_service._tenant = tenant
 
         try:
             visit = await visit_service.checkout(
@@ -2171,7 +2168,6 @@ class FormAPIHandler:
             return JSONResponse({"error": "reason_id is required"}, status=400)
 
         visit_service = self._get_visit_service()
-        visit_service._tenant = tenant
 
         try:
             visit = await visit_service.set_missed_reason(

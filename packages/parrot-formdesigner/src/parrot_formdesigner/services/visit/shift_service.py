@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .errors import OverlappingShiftError
 from .models import Event, Shift, ShiftStatus
 from .storage import EventStorage
+
+
+_EPOCH_MIN = datetime(1, 1, 1, tzinfo=timezone.utc)
+_EPOCH_MAX = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
 
 
 def _overlaps(
@@ -43,10 +47,12 @@ def _overlaps(
         return True
 
     # Standard overlap check: A starts before B ends AND B starts before A ends
-    a_start = start_a or datetime.min
-    a_end = end_a or datetime.max
-    b_start = start_b or datetime.min
-    b_end = end_b or datetime.max
+    # tz-aware sentinels — shift datetimes are tz-aware UTC; tz-naive
+    # datetime.min/max would raise TypeError on mixed comparison (review #1).
+    a_start = start_a if start_a is not None else _EPOCH_MIN
+    a_end = end_a if end_a is not None else _EPOCH_MAX
+    b_start = start_b if start_b is not None else _EPOCH_MIN
+    b_end = end_b if end_b is not None else _EPOCH_MAX
 
     return a_start < b_end and b_start < a_end
 

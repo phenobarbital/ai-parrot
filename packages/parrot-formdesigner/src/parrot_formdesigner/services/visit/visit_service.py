@@ -16,7 +16,9 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from .errors import (
+    GeofenceConfigError,
     GeofenceViolationError,
+    InvalidTransitionError,
     VisitAlreadyCheckedInError,
 )
 from .models import (
@@ -99,8 +101,7 @@ class VisitService:
     def _transition_shift(self, shift: Shift, new_status: ShiftStatus) -> Shift:
         allowed = SHIFT_TRANSITIONS.get(shift.status, set())
         if new_status not in allowed:
-            from .errors import InvalidTransitionError
-            raise InvalidTransitionError(
+                raise InvalidTransitionError(
                 from_status=shift.status.value,
                 to_status=new_status.value,
                 entity="Shift",
@@ -172,6 +173,15 @@ class VisitService:
         effective_tenant = tenant or self._tenant
         event = await self._load_event(event_id)
         shift = self._find_shift(event, shift_id)
+
+        # State-machine guard: only SCHEDULED/IN_PROGRESS events accept a
+        # check-in (no REQUESTED → IN_PROGRESS edge — review #6).
+        if event.status not in (EventStatus.SCHEDULED, EventStatus.IN_PROGRESS):
+            raise InvalidTransitionError(
+                from_status=event.status.value,
+                to_status=ShiftStatus.IN_PROGRESS.value,
+                entity="Event",
+            )
 
         # Idempotency guard
         if shift.visit is not None and shift.visit.check_in is not None:
@@ -265,8 +275,11 @@ class VisitService:
         now = datetime.now(timezone.utc)
         new_breadcrumb = list(visit.gps_breadcrumb) + [coord]
 
-        # Geofence validation
+        # Geofence validation. A malformed/missing geofence config yields
+        # ERROR — treat that as a hard block, never a silent pass (review #2).
         geo_result = self._geofence_validator.validate(coord, event)
+        if geo_result.status == GeofenceStatus.ERROR:
+            raise GeofenceConfigError(event_id)
         gps_outside = geo_result.status == GeofenceStatus.OUTSIDE
 
         # Update visit with checkout coordinate
@@ -346,16 +359,14 @@ class VisitService:
 
     async def _fire_payroll_hook(self, visit: Visit, tenant: str) -> None:
         """Fire the registered PayrollHook (best-effort, never propagates errors)."""
-        from ..callback_registry import _CALLBACK_REGISTRY
+        # Tenant-specific hook wins over global — get_form_callback already
+        # implements that priority (review #4).
+        from ..callback_registry import get_form_callback
 
-        hook_fn = None
-        for key_tenant, key_name in _CALLBACK_REGISTRY:
-            if key_name == "payroll_hook" and (
-                key_tenant is None or key_tenant == tenant
-            ):
-                hook_fn = _CALLBACK_REGISTRY[(key_tenant, key_name)]
-                break
-
+        try:
+            hook_fn = get_form_callback("payroll_hook", tenant=tenant)
+        except KeyError:
+            return
         if hook_fn is None:
             return
 
