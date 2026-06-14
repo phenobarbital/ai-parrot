@@ -6,7 +6,7 @@ use serde_yaml;
 
 /// Convert Python object to YAML string
 #[pyfunction]
-fn dumps(py: Python, obj: &PyAny) -> PyResult<String> {
+fn dumps(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<String> {
     // Convert Python object to serde_json::Value first
     let json_value = python_to_json(py, obj)?;
     // Serialize to YAML using serde_yaml
@@ -23,8 +23,8 @@ fn dumps(py: Python, obj: &PyAny) -> PyResult<String> {
 #[pyfunction]
 #[pyo3(signature = (obj, indent=2, flow_style=false, sort_keys=false))]
 fn dumps_formatted(
-    py: Python,
-    obj: &PyAny,
+    py: Python<'_>,
+    obj: &Bound<'_, PyAny>,
     indent: usize,
     flow_style: bool,
     sort_keys: bool,
@@ -60,7 +60,7 @@ fn dumps_formatted(
 
 /// Convert YAML string to Python object
 #[pyfunction]
-fn loads(py: Python, yaml_str: &str) -> PyResult<PyObject> {
+fn loads<'py>(py: Python<'py>, yaml_str: &str) -> PyResult<Bound<'py, PyAny>> {
     // Parse YAML to serde_json::Value
     let value: serde_json::Value = match serde_yaml::from_str(yaml_str) {
         Ok(v) => v,
@@ -76,7 +76,7 @@ fn loads(py: Python, yaml_str: &str) -> PyResult<PyObject> {
 }
 
 /// Helper: Convert Python object to JSON Value
-fn python_to_json(py: Python, obj: &PyAny) -> PyResult<serde_json::Value> {
+fn python_to_json(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
     if obj.is_none() {
         Ok(serde_json::Value::Null)
     } else if let Ok(b) = obj.extract::<bool>() {
@@ -91,33 +91,33 @@ fn python_to_json(py: Python, obj: &PyAny) -> PyResult<serde_json::Value> {
         }
     } else if let Ok(s) = obj.extract::<String>() {
         Ok(serde_json::Value::String(s))
-    } else if let Ok(list) = obj.downcast::<PyList>() {
+    } else if let Ok(list) = obj.cast::<PyList>() {
         let mut vec = Vec::new();
         for item in list.iter() {
-            vec.push(python_to_json(py, item)?);
+            vec.push(python_to_json(py, &item)?);
         }
         Ok(serde_json::Value::Array(vec))
-    } else if let Ok(dict) = obj.downcast::<PyDict>() {
+    } else if let Ok(dict) = obj.cast::<PyDict>() {
         let mut map = serde_json::Map::new();
         for (key, value) in dict.iter() {
             let key_str = key.extract::<String>()?;
-            map.insert(key_str, python_to_json(py, value)?);
+            map.insert(key_str, python_to_json(py, &value)?);
         }
         Ok(serde_json::Value::Object(map))
     } else if obj.hasattr("model_dump")? {
         // Handle Pydantic BaseModel
         let dict = obj.call_method0("model_dump")?;
-        python_to_json(py, dict)
+        python_to_json(py, &dict)
     } else if obj.hasattr("__dataclass_fields__")? {
         // Handle dataclass objects
         let dataclasses = py.import("dataclasses")?;
         let asdict = dataclasses.getattr("asdict")?;
         let dict = asdict.call1((obj,))?;
-        python_to_json(py, dict)
+        python_to_json(py, &dict)
     } else if obj.hasattr("dict")? {
         // Handle dataclass or regular objects
         let dict = obj.getattr("dict")?;
-        python_to_json(py, dict)
+        python_to_json(py, &dict)
     } else {
         // Try string representation
         let s = obj.str()?.extract::<String>()?;
@@ -126,35 +126,39 @@ fn python_to_json(py: Python, obj: &PyAny) -> PyResult<serde_json::Value> {
 }
 
 /// Helper: Convert JSON Value to Python object
-fn json_to_python(py: Python, value: &serde_json::Value) -> PyResult<PyObject> {
-    match value {
-        serde_json::Value::Null => Ok(py.None()),
-        serde_json::Value::Bool(b) => Ok(b.into_py(py)),
+fn json_to_python<'py>(
+    py: Python<'py>,
+    value: &serde_json::Value,
+) -> PyResult<Bound<'py, PyAny>> {
+    let obj = match value {
+        serde_json::Value::Null => py.None().into_bound(py),
+        serde_json::Value::Bool(b) => b.into_pyobject(py)?.to_owned().into_any(),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                Ok(i.into_py(py))
+                i.into_pyobject(py)?.into_any()
             } else if let Some(f) = n.as_f64() {
-                Ok(f.into_py(py))
+                f.into_pyobject(py)?.into_any()
             } else {
-                Ok(py.None())
+                py.None().into_bound(py)
             }
         }
-        serde_json::Value::String(s) => Ok(s.into_py(py)),
+        serde_json::Value::String(s) => s.into_pyobject(py)?.into_any(),
         serde_json::Value::Array(arr) => {
             let list = PyList::empty(py);
             for item in arr {
                 list.append(json_to_python(py, item)?)?;
             }
-            Ok(list.into())
+            list.into_any()
         }
         serde_json::Value::Object(map) => {
             let dict = PyDict::new(py);
             for (key, value) in map {
                 dict.set_item(key, json_to_python(py, value)?)?;
             }
-            Ok(dict.into())
+            dict.into_any()
         }
-    }
+    };
+    Ok(obj)
 }
 
 fn sort_json_value(value: &mut serde_json::Value) {
@@ -214,7 +218,7 @@ fn adjust_yaml_indent(yaml: &str, indent: usize) -> String {
 
 /// Module definition
 #[pymodule]
-fn yaml_rs(_py: Python, m: &PyModule) -> PyResult<()> {
+fn yaml_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(dumps, m)?)?;
     m.add_function(wrap_pyfunction!(dumps_formatted, m)?)?;
     m.add_function(wrap_pyfunction!(loads, m)?)?;

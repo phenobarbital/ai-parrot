@@ -90,7 +90,9 @@ ml = [
     "torch>=2.8.0,<2.9",
     "torchaudio>=2.8.0,<2.9",
     "torchvision>=0.23.0,<0.24",
-    "pytorch-lightning==2.5.5",
+    # 2.6.5: fixes CWE-502 insecure checkpoint deserialization (load_from_checkpoint
+    # called torch.load without weights_only=True). Affected: <=2.6.0.
+    "pytorch-lightning==2.6.5",
     "pytorch-metric-learning==2.9.0",
     "nvidia-cudnn-cu12>=9.10.2.21",
 ]
