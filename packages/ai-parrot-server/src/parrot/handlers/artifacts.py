@@ -336,9 +336,11 @@ class ArtifactDetailView(BaseView):
             )
 
         # FEAT-197: Content-negotiation — return raw HTML when requested.
+        # ?download=1 also forces HTML mode (the download makes no sense as JSON).
         accept = self.request.headers.get("Accept", "")
         fmt = self.request.query.get("format", "")
-        if accept.startswith("text/html") or fmt == "html":
+        download_requested = self.request.query.get("download") in ("1", "true", "yes")
+        if accept.startswith("text/html") or fmt == "html" or download_requested:
             html = _extract_html_from_artifact(artifact)
             raw_bundles = (artifact.definition or {}).get("js_bundles", [])
             try:
@@ -352,7 +354,7 @@ class ArtifactDetailView(BaseView):
             )
             # ?download=1 → offer the self-contained HTML as a downloadable file
             # (the "open it and use it" delivery mode for interactive artifacts).
-            if self.request.query.get("download") in ("1", "true", "yes"):
+            if download_requested:
                 safe_name = _re.sub(r"[^A-Za-z0-9._-]", "_", artifact_id) or "artifact"
                 csp_headers = {
                     **dict(csp_headers),

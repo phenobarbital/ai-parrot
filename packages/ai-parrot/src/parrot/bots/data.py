@@ -55,6 +55,15 @@ def _get_infographic_result_class() -> Optional[type]:
         return None
 
 
+def _get_interactive_result_class() -> Optional[type]:
+    """Lazy import of InteractiveRenderResult (avoids circular deps)."""
+    try:
+        from ..models.interactive import InteractiveRenderResult as _cls
+        return _cls
+    except ImportError:
+        return None
+
+
 Scalar = Union[str, int, float, bool, None]
 
 try:
@@ -1110,6 +1119,54 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 return result
         return None
 
+    def _extract_last_interactive_result(
+        self, tool_calls: Optional[List[Any]],
+    ) -> Optional[Any]:
+        """Return the last ``InteractiveRenderResult`` from the tool calls list."""
+        if not tool_calls:
+            return None
+        cls = _get_interactive_result_class()
+        if cls is None:
+            return None
+        for tc in reversed(tool_calls):
+            result = getattr(tc, "result", None)
+            if isinstance(result, cls):
+                return result
+        return None
+
+    def _finalize_interactive_response(
+        self, response: Any, envelope: Any,
+    ) -> Optional[str]:
+        """Apply an ``InteractiveRenderResult`` to the agent response in place.
+
+        Mirrors ``_finalize_infographic_response`` but sets ``OutputMode.HTML``
+        and records ``libraries_used`` in metadata instead of block metadata.
+        """
+        explanation = getattr(response, "response", None)
+        if not explanation and isinstance(response.output, str):
+            explanation = response.output
+
+        response.output = envelope.html_inline or envelope.html_url
+        response.output_mode = OutputMode.HTML
+        response.artifact_id = envelope.artifact_id
+        if explanation:
+            response.response = explanation
+
+        meta = dict(getattr(response, "metadata", None) or {})
+        meta.update({
+            "html_url": envelope.html_url,
+            "html_inline_omitted": envelope.html_inline is None,
+            "enhanced": envelope.enhanced,
+            "template_name": envelope.template_name,
+            "theme": envelope.theme,
+            "libraries_used": getattr(envelope, "libraries_used", []),
+            "explanation": explanation,
+        })
+        if hasattr(response, "metadata"):
+            response.metadata = meta
+
+        return explanation
+
     def _finalize_infographic_response(
         self, response: Any, envelope: Any,
     ) -> Optional[str]:
@@ -2065,6 +2122,23 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         "artifact_id=%s enhanced=%s explanation_chars=%d",
                         infographic_envelope.artifact_id,
                         infographic_envelope.enhanced,
+                        len(explanation or ""),
+                    )
+                    return response   # skip formatter + structured reformat
+
+                # Interactive artifact: same early-return pattern, no data_variables.
+                interactive_envelope = self._extract_last_interactive_result(
+                    response.tool_calls
+                )
+                if interactive_envelope is not None:
+                    explanation = self._finalize_interactive_response(
+                        response, interactive_envelope,
+                    )
+                    self.logger.info(
+                        "InteractiveRenderResult detected — bypassing formatter: "
+                        "artifact_id=%s enhanced=%s explanation_chars=%d",
+                        interactive_envelope.artifact_id,
+                        interactive_envelope.enhanced,
                         len(explanation or ""),
                     )
                     return response   # skip formatter + structured reformat

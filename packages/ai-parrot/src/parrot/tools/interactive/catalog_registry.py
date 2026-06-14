@@ -200,6 +200,16 @@ class InteractiveCatalogRegistry:
         if not self._loaded:
             self.load()
 
+    async def ensure_loaded_async(self) -> None:
+        """Load the catalog in a thread pool executor to avoid blocking the event loop.
+
+        Call this from async contexts (aiohttp handlers, async tool methods) before
+        the first synchronous catalog access. Subsequent calls are no-ops.
+        """
+        if not self._loaded:
+            import asyncio
+            await asyncio.to_thread(self.load)
+
     def _load_libraries(self) -> None:
         lib_dir = self.catalog_dir / "libraries"
         if not lib_dir.is_dir():
@@ -220,6 +230,17 @@ class InteractiveCatalogRegistry:
                 self.logger.warning(
                     "Library '%s' uses a PLACEHOLDER SRI hash — its CDN asset will be "
                     "blocked by the browser until regenerated (see catalog/SRI.md).",
+                    entry.name,
+                )
+            if (
+                entry.css_bundle is not None
+                and entry.css_bundle.scope == "cdn"
+                and str(entry.css_bundle.sri_hash or "").startswith(PLACEHOLDER_SRI_PREFIX)
+            ):
+                self.logger.warning(
+                    "Library '%s' CSS bundle uses a PLACEHOLDER SRI hash — its "
+                    "stylesheet will be blocked by the browser until regenerated "
+                    "(see catalog/SRI.md).",
                     entry.name,
                 )
             self._libraries[entry.name] = entry
@@ -369,8 +390,14 @@ _CATALOG: Optional[InteractiveCatalogRegistry] = None
 
 
 def get_interactive_catalog() -> InteractiveCatalogRegistry:
-    """Return the lazily-loaded process-wide catalog singleton."""
+    """Return the process-wide catalog singleton (not yet loaded).
+
+    The catalog is loaded on first access via ``_ensure_loaded()`` (sync) or
+    ``ensure_loaded_async()`` (async, thread-safe).  Async callers should call
+    ``await catalog.ensure_loaded_async()`` before touching catalog data to
+    avoid blocking the event loop with disk I/O.
+    """
     global _CATALOG
     if _CATALOG is None:
-        _CATALOG = InteractiveCatalogRegistry().load()
+        _CATALOG = InteractiveCatalogRegistry()
     return _CATALOG

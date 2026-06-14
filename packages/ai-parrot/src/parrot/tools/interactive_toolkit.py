@@ -152,6 +152,7 @@ class InteractiveToolkit(AbstractToolkit):
             List of dicts with ``name``, ``description``, ``default_theme``,
             ``allowed_bundles`` and ``slots``.
         """
+        await self._catalog.ensure_loaded_async()
         return [
             {
                 "name": t.name,
@@ -170,6 +171,7 @@ class InteractiveToolkit(AbstractToolkit):
             List of dicts with ``name``, ``description``, ``category`` and
             ``scope`` (``"cdn"`` or ``"inline"``).
         """
+        await self._catalog.ensure_loaded_async()
         return [
             {
                 "name": lib.name,
@@ -197,8 +199,17 @@ class InteractiveToolkit(AbstractToolkit):
         Raises:
             InteractiveValidationError: ``TEMPLATE_UNKNOWN`` if not found.
         """
+        await self._catalog.ensure_loaded_async()
         template = self._resolve_template(template_name)
-        libs = [self._catalog.get_library(n) for n in template.allowed_bundles]
+        libs = []
+        for n in template.allowed_bundles:
+            try:
+                libs.append(self._catalog.get_library(n))
+            except KeyError:
+                raise InteractiveValidationError(
+                    "LIBRARY_UNKNOWN",
+                    {"library": n, "template": template_name},
+                )
         return {
             "name": template.name,
             "description": template.description,
@@ -254,6 +265,7 @@ class InteractiveToolkit(AbstractToolkit):
             InteractiveValidationError: On unknown/disallowed template or library,
                 or a missing enhance brief.
         """
+        await self._catalog.ensure_loaded_async()
         template = self._resolve_template(template_name)
         entries, bundles = self._resolve_libraries(template, libraries)
         resolved_theme = theme or template.default_theme
