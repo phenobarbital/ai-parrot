@@ -61,4 +61,16 @@ existing `callback_registry` pattern.
 - [ ] Full suite green + `ruff check`
 
 ## Completion Note
-*(Agent fills this in when done)*
+Implemented 2026-06-14 by sdd-worker agent.
+
+**Files modified**:
+- `src/parrot_formdesigner/api/handlers.py` — Added 4 handler methods: `_get_visit_service()` (lazy init), `create_event()`, `visit_checkin()`, `visit_checkout()`, `visit_set_missed()`.
+- `src/parrot_formdesigner/api/routes.py` — Added 4 routes under `/api/v1/visits/`: `POST /events`, `POST /{event_id}/shifts/{shift_id}/checkin`, `POST /{event_id}/shifts/{shift_id}/checkout`, `POST /{event_id}/shifts/{shift_id}/missed`.
+
+**PayrollHook**: ABC + NullPayrollHook implemented in TASK-303-1 (`services/visit/payroll_hook.py`). Hook resolved via `_CALLBACK_REGISTRY` in `visit_service._fire_payroll_hook()` using the `"payroll_hook"` key — not injected via constructor.
+
+**Tests**: `tests/unit/visit/test_task303_4_payroll_hook_api.py` — 23 tests covering:
+- PayrollHook ABC/NullPayrollHook behaviour
+- Hook invoked after successful checkout; NOT invoked on geofence block; failures don't block checkout
+- All 4 API endpoints: 200/201/400/404/409 responses
+- callback_registry isolation per test (autouse fixture)

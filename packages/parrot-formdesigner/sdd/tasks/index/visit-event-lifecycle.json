@@ -73,7 +73,7 @@
       "feature_id": "FEAT-303",
       "feature": "visit-event-lifecycle",
       "spec": "sdd/specs/visit-event-lifecycle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "Integrates all into handlers.py + routes.py — waits for 303-2 and 303-3.",
       "assigned_to": null,
       "started_at": "2026-06-14T07:51:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-303-4-payroll-hook-api.md"
+      "completed_at": "2026-06-14T08:04:30+00:00",
+      "file": "sdd/tasks/completed/TASK-303-4-payroll-hook-api.md"
     }
   ]
 }
