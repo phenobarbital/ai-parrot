@@ -40,7 +40,6 @@ TOOL_REGISTRY: dict[str, str] = {
     "notification": "parrot_tools.notification.NotificationTool",
     "metadata": "parrot_tools.metadata.MetadataTool",
     "doc_converter": "parrot_tools.doc_converter.DocumentConverterTool",
-    "webapp_generator": "parrot_tools.webapp_tool.WebAppGeneratorTool",
     "employees": "parrot_tools.employees.EmployeesTool",
     "powerbi_query": "parrot_tools.powerbi.PowerBIQueryTool",
     "powerbi_table_info": "parrot_tools.powerbi.PowerBITableInfoTool",
