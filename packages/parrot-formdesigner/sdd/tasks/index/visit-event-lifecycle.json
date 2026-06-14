@@ -33,7 +33,7 @@
       "feature_id": "FEAT-303",
       "feature": "visit-event-lifecycle",
       "spec": "sdd/specs/visit-event-lifecycle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -43,8 +43,8 @@
       "parallelism_notes": "VisitService core flow; TASK-303-4 depends on its checkout.",
       "assigned_to": null,
       "started_at": "2026-06-14T07:51:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-303-2-checkin-checkout-geofence.md"
+      "completed_at": "2026-06-14T08:00:19+00:00",
+      "file": "sdd/tasks/completed/TASK-303-2-checkin-checkout-geofence.md"
     },
     {
       "id": "TASK-303-3",

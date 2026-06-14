@@ -56,4 +56,14 @@ blocked when the rep is outside the geofence.
 - [ ] Full suite green + `ruff check`
 
 ## Completion Note
-*(Agent fills this in when done)*
+Implemented 2026-06-14 by sdd-worker agent.
+
+All code was implemented in TASK-303-1 (services/visit/geofence.py, visit_service.py).
+This task added 25 unit tests in `tests/unit/visit/test_task303_2_checkin_checkout.py`:
+
+- `TestHaversine`: same-point=0, known distance ~111km/degree
+- `TestGeofenceValidator`: inside/outside/missing meta/accuracy buffer/device accuracy
+- `TestCheckin`: timestamp set, breadcrumb started, shift→IN_PROGRESS, partial auto-save, idempotency guard, unknown event/shift
+- `TestCheckout`: blocked outside geofence, no submission when outside, submission saved, timestamp set, breadcrumb accumulated, partial draft cleared, shift→COMPLETED, event→COMPLETED when all done, no checkin raises, gps_outside flag persisted
+
+Note: PartialSaveStore.save() signature in actual code is `save(form_id, session_id, answers)` — NOT `save(form_id, data, *, user_id, tenant)` as the spec contract section states. The actual method signature was verified and used correctly. The spec contract section had a stale description.
