@@ -239,6 +239,7 @@ __all__ = (
     "AgentTool",
     "SpawnSubAgentTool",
     "SpawnSubAgentInput",
+    "InteractiveToolkit",
 )
 
 
@@ -251,6 +252,7 @@ _LAZY_CORE_TOOLS = {
     "FileManagerFactory": ".filemanager",
     "FileManagerToolkit": ".filemanager",
     "DatasetManager": ".dataset_manager",
+    "InteractiveToolkit": ".interactive_toolkit",
 }
 
 

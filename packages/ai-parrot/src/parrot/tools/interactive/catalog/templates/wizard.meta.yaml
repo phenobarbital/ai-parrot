@@ -1,0 +1,9 @@
+name: wizard
+description: >-
+  A multi-step / wizard presentation driven by the inline `stepper` controller.
+  Each step is a <section data-step> block. Good for guided flows and slide-style
+  walk-throughs; charts can be embedded inside steps.
+default_theme: light
+allowed_bundles:
+  - stepper
+  - echarts

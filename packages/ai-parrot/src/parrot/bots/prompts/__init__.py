@@ -149,6 +149,82 @@ or `<link rel="stylesheet" href>` will be rejected.
   no explanation, just the raw HTML starting with `<!DOCTYPE html>` or `<html`.
 """
 
+# ── Interactive HTML artifacts ("vibe-coding" canvas) ───────────────────────
+INTERACTIVE_SYSTEM_PROMPT_ADDON = """
+## Interactive HTML Generation Mode
+
+You can build polished, **self-contained interactive HTML pages** — Mermaid
+diagrams, charts, sortable/searchable data grids, and multi-step (wizard)
+presentations — using the `interactive_*` tools. The user can open the result as
+a single file or share it via a signed public URL; both are produced for you.
+
+The `<interactive_catalog>` block below this guide lists the **scaffold
+templates** and the **JavaScript libraries** you may use. Only those libraries
+are allowed — anything else is rejected by the security validator.
+
+Follow these steps IN ORDER:
+
+1. **Pick a scaffold template** that fits the request (`interactive_list_templates`
+   if unsure): `dashboard`, `wizard`, `diagram`, `grid`, or `report`.
+
+2. **Inspect it** with `interactive_get_scaffold(template_name=...)` to see the
+   slot markers (`<!-- SLOT:name -->`) you must fill and the usage snippets for
+   that template's allowed libraries.
+
+3. **Render** by calling `interactive_render(template_name=..., brief=...,
+   libraries=[...], theme=..., title=...)`. Write a thorough `brief` describing
+   exactly what each slot should contain and the data to visualise. The LLM
+   enhance pass turns your brief + the skeleton into the finished page.
+
+4. **Write a short chat reply** (2–4 sentences) summarising what you built. Do
+   NOT paste the HTML or the `interactive_render` return envelope — the agent
+   attaches the artifact (`html_url`/`artifact_id`) automatically.
+
+Rules for the generated page:
+- Keep every `<script src>`/`<link rel=stylesheet>` exactly as injected in the
+  skeleton's `<head>` (with its `integrity` attribute). Never add other external
+  resources — inline `<script>`/`<style>` blocks are fine.
+- Base every figure on data you actually have; do not invent numbers.
+"""
+
+# Enhance prompt — substitute placeholders with str.replace(), NOT str.format()
+# (the skeleton HTML contains curly braces in CSS/JS that would break format()).
+INTERACTIVE_ENHANCE_PROMPT = """
+You are authoring a self-contained, interactive HTML page by filling the slots
+of a skeleton and adding interactive JavaScript.
+
+## Skeleton HTML
+The skeleton is a complete document. Replace each `<!-- SLOT:name -->` marker
+with your content. Keep everything else — including the `<head>` and every
+`<script src>`/`<link>` it contains (with their `integrity` attributes) — intact.
+<skeleton>
+{skeleton}
+</skeleton>
+
+## Build brief
+{brief}
+
+## Data context (JSON) — the source of truth for every figure
+{data_context_json}
+
+## Available libraries (usage snippets + reference types)
+Author plain JavaScript. The TypeScript snippets are reference material only.
+{library_guide}
+
+## Allowed JavaScript bundles
+Only the scripts/stylesheets already present in the skeleton `<head>` may load
+external resources. Do NOT add any other `<script src>` or `<link href>`.
+{js_bundles}
+
+## Rules
+- You MAY add inline `<script>` and inline `<style>` blocks.
+- You MUST NOT add `<script src>` / `<link href>` outside the whitelist above.
+- When referencing a whitelisted CDN bundle you MUST keep its `integrity` value.
+- Replace ALL `<!-- SLOT:name -->` markers; leave no marker behind.
+- Return ONLY the complete, self-contained HTML document — no markdown fences,
+  no explanation, starting with `<!DOCTYPE html>` or `<html`.
+"""
+
 # Deprecated: use PromptBuilder.default() instead
 BASIC_SYSTEM_PROMPT = """
 Your name is $name Agent.

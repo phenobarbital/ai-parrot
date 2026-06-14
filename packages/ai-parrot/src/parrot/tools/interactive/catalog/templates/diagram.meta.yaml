@@ -1,0 +1,7 @@
+name: diagram
+description: >-
+  A single prominent diagram (flowchart, sequence, gantt, ER) with a title and
+  explanatory notes. Best for architecture and process visualisations.
+default_theme: light
+allowed_bundles:
+  - mermaid
