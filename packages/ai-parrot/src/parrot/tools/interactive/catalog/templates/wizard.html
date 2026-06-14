@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title><!-- SLOT:title --></title>
+  <!--HEAD-->
+</head>
+<body>
+  <main class="ip-container">
+    <header class="ip-header">
+      <h1><!-- SLOT:title --></h1>
+      <p class="ip-subtitle"><!-- SLOT:subtitle --></p>
+    </header>
+    <div id="wizard" class="ip-card">
+      <div class="ip-stepper-indicator" data-stepper-indicator></div>
+      <!-- SLOT:steps -->
+      <div class="ip-stepper-controls">
+        <button class="ip-btn" data-stepper-prev>Back</button>
+        <button class="ip-btn ip-btn-primary" data-stepper-next>Next</button>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

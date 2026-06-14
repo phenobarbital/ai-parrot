@@ -248,6 +248,7 @@ class ArtifactType(str, Enum):
     TABLE = "table"          # FEAT-224: structured table output
     CANVAS = "canvas"
     INFOGRAPHIC = "infographic"
+    INTERACTIVE = "interactive"  # free-form, self-contained interactive HTML pages
     DATAFRAME = "dataframe"
     EXPORT = "export"
 

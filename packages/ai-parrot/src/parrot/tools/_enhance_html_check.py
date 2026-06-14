@@ -1,6 +1,7 @@
-"""HTML validator for the LLM-enhanced infographic output (FEAT-197, TASK-1325).
+"""HTML validator for LLM-enhanced output (FEAT-197, TASK-1325).
 
-Uses stdlib ``html.parser`` — no new dependencies.
+Shared by the infographic enhance pass and the interactive-artifact render
+pipeline. Uses stdlib ``html.parser`` — no new dependencies.
 
 Checks:
 - Every ``<script src="...">`` URL must be in the ``allowed_bundles`` whitelist
@@ -9,13 +10,15 @@ Checks:
 - Inline ``<script>`` blocks (no ``src``) are allowed.
 - Inline ``<style>`` blocks are allowed.
 
-Raises ``InfographicValidationError(code='ENHANCE_OUTPUT_INVALID')`` on any
-policy violation.
+Raises ``code='ENHANCE_OUTPUT_INVALID'`` on any policy violation. The concrete
+exception type is pluggable via ``error_cls`` so callers can keep their own
+structured error class (``InfographicValidationError`` by default, or e.g.
+``InteractiveValidationError``).
 """
 from __future__ import annotations
 
 from html.parser import HTMLParser
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 
 class _ExternalResourceCollector(HTMLParser):
@@ -50,7 +53,11 @@ class _ExternalResourceCollector(HTMLParser):
             )
 
 
-def validate_enhanced_html(html: str, allowed_bundles: Iterable[Any]) -> None:
+def validate_enhanced_html(
+    html: str,
+    allowed_bundles: Iterable[Any],
+    error_cls: Optional[Callable[[str, Dict[str, Any]], Exception]] = None,
+) -> None:
     """Raise ENHANCE_OUTPUT_INVALID if the HTML references disallowed resources.
 
     ``allowed_bundles`` must be an iterable of objects with at least::
@@ -62,13 +69,19 @@ def validate_enhanced_html(html: str, allowed_bundles: Iterable[Any]) -> None:
     Args:
         html: Full HTML document returned by the LLM enhance step.
         allowed_bundles: Iterable of ``JSBundle`` instances from the template.
+        error_cls: Factory ``(code, detail) -> Exception`` used to build the
+            raised error. Defaults to ``InfographicValidationError`` for
+            backward compatibility; the interactive pipeline passes
+            ``InteractiveValidationError``.
 
     Raises:
-        InfographicValidationError: Code ``ENHANCE_OUTPUT_INVALID`` on any
-            policy violation.
+        Exception: Built by ``error_cls`` with code ``ENHANCE_OUTPUT_INVALID``
+            on any policy violation.
     """
-    # Inline import to avoid circular dependency at module load time.
-    from parrot.tools.infographic_toolkit import InfographicValidationError
+    if error_cls is None:
+        # Inline import to avoid circular dependency at module load time.
+        from parrot.tools.infographic_toolkit import InfographicValidationError
+        error_cls = InfographicValidationError
 
     collector = _ExternalResourceCollector()
     collector.feed(html)
@@ -85,7 +98,7 @@ def validate_enhanced_html(html: str, allowed_bundles: Iterable[Any]) -> None:
     for tag in collector.scripts:
         key = (tag["src"], tag.get("integrity"))
         if key not in cdn_index:
-            raise InfographicValidationError(
+            raise error_cls(
                 "ENHANCE_OUTPUT_INVALID",
                 {
                     "reason": "external script outside whitelist",
@@ -97,7 +110,7 @@ def validate_enhanced_html(html: str, allowed_bundles: Iterable[Any]) -> None:
     for tag in collector.links:
         key = (tag["href"], tag.get("integrity"))
         if key not in cdn_index:
-            raise InfographicValidationError(
+            raise error_cls(
                 "ENHANCE_OUTPUT_INVALID",
                 {
                     "reason": "external stylesheet outside whitelist",

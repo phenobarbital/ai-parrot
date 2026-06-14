@@ -1,0 +1,9 @@
+name: report
+description: >-
+  A long-form narrative report: prose body, an optional grid of charts, and a
+  footer. Mix diagrams, charts and grids. Best for analytical write-ups.
+default_theme: light
+allowed_bundles:
+  - echarts
+  - mermaid
+  - gridjs

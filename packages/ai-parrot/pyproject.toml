@@ -551,6 +551,14 @@ parrot = ["py.typed", "templates/*.tpl"]
 "parrot.knowledge.ontology.defaults" = ["*.yaml", "domains/*.yaml"]
 "parrot.forms.renderers" = ["templates/*.j2"]
 "parrot.flows.dev_loop" = ["_subagent_data/*.md"]
+# Interactive HTML artifact catalog (library specs + scaffold templates),
+# loaded from disk at runtime by parrot.tools.interactive.catalog_registry.
+"parrot.tools.interactive" = [
+    "catalog/*.md",
+    "catalog/libraries/*.md",
+    "catalog/templates/*.html",
+    "catalog/templates/*.meta.yaml",
+]
 "parrot.storage.security_reports" = ["*.sql"]
 # Runtime-loaded bundled pricing tables (calculator.py globs *.json here).
 "parrot.observability.cost.pricing" = ["*.json"]

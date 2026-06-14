@@ -1,0 +1,7 @@
+name: grid
+description: >-
+  An interactive, sortable, searchable data grid with a title and notes. Ideal
+  for tabular datasets the user needs to explore.
+default_theme: light
+allowed_bundles:
+  - gridjs

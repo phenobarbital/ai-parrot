@@ -25,6 +25,7 @@ Endpoints:
 """
 from __future__ import annotations
 
+import re as _re
 from typing import Optional
 from datetime import datetime, timezone
 
@@ -349,6 +350,14 @@ class ArtifactDetailView(BaseView):
                 js_bundles=bundles,
                 frame_ancestors=frame_ancestors_from_env(),
             )
+            # ?download=1 → offer the self-contained HTML as a downloadable file
+            # (the "open it and use it" delivery mode for interactive artifacts).
+            if self.request.query.get("download") in ("1", "true", "yes"):
+                safe_name = _re.sub(r"[^A-Za-z0-9._-]", "_", artifact_id) or "artifact"
+                csp_headers = {
+                    **dict(csp_headers),
+                    "Content-Disposition": f'attachment; filename="{safe_name}.html"',
+                }
             return web.Response(
                 text=html,
                 content_type="text/html",
