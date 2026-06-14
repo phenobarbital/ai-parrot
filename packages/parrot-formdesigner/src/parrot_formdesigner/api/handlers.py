@@ -1975,3 +1975,212 @@ class FormAPIHandler:
             return JSONResponse({"error": "Internal server error"}, status=500)
 
         return JSONResponse(result, status=202)
+
+    # ------------------------------------------------------------------
+    # FEAT-303 — Visit / Event Lifecycle endpoints
+    # ------------------------------------------------------------------
+
+    def _get_visit_service(self):
+        """Lazily initialise VisitService (in-memory storage for no-pool setups).
+
+        Mirrors the lazy-init pattern for FEAT-300/302 services.  In
+        production the app wires a real ``PostgresEventStorage`` by passing
+        ``event_storage=`` at handler construction time; tests use the
+        in-memory default.
+        """
+        if not hasattr(self, "_visit_service") or self._visit_service is None:
+            from ..services.visit.storage import InMemoryEventStorage
+            from ..services.visit.geofence import GeofenceValidator
+            from ..services.visit.visit_service import VisitService
+
+            storage = getattr(self, "_event_storage", None) or InMemoryEventStorage()
+            self._visit_service = VisitService(
+                event_storage=storage,
+                submission_storage=self._submission_storage,
+                partial_save_store=self._partial_store,
+                geofence_validator=GeofenceValidator(),
+                registry=self.registry,
+                tenant=self.registry.default_tenant,
+            )
+        return self._visit_service
+
+    async def create_event(self, request: web.Request) -> web.Response:
+        """POST /api/v1/visits/events — Create a new Event (with optional Shifts).
+
+        Request body (JSON):
+            ``org_node_id`` (str, required), ``recap_ids`` (list[str]),
+            ``shifts`` (list of shift dicts), ``meta`` (dict), etc.
+
+        Returns:
+            201: Created Event as JSON.
+            400: Invalid request body.
+        """
+        tenant = self._get_tenant(request)
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        if not body.get("org_node_id"):
+            return JSONResponse({"error": "org_node_id is required"}, status=400)
+
+        visit_service = self._get_visit_service()
+        # Ensure tenant is in payload
+        body.setdefault("tenant", tenant)
+        event = await visit_service._event_storage.load("__nonexistent__", tenant=tenant)
+
+        # Use EventService for proper validation
+        from ..services.visit.event_service import EventService
+
+        event_service = EventService(
+            storage=visit_service._event_storage,
+            registry=self.registry,
+            tenant=tenant,
+        )
+        try:
+            event = await event_service.create_event(body)
+        except Exception as exc:
+            self.logger.warning("create_event failed: %s", exc)
+            return JSONResponse({"error": str(exc)}, status=400)
+
+        return JSONResponse(event.model_dump(mode="json"), status=201)
+
+    async def visit_checkin(self, request: web.Request) -> web.Response:
+        """POST /api/v1/visits/{event_id}/shifts/{shift_id}/checkin — Check in.
+
+        Extracts ``staff_id`` from JWT claims (``sub``).
+
+        Request body (JSON):
+            ``lat`` (float, required), ``lon`` (float, required),
+            ``accuracy_m`` (float, optional).
+
+        Returns:
+            200: Updated Visit as JSON.
+            400: Invalid/missing GPS data.
+            404: Event or shift not found.
+            409: Visit already checked in.
+        """
+        tenant = self._get_tenant(request)
+        event_id = request.match_info.get("event_id", "")
+        shift_id = request.match_info.get("shift_id", "")
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        lat = body.get("lat")
+        lon = body.get("lon")
+        if lat is None or lon is None:
+            return JSONResponse({"error": "lat and lon are required"}, status=400)
+
+        from ..services.visit.models import GpsCoord
+        from ..services.visit.errors import VisitAlreadyCheckedInError
+
+        coord = GpsCoord(lat=float(lat), lon=float(lon),
+                         accuracy_m=body.get("accuracy_m"))
+
+        visit_service = self._get_visit_service()
+        visit_service._tenant = tenant
+
+        try:
+            visit = await visit_service.checkin(event_id, shift_id, coord, tenant=tenant)
+        except VisitAlreadyCheckedInError as exc:
+            return JSONResponse({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            msg = str(exc)
+            if "not found" in msg:
+                return JSONResponse({"error": msg}, status=404)
+            return JSONResponse({"error": msg}, status=400)
+
+        return JSONResponse(visit.model_dump(mode="json"), status=200)
+
+    async def visit_checkout(self, request: web.Request) -> web.Response:
+        """POST /api/v1/visits/{event_id}/shifts/{shift_id}/checkout — Check out.
+
+        Request body (JSON):
+            ``lat`` (float, required), ``lon`` (float, required),
+            ``submission_data`` (dict, optional — recap answers).
+
+        Returns:
+            200: Updated Visit as JSON.
+            400: Invalid/missing GPS data.
+            404: Event or shift not found.
+            409: GPS outside geofence (checkout blocked).
+        """
+        tenant = self._get_tenant(request)
+        event_id = request.match_info.get("event_id", "")
+        shift_id = request.match_info.get("shift_id", "")
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        lat = body.get("lat")
+        lon = body.get("lon")
+        if lat is None or lon is None:
+            return JSONResponse({"error": "lat and lon are required"}, status=400)
+
+        from ..services.visit.models import GpsCoord
+        from ..services.visit.errors import GeofenceViolationError
+
+        coord = GpsCoord(lat=float(lat), lon=float(lon),
+                         accuracy_m=body.get("accuracy_m"))
+        submission_data = body.get("submission_data") or {}
+
+        visit_service = self._get_visit_service()
+        visit_service._tenant = tenant
+
+        try:
+            visit = await visit_service.checkout(
+                event_id, shift_id, coord, submission_data, tenant=tenant
+            )
+        except GeofenceViolationError as exc:
+            return JSONResponse({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            msg = str(exc)
+            if "not found" in msg:
+                return JSONResponse({"error": msg}, status=404)
+            return JSONResponse({"error": msg}, status=400)
+
+        return JSONResponse(visit.model_dump(mode="json"), status=200)
+
+    async def visit_set_missed(self, request: web.Request) -> web.Response:
+        """POST /api/v1/visits/{event_id}/shifts/{shift_id}/missed — Set missed.
+
+        Request body (JSON):
+            ``reason_id`` (str, required).
+
+        Returns:
+            200: Updated Visit as JSON.
+            400: Missing reason_id.
+            404: Event or shift not found.
+        """
+        tenant = self._get_tenant(request)
+        event_id = request.match_info.get("event_id", "")
+        shift_id = request.match_info.get("shift_id", "")
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        reason_id = body.get("reason_id")
+        if not reason_id:
+            return JSONResponse({"error": "reason_id is required"}, status=400)
+
+        visit_service = self._get_visit_service()
+        visit_service._tenant = tenant
+
+        try:
+            visit = await visit_service.set_missed_reason(
+                event_id, shift_id, reason_id, tenant=tenant
+            )
+        except ValueError as exc:
+            msg = str(exc)
+            if "not found" in msg:
+                return JSONResponse({"error": msg}, status=404)
+            return JSONResponse({"error": msg}, status=400)
+
+        return JSONResponse(visit.model_dump(mode="json"), status=200)
