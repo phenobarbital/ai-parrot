@@ -15,7 +15,7 @@
       "feature_id": "FEAT-303",
       "feature": "visit-event-lifecycle",
       "spec": "sdd/specs/visit-event-lifecycle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -23,8 +23,8 @@
       "parallelism_notes": "Base module — models/storage/state machine; all others build on it.",
       "assigned_to": null,
       "started_at": "2026-06-14T07:51:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-303-1-event-shift-visit-models.md"
+      "completed_at": "2026-06-14T07:58:12+00:00",
+      "file": "sdd/tasks/completed/TASK-303-1-event-shift-visit-models.md"
     },
     {
       "id": "TASK-303-2",
