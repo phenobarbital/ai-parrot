@@ -45,6 +45,7 @@ from parrot.knowledge.pageindex.okf.migrate import (
     okf_migrate,
     MigrationReport,
 )
+from parrot.knowledge.pageindex.okf.tools import OKFToolkit
 
 __all__ = [
     "ConceptType",
@@ -67,4 +68,5 @@ __all__ = [
     "ProjectionReport",
     "okf_migrate",
     "MigrationReport",
+    "OKFToolkit",
 ]
