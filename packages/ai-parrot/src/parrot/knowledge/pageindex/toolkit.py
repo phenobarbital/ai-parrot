@@ -27,6 +27,7 @@ from typing import Any, Optional
 from parrot.tools.toolkit import AbstractToolkit
 from .builder import build_page_index
 from .content_store import NodeContentStore
+from .embedding_store import NodeEmbeddingStore
 from .hybrid_search import HybridPageIndexSearch
 from .ingest import IngestedMarkdown, TwoStepIngester
 from .llm_adapter import PageIndexLLMAdapter
@@ -68,6 +69,17 @@ class PageIndexToolkit(AbstractToolkit):
         default_bm25_k: Number of BM25 candidates fetched per query.
         folder_concurrency: Maximum concurrent file ingests during
             ``import_folder``.
+        embedding_model: Sentence-Transformers model identifier for
+            dense node embeddings (FEAT-237).  Defaults to the
+            ``EMBEDDING_DEFAULT_MODEL`` config value when embedding is
+            enabled.
+        embedding_dimension: Dimensionality of the embedding vectors.
+            Must match the selected model's output (or MRL truncation dim).
+        embedding_backend: Optional runtime backend for
+            ``SentenceTransformerModel`` — ``"onnx"``, ``"openvino"``, or
+            ``None`` (default torch).
+        use_vec_rank: Enable Phase A dense cosine-similarity ranking signal.
+        use_embedding_walk: Enable Phase B embedding-guided beam walk.
     """
 
     name = "pageindex"
@@ -83,6 +95,11 @@ class PageIndexToolkit(AbstractToolkit):
         default_bm25_k: int = 20,
         folder_concurrency: int = 4,
         content_cache_size: int = 256,
+        embedding_model: Optional[str] = None,
+        embedding_dimension: int = 256,
+        embedding_backend: Optional[str] = None,
+        use_vec_rank: bool = False,
+        use_embedding_walk: bool = False,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -100,6 +117,45 @@ class PageIndexToolkit(AbstractToolkit):
         self._model = model or adapter.model
         self._default_bm25_k = default_bm25_k
         self._folder_concurrency = max(1, folder_concurrency)
+        self._use_vec_rank = use_vec_rank
+        self._use_embedding_walk = use_embedding_walk
+
+        # ---- Embedding store (FEAT-237) ---------------------------------
+        # Constructed only when at least one embedding feature is enabled.
+        # When both are False, behaviour is identical to pre-FEAT-237.
+        self._embedding_store: Optional[NodeEmbeddingStore] = None
+        self._embed_fn = None
+        if use_vec_rank or use_embedding_walk:
+            from parrot.conf import EMBEDDING_DEFAULT_MODEL
+            from parrot.embeddings.registry import EmbeddingRegistry
+            emb_model_name = embedding_model or EMBEDDING_DEFAULT_MODEL
+            self._embedding_store = NodeEmbeddingStore(
+                storage_dir=storage_dir,
+                model_id=emb_model_name,
+                dimension=embedding_dimension,
+            )
+            _backend = embedding_backend  # closure captures value
+
+            def _make_embed_fn(name: str, backend: Optional[str]):
+                """Return a lazy-loading sync embed function."""
+                _raw_model = None
+
+                def _embed(texts: list[str]):
+                    nonlocal _raw_model
+                    if _raw_model is None:
+                        registry = EmbeddingRegistry.instance()
+                        kw = {}
+                        if backend is not None:
+                            kw["backend"] = backend
+                        wrapper = registry.get_or_create_sync(name, "huggingface", **kw)
+                        _raw_model = wrapper.model  # underlying SentenceTransformer
+                    import numpy as _np
+                    result = _raw_model.encode(texts, convert_to_numpy=True)
+                    return _np.asarray(result, dtype=_np.float32)
+
+                return _embed
+
+            self._embed_fn = _make_embed_fn(emb_model_name, _backend)
 
         self._trees: dict[str, dict[str, Any]] = {}
         self._search: dict[str, HybridPageIndexSearch] = {}
@@ -134,6 +190,10 @@ class PageIndexToolkit(AbstractToolkit):
                 model=self._model,
                 default_bm25_k=self._default_bm25_k,
                 content_loader=self._content_store.loader_for(tree_name),
+                embedding_store=self._embedding_store,
+                embed_fn=self._embed_fn,
+                use_vec_rank=self._use_vec_rank,
+                use_embedding_walk=self._use_embedding_walk,
             )
             self._search[tree_name] = engine
         return engine
