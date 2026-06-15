@@ -220,10 +220,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-15
+**Notes**: Created corpus/compliance_soc2_hipaa/ with manifest.yaml (4 sources),
+fetch.py (aiohttp downloader, SHA-256 verified, idempotent), build_tree.py
+(orchestrates PageIndexToolkit), and README with licensing notes.
+Added gitignore entries for raw/ and trees/. All 13 tests pass.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

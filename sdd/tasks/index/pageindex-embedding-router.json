@@ -132,7 +132,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Needs toolkit wiring complete to build tree via PageIndexToolkit",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1550-compliance-corpus.md"
+      "completed_at": "2026-06-15T14:39:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1550-compliance-corpus.md"
     },
     {
       "id": "TASK-1551",
