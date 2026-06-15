@@ -1027,7 +1027,7 @@ def create_api_key_mcp_server(
 
 def create_fireflies_mcp_server(
     *,
-    api_key: str,
+    api_key: Optional[str] = None,
     api_base: str = "https://api.fireflies.ai/mcp",
     **kwargs
 ) -> MCPServerConfig:
@@ -1035,14 +1035,25 @@ def create_fireflies_mcp_server(
 
     Fireflies MCP requires using npx mcp-remote as a command-line proxy.
 
+    The API key is resolved with the following precedence:
+      1. Explicit ``api_key`` argument.
+      2. ``FIREFLIES_API_KEY`` environment variable (via ``navconfig.config``).
+      3. ``ValueError`` if neither is available.
+
     Args:
-        api_key: Fireflies API key
+        api_key: Fireflies API key (optional; falls back to FIREFLIES_API_KEY env var)
         api_base: Base URL of the Fireflies MCP endpoint
         **kwargs: Additional MCPServerConfig parameters
 
     Returns:
         MCPServerConfig instance configured for stdio transport
+
+    Raises:
+        ValueError: When no API key is available from argument or environment.
     """
+    api_key = api_key or config.get('FIREFLIES_API_KEY')
+    if not api_key:
+        raise ValueError("FIREFLIES_API_KEY is required")
     return MCPServerConfig(
         name="fireflies",
         command="npx",
@@ -1347,13 +1358,18 @@ class MCPEnabledMixin:
 
     async def add_fireflies_mcp_server(
         self,
-        api_key: str,
+        api_key: Optional[str] = None,
         **kwargs
     ) -> List[str]:
         """Add Fireflies.ai MCP server capability.
 
+        The API key is resolved with the following precedence:
+          1. Explicit ``api_key`` argument.
+          2. ``FIREFLIES_API_KEY`` environment variable (via ``navconfig.config``).
+          3. ``ValueError`` if neither is available.
+
         Args:
-            api_key: Fireflies API key from Settings > Developer Settings
+            api_key: Fireflies API key (optional; falls back to FIREFLIES_API_KEY env var)
             **kwargs: Additional MCPServerConfig parameters
 
         Returns:
@@ -1363,6 +1379,8 @@ class MCPEnabledMixin:
             >>> tools = await agent.add_fireflies_mcp_server(
             ...     api_key="your-fireflies-api-key"
             ... )
+            >>> # Or rely on FIREFLIES_API_KEY env var:
+            >>> tools = await agent.add_fireflies_mcp_server()
         """
         config = create_fireflies_mcp_server(api_key=api_key, **kwargs)
         return await self.add_mcp_server(config)
