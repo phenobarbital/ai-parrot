@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-239
 **Date**: 2026-06-16
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.next
 **Brainstorm**: `sdd/proposals/graphindex-frontmatter.brainstorm.md`
 
@@ -732,8 +732,8 @@ No new external dependencies introduced.
 
 - [x] Should sidecars include full body text or just summary? — *Resolved in brainstorm Q&A*: Full body when content_ref resolves to PageIndex storage; fall back to summary otherwise.
 - [x] Should ConceptType extension be additive-only or also unify with aliases? — *Resolved in brainstorm Q&A*: Unify with aliases. The shared SECTION value is the same enum member; new graph-native types (SYMBOL, RATIONALE, SKILL, CONCEPT_NODE, DOCUMENT_NODE) are added.
-- [ ] Should `pageindex://` URIs in existing FEAT-238 documents be migrated to `knowledge://pageindex/...` in this FEAT, or deferred to a migration FEAT? — *Owner: Jesus*
-- [ ] Does the `knowledge://` URI scheme need formal registration (RFC-style) for OKF interoperability, or is a project-internal convention sufficient? — *Owner: Jesus*
+- [x] Should `pageindex://` URIs in existing FEAT-238 documents be migrated to `knowledge://pageindex/...` in this FEAT, or deferred to a migration FEAT? — *Owner: Jesus*: migrated
+- [x] Does the `knowledge://` URI scheme need formal registration (RFC-style) for OKF interoperability, or is a project-internal convention sufficient? — *Owner: Jesus*: formal registration
 
 ---
 
