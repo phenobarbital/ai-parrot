@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-15T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-15T21:41:53+00:00",
   "tasks": [
     {
       "id": "TASK-1552",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-238",
       "feature": "okf-knowledge-layer",
       "spec": "sdd/specs/okf-knowledge-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,7 +22,7 @@
       "parallelism_notes": "Leaf module with no shared files — can run in parallel with TASK-1553",
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
-      "completed_at": null,
+      "completed_at": "2026-06-15T21:41:53+00:00",
       "file": "sdd/tasks/active/TASK-1552-okf-ontology.md"
     },
     {
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-238",
       "feature": "okf-knowledge-layer",
       "spec": "sdd/specs/okf-knowledge-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,7 +40,7 @@
       "parallelism_notes": "Leaf module with no shared files — can run in parallel with TASK-1552",
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
-      "completed_at": null,
+      "completed_at": "2026-06-15T21:41:53+00:00",
       "file": "sdd/tasks/active/TASK-1553-okf-concept-id.md"
     },
     {
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-238",
       "feature": "okf-knowledge-layer",
       "spec": "sdd/specs/okf-knowledge-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,7 +60,7 @@
       "parallelism_notes": "Imports ConceptType from TASK-1552 — must run after ontology",
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
-      "completed_at": null,
+      "completed_at": "2026-06-15T21:41:53+00:00",
       "file": "sdd/tasks/active/TASK-1554-okf-frontmatter.md"
     },
     {
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-238",
       "feature": "okf-knowledge-layer",
       "spec": "sdd/specs/okf-knowledge-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -81,7 +81,7 @@
       "parallelism_notes": "Imports from ontology (TASK-1552) and uses concept_id keying (TASK-1553)",
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
-      "completed_at": null,
+      "completed_at": "2026-06-15T21:41:53+00:00",
       "file": "sdd/tasks/active/TASK-1555-okf-graph.md"
     },
     {
@@ -91,7 +91,7 @@
       "feature_id": "FEAT-238",
       "feature": "okf-knowledge-layer",
       "spec": "sdd/specs/okf-knowledge-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,7 +102,7 @@
       "parallelism_notes": "Imports from ontology and frontmatter — must run after TASK-1552 + TASK-1554",
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
-      "completed_at": null,
+      "completed_at": "2026-06-15T21:41:53+00:00",
       "file": "sdd/tasks/active/TASK-1556-okf-projection.md"
     },
     {
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-238",
       "feature": "okf-knowledge-layer",
       "spec": "sdd/specs/okf-knowledge-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -126,7 +126,7 @@
       "parallelism_notes": "Composes all prior modules — must run after all of TASK-1552 through TASK-1556",
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
-      "completed_at": null,
+      "completed_at": "2026-06-15T21:41:53+00:00",
       "file": "sdd/tasks/active/TASK-1557-okf-migrate.md"
     },
     {
@@ -136,7 +136,7 @@
       "feature_id": "FEAT-238",
       "feature": "okf-knowledge-layer",
       "spec": "sdd/specs/okf-knowledge-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -147,7 +147,7 @@
       "parallelism_notes": "Imports ontology enums and KnowledgeGraph — must run after TASK-1552 + TASK-1555",
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
-      "completed_at": null,
+      "completed_at": "2026-06-15T21:41:53+00:00",
       "file": "sdd/tasks/active/TASK-1558-okf-tools.md"
     },
     {
@@ -157,7 +157,7 @@
       "feature_id": "FEAT-238",
       "feature": "okf-knowledge-layer",
       "spec": "sdd/specs/okf-knowledge-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -173,7 +173,7 @@
       "parallelism_notes": "Wires all OKF modules into existing components — must run last",
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
-      "completed_at": null,
+      "completed_at": "2026-06-15T21:41:53+00:00",
       "file": "sdd/tasks/active/TASK-1559-okf-integration.md"
     }
   ]
