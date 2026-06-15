@@ -34,7 +34,11 @@ from parrot._imports import lazy_import  # noqa: F401 — used by subclasses for
 # Matryoshka truncation dimension.  The third element is None when no
 # truncation is requested, preserving backward-compat for all existing
 # callers that pass only (model_name, model_type).
-CacheKey = Tuple[str, str, Optional[int]]  # (model_name, model_type, matryoshka_dim)
+# FEAT-237: Extended to 5-tuple to include backend and file_name so that
+# two callers requesting different backends for the same model do not get
+# the same cached instance (cache key collision fix).
+CacheKey = Tuple[str, str, Optional[int], Optional[str], Optional[str]]
+# (model_name, model_type, matryoshka_dim, backend, file_name)
 
 
 @dataclass
@@ -188,13 +192,14 @@ class EmbeddingRegistry:
             # popitem(last=False) removes the *oldest* (LRU) entry
             evicted_key, evicted_model = self._cache.popitem(last=False)
             self._stats["evictions"] += 1
-            # evicted_key is a 3-tuple (model_name, model_type, matryoshka_dim)
+            # evicted_key is a 5-tuple (model_name, model_type, matryoshka_dim, backend, file_name)
             self.logger.warning(
-                "Evicting embedding model '%s' (type=%s, matryoshka_dim=%s) "
+                "Evicting embedding model '%s' (type=%s, matryoshka_dim=%s, backend=%s) "
                 "from cache (cache full: %d/%d)",
                 evicted_key[0],
                 evicted_key[1],
                 evicted_key[2] if len(evicted_key) > 2 else None,
+                evicted_key[3] if len(evicted_key) > 3 else None,
                 len(self._cache),
                 self._max_models,
             )
@@ -239,8 +244,12 @@ class EmbeddingRegistry:
         # using the same model with different truncation dims do not share
         # a cached instance.  A null third element (no truncation) is
         # backward-compatible with all pre-FEAT-150 callers.
+        # FEAT-237: also include backend and file_name to prevent collision
+        # when two callers request different backends for the same model.
         matryoshka_dim = self._extract_matryoshka_dim(kwargs)
-        key: CacheKey = (model_name, model_type, matryoshka_dim)
+        backend_val = kwargs.get("backend")
+        file_name_val = kwargs.get("file_name")
+        key: CacheKey = (model_name, model_type, matryoshka_dim, backend_val, file_name_val)
 
         # Fast path — already cached
         if key in self._cache:
@@ -326,11 +335,12 @@ class EmbeddingRegistry:
             model = self._cache.pop(key)
             self._async_locks.pop(key, None)
             self.logger.info(
-                "Unloading embedding model '%s' (type=%s, matryoshka_dim=%s) "
+                "Unloading embedding model '%s' (type=%s, matryoshka_dim=%s, backend=%s) "
                 "from registry",
                 model_name,
                 model_type,
                 key[2],
+                key[3] if len(key) > 3 else None,
             )
             try:
                 model.free()
@@ -362,8 +372,11 @@ class EmbeddingRegistry:
             A cached (or freshly created) ``EmbeddingModel`` instance.
         """
         # FEAT-150: include matryoshka_dim in the cache key (see get_or_create).
+        # FEAT-237: also include backend and file_name (see get_or_create).
         matryoshka_dim = self._extract_matryoshka_dim(kwargs)
-        key: CacheKey = (model_name, model_type, matryoshka_dim)
+        backend_val = kwargs.get("backend")
+        file_name_val = kwargs.get("file_name")
+        key: CacheKey = (model_name, model_type, matryoshka_dim, backend_val, file_name_val)
 
         # Fast path — no lock needed if already cached
         if key in self._cache:

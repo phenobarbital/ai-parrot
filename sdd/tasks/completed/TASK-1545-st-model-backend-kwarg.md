@@ -196,3 +196,12 @@ When you pick up this task:
 **Notes**: 
 
 **Deviations from spec**: none | describe if any
+
+---
+_Completion appended by sdd-worker_
+
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-15
+**Notes**: Added `backend: Optional[str] = None` and `file_name: Optional[str] = None` to `SentenceTransformerModel.__init__`. Both are stored as `self._backend` and `self._file_name` before super().__init__(). In `_create_embedding()`, `backend` is forwarded directly to `SentenceTransformer()` via `st_kwargs`, and `file_name` is forwarded via `st_kwargs["model_kwargs"] = {"file_name": ...}`. All 7 unit tests pass.
+
+**Deviations from spec**: Tests patch `sentence_transformers.SentenceTransformer` directly (not `parrot.embeddings.huggingface.SentenceTransformer`) because `SentenceTransformer` is loaded via `lazy_import()` at call time, not as a module-level attribute. This is functionally equivalent and correctly tests the forwarding behavior.

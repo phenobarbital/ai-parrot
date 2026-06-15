@@ -1,0 +1,68 @@
+# Compliance Corpus Manifest — SOC 2 + HIPAA
+#
+# This manifest pins source documents with SHA-256 checksums for reproducibility.
+# Run `python -m corpus.compliance_soc2_hipaa.fetch` to download verified copies.
+#
+# LICENSING NOTICE:
+#   Sources marked `redistributable: false` must NEVER be published or committed
+#   to any public repository.  Treat them as confidential internal material.
+#
+# SHA-256 hashes:
+#   Replace placeholders (null) after the first successful download using:
+#     python -m corpus.compliance_soc2_hipaa.fetch --compute-sha
+
+sources:
+  - name: "NIST SP 800-53 Rev 5"
+    description: >
+      Security and Privacy Controls for Information Systems and Organizations.
+      Comprehensive baseline of security controls used in SOC 2 audits and
+      FedRAMP compliance.
+    url: "https://csrc.nist.gov/extensions/nudp/services/json/nudp/framework/version/sp_800_53_5_1_1/element/all"
+    format: json
+    filename: nist_800_53_r5.json
+    sha256: null
+    redistributable: true
+    license: "Public Domain (NIST)"
+    category: ["SOC2", "FedRAMP"]
+
+  - name: "NIST Cybersecurity Framework 2.0"
+    description: >
+      NIST CSF 2.0 — the updated voluntary framework for managing cybersecurity
+      risk, widely referenced in SOC 2 Type II and vendor risk assessments.
+    url: "https://nvlpubs.nist.gov/nistpubs/CSWP/NIST.CSWP.29.pdf"
+    format: pdf
+    filename: nist_csf_2_0.pdf
+    sha256: null
+    redistributable: true
+    license: "Public Domain (NIST)"
+    category: ["SOC2", "Risk"]
+
+  - name: "AICPA Trust Services Criteria 2017 (with 2022 points)"
+    description: >
+      AICPA TSC 2017 — the authoritative criteria for SOC 2 attestations.
+      INTERNAL USE ONLY: this source may not be redistributed.
+      Obtain from the AICPA website (https://www.aicpa-cima.com/resources)
+      or your firm's internal document library.
+    url: null
+    format: pdf
+    filename: aicpa_tsc_2017.pdf
+    sha256: null
+    redistributable: false
+    license: "AICPA — internal use only. Do NOT publish."
+    category: ["SOC2"]
+    placement_note: >
+      Manually place the PDF at corpus/compliance_soc2_hipaa/raw/aicpa_tsc_2017.pdf
+      after downloading from the AICPA member portal.
+
+  - name: "HIPAA Security Rule (45 CFR Part 164)"
+    description: >
+      Health Insurance Portability and Accountability Act Security Rule —
+      45 CFR Part 164.  Governs technical and administrative safeguards for
+      electronic protected health information (ePHI).
+    url: "https://www.govinfo.gov/content/pkg/CFR-2023-title45-vol1/pdf/CFR-2023-title45-vol1-part164.pdf"
+    format: pdf
+    filename: hipaa_45cfr164_2023.pdf
+    sha256: null
+    redistributable: true
+    license: "Public Domain (US Government)"
+    category: ["HIPAA"]

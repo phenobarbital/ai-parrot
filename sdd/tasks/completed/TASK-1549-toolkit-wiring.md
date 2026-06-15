@@ -217,10 +217,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-15
+**Notes**: Added embedding_model/dimension/backend/use_vec_rank/use_embedding_walk to
+PageIndexToolkit.__init__. NodeEmbeddingStore constructed when either feature enabled.
+Lazy-loading _embed_fn closure uses EmbeddingRegistry.get_or_create_sync() + raw model.
+_search_for passes store/embed_fn/flags to HybridPageIndexSearch. All 7 tests pass.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

@@ -268,10 +268,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-15
+**Notes**: Created full benchmark harness package at benchmarks/pageindex_embedding_latency/.
+  - metrics.py: latency_percentiles (raises on empty), peak_rss_mb (Linux/macOS normalised),
+    recall_at_k (set-based, handles k=0 and empty relevant).
+  - harness.py: BLAS/OMP thread pinning at import, BENCHMARK_MATRIX, WARMUP_RUNS=3,
+    MIN_REPEATS=30, run_configuration + run_matrix, CLI via __main__.
+  - report.py: build_report() emits markdown table + recommendation gate; picks lowest p95.
+  - conftest_tree.py: session-scoped fixtures (compliance_tree_nodes, compliance_tree_oracle,
+    synthetic_tree_nodes) with fallback to 20-node synthetic tree for offline CI.
+  - README.md: usage, environment setup, metric interpretation, reproducibility notes.
+  - tests/benchmarks/test_benchmark_metrics.py: 24 tests, all pass (uses importlib.util
+    to bypass conftest.py sys.path interference from the main-repo benchmarks/ package).
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
