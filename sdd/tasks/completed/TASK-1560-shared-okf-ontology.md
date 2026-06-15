@@ -257,10 +257,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-06-16
+**Notes**: Created `parrot/knowledge/okf/` package with `ontology.py` containing
+all 16 ConceptType values and 12 RelationType values. Made `pageindex/okf/ontology.py`
+a thin re-export shim. All 39 tests pass (19 new + 20 updated FEAT-238 tests).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Updated 4 FEAT-238 tests in `test_okf_ontology.py` that
+checked hardcoded enum counts (11 and 8). After extension, counts are 16 and 12.
+Changed from exact set equality to `issubset()` for original value checks, and
+updated count assertions to new values. This was necessary because the spec's
+statement "all 20 FEAT-238 tests pass without modification" contradicts "extend
+ConceptType to 16 values." Backward-compatible API (imports, existing values)
+is fully preserved.
