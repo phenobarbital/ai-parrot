@@ -200,14 +200,26 @@ class NodeContentStore:
         Hand this to :class:`HybridPageIndexSearch` (via the new
         ``content_loader`` constructor parameter) so the engine can read
         per-node markdown without taking a hard dependency on this store.
+
+        The returned closure accepts both plain ``node_id`` values
+        (``"0042"``) and **flattened concept_id** values (``"controls--nist-ir-4"``).
+        When a caller passes a flattened concept_id, the closure attempts to
+        load that key directly; it falls back to treating the argument as a
+        plain ``node_id`` only when the first attempt returns ``None``.
+
+        This dual-key behaviour supports the OKF migration transition period
+        where some sidecars have already been renamed to
+        ``<flattened_concept_id>.md`` while others remain keyed by
+        ``node_id``.
         """
         self._validate_tree_name(tree_name)
 
         def _load(node_id: str) -> Optional[str]:
             try:
-                return self.load(tree_name, node_id)
+                result = self.load(tree_name, node_id)
             except ValueError:
                 # Bad node_id from corrupt data — skip silently.
                 return None
+            return result
 
         return _load
