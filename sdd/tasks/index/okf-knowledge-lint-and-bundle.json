@@ -14,7 +14,7 @@
       "feature_id": "FEAT-216",
       "feature": "okf-knowledge-lint-and-bundle",
       "spec": "sdd/specs/FEAT-216-okf-knowledge-lint-and-bundle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — must complete before lint and bundle tasks",
       "assigned_to": null,
       "started_at": "2026-06-15T23:55:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1565-concepttype-other-extension.md"
+      "completed_at": "2026-06-15T23:58:59+00:00",
+      "file": "sdd/tasks/completed/TASK-1565-concepttype-other-extension.md"
     },
     {
       "id": "TASK-1566",
