@@ -1,0 +1,133 @@
+{
+  "plan_version": 1,
+  "mode": "enrichment",
+  "total_queries": 18,
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "V1: Confirm registry model embed method/return type (embed_documents vs encode vs embed)",
+      "type": "grep",
+      "params": {"pattern": "def embed|def encode|embed_documents|def embed_text", "paths": ["packages/ai-parrot/src/parrot/embeddings/", "packages/ai-parrot-embeddings/src/parrot/embeddings/"]},
+      "priority": 1
+    },
+    {
+      "id": "Q002",
+      "intent": "V2: Confirm SentenceTransformerModel module path and backend kwarg support",
+      "type": "grep",
+      "params": {"pattern": "SentenceTransformerModel|class.*SentenceTransformer", "paths": ["packages/"]},
+      "priority": 1
+    },
+    {
+      "id": "Q003",
+      "intent": "V2 follow-up: Check sentence-transformers version in dependencies",
+      "type": "grep",
+      "params": {"pattern": "sentence.transformers|sentence_transformers", "paths": ["pyproject.toml", "packages/ai-parrot-embeddings/pyproject.toml"]},
+      "priority": 1
+    },
+    {
+      "id": "Q004",
+      "intent": "V3: Confirm dirty-mark method on HybridPageIndexSearch",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/pageindex/hybrid_search.py"},
+      "priority": 1
+    },
+    {
+      "id": "Q005",
+      "intent": "V4: Confirm leaf-node body access (text inline vs content_ref/NodeContentStore)",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/pageindex/store.py"},
+      "priority": 1
+    },
+    {
+      "id": "Q006",
+      "intent": "Verify HybridPageIndexSearch._bm25_rank, _llm_rank, _rrf_fuse method signatures",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/pageindex/hybrid_search.py"},
+      "priority": 1
+    },
+    {
+      "id": "Q007",
+      "intent": "Verify PageIndexRetriever.search and LLM walk implementation",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/pageindex/retriever.py"},
+      "priority": 2
+    },
+    {
+      "id": "Q008",
+      "intent": "Verify PageIndexToolkit._search_for and _strip_keys_in_place",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py"},
+      "priority": 2
+    },
+    {
+      "id": "Q009",
+      "intent": "Verify tree_ops.py: reindex_node_ids, splice_subtree, delete_node signatures",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/pageindex/tree_ops.py"},
+      "priority": 2
+    },
+    {
+      "id": "Q010",
+      "intent": "Verify EMBEDDING_MODELS catalog and EmbeddingModelEntry schema",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/embeddings/catalog.py"},
+      "priority": 1
+    },
+    {
+      "id": "Q011",
+      "intent": "Verify EmbeddingRegistry and get_or_create_sync",
+      "type": "grep",
+      "params": {"pattern": "class EmbeddingRegistry|get_or_create_sync|get_or_create", "paths": ["packages/ai-parrot/src/parrot/embeddings/"]},
+      "priority": 1
+    },
+    {
+      "id": "Q012",
+      "intent": "Verify conf.py: EMBEDDING_DEVICE, EMBEDDING_DEFAULT_MODEL, HUGGINGFACE_EMBEDDING_CACHE_DIR",
+      "type": "grep",
+      "params": {"pattern": "EMBEDDING_DEVICE|EMBEDDING_DEFAULT_MODEL|HUGGINGFACE_EMBEDDING_CACHE_DIR", "paths": ["packages/ai-parrot/src/parrot/conf.py"]},
+      "priority": 2
+    },
+    {
+      "id": "Q013",
+      "intent": "Verify prior art: HybridBM25Strategy in episodic memory (cosine_sim, score normalization)",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/memory/episodic/recall.py"},
+      "priority": 2
+    },
+    {
+      "id": "Q014",
+      "intent": "Verify prior art: EpisodeEmbeddingProvider (lazy load + asyncio.to_thread encode)",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/memory/episodic/embedding.py"},
+      "priority": 2
+    },
+    {
+      "id": "Q015",
+      "intent": "Verify NodeContentStore pattern and pageindex:// scheme",
+      "type": "grep",
+      "params": {"pattern": "NodeContentStore|pageindex://|content_ref", "paths": ["packages/ai-parrot/src/parrot/knowledge/pageindex/"]},
+      "priority": 2
+    },
+    {
+      "id": "Q016",
+      "intent": "Verify node schema: node_id, title, summary, prefix_summary, nodes structure",
+      "type": "grep",
+      "params": {"pattern": "node_id|prefix_summary|summary|content_ref", "paths": ["packages/ai-parrot/src/parrot/knowledge/pageindex/store.py"]},
+      "priority": 2
+    },
+    {
+      "id": "Q017",
+      "intent": "Check FEAT-150 Matryoshka truncation path in embedding registry",
+      "type": "grep",
+      "params": {"pattern": "matryoshka|truncat|MRL|reduce_dim", "paths": ["packages/ai-parrot/src/parrot/embeddings/"]},
+      "priority": 2
+    },
+    {
+      "id": "Q018",
+      "intent": "Git history: recent changes to pageindex module",
+      "type": "git_log",
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/pageindex/", "since": "3 months"},
+      "priority": 3
+    }
+  ]
+}

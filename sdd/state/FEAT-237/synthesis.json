@@ -1,0 +1,191 @@
+{
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/pageindex/hybrid_search.py",
+      "symbol": "HybridPageIndexSearch",
+      "lines": "43-291",
+      "role": "Primary edit target — add _vec_rank dense ranking signal, fuse into _rrf_fuse as third list, wire dirty flag for embedding matrix rebuild",
+      "evidence": ["F003", "F008"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/pageindex/retriever.py",
+      "symbol": "PageIndexRetriever.search",
+      "lines": "38-79",
+      "role": "Phase B target — embedding beam walk pre-filters or replaces the LLM walk that serializes entire tree to JSON",
+      "evidence": ["F008"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py",
+      "symbol": "PageIndexToolkit._search_for",
+      "lines": "126-139",
+      "role": "Construct and inject NodeEmbeddingStore into the search engine, mirroring content_loader wiring",
+      "evidence": ["F010"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/pageindex/content_store.py",
+      "symbol": "NodeContentStore",
+      "lines": "37-213",
+      "role": "Sibling pattern for NodeEmbeddingStore — LRU-cached sidecar store with loader_for() closure",
+      "evidence": ["F010"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/pageindex/tree_ops.py",
+      "symbol": "reindex_node_ids / splice_subtree / delete_node",
+      "lines": "16-104",
+      "role": "Confirms content-addressing requirement: every mutation rewrites all node_ids",
+      "evidence": ["F007"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-embeddings/src/parrot/embeddings/huggingface.py",
+      "symbol": "SentenceTransformerModel",
+      "lines": "111-393",
+      "role": "Add backend kwarg (onnx/openvino) to _create_embedding; encode() returns np.ndarray for matmul",
+      "evidence": ["F001", "F002"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/embeddings/catalog.py",
+      "symbol": "EmbeddingModelEntry / EMBEDDING_MODELS",
+      "lines": "36-1352",
+      "role": "Add backend field to schema; add Qwen3-Embedding-0.6B, multilingual-e5-small, potion-multilingual entries",
+      "evidence": ["F005"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/embeddings/registry.py",
+      "symbol": "EmbeddingRegistry",
+      "lines": "51-447",
+      "role": "Reuse get_or_create path; backend kwarg flows through to model constructor via _build_model **kwargs",
+      "evidence": ["F006"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/embeddings/matryoshka.py",
+      "symbol": "MatryoshkaConfig / validate_against_catalog",
+      "lines": "1-128",
+      "role": "FEAT-150 MRL truncation — reuse for dim reduction (e.g. 1024→256) on PageIndex node embeddings",
+      "evidence": ["F009"],
+      "confidence": "high"
+    }
+  ],
+  "constraints": [
+    {
+      "claim": "SentenceTransformerModel.encode() returns np.ndarray — use this for matmul, not embed_documents",
+      "confidence": "high",
+      "evidence": ["F001"]
+    },
+    {
+      "claim": "sentence-transformers >= 5.0.0 supports backend='onnx'|'openvino' in SentenceTransformer constructor but _create_embedding does not yet forward this kwarg",
+      "confidence": "high",
+      "evidence": ["F002"]
+    },
+    {
+      "claim": "HybridPageIndexSearch has public mark_dirty() method — reuse for embedding matrix invalidation",
+      "confidence": "high",
+      "evidence": ["F003"]
+    },
+    {
+      "claim": "Leaf-node body accessed via NodeContentStore sidecars (content_loader closure) or inline text field; for embedding text target, title+summary is available on all nodes",
+      "confidence": "high",
+      "evidence": ["F004"]
+    },
+    {
+      "claim": "EmbeddingModelEntry schema lacks a 'backend' field — must be added to support ONNX/OpenVINO model entries",
+      "confidence": "high",
+      "evidence": ["F005"]
+    },
+    {
+      "claim": "Octen-Embedding-0.6B (Qwen3 derivative) already in catalog; Qwen3-Embedding-0.6B itself is NOT — add as separate entry",
+      "confidence": "high",
+      "evidence": ["F005"]
+    },
+    {
+      "claim": "multilingual-e5-small NOT in catalog (only e5-base/large); potion-multilingual NOT in catalog — both need new entries",
+      "confidence": "high",
+      "evidence": ["F005"]
+    },
+    {
+      "claim": "Node IDs are rewritten by reindex_node_ids on every tree mutation — embedding cache MUST be content-addressed",
+      "confidence": "high",
+      "evidence": ["F007"]
+    },
+    {
+      "claim": "PageIndexRetriever.search() serializes entire tree to JSON in one LLM call — confirms scaling concern",
+      "confidence": "high",
+      "evidence": ["F008"]
+    },
+    {
+      "claim": "FEAT-150 Matryoshka path is production-proven: MatryoshkaConfig + validate_against_catalog + _apply_matryoshka slice+renorm",
+      "confidence": "high",
+      "evidence": ["F009"]
+    },
+    {
+      "claim": "NodeContentStore LRU-cached sidecar pattern is the template for NodeEmbeddingStore",
+      "confidence": "high",
+      "evidence": ["F010"]
+    }
+  ],
+  "hypotheses": [
+    {
+      "statement": "Phase A (dense-as-third-RRF-input) can be implemented with minimal risk by adding _vec_rank to HybridPageIndexSearch, building a per-tree (N,d) numpy matrix from node title+summary embeddings via EmbeddingRegistry, and fusing into the existing _rrf_fuse. NodeEmbeddingStore mirrors NodeContentStore as a content-addressed sidecar. Dirty flag triggers lazy rebuild. All embedding infrastructure (registry, Matryoshka truncation, model catalog) already exists.",
+      "confidence": "high",
+      "evidence": ["F001", "F003", "F005", "F006", "F009", "F010"],
+      "scope": "Phase A — dense ranking signal"
+    },
+    {
+      "statement": "Phase B (embedding-guided beam walk) replaces the full-tree JSON serialization in PageIndexRetriever.search() with O(depth) local matmuls over child-set embedding submatrices. This is higher risk but addresses a confirmed scaling concern.",
+      "confidence": "medium",
+      "evidence": ["F008"],
+      "scope": "Phase B — beam walk"
+    },
+    {
+      "statement": "Backend support (ONNX/OpenVINO) for CPU-optimized inference requires a targeted change to SentenceTransformerModel._create_embedding() plus a new optional 'backend' field on EmbeddingModelEntry. The sentence-transformers library already supports this; the gap is only in the parrot wrapper.",
+      "confidence": "high",
+      "evidence": ["F002", "F005"],
+      "scope": "Backend support for CPU benchmark"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should Qwen3-Embedding-0.6B be the default model, or should we benchmark first and let the results decide? The Octen derivative (already in catalog) may suffice.",
+      "impacts_claims": ["C6"],
+      "plausible_answers": [
+        "Benchmark-first: add both Qwen3 and Octen to the benchmark matrix, pick winner based on CPU latency + recall@k",
+        "Default to Octen-Embedding-0.6B since it's already in catalog and domain-tuned for legal/finance"
+      ]
+    },
+    {
+      "id": "U2",
+      "question": "For the compliance corpus (§7.A), should AICPA TSC sources be included in the manifest for internal-only grounding, or restricted to public-domain NIST sources only?",
+      "impacts_claims": [],
+      "plausible_answers": [
+        "Internal-only: include AICPA sources with redistributable=false flag for richer SOC 2 grounding",
+        "Public-domain only: NIST 800-53/CSF mappings as SOC 2 control backbone, simpler licensing"
+      ]
+    },
+    {
+      "id": "U3",
+      "question": "What should the default embedding text target be — title+summary only, or include prefix_summary / first-N chars of leaf body for better leaf discrimination?",
+      "impacts_claims": [],
+      "plausible_answers": [
+        "title+summary only — consistent across all nodes, fast to compute, matches existing BM25 corpus text",
+        "title+summary+first_512_chars_body — better leaf discrimination at cost of more text to embed"
+      ]
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "All brainstorm codebase anchors are verified (high confidence). Architecture options are well-grounded. Phase A is low-risk and well-scoped. The spec should formalize the phased approach (A first, B behind flag) and resolve the 3 remaining unknowns."
+  },
+  "recent_history": {
+    "summary": "PageIndex module was recently reorganized (move-pageindex-kb, TASK-1328) and had imports cleaned up. No recent changes to hybrid_search.py or retriever.py logic — the codebase is stable for this feature."
+  }
+}
