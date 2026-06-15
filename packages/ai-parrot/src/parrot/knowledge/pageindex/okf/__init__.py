@@ -19,10 +19,18 @@ from parrot.knowledge.pageindex.okf.ontology import (
     RelatesTo,
     SourceProvenance,
 )
+from parrot.knowledge.pageindex.okf.concept_id import (
+    derive_concept_id,
+    dedup_concept_ids,
+    assign_concept_ids,
+)
 
 __all__ = [
     "ConceptType",
     "RelationType",
     "RelatesTo",
     "SourceProvenance",
+    "derive_concept_id",
+    "dedup_concept_ids",
+    "assign_concept_ids",
 ]
