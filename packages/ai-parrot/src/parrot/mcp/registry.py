@@ -174,8 +174,12 @@ _REGISTRY: List[MCPServerDescriptor] = [
             MCPServerParam(
                 name="api_key",
                 type=MCPParamType.SECRET,
-                required=True,
-                description="Fireflies API key from app.fireflies.ai/account",
+                required=False,
+                default=None,
+                description=(
+                    "Fireflies API key from app.fireflies.ai/account "
+                    "(optional; falls back to FIREFLIES_API_KEY env var)"
+                ),
             ),
         ],
     ),
