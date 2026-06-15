@@ -136,7 +136,7 @@
       "feature_id": "FEAT-238",
       "feature": "okf-knowledge-layer",
       "spec": "sdd/specs/okf-knowledge-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -147,8 +147,8 @@
       "parallelism_notes": "Imports ontology enums and KnowledgeGraph — must run after TASK-1552 + TASK-1555",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1558-okf-tools.md"
+      "completed_at": "2026-06-15T17:13:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1558-okf-tools.md"
     },
     {
       "id": "TASK-1559",
