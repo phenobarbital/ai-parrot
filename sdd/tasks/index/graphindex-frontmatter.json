@@ -14,14 +14,14 @@
       "feature_id": "FEAT-239",
       "feature": "graphindex-frontmatter",
       "spec": "sdd/specs/graphindex-frontmatter.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task — creates the shared package that all subsequent tasks depend on.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-15T23:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1560-shared-okf-ontology.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-239",
       "feature": "graphindex-frontmatter",
       "spec": "sdd/specs/graphindex-frontmatter.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1560"],
+      "depends_on": [
+        "TASK-1560"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1560 for the shared okf package. Modifies the same __init__.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-15T23:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1561-shared-okf-frontmatter.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-239",
       "feature": "graphindex-frontmatter",
       "spec": "sdd/specs/graphindex-frontmatter.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1560"],
+      "depends_on": [
+        "TASK-1560"
+      ],
       "parallel": true,
       "parallelism_notes": "Only depends on the shared package existing (TASK-1560). Touches no files shared with TASK-1561. Could run in parallel with TASK-1561.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-15T23:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1562-knowledge-uri-scheme.md"
     },
@@ -68,14 +72,17 @@
       "feature_id": "FEAT-239",
       "feature": "graphindex-frontmatter",
       "spec": "sdd/specs/graphindex-frontmatter.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1561", "TASK-1562"],
+      "depends_on": [
+        "TASK-1561",
+        "TASK-1562"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports from both shared frontmatter (TASK-1561) and URI module (TASK-1562). Must wait for both.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-15T23:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1563-graphindex-projection.md"
     },
@@ -86,14 +93,16 @@
       "feature_id": "FEAT-239",
       "feature": "graphindex-frontmatter",
       "spec": "sdd/specs/graphindex-frontmatter.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1563"],
+      "depends_on": [
+        "TASK-1563"
+      ],
       "parallel": false,
       "parallelism_notes": "Wires projection into the build pipeline. Must have the full projection module available.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-15T23:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1564-builder-analytics-integration.md"
     }
