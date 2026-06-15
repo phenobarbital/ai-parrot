@@ -94,6 +94,8 @@ class EmbeddingModelEntry(BaseModel):
     recommended_search_limit: int = Field(ge=1, le=100)
     # Existing optional field
     matryoshka_dimensions: Optional[list[int]] = None
+    # FEAT-237: Optional inference backend for ONNX/OpenVINO CPU-optimised models.
+    backend: Optional[Literal["torch", "onnx", "openvino"]] = None
 
     @model_validator(mode="after")
     def _prefix_consistency(self) -> "EmbeddingModelEntry":
@@ -1070,6 +1072,83 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "hnsw_compatible": True,
         "license": "apache-2.0",
         "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
+    },
+
+    # -- FEAT-237 Benchmark Matrix ----------------------------------------
+    {
+        "model": "Qwen/Qwen3-Embedding-0.6B",
+        "provider": "huggingface",
+        "name": "Qwen3 Embedding 0.6B",
+        "dimension": 1024,
+        "multilingual": True,
+        "language": "multi",
+        "use_case": ["retrieval", "multilingual", "long-context"],
+        "matryoshka_dimensions": [64, 128, 256, 512, 1024],
+        "description": (
+            "1024-dim 0.6B-parameter multilingual retrieval model from Qwen. "
+            "32K-token context with Matryoshka support (64 to 1024 dims). "
+            "Strong baseline for CPU-optimised PageIndex embedding. Apache-2.0. "
+            "ONNX backend supported via sentence-transformers>=5.0.0."
+        ),
+        "metric_recommended": "cosine",
+        "requires_prefix": False,
+        "prefix_query": None,
+        "prefix_passage": None,
+        "normalized_output": True,
+        "max_seq_length": 32768,
+        "hnsw_compatible": True,
+        "license": "apache-2.0",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
+    },
+    {
+        "model": "intfloat/multilingual-e5-small",
+        "provider": "huggingface",
+        "name": "Multilingual E5 Small",
+        "dimension": 384,
+        "multilingual": True,
+        "language": "multi",
+        "use_case": ["retrieval", "multilingual", "asymmetric"],
+        "description": (
+            "384-dim lightweight multilingual model (100+ languages). "
+            "Fast CPU inference; good baseline for multilingual retrieval "
+            "in resource-constrained environments. MIT license."
+        ),
+        "metric_recommended": "cosine",
+        "requires_prefix": True,
+        "prefix_query": "query: ",
+        "prefix_passage": "passage: ",
+        "normalized_output": True,
+        "max_seq_length": 512,
+        "hnsw_compatible": True,
+        "license": "mit",
+        "recommended_score_threshold": 0.70,
+        "recommended_search_limit": 10,
+    },
+    {
+        "model": "minishlab/potion-base-8M",
+        "provider": "huggingface",
+        "name": "Potion Base 8M",
+        "dimension": 256,
+        "multilingual": True,
+        "language": "multi",
+        "use_case": ["similarity", "retrieval", "multilingual"],
+        "description": (
+            "256-dim ultra-lightweight static embedding model (8M params, "
+            "model2vec/static architecture). Extremely fast CPU inference "
+            "with no transformer computation. MIT license. Ideal for "
+            "latency-critical on-device PageIndex deployments."
+        ),
+        "metric_recommended": "cosine",
+        "requires_prefix": False,
+        "prefix_query": None,
+        "prefix_passage": None,
+        "normalized_output": True,
+        "max_seq_length": 512,
+        "hnsw_compatible": True,
+        "license": "mit",
+        "recommended_score_threshold": 0.45,
         "recommended_search_limit": 10,
     },
 
