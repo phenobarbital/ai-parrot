@@ -29,6 +29,11 @@ from parrot.knowledge.pageindex.okf.frontmatter import (
     project_frontmatter,
     parse_frontmatter,
 )
+from parrot.knowledge.pageindex.okf.graph import (
+    KnowledgeGraph,
+    build_graph,
+    parse_markdown_links,
+)
 
 __all__ = [
     "ConceptType",
@@ -41,4 +46,7 @@ __all__ = [
     "ConceptFrontmatter",
     "project_frontmatter",
     "parse_frontmatter",
+    "KnowledgeGraph",
+    "build_graph",
+    "parse_markdown_links",
 ]
