@@ -112,7 +112,7 @@
       "feature_id": "FEAT-238",
       "feature": "okf-knowledge-layer",
       "spec": "sdd/specs/okf-knowledge-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "Composes all prior modules — must run after all of TASK-1552 through TASK-1556",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1557-okf-migrate.md"
+      "completed_at": "2026-06-15T17:11:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1557-okf-migrate.md"
     },
     {
       "id": "TASK-1558",
