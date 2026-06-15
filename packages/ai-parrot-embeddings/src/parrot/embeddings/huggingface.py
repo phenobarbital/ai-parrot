@@ -109,8 +109,7 @@ class ModelType(Enum):
 
 
 class SentenceTransformerModel(EmbeddingModel):
-    """
-    A wrapper class for HuggingFace sentence-transformers embeddings.
+    """A wrapper class for HuggingFace sentence-transformers embeddings.
 
     Supports optional Matryoshka Representation Learning (MRL) truncation via
     the ``matryoshka`` kwarg.  When enabled, ``embed_documents`` and
@@ -124,6 +123,9 @@ class SentenceTransformerModel(EmbeddingModel):
     rely on ``SentenceTransformer.encode(truncate_dim=N)`` because that
     parameter is only available in newer sentence-transformers versions and the
     project does not pin to those.
+
+    FEAT-237: Added ``backend`` and ``file_name`` kwargs for ONNX/OpenVINO
+    CPU-optimised inference via ``sentence-transformers>=5.0.0``.
     """
 
     model_name: str = "sentence-transformers/all-mpnet-base-v2"
@@ -132,6 +134,8 @@ class SentenceTransformerModel(EmbeddingModel):
         self,
         model_name: str,
         matryoshka: Optional[dict] = None,
+        backend: Optional[str] = None,
+        file_name: Optional[str] = None,
         **kwargs,
     ):
         """Initializes the embedding model with the specified model name.
@@ -141,6 +145,15 @@ class SentenceTransformerModel(EmbeddingModel):
             matryoshka: Optional Matryoshka truncation config dict with shape
                 ``{"enabled": bool, "dimension": int}``.  When ``None`` or
                 ``{}`` the model behaves exactly as before FEAT-150.
+            backend: Optional inference backend for CPU-optimised inference.
+                One of ``"torch"`` (default), ``"onnx"``, or ``"openvino"``.
+                Requires ``sentence-transformers>=5.0.0`` and the corresponding
+                optional runtime (``optimum[onnxruntime]`` or ``openvino``).
+                When ``None``, defaults to standard torch behaviour.
+            file_name: Optional quantized model filename within the model repo,
+                e.g. ``"model_quantized.onnx"`` for ONNX int8 quantized models.
+                Forwarded to ``SentenceTransformer`` via ``model_kwargs``.
+                Only used when ``backend`` is set; has no effect otherwise.
             **kwargs: Additional keyword arguments forwarded to the parent
                 ``EmbeddingModel.__init__`` and ultimately to
                 ``SentenceTransformer``.
@@ -150,6 +163,10 @@ class SentenceTransformerModel(EmbeddingModel):
                 is not in the catalog, has no ``matryoshka_dimensions``, or the
                 requested dimension is not in the allowed list.
         """
+        # FEAT-237: Store backend/file_name BEFORE super().__init__ so that
+        # _create_embedding (called lazily on first .model access) picks them up.
+        self._backend: Optional[str] = backend
+        self._file_name: Optional[str] = file_name
         super().__init__(model_name=model_name, **kwargs)
         # Resolve model-family prefixes once at construction so
         # embed_documents / embed_query stay hot-path cheap. See
@@ -359,6 +376,15 @@ class SentenceTransformerModel(EmbeddingModel):
         }
         if model_name in _TRUST_REMOTE_CODE_MODELS:
             st_kwargs["trust_remote_code"] = True
+        # FEAT-237: Forward backend and file_name to SentenceTransformer
+        # when explicitly set. backend selects the inference runtime
+        # (torch/onnx/openvino); file_name selects a specific quantized
+        # checkpoint file within the HuggingFace model repo.
+        if self._backend is not None:
+            st_kwargs["backend"] = self._backend
+        if self._file_name is not None:
+            # sentence-transformers passes file-level kwargs via model_kwargs.
+            st_kwargs["model_kwargs"] = {"file_name": self._file_name}
         try:
             model = SentenceTransformer(model_name, **st_kwargs)
         finally:
