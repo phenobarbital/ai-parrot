@@ -1642,7 +1642,20 @@ class AgentTalk(BaseView):
         # output_mode = self._get_output_mode(self.request)
         # Determine output format
         output_format = self._get_output_format(data, qs)
+        # Coerce the request's output_mode to a valid OutputMode enum member.
+        # Unknown values (e.g. a frontend mode the backend doesn't implement)
+        # fall back to DEFAULT instead of leaking a raw string into bot.ask(),
+        # which would crash the renderer dispatch with "No renderer registered".
         output_mode = data.pop('output_mode', OutputMode.DEFAULT)
+        if isinstance(output_mode, str):
+            try:
+                output_mode = OutputMode(output_mode.lower())
+            except ValueError:
+                self.logger.warning(
+                    "Unknown output_mode '%s' in request; falling back to DEFAULT.",
+                    output_mode,
+                )
+                output_mode = OutputMode.DEFAULT
 
         # Extract parameters for ask()
         search_type = data.pop('search_type', 'similarity')
@@ -1670,15 +1683,12 @@ class AgentTalk(BaseView):
                 request_session=request_session,
             )
 
-        # Override with explicit parameter if provided
-        if 'output_mode' in data:
-            with contextlib.suppress(ValueError):
-                output_mode = OutputMode(data.pop('output_mode'))
-
         # FEAT-197: Infographic mode is not compatible with streaming — the
         # final envelope must carry the signed URL atomically.
-        if output_mode == OutputMode.INFOGRAPHIC:
-            use_stream = False  # force-disable streaming for this mode
+        if output_mode in (OutputMode.INFOGRAPHIC, OutputMode.INTERACTIVE):
+            # These modes attach an artifact (signed URL) that must be delivered
+            # atomically in the final envelope — incompatible with streaming.
+            use_stream = False  # force-disable streaming for these modes
 
         # Prepare ask() parameters
         format_kwargs = data.pop('format_kwargs', {})

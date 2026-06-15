@@ -4,7 +4,7 @@ BaseBot - Concrete implementation of AbstractBot.
 This module provides BaseBot, a concrete implementation of the AbstractBot
 abstract base class. It implements all required abstract methods.
 """
-from typing import Optional, Union, Type, AsyncIterator, Any
+from typing import Optional, Union, Type, AsyncIterator, Any, List
 from collections.abc import Callable
 import inspect
 import logging
@@ -25,6 +25,15 @@ from .prompts import (
 )
 from .abstract import AbstractBot
 from ..models.status import AgentStatus
+
+
+def _get_interactive_result_class() -> Optional[type]:
+    """Lazy import of ``InteractiveRenderResult`` (avoids circular deps)."""
+    try:
+        from ..models.interactive import InteractiveRenderResult as _cls
+        return _cls
+    except ImportError:
+        return None
 # FEAT-176: Lifecycle Events
 from parrot.core.events.lifecycle.trace import TraceContext
 from parrot.core.events.lifecycle.events import (
@@ -779,6 +788,55 @@ class BaseBot(AbstractBot):
         or perform other post-response processing. Called fire-and-forget.
         """
 
+    def _extract_last_interactive_result(
+        self, tool_calls: Optional[List[Any]],
+    ) -> Optional[Any]:
+        """Return the last ``InteractiveRenderResult`` from the tool calls list."""
+        if not tool_calls:
+            return None
+        cls = _get_interactive_result_class()
+        if cls is None:
+            return None
+        for tc in reversed(tool_calls):
+            result = getattr(tc, "result", None)
+            if isinstance(result, cls):
+                return result
+        return None
+
+    def _finalize_interactive_response(
+        self, response: Any, envelope: Any,
+    ) -> Optional[str]:
+        """Apply an ``InteractiveRenderResult`` to the agent response in place.
+
+        Sets ``OutputMode.HTML`` (there is no ``interactive`` renderer — the
+        ``interactive_*`` tools produce the artifact) and records
+        ``libraries_used`` in metadata.
+        """
+        explanation = getattr(response, "response", None)
+        if not explanation and isinstance(response.output, str):
+            explanation = response.output
+
+        response.output = envelope.html_inline or envelope.html_url
+        response.output_mode = OutputMode.HTML
+        response.artifact_id = envelope.artifact_id
+        if explanation:
+            response.response = explanation
+
+        meta = dict(getattr(response, "metadata", None) or {})
+        meta.update({
+            "html_url": envelope.html_url,
+            "html_inline_omitted": envelope.html_inline is None,
+            "enhanced": envelope.enhanced,
+            "template_name": envelope.template_name,
+            "theme": envelope.theme,
+            "libraries_used": getattr(envelope, "libraries_used", []),
+            "explanation": explanation,
+        })
+        if hasattr(response, "metadata"):
+            response.metadata = meta
+
+        return explanation
+
     async def ask(
         self,
         question: str,
@@ -1224,9 +1282,39 @@ class BaseBot(AbstractBot):
                             response.data = self._sanitize_tool_data(tool_call.result)
                             break
 
+                # Tool-driven interactive HTML artifact: when the agent's
+                # ``interactive_render`` tool produced an InteractiveRenderResult,
+                # finalize it to an HTML artifact and bypass the renderer dispatch
+                # entirely. There is NO ``interactive`` renderer — the mode is a
+                # request-side signal handled by the ``interactive_*`` tools.
+                interactive_envelope = self._extract_last_interactive_result(
+                    getattr(response, "tool_calls", None)
+                )
+                if interactive_envelope is not None:
+                    self._finalize_interactive_response(response, interactive_envelope)
+                    self.logger.info(
+                        "InteractiveRenderResult detected — bypassing formatter: "
+                        "artifact_id=%s enhanced=%s",
+                        interactive_envelope.artifact_id,
+                        interactive_envelope.enhanced,
+                    )
+                elif output_mode == OutputMode.INTERACTIVE:
+                    # Interactive mode was requested but no artifact was produced
+                    # (toolkit not registered, or the LLM answered in prose).
+                    # Downgrade to DEFAULT so we don't dispatch to a renderer
+                    # that doesn't exist.
+                    self.logger.warning(
+                        "output_mode=interactive requested but no interactive "
+                        "artifact was produced; falling back to plain response."
+                    )
+                    output_mode = OutputMode.DEFAULT
+                    response.output_mode = OutputMode.DEFAULT
+
                 # Determine output mode
                 format_kwargs = format_kwargs or {}
-                if output_mode in [
+                if interactive_envelope is not None:
+                    pass  # already finalized above — skip the formatter
+                elif output_mode in [
                     OutputMode.TELEGRAM,
                     OutputMode.MSTEAMS,
                 ]:

@@ -345,7 +345,7 @@ class DatabaseAgent(BasicAgent):
 
     async def ask(
         self,
-        query: str,
+        question: str,
         user_role: Optional[UserRole] = None,
         database: Optional[str] = None,
         context: Optional[str] = None,
@@ -365,7 +365,10 @@ class DatabaseAgent(BasicAgent):
           3. ``default_user_role`` fallback
 
         Args:
-            query: Natural-language query or SQL.
+            question: Natural-language query or SQL. Named ``question`` to honor
+                the universal ``AbstractBot.ask`` contract (the HTTP handler and
+                every sibling bot call ``ask(question=...)``); aliased internally
+                to ``query`` for the SQL-centric logic below.
             user_role: Explicit role override (highest priority).
             database: Explicit toolkit identifier.
             context: Additional context string injected into the prompt.
@@ -383,6 +386,10 @@ class DatabaseAgent(BasicAgent):
         Returns:
             ``AIMessage`` with the formatted response and unpacked ``QueryResponse``.
         """
+        # Internal alias: the parameter is named ``question`` to match the
+        # universal ask() contract, but the SQL-routing logic below reads
+        # ``query``.
+        query = question
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
 

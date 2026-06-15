@@ -62,6 +62,7 @@ class OutputMode(str, Enum):
     WHATSAPP = "whatsapp"
     SLACK = "slack"
     INFOGRAPHIC = "infographic"
+    INTERACTIVE = "interactive"  # Tool-driven interactive HTML artifact (canvas); finalized to OutputMode.HTML
     SQL_ANALYSIS = "sql_analysis"  # DBA helper: QueryResponse with explanation + SQL artifact
     STRUCTURED_CHART = "structured_chart"  # Library-agnostic chart config (AppChartConfig mirror)
     STRUCTURED_TABLE = "structured_table"  # Framework-agnostic table config (FEAT-218)
