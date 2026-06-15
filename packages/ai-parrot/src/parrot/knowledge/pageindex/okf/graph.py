@@ -23,6 +23,7 @@ import re
 from typing import Any, Callable, Optional
 
 from parrot.knowledge.pageindex.okf.ontology import RelationType
+from parrot.knowledge.pageindex.okf.projection import flatten_concept_id_for_filename
 from parrot.knowledge.pageindex.utils import structure_to_list
 
 
@@ -253,8 +254,6 @@ def build_graph(
     Returns:
         Fully built ``KnowledgeGraph``.
     """
-    from parrot.knowledge.pageindex.okf.projection import flatten_concept_id_for_filename
-
     graph = KnowledgeGraph(tree)
     nodes = structure_to_list(tree.get("structure", []))
     for node in nodes:

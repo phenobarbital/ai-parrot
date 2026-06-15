@@ -106,11 +106,16 @@ def _strip_frontmatter(content: str) -> str:
     """
     if not content.startswith("---\n"):
         return content
-    # Find the closing ---
-    second_start = content.find("\n---", 4)
+    # Find the closing "---" on its own line (must be followed by \n or EOF).
+    # Using "\n---\n" avoids matching "---more-text" as a closing delimiter.
+    second_start = content.find("\n---\n", 4)
     if second_start == -1:
+        # Tolerate "---" at the very end of the string (no trailing newline)
+        if content.endswith("\n---"):
+            second_start = len(content) - 4
+            return content[second_start + 4:]
         return content
-    return content[second_start + 4:].lstrip("\n")
+    return content[second_start + 5:].lstrip("\n")
 
 
 def project_sidecars(

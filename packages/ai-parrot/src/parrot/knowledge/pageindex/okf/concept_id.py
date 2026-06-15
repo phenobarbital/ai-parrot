@@ -127,15 +127,38 @@ def _assign_recursive(
 ) -> None:
     """Recursively assign concept_ids depth-first, collecting nodes for dedup.
 
+    Collision resolution is done **per-level** (same-parent siblings only)
+    BEFORE recursing into children.  This guarantees that children always
+    inherit the post-dedup parent ``concept_id`` as their ``parent_path``,
+    preventing stale paths like ``overview/details`` when the parent was
+    renamed to ``overview-2`` by dedup.
+
     Args:
         nodes: List of sibling node dicts (``nodes`` field of a parent).
         parent_path: Accumulated path from parent context.
-        flat: Accumulator list for depth-first ordering (used by dedup).
+        flat: Accumulator list for depth-first ordering (returned for
+            external callers; dedup is already done here, not globally).
     """
+    # 1. Assign initial slugs to all siblings at this level.
     for node in nodes:
         title = node.get("title", "")
         node["concept_id"] = derive_concept_id(title, parent_path)
         flat.append(node)
+
+    # 2. Resolve collisions among siblings at this level only.
+    #    The first occurrence keeps the bare slug; subsequent ones get
+    #    -2, -3, … suffixes (stable across runs because list order is DFS).
+    seen: dict[str, int] = {}
+    for node in nodes:
+        raw = node["concept_id"]
+        if raw in seen:
+            seen[raw] += 1
+            node["concept_id"] = f"{raw}-{seen[raw]}"
+        else:
+            seen[raw] = 1
+
+    # 3. Recurse with the now-correct (post-dedup) parent concept_id.
+    for node in nodes:
         children = node.get("nodes", [])
         if children:
             _assign_recursive(children, node["concept_id"], flat)
@@ -151,8 +174,15 @@ def assign_concept_ids(tree: dict[str, Any]) -> None:
     The function:
     1. Walks the tree depth-first via ``structure``.
     2. Derives a slug for each node via ``derive_concept_id``.
-    3. Collects all nodes in DFS order.
-    4. Resolves collisions via ``dedup_concept_ids``.
+    3. Resolves per-level collisions via sibling-scoped dedup in
+       ``_assign_recursive`` — children always inherit the post-dedup
+       parent path.
+
+    Note:
+        The global ``dedup_concept_ids`` step that previously ran here
+        has been moved into ``_assign_recursive`` so that sibling dedup
+        happens before recursing into children.  ``dedup_concept_ids``
+        remains public for callers that maintain their own flat node lists.
 
     Args:
         tree: PageIndex tree dict with a ``structure`` list of node dicts.
@@ -161,4 +191,9 @@ def assign_concept_ids(tree: dict[str, Any]) -> None:
     structure = tree.get("structure", [])
     flat: list[dict] = []
     _assign_recursive(structure, "", flat)
-    dedup_concept_ids(flat)
+    # Global dedup intentionally omitted here: level-local dedup in
+    # _assign_recursive already handles all intra-level collisions while
+    # preserving correct parent paths.  Cross-level nodes with the same
+    # slug are NOT collisions (they differ in their parent_path prefix).
+    # Calling dedup_concept_ids(flat) here would incorrectly add suffixes
+    # to those legitimate same-name-different-level nodes.

@@ -1005,7 +1005,35 @@ class PageIndexToolkit(AbstractToolkit):
         new_ids = splice_subtree(tree, node, parent_node_id=parent_node_id)
         new_id = new_ids[0] if new_ids else node.get("node_id")
         if new_id and body:
-            self._content_store.save(tree_name, new_id, body)
+            # For OKF-enriched trees, splice_subtree auto-assigns concept_id via
+            # _assign_okf_concept_ids.  Save under the flat concept_id key directly
+            # so project_sidecars (called from _persist below) avoids a redundant
+            # node_id → flat_id copy.
+            #
+            # Guard: only use flat_id when the tree is already OKF-enriched
+            # (has at least one node with BOTH concept_id AND type).  Non-OKF
+            # trees (and newly-created bare trees) keep the node_id key so that
+            # existing tests and callers that look up by node_id still work.
+            save_key = new_id
+            structure = tree.get("structure", [])
+            from parrot.knowledge.pageindex.utils import structure_to_list as _stl
+            is_okf = any(
+                n.get("concept_id") and n.get("type")
+                for n in _stl(structure)
+            )
+            if is_okf:
+                inserted = find_node_by_id(structure, new_id)
+                if inserted is not None:
+                    cid = inserted.get("concept_id")
+                    if cid:
+                        try:
+                            from parrot.knowledge.pageindex.okf.projection import (
+                                flatten_concept_id_for_filename,
+                            )
+                            save_key = flatten_concept_id_for_filename(cid)
+                        except ImportError:
+                            pass
+            self._content_store.save(tree_name, save_key, body)
         self._persist(tree_name)
         return {
             "tree_name": tree_name,

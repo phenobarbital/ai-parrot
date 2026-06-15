@@ -22,6 +22,7 @@ Design notes (spec §2.5, §3 Module 7):
   No branching ``search(type=...)`` multi-purpose tool.
 """
 
+import logging
 from typing import Any, Optional
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
@@ -38,6 +39,13 @@ class OKFToolkit:
     Holds shared state (tree, graph, content_store) and exposes ``@tool``
     decorated methods callable by agents.
 
+    NOTE: This class intentionally does NOT inherit ``AbstractToolkit``.
+    OKF tools are read-only, stateless w.r.t. sensitive mutations, and
+    currently have no HITL confirmation or PBAC permission requirements.
+    If ``Evidence``-type access control (spec §2.5 "sensitive-type gate")
+    is enforced in a future pass, migrate this to ``AbstractToolkit`` so
+    the execution-layer hooks fire correctly.
+
     Args:
         tree: OKF-enriched PageIndex tree dict.
         graph: Pre-built ``KnowledgeGraph`` instance.
@@ -52,6 +60,7 @@ class OKFToolkit:
         content_store: NodeContentStore,
         tree_name: str,
     ) -> None:
+        self.logger = logging.getLogger(__name__)
         self._tree = tree
         self._graph = graph
         self._content_store = content_store
@@ -95,10 +104,13 @@ class OKFToolkit:
         Returns:
             List of matching node dicts (title, concept_id, summary, type).
         """
+        # ConceptType is a str-enum, so comparing directly works whether
+        # `type` is a ConceptType instance or a raw string from an LLM call.
+        type_str: str = type.value if isinstance(type, ConceptType) else str(type)
         q = query.lower()
         results = []
         for node in structure_to_list(self._tree.get("structure", [])):
-            if node.get("type") != type.value:
+            if node.get("type") != type_str:
                 continue
             if q and q not in (node.get("title", "") + node.get("summary", "")).lower():
                 continue
@@ -120,12 +132,16 @@ class OKFToolkit:
         Returns:
             List of concept dicts (concept_id, title, summary, type).
         """
+        # Same str-enum guard as find_by_type — handles raw strings from LLM.
+        type_str: Optional[str] = (
+            type.value if isinstance(type, ConceptType) else (str(type) if type is not None else None)
+        )
         results = []
         for node in structure_to_list(self._tree.get("structure", [])):
             cid = node.get("concept_id")
             if not cid:
                 continue
-            if type is not None and node.get("type") != type.value:
+            if type_str is not None and node.get("type") != type_str:
                 continue
             results.append({
                 "concept_id": cid,

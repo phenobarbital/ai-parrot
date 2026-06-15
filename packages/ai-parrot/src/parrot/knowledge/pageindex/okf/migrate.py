@@ -30,6 +30,7 @@ Design notes (spec §3 Module 6, D3, D8, D10):
 import hashlib
 import json
 import logging
+import re
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -242,14 +243,20 @@ async def okf_migrate(
     doc_name = tree.get("doc_name", "")
 
     # 2. Assign concept_ids (idempotent)
-    # Assign concept_ids then count slug collisions
     assign_concept_ids(tree)
     nodes_after = structure_to_list(tree.get("structure", []))
     post_ids = [n.get("concept_id", "") for n in nodes_after]
-    # Slug collisions = nodes whose id ends with -2, -3, ... (suffix indicates dedup)
+    # Count slug collisions: a node received a dedup suffix when its id
+    # matches "<base>-<N>" AND the bare "<base>" also exists in the set.
+    # This handles multi-digit suffixes (-10, -11, …) and avoids false
+    # positives on naturally-numeric titles (e.g. "ir-4" only flagged
+    # if a sibling "ir" also exists).
+    _DEDUP_SUFFIX_RE = re.compile(r"^(.*)-(\d+)$")
+    post_ids_set = set(post_ids)
     report.slug_collisions = sum(
-        1 for cid in post_ids
-        if cid and len(cid) > 2 and cid[-2] == "-" and cid[-1].isdigit()
+        1
+        for cid in post_ids
+        if cid and (m := _DEDUP_SUFFIX_RE.match(cid)) and m.group(1) in post_ids_set
     )
 
     # 3. Load type cache
