@@ -32,7 +32,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-1544 for new catalog entries referencing backends",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1545-st-model-backend-kwarg.md"
+      "completed_at": "2026-06-15T14:20:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1545-st-model-backend-kwarg.md"
     },
     {
       "id": "TASK-1546",
