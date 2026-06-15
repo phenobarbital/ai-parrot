@@ -162,6 +162,10 @@ class PageIndexToolkit(AbstractToolkit):
         self._batch_depth: dict[str, int] = {}
         self._batch_dirty: dict[str, bool] = {}
 
+        # OKF integration (FEAT-238) — optional per-tree OKF toolkits.
+        # Populated via set_okf_toolkit() or lazily by _get_or_build_okf_toolkit().
+        self._okf_toolkits: dict[str, Any] = {}
+
     # ---- internal helpers ----------------------------------------------
 
     def _ingester(self) -> TwoStepIngester:
@@ -209,6 +213,150 @@ class PageIndexToolkit(AbstractToolkit):
         engine = self._search.get(tree_name)
         if engine is not None:
             engine.mark_dirty()
+        # OKF projection (FEAT-238): regenerate sidecars when the tree has
+        # OKF-enriched nodes.  The check is cheap (first node in structure).
+        # project_sidecars() is idempotent and a no-op for non-enriched trees.
+        self._project_okf_sidecars(tree_name, tree)
+
+    def _project_okf_sidecars(self, tree_name: str, tree: dict[str, Any]) -> None:
+        """Trigger OKF sidecar projection if the tree is OKF-enriched.
+
+        A tree is considered OKF-enriched when at least one node carries
+        **both** a ``concept_id`` AND a ``type`` field — i.e. it has been
+        through at least one ``okf_migrate`` pass or a T3 classification.
+        Trees that only have ``concept_id`` (auto-assigned by
+        ``splice_subtree``) but no ``type`` are NOT projected so that
+        pre-migration trees keep their plain ``node_id.md`` sidecar layout.
+
+        This is a best-effort call — errors are logged but never propagated
+        so projection failures cannot break ingest or update operations.
+
+        Args:
+            tree_name: PageIndex tree name.
+            tree: The current in-memory tree dict.
+        """
+        structure = tree.get("structure")
+        if not structure:
+            return
+        try:
+            from parrot.knowledge.pageindex.utils import structure_to_list
+        except ImportError:
+            return
+        nodes = structure_to_list(structure)
+        # Require at least one node with BOTH concept_id AND type to trigger
+        # projection.  This preserves backward compatibility for trees that
+        # received auto-assigned concept_ids from splice_subtree but were not
+        # run through okf_migrate / T3 classification.
+        if not any(n.get("concept_id") and n.get("type") for n in nodes):
+            return
+        try:
+            from parrot.knowledge.pageindex.okf.projection import project_sidecars
+            project_sidecars(tree, tree_name, self._content_store)
+        except Exception:
+            logger.exception(
+                "OKF sidecar projection failed for tree %r — skipping", tree_name
+            )
+
+    async def _run_t3_classification(
+        self,
+        tree: dict[str, Any],
+        original_id_to_node: dict[str, dict[str, Any]],
+    ) -> None:
+        """Classify the OKF ``type`` for newly spliced nodes (T3 step).
+
+        T3 classification only runs when the tree is **OKF-enriched** — i.e.
+        at least one existing node already carries a ``type`` field,
+        indicating the tree has been through ``okf_migrate`` at least once.
+        This preserves backward compatibility: fresh trees that have not been
+        OKF-migrated are left untouched.
+
+        Only nodes that are missing a ``type`` field are classified — existing
+        types are preserved.
+
+        Falls back to ``ConceptType.SECTION`` when:
+        - the OKF subpackage is not installed;
+        - the tree has no prior OKF enrichment;
+        - the LLM adapter call fails.
+
+        This method never raises — failures are logged and silently ignored so
+        the ingest pipeline always completes.
+
+        Args:
+            tree: Full in-memory tree dict (concept_ids already assigned).
+            original_id_to_node: Map of pre-splice ``node_id`` → node-dict
+                reference (unused directly; kept for signature stability).
+        """
+        try:
+            from parrot.knowledge.pageindex.okf.ontology import ConceptType
+            from parrot.knowledge.pageindex.utils import structure_to_list
+        except ImportError:
+            return
+
+        structure = tree.get("structure") or []
+        all_nodes = structure_to_list(structure)
+
+        # Gate: only proceed if the tree already has some OKF-typed nodes.
+        # This ensures we don't silently enrich fresh non-migrated trees.
+        if not any(n.get("type") for n in all_nodes):
+            return
+
+        nodes_to_classify = [n for n in all_nodes if not n.get("type")]
+        if not nodes_to_classify:
+            return
+
+        cache: dict[str, str] = {}
+        for node in nodes_to_classify:
+            try:
+                if self._adapter is not None:
+                    from parrot.knowledge.pageindex.okf.migrate import _classify_type
+                    result: str = await _classify_type(
+                        node, self._adapter, cache, force_reclassify=False
+                    )
+                    node["type"] = result
+                else:
+                    node["type"] = ConceptType.SECTION.value
+            except Exception:
+                logger.debug(
+                    "T3 classification failed for node %r — falling back to Section",
+                    node.get("node_id") or node.get("concept_id"),
+                )
+                node["type"] = ConceptType.SECTION.value
+
+    def set_okf_toolkit(self, tree_name: str, okf_toolkit: Any) -> None:
+        """Register an :class:`~parrot.knowledge.pageindex.okf.tools.OKFToolkit`
+        for ``tree_name`` so OKF read tools appear in :meth:`get_tools`.
+
+        Args:
+            tree_name: The PageIndex tree this toolkit is scoped to.
+            okf_toolkit: An ``OKFToolkit`` instance bound to the enriched tree.
+        """
+        self._okf_toolkits[tree_name] = okf_toolkit
+
+    def get_tools(
+        self,
+        permission_context: Any = None,
+        resolver: Any = None,
+    ) -> list:
+        """Return all tools, including OKF read tools for enriched trees.
+
+        Extends the base ``AbstractToolkit.get_tools()`` with any
+        ``OKFToolkit`` tools registered via :meth:`set_okf_toolkit`.
+
+        Args:
+            permission_context: Passed through to super (unused, compat).
+            resolver: Passed through to super (unused, compat).
+
+        Returns:
+            Combined list of toolkit tools + OKF read tools.
+        """
+        base_tools = super().get_tools(permission_context, resolver)
+        okf_tools: list = []
+        for okf_tk in self._okf_toolkits.values():
+            try:
+                okf_tools.extend(okf_tk.get_tools())
+            except Exception:
+                logger.debug("Failed to collect OKF tools from toolkit %r", okf_tk)
+        return base_tools + okf_tools
 
     @asynccontextmanager
     async def _batch(self, tree_name: str):
@@ -556,6 +704,11 @@ class PageIndexToolkit(AbstractToolkit):
         persisted JSON does NOT carry inline ``text`` fields.
 
         ``parent_node_id=None`` appends at the tree root.
+
+        After splicing, the T3 OKF type-classification step is run for any
+        node that is missing a ``type`` field.  The step falls back to
+        ``ConceptType.SECTION`` when no LLM adapter is available, so it
+        never blocks ingest.
         """
         tree = self._load_tree(tree_name)
         subtree = await md_to_tree(
@@ -569,6 +722,8 @@ class PageIndexToolkit(AbstractToolkit):
         original_id_to_node = _capture_node_id_object_map(subtree)
         new_ids = splice_subtree(tree, subtree, parent_node_id=parent_node_id)
         self._save_node_markdown(tree_name, original_id_to_node, node_markdown)
+        # T3 OKF classification step (FEAT-238): assign type to new nodes.
+        await self._run_t3_classification(tree, original_id_to_node)
         self._persist(tree_name)
         return {"tree_name": tree_name, "new_node_ids": new_ids}
 
@@ -774,16 +929,26 @@ class PageIndexToolkit(AbstractToolkit):
         Also removes any sidecar markdown for the deleted subtree and
         evicts the matching LRU cache entries so a later ``retrieve``
         cannot see stale content.
+
+        OKF integration: if the node carries a ``concept_id``, the
+        flattened-concept_id sidecar (``<concept_id>.md``) is also removed
+        so no stale OKF sidecars accumulate after deletion.
         """
         tree = self._load_tree(tree_name)
         node = find_node_by_id(tree.get("structure", []), node_id)
         descendant_ids: list[str] = []
+        # Collect both node_ids AND flattened concept_ids before deletion.
+        concept_id_keys: list[str] = []
         if node is not None:
             descendant_ids = _collect_node_ids(node)
+            concept_id_keys = _collect_concept_id_keys(node)
         removed = _delete_node(tree, node_id)
         if removed:
             for nid in descendant_ids:
                 self._content_store.delete_node(tree_name, nid)
+            # Also clean up concept_id-keyed sidecars (OKF migration artefacts).
+            for cid_key in concept_id_keys:
+                self._content_store.delete_node(tree_name, cid_key)
             self._persist(tree_name)
         return {"tree_name": tree_name, "removed": removed}
 
@@ -1027,3 +1192,43 @@ def _collect_node_ids(node: Any) -> list[str]:
 
     _walk(node)
     return ids
+
+
+def _collect_concept_id_keys(node: Any) -> list[str]:
+    """Return flattened concept_id keys for every node reachable from ``node``.
+
+    Returns only nodes that carry a ``concept_id`` field; plain ``node_id``
+    values are handled by :func:`_collect_node_ids`.  The flattened form
+    replaces ``/`` with ``--`` to match the :class:`NodeContentStore` key
+    layout written by OKF sidecar projection.
+
+    Args:
+        node: A node dict or list of node dicts.
+
+    Returns:
+        List of flattened concept_id strings (may be empty for non-OKF trees).
+    """
+    keys: list[str] = []
+
+    try:
+        from parrot.knowledge.pageindex.okf.projection import (
+            flatten_concept_id_for_filename,
+        )
+    except ImportError:
+        return keys
+
+    def _walk(n: Any) -> None:
+        if isinstance(n, dict):
+            cid = n.get("concept_id")
+            if cid:
+                keys.append(flatten_concept_id_for_filename(cid))
+            children = n.get("nodes")
+            if isinstance(children, list):
+                for child in children:
+                    _walk(child)
+        elif isinstance(n, list):
+            for item in n:
+                _walk(item)
+
+    _walk(node)
+    return keys

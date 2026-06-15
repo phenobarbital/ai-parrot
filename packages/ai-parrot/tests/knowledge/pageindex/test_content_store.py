@@ -96,3 +96,52 @@ def test_node_content_store_overwrites_existing(store: NodeContentStore):
     store.save("docs", "0000", "v1")
     store.save("docs", "0000", "v2")
     assert store.load("docs", "0000") == "v2"
+
+
+# ---- OKF dual-key / flattened concept_id tests (FEAT-238 / TASK-1559) ----
+
+
+def test_flattened_concept_id_is_valid_node_id(store: NodeContentStore):
+    """Flattened concept_ids (slashes → dashes) satisfy _NODE_ID_RE."""
+    # ``flatten_concept_id_for_filename`` converts 'controls/nist-ir-4' →
+    # 'controls--nist-ir-4', which is [A-Za-z0-9_-]+ and ≤ 64 chars.
+    flat_id = "controls--nist-ir-4"
+    store.save("tree", flat_id, "body")
+    assert store.load("tree", flat_id) == "body"
+
+
+def test_store_save_and_load_by_flattened_concept_id(store: NodeContentStore):
+    """Save/load round-trip works for flattened concept_id keys."""
+    store.save("tree", "playbooks--aws-ir", "content here")
+    assert store.load("tree", "playbooks--aws-ir") == "content here"
+    assert store.has("tree", "playbooks--aws-ir")
+
+
+def test_loader_for_accepts_flattened_concept_id(store: NodeContentStore):
+    """loader_for closure loads flattened concept_id keyed content."""
+    store.save("tree", "controls--nist-ir-4", "sidecar body")
+    loader = store.loader_for("tree")
+    result = loader("controls--nist-ir-4")
+    assert result == "sidecar body"
+
+
+def test_loader_for_returns_none_for_missing_concept_id(store: NodeContentStore):
+    """loader_for returns None for an unrecognised flattened concept_id."""
+    loader = store.loader_for("tree")
+    assert loader("missing--concept") is None
+
+
+def test_flattened_concept_id_listed_in_node_ids(store: NodeContentStore):
+    """list_node_ids includes flattened concept_id keyed sidecars."""
+    store.save("tree", "section--intro", "body")
+    store.save("tree", "0001", "node body")
+    ids = store.list_node_ids("tree")
+    assert "section--intro" in ids
+    assert "0001" in ids
+
+
+def test_delete_node_by_flattened_concept_id(store: NodeContentStore):
+    """delete_node works for flattened concept_id keys."""
+    store.save("tree", "playbooks--aws-ir", "content")
+    assert store.delete_node("tree", "playbooks--aws-ir") is True
+    assert store.load("tree", "playbooks--aws-ir") is None
