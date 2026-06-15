@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-15T14:00:00-04:00",
-  "completed_at": null,
+  "completed_at": "2026-06-15T16:46:46+00:00",
   "tasks": [
     {
       "id": "TASK-1544",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundation task — catalog changes are imported by all downstream modules",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1544-catalog-backend-field.md"
+      "completed_at": "2026-06-15T16:46:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1544-catalog-backend-field.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1545",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Depends on TASK-1544 for new catalog entries referencing backends",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1545-st-model-backend-kwarg.md"
+      "completed_at": "2026-06-15T16:46:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1545-st-model-backend-kwarg.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1546",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -60,8 +62,9 @@
       "parallelism_notes": "No code dependency on TASK-1544/1545, but kept sequential for orderly review in one worktree",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1546-node-embedding-store.md"
+      "completed_at": "2026-06-15T16:46:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1546-node-embedding-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1547",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -80,8 +83,9 @@
       "parallelism_notes": "Depends on NodeEmbeddingStore from TASK-1546",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1547-dense-rrf-fusion.md"
+      "completed_at": "2026-06-15T16:46:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1547-dense-rrf-fusion.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1548",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -101,8 +105,9 @@
       "parallelism_notes": "Depends on both store and RRF fusion being in place",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1548-embedding-beam-walk.md"
+      "completed_at": "2026-06-15T16:46:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1548-embedding-beam-walk.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1549",
@@ -111,7 +116,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +127,9 @@
       "parallelism_notes": "Depends on store + RRF fusion to wire into toolkit",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1549-toolkit-wiring.md"
+      "completed_at": "2026-06-15T16:46:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1549-toolkit-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1550",
@@ -132,7 +138,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -142,8 +148,9 @@
       "parallelism_notes": "Needs toolkit wiring complete to build tree via PageIndexToolkit",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1550-compliance-corpus.md"
+      "completed_at": "2026-06-15T16:46:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1550-compliance-corpus.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1551",
@@ -152,7 +159,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -163,8 +170,9 @@
       "parallelism_notes": "Needs corpus as fixture and toolkit wiring for end-to-end benchmark",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1551-cpu-latency-benchmark.md"
+      "completed_at": "2026-06-15T16:46:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1551-cpu-latency-benchmark.md",
+      "verification": "verified"
     }
   ]
 }
