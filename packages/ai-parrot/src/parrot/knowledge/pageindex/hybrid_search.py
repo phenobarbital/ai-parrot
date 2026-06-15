@@ -6,23 +6,32 @@ Combines three signals:
   Backed by the ``bm25s`` library (an optional extra).
 * **LLM tree walk** via :class:`PageIndexRetriever` — the existing
   reasoning-based retriever that selects a list of relevant node ids.
-* **Reciprocal Rank Fusion** to combine the two rankings.
+* **Dense cosine-similarity** via ``_vec_rank`` over a pre-built node
+  embedding matrix (Phase A of FEAT-237, enabled with ``use_vec=True``).
+* **Reciprocal Rank Fusion** to combine up to three rankings.
 
 An :class:`AbstractReranker` may optionally be supplied to rerank the
 fused candidate set with a cross-encoder.
 
 The BM25 index is rebuilt lazily — every mutation calls ``mark_dirty``,
-and the next ``search`` rebuilds before scoring.
+and the next ``search`` rebuilds before scoring.  The embedding matrix
+uses the same dirty / invalidate pattern via :class:`NodeEmbeddingStore`.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
+
+import numpy as np
 
 from parrot._imports import lazy_import
 from .llm_adapter import PageIndexLLMAdapter
 from .retriever import PageIndexRetriever
 from .utils import find_node_by_id, get_nodes
+
+if TYPE_CHECKING:
+    from .embedding_store import NodeEmbeddingStore
 
 
 logger = logging.getLogger("parrot.knowledge.pageindex.hybrid_search")
@@ -41,7 +50,7 @@ _BM25_TEXT_LIMIT = 4000
 
 
 class HybridPageIndexSearch:
-    """BM25 + LLM-walk hybrid retrieval wrapping a single tree.
+    """BM25 + LLM-walk + dense-cosine hybrid retrieval wrapping a single tree.
 
     Args:
         tree: A PageIndex tree dict (``{doc_name, structure: [...]}``).
@@ -49,6 +58,16 @@ class HybridPageIndexSearch:
         reranker: Optional reranker applied to the fused candidate set.
         model: Model passed through to :class:`PageIndexRetriever`.
         default_bm25_k: Number of candidates fetched from BM25 per query.
+        content_loader: Optional per-node content loader for BM25 index.
+        embedding_store: Optional :class:`NodeEmbeddingStore` for dense search
+            (Phase A of FEAT-237).  When ``None``, ``use_vec=True`` in
+            :meth:`search` silently returns empty dense rankings.
+        embed_fn: Callable ``(list[str]) -> np.ndarray`` used to embed node
+            texts and query strings for dense ranking.  Required when
+            ``embedding_store`` is supplied.
+        use_vec_rank: Default value of the ``use_vec`` flag in :meth:`search`.
+        use_embedding_walk: Reserved for Phase B (beam walk).  Stored but
+            unused in this implementation.
     """
 
     def __init__(
@@ -59,6 +78,10 @@ class HybridPageIndexSearch:
         model: Optional[str] = None,
         default_bm25_k: int = 20,
         content_loader: Optional[Callable[[str], Optional[str]]] = None,
+        embedding_store: Optional["NodeEmbeddingStore"] = None,
+        embed_fn: Optional[Callable[[list[str]], "np.ndarray"]] = None,
+        use_vec_rank: bool = False,
+        use_embedding_walk: bool = False,
     ):
         self._tree = tree
         self._adapter = adapter
@@ -66,6 +89,10 @@ class HybridPageIndexSearch:
         self._model = model
         self._default_bm25_k = default_bm25_k
         self._content_loader = content_loader
+        self._embedding_store = embedding_store
+        self._embed_fn = embed_fn
+        self._use_vec_rank = use_vec_rank
+        self._use_embedding_walk = use_embedding_walk
 
         self._bm25_index = None
         self._corpus_node_ids: list[str] = []
@@ -90,8 +117,18 @@ class HybridPageIndexSearch:
         return body or ""
 
     def mark_dirty(self) -> None:
-        """Invalidate the BM25 index; it will be rebuilt on next search."""
+        """Invalidate the BM25 index and embedding matrix.
+
+        Both will be rebuilt lazily on the next :meth:`search` call.
+        The per-tree embedding matrix is deleted via
+        :meth:`NodeEmbeddingStore.invalidate_tree`; global-tier vectors
+        (content-addressed) are preserved.
+        """
         self._dirty = True
+        if self._embedding_store is not None:
+            tree_name = self._tree.get("doc_name") or ""
+            if tree_name:
+                self._embedding_store.invalidate_tree(tree_name)
 
     def replace_tree(self, tree: dict[str, Any]) -> None:
         self._tree = tree
@@ -157,6 +194,72 @@ class HybridPageIndexSearch:
             if 0 <= int(i) < len(self._corpus_node_ids)
         ]
 
+    # ---- Dense vector ranking ------------------------------------------
+
+    def _vec_rank(self, query: str, top_k: int) -> list[str]:
+        """Rank nodes by cosine similarity to the query embedding.
+
+        Uses the per-tree ``(N, d)`` matrix from :class:`NodeEmbeddingStore`.
+        Lazily rebuilds the matrix if it has been invalidated.
+
+        Args:
+            query: Query string to embed.
+            top_k: Number of top node ids to return.
+
+        Returns:
+            Ordered list of ``node_id`` strings (highest similarity first).
+            Returns an empty list if ``embedding_store`` or ``embed_fn`` is
+            ``None``, or if the tree has no embeddable nodes.
+        """
+        if self._embedding_store is None or self._embed_fn is None:
+            return []
+
+        tree_name = self._tree.get("doc_name") or ""
+        if not tree_name:
+            logger.warning("_vec_rank: tree has no doc_name; skipping")
+            return []
+
+        # Lazy rebuild if the per-tree matrix was invalidated.
+        result = self._embedding_store.load_tree_matrix(tree_name)
+        if result is None:
+            nodes = get_nodes(self._structure())
+            if not nodes:
+                return []
+            try:
+                result = self._embedding_store.build_tree_matrix(
+                    tree_name, nodes, self._embed_fn
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("build_tree_matrix failed: %s", exc)
+                return []
+
+        matrix, node_order = result
+        if matrix.shape[0] == 0:
+            return []
+
+        # Embed the query (sync call; embed_fn must be synchronous).
+        try:
+            q_vecs = self._embed_fn([query])
+            q_vec = np.asarray(q_vecs[0], dtype=np.float32)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("embed_fn failed for query: %s", exc)
+            return []
+
+        # L2-normalise both query and matrix rows for cosine similarity.
+        q_norm = np.linalg.norm(q_vec)
+        if q_norm > 0.0:
+            q_vec = q_vec / q_norm
+
+        mat = np.asarray(matrix, dtype=np.float32)
+        row_norms = np.linalg.norm(mat, axis=1, keepdims=True)
+        row_norms = np.where(row_norms > 0.0, row_norms, 1.0)
+        mat_normed = mat / row_norms
+
+        scores = mat_normed @ q_vec  # (N,)
+        k = min(top_k, len(node_order))
+        top_indices = np.argsort(scores)[::-1][:k]
+        return [node_order[int(i)] for i in top_indices]
+
     # ---- LLM walk ------------------------------------------------------
 
     async def _llm_rank(self, query: str) -> list[str]:
@@ -188,32 +291,69 @@ class HybridPageIndexSearch:
         top_k: int = 10,
         use_bm25: bool = True,
         use_llm_walk: bool = True,
+        use_vec: bool = False,
         rerank: bool = False,
     ) -> list[dict[str, Any]]:
         """Run hybrid search and return a list of candidate node summaries.
 
         Each result is a dict with ``node_id``, ``title``, ``summary``,
-        ``score`` and ``source`` (one of ``"bm25"``, ``"llm"``, ``"fused"``).
+        ``score`` and ``source`` (one of ``"bm25"``, ``"llm"``, ``"vec"``,
+        ``"fused"``).
+
+        When ``use_vec=False`` (the default), the output is byte-identical
+        to the pre-embedding baseline.
+
+        Args:
+            query: Query string.
+            top_k: Maximum number of results to return.
+            use_bm25: Include BM25 lexical ranking signal.
+            use_llm_walk: Include LLM tree-walk ranking signal.
+            use_vec: Include dense cosine-similarity ranking signal (Phase A).
+                Requires ``embedding_store`` and ``embed_fn`` to be set.
+            rerank: Apply cross-encoder reranking to the fused candidates.
+
+        Raises:
+            ValueError: When all three signals are disabled.
         """
-        if not (use_bm25 or use_llm_walk):
-            raise ValueError("At least one of use_bm25 / use_llm_walk must be True")
+        if not (use_bm25 or use_llm_walk or use_vec):
+            raise ValueError(
+                "At least one of use_bm25 / use_llm_walk / use_vec must be True"
+            )
 
         bm25_ranking: list[str] = []
         llm_ranking: list[str] = []
+        vec_ranking: list[str] = []
+
         if use_bm25:
             bm25_ranking = self._bm25_rank(query, self._default_bm25_k)
         if use_llm_walk:
             llm_ranking = await self._llm_rank(query)
+        if use_vec:
+            # Run synchronous _vec_rank in a thread to avoid blocking the loop.
+            vec_ranking = await asyncio.to_thread(self._vec_rank, query, top_k)
 
-        if use_bm25 and use_llm_walk:
-            fused = self._rrf_fuse([bm25_ranking, llm_ranking])
+        # Build rankings list for RRF — only include signals that were requested.
+        # Preserve byte-identical baseline when use_vec=False.
+        rankings: list[list[str]] = []
+        if use_bm25:
+            rankings.append(bm25_ranking)
+        if use_llm_walk:
+            rankings.append(llm_ranking)
+        if use_vec:
+            rankings.append(vec_ranking)
+
+        if len(rankings) > 1:
+            fused = self._rrf_fuse(rankings)
             source = "fused"
         elif use_bm25:
             fused = [(nid, 1.0 / (i + 1)) for i, nid in enumerate(bm25_ranking)]
             source = "bm25"
-        else:
+        elif use_llm_walk:
             fused = [(nid, 1.0 / (i + 1)) for i, nid in enumerate(llm_ranking)]
             source = "llm"
+        else:
+            fused = [(nid, 1.0 / (i + 1)) for i, nid in enumerate(vec_ranking)]
+            source = "vec"
 
         if not fused:
             return []
