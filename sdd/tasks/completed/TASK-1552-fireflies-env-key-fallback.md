@@ -290,10 +290,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-15
+**Notes**: Implemented exactly as specified. Three changes made:
+  1. `create_fireflies_mcp_server` in `integration.py`: `api_key: str` changed to
+     `api_key: Optional[str] = None`; added `api_key = api_key or config.get('FIREFLIES_API_KEY')`
+     and `if not api_key: raise ValueError("FIREFLIES_API_KEY is required")`. Docstring updated.
+  2. `add_fireflies_mcp_server` in `integration.py` (MCPEnabledMixin): `api_key: str` changed
+     to `api_key: Optional[str] = None`. Docstring updated with env-var fallback example.
+  3. `fireflies` MCPServerDescriptor in `registry.py`: `api_key` param changed to
+     `required=False`, `default=None`, description updated to mention `FIREFLIES_API_KEY` fallback.
+  Created `test_fireflies_env_key.py` (7 tests) and added 2 tests to `test_mcp_registry.py`.
+  All 37 tests pass. Pre-existing ruff issues in `integration.py` (F401 x3, F402 x1) are
+  unchanged from before this feature — not introduced by this task.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -128,6 +128,22 @@ class TestMCPServerRegistry:
         assert api_key_param.required is False
         assert api_key_param.type == MCPParamType.SECRET
 
+    def test_fireflies_api_key_optional(self, registry: MCPServerRegistry) -> None:
+        """Fireflies api_key is optional (falls back to FIREFLIES_API_KEY env var)."""
+        desc = registry.get_server("fireflies")
+        assert desc is not None
+        api_key_param = next((p for p in desc.params if p.name == "api_key"), None)
+        assert api_key_param is not None
+        assert api_key_param.required is False
+        assert api_key_param.default is None
+        assert api_key_param.type == MCPParamType.SECRET
+        assert "FIREFLIES_API_KEY" in api_key_param.description
+
+    def test_validate_params_fireflies_optional_key(self, registry: MCPServerRegistry) -> None:
+        """api_key is optional for fireflies (env-var fallback); defaults to None."""
+        result = registry.validate_params("fireflies", {})
+        assert result["api_key"] is None
+
     def test_quic_required_params(self, registry: MCPServerRegistry) -> None:
         """QUIC server has name, host, port as required params."""
         desc = registry.get_server("quic")
