@@ -14,7 +14,7 @@
       "feature_id": "FEAT-238",
       "feature": "okf-knowledge-layer",
       "spec": "sdd/specs/okf-knowledge-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Leaf module with no shared files — can run in parallel with TASK-1553",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1552-okf-ontology.md"
+      "completed_at": "2026-06-15T17:01:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1552-okf-ontology.md"
     },
     {
       "id": "TASK-1553",
@@ -53,7 +53,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1552"],
+      "depends_on": [
+        "TASK-1552"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports ConceptType from TASK-1552 — must run after ontology",
       "assigned_to": null,
@@ -71,7 +73,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1552", "TASK-1553"],
+      "depends_on": [
+        "TASK-1552",
+        "TASK-1553"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports from ontology (TASK-1552) and uses concept_id keying (TASK-1553)",
       "assigned_to": null,
@@ -89,7 +94,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1552", "TASK-1554"],
+      "depends_on": [
+        "TASK-1552",
+        "TASK-1554"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports from ontology and frontmatter — must run after TASK-1552 + TASK-1554",
       "assigned_to": null,
@@ -107,7 +115,13 @@
       "status": "pending",
       "priority": "high",
       "effort": "XL",
-      "depends_on": ["TASK-1552", "TASK-1553", "TASK-1554", "TASK-1555", "TASK-1556"],
+      "depends_on": [
+        "TASK-1552",
+        "TASK-1553",
+        "TASK-1554",
+        "TASK-1555",
+        "TASK-1556"
+      ],
       "parallel": false,
       "parallelism_notes": "Composes all prior modules — must run after all of TASK-1552 through TASK-1556",
       "assigned_to": null,
@@ -125,7 +139,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1552", "TASK-1555"],
+      "depends_on": [
+        "TASK-1552",
+        "TASK-1555"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports ontology enums and KnowledgeGraph — must run after TASK-1552 + TASK-1555",
       "assigned_to": null,
@@ -143,7 +160,15 @@
       "status": "pending",
       "priority": "high",
       "effort": "XL",
-      "depends_on": ["TASK-1552", "TASK-1553", "TASK-1554", "TASK-1555", "TASK-1556", "TASK-1557", "TASK-1558"],
+      "depends_on": [
+        "TASK-1552",
+        "TASK-1553",
+        "TASK-1554",
+        "TASK-1555",
+        "TASK-1556",
+        "TASK-1557",
+        "TASK-1558"
+      ],
       "parallel": false,
       "parallelism_notes": "Wires all OKF modules into existing components — must run last",
       "assigned_to": null,
