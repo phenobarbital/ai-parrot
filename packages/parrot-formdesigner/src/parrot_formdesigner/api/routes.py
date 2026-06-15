@@ -348,21 +348,4 @@ def setup_form_api(
         f"{bp}/org/sync/workday", _wrap_auth(handler.sync_workday_identities)
     )
 
-    # FEAT-303 — Visit / Event Lifecycle routes
-    app.router.add_post(
-        f"{bp}/visits/events", _wrap_auth(handler.create_event)
-    )
-    app.router.add_post(
-        f"{bp}/visits/{{event_id}}/shifts/{{shift_id}}/checkin",
-        _wrap_auth(handler.visit_checkin),
-    )
-    app.router.add_post(
-        f"{bp}/visits/{{event_id}}/shifts/{{shift_id}}/checkout",
-        _wrap_auth(handler.visit_checkout),
-    )
-    app.router.add_post(
-        f"{bp}/visits/{{event_id}}/shifts/{{shift_id}}/missed",
-        _wrap_auth(handler.visit_set_missed),
-    )
-
     logger.info("setup_form_api: mounted on %s", bp)
