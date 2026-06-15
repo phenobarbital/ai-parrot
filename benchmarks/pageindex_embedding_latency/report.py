@@ -1,0 +1,155 @@
+"""Report generation for the PageIndex embedding latency benchmark.
+
+Converts raw benchmark result dictionaries into a human-readable markdown
+table and a recommendation gate that flags configurations exceeding the
+latency threshold.
+
+The recommendation gate applies the following logic:
+
+* Any configuration with ``error`` set is marked as **FAILED**.
+* Any configuration whose ``p95_ms`` exceeds *latency_gate_ms* is flagged
+  with a warning.
+* The configuration with the lowest ``p95_ms`` (among non-failed entries)
+  is marked as the recommended choice.
+
+Output format::
+
+    # PageIndex Embedding Latency Benchmark
+
+    ## Results
+
+    | Model | Backend | Dim | p50 (ms) | p95 (ms) | RSS (MB) | Recall@10 | Status |
+    |---|---|---|---|---|---|---|---|
+    | …  | …  | …  | …  | …  | …  | …  | …  |
+
+    ## Recommendation
+
+    **Recommended**: `<model>` / `<backend>` / dim=<dim>  (p95=<N> ms)
+    …
+"""
+from __future__ import annotations
+
+from typing import Any, Optional
+
+
+def _fmt(value: Optional[float], decimals: int = 1, suffix: str = "") -> str:
+    """Format an optional float for table display.
+
+    Args:
+        value: Numeric value or ``None``.
+        decimals: Decimal places.
+        suffix: Optional suffix string (e.g. ``" ms"``).
+
+    Returns:
+        Formatted string or ``"—"`` when *value* is ``None``.
+    """
+    if value is None:
+        return "—"
+    return f"{value:.{decimals}f}{suffix}"
+
+
+def build_report(
+    results: list[dict[str, Any]],
+    latency_gate_ms: float = 200.0,
+) -> str:
+    """Build a markdown report from benchmark results.
+
+    Args:
+        results: List of result dicts as returned by
+            :func:`~benchmarks.pageindex_embedding_latency.harness.run_configuration`.
+        latency_gate_ms: p95 latency threshold in milliseconds.
+            Configurations above this emit a warning in the report.
+
+    Returns:
+        Full markdown string suitable for writing to a ``.md`` file or
+        printing to stdout.
+    """
+    lines: list[str] = []
+    lines.append("# PageIndex Embedding Latency Benchmark")
+    lines.append("")
+    lines.append(f"Latency gate: **{latency_gate_ms:.0f} ms** (p95)")
+    lines.append("")
+
+    # ── Results table ────────────────────────────────────────────────────────
+    lines.append("## Results")
+    lines.append("")
+    header = (
+        "| Model | Backend | Dim | p50 (ms) | p95 (ms) | p99 (ms) "
+        "| RSS (MB) | Recall@10 | Status |"
+    )
+    separator = "|---|---|---|---|---|---|---|---|---|"
+    lines.append(header)
+    lines.append(separator)
+
+    valid_results: list[dict[str, Any]] = []
+
+    for r in results:
+        model_short = r["model"].split("/")[-1]
+        backend = r.get("backend", "—")
+        dim = r.get("dimension", "—")
+        p50 = _fmt(r.get("p50_ms"), 1)
+        p95 = _fmt(r.get("p95_ms"), 1)
+        p99 = _fmt(r.get("p99_ms"), 1)
+        rss = _fmt(r.get("rss_mb"), 0)
+        recall = _fmt(r.get("recall_at_10"), 3)
+
+        if r.get("error"):
+            status = f"FAILED: {r['error']}"
+        elif r.get("p95_ms") is not None and r["p95_ms"] > latency_gate_ms:
+            status = "WARN (slow)"
+            valid_results.append(r)
+        else:
+            status = "OK"
+            valid_results.append(r)
+
+        lines.append(
+            f"| {model_short} | {backend} | {dim} "
+            f"| {p50} | {p95} | {p99} | {rss} | {recall} | {status} |"
+        )
+
+    lines.append("")
+
+    # ── Recommendation gate ──────────────────────────────────────────────────
+    lines.append("## Recommendation")
+    lines.append("")
+
+    ok_results = [r for r in valid_results if r.get("p95_ms") is not None]
+
+    if not ok_results:
+        lines.append(
+            "> **WARNING**: All configurations failed or exceeded the latency gate. "
+            "Review errors above before shipping."
+        )
+    else:
+        # Pick the configuration with the best (lowest) p95
+        best = min(ok_results, key=lambda r: r["p95_ms"])  # type: ignore[arg-type]
+        lines.append(
+            f"**Recommended**: `{best['model']}` / `{best['backend']}` / "
+            f"dim={best['dimension']}  "
+            f"(p95={best['p95_ms']:.1f} ms, RSS={_fmt(best.get('rss_mb'), 0)} MB)"
+        )
+        lines.append("")
+
+        # Check if any configuration exceeded the gate
+        slow = [r for r in ok_results if r["p95_ms"] > latency_gate_ms]
+        if slow:
+            lines.append(
+                f"> **WARNING**: {len(slow)} configuration(s) exceeded the "
+                f"{latency_gate_ms:.0f} ms latency gate:"
+            )
+            for r in slow:
+                lines.append(
+                    f">  - `{r['model']}` / `{r['backend']}` / dim={r['dimension']}"
+                    f" — p95={r['p95_ms']:.1f} ms"
+                )
+            lines.append("")
+
+    lines.append("")
+    lines.append("---")
+    lines.append(
+        "_Generated by `benchmarks.pageindex_embedding_latency.harness` "
+        "(FEAT-237 TASK-1551)_"
+    )
+    lines.append("")
+
+    return "\n".join(lines)

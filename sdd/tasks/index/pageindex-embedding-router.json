@@ -1,0 +1,170 @@
+{
+  "feature": "pageindex-embedding-router",
+  "feature_id": "FEAT-237",
+  "spec": "sdd/specs/pageindex-embedding-router.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-15T14:00:00-04:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1544",
+      "slug": "catalog-backend-field",
+      "title": "Add backend field to EmbeddingModelEntry + new catalog entries",
+      "feature_id": "FEAT-237",
+      "feature": "pageindex-embedding-router",
+      "spec": "sdd/specs/pageindex-embedding-router.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task — catalog changes are imported by all downstream modules",
+      "assigned_to": null,
+      "started_at": "2026-06-15T14:14:14+00:00",
+      "completed_at": "2026-06-15T14:16:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1544-catalog-backend-field.md"
+    },
+    {
+      "id": "TASK-1545",
+      "slug": "st-model-backend-kwarg",
+      "title": "Add backend/file_name kwargs to SentenceTransformerModel",
+      "feature_id": "FEAT-237",
+      "feature": "pageindex-embedding-router",
+      "spec": "sdd/specs/pageindex-embedding-router.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1544"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-1544 for new catalog entries referencing backends",
+      "assigned_to": null,
+      "started_at": "2026-06-15T14:14:14+00:00",
+      "completed_at": "2026-06-15T14:20:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1545-st-model-backend-kwarg.md"
+    },
+    {
+      "id": "TASK-1546",
+      "slug": "node-embedding-store",
+      "title": "Implement NodeEmbeddingStore (two-tier content-addressed cache)",
+      "feature_id": "FEAT-237",
+      "feature": "pageindex-embedding-router",
+      "spec": "sdd/specs/pageindex-embedding-router.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "No code dependency on TASK-1544/1545, but kept sequential for orderly review in one worktree",
+      "assigned_to": null,
+      "started_at": "2026-06-15T14:14:14+00:00",
+      "completed_at": "2026-06-15T14:25:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1546-node-embedding-store.md"
+    },
+    {
+      "id": "TASK-1547",
+      "slug": "dense-rrf-fusion",
+      "title": "Add _vec_rank dense signal and RRF fusion (Phase A)",
+      "feature_id": "FEAT-237",
+      "feature": "pageindex-embedding-router",
+      "spec": "sdd/specs/pageindex-embedding-router.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1546"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on NodeEmbeddingStore from TASK-1546",
+      "assigned_to": null,
+      "started_at": "2026-06-15T14:14:14+00:00",
+      "completed_at": "2026-06-15T14:29:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1547-dense-rrf-fusion.md"
+    },
+    {
+      "id": "TASK-1548",
+      "slug": "embedding-beam-walk",
+      "title": "Implement embedding beam walk (Phase B, flag-gated)",
+      "feature_id": "FEAT-237",
+      "feature": "pageindex-embedding-router",
+      "spec": "sdd/specs/pageindex-embedding-router.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1546",
+        "TASK-1547"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on both store and RRF fusion being in place",
+      "assigned_to": null,
+      "started_at": "2026-06-15T14:14:14+00:00",
+      "completed_at": "2026-06-15T14:32:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1548-embedding-beam-walk.md"
+    },
+    {
+      "id": "TASK-1549",
+      "slug": "toolkit-wiring",
+      "title": "Wire NodeEmbeddingStore into PageIndexToolkit",
+      "feature_id": "FEAT-237",
+      "feature": "pageindex-embedding-router",
+      "spec": "sdd/specs/pageindex-embedding-router.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1546",
+        "TASK-1547"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on store + RRF fusion to wire into toolkit",
+      "assigned_to": null,
+      "started_at": "2026-06-15T14:14:14+00:00",
+      "completed_at": "2026-06-15T14:35:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1549-toolkit-wiring.md"
+    },
+    {
+      "id": "TASK-1550",
+      "slug": "compliance-corpus",
+      "title": "Build compliance corpus (SOC 2 + HIPAA) from manifest",
+      "feature_id": "FEAT-237",
+      "feature": "pageindex-embedding-router",
+      "spec": "sdd/specs/pageindex-embedding-router.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1549"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs toolkit wiring complete to build tree via PageIndexToolkit",
+      "assigned_to": null,
+      "started_at": "2026-06-15T14:14:14+00:00",
+      "completed_at": "2026-06-15T14:39:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1550-compliance-corpus.md"
+    },
+    {
+      "id": "TASK-1551",
+      "slug": "cpu-latency-benchmark",
+      "title": "CPU latency micro-benchmark harness",
+      "feature_id": "FEAT-237",
+      "feature": "pageindex-embedding-router",
+      "spec": "sdd/specs/pageindex-embedding-router.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1549",
+        "TASK-1550"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs corpus as fixture and toolkit wiring for end-to-end benchmark",
+      "assigned_to": null,
+      "started_at": "2026-06-15T14:14:14+00:00",
+      "completed_at": "2026-06-15T14:47:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1551-cpu-latency-benchmark.md"
+    }
+  ]
+}

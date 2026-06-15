@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-237",
+  "feature_slug": "pageindex-embedding-router",
+  "started_at": "2026-06-15T12:00:00-04:00",
+  "updated_at": "2026-06-15T12:20:00-04:00",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/pageindex-embedding-router.brainstorm.md",
+    "raw_path": "sdd/state/FEAT-237/source.md",
+    "fetched_at": "2026-06-15T12:00:00-04:00",
+    "summary_oneline": "PageIndex Embedding Router — add dense semantic signal + CPU latency micro-benchmark for PageIndex retrieval"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {"status": "completed", "started_at": "2026-06-15T12:00:00-04:00", "completed_at": "2026-06-15T12:00:00-04:00"},
+    "plan": {"status": "completed", "queries_total": 18, "approved_by_user": true, "edited_by_user": false, "plan_path": "sdd/state/FEAT-237/research_plan.json"},
+    "research": {"status": "completed", "queries_executed": 18, "queries_skipped": 0, "depth_reached": 1, "files_read": 12, "grep_calls": 10, "git_calls": 1, "truncated": false, "truncation_reason": null, "completed_at": "2026-06-15T12:18:00-04:00"},
+    "synthesis": {"status": "completed", "synthesis_path": "sdd/state/FEAT-237/synthesis.json", "thinking_path": null, "overall_confidence": "high", "claims_total": 11, "claims_high_conf": 10, "claims_medium_conf": 1, "claims_low_conf": 0, "unknowns_count": 3, "lint_passed": true, "lint_iterations": 0},
+    "qa": {"status": "completed", "questions_total": 3, "questions_answered": 3, "skipped_reason": null},
+    "output": {"status": "completed", "proposal_path": "sdd/proposals/pageindex-embedding-router.proposal.md", "commit_sha": "1d9eebebf1cd50b9066bddefc9705b72591ef5e9", "next_command_recommended": "sdd-spec", "next_command_rationale": "All brainstorm codebase anchors verified (high confidence). Phase A is low-risk and well-scoped. Spec should formalize phased approach and resolve remaining architectural questions."}
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 12,
+    "grep_calls": 10,
+    "git_calls": 1,
+    "wall_seconds": 180
+  }
+}

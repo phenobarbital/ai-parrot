@@ -335,3 +335,8 @@ packages/ai-parrot/src/parrot/_version.py
 
 # Downloaded TTS model weights (make install-supertonic) — large LFS assets
 /models/
+
+# Compliance corpus raw downloads and built trees (FEAT-237)
+# Scripts/manifest are committed; raw files and trees are not.
+corpus/compliance_soc2_hipaa/raw/
+corpus/compliance_soc2_hipaa/trees/
