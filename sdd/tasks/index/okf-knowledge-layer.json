@@ -91,7 +91,7 @@
       "feature_id": "FEAT-238",
       "feature": "okf-knowledge-layer",
       "spec": "sdd/specs/okf-knowledge-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Imports from ontology and frontmatter — must run after TASK-1552 + TASK-1554",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1556-okf-projection.md"
+      "completed_at": "2026-06-15T17:08:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1556-okf-projection.md"
     },
     {
       "id": "TASK-1557",
