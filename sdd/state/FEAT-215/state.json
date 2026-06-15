@@ -1,0 +1,49 @@
+{
+  "feature_id": "FEAT-215",
+  "slug": "graphindex-pageindex-llmwiki",
+  "phase": "synthesis_complete",
+  "mode": "investigation",
+  "budget": {
+    "profile": "loose",
+    "files_read": 18,
+    "grep_calls": 8,
+    "git_calls": 0,
+    "depth": 3,
+    "wall_seconds": 900,
+    "consumed": {
+      "files_read": 18,
+      "grep_calls": 8,
+      "git_calls": 0,
+      "depth_reached": 2
+    },
+    "truncated": false
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Evaluate llm_wiki repo and OKF spec; extract ideas for GraphIndex/PageIndex platform enhancement"
+  },
+  "started_at": "2026-06-16T12:00:00Z",
+  "updated_at": "2026-06-16T12:30:00Z",
+  "phases": {
+    "source": { "status": "complete" },
+    "plan": { "status": "complete", "approved_by_user": true },
+    "research": {
+      "status": "complete",
+      "files_read": 18,
+      "findings_count": 6
+    },
+    "synthesis": {
+      "status": "complete",
+      "overall_confidence": "high",
+      "claims_high": 6,
+      "claims_medium": 4,
+      "claims_low": 1
+    },
+    "qa": { "status": "skipped", "reason": "no-gate mode, inline source with detailed context" },
+    "output": {
+      "proposal_path": "sdd/proposals/graphindex-pageindex-llmwiki.proposal.md",
+      "commit_sha": null
+    }
+  }
+}
