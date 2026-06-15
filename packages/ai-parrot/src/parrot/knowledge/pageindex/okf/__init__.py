@@ -34,6 +34,13 @@ from parrot.knowledge.pageindex.okf.graph import (
     build_graph,
     parse_markdown_links,
 )
+from parrot.knowledge.pageindex.okf.projection import (
+    flatten_concept_id_for_filename,
+    project_sidecar,
+    project_sidecars,
+    generate_index_md,
+    ProjectionReport,
+)
 
 __all__ = [
     "ConceptType",
@@ -49,4 +56,9 @@ __all__ = [
     "KnowledgeGraph",
     "build_graph",
     "parse_markdown_links",
+    "flatten_concept_id_for_filename",
+    "project_sidecar",
+    "project_sidecars",
+    "generate_index_md",
+    "ProjectionReport",
 ]
