@@ -111,7 +111,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Depends on store + RRF fusion to wire into toolkit",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1549-toolkit-wiring.md"
+      "completed_at": "2026-06-15T14:35:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1549-toolkit-wiring.md"
     },
     {
       "id": "TASK-1550",
