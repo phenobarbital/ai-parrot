@@ -16,10 +16,18 @@ from parrot.knowledge.okf.ontology import (
     RelatesTo,
     SourceProvenance,
 )
+from parrot.knowledge.okf.frontmatter import (
+    ConceptFrontmatter,
+    project_frontmatter,
+    parse_frontmatter,
+)
 
 __all__ = [
     "ConceptType",
     "RelationType",
     "RelatesTo",
     "SourceProvenance",
+    "ConceptFrontmatter",
+    "project_frontmatter",
+    "parse_frontmatter",
 ]

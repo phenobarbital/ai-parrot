@@ -26,7 +26,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
-from parrot.knowledge.pageindex.okf.frontmatter import project_frontmatter
+from parrot.knowledge.okf.frontmatter import project_frontmatter
 from parrot.knowledge.pageindex.utils import structure_to_list
 
 # Maximum length for the TOTAL flattened filename (all hierarchy levels joined
