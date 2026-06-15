@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import threading
 from collections import OrderedDict
 from pathlib import Path
 from typing import Callable, Optional
@@ -84,6 +85,8 @@ class NodeEmbeddingStore:
         self._cache_size = max(1, int(cache_size))
         # LRU cache: content_key (str) -> np.ndarray (1-D)
         self._cache: OrderedDict[str, np.ndarray] = OrderedDict()
+        # Protects the LRU cache from concurrent asyncio.to_thread callers.
+        self._cache_lock: threading.Lock = threading.Lock()
 
     # ---- content key ---------------------------------------------------
 
@@ -127,20 +130,22 @@ class NodeEmbeddingStore:
 
     def _cache_get(self, key: str) -> Optional[np.ndarray]:
         """Return cached vector or None; moves to end on hit (LRU)."""
-        vec = self._cache.get(key)
-        if vec is not None:
-            self._cache.move_to_end(key)
-        return vec
+        with self._cache_lock:
+            vec = self._cache.get(key)
+            if vec is not None:
+                self._cache.move_to_end(key)
+            return vec
 
     def _cache_put(self, key: str, vec: np.ndarray) -> None:
         """Insert or update a vector in the LRU cache; evict LRU if full."""
-        if key in self._cache:
-            self._cache.move_to_end(key)
+        with self._cache_lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+                self._cache[key] = vec
+                return
             self._cache[key] = vec
-            return
-        self._cache[key] = vec
-        while len(self._cache) > self._cache_size:
-            self._cache.popitem(last=False)
+            while len(self._cache) > self._cache_size:
+                self._cache.popitem(last=False)
 
     # ---- global-tier helpers -------------------------------------------
 

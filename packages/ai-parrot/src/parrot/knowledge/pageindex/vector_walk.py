@@ -20,6 +20,7 @@ Usage example::
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Optional
 
@@ -171,10 +172,11 @@ async def embedding_tree_walk(
                 vec = store.get_or_embed(tree_name, nid, title, summary)
 
             if vec is None and embed_fn is not None:
-                # Last resort: embed on demand (single text, slow path)
+                # Last resort: embed on demand (single text, slow path).
+                # Offload to a thread pool so the event loop is not blocked.
                 text = f"{title} {summary}".strip()
                 try:
-                    vecs = embed_fn([text])
+                    vecs = await asyncio.to_thread(embed_fn, [text])
                     vec = np.asarray(vecs[0], dtype=np.float32)
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("embed_fn failed for node %s: %s", nid, exc)

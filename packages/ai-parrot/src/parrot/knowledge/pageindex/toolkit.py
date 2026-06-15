@@ -300,6 +300,7 @@ class PageIndexToolkit(AbstractToolkit):
             use_bm25=use_bm25,
             use_llm_walk=use_llm_walk,
             rerank=rerank,
+            use_vec=self._use_vec_rank,
         )
         if categories or metadata_filter:
             results = self._apply_filters(

@@ -210,15 +210,23 @@ def _load_oracle(storage_dir: Optional[Path], tree_name: Optional[str]) -> dict[
         return {}
     try:
         data = json.loads(tree_file.read_text())
-        nodes = data.get("nodes", {})
-        if not nodes:
+        structure = data.get("structure", [])
+        if not structure:
+            return {}
+        # Flatten the tree using the same utility used by hybrid_search.
+        from parrot.knowledge.pageindex.utils import get_nodes
+        flat_nodes: list[dict] = get_nodes(structure)
+        if not flat_nodes:
             return {}
         # Use first-level nodes as a simple oracle: each node is its own
         # relevant result for the query formed from its title/summary.
         oracle: dict[str, list[str]] = {}
-        for node_id, node in list(nodes.items())[:20]:
+        for node in flat_nodes[:20]:
+            node_id = node.get("node_id", "")
+            if not node_id:
+                continue
             title = node.get("title", "")
-            summary = node.get("summary", "")
+            summary = node.get("summary") or node.get("prefix_summary", "")
             query = f"{title} {summary}".strip()
             if query:
                 oracle[query] = [node_id]

@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 _TRUST_REMOTE_CODE_MODELS: set[str] = {
     "nomic-ai/nomic-embed-text-v1.5",
     "jinaai/jina-embeddings-v3",
+    "Qwen/Qwen3-Embedding-0.6B",
 }
 
 # Built once at import time from the catalog — O(1) lookup at runtime.
