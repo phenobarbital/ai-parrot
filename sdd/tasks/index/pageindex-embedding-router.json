@@ -90,7 +90,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -101,8 +101,8 @@
       "parallelism_notes": "Depends on both store and RRF fusion being in place",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1548-embedding-beam-walk.md"
+      "completed_at": "2026-06-15T14:32:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1548-embedding-beam-walk.md"
     },
     {
       "id": "TASK-1549",
