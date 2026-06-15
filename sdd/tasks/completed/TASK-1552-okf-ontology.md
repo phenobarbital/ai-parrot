@@ -204,10 +204,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-15
+**Notes**: Created `okf/__init__.py` and `okf/ontology.py` with ConceptType (11 values), RelationType (8 values), RelatesTo and SourceProvenance Pydantic v2 models. All 20 tests pass. No linting errors.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -244,10 +244,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-15
+**Notes**: Implemented flatten_concept_id_for_filename, project_sidecar, project_sidecars (byte-deterministic), generate_index_md, and ProjectionReport model. Old node_id.md cleanup implemented. Added re-exports to __init__.py. All 22 tests pass. No linting errors.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

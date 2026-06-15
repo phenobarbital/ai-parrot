@@ -1021,3 +1021,113 @@ async def test_search_documents_scoped_falls_back_to_summary_when_no_sidecar(
     entry = result["scoped_results"][0]
     assert "BODY_A" not in entry["context"]
     assert "Summary A for kb" in entry["context"]
+
+
+# ---- OKF integration tests (FEAT-238 / TASK-1559) -------------------------
+
+
+@pytest.mark.asyncio
+async def test_insert_markdown_t3_classifies_in_okf_tree(
+    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path
+):
+    """In an OKF-migrated tree, insert_markdown runs T3 for new untyped nodes.
+
+    T3 only activates when the tree already has at least one typed node
+    (backward compatibility gate).  We pre-seed one typed node to enable T3.
+    """
+    from parrot.knowledge.pageindex.okf.ontology import ConceptType
+    from parrot.knowledge.pageindex.utils import structure_to_list
+
+    await toolkit.create_tree("okf_test")
+    # Pre-seed a typed node to enable T3 gate.
+    tree = toolkit._trees["okf_test"]
+    tree["structure"] = [
+        {
+            "node_id": "0000",
+            "concept_id": "seed/section",
+            "type": "Section",
+            "title": "Seed",
+            "summary": "Pre-existing typed node",
+            "nodes": [],
+        }
+    ]
+
+    md = (
+        "# OKF Node\n\n"
+        "This is a short description of the OKF node being inserted for testing purposes.\n"
+    )
+    await toolkit.insert_markdown("okf_test", md)
+    tree = await toolkit.get_tree("okf_test")
+    nodes = structure_to_list(tree.get("structure", []))
+    # New nodes inserted after the seed must also have a type.
+    new_nodes = [n for n in nodes if n.get("title") != "Seed"]
+    assert new_nodes, "Expected new nodes after insert_markdown"
+    for node in new_nodes:
+        assert node.get("type") is not None, (
+            f"Node {node.get('node_id')!r} missing type after T3 step"
+        )
+    # With a mock adapter, the fallback is Section.
+    assert all(n.get("type") == ConceptType.SECTION.value for n in new_nodes)
+
+
+def test_set_okf_toolkit_registers_tools(toolkit: PageIndexToolkit, tmp_path: Path):
+    """set_okf_toolkit registers OKF tools in get_tools() output."""
+    from parrot.knowledge.pageindex.content_store import NodeContentStore
+    from parrot.knowledge.pageindex.okf.graph import KnowledgeGraph
+    from parrot.knowledge.pageindex.okf.tools import OKFToolkit
+
+    enriched_tree = {
+        "doc_name": "guide.pdf",
+        "structure": [
+            {
+                "node_id": "0000",
+                "concept_id": "controls/c1",
+                "type": "Control",
+                "title": "Control 1",
+                "summary": "A test control",
+                "relates_to": [],
+                "nodes": [],
+            }
+        ],
+    }
+    graph = KnowledgeGraph(enriched_tree)
+    store = NodeContentStore(tmp_path)
+    okf_tk = OKFToolkit(enriched_tree, graph, store, "guide")
+    toolkit.set_okf_toolkit("guide", okf_tk)
+
+    all_tools = toolkit.get_tools()
+    # Should have the standard toolkit tools + 6 OKF tools.
+    assert len(all_tools) > len(toolkit.__class__.mro())  # at least some tools
+    # OKF toolkit returns 6 tools.
+    assert len(okf_tk.get_tools()) == 6
+
+
+@pytest.mark.asyncio
+async def test_delete_node_cleans_up_concept_id_sidecar(
+    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path
+):
+    """delete_node removes concept_id-keyed sidecar when node has concept_id."""
+    # Create a tree with an OKF-enriched node.
+    await toolkit.create_tree("cleanup_test")
+    # Manually inject an enriched node into the tree.
+    tree = toolkit._trees["cleanup_test"]
+    tree["structure"] = [
+        {
+            "node_id": "0000",
+            "concept_id": "controls/c1",
+            "type": "Control",
+            "title": "Control 1",
+            "summary": "Test",
+            "nodes": [],
+        }
+    ]
+    # Write both node_id and concept_id keyed sidecars.
+    toolkit._content_store.save("cleanup_test", "0000", "legacy body")
+    toolkit._content_store.save("cleanup_test", "controls--c1", "okf body")
+
+    result = await toolkit.delete_node("cleanup_test", "0000")
+    assert result["removed"] is True
+
+    # Both sidecars must be gone.
+    assert toolkit._content_store.load("cleanup_test", "0000") is None
+    assert toolkit._content_store.load("cleanup_test", "controls--c1") is None

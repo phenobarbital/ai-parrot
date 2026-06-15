@@ -265,10 +265,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-15
+**Notes**: Implemented KnowledgeGraph class with neighbors(), trace(), broken_links(), concepts(), and add_prose_links(). Also implemented parse_markdown_links() skipping fenced code blocks, and build_graph() convenience factory. Added re-exports to __init__.py. All 29 tests pass. No linting errors.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none
 
 **Deviations from spec**: none | describe if any

@@ -283,7 +283,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-15
+**Notes**: Implemented okf_migrate() with full pipeline: concept_id assignment, type classification (LLM + content-addressed cache + Section fallback), source provenance, markdown link → relates_to parsing, sidecar rename via project_sidecars, index.md generation. MigrationReport includes histogram, link stats, slug collision count. All 14 tests pass. No linting errors.
+
+**Deviations from spec**: none
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD
