@@ -70,7 +70,7 @@
       "feature_id": "FEAT-238",
       "feature": "okf-knowledge-layer",
       "spec": "sdd/specs/okf-knowledge-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Imports from ontology (TASK-1552) and uses concept_id keying (TASK-1553)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1555-okf-graph.md"
+      "completed_at": "2026-06-15T17:06:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1555-okf-graph.md"
     },
     {
       "id": "TASK-1556",
