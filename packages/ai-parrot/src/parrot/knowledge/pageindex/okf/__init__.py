@@ -24,6 +24,11 @@ from parrot.knowledge.pageindex.okf.concept_id import (
     dedup_concept_ids,
     assign_concept_ids,
 )
+from parrot.knowledge.pageindex.okf.frontmatter import (
+    ConceptFrontmatter,
+    project_frontmatter,
+    parse_frontmatter,
+)
 
 __all__ = [
     "ConceptType",
@@ -33,4 +38,7 @@ __all__ = [
     "derive_concept_id",
     "dedup_concept_ids",
     "assign_concept_ids",
+    "ConceptFrontmatter",
+    "project_frontmatter",
+    "parse_frontmatter",
 ]
