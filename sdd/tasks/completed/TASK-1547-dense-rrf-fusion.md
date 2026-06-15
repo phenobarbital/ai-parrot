@@ -248,10 +248,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-15
+**Notes**: Added _vec_rank(), embedding_store/embed_fn/use_vec_rank/use_embedding_walk
+params to HybridPageIndexSearch.__init__. Updated mark_dirty() to invalidate embedding
+matrix. Updated search() with use_vec parameter and 3-way RRF fusion. When use_vec=False,
+code path is byte-identical to baseline. All 14 unit tests pass.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

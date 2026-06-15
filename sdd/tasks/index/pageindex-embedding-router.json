@@ -70,7 +70,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Depends on NodeEmbeddingStore from TASK-1546",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1547-dense-rrf-fusion.md"
+      "completed_at": "2026-06-15T14:29:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1547-dense-rrf-fusion.md"
     },
     {
       "id": "TASK-1548",
