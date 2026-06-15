@@ -14,7 +14,7 @@
       "feature_id": "FEAT-237",
       "feature": "integrate-mcp-fireflies",
       "spec": "sdd/specs/integrate-mcp-fireflies.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Single sequential task per spec Worktree Strategy. Touches integration.py + registry.py + their tests; the descriptor change is conceptually coupled to the factory env-fallback, so kept in one task.",
       "assigned_to": null,
       "started_at": "2026-06-15T17:50:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1552-fireflies-env-key-fallback.md"
+      "completed_at": "2026-06-15T17:57:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1552-fireflies-env-key-fallback.md"
     }
   ]
 }
