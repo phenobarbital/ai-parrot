@@ -14,7 +14,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — catalog changes are imported by all downstream modules",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1544-catalog-backend-field.md"
+      "completed_at": "2026-06-15T14:16:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1544-catalog-backend-field.md"
     },
     {
       "id": "TASK-1545",

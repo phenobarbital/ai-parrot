@@ -189,3 +189,12 @@ When you pick up this task:
 **Notes**: 
 
 **Deviations from spec**: none | describe if any
+
+---
+_Completion appended by sdd-worker_
+
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-15
+**Notes**: Added optional `backend: Optional[Literal["torch", "onnx", "openvino"]] = None` field to `EmbeddingModelEntry`. Added 3 new entries: Qwen/Qwen3-Embedding-0.6B (1024d, matryoshka), intfloat/multilingual-e5-small (384d), minishlab/potion-base-8M (256d). All 10 unit tests pass.
+
+**Deviations from spec**: The test spec used `"model_id" in EMBEDDING_MODELS` but EMBEDDING_MODELS is a list not a dict. Tests use a helper function `_find_model(model_id)` that searches the list by the `model` field key. Functionally equivalent.
