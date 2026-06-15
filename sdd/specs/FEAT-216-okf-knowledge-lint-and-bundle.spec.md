@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-216
 **Date**: 2026-06-16
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.next
 **Related**: FEAT-238 (okf-knowledge-layer)
 
@@ -514,12 +514,12 @@ project deps (pydantic, pyyaml).
 
 - [x] **Should OKF bundle import support arbitrary `type` values?** — *Resolved
   in proposal*: Map unknown types to `ConceptType.OTHER`.
-- [ ] **Should export produce a flat directory or nested by type?** —
+- [x] **Should export produce a flat directory or nested by type?** —
   Recommendation: nested by type (e.g. `controls/`, `policies/`) matching OKF
-  convention, with a flat fallback for bundles with only one type.
-- [ ] **Should stale-claims detection use file mtime or frontmatter timestamp?**
+  convention, with a flat fallback for bundles with only one type.: nested
+- [x] **Should stale-claims detection use file mtime or frontmatter timestamp?**
   — Recommendation: frontmatter timestamp (more reliable, doesn't depend on
-  filesystem).
+  filesystem): frontmatter timestamp
 
 ---
 

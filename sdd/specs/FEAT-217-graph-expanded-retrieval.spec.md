@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-217
 **Date**: 2026-06-16
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.next
 **Related**: FEAT-190 (signal-relevance), FEAT-191 (louvain-communities), FEAT-237 (pageindex-embedding-router)
 
@@ -431,8 +431,8 @@ No new external dependencies. Uses existing rustworkx, networkx, numpy, pydantic
 
 - [x] **Should graph-expanded retrieval be a separate class or integrated into hybrid_search.py?** -- *Resolved in proposal*: Separate `GraphExpandedRetriever` class to keep concerns separated.
 - [x] **What decay function for graph expansion hops?** -- *Resolved in proposal*: Configurable, default exponential (`score * 0.7^hop`).
-- [ ] **Should the retriever cache signal_relevance results across queries?** -- Recommendation: No caching for v1. Signal scores depend on the graph state which may change between queries. Cache in v2 with TTL if profiling shows it's needed.
-- [ ] **Should Phase 1 support combining both seed sources (FAISS + hybrid)?** -- Recommendation: Yes, with RRF fusion (same pattern as HybridPageIndexSearch._rrf_fuse). But defer to v2; v1 uses one or the other.
+- [x] **Should the retriever cache signal_relevance results across queries?** -- Recommendation: No caching for v1. Signal scores depend on the graph state which may change between queries. Cache in v2 with TTL if profiling shows it's needed: no caching
+- [x] **Should Phase 1 support combining both seed sources (FAISS + hybrid)?** -- Recommendation: Yes, with RRF fusion (same pattern as HybridPageIndexSearch._rrf_fuse). But defer to v2; v1 uses one or the other: Yes, based on recommendation
 
 ---
 

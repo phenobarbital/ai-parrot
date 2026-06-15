@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-215
 **Date**: 2026-06-16
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.next
 **Related**: FEAT-190 (signal-relevance), FEAT-191 (louvain-communities), FEAT-192 (toolkit-write-and-signals)
 
@@ -410,7 +410,7 @@ class GraphIndexToolkit(AbstractToolkit):  # line 60
 
 - [x] **Does the composite scoring replace or supplement confidence-based ranking?** — *Resolved in proposal*: Replaces the sort key. Confidence is one of the 5 factors; the composite score is the new primary sort key.
 - [x] **Should dismissal state persist to ArangoDB?** — *Resolved*: No for v1. Session-scoped via domain_tags. Persistence deferred to v2 if needed.
-- [ ] **Should `exclude_kinds` for isolated-node detection be configurable per-toolkit-call or set at toolkit init?** — Recommendation: per-call parameter with a sensible default (exclude DOCUMENT root nodes).
+- [x] **Should `exclude_kinds` for isolated-node detection be configurable per-toolkit-call or set at toolkit init?** — Recommendation: per-call parameter with a sensible default (exclude DOCUMENT root nodes): per-call as recommended
 
 ---
 
