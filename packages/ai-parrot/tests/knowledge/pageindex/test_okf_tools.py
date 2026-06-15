@@ -85,36 +85,46 @@ class TestFindByType:
 
     def test_filters_by_type(self, toolkit):
         """Only nodes with matching type are returned."""
-        results = toolkit.find_by_type(ConceptType.CONTROL, query="")
+        results = toolkit.find_by_type(concept_type=ConceptType.CONTROL, query="")
         assert all(r["type"] == "Control" for r in results)
         assert len(results) == 1
         assert results[0]["concept_id"] == "controls/nist-ir-4"
 
     def test_returns_empty_for_no_match(self, toolkit):
         """Type with no matching nodes returns empty list."""
-        results = toolkit.find_by_type(ConceptType.GUIDELINE, query="anything")
+        results = toolkit.find_by_type(concept_type=ConceptType.GUIDELINE, query="anything")
         assert results == []
 
     def test_query_filters_within_type(self, toolkit):
         """Query string filters within the type-filtered candidate set."""
-        results = toolkit.find_by_type(ConceptType.SAFEGUARD, query="hipaa")
+        results = toolkit.find_by_type(concept_type=ConceptType.SAFEGUARD, query="hipaa")
         assert len(results) >= 1
         assert any(r["concept_id"] == "safeguards/hipaa-164" for r in results)
 
     def test_empty_query_returns_all_of_type(self, toolkit):
         """Empty query returns all nodes of the given type."""
-        results = toolkit.find_by_type(ConceptType.EVIDENCE, query="")
+        results = toolkit.find_by_type(concept_type=ConceptType.EVIDENCE, query="")
         assert any(r["concept_id"] == "evidence/ir-plan" for r in results)
 
     def test_result_has_expected_keys(self, toolkit):
         """Result dicts include concept_id, title, summary, type."""
-        results = toolkit.find_by_type(ConceptType.CONTROL, query="")
+        results = toolkit.find_by_type(concept_type=ConceptType.CONTROL, query="")
         assert results
         r = results[0]
         assert "concept_id" in r
         assert "title" in r
         assert "summary" in r
         assert "type" in r
+
+    def test_raw_string_type_does_not_crash(self, toolkit):
+        """Passing a raw string for concept_type (LLM path) works correctly.
+
+        This is the regression test for the AttributeError that occurred when
+        an LLM passed 'Control' as a plain str instead of ConceptType.CONTROL.
+        """
+        results = toolkit.find_by_type(concept_type="Control", query="")
+        assert len(results) == 1
+        assert results[0]["concept_id"] == "controls/nist-ir-4"
 
 
 class TestListConcepts:
@@ -127,7 +137,7 @@ class TestListConcepts:
 
     def test_filters_by_type(self, toolkit):
         """With type filter, only matching concepts returned."""
-        results = toolkit.list_concepts(type=ConceptType.CONTROL)
+        results = toolkit.list_concepts(concept_type=ConceptType.CONTROL)
         assert len(results) == 1
         assert results[0]["concept_id"] == "controls/nist-ir-4"
 

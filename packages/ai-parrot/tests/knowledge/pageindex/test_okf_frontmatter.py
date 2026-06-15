@@ -104,11 +104,34 @@ class TestProjectFrontmatter:
         assert a == b
 
     def test_round_trip(self, sample_node):
-        """project → parse → re-project yields identical YAML."""
-        yaml_str = project_frontmatter(sample_node, "tree1")
-        # Parse and re-project must be identical
-        reprojected = project_frontmatter(sample_node, "tree1")
-        assert yaml_str == reprojected
+        """project → parse → reconstruct node → re-project yields identical YAML.
+
+        The real round-trip: project a node to YAML, parse back to a
+        ConceptFrontmatter, rebuild a node dict from the parsed fields, then
+        project again — the two YAML strings must be byte-identical.
+        """
+        first = project_frontmatter(sample_node, "tree1")
+        fm = parse_frontmatter(first)
+
+        # Reconstruct a node dict from the parsed ConceptFrontmatter.
+        # Field mapping mirrors what project_frontmatter extracts from a node.
+        reconstructed = {
+            "type": fm.type.value,
+            "title": fm.title,
+            "concept_id": fm.id,
+            "node_id": fm.node_id,
+            "summary": fm.summary,
+            "categories": fm.tags,  # project_frontmatter uses categories → tags
+            "timestamp": fm.timestamp,
+            "relates_to": [
+                {"concept": r.concept, "rel": r.rel.value} for r in fm.relates_to
+            ],
+            "source": fm.source.model_dump(exclude_none=True) if fm.source else None,
+        }
+        second = project_frontmatter(reconstructed, "tree1")
+        assert first == second, (
+            f"Round-trip failed.\nFirst:\n{first}\nSecond:\n{second}"
+        )
 
     def test_optional_source_omitted(self, minimal_node):
         """source key absent when node has no source."""
@@ -205,9 +228,25 @@ class TestParseFrontmatter:
             parse_frontmatter("---\ntype: Section\ntitle: X\n")
 
     def test_round_trip_full_cycle(self, sample_node):
-        """project → parse → project produces identical bytes."""
+        """project → parse → reconstruct → project produces identical bytes."""
         first = project_frontmatter(sample_node, "soc2")
         fm = parse_frontmatter(first)
-        # Re-project from the re-parsed node dict
-        second = project_frontmatter(sample_node, "soc2")
-        assert first == second
+        # Reconstruct a node dict from the parsed ConceptFrontmatter, then
+        # re-project — must produce byte-identical YAML.
+        reconstructed = {
+            "type": fm.type.value,
+            "title": fm.title,
+            "concept_id": fm.id,
+            "node_id": fm.node_id,
+            "summary": fm.summary,
+            "categories": fm.tags,
+            "timestamp": fm.timestamp,
+            "relates_to": [
+                {"concept": r.concept, "rel": r.rel.value} for r in fm.relates_to
+            ],
+            "source": fm.source.model_dump(exclude_none=True) if fm.source else None,
+        }
+        second = project_frontmatter(reconstructed, "soc2")
+        assert first == second, (
+            f"Full round-trip failed.\nFirst:\n{first}\nSecond:\n{second}"
+        )

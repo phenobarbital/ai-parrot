@@ -88,15 +88,17 @@ class OKFToolkit:
         ]
 
     @tool
-    def find_by_type(self, type: ConceptType, query: str) -> list[dict]:
+    def find_by_type(self, concept_type: ConceptType, query: str) -> list[dict]:
         """Search for concepts of a specific type.
 
         Applies an **exact type pre-filter** on the candidate set before
-        ranking.  Deterministic gate: only nodes with ``node["type"] == type``
-        are considered; all other nodes are excluded.
+        ranking.  Deterministic gate: only nodes with
+        ``node["type"] == concept_type`` are considered; all other nodes are
+        excluded.
 
         Args:
-            type: The concept type to filter by (e.g. ``Control``, ``Safeguard``).
+            concept_type: The concept type to filter by (e.g. ``Control``,
+                ``Safeguard``).
             query: Query string used for substring matching against title and
                 summary (lowercase).  Pass ``""`` to return all concepts of
                 the given type.
@@ -105,8 +107,8 @@ class OKFToolkit:
             List of matching node dicts (title, concept_id, summary, type).
         """
         # ConceptType is a str-enum, so comparing directly works whether
-        # `type` is a ConceptType instance or a raw string from an LLM call.
-        type_str: str = type.value if isinstance(type, ConceptType) else str(type)
+        # `concept_type` is a ConceptType instance or a raw string from an LLM.
+        type_str: str = concept_type.value if isinstance(concept_type, ConceptType) else str(concept_type)
         q = query.lower()
         results = []
         for node in structure_to_list(self._tree.get("structure", [])):
@@ -123,18 +125,20 @@ class OKFToolkit:
         return results
 
     @tool
-    def list_concepts(self, type: Optional[ConceptType] = None) -> list[dict]:
+    def list_concepts(self, concept_type: Optional[ConceptType] = None) -> list[dict]:
         """Browse the knowledge ToC, optionally filtered by type.
 
         Args:
-            type: Optional concept type filter.  If ``None``, returns all concepts.
+            concept_type: Optional concept type filter.  If ``None``, returns
+                all concepts.
 
         Returns:
             List of concept dicts (concept_id, title, summary, type).
         """
         # Same str-enum guard as find_by_type — handles raw strings from LLM.
         type_str: Optional[str] = (
-            type.value if isinstance(type, ConceptType) else (str(type) if type is not None else None)
+            concept_type.value if isinstance(concept_type, ConceptType)
+            else (str(concept_type) if concept_type is not None else None)
         )
         results = []
         for node in structure_to_list(self._tree.get("structure", [])):
@@ -171,6 +175,11 @@ class OKFToolkit:
         """
         node = self._by_concept_id.get(concept_id)
         if node is None:
+            self.logger.warning(
+                "get_concept: concept_id not found in tree %r: %r",
+                self._tree_name,
+                concept_id,
+            )
             raise KeyError(f"concept_id not found: {concept_id!r}")
 
         flat_id = flatten_concept_id_for_filename(concept_id)
@@ -244,6 +253,11 @@ class OKFToolkit:
         """
         node = self._by_concept_id.get(concept_id)
         if node is None:
+            self.logger.warning(
+                "cite: concept_id not found in tree %r: %r",
+                self._tree_name,
+                concept_id,
+            )
             raise KeyError(f"concept_id not found: {concept_id!r}")
 
         src = node.get("source") or {}

@@ -149,7 +149,8 @@ def project_frontmatter(node: dict, tree_name: str) -> str:
 def parse_frontmatter(text: str) -> ConceptFrontmatter:
     """Parse YAML frontmatter from a sidecar string back into a model.
 
-    The ``text`` must begin with ``---\\n`` and contain a closing ``---``.
+    The ``text`` must begin with ``---`` and contain a closing ``---``.
+    CRLF line-endings are normalised to LF before parsing.
 
     Args:
         text: Sidecar file content starting with YAML frontmatter.
@@ -160,6 +161,8 @@ def parse_frontmatter(text: str) -> ConceptFrontmatter:
     Raises:
         ValueError: If the frontmatter block cannot be found or parsed.
     """
+    # Normalise CRLF → LF for consistent delimiter detection.
+    text = text.replace("\r\n", "\n")
     if not text.startswith("---"):
         raise ValueError("Text does not start with YAML frontmatter delimiter '---'")
 
