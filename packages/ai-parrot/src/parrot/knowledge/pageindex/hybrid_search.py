@@ -292,16 +292,17 @@ class HybridPageIndexSearch:
         use_bm25: bool = True,
         use_llm_walk: bool = True,
         use_vec: bool = False,
+        use_embedding_walk: Optional[bool] = None,
         rerank: bool = False,
     ) -> list[dict[str, Any]]:
         """Run hybrid search and return a list of candidate node summaries.
 
         Each result is a dict with ``node_id``, ``title``, ``summary``,
         ``score`` and ``source`` (one of ``"bm25"``, ``"llm"``, ``"vec"``,
-        ``"fused"``).
+        ``"beam"``, ``"fused"``).
 
-        When ``use_vec=False`` (the default), the output is byte-identical
-        to the pre-embedding baseline.
+        When ``use_vec=False`` and ``use_embedding_walk`` is not set, the
+        output is byte-identical to the pre-embedding baseline.
 
         Args:
             query: Query string.
@@ -310,19 +311,31 @@ class HybridPageIndexSearch:
             use_llm_walk: Include LLM tree-walk ranking signal.
             use_vec: Include dense cosine-similarity ranking signal (Phase A).
                 Requires ``embedding_store`` and ``embed_fn`` to be set.
+            use_embedding_walk: Override Phase B beam walk flag.  When
+                ``None`` (default), falls back to the ``use_embedding_walk``
+                constructor flag.
             rerank: Apply cross-encoder reranking to the fused candidates.
 
         Raises:
-            ValueError: When all three signals are disabled.
+            ValueError: When all signals are disabled.
         """
-        if not (use_bm25 or use_llm_walk or use_vec):
+        # Resolve Phase B flag: per-call override wins over constructor default.
+        _use_beam = (
+            use_embedding_walk
+            if use_embedding_walk is not None
+            else self._use_embedding_walk
+        )
+
+        if not (use_bm25 or use_llm_walk or use_vec or _use_beam):
             raise ValueError(
-                "At least one of use_bm25 / use_llm_walk / use_vec must be True"
+                "At least one of use_bm25 / use_llm_walk / use_vec / use_embedding_walk"
+                " must be True"
             )
 
         bm25_ranking: list[str] = []
         llm_ranking: list[str] = []
         vec_ranking: list[str] = []
+        beam_ranking: list[str] = []
 
         if use_bm25:
             bm25_ranking = self._bm25_rank(query, self._default_bm25_k)
@@ -331,9 +344,22 @@ class HybridPageIndexSearch:
         if use_vec:
             # Run synchronous _vec_rank in a thread to avoid blocking the loop.
             vec_ranking = await asyncio.to_thread(self._vec_rank, query, top_k)
+        if _use_beam and self._embedding_store is not None and self._embed_fn is not None:
+            from .vector_walk import embedding_tree_walk
+            try:
+                q_vecs = await asyncio.to_thread(self._embed_fn, [query])
+                q_vec = np.asarray(q_vecs[0], dtype=np.float32)
+                beam_ranking = await embedding_tree_walk(
+                    tree=self._tree,
+                    query_vec=q_vec,
+                    store=self._embedding_store,
+                    embed_fn=self._embed_fn,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("embedding_tree_walk failed: %s", exc)
 
         # Build rankings list for RRF — only include signals that were requested.
-        # Preserve byte-identical baseline when use_vec=False.
+        # Preserve byte-identical baseline when use_vec=False and _use_beam=False.
         rankings: list[list[str]] = []
         if use_bm25:
             rankings.append(bm25_ranking)
@@ -341,6 +367,8 @@ class HybridPageIndexSearch:
             rankings.append(llm_ranking)
         if use_vec:
             rankings.append(vec_ranking)
+        if _use_beam and beam_ranking:
+            rankings.append(beam_ranking)
 
         if len(rankings) > 1:
             fused = self._rrf_fuse(rankings)
@@ -351,9 +379,12 @@ class HybridPageIndexSearch:
         elif use_llm_walk:
             fused = [(nid, 1.0 / (i + 1)) for i, nid in enumerate(llm_ranking)]
             source = "llm"
-        else:
+        elif use_vec:
             fused = [(nid, 1.0 / (i + 1)) for i, nid in enumerate(vec_ranking)]
             source = "vec"
+        else:
+            fused = [(nid, 1.0 / (i + 1)) for i, nid in enumerate(beam_ranking)]
+            source = "beam"
 
         if not fused:
             return []
