@@ -41,6 +41,10 @@ from parrot.knowledge.pageindex.okf.projection import (
     generate_index_md,
     ProjectionReport,
 )
+from parrot.knowledge.pageindex.okf.migrate import (
+    okf_migrate,
+    MigrationReport,
+)
 
 __all__ = [
     "ConceptType",
@@ -61,4 +65,6 @@ __all__ = [
     "project_sidecars",
     "generate_index_md",
     "ProjectionReport",
+    "okf_migrate",
+    "MigrationReport",
 ]
