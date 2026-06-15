@@ -52,7 +52,7 @@
       "feature_id": "FEAT-237",
       "feature": "pageindex-embedding-router",
       "spec": "sdd/specs/pageindex-embedding-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "No code dependency on TASK-1544/1545, but kept sequential for orderly review in one worktree",
       "assigned_to": null,
       "started_at": "2026-06-15T14:14:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1546-node-embedding-store.md"
+      "completed_at": "2026-06-15T14:25:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1546-node-embedding-store.md"
     },
     {
       "id": "TASK-1547",

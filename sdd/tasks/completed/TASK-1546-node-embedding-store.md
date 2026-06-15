@@ -275,10 +275,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-15
+**Notes**: Implemented NodeEmbeddingStore with two-tier content-addressed cache.
+Global tier: SHA-1 keyed .npy sidecar files. Per-tree tier: (N,d) contiguous
+float32 numpy matrix + node_order JSON sidecar. LRU cache via OrderedDict.
+All 20 unit tests pass. Fixed test import to use importlib.util.spec_from_file_location
+to bypass parrot.knowledge.pageindex.__init__.py heavy import chain (aiohttp_cors).
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Pattern mirrors NodeContentStore exactly.
