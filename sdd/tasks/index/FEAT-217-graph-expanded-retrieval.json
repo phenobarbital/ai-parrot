@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-16T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-16T00:28:29Z",
   "tasks": [
     {
       "id": "TASK-1565",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-217",
       "feature": "graph-expanded-retrieval",
       "spec": "sdd/specs/FEAT-217-graph-expanded-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all other tasks depend on its data models and class skeleton.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:59:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1565-retriever-data-models.md"
+      "completed_at": "2026-06-16T00:28:29Z",
+      "file": "sdd/tasks/completed/TASK-1565-retriever-data-models.md"
     },
     {
       "id": "TASK-1566",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-217",
       "feature": "graph-expanded-retrieval",
       "spec": "sdd/specs/FEAT-217-graph-expanded-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Extends retriever.py created by TASK-1565; must run after it.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:59:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1566-seed-search-adapters.md"
+      "completed_at": "2026-06-16T00:28:29Z",
+      "file": "sdd/tasks/completed/TASK-1566-seed-search-adapters.md"
     },
     {
       "id": "TASK-1567",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-217",
       "feature": "graph-expanded-retrieval",
       "spec": "sdd/specs/FEAT-217-graph-expanded-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Requires seed search from TASK-1566; extends the same retriever.py file.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:59:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1567-graph-expansion-engine.md"
+      "completed_at": "2026-06-16T00:28:29Z",
+      "file": "sdd/tasks/completed/TASK-1567-graph-expansion-engine.md"
     },
     {
       "id": "TASK-1568",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-217",
       "feature": "graph-expanded-retrieval",
       "spec": "sdd/specs/FEAT-217-graph-expanded-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Wires the full search() pipeline; requires all prior phases implemented.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:59:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1568-community-context-assembly.md"
+      "completed_at": "2026-06-16T00:28:29Z",
+      "file": "sdd/tasks/completed/TASK-1568-community-context-assembly.md"
     },
     {
       "id": "TASK-1569",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-217",
       "feature": "graph-expanded-retrieval",
       "spec": "sdd/specs/FEAT-217-graph-expanded-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Requires complete retriever; extends a different package (parrot-tools) but depends on retriever API.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:59:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1569-toolkit-integration.md"
+      "completed_at": "2026-06-16T00:28:29Z",
+      "file": "sdd/tasks/completed/TASK-1569-toolkit-integration.md"
     }
   ]
 }
