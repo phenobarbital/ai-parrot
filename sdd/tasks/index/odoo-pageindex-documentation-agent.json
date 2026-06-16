@@ -14,16 +14,16 @@
       "feature_id": "FEAT-240",
       "feature": "odoo-pageindex-documentation-agent",
       "spec": "sdd/specs/odoo-pageindex-documentation-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Only touches packages/ai-parrot-tools/src/parrot_tools/odoo/; shares no files with the doc/skill tasks. Independent of TASK-1572/1575/1576.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1571-odoo-shell-toolkit-functions.md"
+      "started_at": "2026-06-16T13:01:17+00:00",
+      "completed_at": "2026-06-16T13:05:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1571-odoo-shell-toolkit-functions.md"
     },
     {
       "id": "TASK-1572",
@@ -32,16 +32,16 @@
       "feature_id": "FEAT-240",
       "feature": "odoo-pageindex-documentation-agent",
       "spec": "sdd/specs/odoo-pageindex-documentation-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Pure offline shell script under scripts/odoo_agent/; no parrot imports, no shared files with other tasks.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1572-fetch-odoo-docs-script.md"
+      "started_at": "2026-06-16T13:01:17+00:00",
+      "completed_at": "2026-06-16T13:07:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1572-fetch-odoo-docs-script.md"
     },
     {
       "id": "TASK-1573",
@@ -50,16 +50,18 @@
       "feature_id": "FEAT-240",
       "feature": "odoo-pageindex-documentation-agent",
       "spec": "sdd/specs/odoo-pageindex-documentation-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1572"],
+      "depends_on": [
+        "TASK-1572"
+      ],
       "parallel": false,
       "parallelism_notes": "Consumes the PDFs produced by TASK-1572 (agents/odoo_agent/docs/<version>/). Must follow it.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1573-build-odoo-pageindex.md"
+      "started_at": "2026-06-16T13:01:17+00:00",
+      "completed_at": "2026-06-16T13:12:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1573-build-odoo-pageindex.md"
     },
     {
       "id": "TASK-1574",
@@ -68,16 +70,19 @@
       "feature_id": "FEAT-240",
       "feature": "odoo-pageindex-documentation-agent",
       "spec": "sdd/specs/odoo-pageindex-documentation-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
-      "depends_on": ["TASK-1571", "TASK-1573"],
+      "depends_on": [
+        "TASK-1571",
+        "TASK-1573"
+      ],
       "parallel": false,
       "parallelism_notes": "Wires the shell tools (TASK-1571) and consumes the PageIndex store (TASK-1573). Loads the skills (TASK-1575/1576) at runtime; those should land before the skill-discovery AC is validated.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1574-odoo-agent-implementation.md"
+      "started_at": "2026-06-16T13:01:17+00:00",
+      "completed_at": "2026-06-16T13:44:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1574-odoo-agent-implementation.md"
     },
     {
       "id": "TASK-1575",
@@ -86,16 +91,16 @@
       "feature_id": "FEAT-240",
       "feature": "odoo-pageindex-documentation-agent",
       "spec": "sdd/specs/odoo-pageindex-documentation-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Markdown-only skill under agents/odoo_agent/skills/install-odoo-module/. References (but does not import) the TASK-1571 shell tool by name. No file conflicts.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1575-skill-install-odoo-module.md"
+      "started_at": "2026-06-16T13:01:17+00:00",
+      "completed_at": "2026-06-16T13:08:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1575-skill-install-odoo-module.md"
     },
     {
       "id": "TASK-1576",
@@ -104,16 +109,16 @@
       "feature_id": "FEAT-240",
       "feature": "odoo-pageindex-documentation-agent",
       "spec": "sdd/specs/odoo-pageindex-documentation-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Markdown-only skill under agents/odoo_agent/skills/structured-operation-response/. No code, no shared files.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1576-skill-structured-operation-response.md"
+      "started_at": "2026-06-16T13:01:17+00:00",
+      "completed_at": "2026-06-16T13:09:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1576-skill-structured-operation-response.md"
     }
   ]
 }
