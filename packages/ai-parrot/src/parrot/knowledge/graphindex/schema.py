@@ -59,6 +59,8 @@ class EdgeKind(str, Enum):
         DEFINES: A module or document provides the authoritative definition.
         MENTIONS: Cross-domain inferred link (provenance=INFERRED).
         EXPLAINS: A rationale/docstring explains a symbol.
+        EXTENDS: Odoo model inheritance — a class extends a canonical model
+            node via ``_inherit`` or ``_inherits``. Added by FEAT-240.
     """
 
     CONTAINS = "contains"
@@ -66,6 +68,7 @@ class EdgeKind(str, Enum):
     DEFINES = "defines"
     MENTIONS = "mentions"
     EXPLAINS = "explains"
+    EXTENDS = "extends"
 
 
 class UniversalNode(BaseModel):
