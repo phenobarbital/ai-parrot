@@ -70,7 +70,7 @@
       "feature_id": "FEAT-240",
       "feature": "odoo-pageindex-documentation-agent",
       "spec": "sdd/specs/odoo-pageindex-documentation-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Wires the shell tools (TASK-1571) and consumes the PageIndex store (TASK-1573). Loads the skills (TASK-1575/1576) at runtime; those should land before the skill-discovery AC is validated.",
       "assigned_to": null,
       "started_at": "2026-06-16T13:01:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1574-odoo-agent-implementation.md"
+      "completed_at": "2026-06-16T13:44:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1574-odoo-agent-implementation.md"
     },
     {
       "id": "TASK-1575",
