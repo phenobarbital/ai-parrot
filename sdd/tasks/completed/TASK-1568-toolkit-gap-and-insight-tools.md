@@ -274,10 +274,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-16
+**Notes**: Added 5 new async agent tools to GraphIndexToolkit: find_isolated_nodes,
+find_sparse_communities, find_bridge_nodes, dismiss_insight, list_unreviewed_insights.
+Added _extract_edges_from_graph() and _get_or_compute_analytics() private helpers for
+lazy AnalyticsResult caching. _analytics_cache cleared on community cache invalidation.
+Added 10 new integration tests (TestToolkitGapDetection + TestToolkitInsightManagement)
+covering gap detection list returns, isolated node filtering, DOCUMENT exclusion, caching,
+and dismiss/list round-trip. All 40 toolkit tests pass. Linting clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

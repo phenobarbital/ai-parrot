@@ -73,7 +73,7 @@
       "feature_id": "FEAT-215",
       "feature": "graphindex-analytics-insights",
       "spec": "sdd/specs/FEAT-215-graphindex-analytics-insights.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -85,8 +85,8 @@
       "parallelism_notes": "Depends on all analytics functions from prior tasks. Different file (toolkit.py) but imports the analytics module.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:53:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1568-toolkit-gap-and-insight-tools.md"
+      "completed_at": "2026-06-16T00:12:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1568-toolkit-gap-and-insight-tools.md"
     }
   ]
 }
