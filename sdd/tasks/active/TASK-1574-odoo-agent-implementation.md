@@ -29,10 +29,12 @@ file/DB Skill Registry. Resolves G1, G3–G8 and most acceptance criteria.
   `skill_registry_inject_context=True`.
 - `agent_tools()` returns `OdooToolkit.get_tools()` (built from `ODOO_TEST_*`,
   `verify_ssl=False`) **+** `PageIndexToolkit.get_tools()` (adapter + persisted
-  `storage_dir` matching TASK-1573).
+  `storage_dir = agents/odoo_agent/documentation/`, the per-version trees `odoo_16`/
+  `odoo_18`/`odoo_19` built by TASK-1573).
 - `configure()`:
   - register `WorkingMemoryToolkit()` via `self.tool_manager.register_toolkit(...)`.
-  - build + attach a `ConfirmationGuard` via
+  - **construct the HITL human channel + `ConfirmationGuard` here (OQ2 resolved)**:
+    build the store + `ConfirmationConfig` + `HumanInteractionManager`, then attach via
     `self.tool_manager.set_confirmation_guard(guard)` so write/delete RPC tools and
     all shell tools (already flagged `requires_confirmation` by TASK-1571) are gated.
   - `self.register_kb(UserInfo())` (always-active → auto-injected into system prompt).
@@ -168,11 +170,12 @@ class Porygon(SkillRegistryMixin, EpisodicMemoryMixin, PandasAgent):   # line 25
 - Mixin ordering: `class OdooAgent(SkillRegistryMixin, Agent)` (mixin first), per porygon.
 - `OdooToolkit` from `os.getenv("ODOO_TEST_URL"/...)`, `verify_ssl=False` — NOT staging `ODOO_*`.
 - The ConfirmationGuard needs a `store` (use `InMemoryConfirmationWindowStore`) and a
-  `human_manager` — how the human channel is obtained at runtime is **OQ2 (open)**; for
-  now construct the guard with the store + config and a handler-provided/optional
-  `human_manager` (document the seam). The guard must still attach so write tools are gated.
+  `human_manager`. **OQ2 resolved**: construct the store + `ConfirmationConfig` +
+  `HumanInteractionManager` + guard **inside `configure()`** and attach via
+  `set_confirmation_guard`. Verify the exact `HumanInteractionManager` import path at
+  implementation time (grep `parrot.auth`/`parrot.*human*`).
 - async throughout; `self.logger`; Pydantic where structured.
-- PageIndex `storage_dir` must match TASK-1573's output location.
+- PageIndex `storage_dir` is `agents/odoo_agent/documentation/` (must match TASK-1573).
 
 ### References in Codebase
 - `agents/backup/odoo.py`, `agents/porygon.py` — the two reference patterns above.

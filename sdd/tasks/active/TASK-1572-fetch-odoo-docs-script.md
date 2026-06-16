@@ -25,7 +25,7 @@ PageIndex builder (TASK-1573). Resolves G2 / AC4 (sourcing half).
   1. Clones (or reuses a cached clone of) `https://github.com/odoo/documentation.git`.
   2. `git checkout <version>`.
   3. Runs `make latexpdf`.
-  4. Copies the produced PDF into `agents/odoo_agent/docs/<version>/`.
+  4. Copies the produced PDF into `agents/odoo_agent/documentation/<version>/`.
 - Be idempotent / re-runnable (skip a version whose PDF already exists unless
   `--force`).
 - Fail clearly if the LaTeX toolchain (`make latexpdf` → needs a TeX distribution)
@@ -45,7 +45,7 @@ see spec §7 (Git LFS / tracked path consideration).
 |---|---|---|
 | `scripts/odoo_agent/fetch_odoo_docs.sh` | CREATE | Loop over versions, build PDFs via `make latexpdf` |
 | `scripts/odoo_agent/README.md` | CREATE | Toolchain prerequisites + usage |
-| `agents/odoo_agent/docs/.gitkeep` | CREATE | Output dir placeholder (PDFs land here at build time) |
+| `agents/odoo_agent/documentation/.gitkeep` | CREATE | Output dir placeholder (PDFs land here at build time) |
 
 ---
 
@@ -86,7 +86,7 @@ make latexpdf          # emits the docs PDF under the sphinx/latex build output
 ## Acceptance Criteria
 
 - [ ] `scripts/odoo_agent/fetch_odoo_docs.sh` exists and is executable.
-- [ ] Loops over `16.0 18.0 19.0`; outputs a PDF per version into `agents/odoo_agent/docs/<version>/`.
+- [ ] Loops over `16.0 18.0 19.0`; outputs a PDF per version into `agents/odoo_agent/documentation/<version>/`.
 - [ ] Idempotent (skips existing PDFs unless `--force`).
 - [ ] Fails clearly when LaTeX/network prerequisites are missing.
 - [ ] `--help` / header documents prerequisites and usage.

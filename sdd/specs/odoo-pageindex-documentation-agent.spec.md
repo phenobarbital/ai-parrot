@@ -121,7 +121,8 @@ consumes the persisted tree at runtime; it does not build it on the request path
         ▼
   ConfirmationGuard (HITL)  ◀── gates write/delete RPC + odoo-bin/odoo-cli shell tools
 
-  Offline:  build_odoo_pageindex.py  ──→  bundled Odoo 16/18/19 PDFs  ──→  PageIndex store
+  Offline:  build_odoo_pageindex.py  ──→  Odoo 16/18/19 PDFs  ──→  per-version trees
+            (agents/odoo_agent/documentation/: odoo_16, odoo_18, odoo_19)
 ```
 
 ### Integration Points
@@ -198,7 +199,7 @@ class OdooToolkit(AbstractToolkit):
 
 ### Module 2: Odoo documentation sourcing + PDF conversion
 - **Path**: `scripts/odoo_agent/fetch_odoo_docs.sh` (new) + generated output under
-  `agents/odoo_agent/docs/` (16/, 18/, 19/).
+  `agents/odoo_agent/documentation/` (`16.0/`, `18.0/`, `19.0/`).
 - **Responsibility**: Generate the official Odoo docs as PDFs from the **official Odoo
   documentation repository** (`https://github.com/odoo/documentation.git`), one PDF per
   version, by checking out the version branch and running `make latexpdf`:
@@ -209,7 +210,7 @@ class OdooToolkit(AbstractToolkit):
   make latexpdf            # produces the docs PDF under the build output dir
   ```
   Wrap this in `fetch_odoo_docs.sh` to loop over `16.0 18.0 19.0`, collect each generated
-  PDF into `agents/odoo_agent/docs/<version>/`. Document the LaTeX toolchain prerequisite
+  PDF into `agents/odoo_agent/documentation/<version>/`. Document the LaTeX toolchain prerequisite
   (`make latexpdf` needs a TeX distribution). The External API (XML-RPC for 16,
   JSON-RPC/REST/JSON-2 for 18/19) and the `odoo-bin`/`odoo-cli` CLI reference are part of
   this same documentation repo, so they are captured by the same build.
@@ -218,9 +219,11 @@ class OdooToolkit(AbstractToolkit):
 ### Module 3: PageIndex builder (offline ingestion)
 - **Path**: `scripts/odoo_agent/build_odoo_pageindex.py` (new)
 - **Responsibility**: Build the documentation PageIndex from the Module 2 PDFs using
-  `PageIndexToolkit.import_pdf` (or `build_page_index`). Organise as a single tree with
-  per-version parent nodes (`Odoo 16`, `Odoo 18`, `Odoo 19`) and a `CLI (odoo-bin/odoo-cli)`
-  node. Persist to the agent's `storage_dir`. Idempotent / re-runnable.
+  `PageIndexToolkit.import_pdf` (or `build_page_index`). Create **one tree per Odoo
+  version** — `odoo_16`, `odoo_18`, `odoo_19` — importing each version's PDF into its own
+  tree (the per-version PDF already includes that version's `odoo-bin`/`odoo-cli` CLI
+  reference). Persist `storage_dir = agents/odoo_agent/documentation/`. Idempotent /
+  re-runnable.
 - **Depends on**: Module 2, `parrot.knowledge.pageindex`.
 
 ### Module 4: OdooAgent implementation
@@ -264,7 +267,7 @@ class OdooToolkit(AbstractToolkit):
 | `test_odoo_shell_disabled_without_bin` | M1 | Tools self-disable (clear message, no crash) when `ODOO_BIN` unset |
 | `test_odoo_shell_tools_are_confirming` | M1 | All shell tools appear in `confirming_tools` → `routing_meta["requires_confirmation"] is True` |
 | `test_odoo_shell_subcommand_whitelist` | M1 | Non-whitelisted CLI subcommands are rejected |
-| `test_build_pageindex_creates_version_nodes` | M3 | Builder creates `Odoo 16/18/19` + CLI parent nodes (mocked `import_pdf`) |
+| `test_build_pageindex_creates_per_version_trees` | M3 | Builder creates `odoo_16`/`odoo_18`/`odoo_19` trees (mocked `import_pdf`) |
 | `test_pageindex_build_idempotent` | M3 | Re-running the builder does not duplicate version nodes |
 | `test_odoo_agent_registers` | M4 | `@register_agent("odoo_agent")` resolvable from registry |
 | `test_odoo_agent_model_is_gemini_3_5_flash` | M4 | `OdooAgent.model` resolves to `"gemini-3.5-flash"` |
@@ -310,8 +313,10 @@ def tiny_pageindex(tmp_path):
       string; `OdooAgent.model` resolves to `"gemini-3.5-flash"`.
 - [ ] **AC3** — `OdooToolkit` is constructed from `ODOO_TEST_*` env vars (`verify_ssl=False`),
       targeting the test instance — not the staging `ODOO_*` vars.
-- [ ] **AC4** — A documentation **PageIndex** for Odoo 16 / 18 / 19 (incl. `odoo-bin`/
-      `odoo-cli` reference) is built by an offline script and attached via `PageIndexToolkit`.
+- [ ] **AC4** — A documentation **PageIndex** with **one tree per Odoo version**
+      (`odoo_16`/`odoo_18`/`odoo_19`, incl. each version's `odoo-bin`/`odoo-cli` reference) is
+      built by an offline script under `agents/odoo_agent/documentation/` and attached via
+      `PageIndexToolkit`.
 - [ ] **AC5** — Backstory instructs the agent to write learnings *not found in the docs*
       into the documentation PageIndex (and the toolkit exposes a write-back path).
 - [ ] **AC6** — Skill Registry enabled; backstory instructs documenting a skill when the
@@ -536,7 +541,7 @@ mgr.set_confirmation_guard(guard)                                               
 ### Known Risks / Gotchas
 - **`/agents/` is git-ignored** (`.gitignore:267`). *Resolved (OQ1)*: this feature
   **temporarily removes the `/agents/` rule** so `agents/oddie.py`, `agents/odoo_agent/skills/`,
-  and the generated `agents/odoo_agent/docs/` are tracked while the feature is built. Caveat:
+  and the generated `agents/odoo_agent/documentation/` are tracked while the feature is built. Caveat:
   un-ignoring `/agents/` surfaces **every** existing agent dir in `git status` — staging must
   be surgical (only the FEAT-240 files), and large generated PDFs should be reconsidered for a
   tracked path or Git LFS before commit. Restore/re-scope the ignore once the feature lands.
@@ -544,8 +549,9 @@ mgr.set_confirmation_guard(guard)                                               
   When `ODOO_BIN` is unset/unreachable the tools must self-disable gracefully. They are a
   real attack surface → HITL-gated + input-validated + no `shell=True` + subcommand whitelist.
 - **HITL needs a `HumanInteractionManager` + channel.** `ConfirmationGuard` requires a store
-  and (for real prompts) a human manager. How the agent obtains the human manager/channel at
-  runtime (handler-provided vs constructed in `configure()`) is unresolved (§8 OQ2).
+  and (for real prompts) a human manager. *Resolved (OQ2)*: the agent **constructs and wires
+  the human manager + guard in `configure()`** (store + `ConfirmationConfig` + guard, attached
+  via `tool_manager.set_confirmation_guard`).
 - **PDF licensing/attribution** for the official Odoo docs must be respected when the feature
   sources/converts them (§8 OQ3).
 - **PageIndex build cost**: ingesting 3 full doc sets is LLM-heavy and slow — it's an offline
@@ -586,12 +592,16 @@ mgr.set_confirmation_guard(guard)                                               
       env vars registered in `env/.env`. Reflected in G8, AC3, §6/§7.
 - [x] **HITL scope** — *Resolved from request*: confirm **write operations** on Odoo →
       interpreted as all write/delete RPC tools plus all shell tools. Reflected in G6/AC8.
-- [x] **OQ2 — HITL human channel** — how does `OdooAgent` obtain the `HumanInteractionManager`
-      / confirmation channel at runtime (handler-injected vs constructed in `configure()`)?
-      *Owner: Jesus Lara*: constructed in configure()
-- [x] **OQ4 — PageIndex storage_dir** — exact persisted location and whether one tree (with
-      version parent nodes) or three trees (one per version). *Owner: implementer* (spec
-      recommends one tree with `Odoo 16/18/19` + `CLI` parent nodes): path: agent/odoo_agent/documentation/ and per-odoo tree inside of that directory.
+- [x] **OQ2 — HITL human channel** — *Resolved by user (2026-06-16)*: the
+      `HumanInteractionManager` / confirmation channel is **constructed and wired in
+      `configure()`** (alongside the `ConfirmationGuard`), not handler-injected.
+- [x] **OQ4 — PageIndex storage layout** — *Resolved by user (2026-06-16)*: persist under
+      **`agents/odoo_agent/documentation/`** with **one index (tree) per Odoo version**
+      (`odoo_16`, `odoo_18`, `odoo_19`) inside that directory — NOT a single tree with
+      version parent nodes. The generated source PDFs and the per-version trees both live
+      under `agents/odoo_agent/documentation/`. Each version's `make latexpdf` PDF already
+      contains that version's CLI (`odoo-bin`/`odoo-cli`) reference, so CLI docs land inside
+      the matching version tree.
 
 ---
 

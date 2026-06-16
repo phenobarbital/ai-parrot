@@ -13,8 +13,9 @@
 ## Context
 
 Implements **Module 3** of the spec. Builds the documentation PageIndex from the
-Odoo 16/18/19 PDFs produced by TASK-1572, organised as one tree with per-version
-parent nodes plus a CLI node, persisted to the agent's `storage_dir`. Resolves G2 /
+Odoo 16/18/19 PDFs produced by TASK-1572, organised as **one tree per Odoo version**
+(`odoo_16`, `odoo_18`, `odoo_19`), persisted to
+`storage_dir = agents/odoo_agent/documentation/` (must match TASK-1574). Resolves G2 /
 AC4 (ingestion half). This is an OFFLINE one-time/periodic job — never on the
 request path.
 
@@ -25,14 +26,14 @@ request path.
 - Add `scripts/odoo_agent/build_odoo_pageindex.py` that:
   1. Constructs a `PageIndexLLMAdapter` over a Google client + a lightweight model
      for summaries.
-  2. Constructs a `PageIndexToolkit(adapter=..., storage_dir=<agent store>)`.
-  3. Creates a single tree (e.g. `odoo_docs`) with parent nodes `Odoo 16`,
-     `Odoo 18`, `Odoo 19`, and `CLI (odoo-bin/odoo-cli)`.
-  4. For each version PDF under `agents/odoo_agent/docs/<version>/`, calls
-     `toolkit.import_pdf(tree_name, pdf_path, parent_node_id=<version node>,
-     with_summaries=True, with_doc_description=True)`.
-  5. Persists the tree to the configured `storage_dir`.
-- Idempotent: re-running must not duplicate version parent nodes.
+  2. Constructs a `PageIndexToolkit(adapter=..., storage_dir="agents/odoo_agent/documentation/")`.
+  3. Creates **one tree per version**: `odoo_16`, `odoo_18`, `odoo_19`.
+  4. For each version PDF under `agents/odoo_agent/documentation/<version>/`, calls
+     `toolkit.import_pdf(tree_name=<odoo_NN>, pdf_path,
+     with_summaries=True, with_doc_description=True)` — no `parent_node_id` (each version
+     is its own tree; the PDF already contains that version's CLI reference).
+  5. Persists the trees to the configured `storage_dir`.
+- Idempotent: re-running must not duplicate trees (check `list_trees()` first).
 - Unit tests with `import_pdf` mocked (no real LLM / PDF needed).
 
 **NOT in scope**: generating the PDFs (TASK-1572); agent runtime wiring (TASK-1574).
@@ -85,8 +86,8 @@ class PageIndexLLMAdapter:                                # line 42
 ### Does NOT Exist
 - ~~a `PageIndex` class~~ — the tree is a dict validated by `PageIndexTree`/`PageIndexNode`.
 - ~~`PageIndexToolkit.save_learning()`~~ — use `insert_content` / `insert_markdown`.
-- ~~`toolkit.import_pdf` auto-creating version folders~~ — create parent nodes first via
-  `insert_markdown`/`create_tree`, then pass `parent_node_id`.
+- ~~one tree with `Odoo 16/18/19` parent nodes~~ — OQ4 resolved to **one tree per version**
+  (`odoo_16`/`odoo_18`/`odoo_19`); do NOT nest versions under a single tree.
 
 ---
 
@@ -94,20 +95,23 @@ class PageIndexLLMAdapter:                                # line 42
 
 ### Pattern to Follow
 ```python
+STORAGE_DIR = "agents/odoo_agent/documentation/"
 adapter = PageIndexLLMAdapter(client=GoogleGenAIClient(...), model="<light model>")
 toolkit = PageIndexToolkit(adapter=adapter, storage_dir=STORAGE_DIR)
-await toolkit.create_tree("odoo_docs", doc_name="Odoo Documentation 16/18/19")
-v18 = (await toolkit.insert_markdown("odoo_docs", "# Odoo 18"))["new_node_ids"][0]
-await toolkit.import_pdf("odoo_docs", pdf_path, parent_node_id=v18,
-                         with_summaries=True, with_doc_description=True)
+VERSIONS = {"odoo_16": "16.0", "odoo_18": "18.0", "odoo_19": "19.0"}
+for tree_name, ver in VERSIONS.items():
+    if tree_name in (await toolkit.list_trees()):   # idempotent
+        continue
+    pdf_path = f"agents/odoo_agent/documentation/{ver}/<docs>.pdf"
+    await toolkit.import_pdf(tree_name, pdf_path,
+                             with_summaries=True, with_doc_description=True)
 ```
 
 ### Key Constraints
 - async throughout (`asyncio.run(main())`).
-- Idempotency: check `list_trees()` / existing parent node titles before creating.
+- Idempotency: check `list_trees()` before creating/importing a version tree.
 - Use a lightweight model for summaries to control cost (spec §7).
-- `storage_dir` should match the agent's runtime store (coordinate with TASK-1574;
-  default under `agents/odoo_agent/pageindex/`).
+- `storage_dir` is fixed at `agents/odoo_agent/documentation/` (must match TASK-1574).
 
 ### References in Codebase
 - `packages/ai-parrot/tests/knowledge/pageindex/test_toolkit.py` — toolkit usage + mocking patterns.
@@ -116,8 +120,8 @@ await toolkit.import_pdf("odoo_docs", pdf_path, parent_node_id=v18,
 
 ## Acceptance Criteria
 
-- [ ] `scripts/odoo_agent/build_odoo_pageindex.py` builds the tree with `Odoo 16/18/19` + CLI parent nodes (mocked `import_pdf`).
-- [ ] Re-running does not duplicate version parent nodes (idempotent).
+- [ ] `scripts/odoo_agent/build_odoo_pageindex.py` builds one tree per version (`odoo_16`/`odoo_18`/`odoo_19`) under `agents/odoo_agent/documentation/` (mocked `import_pdf`).
+- [ ] Re-running does not duplicate trees (idempotent via `list_trees()`).
 - [ ] Calls `import_pdf(... with_summaries=True ...)` once per discovered version PDF.
 - [ ] Tests pass: `pytest packages/ai-parrot/tests/knowledge/pageindex/test_build_odoo_pageindex.py -v`
 - [ ] No lint errors: `ruff check scripts/odoo_agent/build_odoo_pageindex.py`
@@ -133,15 +137,15 @@ from unittest.mock import AsyncMock, patch
 
 
 @pytest.mark.asyncio
-async def test_creates_version_nodes(tmp_path):
-    # import build module, run with PageIndexToolkit.import_pdf/insert_markdown mocked
-    # assert parent nodes Odoo 16/18/19 + CLI created and import_pdf called per PDF
+async def test_creates_per_version_trees(tmp_path):
+    # import build module, run with PageIndexToolkit.import_pdf/list_trees mocked
+    # assert trees odoo_16/odoo_18/odoo_19 created and import_pdf called once per version PDF
     ...
 
 
 @pytest.mark.asyncio
 async def test_idempotent_rerun(tmp_path):
-    # second run must not create duplicate parent nodes
+    # with list_trees() already returning the version trees, second run imports nothing new
     ...
 ```
 
