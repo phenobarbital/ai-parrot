@@ -7,6 +7,7 @@ from pathlib import Path
 from parrot.knowledge.graphindex.analytics import (
     AnalyticsResult,
     KnowledgeGaps,
+    SurpriseFactors,
     compute_analytics,
     generate_report,
     find_isolated_nodes,
@@ -143,7 +144,8 @@ class TestSurprisingConnections:
         assert result == []
 
     def test_inferred_mentions_included(self):
-        nodes = [make_node("a", NodeKind.SYMBOL), make_node("b", NodeKind.DOCUMENT)]
+        # FEAT-215: Use SKILL<->DOCUMENT (distant cross-type +2) + high_confidence +1 = 3
+        nodes = [make_node("a", NodeKind.SKILL), make_node("b", NodeKind.DOCUMENT)]
         edges = [
             make_edge("a", "b", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.85)
         ]
@@ -152,31 +154,51 @@ class TestSurprisingConnections:
         assert result[0]["source_id"] == "a"
         assert result[0]["confidence"] == 0.85
 
-    def test_ranked_by_confidence_descending(self):
-        nodes = [make_node("a"), make_node("b"), make_node("c")]
+    def test_ranked_by_composite_score_descending(self):
+        """FEAT-215: Results sorted by composite_score (then confidence) descending."""
+        from parrot.knowledge.graphindex.communities import CommunitiesResult
+        # "b" and "c" are in different communities from "a"
+        nodes = [
+            make_node("a", NodeKind.SKILL, "Skill A"),
+            make_node("b", NodeKind.DOCUMENT, "Doc B"),
+            make_node("c", NodeKind.DOCUMENT, "Doc C"),
+        ]
+        # a->b: cross_community(+3) + distant_cross_type(+2) + high_conf(+1) = 6
+        # a->c: distant_cross_type(+2) + high_conf(+1) = 3 (no cross community)
+        communities = CommunitiesResult(
+            modularity=0.5, resolution=1.0, seed=42, weighted=False,
+            communities=[],
+            node_to_community={"a": "comm_1", "b": "comm_2"},
+        )
         edges = [
             make_edge("a", "b", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.70),
             make_edge("a", "c", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.95),
         ]
-        result = _rank_surprising_connections(edges, nodes, top_k=10)
-        assert result[0]["confidence"] == 0.95
-        assert result[1]["confidence"] == 0.70
+        result = _rank_surprising_connections(edges, nodes, top_k=10, communities_result=communities)
+        # a->b has higher composite score (6) vs a->c (3)
+        assert result[0]["source_id"] == "a"
+        assert result[0]["target_id"] == "b"
 
     def test_top_k_limits_results(self):
-        nodes = [make_node(f"n{i}") for i in range(10)]
+        # FEAT-215: Use SKILL and DOCUMENT kinds to ensure composite score >= 3
+        # (distant cross-type +2 + high_confidence +1 = 3)
+        nodes = [make_node(f"sk{i}", NodeKind.SKILL) for i in range(5)] + \
+                [make_node(f"doc{i}", NodeKind.DOCUMENT) for i in range(5)]
         edges = [
-            make_edge(f"n{i}", f"n{9-i}", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=float(i) / 10)
-            for i in range(9)
+            make_edge(f"sk{i}", f"doc{i}", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.8)
+            for i in range(5)
         ]
         result = _rank_surprising_connections(edges, nodes, top_k=3)
         assert len(result) <= 3
 
     def test_result_contains_kind_info(self):
-        nodes = [make_node("a", NodeKind.SYMBOL), make_node("b", NodeKind.SECTION)]
+        # FEAT-215: Use SYMBOL<->RATIONALE (distant pair +2) + high_conf (+1) = 3
+        nodes = [make_node("a", NodeKind.SYMBOL), make_node("b", NodeKind.RATIONALE)]
         edges = [make_edge("a", "b", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.8)]
         result = _rank_surprising_connections(edges, nodes, top_k=10)
+        assert len(result) >= 1
         assert result[0]["source_kind"] == NodeKind.SYMBOL.value
-        assert result[0]["target_kind"] == NodeKind.SECTION.value
+        assert result[0]["target_kind"] == NodeKind.RATIONALE.value
 
 
 # ---------------------------------------------------------------------------
@@ -647,3 +669,188 @@ class TestKnowledgeGapsModel:
         result = compute_analytics(g, nodes, [], top_k=5)
         assert result.knowledge_gaps is not None
         assert isinstance(result.knowledge_gaps, KnowledgeGaps)
+
+
+# ---------------------------------------------------------------------------
+# FEAT-215 TASK-1566: TestCompositeSurpriseScoring
+# ---------------------------------------------------------------------------
+
+
+class TestCompositeSurpriseScoring:
+    def test_surprise_factors_model_defaults(self):
+        """SurpriseFactors defaults are all False/0."""
+        sf = SurpriseFactors()
+        assert sf.cross_community is False
+        assert sf.cross_type is False
+        assert sf.type_distance == 0
+        assert sf.peripheral_hub is False
+        assert sf.weak_but_present is False
+        assert sf.high_confidence is False
+        assert sf.composite_score == 0
+
+    def test_cross_community_score(self, graph_with_gaps):
+        """Cross-community edge gets +3."""
+        from parrot.knowledge.graphindex.communities import Community, CommunitiesResult
+
+        nodes = [
+            make_node("x", NodeKind.CONCEPT, "X"),
+            make_node("y", NodeKind.CONCEPT, "Y"),
+        ]
+        # Create an INFERRED MENTIONS edge
+        edges = [
+            make_edge("x", "y", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.8)
+        ]
+        # x and y in different communities → cross_community +3, high_confidence +1 = 4
+        communities = CommunitiesResult(
+            modularity=0.5, resolution=1.0, seed=42, weighted=False,
+            communities=[],
+            node_to_community={"x": "comm_1", "y": "comm_2"},
+        )
+        result = _rank_surprising_connections(edges, nodes, 10, communities_result=communities)
+        assert len(result) == 1
+        assert result[0]["composite_score"] >= 3
+        assert result[0]["surprise_factors"]["cross_community"] is True
+
+    def test_cross_type_distant_score(self):
+        """Distant NodeKind pair (SKILL<->DOCUMENT) gets +2."""
+        nodes = [
+            make_node("sk", NodeKind.SKILL, "My Skill"),
+            make_node("doc", NodeKind.DOCUMENT, "My Doc"),
+        ]
+        edges = [
+            make_edge("sk", "doc", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.8)
+        ]
+        # cross-type distant +2, high-confidence +1 = 3
+        result = _rank_surprising_connections(edges, nodes, 10)
+        assert len(result) == 1
+        assert result[0]["surprise_factors"]["cross_type"] is True
+        assert result[0]["surprise_factors"]["type_distance"] == 2
+        assert result[0]["composite_score"] >= 3
+
+    def test_cross_type_adjacent_score(self):
+        """Adjacent NodeKind pair (CONCEPT<->SECTION) gets +1."""
+        nodes = [
+            make_node("c", NodeKind.CONCEPT, "My Concept"),
+            make_node("s", NodeKind.SECTION, "My Section"),
+        ]
+        # concept<->section: cross_type adjacent +1, high-confidence 0.8 → +1 = 2 total
+        # With only those two signals, score = 2 → should NOT surface (< 3)
+        edges = [
+            make_edge("c", "s", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.8)
+        ]
+        result = _rank_surprising_connections(edges, nodes, 10)
+        # Score = cross_type_adjacent(1) + high_confidence(1) = 2 < 3, filtered out
+        assert len(result) == 0
+
+    def test_peripheral_hub_coupling(self):
+        """Low-degree node linked to high-degree hub gets +2."""
+        g = rustworkx.PyDiGraph()
+        # Create a hub (many connections) and a peripheral (few connections)
+        hub_idx = g.add_node({"node_id": "hub", "kind": "concept", "title": "Hub"})
+        for i in range(10):
+            leaf_idx = g.add_node({"node_id": f"leaf{i}", "kind": "section", "title": f"Leaf{i}"})
+            g.add_edge(hub_idx, leaf_idx, {})
+        peri_idx = g.add_node({"node_id": "peri", "kind": "skill", "title": "Peripheral"})
+        # peri has degree 0, hub has degree 10
+        # Add a MENTIONS INFERRED edge between peri and hub
+        nodes_list = [
+            make_node("hub", NodeKind.CONCEPT, "Hub"),
+            make_node("peri", NodeKind.SKILL, "Peripheral"),
+        ]
+        edges = [
+            make_edge("peri", "hub", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.8)
+        ]
+        result = _rank_surprising_connections(edges, nodes_list, 10, graph=g)
+        # cross_type: SKILL<->CONCEPT = distant +2, peripheral_hub +2, high_conf +1 = 5
+        assert len(result) == 1
+        assert result[0]["surprise_factors"]["peripheral_hub"] is True
+
+    def test_threshold_filtering(self):
+        """Only connections with composite_score >= 3 are surfaced."""
+        # CONCEPT<->SECTION with confidence=0.3 → cross_type_adj(1) + weak(1) = 2 → filtered
+        nodes = [make_node("a", NodeKind.CONCEPT), make_node("b", NodeKind.SECTION)]
+        edges = [
+            make_edge("a", "b", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.3)
+        ]
+        result = _rank_surprising_connections(edges, nodes, 10)
+        assert len(result) == 0
+
+    def test_factors_decomposed_in_result(self):
+        """Each connection carries surprise_factors dict."""
+        nodes = [
+            make_node("sk", NodeKind.SKILL, "My Skill"),
+            make_node("doc", NodeKind.DOCUMENT, "My Doc"),
+        ]
+        edges = [
+            make_edge("sk", "doc", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.8)
+        ]
+        result = _rank_surprising_connections(edges, nodes, 10)
+        assert len(result) >= 1
+        conn = result[0]
+        assert "surprise_factors" in conn
+        assert "composite_score" in conn
+        sf = conn["surprise_factors"]
+        assert "cross_community" in sf
+        assert "cross_type" in sf
+        assert "type_distance" in sf
+        assert "peripheral_hub" in sf
+        assert "weak_but_present" in sf
+        assert "high_confidence" in sf
+        assert "composite_score" in sf
+
+    def test_backward_compat_no_communities(self):
+        """Without CommunitiesResult, scoring works (skips cross-community)."""
+        nodes = [
+            make_node("sk", NodeKind.SKILL, "My Skill"),
+            make_node("doc", NodeKind.DOCUMENT, "My Doc"),
+        ]
+        edges = [
+            make_edge("sk", "doc", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.8)
+        ]
+        # Should not raise even without communities_result
+        result = _rank_surprising_connections(edges, nodes, 10)
+        assert isinstance(result, list)
+
+    def test_existing_fields_preserved(self):
+        """source_id, target_id, confidence, source_kind, target_kind still present."""
+        nodes = [
+            make_node("sk", NodeKind.SKILL, "My Skill"),
+            make_node("doc", NodeKind.DOCUMENT, "My Doc"),
+        ]
+        edges = [
+            make_edge("sk", "doc", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.8)
+        ]
+        result = _rank_surprising_connections(edges, nodes, 10)
+        assert len(result) >= 1
+        conn = result[0]
+        assert conn["source_id"] == "sk"
+        assert conn["target_id"] == "doc"
+        assert conn["confidence"] == 0.8
+        assert conn["source_kind"] == "skill"
+        assert conn["target_kind"] == "document"
+
+    def test_sorted_by_composite_score_desc(self):
+        """Results sorted by composite_score descending."""
+        from parrot.knowledge.graphindex.communities import CommunitiesResult
+
+        nodes = [
+            make_node("sk", NodeKind.SKILL, "Skill"),
+            make_node("doc", NodeKind.DOCUMENT, "Doc"),
+            make_node("rat", NodeKind.RATIONALE, "Rat"),
+            make_node("sym", NodeKind.SYMBOL, "Sym"),
+        ]
+        # sk->doc: distant +2, high_conf +1 = 3
+        # rat->sym: SYMBOL<->RATIONALE = distant +2, high_conf +1 = 3, plus cross_community +3 = 6
+        communities = CommunitiesResult(
+            modularity=0.5, resolution=1.0, seed=42, weighted=False,
+            communities=[],
+            node_to_community={"rat": "comm_1", "sym": "comm_2"},
+        )
+        edges = [
+            make_edge("sk", "doc", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.8),
+            make_edge("rat", "sym", EdgeKind.MENTIONS, Provenance.INFERRED, confidence=0.8),
+        ]
+        result = _rank_surprising_connections(edges, nodes, 10, communities_result=communities)
+        assert len(result) == 2
+        # rat->sym should have higher composite score
+        assert result[0]["source_id"] == "rat"

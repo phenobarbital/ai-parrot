@@ -11,6 +11,7 @@ but is a no-op; LLM-polished reports are planned for v1.5.
 from __future__ import annotations
 
 import logging
+import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -58,6 +59,43 @@ class KnowledgeGaps(BaseModel):
     isolated_nodes: list[dict] = Field(default_factory=list)
     sparse_communities: list[dict] = Field(default_factory=list)
     bridge_nodes: list[dict] = Field(default_factory=list)
+
+
+class SurpriseFactors(BaseModel):
+    """Decomposed explanation of why a connection is surprising.
+
+    Args:
+        cross_community: Source and target in different Louvain communities.
+        cross_type: Source and target have different NodeKind values.
+        type_distance: Distance between node kinds (1 = adjacent, 2 = distant).
+        peripheral_hub: Low-degree node connected to a high-degree hub.
+        weak_but_present: Edge confidence below 0.5.
+        high_confidence: Edge confidence >= 0.7.
+        composite_score: Sum of all contributing signals.
+    """
+
+    cross_community: bool = False
+    cross_type: bool = False
+    type_distance: int = 0  # 1 or 2
+    peripheral_hub: bool = False
+    weak_but_present: bool = False
+    high_confidence: bool = False
+    composite_score: int = 0
+
+
+# ---------------------------------------------------------------------------
+# FEAT-215: Type distance matrix for composite surprise scoring
+# ---------------------------------------------------------------------------
+
+# "Distant" type pairs — nodes from fundamentally different domains.
+# Pairs listed once; checked as frozenset for symmetry.
+_DISTANT_TYPE_PAIRS: frozenset[frozenset] = frozenset(
+    [
+        frozenset({NodeKind.SKILL, NodeKind.DOCUMENT}),
+        frozenset({NodeKind.SYMBOL, NodeKind.RATIONALE}),
+        frozenset({NodeKind.CONCEPT, NodeKind.SKILL}),
+    ]
+)
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +160,14 @@ def compute_analytics(
         suggested questions, and knowledge gaps.
     """
     god_nodes = _compute_god_nodes(graph, top_k)
-    surprising_connections = _rank_surprising_connections(edges, nodes, top_k)
+
+    # FEAT-215: Pass graph and communities_result for composite scoring.
+    # communities_result is populated after this call if available; for
+    # compute_analytics we pass None here and rely on callers that set
+    # analytics.communities after the fact (e.g. toolkit._get_or_compute_analytics).
+    surprising_connections = _rank_surprising_connections(
+        edges, nodes, top_k, graph=graph, communities_result=None
+    )
     suggested_questions = _generate_suggested_questions(
         nodes, edges, surprising_connections
     )
@@ -193,35 +238,134 @@ def _rank_surprising_connections(
     edges: list[UniversalEdge],
     nodes: list[UniversalNode],
     top_k: int,
+    graph: Optional[rustworkx.PyDiGraph] = None,
+    communities_result: Optional["CommunitiesResult"] = None,
 ) -> list[dict]:
-    """Rank inferred cross-domain ``mentions`` edges by confidence.
+    """Rank inferred cross-domain ``mentions`` edges by composite surprise score.
+
+    FEAT-215: Enhanced with composite scoring. Each connection is scored on
+    5 signals (cross-community +3, cross-type +1/+2, peripheral-hub +2,
+    weak-but-present +1, high-confidence +1). Only connections with
+    composite_score >= 3 are surfaced. Results are sorted by composite_score
+    descending, with confidence as a tie-breaker.
+
+    When ``graph`` and/or ``communities_result`` are None the corresponding
+    signals are gracefully skipped (backward-compatible).
 
     Args:
         edges: All edges; only ``MENTIONS`` edges with
             ``provenance=INFERRED`` are considered.
         nodes: All nodes — used to look up kind information.
         top_k: Maximum number of connections to return.
+        graph: Optional PyDiGraph for degree-based peripheral-hub scoring.
+        communities_result: Optional CommunitiesResult for cross-community scoring.
 
     Returns:
-        List of surprising connection dicts sorted by confidence descending.
+        List of surprising connection dicts sorted by composite_score descending,
+        each containing the original fields plus ``composite_score`` and
+        ``surprise_factors``.
     """
     node_kind: dict[str, str] = {n.node_id: n.kind.value for n in nodes}
+    node_kind_enum: dict[str, NodeKind] = {n.node_id: n.kind for n in nodes}
+
+    # Build degree map for peripheral-hub scoring.
+    degrees: dict[str, int] = {}
+    degree_threshold: Optional[float] = None
+    if graph is not None and graph.num_nodes() > 0:
+        # Build node_id → graph index for degree lookup.
+        nid_to_idx: dict[str, int] = {}
+        for idx in graph.node_indices():
+            payload = graph[idx]
+            if isinstance(payload, dict) and "node_id" in payload:
+                nid_to_idx[payload["node_id"]] = idx
+        for nid, idx in nid_to_idx.items():
+            degrees[nid] = graph.in_degree(idx) + graph.out_degree(idx)
+        if degrees:
+            try:
+                degree_threshold = statistics.median(degrees.values())
+            except statistics.StatisticsError:
+                degree_threshold = None
+
+    # Community membership map.
+    node_to_community: dict[str, str] = (
+        communities_result.node_to_community if communities_result is not None else {}
+    )
 
     connections: list[dict] = []
     for edge in edges:
         if edge.kind != EdgeKind.MENTIONS or edge.provenance != Provenance.INFERRED:
             continue
+
+        confidence = edge.confidence or 0.0
+        src_id = edge.source_id
+        tgt_id = edge.target_id
+        src_kind_str = node_kind.get(src_id, "unknown")
+        tgt_kind_str = node_kind.get(tgt_id, "unknown")
+        src_kind = node_kind_enum.get(src_id)
+        tgt_kind = node_kind_enum.get(tgt_id)
+
+        # --- Compute composite score ---
+        factors = SurpriseFactors()
+
+        # Signal 1: Cross-community (+3)
+        if node_to_community:
+            src_comm = node_to_community.get(src_id)
+            tgt_comm = node_to_community.get(tgt_id)
+            if src_comm is not None and tgt_comm is not None and src_comm != tgt_comm:
+                factors.cross_community = True
+                factors.composite_score += 3
+
+        # Signal 2: Cross-type (+1 or +2)
+        if src_kind is not None and tgt_kind is not None and src_kind != tgt_kind:
+            factors.cross_type = True
+            pair = frozenset({src_kind, tgt_kind})
+            if pair in _DISTANT_TYPE_PAIRS:
+                factors.type_distance = 2
+                factors.composite_score += 2
+            else:
+                factors.type_distance = 1
+                factors.composite_score += 1
+
+        # Signal 3: Peripheral-to-hub coupling (+2)
+        if degree_threshold is not None:
+            src_deg = degrees.get(src_id, 0)
+            tgt_deg = degrees.get(tgt_id, 0)
+            src_peripheral = src_deg <= 2
+            tgt_peripheral = tgt_deg <= 2
+            src_hub = src_deg >= degree_threshold
+            tgt_hub = tgt_deg >= degree_threshold
+            if (src_peripheral and tgt_hub) or (tgt_peripheral and src_hub):
+                factors.peripheral_hub = True
+                factors.composite_score += 2
+
+        # Signal 4: Weak-but-present (+1)
+        if confidence < 0.5:
+            factors.weak_but_present = True
+            factors.composite_score += 1
+
+        # Signal 5: High confidence inferred (+1)
+        if confidence >= 0.7:
+            factors.high_confidence = True
+            factors.composite_score += 1
+
+        # Only surface connections that meet the threshold.
+        if factors.composite_score < 3:
+            continue
+
         connections.append(
             {
-                "source_id": edge.source_id,
-                "target_id": edge.target_id,
-                "confidence": edge.confidence or 0.0,
-                "source_kind": node_kind.get(edge.source_id, "unknown"),
-                "target_kind": node_kind.get(edge.target_id, "unknown"),
+                "source_id": src_id,
+                "target_id": tgt_id,
+                "confidence": confidence,
+                "source_kind": src_kind_str,
+                "target_kind": tgt_kind_str,
+                "composite_score": factors.composite_score,
+                "surprise_factors": factors.model_dump(),
             }
         )
 
-    connections.sort(key=lambda x: x["confidence"], reverse=True)
+    # Sort by composite_score desc, confidence as tie-breaker.
+    connections.sort(key=lambda x: (x["composite_score"], x["confidence"]), reverse=True)
     return connections[:top_k]
 
 
