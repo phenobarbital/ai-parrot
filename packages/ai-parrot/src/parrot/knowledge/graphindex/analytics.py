@@ -83,6 +83,16 @@ class SurpriseFactors(BaseModel):
     composite_score: int = 0
 
 
+class DismissedInsights(BaseModel):
+    """Tracks dismissed insight IDs. Session-scoped (not persisted to DB).
+
+    Args:
+        dismissed_ids: Set of insight IDs that have been marked as reviewed/dismissed.
+    """
+
+    dismissed_ids: set[str] = Field(default_factory=set)
+
+
 # ---------------------------------------------------------------------------
 # FEAT-215: Type distance matrix for composite surprise scoring
 # ---------------------------------------------------------------------------
@@ -129,6 +139,7 @@ class AnalyticsResult:
     suggested_questions: list[str] = field(default_factory=list)
     communities: Optional["CommunitiesResult"] = None
     knowledge_gaps: Optional[KnowledgeGaps] = None
+    dismissed: Optional[DismissedInsights] = None
 
 
 # ---------------------------------------------------------------------------
@@ -632,6 +643,80 @@ def find_bridge_nodes(
 
 
 # ---------------------------------------------------------------------------
+# FEAT-215: Insight dismissal functions
+# ---------------------------------------------------------------------------
+
+
+def dismiss_insight(analytics: AnalyticsResult, insight_id: str) -> None:
+    """Mark an insight as dismissed.
+
+    Creates a ``DismissedInsights`` container if one does not yet exist on
+    the analytics result, then adds ``insight_id`` to the dismissed set.
+
+    Insight IDs follow these conventions:
+    - Surprising connections: ``f"surprise:{conn['source_id']}:{conn['target_id']}"``
+    - Isolated nodes: ``f"isolated:{node['node_id']}"``
+    - Sparse communities: ``f"sparse:{community['community_id']}"``
+    - Bridge nodes: ``f"bridge:{node['node_id']}"``
+
+    Args:
+        analytics: The ``AnalyticsResult`` to update in place.
+        insight_id: The stable ID of the insight to dismiss.
+    """
+    if analytics.dismissed is None:
+        analytics.dismissed = DismissedInsights()
+    analytics.dismissed.dismissed_ids.add(insight_id)
+
+
+def list_unreviewed_insights(analytics: AnalyticsResult) -> list[dict]:
+    """Return all insights not yet dismissed.
+
+    Aggregates surprising connections and knowledge gap entries (isolated
+    nodes, sparse communities, bridge nodes) into a flat list, assigns
+    each a stable ``id`` field, and filters out any IDs in
+    ``analytics.dismissed.dismissed_ids``.
+
+    Args:
+        analytics: The ``AnalyticsResult`` to inspect.
+
+    Returns:
+        List of insight dicts, each containing at minimum an ``id`` field
+        (the stable insight ID) and the original insight data. The list
+        is NOT sorted.
+    """
+    dismissed_ids: set[str] = (
+        analytics.dismissed.dismissed_ids if analytics.dismissed else set()
+    )
+
+    insights: list[dict] = []
+
+    # Surprising connections
+    for conn in analytics.surprising_connections:
+        iid = f"surprise:{conn['source_id']}:{conn['target_id']}"
+        if iid not in dismissed_ids:
+            insights.append({"id": iid, **conn})
+
+    # Knowledge gap entries
+    if analytics.knowledge_gaps is not None:
+        for node in analytics.knowledge_gaps.isolated_nodes:
+            iid = f"isolated:{node['node_id']}"
+            if iid not in dismissed_ids:
+                insights.append({"id": iid, **node})
+
+        for community in analytics.knowledge_gaps.sparse_communities:
+            iid = f"sparse:{community['community_id']}"
+            if iid not in dismissed_ids:
+                insights.append({"id": iid, **community})
+
+        for node in analytics.knowledge_gaps.bridge_nodes:
+            iid = f"bridge:{node['node_id']}"
+            if iid not in dismissed_ids:
+                insights.append({"id": iid, **node})
+
+    return insights
+
+
+# ---------------------------------------------------------------------------
 # Report generation
 # ---------------------------------------------------------------------------
 
@@ -679,6 +764,11 @@ def _render_report(analytics: AnalyticsResult) -> str:
     """
     lines: list[str] = ["# Knowledge Graph Report", ""]
 
+    # Collect dismissed IDs for filtering.
+    dismissed_ids: set[str] = (
+        analytics.dismissed.dismissed_ids if analytics.dismissed else set()
+    )
+
     # --- God-Nodes ---
     lines.append("## God-Nodes (Most Central)")
     lines.append("")
@@ -691,16 +781,20 @@ def _render_report(analytics: AnalyticsResult) -> str:
         )
     lines.append("")
 
-    # --- Surprising Connections ---
+    # --- Surprising Connections (FEAT-215: filter dismissed) ---
     lines.append("## Surprising Connections")
     lines.append("")
-    lines.append("| Source | Target | Confidence | Why Interesting |")
-    lines.append("|--------|--------|------------|-----------------|")
+    lines.append("| Source | Target | Confidence | Score | Why Interesting |")
+    lines.append("|--------|--------|------------|-------|-----------------|")
     for conn in analytics.surprising_connections:
+        conn_id = f"surprise:{conn['source_id']}:{conn['target_id']}"
+        if conn_id in dismissed_ids:
+            continue
         why = f"Cross-domain: {conn['source_kind']} <-> {conn['target_kind']}"
+        score = conn.get("composite_score", "")
         lines.append(
             f"| {conn['source_id']} | {conn['target_id']} "
-            f"| {conn['confidence']:.4f} | {why} |"
+            f"| {conn['confidence']:.4f} | {score} | {why} |"
         )
     lines.append("")
 
@@ -730,5 +824,61 @@ def _render_report(analytics: AnalyticsResult) -> str:
                 f"| {comm.centroid_node_id} | {comm.cohesion:.4f} | {top} |"
             )
         lines.append("")
+
+    # --- Knowledge Gaps (FEAT-215, only when present and non-empty) ---
+    if analytics.knowledge_gaps is not None:
+        kg = analytics.knowledge_gaps
+        has_content = (
+            kg.isolated_nodes or kg.sparse_communities or kg.bridge_nodes
+        )
+        if has_content:
+            lines.append("## Knowledge Gaps")
+            lines.append("")
+
+            # --- Isolated Nodes ---
+            lines.append("### Isolated Nodes")
+            lines.append("")
+            lines.append("| Node | Kind | Degree |")
+            lines.append("|------|------|--------|")
+            for node in kg.isolated_nodes:
+                iid = f"isolated:{node['node_id']}"
+                if iid in dismissed_ids:
+                    continue
+                lines.append(
+                    f"| {node.get('title', node['node_id'])} "
+                    f"| {node['kind']} | {node['degree']} |"
+                )
+            lines.append("")
+
+            # --- Sparse Communities ---
+            lines.append("### Sparse Communities")
+            lines.append("")
+            lines.append("| Community | Size | Cohesion | Top Members |")
+            lines.append("|-----------|------|----------|-------------|")
+            for comm in kg.sparse_communities:
+                cid = f"sparse:{comm['community_id']}"
+                if cid in dismissed_ids:
+                    continue
+                top = ", ".join(comm.get("top_titles", []))
+                lines.append(
+                    f"| `{comm['community_id']}` | {comm['size']} "
+                    f"| {comm['cohesion']:.4f} | {top} |"
+                )
+            lines.append("")
+
+            # --- Bridge Nodes ---
+            lines.append("### Bridge Nodes")
+            lines.append("")
+            lines.append("| Node | Kind | Communities Connected |")
+            lines.append("|------|------|-----------------------|")
+            for node in kg.bridge_nodes:
+                bid = f"bridge:{node['node_id']}"
+                if bid in dismissed_ids:
+                    continue
+                lines.append(
+                    f"| {node.get('title', node['node_id'])} "
+                    f"| {node['kind']} | {node['community_count']} |"
+                )
+            lines.append("")
 
     return "\n".join(lines)

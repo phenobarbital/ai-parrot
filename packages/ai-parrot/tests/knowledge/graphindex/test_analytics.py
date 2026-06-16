@@ -8,14 +8,18 @@ from parrot.knowledge.graphindex.analytics import (
     AnalyticsResult,
     KnowledgeGaps,
     SurpriseFactors,
+    DismissedInsights,
     compute_analytics,
     generate_report,
     find_isolated_nodes,
     find_sparse_communities,
     find_bridge_nodes,
+    dismiss_insight,
+    list_unreviewed_insights,
     _compute_god_nodes,
     _rank_surprising_connections,
     _generate_suggested_questions,
+    _render_report,
     REPORT_FILENAME,
 )
 from parrot.knowledge.graphindex.schema import (
@@ -854,3 +858,166 @@ class TestCompositeSurpriseScoring:
         assert len(result) == 2
         # rat->sym should have higher composite score
         assert result[0]["source_id"] == "rat"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-215 TASK-1567: TestInsightDismissal
+# ---------------------------------------------------------------------------
+
+
+class TestInsightDismissal:
+    def test_dismiss_insight_stores_id(self):
+        """dismiss_insight adds ID to dismissed set."""
+        analytics = AnalyticsResult(
+            surprising_connections=[
+                {"source_id": "a", "target_id": "b", "confidence": 0.9,
+                 "source_kind": "concept", "target_kind": "symbol",
+                 "composite_score": 4, "surprise_factors": {}},
+            ]
+        )
+        dismiss_insight(analytics, "surprise:a:b")
+        assert analytics.dismissed is not None
+        assert "surprise:a:b" in analytics.dismissed.dismissed_ids
+
+    def test_dismiss_insight_creates_dismissed_if_none(self):
+        """dismiss_insight creates DismissedInsights when analytics.dismissed is None."""
+        analytics = AnalyticsResult()
+        assert analytics.dismissed is None
+        dismiss_insight(analytics, "isolated:x")
+        assert analytics.dismissed is not None
+
+    def test_dismiss_insight_multiple_ids(self):
+        """Multiple insight IDs can be dismissed."""
+        analytics = AnalyticsResult()
+        dismiss_insight(analytics, "surprise:a:b")
+        dismiss_insight(analytics, "isolated:n1")
+        dismiss_insight(analytics, "sparse:comm_b")
+        assert len(analytics.dismissed.dismissed_ids) == 3
+
+    def test_list_unreviewed_excludes_dismissed(self):
+        """list_unreviewed_insights excludes dismissed IDs."""
+        analytics = AnalyticsResult(
+            surprising_connections=[
+                {"source_id": "a", "target_id": "b", "confidence": 0.9,
+                 "source_kind": "concept", "target_kind": "symbol",
+                 "composite_score": 4, "surprise_factors": {}},
+                {"source_id": "c", "target_id": "d", "confidence": 0.8,
+                 "source_kind": "section", "target_kind": "skill",
+                 "composite_score": 3, "surprise_factors": {}},
+            ]
+        )
+        dismiss_insight(analytics, "surprise:a:b")
+        unreviewed = list_unreviewed_insights(analytics)
+        ids = [i["id"] for i in unreviewed]
+        assert "surprise:a:b" not in ids
+        assert "surprise:c:d" in ids
+
+    def test_list_unreviewed_returns_all_when_none_dismissed(self):
+        """list_unreviewed_insights returns all insights when none dismissed."""
+        analytics = AnalyticsResult(
+            surprising_connections=[
+                {"source_id": "a", "target_id": "b", "confidence": 0.9,
+                 "source_kind": "concept", "target_kind": "symbol",
+                 "composite_score": 4, "surprise_factors": {}},
+            ]
+        )
+        unreviewed = list_unreviewed_insights(analytics)
+        assert len(unreviewed) == 1
+
+    def test_list_unreviewed_includes_gap_insights(self):
+        """list_unreviewed_insights includes knowledge gap insights."""
+        analytics = AnalyticsResult(
+            knowledge_gaps=KnowledgeGaps(
+                isolated_nodes=[{"node_id": "iso1", "kind": "concept", "title": "Iso1", "degree": 0}],
+                sparse_communities=[{"community_id": "sp1", "size": 3, "cohesion": 0.05,
+                                     "top_titles": ["A"], "centroid_node_id": "a"}],
+                bridge_nodes=[{"node_id": "br1", "kind": "concept", "title": "Br1",
+                                "community_count": 3, "neighbor_community_ids": []}],
+            )
+        )
+        unreviewed = list_unreviewed_insights(analytics)
+        ids = [i["id"] for i in unreviewed]
+        assert "isolated:iso1" in ids
+        assert "sparse:sp1" in ids
+        assert "bridge:br1" in ids
+
+
+# ---------------------------------------------------------------------------
+# FEAT-215 TASK-1567: TestReportKnowledgeGaps
+# ---------------------------------------------------------------------------
+
+
+class TestReportKnowledgeGaps:
+    def test_report_includes_knowledge_gaps_section(self):
+        """GRAPH_REPORT.md contains Knowledge Gaps section when knowledge_gaps set."""
+        analytics = AnalyticsResult(
+            knowledge_gaps=KnowledgeGaps(
+                isolated_nodes=[{"node_id": "iso1", "kind": "concept", "title": "Iso1", "degree": 0}],
+                sparse_communities=[{"community_id": "sp1", "size": 3, "cohesion": 0.05,
+                                     "top_titles": ["A"], "centroid_node_id": "a"}],
+                bridge_nodes=[{"node_id": "br1", "kind": "concept", "title": "Br1",
+                               "community_count": 3, "neighbor_community_ids": []}],
+            )
+        )
+        report = _render_report(analytics)
+        assert "## Knowledge Gaps" in report
+        assert "### Isolated Nodes" in report
+        assert "### Sparse Communities" in report
+        assert "### Bridge Nodes" in report
+
+    def test_report_omits_gaps_when_none(self):
+        """No Knowledge Gaps section when knowledge_gaps is None."""
+        analytics = AnalyticsResult()
+        report = _render_report(analytics)
+        assert "## Knowledge Gaps" not in report
+
+    def test_report_omits_gaps_when_all_empty(self):
+        """No Knowledge Gaps section when knowledge_gaps has empty lists."""
+        analytics = AnalyticsResult(knowledge_gaps=KnowledgeGaps())
+        report = _render_report(analytics)
+        assert "## Knowledge Gaps" not in report
+
+    def test_dismissed_connections_filtered_in_report(self):
+        """Dismissed surprising connections not in report output."""
+        analytics = AnalyticsResult(
+            surprising_connections=[
+                {"source_id": "src1", "target_id": "tgt1", "confidence": 0.9,
+                 "source_kind": "skill", "target_kind": "document",
+                 "composite_score": 3, "surprise_factors": {}},
+                {"source_id": "src2", "target_id": "tgt2", "confidence": 0.8,
+                 "source_kind": "symbol", "target_kind": "rationale",
+                 "composite_score": 3, "surprise_factors": {}},
+            ]
+        )
+        dismiss_insight(analytics, "surprise:src1:tgt1")
+        report = _render_report(analytics)
+        assert "src1" not in report
+        assert "src2" in report
+
+    def test_dismissed_isolated_node_filtered_in_report(self):
+        """Dismissed isolated node not shown in Knowledge Gaps section."""
+        analytics = AnalyticsResult(
+            knowledge_gaps=KnowledgeGaps(
+                isolated_nodes=[
+                    {"node_id": "iso1", "kind": "concept", "title": "Iso1", "degree": 0},
+                    {"node_id": "iso2", "kind": "concept", "title": "Iso2", "degree": 1},
+                ]
+            )
+        )
+        dismiss_insight(analytics, "isolated:iso1")
+        report = _render_report(analytics)
+        assert "Iso1" not in report
+        assert "Iso2" in report
+
+    def test_report_shows_composite_score_column(self):
+        """Surprising Connections table shows composite_score when present."""
+        analytics = AnalyticsResult(
+            surprising_connections=[
+                {"source_id": "sk", "target_id": "doc", "confidence": 0.8,
+                 "source_kind": "skill", "target_kind": "document",
+                 "composite_score": 5, "surprise_factors": {}},
+            ]
+        )
+        report = _render_report(analytics)
+        assert "5" in report  # composite score value present
+        assert "Score" in report
