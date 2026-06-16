@@ -20,20 +20,14 @@ Design notes (from spec §2.2, D1, D8):
   written.
 """
 
-import hashlib
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
-from parrot.knowledge.pageindex.okf.frontmatter import project_frontmatter
+from parrot.knowledge.okf.frontmatter import project_frontmatter
+from parrot.knowledge.okf.utils import flatten_concept_id_for_filename  # noqa: F401 — re-exported for backward compat
 from parrot.knowledge.pageindex.utils import structure_to_list
-
-# Maximum length for the TOTAL flattened filename (all hierarchy levels joined
-# with "--").  Must stay safely under NodeContentStore._NODE_ID_RE's 64-char
-# limit.  Distinct from concept_id._MAX_SLUG_LENGTH (80) which caps individual
-# slug segments before hierarchy levels are combined.
-_MAX_FLAT_ID_LENGTH = 60
 
 
 class ProjectionReport(BaseModel):
@@ -51,34 +45,6 @@ class ProjectionReport(BaseModel):
     files_written: list[str] = Field(default_factory=list)
     old_files_removed: list[str] = Field(default_factory=list)
 
-
-def flatten_concept_id_for_filename(concept_id: str) -> str:
-    """Convert a slash-containing concept_id to a flat filename stem.
-
-    ``NodeContentStore._NODE_ID_RE`` only allows ``[A-Za-z0-9_-]{1,64}``.
-    Slashes in ``concept_id`` are replaced with ``--`` (double-dash).
-
-    If the resulting string exceeds ``_MAX_FLAT_ID_LENGTH`` chars, a
-    deterministic hash suffix is appended to keep uniqueness.
-
-    Args:
-        concept_id: OKF concept_id (may contain ``/`` path separators).
-
-    Returns:
-        Flat filename stem, safe for ``NodeContentStore.save()``.
-
-    Examples:
-        >>> flatten_concept_id_for_filename("aws-ir")
-        'aws-ir'
-        >>> flatten_concept_id_for_filename("playbooks/aws-incident-response")
-        'playbooks--aws-incident-response'
-    """
-    flat = concept_id.replace("/", "--")
-    if len(flat) <= _MAX_FLAT_ID_LENGTH:
-        return flat
-    # Deterministically truncate + append short hash suffix
-    digest = hashlib.sha1(flat.encode()).hexdigest()[:8]
-    return flat[: _MAX_FLAT_ID_LENGTH - 9] + "-" + digest
 
 
 def project_sidecar(node: dict, tree_name: str, body: str) -> str:

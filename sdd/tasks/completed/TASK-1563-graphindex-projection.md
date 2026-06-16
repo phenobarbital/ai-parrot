@@ -391,4 +391,22 @@ When you pick up this task:
 
 ## Completion Note
 
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-06-16
+**Notes**: Created `graphindex/projection.py` with all required functions and
+`GraphProjectionReport` model. All 33 tests pass. content_ref resolution via
+`NodeContentStore.load()` implemented with graceful fallback to summary/title.
+Byte-determinism verified (same input → same output). Cython .so files needed
+to be copied from main repo to worktree for tests to run (pre-existing worktree
+environment issue, not a code issue).
+
+**Deviations from spec**: The `build_uri()` import was removed from projection.py
+since `project_frontmatter()` builds the resource URI internally using the
+tree_name="graphindex" parameter (produces `pageindex://graphindex/<node_id>`
+as the resource URI). The `project_report_frontmatter()` function builds its
+resource via the node dict's concept_id passed to project_frontmatter() rather
+than via a direct build_uri() call.
+
+---
+
 *(Agent fills this in when done)*

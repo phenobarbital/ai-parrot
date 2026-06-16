@@ -2,7 +2,8 @@
 
 Defines the universal node/edge contract that all pipeline stages share:
 ``UniversalNode``, ``UniversalEdge``, ``Provenance``, ``NodeKind``,
-``EdgeKind``, ``SourceConfig``, ``BuildResult``, and ``IngestResult``.
+``EdgeKind``, ``SourceConfig``, ``GraphProjectionReport``, ``BuildResult``,
+and ``IngestResult``.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class Provenance(str, Enum):
@@ -159,6 +160,25 @@ class SourceConfig(BaseModel):
     tenant_id: str = "default"
 
 
+class GraphProjectionReport(BaseModel):
+    """Summary of a completed GraphIndex OKF projection run (FEAT-239).
+
+    Produced by ``project_graph_sidecars()`` and stored on ``BuildResult``.
+
+    Attributes:
+        output_dir: Base directory where sidecars were written.
+        nodes_projected: Count of nodes successfully projected.
+        files_written: Absolute file paths of every sidecar written.
+        report_frontmatter_added: ``True`` when ``GRAPH_REPORT.md`` was
+            generated with OKF frontmatter during the same build run.
+    """
+
+    output_dir: str
+    nodes_projected: int = 0
+    files_written: list[str] = Field(default_factory=list)
+    report_frontmatter_added: bool = False
+
+
 class BuildResult(BaseModel):
     """Outcome of a full ``GraphIndexBuilder.build()`` run.
 
@@ -169,7 +189,12 @@ class BuildResult(BaseModel):
         inferred_edge_count: Subset of edges with ``provenance=INFERRED``.
         report_path: Path to the generated ``GRAPH_REPORT.md`` file, if any.
         errors: List of non-fatal error messages encountered during the run.
+        projection_report: Summary of the OKF projection stage (FEAT-239).
+            ``None`` when the builder has no ``output_dir`` or projection
+            was skipped.
     """
+
+    model_config = {"arbitrary_types_allowed": True}
 
     tenant_id: str
     node_count: int = 0
@@ -177,6 +202,10 @@ class BuildResult(BaseModel):
     inferred_edge_count: int = 0
     report_path: Optional[Path] = None
     errors: list[str] = Field(default_factory=list)
+    projection_report: Optional[GraphProjectionReport] = Field(
+        default=None,
+        description="OKF projection summary; None when projection was skipped.",
+    )
 
 
 class IngestResult(BaseModel):

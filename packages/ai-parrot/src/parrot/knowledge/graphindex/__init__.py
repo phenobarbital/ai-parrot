@@ -20,6 +20,7 @@ from parrot.knowledge.graphindex.schema import (
     UniversalNode,
     UniversalEdge,
     SourceConfig,
+    GraphProjectionReport,
     BuildResult,
     IngestResult,
 )
@@ -37,6 +38,12 @@ from parrot.knowledge.graphindex.communities import (
     detect_communities,
 )
 from parrot.knowledge.graphindex.loader import GraphIndexLoader
+from parrot.knowledge.graphindex.projection import (
+    project_graph_sidecars,
+    project_node_sidecar,
+    project_report_frontmatter,
+    node_to_frontmatter_dict,
+)
 
 __all__ = [
     "Provenance",
@@ -45,6 +52,7 @@ __all__ = [
     "UniversalNode",
     "UniversalEdge",
     "SourceConfig",
+    "GraphProjectionReport",
     "BuildResult",
     "IngestResult",
     "SignalRelevance",
@@ -57,4 +65,8 @@ __all__ = [
     "cohesion_for_community",
     "detect_communities",
     "GraphIndexLoader",
+    "project_graph_sidecars",
+    "project_node_sidecar",
+    "project_report_frontmatter",
+    "node_to_frontmatter_dict",
 ]
