@@ -52,7 +52,7 @@
       "feature_id": "FEAT-241",
       "feature": "formdesigner-public-forms",
       "spec": "sdd/specs/formdesigner-public-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Can run in parallel with TASK-1578 after TASK-1577 is done (no shared files with TASK-1578).",
       "assigned_to": null,
       "started_at": "2026-06-16T13:29:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1579-is-authenticated-honors-exclude-list.md"
+      "completed_at": "2026-06-16T13:35:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1579-is-authenticated-honors-exclude-list.md"
     },
     {
       "id": "TASK-1580",
