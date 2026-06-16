@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-16T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-06-16T15:56:29+00:00",
   "tasks": [
     {
       "id": "TASK-1577",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-241",
       "feature": "formdesigner-public-forms",
       "spec": "sdd/specs/formdesigner-public-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundation for M2 and M6; must land first in navigator-auth.",
       "assigned_to": null,
       "started_at": "2026-06-16T13:29:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1577-navigator-auth-exclude-list-mutation-api.md"
+      "completed_at": "2026-06-16T15:56:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1577-navigator-auth-exclude-list-mutation-api.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1578",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-241",
       "feature": "formdesigner-public-forms",
       "spec": "sdd/specs/formdesigner-public-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Depends on register_exclusions from TASK-1577.",
       "assigned_to": null,
       "started_at": "2026-06-16T13:29:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1578-navigator-auth-exclude-provider-callback.md"
+      "completed_at": "2026-06-16T15:56:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1578-navigator-auth-exclude-provider-callback.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1579",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-241",
       "feature": "formdesigner-public-forms",
       "spec": "sdd/specs/formdesigner-public-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Can run in parallel with TASK-1578 after TASK-1577 is done (no shared files with TASK-1578).",
       "assigned_to": null,
       "started_at": "2026-06-16T13:29:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1579-is-authenticated-honors-exclude-list.md"
+      "completed_at": "2026-06-16T15:56:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1579-is-authenticated-honors-exclude-list.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1580",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-241",
       "feature": "formdesigner-public-forms",
       "spec": "sdd/specs/formdesigner-public-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -80,8 +83,9 @@
       "parallelism_notes": "No deps; can run in parallel with all M1-M3 navigator-auth tasks.",
       "assigned_to": null,
       "started_at": "2026-06-16T13:29:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1580-formschema-is-public-field.md"
+      "completed_at": "2026-06-16T15:56:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1580-formschema-is-public-field.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1581",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-241",
       "feature": "formdesigner-public-forms",
       "spec": "sdd/specs/formdesigner-public-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -100,8 +104,9 @@
       "parallelism_notes": "Conceptually depends on TASK-1580 (is_public concept); pure function, no runtime deps.",
       "assigned_to": null,
       "started_at": "2026-06-16T13:29:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1581-public-form-paths-helper.md"
+      "completed_at": "2026-06-16T15:56:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1581-public-form-paths-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1582",
@@ -110,7 +115,7 @@
       "feature_id": "FEAT-241",
       "feature": "formdesigner-public-forms",
       "spec": "sdd/specs/formdesigner-public-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +127,9 @@
       "parallelism_notes": "Must wait for M1 (navigator-auth bulk API), M4 (is_public), M5 (public_form_paths).",
       "assigned_to": null,
       "started_at": "2026-06-16T13:29:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1582-lifecycle-toggle-integration.md"
+      "completed_at": "2026-06-16T15:56:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1582-lifecycle-toggle-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1583",
@@ -132,7 +138,7 @@
       "feature_id": "FEAT-241",
       "feature": "formdesigner-public-forms",
       "spec": "sdd/specs/formdesigner-public-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -144,8 +150,9 @@
       "parallelism_notes": "Must wait for M2 (exclude-provider API), M5 (public_form_paths), M6 (toggle wiring already in routes.py).",
       "assigned_to": null,
       "started_at": "2026-06-16T13:29:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1583-exclude-provider-registration.md"
+      "completed_at": "2026-06-16T15:56:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1583-exclude-provider-registration.md",
+      "verification": "verified"
     }
   ]
 }
