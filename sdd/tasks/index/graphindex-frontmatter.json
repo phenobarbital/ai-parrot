@@ -32,7 +32,7 @@
       "feature_id": "FEAT-239",
       "feature": "graphindex-frontmatter",
       "spec": "sdd/specs/graphindex-frontmatter.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-1560 for the shared okf package. Modifies the same __init__.py.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1561-shared-okf-frontmatter.md"
+      "completed_at": "2026-06-16T00:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1561-shared-okf-frontmatter.md"
     },
     {
       "id": "TASK-1562",

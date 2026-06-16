@@ -266,4 +266,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-06-16
+**Notes**: Created `parrot/knowledge/okf/frontmatter.py` with `ConceptFrontmatter`,
+`project_frontmatter`, and `parse_frontmatter` (moved from pageindex, updated imports
+to use `knowledge.okf.ontology`). Made `pageindex/okf/frontmatter.py` a thin shim.
+Updated `projection.py` import. All 36 tests pass (19 new + 17 FEAT-238 tests).
+
+**Deviations from spec**: None.
