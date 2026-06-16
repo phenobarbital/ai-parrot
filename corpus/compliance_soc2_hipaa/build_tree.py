@@ -123,6 +123,10 @@ async def build_trees(
             if fmt == "pdf":
                 # Use the toolkit's import_pdf method if available.
                 if hasattr(toolkit, "import_pdf"):
+                    # import_pdf splices into an *existing* tree, so create
+                    # the (empty) tree first — mirrors the example agent's
+                    # ensure_tree() flow (create_tree → import_pdf).
+                    await toolkit.create_tree(tree_name, doc_name=filename)
                     await toolkit.import_pdf(
                         tree_name=tree_name,
                         pdf_path=str(raw_path),
