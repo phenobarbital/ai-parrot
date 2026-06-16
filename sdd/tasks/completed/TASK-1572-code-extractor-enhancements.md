@@ -186,4 +186,9 @@ async def test_function_has_lineno():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `*, mtime: Optional[float] = None` kwarg to `CodeExtractor.extract()`. Computes
+`sha1 = hashlib.sha1(source_bytes).hexdigest()` and stamps it unconditionally in the
+module node's `domain_tags`. Stamps `mtime` only when provided. Added `"lineno"` and
+`"end_lineno"` (1-based from tree-sitter 0-based `start_point`/`end_point`) to both
+`_extract_class` and `_extract_function` domain_tags. All 25 tests pass (19 existing +
+6 new: sha1, mtime, no-mtime-by-default, class lineno, function lineno, backward compat).
