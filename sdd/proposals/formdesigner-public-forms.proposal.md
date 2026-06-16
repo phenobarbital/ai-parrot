@@ -171,9 +171,11 @@ re-hydrates paths on startup, and a bulk add/remove API — while formdesigner a
 - **`navigator_auth/decorators.py::is_authenticated`** — add exclude-list /
   `allow_anonymous` short-circuit.  *Evidence*: F004  *(U2)*
 - **`parrot_formdesigner/api/handlers.py`** (`create_form`/`update_form`/
-  `patch_form`/`publish_form`) **or** `FormRegistry.register` — on an
-  `is_public` transition, call bulk register/unregister against
-  `request.app["auth"]`.  *Evidence*: F007
+  `patch_form`/`publish_form`/`delete_form`) **or** `FormRegistry.register` /
+  `FormRegistry.delete` — on an `is_public` transition (and on deletion of a
+  public form) call bulk register/unregister against `request.app["auth"]`.
+  Deleting a public form **must** unregister its exempt paths so its URLs do not
+  remain anonymous.  *Evidence*: F007
 - **`parrot_formdesigner` startup** — register the exclude-provider callback so
   public paths survive restarts.  *Evidence*: F007  *(U3)*
 
@@ -247,12 +249,13 @@ Distribution: **5** high, **2** medium, **0** low.
 - [x] **What navigator-auth API to add?** — *Resolved*: idempotent
   `add_exclude_list` + `remove_exclude_list` + bulk
   `register_exclusions`/`unregister_exclusions`.  *Resolves*: C2
+- [x] **Should `delete_form` also unregister exempt paths?** — *Resolved*: yes —
+  deleting a public form must unregister its exempt paths so the form's URLs do
+  not remain anonymous. `delete_form` / `FormRegistry.delete` joins the toggle
+  set.  *Resolves*: C7
 
 ### Unresolved (defer to spec / implementation)
 
-- [ ] **Should `delete_form` also unregister exempt paths?** — *Owner*: tbd.
-  *Blocks*: C7. Strongly implied (avoid stale anonymous URLs) but not in the
-  original request — confirm in the spec.
 - [ ] **Minimum navigator-auth version / release ordering for the two-repo rollout.**
   — *Owner*: tbd.
 
