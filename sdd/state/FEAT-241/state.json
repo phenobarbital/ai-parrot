@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-241",
+  "feature_slug": "formdesigner-public-forms",
+  "started_at": "2026-06-16T00:00:00Z",
+  "updated_at": "2026-06-16T00:00:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-241/source.md",
+    "fetched_at": "2026-06-16T00:00:00Z",
+    "summary_oneline": "Public forms (is_public=True) register auth-exempt paths in navigator-auth's runtime exclude list; revoke on is_public=False."
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-06-16T00:00:00Z",
+      "completed_at": "2026-06-16T00:00:00Z"
+    },
+    "plan": {
+      "status": "completed",
+      "queries_total": 10,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-241/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "queries_executed": 9,
+      "queries_skipped": 1,
+      "depth_reached": 2,
+      "files_read": 8,
+      "grep_calls": 13,
+      "git_calls": 2,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-241/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 7,
+      "claims_high_conf": 5,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 0,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 4,
+      "questions_answered": 4,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/formdesigner-public-forms.proposal.md",
+      "commit_sha": "dce78cc029f061ac70cdabcb8a885ba5d70924f3",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "High-confidence localization, bounded two-repo change, all four design decisions resolved."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 8,
+    "grep_calls": 13,
+    "git_calls": 2,
+    "wall_seconds": 0
+  },
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "Proposal drafted and Q&A complete; commit proposal + state, then recommend /sdd-spec FEAT-241."
+  }
+}

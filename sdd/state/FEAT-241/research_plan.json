@@ -1,0 +1,78 @@
+{
+  "feat_id": "FEAT-241",
+  "mode_hint": "enrichment",
+  "generated_at": "2026-06-16",
+  "budget_profile": "default",
+  "queries": [
+    {
+      "id": "Q001",
+      "type": "grep",
+      "intent": "Find how navigator-auth declares/uses the frozen exclude list of auth-exempt routes",
+      "params": {"pattern": "frozenset|exclude_list|exclude_paths|no_auth|unauthenticated", "path": "../navigator-auth"},
+      "priority": "high"
+    },
+    {
+      "id": "Q002",
+      "type": "grep",
+      "intent": "Locate the navigator-auth middleware entrypoint that checks whether a request path is exempt from auth",
+      "params": {"pattern": "middleware|@web.middleware|async def.*middleware|request.path", "path": "../navigator-auth"},
+      "priority": "high"
+    },
+    {
+      "id": "Q003",
+      "type": "tree",
+      "intent": "Map the navigator-auth package structure to find the AuthHandler/middleware module",
+      "params": {"path": "../navigator-auth", "maxdepth": 3},
+      "priority": "high"
+    },
+    {
+      "id": "Q004",
+      "type": "read",
+      "intent": "Read the auth middleware implementation to understand path-exemption evaluation and where frozenset is built",
+      "params": {"path": "TBD-from-Q002"},
+      "priority": "high"
+    },
+    {
+      "id": "Q005",
+      "type": "grep",
+      "intent": "Find the Form model / is_public property in parrot-formdesigner",
+      "params": {"pattern": "is_public|class .*Form|public", "path": "packages/parrot-formdesigner/src"},
+      "priority": "high"
+    },
+    {
+      "id": "Q006",
+      "type": "tree",
+      "intent": "Map parrot-formdesigner source structure (models, handlers, routes)",
+      "params": {"path": "packages/parrot-formdesigner/src/parrot_formdesigner", "maxdepth": 3},
+      "priority": "high"
+    },
+    {
+      "id": "Q007",
+      "type": "grep",
+      "intent": "Find form URL routes (JSON schema endpoint, results submission endpoint) in parrot-formdesigner",
+      "params": {"pattern": "add_routes|router.add|add_get|add_post|route|schema|results|submit", "path": "packages/parrot-formdesigner/src"},
+      "priority": "high"
+    },
+    {
+      "id": "Q008",
+      "type": "grep",
+      "intent": "Find where parrot-formdesigner integrates with navigator-auth / app at startup (edit method, registration hooks)",
+      "params": {"pattern": "navigator_auth|navigator.auth|setup|configure|on_startup|app\\[", "path": "packages/parrot-formdesigner/src"},
+      "priority": "medium"
+    },
+    {
+      "id": "Q009",
+      "type": "grep",
+      "intent": "Check how navigator-auth exposes its setup() / AuthHandler API surface that the app uses to register exclusions",
+      "params": {"pattern": "def setup|class AuthHandler|exclude|add_exclude|self.exclude", "path": "../navigator-auth"},
+      "priority": "high"
+    },
+    {
+      "id": "Q010",
+      "type": "git_log",
+      "intent": "Recent activity on navigator-auth middleware to understand current churn and conventions",
+      "params": {"path": "../navigator-auth", "window": "180 days"},
+      "priority": "low"
+    }
+  ]
+}
