@@ -32,7 +32,7 @@
       "feature_id": "FEAT-241",
       "feature": "formdesigner-public-forms",
       "spec": "sdd/specs/formdesigner-public-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on register_exclusions from TASK-1577.",
       "assigned_to": null,
       "started_at": "2026-06-16T13:29:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1578-navigator-auth-exclude-provider-callback.md"
+      "completed_at": "2026-06-16T13:32:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1578-navigator-auth-exclude-provider-callback.md"
     },
     {
       "id": "TASK-1579",
