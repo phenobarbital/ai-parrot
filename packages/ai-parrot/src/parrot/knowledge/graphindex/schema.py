@@ -11,7 +11,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class Provenance(str, Enum):
@@ -169,6 +169,8 @@ class BuildResult(BaseModel):
         inferred_edge_count: Subset of edges with ``provenance=INFERRED``.
         report_path: Path to the generated ``GRAPH_REPORT.md`` file, if any.
         errors: List of non-fatal error messages encountered during the run.
+        projection_report: Summary of the OKF projection stage (FEAT-239).
+            ``None`` when projection was skipped or not yet supported.
     """
 
     tenant_id: str
@@ -177,6 +179,10 @@ class BuildResult(BaseModel):
     inferred_edge_count: int = 0
     report_path: Optional[Path] = None
     errors: list[str] = Field(default_factory=list)
+    projection_report: Optional[object] = Field(
+        default=None,
+        description="OKF projection summary (GraphProjectionReport); None when skipped.",
+    )
 
 
 class IngestResult(BaseModel):

@@ -224,11 +224,36 @@ class GraphIndexBuilder:
             analytics = compute_analytics(assembler.graph, all_nodes, all_edges)
             # Attach FEAT-191 partition so the report includes communities.
             analytics.communities = self.last_community_result
-            report_path = generate_report(analytics, self.output_dir)
+            report_path = generate_report(
+                analytics, self.output_dir, tenant_id=ctx.tenant_id
+            )
             logger.info("Stage 6 complete: report written to %s", report_path)
         except Exception as exc:
             logger.error("Analytics stage failed: %s", exc)
             errors.append(f"Analytics failed: {exc}")
+
+        # Stage 6.5: OKF Projection — project per-node .md sidecars (FEAT-239)
+        projection_report = None
+        if self.output_dir:
+            try:
+                from parrot.knowledge.graphindex.projection import (  # noqa: PLC0415
+                    project_graph_sidecars,
+                )
+
+                content_store = getattr(self.pageindex_toolkit, "_content_store", None)
+                projection_report = await project_graph_sidecars(
+                    all_nodes,
+                    all_edges,
+                    self.output_dir,
+                    content_store=content_store,
+                )
+                logger.info(
+                    "Stage 6.5 complete: %d nodes projected",
+                    projection_report.nodes_projected,
+                )
+            except Exception as exc:
+                logger.error("Projection stage failed: %s", exc)
+                errors.append(f"Projection failed: {exc}")
 
         inferred_count = sum(
             1 for e in all_edges if e.provenance == Provenance.INFERRED
@@ -240,6 +265,7 @@ class GraphIndexBuilder:
             inferred_edge_count=inferred_count,
             report_path=report_path,
             errors=errors,
+            projection_report=projection_report,
         )
 
     async def ingest_document(self, uri: str, ctx: TenantContext) -> IngestResult:

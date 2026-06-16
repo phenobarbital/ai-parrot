@@ -226,7 +226,6 @@ def _generate_suggested_questions(
             questions.append(f"How does {src.title} relate to {tgt.title}?")
 
     # Pattern 2: rationale → symbol
-    rationale_nodes = {n.node_id: n for n in nodes if n.kind == NodeKind.RATIONALE}
     for edge in edges:
         if edge.kind == EdgeKind.EXPLAINS:
             rationale = node_map.get(edge.source_id)
@@ -242,7 +241,6 @@ def _generate_suggested_questions(
                 )
 
     # Pattern 3: symbol → section (via MENTIONS)
-    symbol_nodes = {n.node_id: n for n in nodes if n.kind == NodeKind.SYMBOL}
     for edge in edges:
         if edge.kind == EdgeKind.MENTIONS:
             symbol = node_map.get(edge.source_id)
@@ -269,20 +267,27 @@ def generate_report(
     analytics: AnalyticsResult,
     output_dir: Path,
     llm_polish: bool = False,  # noqa: FBT001 — stubbed for v1.5
+    tenant_id: str = "default",
 ) -> Path:
     """Generate ``GRAPH_REPORT.md`` from analytics results.
 
     The report is deterministic: identical inputs produce identical output.
     The ``llm_polish`` parameter is accepted but is a no-op in v1.
 
+    FEAT-239: The report now starts with OKF-compatible YAML frontmatter
+    prepended before the Markdown body.
+
     Args:
         analytics: Pre-computed ``AnalyticsResult``.
         output_dir: Directory where ``GRAPH_REPORT.md`` will be written.
         llm_polish: Reserved for v1.5.  Currently ignored.
+        tenant_id: Tenant identifier used in the frontmatter resource URI.
 
     Returns:
         Path to the written report file.
     """
+    from parrot.knowledge.graphindex.projection import project_report_frontmatter  # noqa: PLC0415
+
     if llm_polish:
         logger.info("llm_polish=True is not yet implemented; using deterministic template.")
 
@@ -291,6 +296,13 @@ def generate_report(
 
     report_path = output_dir / REPORT_FILENAME
     content = _render_report(analytics)
+    # Prepend OKF frontmatter (FEAT-239)
+    try:
+        fm = project_report_frontmatter(analytics, tenant_id)
+        content = fm + "\n" + content
+    except Exception as exc:
+        logger.warning("Failed to generate report frontmatter: %s", exc)
+
     report_path.write_text(content, encoding="utf-8")
 
     logger.info("Written GRAPH_REPORT.md to %s", report_path)
