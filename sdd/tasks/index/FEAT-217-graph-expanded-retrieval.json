@@ -52,7 +52,7 @@
       "feature_id": "FEAT-217",
       "feature": "graph-expanded-retrieval",
       "spec": "sdd/specs/FEAT-217-graph-expanded-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Requires seed search from TASK-1566; extends the same retriever.py file.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:59:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1567-graph-expansion-engine.md"
+      "completed_at": "2026-06-16T00:10:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1567-graph-expansion-engine.md"
     },
     {
       "id": "TASK-1568",
