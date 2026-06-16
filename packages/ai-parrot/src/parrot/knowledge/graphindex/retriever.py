@@ -25,6 +25,7 @@ Orchestrates a 4-phase retrieval pipeline over the assembled GraphIndex:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -39,9 +40,6 @@ if TYPE_CHECKING:
     from parrot.knowledge.graphindex.schema import UniversalNode
     from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
     from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch
-
-logger = logging.getLogger(__name__)
-
 
 # ---------------------------------------------------------------------------
 # Data Models
@@ -385,6 +383,14 @@ class GraphExpandedRetriever:
         all_nodes: dict[str, ScoredNode] = {s.node_id: s for s in seeds}
         frontier: list[ScoredNode] = list(seeds)
 
+        # Build lookup maps once before the hop loop to avoid O(N) scans per parent.
+        node_meta_map: dict[str, "UniversalNode"] = {n.node_id: n for n in self.nodes}
+        graph_idx_map: dict[str, int] = {}
+        for idx in self.graph.node_indices():
+            payload = self.graph[idx]
+            if isinstance(payload, dict) and payload.get("node_id"):
+                graph_idx_map[payload["node_id"]] = idx
+
         for hop in range(1, config.max_hops + 1):
             decay = config.decay_base**hop
             next_frontier: list[ScoredNode] = []
@@ -396,12 +402,9 @@ class GraphExpandedRetriever:
                 # Cap candidate pool for high-degree nodes to avoid
                 # O(N) signal_relevance calls on very connected nodes.
                 candidate_pool: Optional[list[str]] = None
-                parent_idx = None
-                for idx in self.graph.node_indices():
-                    payload = self.graph[idx]
-                    if isinstance(payload, dict) and payload.get("node_id") == parent.node_id:
-                        parent_idx = idx
-                        break
+                parent_idx = graph_idx_map.get(parent.node_id)
+                if parent_idx is None:
+                    continue
 
                 if parent_idx is not None:
                     out_neighbors = [
@@ -419,7 +422,8 @@ class GraphExpandedRetriever:
                         # Cap to first 100 neighbours to bound computation
                         candidate_pool = all_adj[:100]
 
-                neighbors = relevance_neighborhood(
+                neighbors = await asyncio.to_thread(
+                    relevance_neighborhood,
                     self.graph,
                     self.nodes,
                     parent.node_id,
@@ -459,12 +463,11 @@ class GraphExpandedRetriever:
                                 summary=existing.summary,
                             )
                             all_nodes[neighbor_id] = updated
+                            next_frontier.append(updated)  # re-queue for further expansion
                         continue
 
                     # New node — resolve metadata
-                    node_meta = next(
-                        (n for n in self.nodes if n.node_id == neighbor_id), None
-                    )
+                    node_meta = node_meta_map.get(neighbor_id)
                     if node_meta is None:
                         self.logger.debug(
                             "_expand: neighbor %r not in nodes list; skipping.",
@@ -528,13 +531,15 @@ class GraphExpandedRetriever:
         community_map = {c.community_id: c for c in self.communities.communities}
         node_ids_present = {n.node_id for n in nodes}
 
+        annotated: list[ScoredNode] = []
         for node in nodes:
             cid = self.communities.node_to_community.get(node.node_id)
             if cid:
-                node.community_id = cid
                 community = community_map.get(cid)
-                if community:
-                    node.community_cohesion = community.cohesion
+                cohesion = community.cohesion if community else None
+                node = node.model_copy(update={"community_id": cid, "community_cohesion": cohesion})
+            annotated.append(node)
+        nodes = annotated
 
         if config.include_community_centroids:
             centroid_nodes: list[ScoredNode] = []

@@ -975,7 +975,7 @@ class GraphIndexToolkit(AbstractToolkit):
 
         Phase 1 uses the ``GraphIndexEmbedder`` (FAISS) for seed search.
         Phase 2 expands N hops with exponential score decay.
-        Phase 3 skips community annotation (no ``CommunitiesResult`` stored in toolkit).
+        Phase 3 community annotation is skipped — pass a ``CommunitiesResult`` to ``GraphExpandedRetriever`` directly if community context is needed.
         Phase 4 applies a token budget and sorts results by combined score.
 
         Args:
@@ -1006,6 +1006,7 @@ class GraphIndexToolkit(AbstractToolkit):
             embedder=self.embedder,
             signal_config=self.signal_config,
         )
+        max_hops = max(1, min(4, max_hops))
         expansion = ExpansionConfig(max_hops=max_hops, decay_base=decay_base)
         budget = BudgetConfig(max_tokens=max_tokens)
         result = await retriever.search(
