@@ -431,3 +431,12 @@ class TestRoundTrip:
         body = reimport_content.load("reimported", "access-control-policy")
         assert body is not None
         assert "Policy body" in body
+
+        # Verify timestamp preserved
+        assert by_cid["access-control-policy"]["timestamp"] == "2026-01-01T00:00:00Z"
+
+        # Verify summary preserved
+        assert by_cid["access-control-policy"]["summary"] == "Manages access control."
+
+        # Verify tags preserved (exported from categories field)
+        assert "access-control" in by_cid["access-control-policy"]["tags"]

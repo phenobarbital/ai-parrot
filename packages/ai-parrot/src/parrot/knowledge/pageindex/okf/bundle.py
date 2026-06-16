@@ -104,17 +104,28 @@ class ImportReport(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+# Mass nouns and other words that must not be naively pluralised.
+_PLURAL_OVERRIDES: dict[str, str] = {
+    "evidence": "evidence",
+}
+
+
 def _type_to_dir(concept_type_value: str) -> str:
     """Map a ConceptType string value to an OKF bundle subdirectory name.
 
+    Uses simple English pluralisation (``-y → -ies``, otherwise ``+s``) with
+    explicit overrides for irregular or mass nouns (e.g. ``evidence``).
+
     Args:
-        concept_type_value: e.g. ``"Policy"``, ``"Control"``, ``"Other"``.
+        concept_type_value: e.g. ``"Policy"``, ``"Control"``, ``"Evidence"``.
 
     Returns:
-        Lowercase plural, e.g. ``"policies"``, ``"controls"``, ``"others"``.
+        Lowercase plural directory name, e.g. ``"policies"``, ``"controls"``,
+        ``"evidence"``.
     """
     lowered = concept_type_value.lower()
-    # Simple English pluralisation: words ending in -y → -ies, else append -s.
+    if lowered in _PLURAL_OVERRIDES:
+        return _PLURAL_OVERRIDES[lowered]
     if lowered.endswith("y"):
         return lowered[:-1] + "ies"
     return lowered + "s"
@@ -191,7 +202,7 @@ def _export_frontmatter(node: dict, tree_name: str) -> str:
         "type": node.get("type", ConceptType.SECTION.value),
         "title": node.get("title", ""),
         "id": node.get("concept_id", ""),
-        "tags": sorted(node.get("categories", []) or node.get("tags", [])),
+        "tags": sorted(set(node.get("categories") or []) | set(node.get("tags") or [])),
         "timestamp": str(node.get("timestamp", "")),
         "summary": node.get("summary", "") or "",
         "relates_to": [
@@ -232,7 +243,7 @@ def _strip_frontmatter(content: str) -> str:
     second = content.find("\n---\n", 4)
     if second == -1:
         if content.endswith("\n---"):
-            return content[len(content) - 4 + 4:]
+            return ""  # frontmatter fills entire content; no body
         return content
     return content[second + 5:].lstrip("\n")
 
@@ -270,9 +281,10 @@ def export_okf_bundle(
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir_resolved = output_dir.resolve()
 
     nodes = structure_to_list(tree.get("structure", []))
-    report = ExportReport(tree_name=tree_name, output_dir=str(output_dir.resolve()))
+    report = ExportReport(tree_name=tree_name, output_dir=str(output_dir_resolved))
 
     # Build concept_id → bundle-relative path map (needed for URI rewriting)
     concept_file_map: dict[str, PurePosixPath] = {}
@@ -292,6 +304,17 @@ def export_okf_bundle(
         concept_type_val = node.get("type", ConceptType.SECTION.value)
         rel_path = _build_export_path(cid, concept_type_val)
         abs_path = output_dir / rel_path
+
+        # Guard against concept_ids that could escape output_dir (e.g. "..--evil")
+        try:
+            if not abs_path.resolve().is_relative_to(output_dir_resolved):
+                logger.warning(
+                    "Skipping concept_id %r: resolved path escapes output_dir", cid
+                )
+                continue
+        except ValueError:
+            logger.warning("Skipping concept_id %r: could not verify path containment", cid)
+            continue
 
         # Ensure type subdirectory exists
         abs_path.parent.mkdir(parents=True, exist_ok=True)
@@ -399,9 +422,14 @@ def import_okf_bundle(
     The resulting tree is saved via ``store`` and bodies via
     ``content_store``.
 
+    .. note::
+        If a tree named ``tree_name`` already exists in ``store`` it will be
+        **overwritten** atomically.  To avoid data loss, choose a unique
+        ``tree_name`` or delete the existing tree first.
+
     Args:
         input_dir: Source OKF bundle directory.
-        tree_name: Name to assign to the new PageIndex tree.
+        tree_name: Name to assign to the new (or replacement) PageIndex tree.
         store: :class:`~parrot.knowledge.pageindex.store.JSONTreeStore` for
             persisting the new tree.
         content_store: :class:`~parrot.knowledge.pageindex.content_store.NodeContentStore`
@@ -413,11 +441,25 @@ def import_okf_bundle(
     input_dir = Path(input_dir)
     report = ImportReport(tree_name=tree_name, input_dir=str(input_dir.resolve()))
 
-    # Collect all .md files (skip index.md)
-    md_files: list[Path] = sorted(
-        p for p in input_dir.rglob("*.md")
-        if p.name.lower() != "index.md"
-    )
+    input_dir_resolved = input_dir.resolve()
+
+    # Collect all .md files (skip index.md; reject symlinks escaping input_dir)
+    md_files: list[Path] = []
+    for p in sorted(input_dir.rglob("*.md")):
+        if p.name.lower() == "index.md":
+            continue
+        try:
+            if not p.resolve().is_relative_to(input_dir_resolved):
+                logger.warning(
+                    "Skipping '%s': symlink resolves outside input_dir '%s'",
+                    p,
+                    input_dir_resolved,
+                )
+                continue
+        except ValueError:
+            logger.warning("Skipping '%s': could not verify containment", p)
+            continue
+        md_files.append(p)
 
     # -----------------------------------------------------------------------
     # Pass 1: collect stem → concept_id mapping

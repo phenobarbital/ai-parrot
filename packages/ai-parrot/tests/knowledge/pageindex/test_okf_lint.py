@@ -316,3 +316,39 @@ class TestLintTotals:
         assert "stale_claims" in d
         assert "total_findings" in d
         assert "total_concepts" in d
+
+
+class TestLintNoTreeName:
+    """Edge case: tree dict with no name keys uses safe fallback."""
+
+    def test_lint_no_tree_name_does_not_crash(self, content_store):
+        """lint_knowledge_base must not raise when tree has no name key."""
+        tree = {
+            # Intentionally omit tree_name, doc_name, name
+            "structure": [
+                {
+                    "node_id": "0001",
+                    "concept_id": "policy-x",
+                    "type": "Policy",
+                    "title": "Policy X",
+                    "summary": "",
+                    "timestamp": "2026-01-01T00:00:00Z",
+                    "relates_to": [],
+                    "nodes": [],
+                },
+            ],
+        }
+        graph = KnowledgeGraph(tree)
+        # Must not raise ValueError from NodeContentStore validation
+        report = lint_knowledge_base(graph, tree, content_store)
+        assert report.total_concepts == 1
+        # All concepts should be flagged as missing (no sidecar under "_unknown")
+        missing_ids = {f.concept_id for f in report.missing_concepts}
+        assert "policy-x" in missing_ids
+
+    def test_lint_no_tree_name_report_tree_name_is_unknown(self, content_store):
+        """LintReport.tree_name is '_unknown' when no name key is present."""
+        tree = {"structure": []}
+        graph = KnowledgeGraph(tree)
+        report = lint_knowledge_base(graph, tree, content_store)
+        assert report.tree_name == "_unknown"

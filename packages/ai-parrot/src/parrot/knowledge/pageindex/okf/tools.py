@@ -30,7 +30,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
+from parrot.knowledge.pageindex.okf.bundle import (
+    export_okf_bundle as _export_okf_bundle,
+    import_okf_bundle as _import_okf_bundle,
+)
 from parrot.knowledge.pageindex.okf.graph import KnowledgeGraph
+from parrot.knowledge.pageindex.okf.lint import lint_knowledge_base as _lint_knowledge_base
 from parrot.knowledge.pageindex.okf.ontology import ConceptType
 from parrot.knowledge.pageindex.okf.projection import flatten_concept_id_for_filename
 from parrot.knowledge.pageindex.store import JSONTreeStore
@@ -292,11 +297,7 @@ class OKFToolkit:
         Returns:
             Serialised ``LintReport`` dict with categorised findings.
         """
-        from parrot.knowledge.pageindex.okf.lint import (
-            lint_knowledge_base as _lint,
-        )
-
-        report = _lint(
+        report = _lint_knowledge_base(
             self._graph,
             self._tree,
             self._content_store,
@@ -319,11 +320,7 @@ class OKFToolkit:
             Serialised ``ExportReport`` dict with counts of files written
             and URIs rewritten.
         """
-        from parrot.knowledge.pageindex.okf.bundle import (
-            export_okf_bundle as _export,
-        )
-
-        report = _export(
+        report = _export_okf_bundle(
             self._tree,
             self._tree_name,
             self._content_store,
@@ -356,11 +353,7 @@ class OKFToolkit:
                 "Pass store=<JSONTreeStore> when constructing OKFToolkit."
             )
 
-        from parrot.knowledge.pageindex.okf.bundle import (
-            import_okf_bundle as _import,
-        )
-
-        report = _import(
+        report = _import_okf_bundle(
             Path(input_dir),
             self._tree_name,
             self._store,

@@ -26,11 +26,13 @@ Design notes:
 
 import logging
 from datetime import datetime, timezone
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
 from parrot.knowledge.pageindex.okf.graph import KnowledgeGraph
+from parrot.knowledge.pageindex.okf.projection import flatten_concept_id_for_filename
 from parrot.knowledge.pageindex.utils import structure_to_list
 
 logger = logging.getLogger(__name__)
@@ -52,10 +54,10 @@ class LintFinding(BaseModel):
         severity: ``"warning"`` (non-critical) or ``"error"`` (data integrity).
     """
 
-    kind: str
+    kind: Literal["orphan", "broken_link", "missing_concept", "stale"]
     concept_id: str
     detail: str
-    severity: str = "warning"
+    severity: Literal["warning", "error"] = "warning"
 
 
 class LintReport(BaseModel):
@@ -113,7 +115,7 @@ def lint_knowledge_base(
         tree.get("tree_name")
         or tree.get("doc_name")
         or tree.get("name")
-        or ""
+        or "_unknown"  # safe fallback — no sidecar will exist, so all concepts flag missing
     )
 
     report = LintReport(tree_name=tree_name)
@@ -169,10 +171,6 @@ def lint_knowledge_base(
     # have no associated content page.
     # ------------------------------------------------------------------
     for cid in sorted(known_concepts):
-        from parrot.knowledge.pageindex.okf.projection import (
-            flatten_concept_id_for_filename,
-        )
-
         flat_key = flatten_concept_id_for_filename(cid)
         if not content_store.has(tree_name, flat_key):
             report.missing_concepts.append(
