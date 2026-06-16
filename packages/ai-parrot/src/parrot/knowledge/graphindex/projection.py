@@ -7,12 +7,15 @@ with YAML frontmatter.  Also provides the frontmatter string for
 Key design decisions:
 - ``node_to_frontmatter_dict()`` and ``project_node_sidecar()`` are pure
   functions (no I/O) for easy unit testing.
-- ``project_graph_sidecars()`` is async because resolving ``content_ref``
-  via ``NodeContentStore.load()`` may involve I/O.
+- ``project_graph_sidecars()`` is async; all disk I/O runs via
+  ``asyncio.to_thread()`` to avoid blocking the event loop.
 - Sidecars are written to ``output_dir/nodes/<filename>.md``.
 - Sidecar filenames use ``flatten_concept_id_for_filename(node_id)`` —
   slashes become ``--``.
-- Byte-determinism: same input → identical sidecar every time.
+- Byte-determinism: ``project_node_sidecar()`` produces identical bytes for
+  the same inputs.  ``project_report_frontmatter()`` is deterministic when
+  an explicit ``timestamp`` is passed; without one it uses the current UTC
+  time (non-deterministic by definition).
 - If ``content_store`` is not provided (or a content_ref fails to resolve),
   the body falls back gracefully to ``summary`` or ``title``.
 - Projection failures do NOT propagate as exceptions; callers are expected
@@ -25,19 +28,24 @@ Mapping tables:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, Field
-
 from parrot.knowledge.graphindex.analytics import AnalyticsResult
-from parrot.knowledge.graphindex.schema import EdgeKind, NodeKind, UniversalEdge, UniversalNode
+from parrot.knowledge.graphindex.schema import (
+    EdgeKind,
+    GraphProjectionReport,
+    NodeKind,
+    UniversalEdge,
+    UniversalNode,
+)
 from parrot.knowledge.okf.frontmatter import project_frontmatter
 from parrot.knowledge.okf.ontology import ConceptType, RelationType
 from parrot.knowledge.okf.uri import parse_uri
-from parrot.knowledge.pageindex.okf.projection import flatten_concept_id_for_filename
+from parrot.knowledge.okf.utils import flatten_concept_id_for_filename
 
 logger = logging.getLogger(__name__)
 
@@ -63,26 +71,10 @@ EDGE_KIND_TO_RELATION_TYPE: dict[EdgeKind, RelationType] = {
 }
 
 # ---------------------------------------------------------------------------
-# Report model
+# Internal constants
 # ---------------------------------------------------------------------------
 
 _GRAPHINDEX_TREE = "graphindex"
-
-
-class GraphProjectionReport(BaseModel):
-    """Summary of a completed GraphIndex projection run.
-
-    Attributes:
-        output_dir: Directory where sidecars were written.
-        nodes_projected: Count of nodes successfully projected.
-        files_written: List of absolute file paths written.
-        report_frontmatter_added: Whether GRAPH_REPORT.md received frontmatter.
-    """
-
-    output_dir: str
-    nodes_projected: int = 0
-    files_written: list[str] = Field(default_factory=list)
-    report_frontmatter_added: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -156,17 +148,24 @@ def project_node_sidecar(
 def project_report_frontmatter(
     analytics: AnalyticsResult,
     tenant_id: str,
+    timestamp: Optional[str] = None,
 ) -> str:
     """Generate OKF YAML frontmatter string for GRAPH_REPORT.md.
 
+    The output is byte-deterministic when ``timestamp`` is supplied; without
+    it the current UTC time is embedded, making each call unique.
+
     Args:
         analytics: The analytics result from the graph build.
-        tenant_id: Tenant identifier used in the resource URI.
+        tenant_id: Tenant identifier used in the concept-id.
+        timestamp: Optional ISO-8601 timestamp string.  When provided, the
+            frontmatter is byte-identical for the same inputs.  When omitted,
+            the current UTC time is used (non-deterministic across calls).
 
     Returns:
         YAML frontmatter string delimited by ``---\\n``.
     """
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    ts = timestamp or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     report_id = f"graph-report-{tenant_id}"
     node_dict = {
         "concept_id": report_id,
@@ -179,19 +178,21 @@ def project_report_frontmatter(
             f"{len(analytics.surprising_connections)} surprising connections."
         ),
         "categories": [],
-        "timestamp": timestamp,
+        "timestamp": ts,
         "relates_to": [],
         "source": None,
     }
-    # Override the resource to use knowledge:// scheme
-    # project_frontmatter builds resource as pageindex://graphindex/..., but
-    # for the graph report we pass a pre-built node dict with the right concept_id.
-    fm = project_frontmatter(node_dict, _GRAPHINDEX_TREE)
-    return fm
+    # NOTE: project_frontmatter() builds the resource as
+    # "pageindex://<tree>/<concept_id>". GraphIndex sidecars therefore carry
+    # "pageindex://graphindex/<id>" rather than "knowledge://graphindex/<id>".
+    # TODO(FEAT-239): migrate to build_uri("graphindex", report_id) once
+    # project_frontmatter() accepts a scheme parameter or is replaced by a
+    # direct ConceptFrontmatter construction path.
+    return project_frontmatter(node_dict, _GRAPHINDEX_TREE)
 
 
 # ---------------------------------------------------------------------------
-# Content-ref resolution helper
+# Content-ref resolution helper (sync — called via asyncio.to_thread)
 # ---------------------------------------------------------------------------
 
 
@@ -200,6 +201,9 @@ def _resolve_body(
     content_store: Optional[object],
 ) -> str:
     """Resolve full body from content_ref or fall back to summary/title.
+
+    This is a **synchronous** function intentionally — callers that need
+    non-blocking behaviour must invoke it via ``asyncio.to_thread()``.
 
     Args:
         node: The node whose ``content_ref`` may point to PageIndex storage.
@@ -245,10 +249,12 @@ async def project_graph_sidecars(
 ) -> GraphProjectionReport:
     """Write per-node ``.md`` sidecars to ``output_dir/nodes/``.
 
-    For each node:
-    1. Resolves body from ``content_ref`` if content_store is available.
-    2. Projects YAML frontmatter + body via ``project_node_sidecar()``.
-    3. Writes to ``output_dir/nodes/<flattened_node_id>.md``.
+    All disk I/O runs via ``asyncio.to_thread()`` to avoid blocking the
+    event loop.  For each node:
+
+    1. Resolves body from ``content_ref`` (via thread) if content_store is available.
+    2. Projects YAML frontmatter + body via ``project_node_sidecar()`` (CPU-only).
+    3. Writes to ``output_dir/nodes/<flattened_node_id>.md`` (via thread).
 
     Args:
         nodes: All ``UniversalNode`` objects to project.
@@ -269,11 +275,13 @@ async def project_graph_sidecars(
 
     for node in nodes:
         try:
-            body = _resolve_body(node, content_store)
+            # Both _resolve_body (disk read) and write_text (disk write) are
+            # offloaded to a thread pool to keep the event loop unblocked.
+            body = await asyncio.to_thread(_resolve_body, node, content_store)
             sidecar = project_node_sidecar(node, edges, body)
             filename = flatten_concept_id_for_filename(node.node_id) + ".md"
             dest = nodes_dir / filename
-            dest.write_text(sidecar, encoding="utf-8")
+            await asyncio.to_thread(dest.write_text, sidecar, "utf-8")
             report.nodes_projected += 1
             report.files_written.append(str(dest))
             logger.debug("Projected node %r → %s", node.node_id, dest)
@@ -288,7 +296,6 @@ async def project_graph_sidecars(
 __all__ = [
     "NODE_KIND_TO_CONCEPT_TYPE",
     "EDGE_KIND_TO_RELATION_TYPE",
-    "GraphProjectionReport",
     "node_to_frontmatter_dict",
     "project_node_sidecar",
     "project_report_frontmatter",

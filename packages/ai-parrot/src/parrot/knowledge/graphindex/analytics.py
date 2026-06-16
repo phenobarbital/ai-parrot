@@ -286,6 +286,7 @@ def generate_report(
     Returns:
         Path to the written report file.
     """
+    # Deferred to avoid a circular import: projection → schema → analytics.
     from parrot.knowledge.graphindex.projection import project_report_frontmatter  # noqa: PLC0415
 
     if llm_polish:

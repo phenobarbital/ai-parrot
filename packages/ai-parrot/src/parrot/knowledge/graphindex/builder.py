@@ -95,7 +95,7 @@ class GraphIndexBuilder:
         self,
         persistence: GraphIndexPersistence,
         embedder: GraphIndexEmbedder,
-        output_dir: Path,
+        output_dir: Optional[Path] = None,
         ignore_file: Optional[Path] = None,
         resolution_config: Optional[ResolutionConfig] = None,
         pageindex_toolkit: Optional[PageIndexToolkit] = None,
@@ -105,7 +105,7 @@ class GraphIndexBuilder:
     ) -> None:
         self.persistence = persistence
         self.embedder = embedder
-        self.output_dir = Path(output_dir)
+        self.output_dir = Path(output_dir) if output_dir is not None else None
         self.resolution_config = resolution_config or ResolutionConfig()
         self.pageindex_toolkit = pageindex_toolkit
         self.signal_config = signal_config
@@ -220,22 +220,28 @@ class GraphIndexBuilder:
 
         # Stage 6: Analytics + Report
         report_path: Optional[Path] = None
+        analytics = None
         try:
             analytics = compute_analytics(assembler.graph, all_nodes, all_edges)
             # Attach FEAT-191 partition so the report includes communities.
             analytics.communities = self.last_community_result
-            report_path = generate_report(
-                analytics, self.output_dir, tenant_id=ctx.tenant_id
-            )
-            logger.info("Stage 6 complete: report written to %s", report_path)
+            if self.output_dir is not None:
+                report_path = generate_report(
+                    analytics, self.output_dir, tenant_id=ctx.tenant_id
+                )
+                logger.info("Stage 6 complete: report written to %s", report_path)
+            else:
+                logger.info("Stage 6 complete: no output_dir, report generation skipped")
         except Exception as exc:
             logger.error("Analytics stage failed: %s", exc)
             errors.append(f"Analytics failed: {exc}")
 
         # Stage 6.5: OKF Projection — project per-node .md sidecars (FEAT-239)
         projection_report = None
-        if self.output_dir:
+        if self.output_dir is not None:
             try:
+                # Deferred import: projection imports from schema (which imports
+                # from analytics), creating a cycle if imported at module level.
                 from parrot.knowledge.graphindex.projection import (  # noqa: PLC0415
                     project_graph_sidecars,
                 )
@@ -247,6 +253,9 @@ class GraphIndexBuilder:
                     self.output_dir,
                     content_store=content_store,
                 )
+                # Record whether the analytics report also received frontmatter
+                # (Stage 6 ran successfully and wrote GRAPH_REPORT.md).
+                projection_report.report_frontmatter_added = report_path is not None
                 logger.info(
                     "Stage 6.5 complete: %d nodes projected",
                     projection_report.nodes_projected,
@@ -334,18 +343,27 @@ class GraphIndexBuilder:
         triggered automatically by ``ingest_document``.
 
         Args:
-            ctx: Tenant context (used to scope persisted data retrieval).
+            ctx: Tenant context (used to scope persisted data retrieval and
+                the frontmatter resource URI in GRAPH_REPORT.md).
 
         Returns:
             Path to the generated ``GRAPH_REPORT.md``.
+
+        Raises:
+            ValueError: If the builder was constructed without an
+                ``output_dir`` — there is nowhere to write the report.
         """
-        # Build an in-memory assembler from the persisted graph state
+        if self.output_dir is None:
+            raise ValueError(
+                "regenerate_report() requires output_dir to be set on the builder."
+            )
+        # Build an in-memory assembler from the persisted graph state.
         # For now, generate an empty analytics result (full reload from ArangoDB
-        # is planned for a future task — this satisfies the explicit call contract)
-        from parrot.knowledge.graphindex.analytics import AnalyticsResult
+        # is planned for a future task — this satisfies the explicit call contract).
+        from parrot.knowledge.graphindex.analytics import AnalyticsResult  # noqa: PLC0415
 
         analytics = AnalyticsResult()
-        report_path = generate_report(analytics, self.output_dir)
+        report_path = generate_report(analytics, self.output_dir, tenant_id=ctx.tenant_id)
         logger.info("regenerate_report: written to %s", report_path)
         return report_path
 

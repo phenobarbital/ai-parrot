@@ -20,6 +20,7 @@ from parrot.knowledge.graphindex.schema import (
     UniversalNode,
     UniversalEdge,
     SourceConfig,
+    GraphProjectionReport,
     BuildResult,
     IngestResult,
 )
@@ -42,7 +43,6 @@ from parrot.knowledge.graphindex.projection import (
     project_node_sidecar,
     project_report_frontmatter,
     node_to_frontmatter_dict,
-    GraphProjectionReport,
 )
 
 __all__ = [
@@ -52,6 +52,7 @@ __all__ = [
     "UniversalNode",
     "UniversalEdge",
     "SourceConfig",
+    "GraphProjectionReport",
     "BuildResult",
     "IngestResult",
     "SignalRelevance",
@@ -68,5 +69,4 @@ __all__ = [
     "project_node_sidecar",
     "project_report_frontmatter",
     "node_to_frontmatter_dict",
-    "GraphProjectionReport",
 ]

@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from parrot.knowledge.graphindex.schema import (
+    GraphProjectionReport,
     UniversalNode,
     UniversalEdge,
     NodeKind,
@@ -26,7 +27,6 @@ from parrot.knowledge.graphindex.projection import (
     project_report_frontmatter,
     NODE_KIND_TO_CONCEPT_TYPE,
     EDGE_KIND_TO_RELATION_TYPE,
-    GraphProjectionReport,
 )
 from parrot.knowledge.okf.ontology import ConceptType, RelationType
 from parrot.knowledge.okf.frontmatter import parse_frontmatter
@@ -241,8 +241,6 @@ class TestProjectNodeSidecar:
         body = "This is the node body text."
         sidecar = project_node_sidecar(symbol_node, sample_edges, body)
         # Body should appear after the frontmatter block
-        parts = sidecar.split("---\n")
-        # parts[0] = '', parts[1] = yaml, parts[2] = '\n' + body
         assert body in sidecar
 
 
@@ -290,7 +288,7 @@ class TestProjectGraphSidecars:
         """When content_ref is present and resolvable, full body is used."""
         mock_store = MagicMock()
         mock_store.load.return_value = "Full body from PageIndex."
-        report = await project_graph_sidecars(
+        await project_graph_sidecars(
             [doc_node_with_content_ref], [], tmp_path, content_store=mock_store
         )
         files = list((tmp_path / "nodes").glob("*.md"))
@@ -308,7 +306,7 @@ class TestProjectGraphSidecars:
         """When content_ref resolves to None, falls back to summary."""
         mock_store = MagicMock()
         mock_store.load.return_value = None  # simulate cache miss
-        report = await project_graph_sidecars(
+        await project_graph_sidecars(
             [doc_node_with_content_ref], [], tmp_path, content_store=mock_store
         )
         files = list((tmp_path / "nodes").glob("*.md"))
@@ -388,19 +386,25 @@ class TestProjectReportFrontmatter:
         parsed = parse_frontmatter(fm)
         assert parsed.type == ConceptType.DOCUMENT_NODE
 
-    def test_byte_determinism(self) -> None:
-        """Same analytics + tenant_id → identical frontmatter."""
+    def test_byte_determinism_with_fixed_timestamp(self) -> None:
+        """Same analytics + tenant_id + timestamp → byte-identical frontmatter."""
         from parrot.knowledge.graphindex.analytics import AnalyticsResult
 
         analytics = AnalyticsResult()
-        fm1 = project_report_frontmatter(analytics, "tenant-a")
-        fm2 = project_report_frontmatter(analytics, "tenant-a")
-        # Both should produce frontmatter; exact timestamp may differ
-        # so we check structure not byte equality here
-        p1 = parse_frontmatter(fm1)
-        p2 = parse_frontmatter(fm2)
-        assert p1.title == p2.title
-        assert p1.type == p2.type
+        fixed_ts = "2024-01-01T00:00:00+00:00"
+        fm1 = project_report_frontmatter(analytics, "tenant-a", timestamp=fixed_ts)
+        fm2 = project_report_frontmatter(analytics, "tenant-a", timestamp=fixed_ts)
+        assert fm1 == fm2, "Same inputs with explicit timestamp must produce identical bytes"
+
+    def test_without_timestamp_still_produces_valid_frontmatter(self) -> None:
+        """Without timestamp parameter, output is valid but non-deterministic."""
+        from parrot.knowledge.graphindex.analytics import AnalyticsResult
+
+        analytics = AnalyticsResult()
+        fm = project_report_frontmatter(analytics, "tenant-a")
+        parsed = parse_frontmatter(fm)
+        assert parsed.title == "Knowledge Graph Report"
+        assert parsed.type == ConceptType.DOCUMENT_NODE
 
 
 # ---------------------------------------------------------------------------

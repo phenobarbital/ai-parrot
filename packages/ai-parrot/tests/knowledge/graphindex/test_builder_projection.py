@@ -10,8 +10,7 @@ Tests verify:
 from pathlib import Path
 
 from parrot.knowledge.graphindex.analytics import generate_report, AnalyticsResult
-from parrot.knowledge.graphindex.schema import BuildResult
-from parrot.knowledge.graphindex.projection import GraphProjectionReport
+from parrot.knowledge.graphindex.schema import BuildResult, GraphProjectionReport
 from parrot.knowledge.okf.frontmatter import parse_frontmatter
 from parrot.knowledge.okf.ontology import ConceptType
 
@@ -101,8 +100,8 @@ class TestBuildResultProjectionField:
             projection_report=report,
         )
         assert result.projection_report is not None
-        assert result.projection_report.output_dir == "/tmp/test"  # type: ignore[union-attr]
-        assert result.projection_report.nodes_projected == 5  # type: ignore[union-attr]
+        assert result.projection_report.output_dir == "/tmp/test"
+        assert result.projection_report.nodes_projected == 5
 
     def test_build_result_other_fields_unchanged(self) -> None:
         """Adding projection_report does not break other BuildResult fields."""
@@ -155,6 +154,13 @@ class TestGraphIndexPackageExports:
 
         report = GPR(output_dir="/tmp")
         assert report.nodes_projected == 0
+
+    def test_graph_projection_report_also_in_schema(self) -> None:
+        """GraphProjectionReport is also importable directly from schema."""
+        from parrot.knowledge.graphindex.schema import GraphProjectionReport as GPR
+
+        report = GPR(output_dir="/tmp")
+        assert report.report_frontmatter_added is False
 
 
 # ---------------------------------------------------------------------------
