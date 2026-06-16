@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-16T00:00:00Z",
-  "completed_at": "2026-06-16T21:51:49+00:00",
+  "completed_at": null,
   "tasks": [
     {
       "id": "TASK-1571",
@@ -21,10 +21,9 @@
       "parallel": false,
       "parallelism_notes": "Prerequisite for TASK-1573, TASK-1574. Could run parallel with TASK-1572 but sequential in same worktree.",
       "assigned_to": null,
-      "started_at": "2026-06-16T21:07:20+00:00",
-      "completed_at": "2026-06-16T21:51:49+00:00",
-      "file": "sdd/tasks/completed/TASK-1571-schema-ontology-extends.md",
-      "verification": "verified"
+      "started_at": null,
+      "completed_at": "2026-06-16T21:13:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1571-schema-ontology-extends.md"
     },
     {
       "id": "TASK-1572",
@@ -40,10 +39,9 @@
       "parallel": false,
       "parallelism_notes": "Independent of TASK-1571 but sequential in same worktree for simplicity.",
       "assigned_to": null,
-      "started_at": "2026-06-16T21:07:20+00:00",
-      "completed_at": "2026-06-16T21:51:49+00:00",
-      "file": "sdd/tasks/completed/TASK-1572-fetch-odoo-docs-script.md",
-      "verification": "verified"
+      "started_at": null,
+      "completed_at": "2026-06-16T21:15:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1572-code-extractor-enhancements.md"
     },
     {
       "id": "TASK-1573",
@@ -61,10 +59,9 @@
       "parallel": false,
       "parallelism_notes": "Needs EdgeKind.EXTENDS from TASK-1571. Could parallel with TASK-1574 but sequential preferred.",
       "assigned_to": null,
-      "started_at": "2026-06-16T21:07:20+00:00",
-      "completed_at": "2026-06-16T21:51:49+00:00",
-      "file": "sdd/tasks/completed/TASK-1573-sqlite-persistence.md",
-      "verification": "verified"
+      "started_at": null,
+      "completed_at": "2026-06-16T21:21:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1573-sqlite-persistence.md"
     },
     {
       "id": "TASK-1574",
@@ -83,10 +80,9 @@
       "parallel": false,
       "parallelism_notes": "Needs EdgeKind.EXTENDS (TASK-1571) and lineno stamping (TASK-1572).",
       "assigned_to": null,
-      "started_at": "2026-06-16T21:07:20+00:00",
-      "completed_at": "2026-06-16T21:51:49+00:00",
-      "file": "sdd/tasks/completed/TASK-1574-odoo-code-extractor.md",
-      "verification": "verified"
+      "started_at": null,
+      "completed_at": "2026-06-16T21:25:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1574-odoo-code-extractor.md"
     },
     {
       "id": "TASK-1575",
@@ -104,10 +100,9 @@
       "parallel": false,
       "parallelism_notes": "Reads the SQLite artefact produced by TASK-1573.",
       "assigned_to": null,
-      "started_at": "2026-06-16T21:07:20+00:00",
-      "completed_at": "2026-06-16T21:51:49+00:00",
-      "file": "sdd/tasks/completed/TASK-1575-sqlite-graph-reader.md",
-      "verification": "verified"
+      "started_at": null,
+      "completed_at": "2026-06-16T21:27:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1575-sqlite-graph-reader.md"
     },
     {
       "id": "TASK-1576",
@@ -127,10 +122,9 @@
       "parallel": false,
       "parallelism_notes": "Integration task — wires all prior components into the pipeline.",
       "assigned_to": null,
-      "started_at": "2026-06-16T21:07:20+00:00",
-      "completed_at": "2026-06-16T21:51:49+00:00",
-      "file": "sdd/tasks/completed/TASK-1576-skill-structured-operation-response.md",
-      "verification": "verified"
+      "started_at": null,
+      "completed_at": "2026-06-16T21:37:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1576-builder-loader-wiring.md"
     }
   ]
 }

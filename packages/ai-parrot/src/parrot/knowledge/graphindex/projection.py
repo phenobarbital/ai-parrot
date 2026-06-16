@@ -68,6 +68,7 @@ EDGE_KIND_TO_RELATION_TYPE: dict[EdgeKind, RelationType] = {
     EdgeKind.DEFINES: RelationType.DEFINES,
     EdgeKind.MENTIONS: RelationType.MENTIONS,
     EdgeKind.EXPLAINS: RelationType.EXPLAINS,
+    EdgeKind.EXTENDS: RelationType.EXTENDS,
 }
 
 # ---------------------------------------------------------------------------

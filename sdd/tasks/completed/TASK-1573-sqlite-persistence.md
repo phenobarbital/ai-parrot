@@ -225,4 +225,15 @@ class TestSQLitePersistence:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `SQLitePersistence` in `persist_sqlite.py` with `_connect()` as an
+`@asynccontextmanager` using `async with aiosqlite.connect(...)` for proper
+thread lifecycle management (avoids the "threads can only be started once"
+error from re-using `async with conn` on an already-opened connection). Schema
+includes WAL, `files`, `nodes`, `edges` tables with indexes, and `nodes_fts`
+FTS5 virtual table with `unicode61` tokenizer. `domain_tags` serialized via
+`orjson`. Canonical `odoo-model://` nodes are preserved through
+`replace_document_slice`. Per-tenant isolation via `<tenant_id>.db`. All 14
+tests pass: DB creation, roundtrip read-back, edge storage, FTS5 search,
+canonical node preservation, node replacement, is_stale (not indexed/mtime
+match/sha1 mismatch/mtime mismatch), per-tenant isolation, WAL mode, and
+return-value shape.

@@ -148,6 +148,7 @@ class GraphIndexLoader(AbstractLoader):
         arango_password: Optional[str] = None,
         arango_database: Optional[str] = None,
         storage_dir: Optional[Union[str, Path]] = None,
+        sqlite_dir: Optional[Union[str, Path]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(source, **kwargs)
@@ -186,6 +187,7 @@ class GraphIndexLoader(AbstractLoader):
             arango_database,
         )
         self.persist_enabled = self._arango_params is not None
+        self._sqlite_dir = Path(sqlite_dir) if sqlite_dir is not None else None
         self.arango_db = (
             arango_database
             or (self._arango_params or {}).get("database")
@@ -284,7 +286,11 @@ class GraphIndexLoader(AbstractLoader):
     # ------------------------------------------------------------------
 
     async def _make_persistence(self) -> Any:
-        """Build the persistence target (real ArangoDB or in-memory no-op)."""
+        """Build the persistence target (SQLite, ArangoDB, or in-memory no-op)."""
+        if self._sqlite_dir is not None:
+            # FEAT-240: SQLite backend takes priority over null persistence
+            from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
+            return SQLitePersistence(db_dir=self._sqlite_dir)
         if not self.persist_enabled:
             return _NullPersistence()
 

@@ -141,4 +141,9 @@ update the expected count.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `EdgeKind.EXTENDS = "extends"` to `schema.py`, `RelationType.EXTENDS = "extends"` to
+`okf/ontology.py`, `"extends": "gi_extends"` to `EDGE_KIND_TO_COLLECTION` in
+`meta_ontology.py`, a `RelationDef("extends", ...)` entry in `_RELATION_DEFS`, and
+`EdgeKind.EXTENDS: RelationType.EXTENDS` to `EDGE_KIND_TO_RELATION_TYPE` in `projection.py`.
+Updated the OKF test that asserts exact enum member count from 12 to 13 (adding new test for
+EXTENDS value). All 72 graphindex + OKF tests pass.

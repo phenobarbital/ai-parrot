@@ -23,8 +23,9 @@ class TestBuildGraphIndexOntology:
 
     def test_five_relation_types(self):
         onto = build_graphindex_ontology()
-        assert len(onto.relations) == 5
-        expected = {"contains", "references", "defines", "mentions", "explains"}
+        # FEAT-240 (TASK-1571) added "extends" for Odoo model inheritance
+        assert len(onto.relations) == 6
+        expected = {"contains", "references", "defines", "mentions", "explains", "extends"}
         assert set(onto.relations.keys()) == expected
 
     def test_entity_collections_prefixed_gi(self):
@@ -71,7 +72,8 @@ class TestBuildGraphIndexOntology:
     def test_get_edge_collections(self):
         onto = build_graphindex_ontology()
         edge_collections = onto.get_edge_collections()
-        assert len(edge_collections) == 5
+        # FEAT-240 (TASK-1571) added gi_extends
+        assert len(edge_collections) == 6
 
 
 class TestMappingDicts:
@@ -79,7 +81,8 @@ class TestMappingDicts:
         assert len(KIND_TO_COLLECTION) == 6
 
     def test_edge_kind_to_collection_has_five_entries(self):
-        assert len(EDGE_KIND_TO_COLLECTION) == 5
+        # FEAT-240 (TASK-1571) added "extends" → "gi_extends"
+        assert len(EDGE_KIND_TO_COLLECTION) == 6
 
     def test_round_trip_document(self):
         from parrot.knowledge.graphindex.meta_ontology import COLLECTION_TO_KIND

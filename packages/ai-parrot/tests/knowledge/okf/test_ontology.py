@@ -83,9 +83,14 @@ class TestRelationType:
         assert RelationType.EXPLAINS.value == "explains"
         assert RelationType.CONTAINS.value == "contains"
 
+    def test_extends_value_exists(self) -> None:
+        """Verify FEAT-240 EXTENDS relation type is present."""
+        assert RelationType.EXTENDS.value == "extends"
+        assert RelationType("extends") == RelationType.EXTENDS
+
     def test_total_count(self) -> None:
-        """RelationType must have exactly 12 values (8 existing + 4 new)."""
-        assert len(RelationType) == 12
+        """RelationType must have exactly 13 values (8 existing + 4 FEAT-239 + 1 FEAT-240)."""
+        assert len(RelationType) == 13
 
     def test_string_round_trip(self) -> None:
         """RelationType(value) must reconstruct the correct enum member."""

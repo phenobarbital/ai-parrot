@@ -8,6 +8,8 @@ packages.
 FEAT-239: Extended with 5 graph-native ``ConceptType`` values and 4 graph
 edge kinds for ``RelationType``.
 
+FEAT-240: Added ``RelationType.EXTENDS`` for Odoo model inheritance edges.
+
 Design notes:
 - ``ConceptType`` values for existing members MUST remain identical strings
   (e.g. ``"Section"``, ``"Policy"``) to avoid breaking YAML frontmatter parsing.
@@ -59,7 +61,8 @@ class RelationType(str, Enum):
     """Typed edge vocabulary (OKF-superset).
 
     Existing PageIndex values are unchanged.  FEAT-239 adds 4 graph edge kinds:
-    DEFINES, MENTIONS, EXPLAINS, CONTAINS.
+    DEFINES, MENTIONS, EXPLAINS, CONTAINS.  FEAT-240 adds EXTENDS for Odoo
+    model inheritance.
 
     ``REFERENCES`` is the default for untyped prose link fallback.
     """
@@ -79,6 +82,9 @@ class RelationType(str, Enum):
     MENTIONS = "mentions"
     EXPLAINS = "explains"
     CONTAINS = "contains"
+
+    # --- Odoo model inheritance (FEAT-240) ---
+    EXTENDS = "extends"
 
 
 class RelatesTo(BaseModel):
