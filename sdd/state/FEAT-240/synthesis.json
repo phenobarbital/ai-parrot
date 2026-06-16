@@ -1,0 +1,176 @@
+{
+  "feat_id": "FEAT-240",
+  "mode": "enrichment",
+  "summary_oneline": "Odoo-aware code extractor, SQLite persistence backend, and graph reader for navigable Odoo repositories",
+  "overall_confidence": "high",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/schema.py",
+      "symbol": "EdgeKind",
+      "lines": "53-68",
+      "role": "Add EXTENDS member to enum",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/extractors/code.py",
+      "symbol": "CodeExtractor",
+      "lines": "95-344",
+      "role": "Add mtime param, sha1 stamping, lineno/end_lineno to domain_tags",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/meta_ontology.py",
+      "symbol": "EDGE_KIND_TO_COLLECTION",
+      "lines": "195-201",
+      "role": "Add extends -> gi_extends mapping",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/projection.py",
+      "symbol": "EDGE_KIND_TO_RELATION_TYPE",
+      "lines": "65-71",
+      "role": "Add EdgeKind.EXTENDS -> RelationType.EXTENDS mapping",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/okf/ontology.py",
+      "symbol": "RelationType",
+      "lines": "58-82",
+      "role": "Add EXTENDS member",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/persist.py",
+      "symbol": "GraphIndexPersistence",
+      "lines": "101-306",
+      "role": "Reference for SQLitePersistence API parity",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/builder.py",
+      "symbol": "GraphIndexBuilder",
+      "lines": "54-576",
+      "role": "Wire extractor selection, mtime, SQLite backend",
+      "evidence": ["F006"]
+    }
+  ],
+  "constraints": [
+    {
+      "title": "Backward compatibility of CodeExtractor changes",
+      "description": "mtime is Optional kwarg, sha1/lineno are additive domain_tags keys. All existing callers remain unaffected.",
+      "evidence": ["F002", "F006"]
+    },
+    {
+      "title": "OdooCodeExtractor must fall back to base for non-Odoo classes",
+      "description": "The brainstorm correctly calls super()._extract_class() when no Odoo signals detected. This is critical for mixed repos.",
+      "evidence": ["F002"]
+    },
+    {
+      "title": "Canonical model nodes use synthetic source_uri",
+      "description": "odoo-model:// URIs prevent replace_document_slice from orphaning cross-module edges. This invariant is well-reasoned.",
+      "evidence": ["F005"]
+    },
+    {
+      "title": "ArangoDB parity for EXTENDS edges",
+      "description": "meta_ontology needs gi_extends collection + RelationDef, but only if ArangoDB must also persist EXTENDS. SQLite backend handles it natively.",
+      "evidence": ["F003"]
+    },
+    {
+      "title": "Explicit dependency declarations",
+      "description": "aiosqlite and orjson should be added to the graphindex extra in pyproject.toml for clean dependency boundaries.",
+      "evidence": ["F007"]
+    }
+  ],
+  "scope": {
+    "new": [
+      {
+        "component": "SQLitePersistence",
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/persist_sqlite.py",
+        "role": "Per-tenant SQLite persistence backend with WAL, FTS5, is_stale()"
+      },
+      {
+        "component": "OdooCodeExtractor",
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/extractors/odoo_code.py",
+        "role": "Odoo-aware tree-sitter extractor: _name/_inherit/_inherits, fields.*, @api.*"
+      },
+      {
+        "component": "SQLiteGraphReader",
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/sqlite_reader.py",
+        "role": "HOT rustworkx topology + COLD FTS5/BM25 search + disk-based source resolution"
+      }
+    ],
+    "changes": [
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/schema.py",
+        "change": "Add EdgeKind.EXTENDS = 'extends'"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/okf/ontology.py",
+        "change": "Add RelationType.EXTENDS = 'extends'"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/meta_ontology.py",
+        "change": "Add extends -> gi_extends to EDGE_KIND_TO_COLLECTION + RelationDef"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/projection.py",
+        "change": "Add EXTENDS mapping to EDGE_KIND_TO_RELATION_TYPE"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/extractors/code.py",
+        "change": "Add mtime kwarg, sha1 stamping, lineno/end_lineno in domain_tags"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/builder.py",
+        "change": "Configurable extractor, mtime passing, SQLite backend selection"
+      },
+      {
+        "path": "packages/ai-parrot/pyproject.toml",
+        "change": "Add aiosqlite and orjson to graphindex extra"
+      }
+    ],
+    "untouched": [
+      "Embedding pipeline (embed.py) — no embeddings in v1",
+      "MCP integration — explicitly descoped",
+      "XML/OWL/JS parsing — possible v2 via tree-sitter multi-language",
+      "Dynamic _name/_inherit resolution (f-strings) — graceful degradation"
+    ]
+  },
+  "confidence_map": [
+    {"id": "C1", "claim": "EdgeKind.EXTENDS is a one-line addition to schema.py", "evidence": ["F001"], "confidence": "high"},
+    {"id": "C2", "claim": "CodeExtractor.extract() signature change is backward-compatible", "evidence": ["F002"], "confidence": "high"},
+    {"id": "C3", "claim": "RelationType is trivially extensible (FEAT-239 just added 4 members)", "evidence": ["F004", "F009"], "confidence": "high"},
+    {"id": "C4", "claim": "SQLitePersistence does NOT exist yet — must be implemented", "evidence": ["F005"], "confidence": "high"},
+    {"id": "C5", "claim": "Builder persistence is injected, so SQLite backend swaps in cleanly", "evidence": ["F006"], "confidence": "high"},
+    {"id": "C6", "claim": "All runtime dependencies (rustworkx, aiosqlite, orjson, tree-sitter) are available", "evidence": ["F007"], "confidence": "high"},
+    {"id": "C7", "claim": "Brainstorm's OdooCodeExtractor design is sound and follows CodeExtractor patterns", "evidence": ["F002"], "confidence": "high"},
+    {"id": "C8", "claim": "Brainstorm's SQLiteGraphReader design (HOT/COLD split) is sound", "evidence": ["F007"], "confidence": "medium"},
+    {"id": "C9", "claim": "19 existing tests provide a strong test-pattern baseline for new tests", "evidence": ["F008"], "confidence": "high"},
+    {"id": "C10", "claim": "Extractor selection in builder is hardcoded — needs refactoring for Odoo support", "evidence": ["F006"], "confidence": "high"}
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should OdooCodeExtractor be selectable per-build or should it always replace CodeExtractor (with fallback)?",
+      "blocks_claims": ["C10"],
+      "plausible_answers": [
+        "Always use OdooCodeExtractor — it falls back to base for non-Odoo classes",
+        "Make extractor configurable via builder constructor param",
+        "Auto-detect based on presence of __manifest__.py files"
+      ]
+    },
+    {
+      "id": "U2",
+      "question": "Should aiosqlite be added as an explicit dependency in the graphindex extra, or rely on the asyncdb transitive?",
+      "blocks_claims": ["C6"],
+      "plausible_answers": [
+        "Add explicitly to graphindex extra for clean boundaries",
+        "Rely on asyncdb transitive — fewer deps to manage"
+      ]
+    }
+  ],
+  "recommended_next_command": {
+    "command": "/sdd-spec FEAT-240",
+    "rationale": "The brainstorm is detailed and well-grounded. All localization is high-confidence. The main correction (SQLitePersistence scope) is clear. A spec can be written directly from this proposal."
+  }
+}
