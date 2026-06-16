@@ -32,7 +32,7 @@
       "feature_id": "FEAT-240",
       "feature": "odoo-pageindex-documentation-agent",
       "spec": "sdd/specs/odoo-pageindex-documentation-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Pure offline shell script under scripts/odoo_agent/; no parrot imports, no shared files with other tasks.",
       "assigned_to": null,
       "started_at": "2026-06-16T13:01:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1572-fetch-odoo-docs-script.md"
+      "completed_at": "2026-06-16T13:07:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1572-fetch-odoo-docs-script.md"
     },
     {
       "id": "TASK-1573",
