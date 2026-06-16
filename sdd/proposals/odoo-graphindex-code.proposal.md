@@ -4,7 +4,7 @@ title: "GraphIndex Odoo-aware extractor + SQLite persistence + graph reader"
 slug: odoo-graphindex-code
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: file
   jira_key: null
@@ -233,15 +233,17 @@ Distribution: **8** high, **1** medium, **0** low.
   incorrectly states it is "ya entregado." It must be built as part of this feature.
   *Resolves claims*: C4
 
-### Unresolved (defer to spec / implementation)
+- [x] **Should OdooCodeExtractor always replace CodeExtractor or be selectable?** —
+  *Resolved*: Selectable. Make the extractor configurable via builder constructor param.
+  *Resolves claims*: C10
 
-- [ ] **Should OdooCodeExtractor always replace CodeExtractor or be selectable?** — *Owner*: tbd
-  *Blocks claims*: C10
-  *Plausible answers*: a) Always use OdooCodeExtractor (falls back to base) · b) Configurable via builder param · c) Auto-detect via `__manifest__.py` presence
+- [x] **Should aiosqlite be an explicit graphindex extra dependency?** —
+  *Resolved*: Yes, add explicitly to the `graphindex` extra for clean dependency boundaries.
+  *Resolves claims*: C6
 
-- [ ] **Should aiosqlite be an explicit graphindex extra dependency?** — *Owner*: tbd
-  *Blocks claims*: C6
-  *Plausible answers*: a) Add explicitly for clean boundaries · b) Rely on asyncdb transitive
+### Unresolved
+
+(none — all questions resolved)
 
 ---
 
