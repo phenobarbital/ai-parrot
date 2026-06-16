@@ -52,7 +52,7 @@
       "feature_id": "FEAT-239",
       "feature": "graphindex-frontmatter",
       "spec": "sdd/specs/graphindex-frontmatter.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Only depends on the shared package existing (TASK-1560). Touches no files shared with TASK-1561. Could run in parallel with TASK-1561.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1562-knowledge-uri-scheme.md"
+      "completed_at": "2026-06-16T00:01:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1562-knowledge-uri-scheme.md"
     },
     {
       "id": "TASK-1563",

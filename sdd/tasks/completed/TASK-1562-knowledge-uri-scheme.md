@@ -205,4 +205,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-06-16
+**Notes**: Created `parrot/knowledge/okf/uri.py` with `build_uri()` and `parse_uri()`.
+Handles both `knowledge://` and legacy `pageindex://` schemes. Updated `__init__.py`.
+All 17 tests pass.
+
+**Deviations from spec**: None.
