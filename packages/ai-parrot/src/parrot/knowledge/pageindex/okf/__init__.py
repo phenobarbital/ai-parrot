@@ -9,6 +9,8 @@ This subpackage implements the OKF-compatible knowledge layer over PageIndex
 - ``frontmatter``: ConceptFrontmatter model and byte-deterministic projection.
 - ``graph``: In-memory knowledge graph (KnowledgeGraph).
 - ``projection``: Sidecar and index.md generation.
+- ``lint``: Knowledge base lint engine (FEAT-216).
+- ``bundle``: OKF v0.1 bundle export/import (FEAT-216).
 - ``migrate``: okf-migrate command for retrofitting existing trees.
 - ``tools``: Named read tools for type-scoped retrieval and traversal.
 """
@@ -41,6 +43,17 @@ from parrot.knowledge.pageindex.okf.projection import (
     generate_index_md,
     ProjectionReport,
 )
+from parrot.knowledge.pageindex.okf.lint import (
+    LintFinding,
+    LintReport,
+    lint_knowledge_base,
+)
+from parrot.knowledge.pageindex.okf.bundle import (
+    ExportReport,
+    ImportReport,
+    export_okf_bundle,
+    import_okf_bundle,
+)
 from parrot.knowledge.pageindex.okf.migrate import (
     okf_migrate,
     MigrationReport,
@@ -66,6 +79,13 @@ __all__ = [
     "project_sidecars",
     "generate_index_md",
     "ProjectionReport",
+    "LintFinding",
+    "LintReport",
+    "lint_knowledge_base",
+    "ExportReport",
+    "ImportReport",
+    "export_okf_bundle",
+    "import_okf_bundle",
     "okf_migrate",
     "MigrationReport",
     "OKFToolkit",

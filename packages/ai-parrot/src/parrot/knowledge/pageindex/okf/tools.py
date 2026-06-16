@@ -9,6 +9,9 @@ for type-scoped retrieval and multi-hop compliance traversal:
 - ``get_related``: In-memory graph traversal, optional rel filter.
 - ``trace_mapping``: Multi-hop typed-chain traversal.
 - ``cite``: Per-node provenance (document, pages, URL).
+- ``lint_knowledge_base``: Run lint checks; returns structured LintReport dict.
+- ``export_okf_bundle``: Export tree as OKF v0.1 bundle directory.
+- ``import_okf_bundle``: Import OKF bundle directory into tree.
 
 Each tool is a ``@tool``-decorated function wrapped in ``OKFToolkit``, which
 holds the shared state (tree dict, graph, content_store).
@@ -23,12 +26,19 @@ Design notes (spec §2.5, §3 Module 7):
 """
 
 import logging
+from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
+from parrot.knowledge.pageindex.okf.bundle import (
+    export_okf_bundle as _export_okf_bundle,
+    import_okf_bundle as _import_okf_bundle,
+)
 from parrot.knowledge.pageindex.okf.graph import KnowledgeGraph
+from parrot.knowledge.pageindex.okf.lint import lint_knowledge_base as _lint_knowledge_base
 from parrot.knowledge.pageindex.okf.ontology import ConceptType
 from parrot.knowledge.pageindex.okf.projection import flatten_concept_id_for_filename
+from parrot.knowledge.pageindex.store import JSONTreeStore
 from parrot.knowledge.pageindex.utils import structure_to_list
 from parrot.tools import tool
 
@@ -59,12 +69,14 @@ class OKFToolkit:
         graph: KnowledgeGraph,
         content_store: NodeContentStore,
         tree_name: str,
+        store: Optional[JSONTreeStore] = None,
     ) -> None:
         self.logger = logging.getLogger(__name__)
         self._tree = tree
         self._graph = graph
         self._content_store = content_store
         self._tree_name = tree_name
+        self._store = store
         # Build a flat concept_id → node lookup for O(1) access
         self._by_concept_id: dict[str, dict] = {}
         for node in structure_to_list(tree.get("structure", [])):
@@ -85,6 +97,9 @@ class OKFToolkit:
             self.get_related,
             self.trace_mapping,
             self.cite,
+            self.lint_knowledge_base,
+            self.export_okf_bundle,
+            self.import_okf_bundle,
         ]
 
     @tool
@@ -267,3 +282,81 @@ class OKFToolkit:
             "pages": src.get("pages"),
             "url": src.get("url"),
         }
+
+    @tool
+    def lint_knowledge_base(self, stale_days: int = 90) -> dict:
+        """Run lint checks on this knowledge base.
+
+        Checks for orphan concepts (zero inbound edges), broken links,
+        missing sidecar pages, and stale claims older than ``stale_days``.
+
+        Args:
+            stale_days: Threshold in days after which a node is considered
+                stale.  Default is 90.
+
+        Returns:
+            Serialised ``LintReport`` dict with categorised findings.
+        """
+        report = _lint_knowledge_base(
+            self._graph,
+            self._tree,
+            self._content_store,
+            stale_days=stale_days,
+        )
+        return report.model_dump()
+
+    @tool
+    def export_okf_bundle(self, output_dir: str) -> dict:
+        """Export this knowledge base as an OKF v0.1 bundle.
+
+        Creates a directory hierarchy grouped by concept type with
+        OKF-compliant frontmatter (no ``node_id``, no ``pageindex://`` URIs)
+        and a root ``index.md``.
+
+        Args:
+            output_dir: Path to the destination directory.  Created if absent.
+
+        Returns:
+            Serialised ``ExportReport`` dict with counts of files written
+            and URIs rewritten.
+        """
+        report = _export_okf_bundle(
+            self._tree,
+            self._tree_name,
+            self._content_store,
+            Path(output_dir),
+        )
+        return report.model_dump()
+
+    @tool
+    def import_okf_bundle(self, input_dir: str) -> dict:
+        """Import an OKF bundle directory into a new PageIndex tree.
+
+        Reads all ``.md`` files from ``input_dir``, parses YAML frontmatter,
+        maps unknown types to ``ConceptType.OTHER``, and saves the resulting
+        tree via the configured ``JSONTreeStore``.
+
+        Args:
+            input_dir: Path to the source OKF bundle directory.
+
+        Returns:
+            Serialised ``ImportReport`` dict with node/edge counts and
+            type mapping information.
+
+        Raises:
+            ValueError: If no ``JSONTreeStore`` was provided to ``OKFToolkit``
+                during construction (``store=`` argument required).
+        """
+        if self._store is None:
+            raise ValueError(
+                "import_okf_bundle requires a JSONTreeStore. "
+                "Pass store=<JSONTreeStore> when constructing OKFToolkit."
+            )
+
+        report = _import_okf_bundle(
+            Path(input_dir),
+            self._tree_name,
+            self._store,
+            self._content_store,
+        )
+        return report.model_dump()

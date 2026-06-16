@@ -14,7 +14,7 @@
       "feature_id": "FEAT-216",
       "feature": "okf-knowledge-lint-and-bundle",
       "spec": "sdd/specs/FEAT-216-okf-knowledge-lint-and-bundle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — must complete before lint and bundle tasks",
       "assigned_to": null,
       "started_at": "2026-06-15T23:55:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1565-concepttype-other-extension.md"
+      "completed_at": "2026-06-15T23:58:59+00:00",
+      "file": "sdd/tasks/completed/TASK-1565-concepttype-other-extension.md"
     },
     {
       "id": "TASK-1566",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-216",
       "feature": "okf-knowledge-lint-and-bundle",
       "spec": "sdd/specs/FEAT-216-okf-knowledge-lint-and-bundle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Touches only new lint.py — can run in parallel with TASK-1567 (bundle export) since they share no files",
       "assigned_to": null,
       "started_at": "2026-06-15T23:55:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1566-knowledge-lint-engine.md"
+      "completed_at": "2026-06-16T00:03:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1566-knowledge-lint-engine.md"
     },
     {
       "id": "TASK-1567",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-216",
       "feature": "okf-knowledge-lint-and-bundle",
       "spec": "sdd/specs/FEAT-216-okf-knowledge-lint-and-bundle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Touches only new bundle.py — can run in parallel with TASK-1566 (lint) since they share no files",
       "assigned_to": null,
       "started_at": "2026-06-15T23:55:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1567-okf-bundle-export.md"
+      "completed_at": "2026-06-16T00:09:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1567-okf-bundle-export.md"
     },
     {
       "id": "TASK-1568",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-216",
       "feature": "okf-knowledge-lint-and-bundle",
       "spec": "sdd/specs/FEAT-216-okf-knowledge-lint-and-bundle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Extends bundle.py created by TASK-1567 — must run after export",
       "assigned_to": null,
       "started_at": "2026-06-15T23:55:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1568-okf-bundle-import.md"
+      "completed_at": "2026-06-16T00:09:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1568-okf-bundle-import.md"
     },
     {
       "id": "TASK-1569",
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-216",
       "feature": "okf-knowledge-lint-and-bundle",
       "spec": "sdd/specs/FEAT-216-okf-knowledge-lint-and-bundle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -105,8 +105,8 @@
       "parallelism_notes": "Wraps lint + bundle functions — requires all three to be complete",
       "assigned_to": null,
       "started_at": "2026-06-15T23:55:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1569-okftoolkit-lint-bundle-tools.md"
+      "completed_at": "2026-06-16T00:15:14+00:00",
+      "file": "sdd/tasks/completed/TASK-1569-okftoolkit-lint-bundle-tools.md"
     },
     {
       "id": "TASK-1570",
@@ -115,7 +115,7 @@
       "feature_id": "FEAT-216",
       "feature": "okf-knowledge-lint-and-bundle",
       "spec": "sdd/specs/FEAT-216-okf-knowledge-lint-and-bundle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -128,8 +128,8 @@
       "parallelism_notes": "Final integration pass — requires all prior tasks complete",
       "assigned_to": null,
       "started_at": "2026-06-15T23:55:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1570-okf-lint-bundle-integration-tests.md"
+      "completed_at": "2026-06-16T00:20:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1570-okf-lint-bundle-integration-tests.md"
     }
   ]
 }

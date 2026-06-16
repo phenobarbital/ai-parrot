@@ -178,4 +178,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-06-16.
+
+- Verified `okf/__init__.py` already exports all FEAT-216 symbols: `LintFinding`, `LintReport`, `lint_knowledge_base`, `ExportReport`, `ImportReport`, `export_okf_bundle`, `import_okf_bundle`.
+- Updated existing `test_okf_integration.py` (rather than creating a new file — file already existed from FEAT-238 with other integration tests).
+- Fixed `TestToolkitOKFToolRegistration.test_set_okf_toolkit_and_get_tools` assertion from 6 → 9 tools.
+- Added `TestFeat216Exports` (7 tests), `TestRoundTripFull` (4 tests), `TestLintAfterImport` (5 tests).
+- Fixtures: `two_node_tree_feat216`, `clean_bundle_feat216` (mutual refs, future timestamps), `broken_link_bundle_feat216` (ghost frontmatter edge).
+- Full OKF test suite: 233 passed, 0 failures.

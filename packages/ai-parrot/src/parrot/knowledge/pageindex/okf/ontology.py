@@ -35,6 +35,7 @@ class ConceptType(str, Enum):
     FRAMEWORK = "Framework"
     REGULATION = "Regulation"
     GUIDELINE = "Guideline"
+    OTHER = "Other"
 
 
 class RelationType(str, Enum):
