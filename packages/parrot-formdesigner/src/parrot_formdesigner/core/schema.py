@@ -295,6 +295,11 @@ class FormSchema(BaseModel):
             and transport options. When ``None`` (default), no lifecycle hooks
             are invoked — forms without events behave identically to their
             pre-FEAT-188 state.
+        is_public: If True, the form's read and submission URLs are accessible
+            without authentication. Default ``False``. Toggling to ``True``
+            registers the form's public paths in navigator-auth's runtime
+            exclude list; toggling to ``False`` or deleting the form unregisters
+            them. (FEAT-241)
     """
 
     form_id: str
@@ -313,6 +318,8 @@ class FormSchema(BaseModel):
     form_type: FormType = FormType.SIMPLE
     product_bindings: list[str] | None = None
     published_version: str | None = None
+    # FEAT-241 — Public Forms
+    is_public: bool = False  # If True, the form's read/submission URLs are accessible without auth.
 
     def iter_all_fields(self) -> Iterator[FormField]:
         """Yield every ``FormField`` across all sections, flattening subsections."""
