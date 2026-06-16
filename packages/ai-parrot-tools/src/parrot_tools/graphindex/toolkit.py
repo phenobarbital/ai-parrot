@@ -56,6 +56,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Number of surprising connections returned by _get_or_compute_analytics.
+DEFAULT_ANALYTICS_TOP_K = 10
+
 
 class GraphIndexToolkit(AbstractToolkit):
     """Agent-facing tools for querying AND mutating the GraphIndex graph.
@@ -112,6 +115,7 @@ class GraphIndexToolkit(AbstractToolkit):
         self.nodes = nodes if nodes is not None else []
         self.signal_config = signal_config
         self._community_cache: Optional[Any] = None
+        self._analytics_cache: Optional[Any] = None  # FEAT-215
         self._encoder_warning_emitted = False
         self.logger = logging.getLogger(__name__)
 
@@ -135,6 +139,7 @@ class GraphIndexToolkit(AbstractToolkit):
 
     def _invalidate_community_cache(self) -> None:
         self._community_cache = None
+        self._analytics_cache = None  # FEAT-215: analytics depends on communities
 
     def _node_by_id(self, node_id: str) -> Optional["UniversalNode"]:
         for n in self.nodes:
@@ -1035,6 +1040,183 @@ class GraphIndexToolkit(AbstractToolkit):
         )
         self._community_cache = result
         return result
+
+    def _extract_edges_from_graph(self) -> list:
+        """Extract UniversalEdge-like objects from the graph edge payloads.
+
+        Graph edges are stored as dicts with keys matching UniversalEdge fields.
+        Returns a list of UniversalEdge instances where possible.
+        """
+        try:
+            from parrot.knowledge.graphindex.schema import UniversalEdge, EdgeKind, Provenance
+        except ImportError:
+            return []
+        edges = []
+        for src_idx, tgt_idx, payload in self.graph.weighted_edge_list():
+            if not isinstance(payload, dict):
+                continue
+            try:
+                edge = UniversalEdge(
+                    source_id=payload.get("source_id", ""),
+                    target_id=payload.get("target_id", ""),
+                    kind=EdgeKind(payload.get("kind", "contains")),
+                    provenance=Provenance(payload.get("provenance", "extracted")),
+                    confidence=payload.get("confidence"),
+                )
+                edges.append(edge)
+            except (ValueError, KeyError):
+                continue
+        return edges
+
+    def _get_or_compute_analytics(self):
+        """Lazy-compute and cache an AnalyticsResult for the current graph state.
+
+        Returns the cached result if available. When communities are available,
+        re-runs _rank_surprising_connections with communities so the
+        cross-community signal (+3) is applied correctly.
+        """
+        if self._analytics_cache is not None:
+            return self._analytics_cache
+        try:
+            from parrot.knowledge.graphindex.analytics import (
+                compute_analytics,
+                _rank_surprising_connections,
+            )
+        except ImportError:
+            return None
+        edges = self._extract_edges_from_graph()
+        result = compute_analytics(self.graph, self.nodes, edges)
+        # Attach communities if already cached.
+        communities = self._get_or_compute_communities()
+        result.communities = communities
+        # Re-rank now that communities are available so cross-community (+3) applies.
+        if communities is not None:
+            result.surprising_connections = _rank_surprising_connections(
+                edges,
+                self.nodes,
+                top_k=DEFAULT_ANALYTICS_TOP_K,
+                graph=self.graph,
+                communities_result=communities,
+            )
+        self._analytics_cache = result
+        return result
+
+    # ------------------------------------------------------------------
+    # FEAT-215: Knowledge gap detection tools
+    # ------------------------------------------------------------------
+
+    async def find_isolated_nodes(self, max_degree: int = 1) -> list[dict]:
+        """Find nodes with few connections — potential knowledge gaps.
+
+        Returns nodes with total degree (in + out) <= max_degree. DOCUMENT
+        root nodes are excluded by default as they are structural anchors.
+
+        Args:
+            max_degree: Maximum total degree for a node to be considered
+                isolated. Defaults to 1.
+
+        Returns:
+            List of dicts with ``node_id``, ``title``, ``kind``, ``degree``.
+        """
+        from parrot.knowledge.graphindex.analytics import (
+            find_isolated_nodes as _find,
+        )
+        return _find(self.graph, self.nodes, max_degree=max_degree)
+
+    async def find_sparse_communities(
+        self, min_size: int = 3, max_cohesion: float = 0.15
+    ) -> list[dict]:
+        """Find Louvain communities with low internal cohesion.
+
+        Communities that are large enough to be meaningful but poorly
+        connected internally represent areas where knowledge is fragmented.
+
+        Args:
+            min_size: Minimum number of community members. Defaults to 3.
+            max_cohesion: Maximum cohesion threshold (exclusive). Defaults to 0.15.
+
+        Returns:
+            List of dicts with ``community_id``, ``size``, ``cohesion``,
+            ``top_titles``. Returns ``[{"error": ...}]`` if communities are
+            not available.
+        """
+        from parrot.knowledge.graphindex.analytics import (
+            find_sparse_communities as _find,
+        )
+        cached = self._get_or_compute_communities()
+        if cached is None:
+            return [{"error": "FEAT-191 communities module not available"}]
+        return _find(cached, min_size=min_size, max_cohesion=max_cohesion)
+
+    async def find_bridge_nodes(self, min_communities: int = 3) -> list[dict]:
+        """Find nodes that bridge multiple distinct communities.
+
+        Bridge nodes are critical connectors spanning at least
+        ``min_communities`` distinct Louvain communities. They represent
+        important cross-domain knowledge links.
+
+        Args:
+            min_communities: Minimum number of neighbor communities for a node
+                to be classified as a bridge. Defaults to 3.
+
+        Returns:
+            List of dicts with ``node_id``, ``title``, ``kind``,
+            ``community_count``, ``neighbor_community_ids``. Returns
+            ``[{"error": ...}]`` if communities are not available.
+        """
+        from parrot.knowledge.graphindex.analytics import (
+            find_bridge_nodes as _find,
+        )
+        cached = self._get_or_compute_communities()
+        if cached is None:
+            return [{"error": "FEAT-191 communities module not available"}]
+        return _find(self.graph, self.nodes, cached, min_communities=min_communities)
+
+    async def dismiss_insight(self, insight_id: str) -> dict:
+        """Mark an insight as dismissed so it won't appear in future reports.
+
+        The dismissal is persisted in a cached AnalyticsResult for the
+        lifetime of this toolkit instance (session-scoped).
+
+        Args:
+            insight_id: The stable insight ID to dismiss. Conventions:
+                ``"surprise:<src>:<tgt>"``, ``"isolated:<node_id>"``,
+                ``"sparse:<community_id>"``, ``"bridge:<node_id>"``.
+
+        Returns:
+            Dict with ``dismissed`` (the ID) and ``total_dismissed`` (count).
+        """
+        from parrot.knowledge.graphindex.analytics import (
+            dismiss_insight as _dismiss,
+        )
+        analytics = self._get_or_compute_analytics()
+        if analytics is None:
+            return {"error": "analytics module not available"}
+        _dismiss(analytics, insight_id)
+        return {
+            "dismissed": insight_id,
+            "total_dismissed": len(analytics.dismissed.dismissed_ids),
+        }
+
+    async def list_unreviewed_insights(self) -> list[dict]:
+        """List all insights not yet dismissed.
+
+        Aggregates surprising connections and knowledge gap entries (isolated
+        nodes, sparse communities, bridge nodes) and filters out any that
+        have been dismissed via ``dismiss_insight``.
+
+        Returns:
+            List of insight dicts, each with an ``id`` field and the original
+            insight data. Empty list when no insights remain or analytics is
+            unavailable.
+        """
+        from parrot.knowledge.graphindex.analytics import (
+            list_unreviewed_insights as _list,
+        )
+        analytics = self._get_or_compute_analytics()
+        if analytics is None:
+            return []
+        return _list(analytics)
 
     # ------------------------------------------------------------------
     # Private helpers

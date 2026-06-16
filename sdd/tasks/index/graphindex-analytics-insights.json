@@ -14,7 +14,7 @@
       "feature_id": "FEAT-215",
       "feature": "graphindex-analytics-insights",
       "spec": "sdd/specs/FEAT-215-graphindex-analytics-insights.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Modifies analytics.py — all subsequent tasks extend the same file and depend on the AnalyticsResult changes made here.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:53:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1565-knowledge-gap-detection.md"
+      "completed_at": "2026-06-16T00:00:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1565-knowledge-gap-detection.md"
     },
     {
       "id": "TASK-1566",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-215",
       "feature": "graphindex-analytics-insights",
       "spec": "sdd/specs/FEAT-215-graphindex-analytics-insights.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Needs CommunitiesResult wiring from TASK-1565's compute_analytics changes. Modifies _rank_surprising_connections in the same file.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:53:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1566-composite-surprise-scoring.md"
+      "completed_at": "2026-06-16T00:04:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1566-composite-surprise-scoring.md"
     },
     {
       "id": "TASK-1567",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-215",
       "feature": "graphindex-analytics-insights",
       "spec": "sdd/specs/FEAT-215-graphindex-analytics-insights.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Extends _render_report which renders knowledge_gaps (TASK-1565) and composite scores (TASK-1566). Must run after both.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:53:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1567-insight-dismissal-and-report-gaps.md"
+      "completed_at": "2026-06-16T00:07:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1567-insight-dismissal-and-report-gaps.md"
     },
     {
       "id": "TASK-1568",
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-215",
       "feature": "graphindex-analytics-insights",
       "spec": "sdd/specs/FEAT-215-graphindex-analytics-insights.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -85,8 +85,8 @@
       "parallelism_notes": "Depends on all analytics functions from prior tasks. Different file (toolkit.py) but imports the analytics module.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:53:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1568-toolkit-gap-and-insight-tools.md"
+      "completed_at": "2026-06-16T00:12:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1568-toolkit-gap-and-insight-tools.md"
     }
   ]
 }
