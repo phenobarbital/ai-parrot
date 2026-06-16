@@ -109,7 +109,7 @@
       "feature_id": "FEAT-240",
       "feature": "odoo-pageindex-documentation-agent",
       "spec": "sdd/specs/odoo-pageindex-documentation-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -117,8 +117,8 @@
       "parallelism_notes": "Markdown-only skill under agents/odoo_agent/skills/structured-operation-response/. No code, no shared files.",
       "assigned_to": null,
       "started_at": "2026-06-16T13:01:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1576-skill-structured-operation-response.md"
+      "completed_at": "2026-06-16T13:09:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1576-skill-structured-operation-response.md"
     }
   ]
 }
