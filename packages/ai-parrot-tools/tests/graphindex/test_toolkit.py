@@ -356,12 +356,6 @@ def build_gap_graph():
         UniversalNode(node_id="iso2", kind=NodeKind.SKILL, title="Isolated 2", source_uri="test.txt"),
         UniversalNode(node_id="doc_root", kind=NodeKind.DOCUMENT, title="Root", source_uri="test.txt"),
     ]
-    node_map = {p["node_id"]: idx for idx, p in zip(
-        [0, 1, 2, 3, 4, 5, 6],
-        [{"node_id": "hub"}, {"node_id": "n1"}, {"node_id": "n2"},
-         {"node_id": "n3"}, {"node_id": "iso1"}, {"node_id": "iso2"}, {"node_id": "doc_root"}]
-    )}
-    # Rebuild node_map from actual graph indices
     node_map = {"hub": hub, "n1": n1, "n2": n2, "n3": n3,
                 "iso1": iso1, "iso2": iso2, "doc_root": doc}
     node_id_list = ["hub", "n1", "n2", "n3", "iso1", "iso2", "doc_root"]
@@ -401,6 +395,7 @@ class TestToolkitGapDetection:
         result = await toolkit.find_isolated_nodes()
         node_ids = [r["node_id"] for r in result]
         assert "iso1" in node_ids  # degree 0 concept node
+        assert "iso2" in node_ids  # degree 1 skill node (connected only to doc_root)
 
     @pytest.mark.asyncio
     async def test_find_isolated_nodes_excludes_document(self):

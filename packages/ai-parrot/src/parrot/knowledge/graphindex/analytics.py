@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 import rustworkx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from parrot.knowledge.graphindex.schema import (
     EdgeKind,
@@ -56,9 +56,18 @@ class KnowledgeGaps(BaseModel):
         bridge_nodes: Nodes that connect many distinct communities.
     """
 
-    isolated_nodes: list[dict] = Field(default_factory=list)
-    sparse_communities: list[dict] = Field(default_factory=list)
-    bridge_nodes: list[dict] = Field(default_factory=list)
+    isolated_nodes: list[dict] = Field(
+        default_factory=list,
+        description="Nodes with very few connections (degree <= threshold), indicating under-explored concepts.",
+    )
+    sparse_communities: list[dict] = Field(
+        default_factory=list,
+        description="Communities with low internal cohesion, suggesting weakly-connected topic clusters.",
+    )
+    bridge_nodes: list[dict] = Field(
+        default_factory=list,
+        description="Nodes connecting many distinct communities; high-value linking concepts.",
+    )
 
 
 class SurpriseFactors(BaseModel):
@@ -74,13 +83,34 @@ class SurpriseFactors(BaseModel):
         composite_score: Sum of all contributing signals.
     """
 
-    cross_community: bool = False
-    cross_type: bool = False
-    type_distance: int = 0  # 1 or 2
-    peripheral_hub: bool = False
-    weak_but_present: bool = False
-    high_confidence: bool = False
-    composite_score: int = 0
+    cross_community: bool = Field(
+        default=False,
+        description="True when source and target belong to different Louvain communities (+3 score).",
+    )
+    cross_type: bool = Field(
+        default=False,
+        description="True when source and target have different NodeKind values.",
+    )
+    type_distance: int = Field(
+        default=0,
+        description="Distance between node kinds: 1 = adjacent pair, 2 = distant pair.",
+    )
+    peripheral_hub: bool = Field(
+        default=False,
+        description="True when a low-degree peripheral node is connected to a high-degree hub (+2 score).",
+    )
+    weak_but_present: bool = Field(
+        default=False,
+        description="True when edge confidence is below 0.5 — surprising given low certainty (+1 score).",
+    )
+    high_confidence: bool = Field(
+        default=False,
+        description="True when edge confidence is >= 0.7 — a confident inferred cross-domain link (+1 score).",
+    )
+    composite_score: int = Field(
+        default=0,
+        description="Sum of all contributing signal scores; connections with score < 3 are filtered out.",
+    )
 
 
 class DismissedInsights(BaseModel):
@@ -90,7 +120,15 @@ class DismissedInsights(BaseModel):
         dismissed_ids: Set of insight IDs that have been marked as reviewed/dismissed.
     """
 
-    dismissed_ids: set[str] = Field(default_factory=set)
+    dismissed_ids: set[str] = Field(
+        default_factory=set,
+        description="Set of insight IDs that have been marked as reviewed/dismissed by the user.",
+    )
+
+    @field_serializer("dismissed_ids")
+    def serialize_dismissed_ids(self, v: set[str]) -> list[str]:
+        """Serialize dismissed_ids as a sorted list for JSON compatibility."""
+        return sorted(v)
 
 
 # ---------------------------------------------------------------------------
@@ -172,10 +210,10 @@ def compute_analytics(
     """
     god_nodes = _compute_god_nodes(graph, top_k)
 
-    # FEAT-215: Pass graph and communities_result for composite scoring.
-    # communities_result is populated after this call if available; for
-    # compute_analytics we pass None here and rely on callers that set
-    # analytics.communities after the fact (e.g. toolkit._get_or_compute_analytics).
+    # FEAT-215: Pass graph for peripheral-hub scoring. communities_result is
+    # intentionally None here; callers that have communities (e.g.
+    # toolkit._get_or_compute_analytics) re-run _rank_surprising_connections
+    # after attaching communities so the cross-community signal (+3) applies.
     surprising_connections = _rank_surprising_connections(
         edges, nodes, top_k, graph=graph, communities_result=None
     )
@@ -479,13 +517,6 @@ def find_isolated_nodes(
     # Build node_id → NodeKind map from the UniversalNode list.
     node_kind_map: dict[str, NodeKind] = {n.node_id: n.kind for n in nodes}
 
-    # Build node_id → graph index map from graph payloads.
-    node_id_to_idx: dict[str, int] = {}
-    for idx in graph.node_indices():
-        payload = graph[idx]
-        if isinstance(payload, dict) and "node_id" in payload:
-            node_id_to_idx[payload["node_id"]] = idx
-
     result: list[dict] = []
     for idx in graph.node_indices():
         payload = graph[idx]
@@ -522,7 +553,7 @@ def find_isolated_nodes(
 
 
 def find_sparse_communities(
-    communities_result: "CommunitiesResult",
+    communities_result: Optional["CommunitiesResult"],
     min_size: int = 3,
     max_cohesion: float = 0.15,
 ) -> list[dict]:
@@ -568,7 +599,7 @@ def find_sparse_communities(
 def find_bridge_nodes(
     graph: rustworkx.PyDiGraph,
     nodes: list[UniversalNode],
-    communities_result: "CommunitiesResult",
+    communities_result: Optional["CommunitiesResult"],
     min_communities: int = 3,
 ) -> list[dict]:
     """Find nodes that bridge multiple distinct communities.

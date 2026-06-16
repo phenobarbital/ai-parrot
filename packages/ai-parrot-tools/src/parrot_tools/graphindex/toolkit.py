@@ -56,6 +56,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Number of surprising connections returned by _get_or_compute_analytics.
+DEFAULT_ANALYTICS_TOP_K = 10
+
 
 class GraphIndexToolkit(AbstractToolkit):
     """Agent-facing tools for querying AND mutating the GraphIndex graph.
@@ -1011,19 +1014,33 @@ class GraphIndexToolkit(AbstractToolkit):
     def _get_or_compute_analytics(self):
         """Lazy-compute and cache an AnalyticsResult for the current graph state.
 
-        Returns the cached result if available. Attaches the communities
-        result when communities have been computed.
+        Returns the cached result if available. When communities are available,
+        re-runs _rank_surprising_connections with communities so the
+        cross-community signal (+3) is applied correctly.
         """
         if self._analytics_cache is not None:
             return self._analytics_cache
         try:
-            from parrot.knowledge.graphindex.analytics import compute_analytics
+            from parrot.knowledge.graphindex.analytics import (
+                compute_analytics,
+                _rank_surprising_connections,
+            )
         except ImportError:
             return None
         edges = self._extract_edges_from_graph()
         result = compute_analytics(self.graph, self.nodes, edges)
         # Attach communities if already cached.
-        result.communities = self._get_or_compute_communities()
+        communities = self._get_or_compute_communities()
+        result.communities = communities
+        # Re-rank now that communities are available so cross-community (+3) applies.
+        if communities is not None:
+            result.surprising_connections = _rank_surprising_connections(
+                edges,
+                self.nodes,
+                top_k=DEFAULT_ANALYTICS_TOP_K,
+                graph=self.graph,
+                communities_result=communities,
+            )
         self._analytics_cache = result
         return result
 
