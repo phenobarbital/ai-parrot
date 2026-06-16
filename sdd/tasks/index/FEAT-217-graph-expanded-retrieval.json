@@ -72,7 +72,7 @@
       "feature_id": "FEAT-217",
       "feature": "graph-expanded-retrieval",
       "spec": "sdd/specs/FEAT-217-graph-expanded-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Wires the full search() pipeline; requires all prior phases implemented.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:59:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1568-community-context-assembly.md"
+      "completed_at": "2026-06-16T00:10:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1568-community-context-assembly.md"
     },
     {
       "id": "TASK-1569",
