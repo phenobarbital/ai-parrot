@@ -206,6 +206,9 @@ class FormRegistry:
         self._app: "web.Application | None" = None
         self._on_register: list[Callable[[FormSchema], Awaitable[None]]] = []
         self._on_unregister: list[Callable[[str, str], Awaitable[None]]] = []
+        # FEAT-241: optional callback invoked when a form's is_public flag changes.
+        # Signature: async (form_id: str, is_public: bool) -> None
+        self._public_toggle_callback: Callable[[str, bool], Awaitable[None]] | None = None
         self.logger = logging.getLogger(__name__)
 
         if app is not None:
@@ -331,7 +334,23 @@ class FormRegistry:
                 )
                 return
 
+            # Capture old form BEFORE overwriting (needed for is_public diff, FEAT-241).
+            _old_form = tenant_bucket.get(form.form_id)
             tenant_bucket[form.form_id] = form
+
+        # Fire is_public toggle callback if is_public changed (FEAT-241).
+        if self._public_toggle_callback is not None:
+            old_is_public = _old_form.is_public if _old_form is not None else False
+            if old_is_public != form.is_public:
+                try:
+                    await self._public_toggle_callback(form.form_id, form.is_public)
+                except Exception as exc:
+                    self.logger.warning(
+                        "public_toggle_callback failed on register(%s, is_public=%s): %s",
+                        form.form_id,
+                        form.is_public,
+                        exc,
+                    )
 
         # Persist to backend if requested.
         if persist:
@@ -367,6 +386,22 @@ class FormRegistry:
             storage: FormStorage instance to use for persistence.
         """
         self._storage = storage
+
+    def set_public_toggle_callback(
+        self,
+        callback: Callable[[str, bool], Awaitable[None]],
+    ) -> None:
+        """Register a callback invoked when a form's ``is_public`` flag changes.
+
+        The callback is called with ``(form_id, True)`` when the form becomes
+        public, and ``(form_id, False)`` when it becomes private or is deleted.
+        Only called when the ``is_public`` value actually changes (no-op on
+        same-value re-registration).
+
+        Args:
+            callback: Async callable ``(form_id: str, is_public: bool) -> None``.
+        """
+        self._public_toggle_callback = callback
 
     async def on_startup(self, app: "web.Application") -> None:
         """aiohttp ``on_startup`` signal handler.
@@ -447,10 +482,23 @@ class FormRegistry:
             if bucket is None or form_id not in bucket:
                 return False
 
+            # Capture the form BEFORE removing it (needed for is_public check, FEAT-241).
+            _existing = bucket.get(form_id)
             bucket.pop(form_id)
             # Clean up empty outer key so list_tenants() stays accurate.
             if not bucket:
                 del self._forms[resolved]
+
+        # Fire is_public toggle callback if the deleted form was public (FEAT-241).
+        if self._public_toggle_callback is not None and _existing is not None and _existing.is_public:
+            try:
+                await self._public_toggle_callback(form_id, False)
+            except Exception as exc:
+                self.logger.warning(
+                    "public_toggle_callback failed on unregister(%s): %s",
+                    form_id,
+                    exc,
+                )
 
         # Fire on_unregister callbacks with new (form_id, tenant) signature.
         for callback in self._on_unregister:

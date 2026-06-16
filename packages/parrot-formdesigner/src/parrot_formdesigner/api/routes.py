@@ -33,6 +33,7 @@ from aiohttp import web
 # See FEAT-152 §1 Goals: "Promote navigator-auth to a hard dependency".
 from navigator_auth.decorators import is_authenticated, user_session
 
+from ..services.public_forms import public_form_paths
 from ..services.registry import FormRegistry
 from . import controls as controls_module
 from . import operations as operations_module
@@ -347,5 +348,25 @@ def setup_form_api(
     app.router.add_post(
         f"{bp}/org/sync/workday", _wrap_auth(handler.sync_workday_identities)
     )
+
+    # FEAT-241 M6: Wire is_public toggle → auth exclude list.
+    # When app["auth"] is present and supports register_exclusions, register an
+    # async callback on the FormRegistry that is invoked whenever a form's
+    # is_public flag changes (False→True registers paths; True→False unregisters).
+    _auth = app.get("auth")
+    if _auth is not None and hasattr(_auth, "register_exclusions"):
+        _bp = bp  # capture stripped base_path in closure
+
+        async def _public_toggle(form_id: str, is_public: bool) -> None:
+            paths = public_form_paths(form_id, base_path=_bp)
+            if is_public:
+                _auth.register_exclusions(paths)
+            else:
+                _auth.unregister_exclusions(paths)
+
+        registry.set_public_toggle_callback(_public_toggle)
+        logger.info(
+            "setup_form_api: is_public toggle wired to auth exclude list (base_path=%s)", _bp
+        )
 
     logger.info("setup_form_api: mounted on %s", bp)
