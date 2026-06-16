@@ -207,4 +207,14 @@ class TestSQLiteGraphReader:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `SQLiteGraphReader` in `sqlite_reader.py`. `load()` opens the DB
+read-only (`file:...?mode=ro, uri=True`) and builds `_idx_by_id`,
+`_payload_by_id`, and `_model_index` from the `nodes` table, then adds all
+`edges` to the `rustworkx.PyDiGraph`. HOT sync navigation:
+`list_models()`(sorted), `get_node()`, `children()` (CONTAINS edges with
+optional `symbol_type` filter), `who_extends()` (in-edges of canonical node,
+`include_definers` flag), `find_model()` (aggregate: contributors + fields +
+methods). COLD async: `search_symbols()` (FTS5/BM25 over `nodes_fts`),
+`get_source()` (line span from disk via `asyncio.to_thread` + LRU cache,
+falls back to summary). `_require_loaded()` guard on all HOT methods. LRU
+eviction via `OrderedDict.popitem(last=False)`. All 26 tests pass.

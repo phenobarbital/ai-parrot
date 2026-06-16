@@ -91,7 +91,7 @@
       "feature_id": "FEAT-240",
       "feature": "odoo-graphindex-code",
       "spec": "sdd/specs/odoo-graphindex-code.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -101,8 +101,8 @@
       "parallelism_notes": "Reads the SQLite artefact produced by TASK-1573.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1575-sqlite-graph-reader.md"
+      "completed_at": "2026-06-16T21:27:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1575-sqlite-graph-reader.md"
     },
     {
       "id": "TASK-1576",
