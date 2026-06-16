@@ -191,6 +191,8 @@ class TestGraphIndexPersistence:
             make_edge("a", "d", EdgeKind.DEFINES),
             make_edge("a", "e", EdgeKind.MENTIONS),
             make_edge("a", "f", EdgeKind.EXPLAINS),
+            # FEAT-240 (TASK-1571): EXTENDS added for Odoo model inheritance
+            make_edge("a", "g", EdgeKind.EXTENDS),
         ]
         # We only test edge routing; no nodes needed for this
         await persistence.persist_graph(ctx, [], edges)

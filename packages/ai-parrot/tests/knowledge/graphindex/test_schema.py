@@ -31,7 +31,8 @@ class TestNodeKind:
 class TestEdgeKind:
     def test_all_five_values(self):
         kinds = {k.value for k in EdgeKind}
-        assert kinds == {"contains", "references", "defines", "mentions", "explains"}
+        # FEAT-240 (TASK-1571) added "extends" for Odoo model inheritance edges
+        assert kinds == {"contains", "references", "defines", "mentions", "explains", "extends"}
 
 
 class TestUniversalNode:

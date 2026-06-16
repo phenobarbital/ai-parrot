@@ -18,9 +18,11 @@ Entry points:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Type
 
 import pathspec
 
@@ -89,6 +91,9 @@ class GraphIndexBuilder:
             Default False — opt-in.
         community_resolution: Louvain γ resolution parameter
             (>1.0 finds smaller/tighter communities).
+        code_extractor_class: The ``CodeExtractor`` subclass to use for
+            Python source files (FEAT-240). Defaults to ``CodeExtractor``.
+            Pass ``OdooCodeExtractor`` to enable Odoo model extraction.
     """
 
     def __init__(
@@ -102,9 +107,11 @@ class GraphIndexBuilder:
         signal_config: Optional[SignalRelevanceConfig] = None,
         detect_communities_enabled: bool = False,
         community_resolution: float = 1.0,
+        code_extractor_class: Type = CodeExtractor,
     ) -> None:
         self.persistence = persistence
         self.embedder = embedder
+        self._code_extractor_class = code_extractor_class
         self.output_dir = Path(output_dir) if output_dir is not None else None
         self.resolution_config = resolution_config or ResolutionConfig()
         self.pageindex_toolkit = pageindex_toolkit
@@ -414,7 +421,7 @@ class GraphIndexBuilder:
         """
         nodes: list[UniversalNode] = []
         edges: list[UniversalEdge] = []
-        extractor = CodeExtractor()
+        extractor = self._code_extractor_class()
         for path_str in sources.code_paths:
             if self._is_ignored(path_str):
                 logger.debug("Ignoring code path: %s", path_str)
@@ -429,8 +436,22 @@ class GraphIndexBuilder:
                     if self._is_ignored(str(f)):
                         continue
                     try:
+                        mtime = os.stat(f).st_mtime
                         source = f.read_text(encoding="utf-8", errors="replace")
-                        n, e = await extractor.extract(str(f), source)
+                        # Incremental staleness check (FEAT-240): skip unchanged files
+                        if hasattr(self.persistence, "is_stale"):
+                            sha1 = hashlib.sha1(
+                                source.encode("utf-8", errors="replace")
+                            ).hexdigest()
+                            if not await self.persistence.is_stale(
+                                sources.ctx if hasattr(sources, "ctx") else None,
+                                str(f),
+                                mtime,
+                                sha1,
+                            ):
+                                logger.debug("Skipping unchanged file: %s", f)
+                                continue
+                        n, e = await extractor.extract(str(f), source, mtime=mtime)
                         nodes.extend(n)
                         edges.extend(e)
                     except Exception as exc:
@@ -525,9 +546,11 @@ class GraphIndexBuilder:
         if self._is_ignored(uri):
             return [], []
         try:
-            extractor = CodeExtractor()
-            source = Path(uri).read_text(encoding="utf-8", errors="replace")
-            return await extractor.extract(uri, source)
+            extractor = self._code_extractor_class()
+            f = Path(uri)
+            mtime = os.stat(f).st_mtime
+            source = f.read_text(encoding="utf-8", errors="replace")
+            return await extractor.extract(uri, source, mtime=mtime)
         except Exception as exc:
             logger.warning("Code extraction for %s failed: %s", uri, exc)
             return [], []
