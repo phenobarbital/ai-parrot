@@ -369,4 +369,32 @@ def setup_form_api(
             "setup_form_api: is_public toggle wired to auth exclude list (base_path=%s)", _bp
         )
 
+    # FEAT-241 M7: Register exclude-provider for restart re-hydration.
+    # On each server startup, AuthHandler will invoke this provider and
+    # register the paths for all persisted is_public=True forms, restoring
+    # auth exemptions that were wiped when the exclude list was re-seeded.
+    _auth_m7 = app.get("auth")
+    if _auth_m7 is not None and hasattr(_auth_m7, "add_exclude_provider"):
+        _bp_m7 = bp  # capture stripped base_path in closure
+
+        async def _public_forms_exclude_provider() -> list[str]:
+            """Yield auth-exempt paths for all persisted is_public=True forms."""
+            paths: list[str] = []
+            try:
+                forms = await registry.list_forms()
+                for form in forms:
+                    if form.is_public:
+                        paths.extend(public_form_paths(form.form_id, base_path=_bp_m7))
+            except Exception as exc:
+                logger.warning(
+                    "public_forms_exclude_provider: list_forms failed: %s", exc
+                )
+            return paths
+
+        _auth_m7.add_exclude_provider(_public_forms_exclude_provider)
+        logger.info(
+            "setup_form_api: exclude-provider registered for restart re-hydration (base_path=%s)",
+            _bp_m7,
+        )
+
     logger.info("setup_form_api: mounted on %s", bp)
