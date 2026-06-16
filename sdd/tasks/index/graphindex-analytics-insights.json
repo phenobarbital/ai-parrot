@@ -14,7 +14,7 @@
       "feature_id": "FEAT-215",
       "feature": "graphindex-analytics-insights",
       "spec": "sdd/specs/FEAT-215-graphindex-analytics-insights.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Modifies analytics.py — all subsequent tasks extend the same file and depend on the AnalyticsResult changes made here.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:53:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1565-knowledge-gap-detection.md"
+      "completed_at": "2026-06-16T00:00:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1565-knowledge-gap-detection.md"
     },
     {
       "id": "TASK-1566",
