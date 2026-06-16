@@ -9,9 +9,8 @@ def public_form_paths(form_id: str, base_path: str = "/api/v1") -> list[str]:
     These five patterns cover all read and submission URLs that should be
     reachable without authentication when a form has ``is_public=True``.
 
-    Used by both the lifecycle toggle (TASK-1582) and the exclude-provider
-    (TASK-1583) so that both callers always register/unregister the same
-    set of paths.
+    Used by both the lifecycle toggle and the exclude-provider registration
+    so that both callers always register/unregister the same set of paths.
 
     Args:
         form_id: The form's unique identifier.

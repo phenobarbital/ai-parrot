@@ -319,7 +319,7 @@ class FormSchema(BaseModel):
     product_bindings: list[str] | None = None
     published_version: str | None = None
     # FEAT-241 — Public Forms
-    is_public: bool = False  # If True, the form's read/submission URLs are accessible without auth.
+    is_public: bool = False
 
     def iter_all_fields(self) -> Iterator[FormField]:
         """Yield every ``FormField`` across all sections, flattening subsections."""

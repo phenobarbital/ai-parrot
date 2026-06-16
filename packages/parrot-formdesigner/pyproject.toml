@@ -37,7 +37,7 @@ dependencies = [
     "PyYAML>=6.0",
     "jinja2>=3.1",
     "aiogram>=3.12",
-    "navigator-auth",
+    "navigator-auth>=0.20.11",  # FEAT-241: requires add_exclude_provider + register/unregister_exclusions
     "lxml>=6.1.0",
     "reportlab>=4.1.0",
     "pycountry>=23.0",
