@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-241
 **Date**: 2026-06-16
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: parrot-formdesigner ≥ 0.4.0 + a coordinated navigator-auth release (see §8)
 
 > **Source of truth**: `sdd/proposals/formdesigner-public-forms.proposal.md`
