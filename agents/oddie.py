@@ -54,19 +54,17 @@ from parrot_tools.odoo import OdooToolkit
 
 logger = logging.getLogger(__name__)
 
-# ── Environment variables ─────────────────────────────────────────────────────
-
-ODOO_TEST_URL = os.environ.get("ODOO_TEST_URL", "")
-ODOO_TEST_DATABASE = os.environ.get("ODOO_TEST_DATABASE", "")
-ODOO_TEST_USERNAME = os.environ.get("ODOO_TEST_USERNAME", "")
-ODOO_TEST_PASSWORD = os.environ.get("ODOO_TEST_PASSWORD", "")
-
 # ── PageIndex configuration ───────────────────────────────────────────────────
 
 # Absolute path to the persisted per-version PageIndex trees.
+# Overridable via ODOO_PAGEINDEX_DIR env var; defaults to
+# agents/odoo_agent/documentation/ relative to this file.
 # Must match the ``storage_dir`` used by ``scripts/odoo_agent/build_odoo_pageindex.py``.
 _SCRIPT_DIR = Path(__file__).resolve().parent
-PAGEINDEX_STORAGE_DIR = str(_SCRIPT_DIR / "odoo_agent" / "documentation")
+PAGEINDEX_STORAGE_DIR: str = os.environ.get(
+    "ODOO_PAGEINDEX_DIR",
+    str(_SCRIPT_DIR / "odoo_agent" / "documentation"),
+)
 
 # Lightweight LLM model used for PageIndex summary generation.
 _PAGEINDEX_LIGHT_MODEL = "gemini-2.0-flash-lite"
@@ -196,18 +194,20 @@ class OdooAgent(SkillRegistryMixin, Agent):
         """Return the tools exposed to the LLM.
 
         Builds :class:`~parrot_tools.odoo.OdooToolkit` from ``ODOO_TEST_*``
-        env vars and :class:`~parrot.knowledge.pageindex.PageIndexToolkit`
-        backed by the persisted version trees.
+        env vars (read fresh on every call — never cached at module scope)
+        and :class:`~parrot.knowledge.pageindex.PageIndexToolkit` backed by
+        the persisted version trees.
 
         Returns:
             Combined list of OdooToolkit and PageIndexToolkit tools.
         """
-        # OdooToolkit (RPC + shell functions from TASK-1571)
+        # Read credentials fresh from the environment every time — avoids
+        # stale values when the process is long-lived or env vars change.
         self._odoo_toolkit = OdooToolkit(
-            url=ODOO_TEST_URL or os.environ.get("ODOO_TEST_URL", ""),
-            database=ODOO_TEST_DATABASE or os.environ.get("ODOO_TEST_DATABASE", ""),
-            username=ODOO_TEST_USERNAME or os.environ.get("ODOO_TEST_USERNAME", ""),
-            password=ODOO_TEST_PASSWORD or os.environ.get("ODOO_TEST_PASSWORD", ""),
+            url=os.environ.get("ODOO_TEST_URL", ""),
+            database=os.environ.get("ODOO_TEST_DATABASE", ""),
+            username=os.environ.get("ODOO_TEST_USERNAME", ""),
+            password=os.environ.get("ODOO_TEST_PASSWORD", ""),
             verify_ssl=False,
         )
 
@@ -256,6 +256,13 @@ class OdooAgent(SkillRegistryMixin, Agent):
         self.tool_manager.register_toolkit(wm_toolkit)
 
         # 2. HITL ConfirmationGuard (OQ2 resolved: built here in configure())
+        #
+        # DEPLOYMENT NOTE: ``human_manager=None`` means the guard is
+        # fail-closed — any HITL-gated shell tool call (odoo_shell_install_module,
+        # odoo_shell_upgrade_module, odoo_cli_command) will be denied with
+        # status="cancelled" until a HumanInteractionManager is injected by
+        # the serving layer (e.g. Telegram / Slack integration).
+        # This is safe by design: better to block than to execute without approval.
         store = InMemoryConfirmationWindowStore()
         config = ConfirmationConfig(
             approval_timeout=120.0,
@@ -264,11 +271,15 @@ class OdooAgent(SkillRegistryMixin, Agent):
         )
         guard = ConfirmationGuard(
             store=store,
-            human_manager=None,  # Wired at runtime by the serving layer if available
+            human_manager=None,  # Injected by the serving layer at runtime
             config=config,
         )
         self.tool_manager.set_confirmation_guard(guard)
-        self.logger.info("ConfirmationGuard attached to ToolManager (HITL active)")
+        self.logger.warning(
+            "ConfirmationGuard attached with human_manager=None (fail-closed). "
+            "Shell and write tools will be DENIED until a HumanInteractionManager "
+            "is provided by the serving layer (Telegram/Slack)."
+        )
 
         # 3. UserInfo KB (always-active — auto-injected into system prompt)
         self.register_kb(UserInfo())

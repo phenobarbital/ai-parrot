@@ -125,14 +125,15 @@ from .models.inputs import (
 from .shell import (
     OdooCliCommandInput,
     OdooShellInstallInput,
+    OdooShellUpgradeInput,
     ShellResult,
-    _build_install_argv,
-    _default_database,
-    _odoo_bin_path,
-    _odoo_conf_path,
-    _validate_subcommand,
-    _validate_token,
+    build_install_argv,
+    default_database,
+    odoo_bin_path,
+    odoo_conf_path,
     run_odoo_subprocess,
+    validate_subcommand,
+    validate_token,
 )
 from .smart_fields import select_smart_fields
 from .transport import (
@@ -2148,7 +2149,7 @@ class OdooToolkit(AbstractToolkit):
         Returns:
             A :class:`ShellResult` with exit code, stdout, and stderr.
         """
-        bin_path = _odoo_bin_path()
+        bin_path = odoo_bin_path()
         if not bin_path:
             msg = (
                 "odoo_shell_install_module is disabled: ODOO_BIN is not set "
@@ -2163,14 +2164,14 @@ class OdooToolkit(AbstractToolkit):
                 argv=[],
             )
 
-        db = database or _default_database()
+        db = database or default_database()
         if not db:
             msg = "odoo_shell_install_module: no database specified and ODOO_TEST_DATABASE is not set"
             self.logger.error(msg)
             return ShellResult(success=False, returncode=-1, message=msg, argv=[])
 
         try:
-            argv = _build_install_argv(bin_path, modules, db, upgrade=upgrade)
+            argv = build_install_argv(bin_path, modules, db, upgrade=upgrade)
         except ValueError as exc:
             msg = f"odoo_shell_install_module: invalid input — {exc}"
             self.logger.error(msg)
@@ -2180,12 +2181,11 @@ class OdooToolkit(AbstractToolkit):
         self.logger.info("%s modules %s on database %s", action, modules, db)
         return await run_odoo_subprocess(argv)
 
-    @tool_schema(OdooShellInstallInput)
+    @tool_schema(OdooShellUpgradeInput)
     async def odoo_shell_upgrade_module(
         self,
         modules: list[str],
         database: Optional[str] = None,
-        upgrade: bool = True,
     ) -> ShellResult:
         """Upgrade one or more Odoo modules via ``odoo-bin -u``.
 
@@ -2193,10 +2193,13 @@ class OdooToolkit(AbstractToolkit):
         ``upgrade=True``.  Requires the ``ODOO_BIN`` environment variable.
         This tool is HITL-gated: confirmation is required before execution.
 
+        Uses a dedicated :class:`~parrot_tools.odoo.shell.OdooShellUpgradeInput`
+        schema that omits the ``upgrade`` flag — this tool always upgrades,
+        and the LLM cannot accidentally set ``upgrade=False``.
+
         Args:
             modules: Technical module names to upgrade.
             database: Target database; defaults to ``ODOO_TEST_DATABASE``.
-            upgrade: Always True for this method (ignored; kept for schema compatibility).
 
         Returns:
             A :class:`ShellResult` with exit code, stdout, and stderr.
@@ -2228,7 +2231,7 @@ class OdooToolkit(AbstractToolkit):
         Returns:
             A :class:`ShellResult` with exit code, stdout, and stderr.
         """
-        bin_path = _odoo_bin_path()
+        bin_path = odoo_bin_path()
         if not bin_path:
             msg = (
                 "odoo_cli_command is disabled: ODOO_BIN is not set and "
@@ -2243,7 +2246,7 @@ class OdooToolkit(AbstractToolkit):
             )
 
         try:
-            _validate_subcommand(subcommand)
+            validate_subcommand(subcommand)
         except ValueError as exc:
             msg = f"odoo_cli_command: {exc}"
             self.logger.error(msg)
@@ -2252,15 +2255,15 @@ class OdooToolkit(AbstractToolkit):
         extra_args = args or []
         for arg in extra_args:
             try:
-                _validate_token(arg, label="argument")
+                validate_token(arg, label="argument")
             except ValueError as exc:
                 msg = f"odoo_cli_command: {exc}"
                 self.logger.error(msg)
                 return ShellResult(success=False, returncode=-1, message=msg, argv=[])
 
-        db = database or _default_database()
+        db = database or default_database()
         argv: list[str] = [bin_path]
-        conf = _odoo_conf_path()
+        conf = odoo_conf_path()
         if conf:
             argv.extend(["--conf", conf])
         if db:

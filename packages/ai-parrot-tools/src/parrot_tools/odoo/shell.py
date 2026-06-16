@@ -34,6 +34,7 @@ DEFAULT_SHELL_TIMEOUT: int = 120
 
 #: Token allowlist: module names, subcommands, database names.
 #: Accepts alphanumerics, underscores, hyphens, and dots.
+#: Path-traversal sequences (..) are rejected explicitly before this check.
 _TOKEN_RE = re.compile(r"^[a-zA-Z0-9_.-]+$")
 
 #: Whitelisted odoo-cli / odoo-bin subcommands.
@@ -55,6 +56,8 @@ ALLOWED_SUBCOMMANDS: frozenset[str] = frozenset(
 class ShellResult(BaseModel):
     """Typed result envelope for odoo-bin / odoo-cli subprocess calls.
 
+    Always constructed internally — never from user-supplied data.
+
     Attributes:
         success: True when the process exited with return-code 0.
         returncode: The raw OS exit code.
@@ -64,7 +67,7 @@ class ShellResult(BaseModel):
         message: Human-readable summary for the agent.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
 
     success: bool = Field(..., description="True when exit code is 0")
     returncode: int = Field(..., description="OS exit code")
@@ -75,15 +78,15 @@ class ShellResult(BaseModel):
 
 
 class OdooShellInstallInput(BaseModel):
-    """Input schema for ``odoo_shell_install_module`` and ``odoo_shell_upgrade_module``.
+    """Input schema for ``odoo_shell_install_module``.
 
     Attributes:
-        modules: Technical module names to install or upgrade.
+        modules: Technical module names to install.
         database: Target database; defaults to ``ODOO_TEST_DATABASE``.
         upgrade: When True, upgrade (``-u``) instead of install (``-i``).
     """
 
-    model_config = ConfigDict(extra="ignore", protected_namespaces=())
+    model_config = ConfigDict(extra="forbid", protected_namespaces=())
 
     modules: list[str] = Field(
         ...,
@@ -99,6 +102,29 @@ class OdooShellInstallInput(BaseModel):
     )
 
 
+class OdooShellUpgradeInput(BaseModel):
+    """Input schema for ``odoo_shell_upgrade_module``.
+
+    Intentionally omits the ``upgrade`` field — this tool always upgrades.
+    The LLM cannot accidentally set ``upgrade=False`` on an upgrade tool.
+
+    Attributes:
+        modules: Technical module names to upgrade.
+        database: Target database; defaults to ``ODOO_TEST_DATABASE``.
+    """
+
+    model_config = ConfigDict(extra="forbid", protected_namespaces=())
+
+    modules: list[str] = Field(
+        ...,
+        description="Technical module names to upgrade, e.g. ['sale', 'stock']",
+    )
+    database: Optional[str] = Field(
+        default=None,
+        description="Target database; defaults to ODOO_TEST_DATABASE env var",
+    )
+
+
 class OdooCliCommandInput(BaseModel):
     """Input schema for ``odoo_cli_command``.
 
@@ -108,7 +134,7 @@ class OdooCliCommandInput(BaseModel):
         database: Target database; defaults to ``ODOO_TEST_DATABASE``.
     """
 
-    model_config = ConfigDict(extra="ignore", protected_namespaces=())
+    model_config = ConfigDict(extra="forbid", protected_namespaces=())
 
     subcommand: str = Field(
         ...,
@@ -129,7 +155,7 @@ class OdooCliCommandInput(BaseModel):
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _odoo_bin_path() -> Optional[str]:
+def odoo_bin_path() -> Optional[str]:
     """Return the path to the odoo-bin binary, or None when not configured.
 
     Checks the ``ODOO_BIN`` environment variable first; falls back to
@@ -145,7 +171,7 @@ def _odoo_bin_path() -> Optional[str]:
     return shutil.which("odoo-bin") or shutil.which("odoo")
 
 
-def _default_database() -> str:
+def default_database() -> str:
     """Return the default Odoo database from the environment.
 
     Returns:
@@ -154,7 +180,7 @@ def _default_database() -> str:
     return os.environ.get("ODOO_TEST_DATABASE", "")
 
 
-def _odoo_conf_path() -> Optional[str]:
+def odoo_conf_path() -> Optional[str]:
     """Return the Odoo config file path from the environment.
 
     Returns:
@@ -163,24 +189,34 @@ def _odoo_conf_path() -> Optional[str]:
     return os.environ.get("ODOO_CONF")
 
 
-def _validate_token(token: str, label: str = "token") -> None:
+def validate_token(token: str, label: str = "token") -> None:
     """Validate that a token contains only safe characters.
+
+    Rejects empty strings, path-traversal sequences (``..``), tokens
+    starting with a dot, and any character outside ``[a-zA-Z0-9_.-]``.
 
     Args:
         token: The string to validate.
         label: Human-readable name for error messages.
 
     Raises:
-        ValueError: When the token contains illegal characters.
+        ValueError: When the token is empty, contains path traversal, or
+            contains illegal characters.
     """
-    if not token or not _TOKEN_RE.match(token):
+    if not token:
+        raise ValueError(f"Invalid {label}: empty string not allowed")
+    if ".." in token or token.startswith("."):
+        raise ValueError(
+            f"Invalid {label} {token!r}: path traversal sequences are not allowed"
+        )
+    if not _TOKEN_RE.match(token):
         raise ValueError(
             f"Invalid {label} {token!r}: only alphanumerics, underscores, "
             "hyphens, and dots are allowed."
         )
 
 
-def _validate_subcommand(subcommand: str) -> None:
+def validate_subcommand(subcommand: str) -> None:
     """Validate that a subcommand is on the whitelist.
 
     Args:
@@ -196,7 +232,7 @@ def _validate_subcommand(subcommand: str) -> None:
         )
 
 
-def _build_install_argv(
+def build_install_argv(
     bin_path: str,
     modules: list[str],
     database: str,
@@ -219,8 +255,8 @@ def _build_install_argv(
     if not modules:
         raise ValueError("modules list must not be empty")
     for mod in modules:
-        _validate_token(mod, label="module name")
-    _validate_token(database, label="database")
+        validate_token(mod, label="module name")
+    validate_token(database, label="database")
 
     flag = "-u" if upgrade else "-i"
     argv = [
@@ -231,7 +267,7 @@ def _build_install_argv(
         ",".join(modules),
         "--stop-after-init",
     ]
-    conf = _odoo_conf_path()
+    conf = odoo_conf_path()
     if conf:
         argv = [argv[0], "--conf", conf] + argv[1:]
     return argv
@@ -243,12 +279,20 @@ async def run_odoo_subprocess(
 ) -> ShellResult:
     """Run an odoo-bin / odoo-cli subprocess and capture output.
 
+    Uses :func:`asyncio.create_subprocess_exec` with an explicit argv list
+    (never ``shell=True``).  On timeout, the process is killed and a bounded
+    drain ensures pipe buffers are flushed without deadlocking.
+
     Args:
         argv: The argv list.  The first element must be the binary path.
         timeout: Maximum seconds to wait before killing the process.
 
     Returns:
         A :class:`ShellResult` with captured stdout, stderr, returncode.
+
+    Raises:
+        asyncio.CancelledError: Re-raised immediately so task cancellation
+            is never swallowed.
     """
     logger.info("Running odoo subprocess: %s", " ".join(argv))
     try:
@@ -263,7 +307,11 @@ async def run_odoo_subprocess(
             )
         except asyncio.TimeoutError:
             proc.kill()
-            await proc.communicate()
+            # Bounded drain after kill — prevents deadlock when pipes are full.
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=5.0)
+            except asyncio.TimeoutError:
+                pass  # process is gone; drain exhausted
             msg = f"Process timed out after {timeout}s: {argv[0]}"
             logger.error(msg)
             return ShellResult(
@@ -279,9 +327,7 @@ async def run_odoo_subprocess(
         stderr_str = raw_err.decode("utf-8", errors="replace")[:4096]
         rc = proc.returncode if proc.returncode is not None else -1
         success = rc == 0
-        msg = (
-            f"{'Success' if success else 'Failed'} (exit {rc}): {argv[0]}"
-        )
+        msg = f"{'Success' if success else 'Failed'} (exit {rc}): {argv[0]}"
         logger.info(msg)
         return ShellResult(
             success=success,
@@ -291,6 +337,9 @@ async def run_odoo_subprocess(
             argv=argv,
             message=msg,
         )
+    except asyncio.CancelledError:
+        # Never swallow task cancellation — re-raise immediately.
+        raise
     except FileNotFoundError:
         msg = f"Binary not found: {argv[0]!r}"
         logger.error(msg)

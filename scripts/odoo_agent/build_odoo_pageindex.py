@@ -146,19 +146,20 @@ async def build_pageindex(
     storage_path = Path(storage_dir)
     storage_path.mkdir(parents=True, exist_ok=True)
 
-    # Build the LLM adapter (lightweight model for summaries)
-    client = GoogleGenAIClient(model=model)
-    adapter = PageIndexLLMAdapter(client=client, model=model)
-
-    # Initialise the toolkit against the storage directory
-    toolkit = PageIndexToolkit(
-        adapter=adapter,
-        storage_dir=str(storage_path),
-    )
-
-    # Discover which trees already exist
-    existing_trees: list[str] = await toolkit.list_trees()
-    logger.info("Existing trees: %s", existing_trees)
+    # In dry-run mode we only need to scan the filesystem — no LLM calls.
+    # Build the LLM adapter only when actual ingestion will happen.
+    if not dry_run:
+        client = GoogleGenAIClient(model=model)
+        adapter = PageIndexLLMAdapter(client=client, model=model)
+        toolkit = PageIndexToolkit(
+            adapter=adapter,
+            storage_dir=str(storage_path),
+        )
+        existing_trees: list[str] = await toolkit.list_trees()
+        logger.info("Existing trees: %s", existing_trees)
+    else:
+        toolkit = None  # type: ignore[assignment]  # never used in dry-run
+        existing_trees = []
 
     outcomes: dict[str, str] = {}
 

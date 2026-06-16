@@ -18,7 +18,7 @@ Usage:
     tools = toolkit.get_tools()
 """
 
-from .shell import ShellResult
+from .shell import OdooShellUpgradeInput, ShellResult
 from .toolkit import (
     OdooAuthenticationError,
     OdooConnectionError,
@@ -33,5 +33,6 @@ __all__ = [
     "OdooAuthenticationError",
     "OdooConnectionError",
     "OdooRPCError",
+    "OdooShellUpgradeInput",
     "ShellResult",
 ]

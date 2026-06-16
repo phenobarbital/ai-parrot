@@ -3,10 +3,11 @@
 Tests verify:
 - Model resolves to "gemini-3.5-flash" via GoogleModel enum.
 - Registry resolves "odoo_agent" to OdooAgent.
-- OdooToolkit is constructed from ODOO_TEST_* env vars.
+- OdooToolkit is constructed from ODOO_TEST_* env vars (fresh reads, not cached).
 - agent_tools() returns both odoo_* and pageindex_* tools (or at least odoo_*).
 - WorkingMemoryToolkit registered in configure().
 - ConfirmationGuard attached after configure().
+- ConfirmationGuard with human_manager=None is fail-closed (HITL gate).
 - UserInfo KB registered and always_active.
 - Skill discovery path is set to agents/odoo_agent/skills/.
 
@@ -267,6 +268,9 @@ def test_odoo_toolkit_uses_test_env(oddie_module: Any) -> None:
 @pytest.mark.asyncio
 async def test_working_memory_registered_after_configure(oddie_module: Any) -> None:
     """WorkingMemoryToolkit must be registered in configure()."""
+    # Local import: Cython stubs are guaranteed installed by the oddie_module fixture.
+    from parrot.bots import Agent
+
     OdooAgent = oddie_module.OdooAgent
 
     with patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls, \
@@ -278,7 +282,7 @@ async def test_working_memory_registered_after_configure(oddie_module: Any) -> N
         mock_pi_cls.return_value = mock_pi
 
         agent = OdooAgent(name="OdooAgent")
-        with patch.object(type(agent).__mro__[2], "configure", new_callable=AsyncMock):
+        with patch.object(Agent, "configure", new_callable=AsyncMock):
             await agent.configure()
 
     tool_names = {t.name for t in agent.tool_manager.get_tools()}
@@ -290,6 +294,8 @@ async def test_working_memory_registered_after_configure(oddie_module: Any) -> N
 @pytest.mark.asyncio
 async def test_confirmation_guard_attached_after_configure(oddie_module: Any) -> None:
     """tool_manager.confirmation_guard must not be None after configure()."""
+    from parrot.bots import Agent
+
     OdooAgent = oddie_module.OdooAgent
 
     with patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls, \
@@ -301,7 +307,7 @@ async def test_confirmation_guard_attached_after_configure(oddie_module: Any) ->
         mock_pi_cls.return_value = mock_pi
 
         agent = OdooAgent(name="OdooAgent")
-        with patch.object(type(agent).__mro__[2], "configure", new_callable=AsyncMock):
+        with patch.object(Agent, "configure", new_callable=AsyncMock):
             await agent.configure()
 
     assert agent.tool_manager.confirmation_guard is not None, (
@@ -312,6 +318,9 @@ async def test_confirmation_guard_attached_after_configure(oddie_module: Any) ->
 @pytest.mark.asyncio
 async def test_userinfo_kb_registered_after_configure(oddie_module: Any) -> None:
     """UserInfo KB must be registered and always_active after configure()."""
+    from parrot.bots import Agent
+    from parrot.stores.kb.user import UserInfo
+
     OdooAgent = oddie_module.OdooAgent
 
     with patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls, \
@@ -322,10 +331,8 @@ async def test_userinfo_kb_registered_after_configure(oddie_module: Any) -> None
         mock_pi.get_tools.return_value = []
         mock_pi_cls.return_value = mock_pi
 
-        from parrot.stores.kb.user import UserInfo
-
         agent = OdooAgent(name="OdooAgent")
-        with patch.object(type(agent).__mro__[2], "configure", new_callable=AsyncMock):
+        with patch.object(Agent, "configure", new_callable=AsyncMock):
             await agent.configure()
 
     user_infos = [kb for kb in agent.knowledge_bases if isinstance(kb, UserInfo)]
@@ -341,6 +348,8 @@ async def test_userinfo_kb_registered_after_configure(oddie_module: Any) -> None
 @pytest.mark.asyncio
 async def test_skill_paths_set_to_odoo_agent_skills(oddie_module: Any) -> None:
     """skill_paths must point to agents/odoo_agent/skills/ after configure()."""
+    from parrot.bots import Agent
+
     OdooAgent = oddie_module.OdooAgent
 
     with patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls, \
@@ -352,7 +361,7 @@ async def test_skill_paths_set_to_odoo_agent_skills(oddie_module: Any) -> None:
         mock_pi_cls.return_value = mock_pi
 
         agent = OdooAgent(name="OdooAgent")
-        with patch.object(type(agent).__mro__[2], "configure", new_callable=AsyncMock):
+        with patch.object(Agent, "configure", new_callable=AsyncMock):
             await agent.configure()
 
     skill_dirs = getattr(agent, "skill_paths", [])
@@ -367,6 +376,8 @@ async def test_skill_paths_set_to_odoo_agent_skills(oddie_module: Any) -> None:
 @pytest.mark.asyncio
 async def test_cleanup_releases_odoo_toolkit(oddie_module: Any) -> None:
     """cleanup() must call OdooToolkit.cleanup() and not raise."""
+    from parrot.bots import Agent
+
     OdooAgent = oddie_module.OdooAgent
 
     with patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls, \
@@ -382,7 +393,57 @@ async def test_cleanup_releases_odoo_toolkit(oddie_module: Any) -> None:
     mock_odoo_cleanup = AsyncMock()
     agent._odoo_toolkit.cleanup = mock_odoo_cleanup
 
-    with patch.object(type(agent).__mro__[2], "cleanup", new_callable=AsyncMock):
+    with patch.object(Agent, "cleanup", new_callable=AsyncMock):
         await agent.cleanup()
 
     mock_odoo_cleanup.assert_called_once()
+
+
+# ── HITL gate behavioural test ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_hitl_guard_fail_closed_without_human_manager() -> None:
+    """ConfirmationGuard with human_manager=None must deny confirming tools.
+
+    This is the primary behavioural guarantee of the HITL gate in OdooAgent:
+    shell and write tools are blocked (fail-closed) until a serving layer
+    injects a HumanInteractionManager.  The test exercises the guard directly
+    to avoid the full Agent stack.
+    """
+    from unittest.mock import MagicMock
+
+    from parrot.auth.confirmation import (
+        ConfirmationConfig,
+        ConfirmationGuard,
+        InMemoryConfirmationWindowStore,
+    )
+
+    store = InMemoryConfirmationWindowStore()
+    config = ConfirmationConfig(
+        approval_timeout=1.0,
+        default_channel="telegram",
+        max_edit_retries=1,
+    )
+    guard = ConfirmationGuard(store=store, human_manager=None, config=config)
+
+    # Build a minimal mock tool that looks like a confirming shell tool.
+    mock_tool = MagicMock()
+    mock_tool.name = "odoo_shell_install_module"
+    mock_tool.routing_meta = {"requires_confirmation": True}
+
+    decision = await guard.confirm(
+        tool=mock_tool,
+        parameters={"modules": ["sale"]},
+    )
+
+    assert decision.allowed is False, (
+        f"Expected fail-closed denial, got allowed={decision.allowed!r}. "
+        "ConfirmationGuard with human_manager=None must deny all confirming tools."
+    )
+    assert decision.status == "cancelled", (
+        f"Expected status='cancelled', got {decision.status!r}"
+    )
+    assert "fail-closed" in (decision.reason or "").lower() or "no human manager" in (
+        decision.reason or ""
+    ).lower(), f"Unexpected reason: {decision.reason!r}"
