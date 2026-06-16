@@ -960,6 +960,63 @@ class GraphIndexToolkit(AbstractToolkit):
                 return c.model_dump()
         return {"error": f"community {cid!r} not found"}
 
+    async def search_with_expansion(
+        self,
+        query: str,
+        seed_top_k: int = 10,
+        max_hops: int = 2,
+        decay_base: float = 0.7,
+        max_tokens: int = 8000,
+    ) -> dict:
+        """Search with graph-expanded retrieval: seeds → graph expansion → result assembly.
+
+        Runs the full 4-phase ``GraphExpandedRetriever`` pipeline using the
+        toolkit's stored graph, embedder, and signal configuration.
+
+        Phase 1 uses the ``GraphIndexEmbedder`` (FAISS) for seed search.
+        Phase 2 expands N hops with exponential score decay.
+        Phase 3 community annotation is skipped — pass a ``CommunitiesResult`` to ``GraphExpandedRetriever`` directly if community context is needed.
+        Phase 4 applies a token budget and sorts results by combined score.
+
+        Args:
+            query: Natural language search query.
+            seed_top_k: Number of seed nodes from the initial FAISS search.
+            max_hops: Maximum graph traversal depth (1–4).
+            decay_base: Score decay per hop (0–1, default 0.7).
+            max_tokens: Token budget for the returned result set.
+
+        Returns:
+            Dictionary representation of a ``GraphRetrievalResult`` with keys:
+            ``query``, ``nodes``, ``total_candidates``, ``nodes_expanded``,
+            ``communities_touched``, ``budget_used``, ``budget_limit``,
+            ``truncated``.
+        """
+        from parrot.knowledge.graphindex.retriever import (
+            BudgetConfig,
+            ExpansionConfig,
+            GraphExpandedRetriever,
+        )
+
+        if self.embedder is None:
+            return {"error": "search_with_expansion requires an embedder; pass embedder=... at construction."}
+
+        retriever = GraphExpandedRetriever(
+            graph=self.graph,
+            nodes=self.nodes,
+            embedder=self.embedder,
+            signal_config=self.signal_config,
+        )
+        max_hops = max(1, min(4, max_hops))
+        expansion = ExpansionConfig(max_hops=max_hops, decay_base=decay_base)
+        budget = BudgetConfig(max_tokens=max_tokens)
+        result = await retriever.search(
+            query,
+            seed_top_k=seed_top_k,
+            expansion=expansion,
+            budget=budget,
+        )
+        return result.model_dump()
+
     def _get_or_compute_communities(self):
         if self._community_cache is not None:
             return self._community_cache
