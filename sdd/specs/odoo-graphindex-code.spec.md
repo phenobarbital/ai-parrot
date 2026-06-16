@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-240
 **Date**: 2026-06-16
 **Author**: Jesus Lara / Claude Code
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
