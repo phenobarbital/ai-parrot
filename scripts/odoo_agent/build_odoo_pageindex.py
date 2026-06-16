@@ -38,6 +38,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 from parrot.clients.google import GoogleGenAIClient
@@ -55,7 +56,9 @@ _REPO_ROOT = _SCRIPT_DIR.parent.parent
 
 # Default values
 DEFAULT_STORAGE_DIR = str(_REPO_ROOT / "agents" / "odoo_agent" / "documentation")
-DEFAULT_MODEL = "gemini-2.0-flash-lite"
+# The legacy "gemini-2.0-flash-lite" was retired by Google and now 404s on every
+# call — that is why no PageIndex was ever produced. Use a current lite model.
+DEFAULT_MODEL = "gemini-2.5-flash-lite"
 
 # Mapping: tree_name → version directory under the storage dir
 VERSION_MAP: dict[str, str] = {
@@ -146,79 +149,90 @@ async def build_pageindex(
     storage_path = Path(storage_dir)
     storage_path.mkdir(parents=True, exist_ok=True)
 
-    # In dry-run mode we only need to scan the filesystem — no LLM calls.
-    # Build the LLM adapter only when actual ingestion will happen.
-    if not dry_run:
-        client = GoogleGenAIClient(model=model)
-        adapter = PageIndexLLMAdapter(client=client, model=model)
-        toolkit = PageIndexToolkit(
-            adapter=adapter,
-            storage_dir=str(storage_path),
-        )
-        existing_trees: list[str] = await toolkit.list_trees()
-        logger.info("Existing trees: %s", existing_trees)
-    else:
-        toolkit = None  # type: ignore[assignment]  # never used in dry-run
-        existing_trees = []
-
-    outcomes: dict[str, str] = {}
-
-    for tree_name in versions:
-        if tree_name not in VERSION_MAP:
-            logger.warning(
-                "Unknown version key %r — not in VERSION_MAP. Skipping.", tree_name
+    async with AsyncExitStack() as stack:
+        # In dry-run mode we only need to scan the filesystem — no LLM calls.
+        # Build the LLM adapter only when actual ingestion will happen.
+        if not dry_run:
+            # The client MUST be entered as an async context manager before the
+            # PageIndex builder fans out concurrent ``ask()`` calls. ``ask()``
+            # (unlike ``complete()``) does not auto-enter, so without this the
+            # per-loop SDK client is never initialised and every concurrent call
+            # fails with "GoogleGenAIClient not initialised. Use async context
+            # manager."
+            client = await stack.enter_async_context(GoogleGenAIClient(model=model))
+            adapter = PageIndexLLMAdapter(client=client, model=model)
+            toolkit = PageIndexToolkit(
+                adapter=adapter,
+                storage_dir=str(storage_path),
             )
-            outcomes[tree_name] = "unknown"
-            continue
+            existing_trees: list[str] = await toolkit.list_trees()
+            logger.info("Existing trees: %s", existing_trees)
+        else:
+            toolkit = None  # type: ignore[assignment]  # never used in dry-run
+            existing_trees = []
 
-        ver = VERSION_MAP[tree_name]
-        version_dir = storage_path / ver
-        pdf_path = _find_pdf(version_dir)
+        outcomes: dict[str, str] = {}
 
-        if pdf_path is None:
-            logger.warning(
-                "[%s] No PDF found in %s — run fetch_odoo_docs.sh first.",
-                tree_name,
-                version_dir,
+        for tree_name in versions:
+            if tree_name not in VERSION_MAP:
+                logger.warning(
+                    "Unknown version key %r — not in VERSION_MAP. Skipping.",
+                    tree_name,
+                )
+                outcomes[tree_name] = "unknown"
+                continue
+
+            ver = VERSION_MAP[tree_name]
+            version_dir = storage_path / ver
+            pdf_path = _find_pdf(version_dir)
+
+            if pdf_path is None:
+                logger.warning(
+                    "[%s] No PDF found in %s — run fetch_odoo_docs.sh first.",
+                    tree_name,
+                    version_dir,
+                )
+                outcomes[tree_name] = "no_pdf"
+                continue
+
+            if tree_name in existing_trees and not force:
+                logger.info(
+                    "[%s] Tree already exists — skipping (use --force to rebuild).",
+                    tree_name,
+                )
+                outcomes[tree_name] = "skipped"
+                continue
+
+            if dry_run:
+                logger.info("[%s] DRY RUN — would ingest %s", tree_name, pdf_path)
+                outcomes[tree_name] = "dry_run"
+                continue
+
+            # Delete existing tree if force is requested
+            if tree_name in existing_trees and force:
+                logger.info(
+                    "[%s] --force: deleting existing tree before rebuild.",
+                    tree_name,
+                )
+                await toolkit.delete_tree(tree_name)
+                existing_trees = await toolkit.list_trees()
+
+            # Create a new empty tree, then import the PDF
+            logger.info("[%s] Creating tree (storage: %s)", tree_name, storage_path)
+            await toolkit.create_tree(tree_name, doc_name=f"Odoo {ver} Documentation")
+
+            logger.info("[%s] Importing PDF: %s", tree_name, pdf_path)
+            result = await toolkit.import_pdf(
+                tree_name=tree_name,
+                pdf_path=str(pdf_path),
+                with_summaries=True,
+                with_doc_description=True,
             )
-            outcomes[tree_name] = "no_pdf"
-            continue
-
-        if tree_name in existing_trees and not force:
+            node_count = len(result.get("new_node_ids", []))
             logger.info(
-                "[%s] Tree already exists — skipping (use --force to rebuild).",
-                tree_name,
+                "[%s] Import complete — %d nodes created.", tree_name, node_count
             )
-            outcomes[tree_name] = "skipped"
-            continue
-
-        if dry_run:
-            logger.info("[%s] DRY RUN — would ingest %s", tree_name, pdf_path)
-            outcomes[tree_name] = "dry_run"
-            continue
-
-        # Delete existing tree if force is requested
-        if tree_name in existing_trees and force:
-            logger.info("[%s] --force: deleting existing tree before rebuild.", tree_name)
-            await toolkit.delete_tree(tree_name)
-            existing_trees = await toolkit.list_trees()
-
-        # Create a new empty tree, then import the PDF
-        logger.info("[%s] Creating tree (storage: %s)", tree_name, storage_path)
-        await toolkit.create_tree(tree_name, doc_name=f"Odoo {ver} Documentation")
-
-        logger.info("[%s] Importing PDF: %s", tree_name, pdf_path)
-        result = await toolkit.import_pdf(
-            tree_name=tree_name,
-            pdf_path=str(pdf_path),
-            with_summaries=True,
-            with_doc_description=True,
-        )
-        node_count = len(result.get("new_node_ids", []))
-        logger.info(
-            "[%s] Import complete — %d nodes created.", tree_name, node_count
-        )
-        outcomes[tree_name] = "built"
+            outcomes[tree_name] = "built"
 
     return outcomes
 
