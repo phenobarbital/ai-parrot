@@ -21,6 +21,10 @@ from parrot.knowledge.okf.frontmatter import (
     project_frontmatter,
     parse_frontmatter,
 )
+from parrot.knowledge.okf.uri import (
+    build_uri,
+    parse_uri,
+)
 
 __all__ = [
     "ConceptType",
@@ -30,4 +34,6 @@ __all__ = [
     "ConceptFrontmatter",
     "project_frontmatter",
     "parse_frontmatter",
+    "build_uri",
+    "parse_uri",
 ]
