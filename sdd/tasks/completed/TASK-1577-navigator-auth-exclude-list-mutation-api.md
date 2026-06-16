@@ -232,6 +232,7 @@ When you pick up this task:
 
 ## Completion Note
 
+<<<<<<< HEAD
 *(Agent fills this in when done)*
 
 **Completed by**: <session or agent ID>
@@ -239,3 +240,14 @@ When you pick up this task:
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
 **Deviations from spec**: none | describe if any
+=======
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-16
+**Notes**: Implemented all four mutation methods in `../navigator-auth/navigator_auth/auth.py`.
+Made `add_exclude_list` idempotent; added `remove_exclude_list`, `register_exclusions`,
+`unregister_exclusions`. All 11 unit tests pass. `Iterable` was already imported from
+`collections.abc` at the top of auth.py (no import change needed). Committed in
+navigator-auth on branch `feat-241-public-forms`.
+
+**Deviations from spec**: none
+>>>>>>> feat-241-formdesigner-public-forms

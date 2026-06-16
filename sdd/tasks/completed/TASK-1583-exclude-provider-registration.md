@@ -259,8 +259,16 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
+<<<<<<< HEAD
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
 **Deviations from spec**: none | describe if any
+=======
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-16
+**Notes**: Added `_public_forms_exclude_provider` async function in `setup_form_api` (after the M6 toggle wiring). The provider calls `registry.list_forms()`, filters by `is_public`, and returns paths via `public_form_paths`. Guarded with `app.get("auth")` and `hasattr(auth, "add_exclude_provider")`. 9 unit tests created and passing.
+
+**Deviations from spec**: none
+>>>>>>> feat-241-formdesigner-public-forms

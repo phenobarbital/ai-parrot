@@ -232,6 +232,7 @@ When you pick up this task:
 
 ## Completion Note
 
+<<<<<<< HEAD
 *(Agent fills this in when done)*
 
 **Completed by**: <session or agent ID>
@@ -239,3 +240,13 @@ When you pick up this task:
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
 **Deviations from spec**: none | describe if any
+=======
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-16
+**Notes**: Added `_exclude_providers` list to `AuthHandler.__init__`; added
+`add_exclude_provider()` method; updated `auth_startup` to iterate providers
+and call `register_exclusions()` on each, logging WARNING on failures. All 7
+unit tests pass. Committed in navigator-auth on branch `feat-241-public-forms`.
+
+**Deviations from spec**: none
+>>>>>>> feat-241-formdesigner-public-forms

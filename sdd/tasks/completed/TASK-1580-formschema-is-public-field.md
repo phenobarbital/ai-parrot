@@ -186,6 +186,7 @@ When you pick up this task:
 
 ## Completion Note
 
+<<<<<<< HEAD
 *(Agent fills this in when done)*
 
 **Completed by**: <session or agent ID>
@@ -193,3 +194,13 @@ When you pick up this task:
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
 **Deviations from spec**: none | describe if any
+=======
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-16
+**Notes**: Added `is_public: bool = False` to `FormSchema` after `published_version`.
+Updated class docstring. All 10 unit tests pass with `PYTHONPATH` pointing to
+worktree source (the editable install resolves from main repo; worktree tests run
+correctly with PYTHONPATH override).
+
+**Deviations from spec**: none
+>>>>>>> feat-241-formdesigner-public-forms

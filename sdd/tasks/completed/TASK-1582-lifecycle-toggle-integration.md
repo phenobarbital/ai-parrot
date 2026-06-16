@@ -345,8 +345,16 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
+<<<<<<< HEAD
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
 **Deviations from spec**: none | describe if any
+=======
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-16
+**Notes**: Implemented `_public_toggle_callback` and `set_public_toggle_callback()` in FormRegistry; diff old vs new `is_public` in `register()`, invoke callback on transitions (False→True: register, True→False: unregister); unregister on `delete()` if form was public. Wired callback in `setup_form_api`. All tests pass.
+
+**Deviations from spec**: none
+>>>>>>> feat-241-formdesigner-public-forms
