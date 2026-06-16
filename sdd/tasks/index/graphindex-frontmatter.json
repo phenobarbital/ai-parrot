@@ -72,7 +72,7 @@
       "feature_id": "FEAT-239",
       "feature": "graphindex-frontmatter",
       "spec": "sdd/specs/graphindex-frontmatter.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Imports from both shared frontmatter (TASK-1561) and URI module (TASK-1562). Must wait for both.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1563-graphindex-projection.md"
+      "completed_at": "2026-06-16T00:09:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1563-graphindex-projection.md"
     },
     {
       "id": "TASK-1564",
