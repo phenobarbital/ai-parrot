@@ -41,7 +41,10 @@ pipelines = ["ai-parrot-pipelines"]
 requires = ["setuptools>=67.6.1"]
 build-backend = "setuptools.build_meta"
 
-# Workspace root has no packages — prevent setuptools flat-layout discovery
+# Workspace root has no packages — prevent setuptools flat-layout discovery.
+# This also keeps the root-level `agents/` folder (un-ignored from git for
+# FEAT-240) out of any build: an empty package list disables discovery, so
+# `agents/` is never collected. MANIFEST.in additionally prunes it from sdists.
 [tool.setuptools]
 packages = []
 
