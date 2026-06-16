@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-240
 **Date**: 2026-06-16
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 ---
@@ -586,12 +586,12 @@ mgr.set_confirmation_guard(guard)                                               
       env vars registered in `env/.env`. Reflected in G8, AC3, §6/§7.
 - [x] **HITL scope** — *Resolved from request*: confirm **write operations** on Odoo →
       interpreted as all write/delete RPC tools plus all shell tools. Reflected in G6/AC8.
-- [ ] **OQ2 — HITL human channel** — how does `OdooAgent` obtain the `HumanInteractionManager`
+- [x] **OQ2 — HITL human channel** — how does `OdooAgent` obtain the `HumanInteractionManager`
       / confirmation channel at runtime (handler-injected vs constructed in `configure()`)?
-      *Owner: Jesus Lara*.
-- [ ] **OQ4 — PageIndex storage_dir** — exact persisted location and whether one tree (with
+      *Owner: Jesus Lara*: constructed in configure()
+- [x] **OQ4 — PageIndex storage_dir** — exact persisted location and whether one tree (with
       version parent nodes) or three trees (one per version). *Owner: implementer* (spec
-      recommends one tree with `Odoo 16/18/19` + `CLI` parent nodes).
+      recommends one tree with `Odoo 16/18/19` + `CLI` parent nodes): path: agent/odoo_agent/documentation/ and per-odoo tree inside of that directory.
 
 ---
 
