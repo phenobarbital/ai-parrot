@@ -319,3 +319,167 @@ class TestGraphIndexToolkit:
         toolkit = make_toolkit(client=mock_client)
         result = await toolkit.explain("A")
         assert isinstance(result, str)
+
+
+# ---------------------------------------------------------------------------
+# FEAT-215: Helpers for gap detection tests
+# ---------------------------------------------------------------------------
+
+
+def build_gap_graph():
+    """Build a graph with isolated nodes for gap detection testing."""
+    from parrot.knowledge.graphindex.schema import NodeKind, UniversalNode
+
+    g = rustworkx.PyDiGraph()
+    # Hub node (well-connected)
+    hub = g.add_node({"node_id": "hub", "kind": "concept", "title": "Hub"})
+    # Connected nodes
+    n1 = g.add_node({"node_id": "n1", "kind": "section", "title": "Section 1"})
+    n2 = g.add_node({"node_id": "n2", "kind": "section", "title": "Section 2"})
+    n3 = g.add_node({"node_id": "n3", "kind": "section", "title": "Section 3"})
+    g.add_edge(hub, n1, {"source_id": "hub", "target_id": "n1", "kind": "contains", "confidence": None})
+    g.add_edge(hub, n2, {"source_id": "hub", "target_id": "n2", "kind": "contains", "confidence": None})
+    g.add_edge(hub, n3, {"source_id": "hub", "target_id": "n3", "kind": "contains", "confidence": None})
+    # Isolated nodes (degree 0 or 1, not DOCUMENT)
+    iso1 = g.add_node({"node_id": "iso1", "kind": "concept", "title": "Isolated 1"})
+    iso2 = g.add_node({"node_id": "iso2", "kind": "skill", "title": "Isolated 2"})
+    # Document root (should be excluded from isolated nodes)
+    doc = g.add_node({"node_id": "doc_root", "kind": "document", "title": "Root"})
+    g.add_edge(iso2, doc, {"source_id": "iso2", "target_id": "doc_root", "kind": "contains", "confidence": None})
+
+    nodes = [
+        UniversalNode(node_id="hub", kind=NodeKind.CONCEPT, title="Hub", source_uri="test.txt"),
+        UniversalNode(node_id="n1", kind=NodeKind.SECTION, title="Section 1", source_uri="test.txt"),
+        UniversalNode(node_id="n2", kind=NodeKind.SECTION, title="Section 2", source_uri="test.txt"),
+        UniversalNode(node_id="n3", kind=NodeKind.SECTION, title="Section 3", source_uri="test.txt"),
+        UniversalNode(node_id="iso1", kind=NodeKind.CONCEPT, title="Isolated 1", source_uri="test.txt"),
+        UniversalNode(node_id="iso2", kind=NodeKind.SKILL, title="Isolated 2", source_uri="test.txt"),
+        UniversalNode(node_id="doc_root", kind=NodeKind.DOCUMENT, title="Root", source_uri="test.txt"),
+    ]
+    node_map = {p["node_id"]: idx for idx, p in zip(
+        [0, 1, 2, 3, 4, 5, 6],
+        [{"node_id": "hub"}, {"node_id": "n1"}, {"node_id": "n2"},
+         {"node_id": "n3"}, {"node_id": "iso1"}, {"node_id": "iso2"}, {"node_id": "doc_root"}]
+    )}
+    # Rebuild node_map from actual graph indices
+    node_map = {"hub": hub, "n1": n1, "n2": n2, "n3": n3,
+                "iso1": iso1, "iso2": iso2, "doc_root": doc}
+    node_id_list = ["hub", "n1", "n2", "n3", "iso1", "iso2", "doc_root"]
+    return g, node_map, node_id_list, nodes
+
+
+def make_gap_toolkit() -> "GraphIndexToolkit":
+    """Create a GraphIndexToolkit with a graph containing knowledge gaps."""
+    g, node_map, node_id_list, nodes = build_gap_graph()
+    faiss_index = build_faiss_index(node_id_list, dim=8)
+    return GraphIndexToolkit(
+        graph=g,
+        faiss_index=faiss_index,
+        node_map=node_map,
+        node_id_list=node_id_list,
+        nodes=nodes,
+    )
+
+
+# ---------------------------------------------------------------------------
+# FEAT-215: TestToolkitGapDetection
+# ---------------------------------------------------------------------------
+
+
+class TestToolkitGapDetection:
+    @pytest.mark.asyncio
+    async def test_find_isolated_nodes_returns_list(self):
+        """find_isolated_nodes returns a list."""
+        toolkit = make_gap_toolkit()
+        result = await toolkit.find_isolated_nodes()
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_find_isolated_nodes_finds_gaps(self):
+        """find_isolated_nodes returns the isolated concept node."""
+        toolkit = make_gap_toolkit()
+        result = await toolkit.find_isolated_nodes()
+        node_ids = [r["node_id"] for r in result]
+        assert "iso1" in node_ids  # degree 0 concept node
+
+    @pytest.mark.asyncio
+    async def test_find_isolated_nodes_excludes_document(self):
+        """find_isolated_nodes excludes DOCUMENT nodes by default."""
+        toolkit = make_gap_toolkit()
+        result = await toolkit.find_isolated_nodes()
+        kinds = [r["kind"] for r in result]
+        assert "document" not in kinds
+
+    @pytest.mark.asyncio
+    async def test_find_sparse_communities_returns_list(self):
+        """find_sparse_communities returns a list (or error dict if no communities)."""
+        toolkit = make_gap_toolkit()
+        result = await toolkit.find_sparse_communities()
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_find_bridge_nodes_returns_list(self):
+        """find_bridge_nodes returns a list (or error dict if no communities)."""
+        toolkit = make_gap_toolkit()
+        result = await toolkit.find_bridge_nodes()
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_analytics_cache_initialized(self):
+        """_analytics_cache is None initially."""
+        toolkit = make_gap_toolkit()
+        assert toolkit._analytics_cache is None
+
+
+# ---------------------------------------------------------------------------
+# FEAT-215: TestToolkitInsightManagement
+# ---------------------------------------------------------------------------
+
+
+class TestToolkitInsightManagement:
+    @pytest.mark.asyncio
+    async def test_dismiss_insight_returns_confirmation(self):
+        """dismiss_insight returns dict with 'dismissed' key."""
+        toolkit = make_gap_toolkit()
+        result = await toolkit.dismiss_insight("surprise:a:b")
+        assert isinstance(result, dict)
+        assert result.get("dismissed") == "surprise:a:b"
+
+    @pytest.mark.asyncio
+    async def test_dismiss_insight_increments_count(self):
+        """Repeated dismissals increment total_dismissed."""
+        toolkit = make_gap_toolkit()
+        r1 = await toolkit.dismiss_insight("isolated:iso1")
+        r2 = await toolkit.dismiss_insight("isolated:iso2")
+        assert r1["total_dismissed"] == 1
+        assert r2["total_dismissed"] == 2
+
+    @pytest.mark.asyncio
+    async def test_list_unreviewed_insights_returns_list(self):
+        """list_unreviewed_insights returns a list."""
+        toolkit = make_gap_toolkit()
+        result = await toolkit.list_unreviewed_insights()
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_dismiss_then_list_round_trip(self):
+        """Dismissed insight excluded from list_unreviewed_insights."""
+        toolkit = make_gap_toolkit()
+        # First list to get available insights
+        unreviewed_before = await toolkit.list_unreviewed_insights()
+        if not unreviewed_before:
+            pytest.skip("No insights available in test graph to dismiss")
+        first_id = unreviewed_before[0]["id"]
+        await toolkit.dismiss_insight(first_id)
+        unreviewed_after = await toolkit.list_unreviewed_insights()
+        ids_after = [i["id"] for i in unreviewed_after]
+        assert first_id not in ids_after
+
+    @pytest.mark.asyncio
+    async def test_analytics_cache_populated_after_call(self):
+        """_analytics_cache is populated after find_isolated_nodes call."""
+        toolkit = make_gap_toolkit()
+        # find_isolated_nodes doesn't use analytics cache directly,
+        # but dismiss_insight does
+        await toolkit.dismiss_insight("test:x")
+        assert toolkit._analytics_cache is not None
