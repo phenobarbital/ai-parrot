@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 import rustworkx
+from pydantic import BaseModel, Field
 
 from parrot.knowledge.graphindex.schema import (
     EdgeKind,
@@ -41,6 +42,25 @@ REPORT_FILENAME = "GRAPH_REPORT.md"
 
 
 # ---------------------------------------------------------------------------
+# Pydantic models (FEAT-215)
+# ---------------------------------------------------------------------------
+
+
+class KnowledgeGaps(BaseModel):
+    """Aggregated knowledge gap report.
+
+    Args:
+        isolated_nodes: Nodes with degree <= max_degree (few connections).
+        sparse_communities: Communities with low cohesion and sufficient size.
+        bridge_nodes: Nodes that connect many distinct communities.
+    """
+
+    isolated_nodes: list[dict] = Field(default_factory=list)
+    sparse_communities: list[dict] = Field(default_factory=list)
+    bridge_nodes: list[dict] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
 
@@ -61,12 +81,16 @@ class AnalyticsResult:
         communities: Optional FEAT-191 Louvain partition result. When
             set, ``generate_report`` renders an additional
             ``## Communities`` section.
+        knowledge_gaps: Optional FEAT-215 knowledge gap detection result.
+            When set, ``generate_report`` renders an additional
+            ``## Knowledge Gaps`` section.
     """
 
     god_nodes: list[dict] = field(default_factory=list)
     surprising_connections: list[dict] = field(default_factory=list)
     suggested_questions: list[str] = field(default_factory=list)
     communities: Optional["CommunitiesResult"] = None
+    knowledge_gaps: Optional[KnowledgeGaps] = None
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +119,7 @@ def compute_analytics(
 
     Returns:
         An ``AnalyticsResult`` with god-nodes, surprising connections,
-        and suggested questions.
+        suggested questions, and knowledge gaps.
     """
     god_nodes = _compute_god_nodes(graph, top_k)
     surprising_connections = _rank_surprising_connections(edges, nodes, top_k)
@@ -103,10 +127,16 @@ def compute_analytics(
         nodes, edges, surprising_connections
     )
 
+    # FEAT-215: Knowledge gap detection — always compute isolated nodes;
+    # sparse_communities and bridge_nodes require CommunitiesResult.
+    isolated = find_isolated_nodes(graph, nodes)
+    knowledge_gaps = KnowledgeGaps(isolated_nodes=isolated)
+
     return AnalyticsResult(
         god_nodes=god_nodes,
         surprising_connections=surprising_connections,
         suggested_questions=suggested_questions,
+        knowledge_gaps=knowledge_gaps,
     )
 
 
@@ -226,7 +256,6 @@ def _generate_suggested_questions(
             questions.append(f"How does {src.title} relate to {tgt.title}?")
 
     # Pattern 2: rationale → symbol
-    rationale_nodes = {n.node_id: n for n in nodes if n.kind == NodeKind.RATIONALE}
     for edge in edges:
         if edge.kind == EdgeKind.EXPLAINS:
             rationale = node_map.get(edge.source_id)
@@ -242,7 +271,6 @@ def _generate_suggested_questions(
                 )
 
     # Pattern 3: symbol → section (via MENTIONS)
-    symbol_nodes = {n.node_id: n for n in nodes if n.kind == NodeKind.SYMBOL}
     for edge in edges:
         if edge.kind == EdgeKind.MENTIONS:
             symbol = node_map.get(edge.source_id)
@@ -258,6 +286,205 @@ def _generate_suggested_questions(
                 )
 
     return questions
+
+
+# ---------------------------------------------------------------------------
+# FEAT-215: Knowledge gap detection functions
+# ---------------------------------------------------------------------------
+
+
+def find_isolated_nodes(
+    graph: rustworkx.PyDiGraph,
+    nodes: list[UniversalNode],
+    max_degree: int = 1,
+    exclude_kinds: Optional[set[NodeKind]] = None,
+) -> list[dict]:
+    """Find nodes with few connections (potential knowledge gaps).
+
+    Nodes with total degree (in + out) <= max_degree are considered
+    isolated. By default, DOCUMENT nodes are excluded because they are
+    structural root nodes expected to have low out-degree.
+
+    Args:
+        graph: The assembled PyDiGraph. Node payloads must contain
+            ``node_id``, ``kind``, and ``title`` keys.
+        nodes: All ``UniversalNode`` objects in the graph.
+        max_degree: Maximum total degree (in + out) for a node to be
+            considered isolated. Defaults to 1.
+        exclude_kinds: Set of ``NodeKind`` values to skip. Defaults to
+            ``{NodeKind.DOCUMENT}`` when not supplied.
+
+    Returns:
+        List of dicts, each containing ``node_id``, ``title``, ``kind``,
+        and ``degree`` for isolated nodes.
+    """
+    if exclude_kinds is None:
+        exclude_kinds = {NodeKind.DOCUMENT}
+
+    # Build node_id → NodeKind map from the UniversalNode list.
+    node_kind_map: dict[str, NodeKind] = {n.node_id: n.kind for n in nodes}
+
+    # Build node_id → graph index map from graph payloads.
+    node_id_to_idx: dict[str, int] = {}
+    for idx in graph.node_indices():
+        payload = graph[idx]
+        if isinstance(payload, dict) and "node_id" in payload:
+            node_id_to_idx[payload["node_id"]] = idx
+
+    result: list[dict] = []
+    for idx in graph.node_indices():
+        payload = graph[idx]
+        if not isinstance(payload, dict):
+            continue
+        node_id = payload.get("node_id", "")
+        kind_value = payload.get("kind", "")
+
+        # Resolve kind — try UniversalNode list first, then payload string.
+        node_kind = node_kind_map.get(node_id)
+        if node_kind is None:
+            # Try to resolve from the string value in payload.
+            try:
+                node_kind = NodeKind(kind_value)
+            except ValueError:
+                node_kind = None
+
+        # Skip excluded kinds.
+        if node_kind in exclude_kinds:
+            continue
+
+        degree = graph.in_degree(idx) + graph.out_degree(idx)
+        if degree <= max_degree:
+            result.append(
+                {
+                    "node_id": node_id,
+                    "title": payload.get("title", ""),
+                    "kind": kind_value,
+                    "degree": degree,
+                }
+            )
+
+    return result
+
+
+def find_sparse_communities(
+    communities_result: "CommunitiesResult",
+    min_size: int = 3,
+    max_cohesion: float = 0.15,
+) -> list[dict]:
+    """Find communities with low internal cohesion (sparse communities).
+
+    A community is considered sparse when it has enough members to be
+    meaningful (>= min_size) but low internal cohesion (< max_cohesion).
+    These represent areas where knowledge is disconnected.
+
+    Args:
+        communities_result: A ``CommunitiesResult`` from FEAT-191 Louvain
+            community detection.
+        min_size: Minimum number of members for a community to be
+            considered. Communities smaller than this are skipped.
+        max_cohesion: Maximum cohesion threshold. Communities with
+            cohesion >= this value are considered tight (not sparse).
+
+    Returns:
+        List of dicts, each containing ``community_id``, ``size``,
+        ``cohesion``, and ``top_titles`` for sparse communities.
+    """
+    if communities_result is None:
+        return []
+
+    result: list[dict] = []
+    for community in communities_result.communities:
+        if community.size < min_size:
+            continue
+        if community.cohesion < max_cohesion:
+            result.append(
+                {
+                    "community_id": community.community_id,
+                    "size": community.size,
+                    "cohesion": community.cohesion,
+                    "top_titles": community.top_titles,
+                    "centroid_node_id": community.centroid_node_id,
+                }
+            )
+
+    return result
+
+
+def find_bridge_nodes(
+    graph: rustworkx.PyDiGraph,
+    nodes: list[UniversalNode],
+    communities_result: "CommunitiesResult",
+    min_communities: int = 3,
+) -> list[dict]:
+    """Find nodes that bridge multiple distinct communities.
+
+    A bridge node is one whose neighbors span at least ``min_communities``
+    distinct Louvain communities. These nodes are critical connectors
+    and represent important cross-domain knowledge links.
+
+    Args:
+        graph: The assembled PyDiGraph.
+        nodes: All ``UniversalNode`` objects in the graph.
+        communities_result: A ``CommunitiesResult`` from FEAT-191 Louvain
+            community detection.
+        min_communities: Minimum number of distinct neighbor communities
+            required to classify a node as a bridge. Defaults to 3.
+
+    Returns:
+        List of dicts, each containing ``node_id``, ``title``, ``kind``,
+        ``community_count``, and ``neighbor_community_ids`` for bridge nodes.
+    """
+    if communities_result is None:
+        return []
+
+    node_to_community = communities_result.node_to_community
+    node_kind_map: dict[str, str] = {}
+    node_title_map: dict[str, str] = {}
+
+    for idx in graph.node_indices():
+        payload = graph[idx]
+        if isinstance(payload, dict) and "node_id" in payload:
+            nid = payload["node_id"]
+            node_kind_map[nid] = payload.get("kind", "")
+            node_title_map[nid] = payload.get("title", "")
+
+    result: list[dict] = []
+    for idx in graph.node_indices():
+        payload = graph[idx]
+        if not isinstance(payload, dict):
+            continue
+        node_id = payload.get("node_id", "")
+
+        # Collect all neighbor node_ids (both in and out edges).
+        neighbor_ids: set[str] = set()
+        for neighbor_idx in graph.predecessor_indices(idx):
+            nbr_payload = graph[neighbor_idx]
+            if isinstance(nbr_payload, dict) and "node_id" in nbr_payload:
+                neighbor_ids.add(nbr_payload["node_id"])
+        for neighbor_idx in graph.successor_indices(idx):
+            nbr_payload = graph[neighbor_idx]
+            if isinstance(nbr_payload, dict) and "node_id" in nbr_payload:
+                neighbor_ids.add(nbr_payload["node_id"])
+
+        # Determine distinct communities among neighbors.
+        neighbor_communities: set[str] = set()
+        for nbr_id in neighbor_ids:
+            cid = node_to_community.get(nbr_id)
+            if cid is not None:
+                neighbor_communities.add(cid)
+
+        if len(neighbor_communities) >= min_communities:
+            result.append(
+                {
+                    "node_id": node_id,
+                    "title": node_title_map.get(node_id, ""),
+                    "kind": node_kind_map.get(node_id, ""),
+                    "community_count": len(neighbor_communities),
+                    "neighbor_community_ids": sorted(neighbor_communities),
+                }
+            )
+
+    return result
 
 
 # ---------------------------------------------------------------------------
