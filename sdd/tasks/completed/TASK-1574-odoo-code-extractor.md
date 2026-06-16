@@ -253,4 +253,15 @@ class TestOdooCodeExtractor:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `OdooCodeExtractor(CodeExtractor)` in `extractors/odoo_code.py`.
+Overrides `_extract_class()` to detect Odoo classes via `_name`/`_inherit`/
+`_inherits` assignments or base-class names (`Model`, `TransientModel`,
+`AbstractModel`). Emits `odoo_model_class` nodes with model metadata, canonical
+`odoo_model` nodes with synthetic `source_uri` (`odoo-model://<name>`), `DEFINES`
+edges (when `_name` present), and `EXTENDS` edges (one per inherited model name,
+excluding self-inherit). `_walk_model_body` handles field declarations
+(`fields.*` → `odoo_field` nodes) and decorated functions (`@api.*` →
+`decorators` in domain_tags). Dynamic `_name` (f-strings) detected by checking
+for `interpolation` child nodes in tree-sitter's `string` type — returns `None`
+to skip canonical linking without crashing. All 21 tests pass. Exported from
+`extractors/__init__.py`.
