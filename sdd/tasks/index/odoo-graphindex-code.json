@@ -111,7 +111,7 @@
       "feature_id": "FEAT-240",
       "feature": "odoo-graphindex-code",
       "spec": "sdd/specs/odoo-graphindex-code.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Integration task — wires all prior components into the pipeline.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1576-builder-loader-wiring.md"
+      "completed_at": "2026-06-16T21:37:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1576-builder-loader-wiring.md"
     }
   ]
 }

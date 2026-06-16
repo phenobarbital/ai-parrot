@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-240 — GraphIndex Odoo-aware Extractor + SQLite Persistence + Graph Reader
 **Spec**: `sdd/specs/odoo-graphindex-code.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1572, TASK-1573, TASK-1574
@@ -215,4 +215,13 @@ class TestBuilderOdooWiring:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented 2026-06-16 by sdd-worker (claude-sonnet-4-6).
+
+- `GraphIndexBuilder`: added `code_extractor_class` param (default `CodeExtractor`), stored as `self._code_extractor_class`. `_extract_code()` now instantiates the configured class, reads `mtime` via `os.stat()`, and calls `await self.persistence.is_stale()` (guarded by `hasattr`) to skip unchanged files.
+- `GraphIndexLoader`: added `sqlite_dir` param; `_make_persistence()` returns `SQLitePersistence(db_dir=self._sqlite_dir)` when set (takes priority over ArangoDB null fallback).
+- `graphindex/__init__.py`: exports `SQLitePersistence`, `SQLiteGraphReader`, `OdooCodeExtractor`.
+- `pyproject.toml`: added `aiosqlite>=0.17`, `orjson>=3.9` to `[graphindex]` extra.
+- Fixed 5 pre-existing test failures from TASK-1571 (EdgeKind.EXTENDS changed enum size from 5→6): updated test_schema.py, test_meta_ontology.py, test_persist.py.
+- 15 integration tests in `test_builder_odoo.py` — all pass. 502/502 graphindex tests pass.
+
+Key issue fixed: `MagicMock.is_stale` is truthy due to auto-attribute creation. Used `_mock_null_persistence()` (which `del p.is_stale`) in tests that should not trigger the staleness path.
