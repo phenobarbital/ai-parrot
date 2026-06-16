@@ -238,10 +238,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-16
+**Notes**: Added SurpriseFactors Pydantic model and _DISTANT_TYPE_PAIRS constant. Rewrote _rank_surprising_connections() with 5-signal composite scoring (cross_community +3, cross_type +1/+2, peripheral_hub +2, weak_but_present +1, high_confidence +1). Only connections with composite_score >= 3 surface. Added 10 new tests. Updated 3 existing tests that used node kind pairs producing score < 3 under the new system. All 54 tests pass. Linting clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Updated 3 existing tests (test_inferred_mentions_included, test_ranked_by_confidence_descending, test_result_contains_kind_info) to use node kinds compatible with composite scoring threshold, since the old confidence-only ranking is replaced.

@@ -32,7 +32,7 @@
       "feature_id": "FEAT-215",
       "feature": "graphindex-analytics-insights",
       "spec": "sdd/specs/FEAT-215-graphindex-analytics-insights.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Needs CommunitiesResult wiring from TASK-1565's compute_analytics changes. Modifies _rank_surprising_connections in the same file.",
       "assigned_to": null,
       "started_at": "2026-06-15T23:53:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1566-composite-surprise-scoring.md"
+      "completed_at": "2026-06-16T00:04:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1566-composite-surprise-scoring.md"
     },
     {
       "id": "TASK-1567",
