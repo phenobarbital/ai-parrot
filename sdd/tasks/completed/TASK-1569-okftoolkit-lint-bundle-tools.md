@@ -182,4 +182,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-06-16.
+
+- Added `store: Optional[JSONTreeStore] = None` parameter to `OKFToolkit.__init__`; stored as `self._store`.
+- Added 3 `@tool`-decorated methods: `lint_knowledge_base`, `export_okf_bundle`, `import_okf_bundle` with lazy imports.
+- Updated `get_tools()` to return 9 tools (was 6).
+- Updated `test_okf_tools.py`: fixed `test_get_tools_returns_six` → `test_get_tools_returns_nine`, added `toolkit_with_store` fixture, added `TestLintKnowledgeBase` (4 tests), `TestExportOKFBundle` (5 tests), `TestImportOKFBundle` (4 tests).
+- Fixed `enriched_tree` fixture to include `"tree_name": "test_tree"` so lint engine resolves valid tree_name.
+- All 38 tests pass.
