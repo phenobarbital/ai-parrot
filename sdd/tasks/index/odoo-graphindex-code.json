@@ -14,7 +14,7 @@
       "feature_id": "FEAT-240",
       "feature": "odoo-graphindex-code",
       "spec": "sdd/specs/odoo-graphindex-code.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Prerequisite for TASK-1573, TASK-1574. Could run parallel with TASK-1572 but sequential in same worktree.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1571-schema-ontology-extends.md"
+      "completed_at": "2026-06-16T21:13:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1571-schema-ontology-extends.md"
     },
     {
       "id": "TASK-1572",
@@ -53,7 +53,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1571"],
+      "depends_on": [
+        "TASK-1571"
+      ],
       "parallel": false,
       "parallelism_notes": "Needs EdgeKind.EXTENDS from TASK-1571. Could parallel with TASK-1574 but sequential preferred.",
       "assigned_to": null,
@@ -71,7 +73,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1571", "TASK-1572"],
+      "depends_on": [
+        "TASK-1571",
+        "TASK-1572"
+      ],
       "parallel": false,
       "parallelism_notes": "Needs EdgeKind.EXTENDS (TASK-1571) and lineno stamping (TASK-1572).",
       "assigned_to": null,
@@ -89,7 +94,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1573"],
+      "depends_on": [
+        "TASK-1573"
+      ],
       "parallel": false,
       "parallelism_notes": "Reads the SQLite artefact produced by TASK-1573.",
       "assigned_to": null,
@@ -107,7 +114,11 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1572", "TASK-1573", "TASK-1574"],
+      "depends_on": [
+        "TASK-1572",
+        "TASK-1573",
+        "TASK-1574"
+      ],
       "parallel": false,
       "parallelism_notes": "Integration task — wires all prior components into the pipeline.",
       "assigned_to": null,
