@@ -263,10 +263,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-16
+**Notes**: Added DismissedInsights Pydantic model. Added dismissed field to AnalyticsResult. Implemented dismiss_insight() and list_unreviewed_insights(). Updated _render_report() to filter dismissed insights from all sections and added "## Knowledge Gaps" section with isolated nodes, sparse communities, and bridge nodes subsections. Added 12 new tests. All 66 tests pass. Linting clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
