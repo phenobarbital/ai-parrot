@@ -264,7 +264,8 @@ examples/knowledge_wiki/store/
 # Custom Agents:
 plugins/agents/
 !/crew-builder/src/routes/agents/
-/agents/
+# /agents/  ← temporarily removed for FEAT-240 (odoo-pageindex-documentation-agent);
+#             restore or re-scope after the feature lands. See spec §7 / OQ1.
 /batch_results/
 
 # SvelteKit build
