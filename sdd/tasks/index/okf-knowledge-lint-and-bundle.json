@@ -32,7 +32,7 @@
       "feature_id": "FEAT-216",
       "feature": "okf-knowledge-lint-and-bundle",
       "spec": "sdd/specs/FEAT-216-okf-knowledge-lint-and-bundle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Touches only new lint.py — can run in parallel with TASK-1567 (bundle export) since they share no files",
       "assigned_to": null,
       "started_at": "2026-06-15T23:55:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1566-knowledge-lint-engine.md"
+      "completed_at": "2026-06-16T00:03:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1566-knowledge-lint-engine.md"
     },
     {
       "id": "TASK-1567",
