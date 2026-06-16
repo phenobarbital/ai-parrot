@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-239 — GraphIndex OKF Frontmatter Projection
 **Spec**: `sdd/specs/graphindex-frontmatter.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1563
@@ -300,4 +300,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented 2026-06-16 by sdd-worker.
+
+- `generate_report()` updated with `tenant_id: str = "default"` parameter; lazily imports
+  `project_report_frontmatter` and prepends OKF YAML frontmatter before writing GRAPH_REPORT.md.
+- `BuildResult` gained `projection_report: Optional[object]` field (typed loosely to avoid
+  circular imports; callers cast to `GraphProjectionReport`).
+- `builder.py` Stage 6 now passes `tenant_id=ctx.tenant_id`; Stage 6.5 calls
+  `project_graph_sidecars()` in a try/except (non-fatal), sets `projection_report` on result.
+- `graphindex/__init__.py` exports: `project_graph_sidecars`, `project_node_sidecar`,
+  `project_report_frontmatter`, `node_to_frontmatter_dict`, `GraphProjectionReport`.
+- Pre-existing ruff F841 issues in `_generate_suggested_questions()` fixed (unused variables).
+- Pre-existing ruff F401 issue in `schema.py` fixed (unused `field_validator` import).
+- 17 integration tests in `test_builder_projection.py`: 17/17 passed.
+- Full test suite for FEAT-239: 390 tests passed.
