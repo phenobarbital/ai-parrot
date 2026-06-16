@@ -93,13 +93,22 @@ class CodeExtractor:
     # ------------------------------------------------------------------
 
     async def extract(
-        self, file_path: str, source: str
+        self, file_path: str, source: str, *, mtime: Optional[float] = None
     ) -> tuple[list[UniversalNode], list[UniversalEdge]]:
         """Parse a Python source file and return nodes and edges.
+
+        The module node's ``domain_tags`` always includes a ``sha1`` of the
+        source content.  When ``mtime`` is supplied, it is also stored so that
+        persistence backends can perform incremental staleness checks without
+        re-reading the file.
 
         Args:
             file_path: Source-relative file path, used as ``source_uri``.
             source: Raw source code text.
+            mtime: Optional filesystem modification time (``os.stat().st_mtime``).
+                When provided, stamped into the module node's ``domain_tags``
+                under the key ``"mtime"``.  Keyword-only to preserve backward
+                compatibility.
 
         Returns:
             Tuple of ``(nodes, edges)`` extracted from the file.
@@ -108,6 +117,7 @@ class CodeExtractor:
         edges: list[UniversalEdge] = []
 
         source_bytes = source.encode("utf-8", errors="replace")
+        sha1 = hashlib.sha1(source_bytes).hexdigest()
 
         try:
             tree = self._parser.parse(source_bytes)
@@ -131,7 +141,7 @@ class CodeExtractor:
         if has_error:
             logger.debug("Syntax errors detected in %s — continuing with degraded extraction", file_path)
 
-        # Module node
+        # Module node — always includes sha1; mtime only when provided
         module_id = _make_node_id(file_path, "__module__")
         module_node = UniversalNode(
             node_id=module_id,
@@ -140,6 +150,8 @@ class CodeExtractor:
             source_uri=file_path,
             domain_tags={
                 "symbol_type": "module",
+                "sha1": sha1,
+                **({"mtime": mtime} if mtime is not None else {}),
                 **({"parse_error": True} if has_error else {}),
             },
             provenance=Provenance.AMBIGUOUS if has_error else Provenance.EXTRACTED,
@@ -270,7 +282,11 @@ class CodeExtractor:
             source_uri=file_path,
             summary=docstring,
             parent_id=parent_id,
-            domain_tags={"symbol_type": "class"},
+            domain_tags={
+                "symbol_type": "class",
+                "lineno": node.start_point[0] + 1,
+                "end_lineno": node.end_point[0] + 1,
+            },
         )
         nodes.append(class_node)
 
@@ -335,7 +351,12 @@ class CodeExtractor:
             source_uri=file_path,
             summary=docstring,
             parent_id=parent_id,
-            domain_tags={"symbol_type": "function", "qualified_name": qualified_name},
+            domain_tags={
+                "symbol_type": "function",
+                "qualified_name": qualified_name,
+                "lineno": node.start_point[0] + 1,
+                "end_lineno": node.end_point[0] + 1,
+            },
         )
         nodes.append(func_node)
 
