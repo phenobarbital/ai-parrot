@@ -319,3 +319,110 @@ class TestGraphIndexToolkit:
         toolkit = make_toolkit(client=mock_client)
         result = await toolkit.explain("A")
         assert isinstance(result, str)
+
+
+# ---------------------------------------------------------------------------
+# TASK-1569: search_with_expansion integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestSearchWithExpansion:
+    """Integration tests for GraphIndexToolkit.search_with_expansion (FEAT-217)."""
+
+    @pytest.mark.asyncio
+    async def test_toolkit_search_with_expansion_returns_dict(self):
+        """Toolkit tool returns a dict matching GraphRetrievalResult schema."""
+        from parrot.knowledge.graphindex.schema import NodeKind, UniversalNode
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        g, node_map, node_id_list = build_simple_graph()
+        faiss_index = build_faiss_index(node_id_list, dim=8)
+
+        # Build UniversalNode objects to mirror the graph
+        nodes = [
+            UniversalNode(
+                node_id=nid,
+                title=f"Title {nid}",
+                kind=NodeKind.DOCUMENT,
+                source_uri=f"file://{nid}.md",
+            )
+            for nid in node_id_list
+        ]
+
+        embedder = MagicMock()
+        embedder.search_similar = AsyncMock(
+            return_value=[("A", 0.1), ("B", 0.3)]
+        )
+
+        toolkit = GraphIndexToolkit(
+            graph=g,
+            faiss_index=faiss_index,
+            node_map=node_map,
+            node_id_list=node_id_list,
+            embedder=embedder,
+            nodes=nodes,
+        )
+
+        with patch(
+            "parrot.knowledge.graphindex.retriever.relevance_neighborhood",
+            return_value=[],
+        ):
+            result = await toolkit.search_with_expansion("test query", seed_top_k=2)
+
+        assert isinstance(result, dict)
+        # Verify GraphRetrievalResult keys present
+        assert "query" in result
+        assert "nodes" in result
+        assert "total_candidates" in result
+        assert "nodes_expanded" in result
+        assert "communities_touched" in result
+        assert "budget_used" in result
+        assert "budget_limit" in result
+        assert "truncated" in result
+        assert result["query"] == "test query"
+        assert isinstance(result["nodes"], list)
+        assert isinstance(result["truncated"], bool)
+
+    @pytest.mark.asyncio
+    async def test_search_with_expansion_no_embedder_returns_error(self):
+        """Returns error dict when no embedder provided."""
+        toolkit = make_toolkit()  # no embedder
+        result = await toolkit.search_with_expansion("query")
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_search_with_expansion_custom_params(self):
+        """Custom max_hops and decay_base accepted."""
+        from parrot.knowledge.graphindex.schema import NodeKind, UniversalNode
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        g, node_map, node_id_list = build_simple_graph()
+        faiss_index = build_faiss_index(node_id_list, dim=8)
+        nodes = [
+            UniversalNode(
+                node_id=nid, title=f"T{nid}", kind=NodeKind.DOCUMENT, source_uri=f"f://{nid}"
+            )
+            for nid in node_id_list
+        ]
+        embedder = MagicMock()
+        embedder.search_similar = AsyncMock(return_value=[("A", 0.2)])
+
+        toolkit = GraphIndexToolkit(
+            graph=g,
+            faiss_index=faiss_index,
+            node_map=node_map,
+            node_id_list=node_id_list,
+            embedder=embedder,
+            nodes=nodes,
+        )
+
+        with patch(
+            "parrot.knowledge.graphindex.retriever.relevance_neighborhood",
+            return_value=[],
+        ):
+            result = await toolkit.search_with_expansion(
+                "query", max_hops=1, decay_base=0.5, max_tokens=4000
+            )
+
+        assert result["budget_limit"] == 4000
+        assert isinstance(result["nodes"], list)
