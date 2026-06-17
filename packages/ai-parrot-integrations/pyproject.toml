@@ -68,6 +68,16 @@ voice-moonshine = [
 liveavatar = [
     "livekit-api>=1.0",
 ]
+# FEAT-243 (LiveAvatar Phase C): voice-native LiveKit Agents pipeline.
+# Versions pinned per spec section 7 (Open Question P5 — the llm_node / worker
+# signatures MUST be validated against these pins before TASK-003 / TASK-004).
+liveavatar-voice = [
+    "livekit-agents~=1.5",
+    "livekit-plugins-deepgram~=1.5",
+    "livekit-plugins-cartesia~=1.5",
+    "livekit-plugins-silero~=1.5",
+    "livekit-plugins-turn-detector~=1.5",
+]
 voice = [
     "ai-parrot-integrations[voice-local]",
     "ai-parrot-integrations[voice-openai]",
