@@ -160,6 +160,8 @@ graphindex = [
     "tree-sitter>=0.23",
     "tree-sitter-languages>=1.10",
     "pathspec>=0.12",
+    "aiosqlite>=0.17",
+    "orjson>=3.9",
 ]
 
 # Task scheduling moved to ai-parrot-server[scheduler] in FEAT-203

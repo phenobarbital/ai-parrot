@@ -38,12 +38,15 @@ from parrot.knowledge.graphindex.communities import (
     detect_communities,
 )
 from parrot.knowledge.graphindex.loader import GraphIndexLoader
+from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
 from parrot.knowledge.graphindex.projection import (
     project_graph_sidecars,
     project_node_sidecar,
     project_report_frontmatter,
     node_to_frontmatter_dict,
 )
+from parrot.knowledge.graphindex.sqlite_reader import SQLiteGraphReader
+from parrot.knowledge.graphindex.extractors.odoo_code import OdooCodeExtractor
 
 __all__ = [
     "Provenance",
@@ -65,6 +68,9 @@ __all__ = [
     "cohesion_for_community",
     "detect_communities",
     "GraphIndexLoader",
+    "OdooCodeExtractor",
+    "SQLitePersistence",
+    "SQLiteGraphReader",
     "project_graph_sidecars",
     "project_node_sidecar",
     "project_report_frontmatter",

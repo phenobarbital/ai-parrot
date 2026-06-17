@@ -182,3 +182,73 @@ class TestCodeExtractor:
         )
         # Normal parse: extracted
         assert module_node.provenance == Provenance.EXTRACTED
+
+    # ------------------------------------------------------------------
+    # TASK-1572: sha1, mtime, lineno additions
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_extract_stamps_sha1(self, extractor):
+        """Module node always has sha1 in domain_tags (full 40-char hex)."""
+        nodes, _ = await extractor.extract("test.py", "x = 1")
+        module = next(
+            (n for n in nodes if n.domain_tags.get("symbol_type") == "module"), None
+        )
+        assert module is not None
+        assert "sha1" in module.domain_tags
+        assert len(module.domain_tags["sha1"]) == 40
+
+    @pytest.mark.asyncio
+    async def test_extract_stamps_mtime(self, extractor):
+        """mtime is stored when provided via keyword argument."""
+        nodes, _ = await extractor.extract("test.py", "x = 1", mtime=1234.5)
+        module = next(
+            (n for n in nodes if n.domain_tags.get("symbol_type") == "module"), None
+        )
+        assert module is not None
+        assert module.domain_tags["mtime"] == 1234.5
+
+    @pytest.mark.asyncio
+    async def test_extract_no_mtime_by_default(self, extractor):
+        """mtime is absent from domain_tags when not supplied."""
+        nodes, _ = await extractor.extract("test.py", "x = 1")
+        module = next(
+            (n for n in nodes if n.domain_tags.get("symbol_type") == "module"), None
+        )
+        assert module is not None
+        assert "mtime" not in module.domain_tags
+
+    @pytest.mark.asyncio
+    async def test_class_has_lineno(self, extractor):
+        """Class nodes carry lineno and end_lineno (1-based)."""
+        source = "class Foo:\n    pass\n"
+        nodes, _ = await extractor.extract("test.py", source)
+        cls = next(
+            (n for n in nodes if n.domain_tags.get("symbol_type") == "class"), None
+        )
+        assert cls is not None
+        assert cls.domain_tags["lineno"] == 1
+        assert cls.domain_tags["end_lineno"] == 2
+
+    @pytest.mark.asyncio
+    async def test_function_has_lineno(self, extractor):
+        """Function nodes carry lineno and end_lineno (1-based)."""
+        source = "def bar():\n    pass\n"
+        nodes, _ = await extractor.extract("test.py", source)
+        func = next(
+            (n for n in nodes if n.domain_tags.get("symbol_type") == "function"), None
+        )
+        assert func is not None
+        assert func.domain_tags["lineno"] == 1
+        assert func.domain_tags["end_lineno"] == 2
+
+    @pytest.mark.asyncio
+    async def test_extract_backward_compat(self, extractor):
+        """extract(path, source) without mtime still returns valid nodes."""
+        nodes, edges = await extractor.extract("test.py", SAMPLE_PYTHON)
+        assert len(nodes) > 0
+        module = next(
+            (n for n in nodes if n.domain_tags.get("symbol_type") == "module"), None
+        )
+        assert module is not None
+        assert module.provenance == Provenance.EXTRACTED
