@@ -300,6 +300,42 @@ because A delivers a spoken avatar quickly and C reuses A's transport wholesale.
 
 ---
 
+## Credentials & Environment Variables
+
+BYO + LiveKit Cloud means **two separate accounts/credentials** — register in both before
+Phase A. All values are read from the environment (never committed).
+
+**1. LiveKit Cloud** (the media room / SFU) — sign up at `https://cloud.livekit.io`
+(free tier covers development), create a project, copy the three values:
+
+| Env var | Purpose | Example |
+|---|---|---|
+| `LIVEKIT_URL` | SFU WebSocket URL of your project | `wss://<project>.livekit.cloud` |
+| `LIVEKIT_API_KEY` | Used by `LiveKitRoomManager` (`livekit-api`) to mint tokens | — |
+| `LIVEKIT_API_SECRET` | Secret for token minting (room + client/agent tokens) | — |
+
+**2. LiveAvatar / HeyGen** (the avatar video + lip-sync):
+
+| Env var | Purpose | Notes |
+|---|---|---|
+| `LIVEAVATAR_API_KEY` | HTTP auth header `X-API-KEY` for `create_session_token`/`stop`/`keep-alive` | `Bearer session_token` is used for `start_session` (obtained at runtime) |
+| `LIVEAVATAR_AVATAR_ID` | Which avatar to render | per `create_session_token` body (LITE) |
+| `LIVEAVATAR_BASE_URL` | API base (default `https://api.liveavatar.com`) | optional override |
+
+**Phase C only** — LiveKit inference plugins (STT/VAD/TTS) may need their own provider keys
+per `pipeline.py` (e.g. Deepgram STT, Cartesia TTS), or be billed through LiveKit Cloud credits.
+To be pinned at Phase C spec time.
+
+**Cost/billing notes (briefing §1.4):**
+- **Phase A**: media plane is LiveKit room + LiveAvatar avatar only — the LiveKit *inference*
+  gateway (STT/LLM/TTS) is NOT used (brain = ai-parrot, TTS = Supertonic). You pay LiveKit room
+  usage + LiveAvatar avatar minutes.
+- **Phase C**: LiveKit inference (STT/TTS) is used and billed through LiveKit Cloud credits.
+- Use LiveAvatar `is_sandbox=true` during development to avoid burning avatar minutes
+  (duration-capped).
+
+---
+
 ## Code Context
 
 ### User-Provided Code
