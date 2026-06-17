@@ -112,7 +112,7 @@
       "feature_id": "FEAT-242",
       "feature": "liveavatar-phase-a-mouth",
       "spec": "sdd/specs/liveavatar-phase-a-mouth.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -125,8 +125,8 @@
       "parallelism_notes": "M5. Integration glue importing all of M1-M4 + VoiceSynthesizer/ask_stream — must run after them, not parallelizable.",
       "assigned_to": null,
       "started_at": "2026-06-17T23:16:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-006-avatar-session-orchestrator.md"
+      "completed_at": "2026-06-17T23:29:25+00:00",
+      "file": "sdd/tasks/completed/TASK-006-avatar-session-orchestrator.md"
     },
     {
       "id": "TASK-007",
