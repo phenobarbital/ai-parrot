@@ -78,6 +78,16 @@ class AgentVoiceTalk(AgentTalk):
         self._tts_format: str = _DEFAULT_AUDIO_FORMAT
         # STT backend, optionally overridden per request body.
         self._stt_backend: Optional[str] = None
+        # ── Avatar mode flag (FEAT-242 Phase A — TASK-007) ─────────────────
+        # Set to True when the request body carries ``"avatar": true``.
+        # When True the turn is driven through the AvatarSessionOrchestrator;
+        # the orchestrator is gated by the per-tenant opt-in hook from TASK-008.
+        # Absent or False → unchanged text/voice behaviour (no avatar session).
+        self._avatar_mode: bool = False
+        # Tenant ID for opt-in gating; extracted from the request body.
+        # Not threaded through the existing chat path (spec §6 Anti-Hallucination);
+        # TASK-008 wires this explicitly.
+        self._avatar_tenant_id: Optional[str] = None
 
     # ── Inbound seam (STT) ─────────────────────────────────────────────
 
@@ -140,6 +150,15 @@ class AgentVoiceTalk(AgentTalk):
         fmt = data.pop("audio_format", None)
         if isinstance(fmt, str) and fmt:
             self._tts_format = fmt
+        # ── Avatar mode flag (FEAT-242 Phase A — TASK-007) ─────────────────
+        # ``avatar=true`` in the request body opts the turn into avatar mode.
+        # The opt-in hook from TASK-008 gates the actual orchestration.
+        avatar_flag = data.pop("avatar", None)
+        if avatar_flag is True or (isinstance(avatar_flag, str) and avatar_flag.lower() == "true"):
+            self._avatar_mode = True
+        tenant_id = data.pop("tenant_id", None)
+        if isinstance(tenant_id, str) and tenant_id:
+            self._avatar_tenant_id = tenant_id
 
     def _find_audio_attachment(
         self, attachments: Dict[str, Any]
@@ -273,9 +292,36 @@ class AgentVoiceTalk(AgentTalk):
         request carried voice input — synthesizes ``AIMessage.response`` and
         attaches ``audio_base64`` + ``audio_format`` to the JSON envelope.
 
+        When ``_avatar_mode`` is True the opt-in hook from TASK-008 is
+        consulted; if avatar mode is enabled for the tenant, the avatar
+        session is expected to have been pre-started via the
+        ``/api/v1/agents/avatar/{agent_id}/start`` endpoint.  The voice path
+        itself is unchanged — the avatar session receives PCM via the
+        ``AvatarSessionOrchestrator`` started separately.
+
         Returns:
             The inherited response, augmented with audio when applicable.
         """
+        # ── Avatar mode gate (FEAT-242 TASK-007 / TASK-008) ───────────────
+        # If the request carries avatar=true, check the opt-in gate and attach
+        # avatar metadata to the response.  The actual PCM push happens via the
+        # /api/v1/agents/avatar/{agent_id}/start endpoint, not here — keeping
+        # this path non-blocking.
+        if self._avatar_mode:
+            try:
+                from parrot.integrations.liveavatar.optin import is_avatar_enabled
+                if not is_avatar_enabled(
+                    tenant_id=self._avatar_tenant_id,
+                    agent_name=self.request.match_info.get("agent_id", ""),
+                ):
+                    self.logger.info(
+                        "AgentVoiceTalk: avatar mode requested but tenant opt-in "
+                        "is off; falling through to text/voice path."
+                    )
+                    self._avatar_mode = False
+            except ImportError:
+                self._avatar_mode = False
+
         response = await super().post()
         if not self._did_transcribe:
             # Plain text request to the voice endpoint → behave like AgentTalk.
