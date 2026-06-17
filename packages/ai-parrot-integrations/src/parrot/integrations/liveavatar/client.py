@@ -1,0 +1,335 @@
+"""LiveAvatar HTTP client and session lifecycle (FEAT-242 Phase A — Module 1).
+
+Ports the LiveAvatar starter ``liveavatar_client.py`` (httpx/websockets) to
+``aiohttp`` per project standards.
+
+Responsibilities:
+- ``create_session_token``: create a LITE session (optionally with
+  ``livekit_config`` so the avatar joins our LiveKit Cloud room).
+- ``start_session``: start the created session (Bearer auth).
+- ``stop_session``: stop/close the session (idempotent).
+- ``keep_alive``: periodic HTTP keep-alive (< 5 min interval).
+
+Auth headers:
+- ``X-API-KEY: cfg.api_key`` on create / stop / keep-alive.
+- ``Authorization: Bearer <handle.session_token>`` on start_session.
+
+Keep-alive strategy: HTTP ``/v1/sessions/{id}/keep-alive`` is used here
+(not the WS variant).  # TODO P7 — if WS keep_alive is chosen in the
+future, move this call to AvatarWebSocket (TASK-003).
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any, Dict, Optional
+
+import aiohttp
+
+from parrot.integrations.liveavatar.models import AvatarSessionHandle, LiveAvatarConfig
+
+# Keep-alive interval must be strictly less than the LiveAvatar 5 min inactivity
+# timeout.  280 s gives a comfortable 20 s safety margin.
+_KEEP_ALIVE_INTERVAL: int = 280  # seconds
+
+
+class LiveAvatarClient:
+    """Async HTTP client for the LiveAvatar LITE API.
+
+    Manages session token creation, session start/stop, and periodic
+    keep-alive.  All auth is handled internally; callers receive an opaque
+    :class:`~parrot.integrations.liveavatar.models.AvatarSessionHandle`.
+
+    Usage (preferred — guarantees stop on exit)::
+
+        async with LiveAvatarClient(cfg) as client:
+            handle = await client.create_session_token(cfg)
+            await client.start_session(handle)
+            ...  # speak
+
+    Args:
+        cfg: LiveAvatar configuration (read from env by the caller).
+        session: Optional external ``aiohttp.ClientSession`` to reuse.
+            When ``None`` (default) the client creates and owns one.
+    """
+
+    def __init__(
+        self,
+        cfg: LiveAvatarConfig,
+        *,
+        session: Optional[aiohttp.ClientSession] = None,
+    ) -> None:
+        self.cfg = cfg
+        self.logger = logging.getLogger(__name__)
+        self._session: Optional[aiohttp.ClientSession] = session
+        self._owns_session: bool = session is None
+        self._keep_alive_task: Optional[asyncio.Task[None]] = None
+        self._handle: Optional[AvatarSessionHandle] = None
+
+    # ── Context manager ────────────────────────────────────────────────
+
+    async def __aenter__(self) -> "LiveAvatarClient":
+        """Open the aiohttp session if not provided externally."""
+        if self._owns_session:
+            self._session = aiohttp.ClientSession()
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        """Guarantee stop_session + keep-alive cancellation on exit."""
+        if self._handle is not None:
+            try:
+                await self.stop_session(self._handle)
+            except Exception:  # noqa: BLE001
+                self.logger.exception("LiveAvatarClient: stop_session failed on exit")
+        self._cancel_keep_alive()
+        if self._owns_session and self._session is not None:
+            await self._session.close()
+            self._session = None
+
+    # ── Public API ─────────────────────────────────────────────────────
+
+    async def create_session_token(
+        self,
+        cfg: LiveAvatarConfig,
+        *,
+        livekit_config: Optional[Dict[str, Any]] = None,
+    ) -> AvatarSessionHandle:
+        """Create a LiveAvatar LITE session token.
+
+        Calls ``POST /v1/sessions`` on the LiveAvatar API, optionally
+        embedding ``livekit_config`` so the avatar joins our LiveKit Cloud
+        room.
+
+        Args:
+            cfg: LiveAvatar configuration (api_key, avatar_id, …).
+            livekit_config: Optional LiveKit room config dict to pass to the
+                API so the avatar joins our room (BYO transport).
+
+        Returns:
+            An :class:`AvatarSessionHandle` populated with the API response.
+
+        Raises:
+            aiohttp.ClientResponseError: On non-2xx responses.
+        """
+        url = f"{cfg.base_url}/v1/sessions"
+        headers = self._api_key_headers(cfg)
+
+        payload: Dict[str, Any] = {
+            "avatarId": cfg.avatar_id,
+        }
+        if cfg.is_sandbox:
+            payload["isSandbox"] = True
+        if cfg.max_session_duration is not None:
+            payload["maxSessionDuration"] = cfg.max_session_duration
+        if livekit_config is not None:
+            payload["liveKitConfig"] = livekit_config
+        if cfg.quality is not None or cfg.encoding is not None:
+            video_settings: Dict[str, Any] = {}
+            if cfg.quality is not None:
+                video_settings["quality"] = cfg.quality  # TODO Q-video-settings
+            if cfg.encoding is not None:
+                video_settings["encoding"] = cfg.encoding  # TODO Q-video-settings
+            payload["videoSettings"] = video_settings
+
+        self.logger.debug("LiveAvatarClient: creating session for avatar %s", cfg.avatar_id)
+        response_data = await self._post(url, headers=headers, json=payload)
+
+        handle = AvatarSessionHandle(
+            session_id=response_data.get("sessionId", ""),
+            liveavatar_session_id=response_data.get("sessionId", ""),
+            session_token=response_data.get("sessionToken", ""),
+            ws_url=response_data.get("wsUrl", ""),
+            agent_name=cfg.avatar_id,
+        )
+        self._handle = handle
+        self.logger.info("LiveAvatarClient: session token created — id=%s", handle.liveavatar_session_id)
+        return handle
+
+    async def start_session(self, handle: AvatarSessionHandle) -> Dict[str, Any]:
+        """Start a previously created session.
+
+        Uses ``Authorization: Bearer <session_token>`` auth.
+
+        Args:
+            handle: The session handle returned by :meth:`create_session_token`.
+
+        Returns:
+            The raw API response dict.
+
+        Raises:
+            aiohttp.ClientResponseError: On non-2xx responses.
+        """
+        url = f"{self.cfg.base_url}/v1/sessions/{handle.liveavatar_session_id}/start"
+        headers = self._bearer_headers(handle)
+
+        self.logger.debug("LiveAvatarClient: starting session %s", handle.liveavatar_session_id)
+        result = await self._post(url, headers=headers, json={})
+        self.logger.info("LiveAvatarClient: session started — id=%s", handle.liveavatar_session_id)
+
+        # Start the background keep-alive loop after the session is live.
+        self._start_keep_alive(handle)
+        return result
+
+    async def stop_session(self, handle: AvatarSessionHandle) -> None:
+        """Stop (close) an active session.
+
+        Idempotent: safe to call multiple times or after the session has
+        already closed.
+
+        Args:
+            handle: The session handle to stop.
+        """
+        self._cancel_keep_alive()
+
+        if not handle.liveavatar_session_id:
+            return
+
+        url = f"{self.cfg.base_url}/v1/sessions/{handle.liveavatar_session_id}/stop"
+        headers = self._api_key_headers(self.cfg)
+
+        self.logger.debug("LiveAvatarClient: stopping session %s", handle.liveavatar_session_id)
+        try:
+            await self._post(url, headers=headers, json={})
+        except aiohttp.ClientResponseError as exc:
+            # 404 means already closed — treat as success.
+            if exc.status == 404:
+                self.logger.debug(
+                    "LiveAvatarClient: session %s already closed (404)",
+                    handle.liveavatar_session_id,
+                )
+            else:
+                self.logger.warning(
+                    "LiveAvatarClient: stop_session failed for %s: %s",
+                    handle.liveavatar_session_id,
+                    exc,
+                )
+        except Exception:  # noqa: BLE001
+            self.logger.exception(
+                "LiveAvatarClient: unexpected error stopping session %s",
+                handle.liveavatar_session_id,
+            )
+        self.logger.info("LiveAvatarClient: session stopped — id=%s", handle.liveavatar_session_id)
+
+    async def keep_alive(self, handle: AvatarSessionHandle) -> None:
+        """Send a single HTTP keep-alive ping for the session.
+
+        Calls ``POST /v1/sessions/{id}/keep-alive`` with ``X-API-KEY`` auth.
+        # TODO P7 — switch to WS ``session.keep_alive`` here if the WS
+        #           variant is chosen as the canonical keep-alive transport.
+
+        Args:
+            handle: The active session handle.
+        """
+        url = f"{self.cfg.base_url}/v1/sessions/{handle.liveavatar_session_id}/keep-alive"
+        headers = self._api_key_headers(self.cfg)
+        try:
+            await self._post(url, headers=headers, json={})
+            self.logger.debug("LiveAvatarClient: keep-alive sent for %s", handle.liveavatar_session_id)
+        except Exception:  # noqa: BLE001
+            self.logger.warning(
+                "LiveAvatarClient: keep-alive failed for %s",
+                handle.liveavatar_session_id,
+                exc_info=True,
+            )
+
+    # ── Internal helpers ───────────────────────────────────────────────
+
+    def _api_key_headers(self, cfg: LiveAvatarConfig) -> Dict[str, str]:
+        """Build headers with ``X-API-KEY`` auth.
+
+        Args:
+            cfg: LiveAvatar configuration containing the API key.
+
+        Returns:
+            Headers dict suitable for most LiveAvatar API calls.
+        """
+        return {
+            "X-API-KEY": cfg.api_key,
+            "Content-Type": "application/json",
+        }
+
+    def _bearer_headers(self, handle: AvatarSessionHandle) -> Dict[str, str]:
+        """Build headers with ``Authorization: Bearer`` for start_session.
+
+        Args:
+            handle: The session handle whose ``session_token`` to use.
+
+        Returns:
+            Headers dict for the start_session API call.
+        """
+        return {
+            "Authorization": f"Bearer {handle.session_token}",
+            "Content-Type": "application/json",
+        }
+
+    async def _post(
+        self,
+        url: str,
+        *,
+        headers: Dict[str, str],
+        json: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Execute a POST request and return the parsed JSON body.
+
+        Args:
+            url: The request URL.
+            headers: Request headers.
+            json: JSON-serialisable request body.
+
+        Returns:
+            Parsed JSON response dict (may be empty for 204 responses).
+
+        Raises:
+            RuntimeError: If the client session is not initialised.
+            aiohttp.ClientResponseError: On non-2xx responses.
+        """
+        if self._session is None:
+            raise RuntimeError(
+                "LiveAvatarClient has no active aiohttp session. "
+                "Use 'async with LiveAvatarClient(cfg) as client:' or "
+                "call __aenter__ before using the client."
+            )
+        async with self._session.post(url, headers=headers, json=json) as resp:
+            resp.raise_for_status()
+            if resp.content_type == "application/json":
+                return await resp.json()  # type: ignore[no-any-return]
+            return {}
+
+    def _start_keep_alive(self, handle: AvatarSessionHandle) -> None:
+        """Start the background keep-alive task.
+
+        Cancels any existing task before creating a new one.
+
+        Args:
+            handle: The active session handle.
+        """
+        self._cancel_keep_alive()
+        self._keep_alive_task = asyncio.create_task(
+            self._keep_alive_loop(handle),
+            name=f"liveavatar-keepalive-{handle.liveavatar_session_id}",
+        )
+
+    def _cancel_keep_alive(self) -> None:
+        """Cancel the keep-alive background task if running."""
+        if self._keep_alive_task is not None and not self._keep_alive_task.done():
+            self._keep_alive_task.cancel()
+        self._keep_alive_task = None
+
+    async def _keep_alive_loop(self, handle: AvatarSessionHandle) -> None:
+        """Background coroutine that sends periodic keep-alive pings.
+
+        Runs every :data:`_KEEP_ALIVE_INTERVAL` seconds (< 5 min inactivity
+        timeout) until cancelled.
+
+        Args:
+            handle: The active session handle.
+        """
+        try:
+            while True:
+                await asyncio.sleep(_KEEP_ALIVE_INTERVAL)
+                await self.keep_alive(handle)
+        except asyncio.CancelledError:
+            self.logger.debug(
+                "LiveAvatarClient: keep-alive loop cancelled for %s",
+                handle.liveavatar_session_id,
+            )
