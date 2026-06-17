@@ -98,9 +98,15 @@ Python changes.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-18
+**Status**: done-with-issues
+**Notes**: The AgentChat Svelte frontend repo is NOT present in this Python monorepo worktree.
+Per the task's own Agent Instructions (step 2): "If the AgentChat frontend repo is NOT
+available in this worktree, STOP and mark done-with-issues (coordinate with Jesus). Do NOT
+scaffold Svelte/JS files in the Python monorepo." This task is tracked here for completeness;
+the LiveKit viewer Svelte component must be implemented in the AgentChat repo. Coordinate
+with Jesus to implement TASK-009 there using the response contract from TASK-007:
+``{ livekit_url, client_token, session_id }`` returned by
+``POST /api/v1/agents/avatar/{agent_id}/start``.
+**Deviations from spec**: No code produced. Frontend implementation deferred to AgentChat repo.
