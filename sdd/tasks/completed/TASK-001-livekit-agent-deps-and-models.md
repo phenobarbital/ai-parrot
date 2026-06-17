@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-243 — LiveAvatar Phase C (voice-native hybrid, ai-parrot as the brain)
 **Spec**: `sdd/specs/liveavatar-phase-c-voice-native.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker (Opus)
 
 ---
 
@@ -202,8 +202,28 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Opus 4.8)
+**Date**: 2026-06-18
+**Notes**: Added the `liveavatar-voice` optional extra to
+`packages/ai-parrot-integrations/pyproject.toml` (pinned `livekit-agents~=1.5`
++ deepgram/cartesia/silero/turn-detector plugins, all `~=1.5`) and wired it into
+the `all` meta-extra. Created the `livekit_agent` sub-package with `__init__.py`
+(re-exports the two models) and `models.py` containing `AvatarJobMetadata` and
+`StructuredOutputMessage` exactly per spec §2 — pure Pydantic v2, no
+`livekit-agents` import, so the module loads without the extra. Added 5 unit
+tests (incl. `test_job_metadata_parsing` via `model_validate_json`); all pass.
+`ruff` clean; pyproject TOML validated.
 
-**Deviations from spec**: none | describe if any
+**Testing note**: the worktree shares the main repo's editable venv, whose
+`.pth` resolves `parrot` to the main-repo source roots. Tests were run with the
+worktree's `packages/ai-parrot-integrations/src` prepended to `PYTHONPATH` so
+`parrot.integrations.liveavatar` resolves from the worktree:
+`PYTHONPATH=<wt>/packages/ai-parrot-integrations/src python -m pytest ...` →
+`5 passed`.
+
+**Deviations from spec**: none. Did NOT create `liveavatar/__init__.py` — that
+parent package file belongs to FEAT-242 (out of this task's scope); the
+`livekit_agent` sub-package imports correctly because `parrot.integrations` is a
+PEP 420 namespace package that merges the source roots. P5 pin (`~=1.5`) is a
+provisional anchor from spec §7 — TASK-003/004 must validate signatures against
+the actually-resolved version before finalising.
