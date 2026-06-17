@@ -6,11 +6,13 @@ the individual submodules.
 """
 from __future__ import annotations
 
+from .avatar_ws import AvatarWebSocket
 from .client import LiveAvatarClient
 from .models import AvatarSessionHandle, LiveAvatarConfig, LiveKitRoomTokens
 
 __all__ = [
     "AvatarSessionHandle",
+    "AvatarWebSocket",
     "LiveAvatarClient",
     "LiveAvatarConfig",
     "LiveKitRoomTokens",
