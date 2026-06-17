@@ -65,6 +65,9 @@ voice-supertonic = [
 voice-moonshine = [
     "useful-moonshine-onnx",
 ]
+liveavatar = [
+    "livekit-api>=1.0",
+]
 voice = [
     "ai-parrot-integrations[voice-local]",
     "ai-parrot-integrations[voice-openai]",
