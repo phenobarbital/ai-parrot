@@ -186,46 +186,45 @@ class SpeakableFlattener:
         """Split the current buffer on sentence boundaries and drain them.
 
         Strategy:
-        1. Clean the buffer (strip markdown).
+        1. Strip markdown from the current raw buffer (BEFORE stripping ws).
         2. Split on ``_RE_SENTENCE_SPLIT`` (terminal punct + whitespace).
+           Critically: we do NOT strip the cleaned text before splitting so
+           that a trailing space in the chunk acts as a valid sentence boundary.
         3. Emit all segments except the last one as complete sentences.
-           The last segment is the partial (tail) kept for the next call.
-        4. A segment is emitted only if the cleaned text up to that point
-           ends with terminal punctuation — which is guaranteed by the split
-           pattern.
+        4. If the last segment also ends with terminal punctuation emit it too.
 
         Returns:
             List of complete speakable sentences extracted from the buffer.
         """
-        cleaned = self._strip_markdown(self._buffer).strip()
-        if not cleaned:
+        # Clean but do NOT call .strip() here — trailing whitespace from the
+        # incoming chunk is the sentence boundary signal we rely on.
+        cleaned = self._strip_markdown(self._buffer)
+        if not cleaned.strip():
             return []
 
-        # Split gives: ["First sentence.", "Second sentence.", "partial"]
+        # Split gives: ["First sentence.", " Second sentence.", " partial"]
         # Everything but the last part ends with [.!?]
         parts = _RE_SENTENCE_SPLIT.split(cleaned)
         # parts[-1] is the tail (may or may not end with terminal punct)
 
         if len(parts) <= 1:
-            # No boundary found; keep accumulating
-            # Update buffer with cleaned version to avoid re-processing markup
+            # No whitespace-after-punct boundary found yet; keep accumulating.
+            # Store the cleaned version (without raw markdown) as the buffer
+            # so future feeds don't re-process markup that was already removed.
             self._buffer = cleaned
             return []
 
-        # Determine which segments are truly complete sentences
-        # (they come from splits — the separator is terminal punct + ws,
-        # so each segment up to the last is complete).
         complete = parts[:-1]
         tail = parts[-1]
 
         sentences = [s.strip() for s in complete if s.strip()]
 
         # If the last segment itself ends with terminal punctuation,
-        # it is also a complete sentence (occurs at EOS).
+        # it is also a complete sentence (occurs at EOS or when the stream ends).
         if tail.strip() and re.search(r"[.!?]$", tail.strip()):
             sentences.append(tail.strip())
             self._buffer = ""
         else:
-            self._buffer = tail  # retain tail (cleaned) for next feed()
+            self._buffer = tail.lstrip()  # retain tail for next feed()
 
         return sentences
