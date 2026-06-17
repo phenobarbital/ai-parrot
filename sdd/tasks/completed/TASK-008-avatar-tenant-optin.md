@@ -133,9 +133,34 @@ def test_optin_default_deny():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-18
+**Notes**: 9/9 tests pass, lint clean.
 
-**Completed by**:
-**Date**:
-**Notes** (MUST document Q-tenant flag location decision):
-**Deviations from spec**:
+Q-tenant flag location decision (MUST document):
+No existing program/tenant flag mechanism was found in the codebase (grep over all server
+handlers and the ai-parrot package found no ``tenant_id`` resolution infrastructure).
+
+Interim implementation chosen: two environment variables form a comma-separated allowlist:
+
+- ``LIVEAVATAR_ENABLED_TENANTS``: comma-separated tenant IDs allowed to use avatar mode.
+  Set to ``*`` to allow all (dev/staging only). Absent or empty -> default-deny.
+- ``LIVEAVATAR_ENABLED_AGENTS``: optional comma-separated list of agent slugs; if set,
+  both tenant AND agent must match. If absent, any agent is accepted.
+
+The ``is_avatar_enabled(tenant_id, agent_name) -> bool`` interface is stable. When the
+authoritative program flag location is decided (Q-tenant candidates: a DB column, a
+NavConfig key, or a feature-flag service), only ``optin.py`` needs updating; no callers change.
+
+``agent_voice.py`` gating was already wired in TASK-007 via lazy import of
+``parrot.integrations.liveavatar.optin.is_avatar_enabled``. No additional changes needed here.
+
+``AvatarSessionHandle.tenant_id`` field -- the task acceptance criterion mentions threading
+``tenant_id`` into the handle. The current ``AvatarSessionHandle`` model (TASK-001) does not
+have a ``tenant_id`` field (it was not in the spec models). The tenant identity is carried
+through ``is_avatar_enabled()`` (called before handle creation) and logged server-side.
+Adding a ``tenant_id`` field to the handle is deferred to Phase C (FEAT-243) as it would
+require modifying the TASK-001 model (out of scope here).
+
+**Deviations from spec**: ``AvatarSessionHandle.tenant_id`` not populated (field does not
+exist in the model from TASK-001; deferred to FEAT-243). All other acceptance criteria met.
