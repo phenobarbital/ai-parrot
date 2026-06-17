@@ -10,6 +10,7 @@ from .avatar_ws import AvatarWebSocket
 from .client import LiveAvatarClient
 from .models import AvatarSessionHandle, LiveAvatarConfig, LiveKitRoomTokens
 from .room_manager import LiveKitRoomManager
+from .speakable import SpeakableFlattener
 
 __all__ = [
     "AvatarSessionHandle",
@@ -18,4 +19,5 @@ __all__ = [
     "LiveAvatarConfig",
     "LiveKitRoomManager",
     "LiveKitRoomTokens",
+    "SpeakableFlattener",
 ]
