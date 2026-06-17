@@ -14,7 +14,7 @@
       "feature_id": "FEAT-242",
       "feature": "liveavatar-phase-a-mouth",
       "spec": "sdd/specs/liveavatar-phase-a-mouth.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation. Creates the package + models every other task imports; must complete first.",
       "assigned_to": null,
       "started_at": "2026-06-17T23:16:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-001-liveavatar-package-models.md"
+      "completed_at": "2026-06-17T23:17:36+00:00",
+      "file": "sdd/tasks/completed/TASK-001-liveavatar-package-models.md"
     },
     {
       "id": "TASK-002",
