@@ -32,7 +32,7 @@
       "feature_id": "FEAT-243",
       "feature": "liveavatar-phase-c-voice-native",
       "spec": "sdd/specs/liveavatar-phase-c-voice-native.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -40,10 +40,10 @@
       ],
       "parallel": false,
       "parallelism_notes": "Module 3 (P4). Depends only on TASK-001 models + the existing UserSocketManager.broadcast_to_channel (verified user.py:357). NOT blocked by FEAT-242. Sequential in the same worktree; TASK-003 imports it.",
-      "assigned_to": null,
+      "assigned_to": "sdd-worker",
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-002-output-bridge.md"
+      "completed_at": "2026-06-17T23:24:18+00:00",
+      "file": "sdd/tasks/completed/TASK-002-output-bridge.md"
     },
     {
       "id": "TASK-003",

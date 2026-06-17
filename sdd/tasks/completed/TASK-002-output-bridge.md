@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-243 — LiveAvatar Phase C (voice-native hybrid, ai-parrot as the brain)
 **Spec**: `sdd/specs/liveavatar-phase-c-voice-native.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-001
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker (Opus)
 
 ---
 
@@ -193,8 +193,21 @@ async def test_output_bridge_contract():
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Opus 4.8)
+**Date**: 2026-06-18
+**Notes**: Created `parrot/integrations/liveavatar/output_bridge.py` (directly
+under `liveavatar/`, per spec §3 Module 3 path — NOT under `livekit_agent/`).
+`OutputBridge.publish(StructuredOutputMessage)` is async and calls
+`socket_manager.broadcast_to_channel(channel=msg.session_id, message=msg.model_dump())`,
+keying the AgentChat UI channel by `session_id` (acceptance: avatar speech and UI
+share one conversation). The `UserSocketManager` is dependency-injected and
+duck-typed (`Any`) so `ai-parrot-integrations` keeps no hard import on the
+ai-parrot-server package and the bridge is unit-testable with a fake. Added 3
+tests (`test_output_bridge_contract` + turn_id + per-message); full liveavatar
+suite = 8 passed; `ruff` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. The `StructuredOutputMessage` model is imported
+from `livekit_agent.models` (defined in TASK-001 per spec §2 "Data Models")
+rather than redefined here — this resolves the spec's minor inconsistency
+between §2 (model lives in `livekit_agent/models.py`) and §3 Module 3 ("define
+the contract in output_bridge.py"): the model is defined once and imported.
