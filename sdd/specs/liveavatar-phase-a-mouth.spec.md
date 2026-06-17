@@ -3,16 +3,17 @@ type: feature
 base_branch: dev
 ---
 
-# Feature Specification: LiveAvatar Integration (talking avatar for AgentChat)
+# Feature Specification: LiveAvatar — Phase A (avatar as the "mouth" of AgentChat)
 
 **Feature ID**: FEAT-242
 **Date**: 2026-06-18
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
-> Input brainstorm: `sdd/proposals/liveavatar-integration.brainstorm.md`
-> (Recommended Option: A — Phase 1 → C — Phase 2, both on BYO + LiveKit Cloud).
+> Input brainstorm: `sdd/proposals/liveavatar-integration.brainstorm.md` (Option A).
+> Companion spec: `sdd/specs/liveavatar-phase-c-voice-native.spec.md` (FEAT-243, Phase C —
+> depends on this one for the shared transport, room manager and speakable flattener).
 
 ---
 
@@ -33,32 +34,31 @@ in **LITE Mode** provides only the real-time video + lip-sync; STT/LLM/TTS are o
 LITE Mode has no "speak text" command — it plays **PCM 16-bit, 24 kHz, mono** pushed
 over a WebSocket, so we must produce that PCM ourselves.
 
+**Phase A** is the fastest, lowest-risk path to a talking avatar: ai-parrot resolves the
+full turn through the existing path; its plain (speakable) text is synthesized with
+Supertonic (PCM 24 kHz mono 16-bit — the exact LITE format) and the **backend** pushes that
+PCM to the avatar. No LiveKit voice pipeline / worker is needed in this phase.
+
 ### Goals
 - Give AgentChat a lip-synced talking avatar that speaks the agent's response aloud.
-- **Phase A** — Avatar as the "mouth": ai-parrot resolves the full turn; its plain
-  (speakable) text is synthesized with Supertonic (PCM 24 kHz mono 16-bit) and pushed by
-  the **backend** to the avatar; structured outputs keep rendering in the UI as today.
-- **Phase C** — Voice-native hybrid: keep the LiveKit Agents voice pipeline (STT/VAD/
-  turn-detection/TTS/avatar) but override `llm_node` so ai-parrot is the brain; bifurcate
-  plain text → spoken, structured outputs → AgentChat UI.
-- Unified media transport for both phases: **BYO + LiveKit Cloud** (one room/token layer,
-  no migration between phases).
-- TTS pluggable: Supertonic default in Phase A; Kokoro and others addable without touching
-  the orchestrator.
-- Per-program/tenant **opt-in**; one avatar session = one `tenant_id` + one `agent_name`
-  + one `session_id`.
-- Robust session lifecycle: `keep_alive` < 5 min, guaranteed `stop_session` on every exit
-  path, `max_session_duration` safety net.
+- ai-parrot resolves the full turn (text typed, browser STT, or `AgentVoiceTalk` STT); its
+  speakable text → Supertonic PCM → backend pushes to the avatar; structured outputs keep
+  rendering in the UI as today.
+- Media transport: **BYO + LiveKit Cloud** (one room/token layer, reused by Phase C — no migration).
+- TTS pluggable: Supertonic default; Kokoro and others addable without touching the orchestrator.
+- Per-program/tenant **opt-in**; one avatar session = one `tenant_id` + one `agent_name` + one `session_id`.
+- Robust session lifecycle: `keep_alive` < 5 min, guaranteed `stop_session` on every exit path,
+  `max_session_duration` safety net.
+- Per-sentence streaming to lower TTFB (avatar starts speaking before the full answer).
 
 ### Non-Goals (explicitly out of scope)
-- **FULL Mode + Custom LLM** (LiveAvatar runs the whole pipeline, calls an OpenAI-compatible
-  ai-parrot endpoint) was rejected as the primary path — see
-  `sdd/proposals/liveavatar-integration.brainstorm.md` Option B. It remains a documented
-  fallback only.
+- **Phase C (voice-native hybrid)** — STT/VAD/turn-detection/barge-in via the LiveKit pipeline
+  and the `llm_node` ai-parrot bridge — is a separate spec (FEAT-243).
+- **FULL Mode + Custom LLM** was rejected as the primary path — see
+  `sdd/proposals/liveavatar-integration.brainstorm.md` Option B. Documented fallback only.
 - **Self-hosted LiveKit SFU** — out of scope; we use LiveKit Cloud (managed).
-- Replacing or redefining the existing `AgentVoiceTalk` / streaming / WS handlers — they are
-  extended, not rewritten.
-- Avatar appearance/branding customization beyond selecting an `avatar_id`.
+- Replacing/redefining `AgentVoiceTalk` / streaming / WS handlers — extended, not rewritten.
+- Avatar appearance/branding beyond selecting an `avatar_id`.
 
 ---
 
@@ -66,35 +66,22 @@ over a WebSocket, so we must produce that PCM ourselves.
 
 ### Overview
 
-We build a talking-avatar presentation layer in two phases sharing one media transport
-(**BYO + LiveKit Cloud**).
-
-**Phase A — Avatar as "mouth".** ai-parrot resolves the entire turn through the existing
-path (text typed, browser STT, or `AgentVoiceTalk` STT). A new backend **avatar session
+ai-parrot resolves the entire turn through the existing path. A new backend **avatar session
 orchestrator** opens the LiveAvatar session (LITE, with `livekit_config` so the avatar joins
 *our* LiveKit Cloud room), consumes `ask_stream()`, segments the stream into sentences,
 flattens markdown to speakable text incrementally, synthesizes each sentence with Supertonic
-(`synthesize_pcm()` → PCM int16 LE mono 24 kHz — the exact LITE format, no resampling), and
-pushes PCM frames to the avatar over the ported `AvatarWebSocket`. The browser joins the same
-room with a `client_token` and renders `<video>`/`<audio>`; structured outputs (charts/data/
-canvas) keep flowing to the AgentChat UI unchanged. The avatar agent token and the avatar WS
-stay server-side.
+(`synthesize_pcm()` → PCM int16 LE mono 24 kHz — no resampling), and pushes PCM frames to the
+avatar over the ported `AvatarWebSocket`. The browser joins the same room with a `client_token`
+and renders `<video>`/`<audio>`; structured outputs (charts/data/canvas) keep flowing to the
+AgentChat UI unchanged. The avatar agent token and the avatar WS stay server-side.
 
-**Phase C — Voice-native hybrid.** The LiveKit Agents pipeline (STT/VAD/turn-detection/TTS/
-avatar) runs in a long-lived worker that is a participant of the **same** LiveKit Cloud room.
-`LiveAvatarAgent` overrides `llm_node` to call ai-parrot (`ask_stream`) instead of LiveKit's
-LLM; it `yield`s plain text → LiveKit TTS → avatar, and publishes structured outputs to the
-AgentChat UI channel via `UserSocketManager.broadcast_to_channel()` keyed by `session_id`.
-
-A `LiveKitRoomManager` (`livekit-api`) mints the room + client/agent tokens for both phases.
-A `speakable-text flattener` (new) strips markdown/code/tables and segments sentences for
+A `LiveKitRoomManager` (`livekit-api`) mints the room + client/agent tokens (shared with
+Phase C). A `SpeakableFlattener` (new) strips markdown/code/tables and segments sentences for
 streaming TTS. The whole avatar layer is opt-in per program/tenant.
 
 ### Component Diagram
 
 ```
-Phase A (Avatar as "mouth"):
-
 [Browser] text / STT ──→ AgentVoiceTalk (avatar-mode flag)
                               │
                               ▼
@@ -113,22 +100,8 @@ Phase A (Avatar as "mouth"):
         │                                                       structured outputs
         ▼                                                              │
    our LiveKit Cloud room  ──────────────────────────────────────────┐│
-        │                                                             ││
-        ▼                                                             ▼▼
+        │                                                             ▼▼
    [Browser viewer] <video>/<audio>                    AgentChat UI (existing WS)
-
-Phase C (Voice-native hybrid):
-
-[Browser] mic ──→ LiveKit room ──→ AgentSession(STT/VAD/turn) ──→ llm_node override
-                                                                       │
-                                          ai-parrot ask_stream() ◄─────┘
-                                          │                    │
-                                  plain text (yield)     structured outputs
-                                          │                    │
-                                   LiveKit TTS ──→ avatar   broadcast_to_channel(session_id)
-                                                                │
-                                                                ▼
-                                                          AgentChat UI
 ```
 
 ### Integration Points
@@ -137,10 +110,8 @@ Phase C (Voice-native hybrid):
 |---|---|---|
 | `AgentVoiceTalk` (`agent_voice.py:57`) | extends | Add avatar-mode flag; reuse STT-in/TTS-out pattern around unchanged text dispatch. |
 | `VoiceSynthesizer` / Supertonic (`synthesizer.py:53`, `supertonic_inference.py:528`) | uses | `synthesize_pcm()` → PCM 24 kHz mono 16-bit; add Kokoro via `_get_backend()` factory. |
-| `BaseBot.ask_stream` (`base.py:1456`) | uses | Per-sentence streaming source for avatar speech / `llm_node`. |
-| `UserSocketManager.broadcast_to_channel` (`user.py:357`) | uses | Phase C structured-output bridge to AgentChat UI keyed by `session_id`. |
+| `BaseBot.ask_stream` (`base.py:1456`) | uses | Per-sentence streaming source for avatar speech. |
 | `StreamHandler` (`stream.py:197`) | uses | Existing streaming surface; reference for the avatar speech consumer. |
-| `web_hitl.py` (`ws_channel_id` / `current_web_session`) | uses | Channel-routing pattern for the output bridge. |
 | `AIMessage` (`responses.py:72`) | uses | Final stream sentinel; carries structured outputs / `tool_calls` / `artifact_id`. |
 | AgentChat frontend (Svelte 5) | new | LiveKit viewer component, opt-in aware, shares `session_id`. |
 | Deployment | new | Long-lived stateful process (spawn-per-session or warm pool). |
@@ -148,16 +119,16 @@ Phase C (Voice-native hybrid):
 ### Data Models
 
 ```python
-# New Pydantic models (parrot/integrations/liveavatar/models.py — to create)
+# parrot/integrations/liveavatar/models.py — to create
 
 class LiveAvatarConfig(BaseModel):
-    api_key: str                      # from LIVEAVATAR_API_KEY (env)
-    avatar_id: str                    # from LIVEAVATAR_AVATAR_ID (env)
+    api_key: str                      # LIVEAVATAR_API_KEY (env)
+    avatar_id: str                    # LIVEAVATAR_AVATAR_ID (env)
     base_url: str = "https://api.liveavatar.com"
     is_sandbox: bool = True
     max_session_duration: Optional[int] = None
-    quality: str = "..."              # video_settings.quality — confirm enum at impl
-    encoding: str = "..."             # video_settings.encoding — confirm enum at impl
+    quality: str = "..."              # video_settings.quality — confirm enum (Q-video-settings)
+    encoding: str = "..."             # video_settings.encoding — confirm enum (Q-video-settings)
 
 class LiveKitRoomTokens(BaseModel):
     livekit_url: str                  # wss://<project>.livekit.cloud
@@ -172,17 +143,12 @@ class AvatarSessionHandle(BaseModel):
     ws_url: str                       # avatar media-server WS
     tenant_id: Optional[str] = None
     agent_name: str
-
-class SpeakablePiece(BaseModel):
-    kind: Literal["speakable", "structured"]
-    text: Optional[str] = None        # for kind="speakable"
-    payload: Optional[dict] = None    # for kind="structured" (charts/data/canvas)
 ```
 
 ### New Public Interfaces
 
 ```python
-# parrot/integrations/liveavatar/ (to create) — signatures illustrative, confirm at impl
+# parrot/integrations/liveavatar/ — signatures illustrative, confirm at impl
 
 class LiveAvatarClient:               # ported from starter src/liveavatar_client.py → aiohttp
     async def create_session_token(self, cfg: LiveAvatarConfig,
@@ -197,10 +163,10 @@ class AvatarWebSocket:                # ported from starter src/avatar_ws.py →
     async def finish_speaking(self) -> None: ...
     async def interrupt(self) -> None: ...
 
-class LiveKitRoomManager:             # livekit-api
+class LiveKitRoomManager:             # livekit-api (shared with Phase C)
     def mint_room_tokens(self, room: str, identity: str) -> LiveKitRoomTokens: ...
 
-class SpeakableFlattener:             # new
+class SpeakableFlattener:             # new (shared with Phase C)
     def feed(self, chunk: str) -> list[str]: ...   # incremental → complete sentences
     def flush(self) -> list[str]: ...
 
@@ -212,9 +178,6 @@ class AvatarSessionOrchestrator:      # new — Phase A glue
 ---
 
 ## 3. Module Breakdown
-
-> One module per brainstorm capability as a starting point. Phase A = Modules 1–7;
-> Phase C = Modules 8–9.
 
 ### Module 1: LiveAvatar HTTP client + session lifecycle
 - **Path**: `parrot/integrations/liveavatar/client.py`
@@ -233,20 +196,20 @@ class AvatarSessionOrchestrator:      # new — Phase A glue
 ### Module 3: LiveKit room manager (BYO Cloud)
 - **Path**: `parrot/integrations/liveavatar/room_manager.py`
 - **Responsibility**: mint room + client/agent tokens via `livekit-api`; env
-  `LIVEKIT_URL/API_KEY/API_SECRET`. (capability `livekit-room-manager`)
+  `LIVEKIT_URL/API_KEY/API_SECRET`. **Shared with Phase C.** (capability `livekit-room-manager`)
 - **Depends on**: none (new dep `livekit-api`).
 
 ### Module 4: Speakable-text flattener + sentence segmenter
 - **Path**: `parrot/integrations/liveavatar/speakable.py`
 - **Responsibility**: markdown→speakable plaintext (strip code fences/tables/md syntax),
-  incremental sentence segmentation for streaming TTS. (capability `speakable-text-flattener`)
+  incremental sentence segmentation for streaming TTS. **Shared with Phase C.** (capability `speakable-text-flattener`)
 - **Depends on**: none.
 
 ### Module 5: Avatar session orchestrator
 - **Path**: `parrot/integrations/liveavatar/orchestrator.py`
 - **Responsibility**: glue — open LiveAvatar session (with `livekit_config`), consume
   `ask_stream()`, run flattener+segmenter, `VoiceSynthesizer` per sentence → PCM → `AvatarWebSocket`;
-  lifecycle (keep_alive/stop). (capability `avatar-audio-bridge`/orchestration)
+  lifecycle (keep_alive/stop). (capability avatar orchestration)
 - **Depends on**: Modules 1, 2, 3, 4; `VoiceSynthesizer`, `ask_stream`.
 
 ### Module 6: Avatar session endpoint + avatar-mode flag
@@ -257,27 +220,14 @@ class AvatarSessionOrchestrator:      # new — Phase A glue
 
 ### Module 7: Per-tenant opt-in gating
 - **Path**: `parrot/integrations/liveavatar/optin.py` (+ wiring into the endpoint)
-- **Responsibility**: resolve per-program/tenant opt-in; inject `tenant_id` into ai-parrot calls
-  and (Phase C) LiveKit job metadata. (capability `avatar-tenant-optin`)
+- **Responsibility**: resolve per-program/tenant opt-in; inject `tenant_id` into ai-parrot calls.
+  (capability `avatar-tenant-optin`)
 - **Depends on**: Module 6; existing auth/program pattern.
 
-### Module 8 (Phase C): LiveKit Agents worker + `llm_node` ai-parrot bridge
-- **Path**: `parrot/integrations/liveavatar/livekit_agent/` (agent.py, pipeline.py, worker.py)
-- **Responsibility**: adapt starter; override `llm_node` to call ai-parrot (`ask_stream`),
-  `yield` speakable text, inject `tenant_id`/`agent_name`/`session_id` via job metadata.
-  (capability `llm-node-aiparrot-bridge`)
-- **Depends on**: Modules 3, 4; `ask_stream`; new dep `livekit-agents` (pinned).
-
-### Module 9 (Phase C): Structured-output → AgentChat UI bridge
-- **Path**: `parrot/integrations/liveavatar/output_bridge.py`
-- **Responsibility**: define message contract; publish structured outputs to the AgentChat UI
-  channel via `broadcast_to_channel()` keyed by `session_id`. (capability `llm-node-aiparrot-bridge`)
-- **Depends on**: Module 8; `UserSocketManager.broadcast_to_channel`.
-
-### Module 10: Frontend LiveKit viewer (Svelte 5)
+### Module 8: Frontend LiveKit viewer (Svelte 5)
 - **Path**: AgentChat frontend (separate repo/package — coordinate)
-- **Responsibility**: embed `livekit-client` viewer in AgentChat, opt-in aware, share
-  `session_id`. (capability `avatar-viewer-frontend`)
+- **Responsibility**: embed `livekit-client` viewer in AgentChat, opt-in aware, share `session_id`.
+  (capability `avatar-viewer-frontend`)
 - **Depends on**: Module 6.
 
 ---
@@ -300,15 +250,12 @@ class AvatarSessionOrchestrator:      # new — Phase A glue
 | `test_supertonic_pcm_format` | M5 | output is PCM int16 LE mono 24 kHz (no resampling) |
 | `test_avatar_mode_flag_optin` | M6/M7 | avatar mode only when tenant opt-in enabled |
 | `test_endpoint_returns_viewer_token` | M6 | response carries `livekit_url` + `client_token`, not agent token |
-| `test_llm_node_yields_speakable` | M8 | `llm_node` yields plain str from ai-parrot stream |
-| `test_output_bridge_contract` | M9 | structured outputs published with the agreed schema to `session_id` channel |
 
 ### Integration Tests
 | Test | Description |
 |---|---|
 | `test_phase_a_end_to_end_sandbox` | text in → ai-parrot → Supertonic PCM → avatar speaks (LiveAvatar `is_sandbox=true`) |
 | `test_phase_a_barge_in` | `agent.interrupt` clears scheduled audio |
-| `test_phase_c_voice_roundtrip_sandbox` | mic → STT → `llm_node`→ai-parrot → TTS → avatar; outputs to UI |
 | `test_session_teardown_on_disconnect` | abandoned session closes via `max_session_duration` backstop |
 
 ### Test Data / Fixtures
@@ -329,8 +276,8 @@ def fake_avatar_ws():
 
 > This feature is complete when ALL of the following are true:
 
-- [ ] **Phase A** unit tests pass (`pytest packages/.../tests/integrations/liveavatar -v`)
-- [ ] **Phase A** integration test passes end-to-end in LiveAvatar sandbox (`is_sandbox=true`)
+- [ ] Phase A unit tests pass (`pytest packages/.../tests/integrations/liveavatar -v`)
+- [ ] Phase A integration test passes end-to-end in LiveAvatar sandbox (`is_sandbox=true`)
 - [ ] Supertonic output verified as **PCM 16-bit, 24 kHz, mono** with no resampling
 - [ ] Avatar WS never sends commands before `session.state_updated == "connected"`
 - [ ] PCM chunking respects ~400 ms first chunk, ~1 s thereafter, ≤1 MB/packet
@@ -343,7 +290,6 @@ def fake_avatar_ws():
 - [ ] Per-sentence streaming reduces TTFB (avatar starts speaking before the full answer)
 - [ ] Speakable flattener strips markdown/code/tables before TTS
 - [ ] Secrets (`LIVEAVATAR_API_KEY`, `LIVEKIT_API_KEY/SECRET/URL`, `LIVEAVATAR_AVATAR_ID`) read from env only
-- [ ] **Phase C** (when implemented): `llm_node` override calls ai-parrot; structured outputs bridged to AgentChat UI via `broadcast_to_channel()` keyed by `session_id`
 - [ ] No breaking changes to existing `AgentVoiceTalk` / streaming / WS public API
 
 ---
@@ -408,10 +354,6 @@ class AIMessage(BaseModel):                                 # line 72
 # packages/ai-parrot-server/src/parrot/handlers/stream.py
 class StreamHandler(BaseHandler):                           # line 11
     async def stream_websocket(self, request) -> web.WebSocketResponse: ...  # line 197 (GET /bots/{bot_id}/stream/ws)
-
-# packages/ai-parrot-server/src/parrot/handlers/user.py
-class UserSocketManager(WebSocketManager):                  # line 27
-    async def broadcast_to_channel(self, channel, message, exclude_ws=None): ...  # line 357
 ```
 
 ### Integration Points
@@ -421,17 +363,14 @@ class UserSocketManager(WebSocketManager):                  # line 27
 | `AvatarSessionOrchestrator` | `VoiceSynthesizer`/Supertonic | `synthesize_pcm()` | `supertonic_inference.py:528` |
 | `AvatarSessionEndpoint` | `AgentVoiceTalk` | extend handler + avatar-mode flag | `agent_voice.py:57` |
 | Kokoro backend (future) | `VoiceSynthesizer._get_backend()` | new `elif` + `AbstractTTSBackend` subclass | `synthesizer.py:53` |
-| Output bridge (Phase C) | `UserSocketManager.broadcast_to_channel()` | publish keyed by `session_id` | `user.py:357` |
-| Output bridge (Phase C) | `ws_channel_id` / `current_web_session` | channel routing pattern | `web_hitl.py` |
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~any `livekit` / `liveavatar` / `webrtc` / `aiortc` / `avatar` code~~ — **ZERO** matches in
-  `packages/*/src` (confirmed 2026-06-18). Clean slate; everything LiveKit/LiveAvatar is new.
+  `packages/*/src` (confirmed 2026-06-18). Clean slate.
 - ~~a markdown→speakable-plaintext flattener~~ — does not exist (only `_flatten_adf` for Atlassian
   ADF in `bots/github_reviewer.py`, and `strip_html_text` in `utils/jsonld_extractors.py`). Build it (P2).
 - ~~`tenant_id` threaded through the chat endpoint~~ — the chat path threads `user_id`/`session_id`
   only; `tenant` appears in crew Redis persistence, not in `AgentTalk`. Opt-in needs explicit wiring.
-- ~~a LiveKit `llm_node` override or a structured-output→UI bridge~~ — neither exists (P4/P5).
 - ~~partial-token emission over `ws_channel_id` from `/agents/chat`~~ — streaming is via
   `ask_stream()` over **HTTP chunked** and the **`StreamHandler` WebSocket** (`/bots/{id}/stream/ws`),
   NOT over the `/ws/userinfo` channel.
@@ -442,10 +381,10 @@ class UserSocketManager(WebSocketManager):                  # line 27
 
 ### Patterns to Follow
 - Async-first throughout (`aiohttp`, never `requests`/`httpx`); port starter's httpx/websockets to `aiohttp`.
-- Pydantic models for all structured data (`LiveAvatarConfig`, `LiveKitRoomTokens`, `AvatarSessionHandle`, `SpeakablePiece`).
+- Pydantic models for all structured data (`LiveAvatarConfig`, `LiveKitRoomTokens`, `AvatarSessionHandle`).
 - `self.logger` for logging; no `print`.
 - New code under `parrot/integrations/liveavatar/` (aligns with `parrot/integrations/` convention).
-- Add `livekit-api` (Phase A) and `livekit-agents`+plugins (Phase C) as an **optional extra** in `pyproject.toml`.
+- Add `livekit-api` as an **optional extra** in `pyproject.toml`.
 - Reuse the `AbstractTTSBackend` + `_get_backend()` factory to keep TTS pluggable (Kokoro later).
 - Secrets via env only: `LIVEAVATAR_API_KEY`, `LIVEAVATAR_AVATAR_ID`, `LIVEAVATAR_BASE_URL` (opt),
   `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`.
@@ -456,20 +395,16 @@ class UserSocketManager(WebSocketManager):                  # line 27
 - **WS disconnect** → reconnect with `start` replay (port from starter `avatar_ws.py`).
 - **PCM limits** → ≤1 MB/packet, ~1 s chunks, ~400 ms first chunk for TTFB.
 - **Markdown read aloud** → flattener must strip code fences/tables/md syntax.
-- **Long `tool_calls` (Phase C)** → filler utterance / "thinking" state to avoid dead air.
 - **TTS failure** → graceful degradation to text-only (mirror `AgentVoiceTalk`).
-- **Cost** → Phase A uses LiveKit room + LiveAvatar minutes only (no LiveKit inference); Phase C adds LiveKit inference (STT/TTS) billed to LiveKit Cloud credits; use `is_sandbox=true` in dev.
+- **Cost** → Phase A uses LiveKit room + LiveAvatar minutes only (no LiveKit inference); use `is_sandbox=true` in dev.
 - **Deployment** → long-lived stateful process; spawn-per-session vs warm pool unresolved (Q-deploy).
-- **`livekit-agents` version** → pin and validate the exact `llm_node` signature before Phase C (P5).
 
 ### External Dependencies
 | Package | Version | Reason |
 |---|---|---|
-| `livekit-api` | `>=0.x` (pin at impl) | Mint LiveKit Cloud room + client/agent tokens (BYO) — Phase A |
-| `livekit-agents` | `~=1.5` (pin at impl) | Voice pipeline + `llm_node` override — Phase C |
-| `livekit-plugins-*` | pin at impl | Deepgram STT, Cartesia TTS, Silero VAD, MultilingualModel turn-detection — Phase C |
+| `livekit-api` | `>=0.x` (pin at impl) | Mint LiveKit Cloud room + client/agent tokens (BYO) |
 | `aiohttp` | existing | LiveAvatar HTTP client + avatar WebSocket (project standard) |
-| Supertonic (existing) | existing | TTS text→PCM 24 kHz mono 16-bit (Phase A) |
+| Supertonic (existing) | existing | TTS text→PCM 24 kHz mono 16-bit |
 | `livekit-client` (JS) | pin at impl | Browser viewer (frontend) |
 
 ---
@@ -478,20 +413,18 @@ class UserSocketManager(WebSocketManager):                  # line 27
 
 > Resolved items (from brainstorm) are `[x]`; unresolved are `[ ]`.
 
-- [x] P1 — Does ai-parrot stream partial tokens? — *Resolved in brainstorm*: Yes, via `ask_stream()` over HTTP-chunked and the `StreamHandler` WebSocket (`/bots/{id}/stream/ws`), NOT over the `/ws/userinfo` channel. Avatar speech (Phase A) consumes `ask_stream()` directly.
-- [x] P2 — Is there a "speakable text" field/flattener? — *Resolved in brainstorm*: No. Build a markdown→plaintext flattener (incremental + sentence segmentation). `AIMessage.to_text` exists but does not strip markdown.
+- [x] P1 — Does ai-parrot stream partial tokens? — *Resolved in brainstorm*: Yes, via `ask_stream()` over HTTP-chunked and the `StreamHandler` WebSocket (`/bots/{id}/stream/ws`), NOT over the `/ws/userinfo` channel. Avatar speech consumes `ask_stream()` directly.
+- [x] P2 — Is there a "speakable text" field/flattener? — *Resolved in brainstorm*: No. Build a markdown→plaintext flattener (incremental + sentence segmentation).
 - [x] P3 — Any avatar integration code today? — *Resolved in brainstorm*: None. Clean slate.
-- [x] Media transport — *Resolved in brainstorm*: BYO + LiveKit Cloud for both phases (no migration; `lk agent deploy` applies in Phase C).
-- [x] TTS choice — *Resolved in brainstorm*: Supertonic in Phase A (pluggable, Kokoro later); LiveKit inference in Phase C.
+- [x] Media transport — *Resolved in brainstorm*: BYO + LiveKit Cloud (shared with Phase C).
+- [x] TTS choice — *Resolved in brainstorm*: Supertonic (pluggable, Kokoro later).
 - [x] Tenant model — *Resolved in brainstorm*: Avatar is opt-in per program/tenant.
 - [x] Orchestration locus — *Resolved in brainstorm*: Backend orchestrates the PCM push; frontend is viewer-only.
 - [x] Streaming granularity — *Resolved in brainstorm*: Per-sentence via `ask_stream` to lower TTFB.
-- [ ] P4 — Phase C: define the structured-outputs → AgentChat UI bridge contract (message schema + channel; likely `broadcast_to_channel()` keyed by `session_id`). — *Owner: Jesús / Claude Code*
-- [ ] P5 — Pin `livekit-agents` version and validate the exact `llm_node` signature before Phase C. — *Owner: Jesús*
 - [ ] P6 — Confirm Supertonic streaming/chunked behavior (per-sentence latency on target hardware) and whether a 400 ms first chunk is achievable. — *Owner: Claude Code*
 - [ ] P7 — `keep_alive`: HTTP `/v1/sessions/keep-alive` vs WS `session.keep_alive` for the BYO flow — pick one. — *Owner: Claude Code*
 - [ ] Q-deploy — spawn-per-session vs warm worker pool for the long-lived stateful process. — *Owner: Jesús*
-- [ ] Q-tenant — exact opt-in mechanism (program flag location) and how `tenant_id` is injected into ai-parrot calls + LiveKit job metadata. — *Owner: Jesús / Claude Code*
+- [ ] Q-tenant — exact opt-in mechanism (program flag location) and how `tenant_id` is injected into ai-parrot calls. — *Owner: Jesús / Claude Code*
 - [ ] Q-skills — install LiveAvatar Agent Skills (`npx skills add heygen-com/liveavatar-agent-skills`) before implementation? — *Owner: Jesús*
 - [ ] Q-video-settings — confirm LITE `video_settings.quality`/`encoding` enum values against the API reference. — *Owner: Claude Code*
 
@@ -500,18 +433,17 @@ class UserSocketManager(WebSocketManager):                  # line 27
 ## Worktree Strategy
 
 - **Default isolation unit**: `mixed`.
-- **Phase A (parallelizable)** — these modules are decoupled libraries/adapters that only meet at
-  the orchestrator/endpoint and can run in separate worktrees:
+- **Parallelizable** — decoupled libraries/adapters that only meet at the orchestrator/endpoint,
+  each can run in a separate worktree:
   - M1 LiveAvatar client + lifecycle
   - M2 Avatar WS PCM bridge
   - M3 LiveKit room manager
   - M4 Speakable flattener + segmenter
-  Then **sequential** integration: M5 orchestrator → M6 endpoint/flag → M7 opt-in → M10 frontend viewer.
-- **Phase C (sequential / per-spec)** — M8 (`llm_node` bridge) and M9 (output bridge) are a single
-  integration seam; run them sequentially in one worktree after Phase A lands and P4/P5 are resolved.
+- **Sequential** integration after the above: M5 orchestrator → M6 endpoint/flag → M7 opt-in → M8 frontend viewer.
 - **Cross-feature dependencies**: none blocking. New top-level module `parrot/integrations/liveavatar/`
-  has no overlap with in-flight specs; shared files (`AgentVoiceTalk`, `StreamHandler`, `UserSocketManager`)
-  are touched only by extension — coordinate edits there to avoid conflicts.
+  has no overlap with in-flight specs; shared files (`AgentVoiceTalk`, `StreamHandler`) are touched
+  only by extension — coordinate edits there. **FEAT-243 (Phase C) depends on this spec** (M3 room
+  manager + M4 flattener are reused there).
 
 ---
 
@@ -519,4 +451,5 @@ class UserSocketManager(WebSocketManager):                  # line 27
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-06-18 | Jesus Lara | Initial draft from brainstorm (Option A→C, BYO LiveKit Cloud) |
+| 0.1 | 2026-06-18 | Jesus Lara | Initial draft from brainstorm (Option A) |
+| 0.2 | 2026-06-18 | Jesus Lara | Split from combined spec — Phase A only; Phase C moved to FEAT-243 |
