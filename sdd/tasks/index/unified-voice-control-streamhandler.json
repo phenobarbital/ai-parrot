@@ -52,7 +52,7 @@
       "feature_id": "FEAT-244",
       "feature": "unified-voice-control-streamhandler",
       "spec": "sdd/specs/unified-voice-control-streamhandler.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Requires StreamHandler.broadcast_to_channel (TASK-1585) to exist as a fan-out target. Touches liveavatar_output.py + manager.py.",
       "assigned_to": null,
       "started_at": "2026-06-18T18:01:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1586-fanout-output-subscriber.md"
+      "completed_at": "2026-06-18T18:10:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1586-fanout-output-subscriber.md"
     },
     {
       "id": "TASK-1587",
