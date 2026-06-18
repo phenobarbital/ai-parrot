@@ -1,0 +1,391 @@
+"""Unit tests for the FULL mode avatar handler (TASK-1594 + TASK-1595).
+
+Tests cover:
+- _start_fullmode_session: returns viewer creds, no sensitive fields, opt-in gate
+- _stop_fullmode_session: tears down via store, idempotent
+- _list_avatars: proxies list_avatars() with config resolver
+- _list_voices: proxies list_voices() with config resolver
+
+All LiveAvatar and liveavatar stack imports are lazy-injected via sys.modules
+so the test suite never requires ai-parrot-integrations to be installed.
+"""
+from __future__ import annotations
+
+import json
+import sys
+import types
+from typing import Any, Dict
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from aiohttp.web import (
+    HTTPBadRequest,
+    HTTPForbidden,
+    HTTPInternalServerError,
+    HTTPServiceUnavailable,
+)
+
+from parrot.handlers.avatar_fullmode import (
+    FULLMODE_SESSIONS_KEY,
+    _list_avatars,
+    _list_voices,
+    _start_fullmode_session,
+    _stop_fullmode_session,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers: inject fake liveavatar stack
+# ---------------------------------------------------------------------------
+
+
+def _inject_fullmode_stack(
+    *,
+    fullmode_enabled: bool = True,
+    livekit_url: str = "wss://test.livekit.cloud",
+    livekit_client_token: str = "eyJ-browser-token",
+    session_id_response: str = "la-session-1",
+) -> tuple:
+    """Inject fake liveavatar modules into sys.modules.
+
+    Returns ``(saved_modules, inject_keys, fake_client, fake_handle)``
+    so callers can assert on interactions and restore sys.modules.
+    """
+    # Fake session handle
+    fake_handle = MagicMock()
+    fake_handle.session_id = ""
+    fake_handle.liveavatar_session_id = session_id_response
+    fake_handle.session_token = "server-secret"
+    fake_handle.ws_url = ""
+    fake_handle.agent_name = "test-agent"
+    fake_handle.livekit_url = livekit_url
+    fake_handle.livekit_client_token = livekit_client_token
+
+    # Fake client — supports aopen() and the context manager protocol
+    fake_client = MagicMock()
+    fake_client.aopen = AsyncMock(return_value=fake_client)
+    fake_client.aclose = AsyncMock()
+    fake_client.create_full_session_token = AsyncMock(return_value=fake_handle)
+    fake_client.start_session = AsyncMock(return_value={})
+    fake_client.stop_session = AsyncMock()
+    fake_client.list_avatars = AsyncMock(return_value=[])
+    fake_client.list_voices = AsyncMock(return_value=[])
+    fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+    fake_client.__aexit__ = AsyncMock(return_value=False)
+
+    # Fake LiveAvatarClient class — returns our fake instance
+    fake_client_cls = MagicMock(return_value=fake_client)
+
+    # Fake resolve_fullmode_config
+    fake_cfg = MagicMock()
+    fake_cfg.api_key = "test-key"
+    fake_resolve = MagicMock(return_value=fake_cfg)
+
+    # Fake is_fullmode_enabled
+    fake_is_fullmode = MagicMock(return_value=fullmode_enabled)
+
+    # Build the fake modules
+    fake_client_mod = types.ModuleType("parrot.integrations.liveavatar.client")
+    fake_client_mod.LiveAvatarClient = fake_client_cls  # type: ignore[attr-defined]
+
+    fake_optin_mod = types.ModuleType("parrot.integrations.liveavatar.optin")
+    fake_optin_mod.is_fullmode_enabled = fake_is_fullmode  # type: ignore[attr-defined]
+
+    fake_tenant_mod = types.ModuleType("parrot.integrations.liveavatar.tenant_config")
+    fake_tenant_mod.resolve_fullmode_config = fake_resolve  # type: ignore[attr-defined]
+
+    inject_keys = [
+        "parrot.integrations.liveavatar.client",
+        "parrot.integrations.liveavatar.optin",
+        "parrot.integrations.liveavatar.tenant_config",
+    ]
+    saved_modules = {k: sys.modules.get(k) for k in inject_keys}
+    sys.modules["parrot.integrations.liveavatar.client"] = fake_client_mod
+    sys.modules["parrot.integrations.liveavatar.optin"] = fake_optin_mod
+    sys.modules["parrot.integrations.liveavatar.tenant_config"] = fake_tenant_mod
+
+    return saved_modules, inject_keys, fake_client, fake_handle
+
+
+def _restore_modules(saved_modules: dict, inject_keys: list) -> None:
+    """Restore sys.modules to their pre-injection state."""
+    for key in inject_keys:
+        if saved_modules[key] is None:
+            sys.modules.pop(key, None)
+        else:
+            sys.modules[key] = saved_modules[key]
+
+
+def _make_request(
+    json_body: Dict[str, Any],
+    match_info: Dict[str, str] | None = None,
+) -> MagicMock:
+    """Build a fake aiohttp.web.Request with a real dict app."""
+    req = MagicMock()
+    req.json = AsyncMock(return_value=json_body)
+    req.match_info = match_info or {"agent_id": "test-agent"}
+    req.app = {}
+
+    # Fake rel_url for GET query params
+    fake_url = MagicMock()
+    fake_url.query = {}
+    req.rel_url = fake_url
+
+    return req
+
+
+# ---------------------------------------------------------------------------
+# TASK-1594: _start_fullmode_session
+# ---------------------------------------------------------------------------
+
+
+class TestStartFullmodeSession:
+    """Tests for _start_fullmode_session (TASK-1594)."""
+
+    async def test_returns_viewer_creds(self) -> None:
+        """Response contains session_id, livekit_url, livekit_client_token."""
+        req = _make_request({"session_id": "sess-1", "tenant_id": "acme"})
+
+        saved, keys, fake_client, fake_handle = _inject_fullmode_stack()
+        try:
+            resp = await _start_fullmode_session(req)
+        finally:
+            _restore_modules(saved, keys)
+
+        body = json.loads(resp.body)  # type: ignore[attr-defined]
+        assert body["session_id"] == "sess-1"
+        assert body["livekit_url"] == "wss://test.livekit.cloud"
+        assert body["livekit_client_token"] == "eyJ-browser-token"
+
+    async def test_no_sensitive_fields_in_response(self) -> None:
+        """Response does NOT contain session_token, agent_token, ws_url."""
+        req = _make_request({"session_id": "sess-1", "tenant_id": "acme"})
+
+        saved, keys, _, _ = _inject_fullmode_stack()
+        try:
+            resp = await _start_fullmode_session(req)
+        finally:
+            _restore_modules(saved, keys)
+
+        body = json.loads(resp.body)  # type: ignore[attr-defined]
+        assert "session_token" not in body, "session_token must never be returned"
+        assert "agent_token" not in body, "agent_token must never be returned"
+        assert "ws_url" not in body, "ws_url must never be returned"
+
+    async def test_rejects_disabled_tenant(self) -> None:
+        """Returns 403 when is_fullmode_enabled returns False."""
+        req = _make_request({"session_id": "sess-1", "tenant_id": "blocked"})
+
+        saved, keys, _, _ = _inject_fullmode_stack(fullmode_enabled=False)
+        try:
+            with pytest.raises(HTTPForbidden):
+                await _start_fullmode_session(req)
+        finally:
+            _restore_modules(saved, keys)
+
+    async def test_requires_session_id(self) -> None:
+        """Returns 400 when session_id is missing from request body."""
+        req = _make_request({})
+
+        saved, keys, _, _ = _inject_fullmode_stack()
+        try:
+            with pytest.raises(HTTPBadRequest):
+                await _start_fullmode_session(req)
+        finally:
+            _restore_modules(saved, keys)
+
+    async def test_client_stored_in_session_store(self) -> None:
+        """The live client is kept alive and stored in app[FULLMODE_SESSIONS_KEY]."""
+        req = _make_request({"session_id": "sess-1", "tenant_id": "acme"})
+
+        saved, keys, fake_client, _ = _inject_fullmode_stack()
+        try:
+            await _start_fullmode_session(req)
+        finally:
+            _restore_modules(saved, keys)
+
+        # aclose must NOT have been called (client is kept alive)
+        fake_client.aclose.assert_not_called()
+        # Client stored in session store
+        store = req.app[FULLMODE_SESSIONS_KEY]
+        assert "sess-1" in store
+        assert store["sess-1"]["client"] is fake_client
+
+    async def test_config_error_returns_503(self) -> None:
+        """Returns 503 when resolve_fullmode_config raises RuntimeError."""
+        req = _make_request({"session_id": "sess-1", "tenant_id": "acme"})
+
+        saved, keys, _, _ = _inject_fullmode_stack()
+        try:
+            sys.modules[
+                "parrot.integrations.liveavatar.tenant_config"
+            ].resolve_fullmode_config = MagicMock(
+                side_effect=RuntimeError("missing env vars")
+            )
+            with pytest.raises(HTTPServiceUnavailable):
+                await _start_fullmode_session(req)
+        finally:
+            _restore_modules(saved, keys)
+
+
+# ---------------------------------------------------------------------------
+# TASK-1594: _stop_fullmode_session
+# ---------------------------------------------------------------------------
+
+
+class TestStopFullmodeSession:
+    """Tests for _stop_fullmode_session (TASK-1594)."""
+
+    async def test_stops_existing_session(self) -> None:
+        """Stops a tracked session: calls stop_session + aclose, removes from store."""
+        fake_client = MagicMock()
+        fake_client.stop_session = AsyncMock()
+        fake_client.aclose = AsyncMock()
+        fake_handle = MagicMock()
+
+        req = _make_request({"session_id": "sess-1"})
+        req.app = {
+            FULLMODE_SESSIONS_KEY: {
+                "sess-1": {"client": fake_client, "handle": fake_handle}
+            }
+        }
+
+        resp = await _stop_fullmode_session(req)
+
+        assert resp.status == 204
+        fake_client.stop_session.assert_awaited_once_with(fake_handle)
+        fake_client.aclose.assert_awaited_once()
+        assert "sess-1" not in req.app[FULLMODE_SESSIONS_KEY]
+
+    async def test_idempotent_stop_unknown_session(self) -> None:
+        """Returns 204 for an unknown/already-stopped session (idempotent)."""
+        req = _make_request({"session_id": "ghost"})
+        req.app = {}
+
+        resp = await _stop_fullmode_session(req)
+
+        assert resp.status == 204
+
+    async def test_requires_session_id(self) -> None:
+        """Returns 400 when session_id is missing."""
+        req = _make_request({})
+
+        with pytest.raises(HTTPBadRequest):
+            await _stop_fullmode_session(req)
+
+    async def test_aclose_called_even_on_stop_error(self) -> None:
+        """aclose() is called in the finally block even when stop_session raises."""
+        import aiohttp
+
+        fake_client = MagicMock()
+        fake_client.stop_session = AsyncMock(
+            side_effect=aiohttp.ClientResponseError(
+                request_info=MagicMock(), history=(), status=500
+            )
+        )
+        fake_client.aclose = AsyncMock()
+        fake_handle = MagicMock()
+
+        req = _make_request({"session_id": "sess-1"})
+        req.app = {
+            FULLMODE_SESSIONS_KEY: {
+                "sess-1": {"client": fake_client, "handle": fake_handle}
+            }
+        }
+
+        try:
+            await _stop_fullmode_session(req)
+        except Exception:
+            pass
+
+        fake_client.aclose.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# TASK-1595: _list_avatars / _list_voices
+# ---------------------------------------------------------------------------
+
+
+class TestListAvatars:
+    """Tests for _list_avatars (TASK-1595)."""
+
+    async def test_returns_avatars(self) -> None:
+        """Returns a list of avatars from the LiveAvatar API."""
+        fake_avatars = [{"id": "av1", "name": "Avatar 1"}]
+
+        req = MagicMock()
+        req.rel_url.query = {}
+
+        saved, keys, fake_client, _ = _inject_fullmode_stack()
+        fake_client.list_avatars = AsyncMock(return_value=fake_avatars)
+        try:
+            resp = await _list_avatars(req)
+        finally:
+            _restore_modules(saved, keys)
+
+        body = json.loads(resp.body)  # type: ignore[attr-defined]
+        assert body == {"avatars": fake_avatars}
+
+    async def test_handles_api_error(self) -> None:
+        """Returns 500 when LiveAvatar API raises an exception."""
+        req = MagicMock()
+        req.rel_url.query = {}
+
+        saved, keys, fake_client, _ = _inject_fullmode_stack()
+        fake_client.list_avatars = AsyncMock(side_effect=RuntimeError("API down"))
+        try:
+            with pytest.raises(HTTPInternalServerError):
+                await _list_avatars(req)
+        finally:
+            _restore_modules(saved, keys)
+
+    async def test_config_error_returns_503(self) -> None:
+        """Returns 503 when resolve_fullmode_config raises RuntimeError."""
+        req = MagicMock()
+        req.rel_url.query = {}
+
+        saved, keys, _, _ = _inject_fullmode_stack()
+        sys.modules[
+            "parrot.integrations.liveavatar.tenant_config"
+        ].resolve_fullmode_config = MagicMock(
+            side_effect=RuntimeError("missing vars")
+        )
+        try:
+            with pytest.raises(HTTPServiceUnavailable):
+                await _list_avatars(req)
+        finally:
+            _restore_modules(saved, keys)
+
+
+class TestListVoices:
+    """Tests for _list_voices (TASK-1595)."""
+
+    async def test_returns_voices(self) -> None:
+        """Returns a list of voices from the LiveAvatar API."""
+        fake_voices = [{"id": "v1", "name": "Voice 1"}]
+
+        req = MagicMock()
+        req.rel_url.query = {}
+
+        saved, keys, fake_client, _ = _inject_fullmode_stack()
+        fake_client.list_voices = AsyncMock(return_value=fake_voices)
+        try:
+            resp = await _list_voices(req)
+        finally:
+            _restore_modules(saved, keys)
+
+        body = json.loads(resp.body)  # type: ignore[attr-defined]
+        assert body == {"voices": fake_voices}
+
+    async def test_handles_api_error(self) -> None:
+        """Returns 500 when LiveAvatar API raises an exception."""
+        req = MagicMock()
+        req.rel_url.query = {}
+
+        saved, keys, fake_client, _ = _inject_fullmode_stack()
+        fake_client.list_voices = AsyncMock(side_effect=RuntimeError("API down"))
+        try:
+            with pytest.raises(HTTPInternalServerError):
+                await _list_voices(req)
+        finally:
+            _restore_modules(saved, keys)
