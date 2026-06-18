@@ -2,15 +2,22 @@
 
 **Feature**: FEAT-243 — LiveAvatar Phase C (voice-native hybrid, ai-parrot as the brain)
 **Spec**: `sdd/specs/liveavatar-phase-c-voice-native.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-001, TASK-003
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker (Opus)
 
 ---
 
-## ⛔ BLOCKED ON FEAT-242
+## ✅ UNBLOCKED — FEAT-243 rebased onto feat-242-liveavatar-phase-a-mouth
+
+FEAT-242's `LiveKitRoomManager`, `LiveAvatarClient` and models are present in
+this worktree (FEAT-243 stacked on the FEAT-242 branch). Implemented against the
+**real** FEAT-242 API; the wiring mirrors FEAT-242's `AvatarSessionOrchestrator`.
+Original blocker note retained below for history.
+
+## ⛔ (historical) BLOCKED ON FEAT-242
 
 This task wires the worker to FEAT-242's `LiveKitRoomManager` and `LiveAvatarClient`
 (+ `LiveAvatarConfig` / `AvatarSessionHandle`). **Do NOT start until FEAT-242 has
@@ -194,8 +201,45 @@ async def test_stop_session_shutdown_callback():
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Opus 4.8)
+**Date**: 2026-06-18
+**Notes**: Created `livekit_agent/pipeline.py` and `livekit_agent/worker.py`.
 
-**Deviations from spec**: none | describe if any
+`pipeline.build_session(vad, *, stt, tts, turn_detection, session_factory)`
+assembles the `AgentSession` wiring STT (Deepgram nova-3) / VAD (injected,
+prewarmed Silero) / turn-detection (MultilingualModel) / TTS (Cartesia). The
+heavy plugins + `AgentSession` are lazy-imported inside default factories so the
+module imports without the `liveavatar-voice` extra and the wiring is tested by
+injecting fakes + a fake `session_factory`.
+
+`worker.py` exposes pure/fake-able helpers mirroring FEAT-242's
+`AvatarSessionOrchestrator`:
+- `parse_job_metadata(ctx)` → `AvatarJobMetadata` (from `ctx.job.metadata` JSON);
+- `build_livekit_config(tokens)` → `{"url","room","agentToken"}`;
+- `open_avatar_session(client, cfg, room_manager, meta)` → mints room tokens
+  (`mint_room_tokens(room=session_id, identity=agent_name)`), calls
+  `create_session_token(cfg, livekit_config=...)`, rebuilds the
+  `AvatarSessionHandle` with our `session_id`/`tenant_id`/`agent_name`, and
+  `start_session`s it;
+- `register_stop_session_shutdown(ctx, client, handle)` → registers
+  `client.stop_session` via `ctx.add_shutdown_callback` (errors swallowed so
+  teardown never raises);
+- `entrypoint(ctx, *, deps)` ties it together (parse → open session → register
+  shutdown → build `OutputBridge` + `LiveAvatarAgent` → `build_session` →
+  `ctx.connect()` → `session.start(agent, room)`), with deps in a
+  `LiveAvatarWorkerDeps` dataclass; `run(deps)` is the guarded `cli.run_app`
+  entry.
+
+7 unit tests (incl. the two required: `test_build_session_components`,
+`test_stop_session_shutdown_callback`, plus metadata/livekit_config/open_session/
+error-swallowing). Full liveavatar suite = **78 passed**; my files `ruff`-clean.
+
+**Deviations from spec**: (1) Heavy LiveKit imports are **guarded/lazy** so the
+modules import and unit-test without the extra (task constraint). (2) `entrypoint`
+/ `run` are NOT unit-tested end-to-end — they need a live room and the installed
+extra; covered by the Phase C integration tests (`test_phase_c_*`, explicitly out
+of this task's scope). (3) **P5 / Q-deploy / Q-plugins** remain open: the exact
+`AgentSession`/`WorkerOptions`/`cli` APIs, plugin classes and the spawn-per-session
+vs warm-pool deployment model must be validated against the pinned
+`livekit-agents` before production. (4) Pre-existing `ruff` F401s exist in
+FEAT-242's own test files — left untouched (out of scope).
