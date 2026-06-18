@@ -10,7 +10,6 @@ mocked.  No real network, LiveKit, or LiveAvatar connections.
 """
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -20,60 +19,7 @@ from parrot.integrations.liveavatar.voice_session import VoiceAvatarSession
 from parrot.voice.handler import BotConfig, VoiceChatHandler, WebSocketConnection
 
 
-# ---------------------------------------------------------------------------
-# Shared fixtures (reuse patched_stack style from test_voice_avatar_session.py)
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def patched_stack(mocker):
-    """Mock the entire LiveAvatar transport stack (same style as TASK-1588 tests)."""
-    rm = mocker.Mock()
-    tokens = mocker.Mock(
-        livekit_url="wss://x",
-        room="sess-1",
-        client_token="viewer-jwt",
-        agent_token="agent-jwt",
-    )
-    rm.mint_room_tokens.return_value = tokens
-    mocker.patch(
-        "parrot.integrations.liveavatar.voice_session.LiveKitRoomManager",
-        return_value=rm,
-    )
-
-    client = mocker.Mock()
-    client.aopen = AsyncMock(return_value=client)
-    handle = mocker.Mock()
-    handle.session_id = ""
-    handle.tenant_id = None
-    client.create_session_token = AsyncMock(return_value=handle)
-    client.start_session = AsyncMock()
-    client.stop_session = AsyncMock()
-    client.aclose = AsyncMock()
-    mocker.patch(
-        "parrot.integrations.liveavatar.voice_session.LiveAvatarClient",
-        return_value=client,
-    )
-
-    ws = mocker.Mock()
-    ws.__aenter__ = AsyncMock(return_value=ws)
-    ws.__aexit__ = AsyncMock(return_value=None)
-    ws.start_speaking = AsyncMock()
-    ws.send_audio_frame = AsyncMock()
-    ws.finish_speaking = AsyncMock()
-    ws.interrupt = AsyncMock()
-    mocker.patch(
-        "parrot.integrations.liveavatar.voice_session.AvatarWebSocket",
-        return_value=ws,
-    )
-
-    mocker.patch.dict(
-        "os.environ",
-        {"LIVEAVATAR_API_KEY": "k", "LIVEAVATAR_AVATAR_ID": "a"},
-    )
-
-    return rm, client, ws, tokens
-
+# patched_stack fixture lives in conftest.py (shared with unit tests)
 
 @pytest.fixture
 def handler():

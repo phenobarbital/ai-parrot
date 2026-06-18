@@ -40,7 +40,7 @@ import asyncio
 import contextlib
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any
 
 from parrot.integrations.liveavatar.avatar_ws import AvatarWebSocket
 from parrot.integrations.liveavatar.client import LiveAvatarClient
@@ -93,8 +93,8 @@ class VoiceAvatarSession:
         *,
         agent_id: str,
         session_id: str,
-        tenant_id: Optional[str],
-        avatar_id: Optional[str] = None,
+        tenant_id: str | None,
+        avatar_id: str | None = None,
     ) -> "VoiceAvatarSession":
         """Bring up a full LiveAvatar LITE session for realtime PCM delivery.
 
@@ -148,7 +148,9 @@ class VoiceAvatarSession:
             is_sandbox=os.environ.get("LIVEAVATAR_SANDBOX", "true").lower() != "false",
         )
 
-        # 2. Mint room tokens (sync CPU work — offload to thread)
+        # 2. Mint room tokens (sync CPU work — JWT signing via PyJWT, both
+        # datetime.utcnow() and PyJWT are thread-safe; offload to avoid
+        # blocking the event loop on key-derivation).
         room_manager = LiveKitRoomManager()
         tokens: LiveKitRoomTokens = await asyncio.to_thread(
             room_manager.mint_room_tokens, session_id, agent_id
@@ -156,7 +158,7 @@ class VoiceAvatarSession:
 
         # LiveKit config passed to the avatar so it joins our room as a publisher.
         # Field names follow LiveAvatar's LiveKitConfigSchema (snake_case).
-        livekit_config: Dict[str, Any] = {
+        livekit_config: dict[str, Any] = {
             "livekit_url": tokens.livekit_url,
             "livekit_room": tokens.room,
             "livekit_client_token": tokens.agent_token,  # avatar publishes → agent_token
@@ -166,8 +168,8 @@ class VoiceAvatarSession:
         client = LiveAvatarClient(cfg)
         await client.aopen()
 
-        ws: Optional[AvatarWebSocket] = None
-        handle: Optional[AvatarSessionHandle] = None
+        ws: AvatarWebSocket | None = None
+        handle: AvatarSessionHandle | None = None
         try:
             # 4. Create session token with livekit_config
             handle = await client.create_session_token(cfg, livekit_config=livekit_config)
@@ -203,7 +205,7 @@ class VoiceAvatarSession:
     # ── Public interface ───────────────────────────────────────────────
 
     @property
-    def viewer_credentials(self) -> Dict[str, str]:
+    def viewer_credentials(self) -> dict[str, str]:
         """Browser-safe viewer credentials for the LiveKit room.
 
         Returns ONLY the subscribe-only ``client_token`` (+ URL + room name).

@@ -808,8 +808,9 @@ class VoiceChatHandler:
         })
 
         self.logger.info(
-            f"Voice session started: {connection.session_id} "
-            f"(mode={streaming_mode})"
+            "Voice session started: %s (mode=%s)",
+            connection.session_id,
+            streaming_mode,
         )
 
     async def _handle_end_session(
@@ -830,6 +831,13 @@ class VoiceChatHandler:
         if connection.bot:
             await connection.bot.close()
             connection.bot = None
+
+        # Tear down avatar session — mirrors _cleanup_connection so that an
+        # explicit end_session from the client does not orphan the LiveAvatar WS.
+        if connection.avatar_session is not None:
+            with contextlib.suppress(Exception):
+                await connection.avatar_session.aclose()
+            connection.avatar_session = None
 
         await self._send_message(connection.ws, {
             "type": "session_ended",

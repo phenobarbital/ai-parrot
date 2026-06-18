@@ -273,6 +273,48 @@ async def test_start_session_avatar_optin_denied(handler, connection, mocker):
     assert session_started.get("session_id") == connection.session_id
 
 
+# ---------------------------------------------------------------------------
+# TASK-1589: _handle_end_session / _handle_reset_session avatar teardown
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_end_session_closes_avatar(handler, connection, avatar_session):
+    """_handle_end_session must tear down avatar_session (no orphan WS)."""
+    connection.avatar_session = avatar_session
+    await handler._handle_end_session(connection, {})
+    avatar_session.aclose.assert_awaited_once()
+    assert connection.avatar_session is None
+
+
+@pytest.mark.asyncio
+async def test_end_session_without_avatar_does_not_raise(handler, connection):
+    """_handle_end_session with no avatar_session must not raise."""
+    assert connection.avatar_session is None
+    await handler._handle_end_session(connection, {})  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_reset_session_no_orphan(handler, connection, avatar_session, mocker):
+    """_handle_reset_session tears down the old avatar before starting a new session.
+
+    Verifies that the old avatar_session.aclose() is called exactly once,
+    preventing a dangling LiveAvatar WS after a reset.
+    """
+    connection.avatar_session = avatar_session
+
+    # Stub _handle_start_session so the reset doesn't attempt real bot creation
+    mocker.patch.object(handler, "_handle_start_session", new=AsyncMock())
+
+    await handler._handle_reset_session(connection, {})
+
+    # Old avatar session must have been closed
+    avatar_session.aclose.assert_awaited_once()
+    assert connection.avatar_session is None
+
+
+# ---------------------------------------------------------------------------
+
 @pytest.mark.asyncio
 async def test_start_session_avatar_failure_degrades(handler, connection, mocker):
     """Avatar start raises → avatar.active=false; voice session still usable."""
