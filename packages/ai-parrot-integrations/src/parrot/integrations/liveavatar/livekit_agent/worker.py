@@ -178,9 +178,24 @@ async def entrypoint(ctx: Any, *, deps: LiveAvatarWorkerDeps) -> None:
 def run(deps: LiveAvatarWorkerDeps) -> None:  # pragma: no cover - requires the extra
     """Run the LiveKit Agents worker CLI (long-lived stateful worker).
 
-    .. note:: ``lk agent deploy`` applies (the room is ours). Spawn-per-session
-       vs warm pool is unresolved (Q-deploy). P5: validate ``WorkerOptions`` /
-       ``cli`` against the pinned ``livekit-agents`` version.
+    .. note:: ``lk agent deploy`` applies (the room is ours). P5 RESOLVED:
+       ``WorkerOptions(entrypoint_fnc=...)`` + ``cli.run_app`` validated against
+       livekit-agents 1.6.1.
+
+    .. warning:: **Q-deploy (UNRESOLVED) — process boundary.** livekit-agents
+       runs jobs in separate processes (``job_executor_type=PROCESS``,
+       ``multiprocessing_context='forkserver'``; a warm pool is the prod default
+       via ``num_idle_processes``). Binding non-picklable resources (the aiohttp
+       ``LiveAvatarClient``, ``socket_manager``, ``bot_resolver``) onto the
+       entrypoint via ``functools.partial(entrypoint, deps=deps)`` will NOT
+       survive that boundary — per-process resources must be constructed INSIDE
+       the job (``prewarm_fnc`` → ``proc.userdata`` and/or a module-level deps
+       factory called within ``entrypoint``). Additionally, the worker is a
+       separate process from the AgentChat WS server, so ``OutputBridge`` cannot
+       call the server's ``UserSocketManager`` directly — it must publish via a
+       cross-process channel (e.g. Redis pub/sub) that the server re-broadcasts.
+       This ``run`` helper is a scaffold; finalise the deps/transport model
+       before deploying.
     """
     try:
         from livekit.agents import WorkerOptions, cli
