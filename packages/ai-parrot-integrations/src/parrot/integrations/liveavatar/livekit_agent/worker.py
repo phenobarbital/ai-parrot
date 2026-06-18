@@ -1,28 +1,37 @@
 """LiveKit Agents worker entrypoint for LiveAvatar Phase C (FEAT-243, Module 1).
 
 The worker joins the **same** LiveKit Cloud room as the avatar participant
-(shared BYO transport with FEAT-242 — no new transport layer). It:
+(shared BYO transport with FEAT-242 — no new transport layer).
 
-1. parses ``ctx.job.metadata`` (JSON) into :class:`AvatarJobMetadata`
-   (injecting ``tenant_id`` / ``agent_name`` / ``session_id``);
-2. mints room tokens via the FEAT-242 :class:`LiveKitRoomManager` and opens a
-   LiveAvatar session via :class:`LiveAvatarClient` with ``livekit_config`` so
-   the avatar joins our room;
-3. builds the :class:`OutputBridge` + :class:`LiveAvatarAgent` (the ai-parrot
-   LLM node) and the voice :func:`build_session`;
-4. registers ``stop_session`` as a shutdown callback so the LiveAvatar session
-   is torn down on worker teardown.
+**Process model (Q-deploy, validated on livekit-agents 1.6.1).** Jobs run in
+**separate processes** (``job_executor_type=PROCESS``, ``forkserver``; a warm
+pool is the prod default via ``num_idle_processes``). Two design consequences,
+both handled here:
+
+1. Per-job/per-process resources are built **inside** the job, never bound onto
+   the entrypoint from the parent (which would not survive pickling across the
+   process boundary). The aiohttp ``LiveAvatarClient`` is created in
+   :func:`entrypoint`; the VAD is loaded once per process in :func:`prewarm` and
+   read from ``ctx.proc.userdata``.
+2. The worker is a different process from the AgentChat WS server, so the
+   :class:`OutputBridge` sink is a :class:`RedisBroadcastForwarder` (cross-process
+   pub/sub) rather than a direct ``UserSocketManager``. The server runs
+   :func:`run_output_subscriber` to re-broadcast.
+
+The deployment supplies the one non-env dependency — the ai-parrot
+``bot_resolver`` — by calling :func:`configure` **at import time** in its worker
+entry module (so ``forkserver`` children re-run it on import), then calling
+:func:`run`.
 
 The discrete helpers (``parse_job_metadata``, ``build_livekit_config``,
-``open_avatar_session``, ``register_stop_session_shutdown``) are pure / fake-able
-and unit-tested. The full ``entrypoint`` / ``run`` path needs the
-``liveavatar-voice`` extra and a live room; it is validated by the Phase C
-integration tests (``test_phase_c_*``, out of this task's scope) and **P5 /
-Q-deploy** before production.
+``open_avatar_session``, ``register_stop_session_shutdown``, ``prewarm``) are
+pure / fake-able and unit-tested. The full ``entrypoint`` / ``run`` path needs a
+live room and the ``liveavatar-voice`` extra; it is exercised by the Phase C
+integration tests.
 """
 
-import functools
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Optional
 
@@ -36,43 +45,107 @@ from parrot.integrations.liveavatar.models import (
     LiveKitRoomTokens,
 )
 from parrot.integrations.liveavatar.output_bridge import OutputBridge
+from parrot.integrations.liveavatar.output_transport import RedisBroadcastForwarder
 from parrot.integrations.liveavatar.room_manager import LiveKitRoomManager
 
 __all__ = [
-    "LiveAvatarWorkerDeps",
+    "WorkerConfig",
+    "configure",
     "parse_job_metadata",
     "build_livekit_config",
     "open_avatar_session",
     "register_stop_session_shutdown",
+    "prewarm",
     "entrypoint",
     "run",
 ]
 
 logger = logging.getLogger(__name__)
 
+#: Async callable resolving an agent name to an ai-parrot bot exposing
+#: ``ask_stream``. Supplied by the deployment via :func:`configure`.
+BotResolver = Callable[[str], Awaitable[Any]]
+
 
 @dataclass
-class LiveAvatarWorkerDeps:
-    """Dependencies bound into the worker ``entrypoint``.
+class WorkerConfig:
+    """Import-time configuration shared by every job in the worker process.
+
+    Built once via :func:`configure`; per-job resources (the aiohttp client) are
+    created separately inside :func:`entrypoint`.
 
     Attributes:
-        cfg: LiveAvatar API configuration.
-        client: FEAT-242 LiveAvatar session client.
-        room_manager: FEAT-242 LiveKit room/token manager.
-        socket_manager: ``UserSocketManager``-like object for the output bridge.
         bot_resolver: Async ``agent_name -> bot`` resolver (prod: BotManager).
-        vad: Prewarmed VAD plugin instance (e.g. Silero).
-        session_factory: Optional ``AgentSession`` factory (defaults to the real
-            one inside :func:`build_session`); injectable for tests.
+        cfg: LiveAvatar API configuration (defaults from env).
+        output_sink: ``UserSocketManager``-compatible sink for the output bridge
+            (defaults to a :class:`RedisBroadcastForwarder` for cross-process
+            delivery).
+        room_manager: LiveKit room/token manager (defaults to env-driven).
+        agent_name: Optional worker ``agent_name`` for ``lk agent deploy``.
     """
 
+    bot_resolver: BotResolver
     cfg: LiveAvatarConfig
-    client: LiveAvatarClient
+    output_sink: Any
     room_manager: LiveKitRoomManager
-    socket_manager: Any
-    bot_resolver: Callable[[str], Awaitable[Any]]
-    vad: Any
-    session_factory: Optional[Callable[..., Any]] = None
+    agent_name: str = ""
+
+
+_CONFIG: Optional[WorkerConfig] = None
+
+
+def _config_from_env() -> LiveAvatarConfig:
+    """Build a :class:`LiveAvatarConfig` from environment variables."""
+    return LiveAvatarConfig(
+        api_key=os.environ["LIVEAVATAR_API_KEY"],
+        avatar_id=os.environ["LIVEAVATAR_AVATAR_ID"],
+        is_sandbox=os.environ.get("LIVEAVATAR_SANDBOX", "true").lower()
+        in ("1", "true", "yes"),
+    )
+
+
+def configure(
+    *,
+    bot_resolver: BotResolver,
+    cfg: Optional[LiveAvatarConfig] = None,
+    output_sink: Optional[Any] = None,
+    room_manager: Optional[LiveKitRoomManager] = None,
+    agent_name: str = "",
+) -> WorkerConfig:
+    """Register the worker configuration. **Call at import time** in the worker
+    entry module so ``forkserver`` children re-run it when re-importing.
+
+    Defaults pull from the environment: ``cfg`` from ``LIVEAVATAR_*``,
+    ``output_sink`` from ``REDIS_URL`` (a :class:`RedisBroadcastForwarder`),
+    ``room_manager`` from ``LIVEKIT_*``.
+
+    Args:
+        bot_resolver: The only required, non-env dependency — resolves an
+            ai-parrot bot by name in-process.
+    """
+    global _CONFIG
+    if output_sink is None:
+        from parrot.conf import REDIS_URL
+
+        output_sink = RedisBroadcastForwarder.from_url(REDIS_URL)
+    _CONFIG = WorkerConfig(
+        bot_resolver=bot_resolver,
+        cfg=cfg or _config_from_env(),
+        output_sink=output_sink,
+        room_manager=room_manager or LiveKitRoomManager(),
+        agent_name=agent_name,
+    )
+    return _CONFIG
+
+
+def _require_config() -> WorkerConfig:
+    if _CONFIG is None:
+        raise RuntimeError(
+            "LiveAvatar worker not configured. Call "
+            "parrot.integrations.liveavatar.livekit_agent.worker.configure(...) "
+            "at import time in your worker entry module before run()."
+        )
+    return _CONFIG
 
 
 def parse_job_metadata(ctx: Any) -> AvatarJobMetadata:
@@ -136,7 +209,10 @@ def register_stop_session_shutdown(
 ) -> Callable[[], Awaitable[None]]:
     """Register ``client.stop_session(handle)`` as a worker shutdown callback.
 
-    Returns the registered coroutine function (useful for tests).
+    A standalone helper for callers that manage the aiohttp session themselves.
+    :func:`entrypoint` instead relies on the client's own async-context teardown
+    (``__aexit__`` stops the session and closes the aiohttp session). Returns the
+    registered coroutine function (useful for tests).
     """
 
     async def _on_shutdown() -> None:
@@ -151,60 +227,75 @@ def register_stop_session_shutdown(
     return _on_shutdown
 
 
-async def entrypoint(ctx: Any, *, deps: LiveAvatarWorkerDeps) -> None:
-    """LiveKit Agents job entrypoint (bind ``deps`` via ``functools.partial``).
+def _vad_from_proc(ctx: Any) -> Any:
+    """Read the prewarmed VAD from ``ctx.proc.userdata`` (or ``None``)."""
+    proc = getattr(ctx, "proc", None)
+    userdata = getattr(proc, "userdata", None) or {}
+    return userdata.get("vad")
 
-    .. note:: Requires the ``liveavatar-voice`` extra and a live room; covered by
-       the Phase C integration tests, not the unit tests for this task.
+
+def prewarm(proc: Any) -> None:  # pragma: no cover - requires the extra
+    """Load the Silero VAD once per worker process into ``proc.userdata``.
+
+    Registered as ``WorkerOptions.prewarm_fnc`` so each job reuses one VAD.
     """
-    meta = parse_job_metadata(ctx)
-    handle = await open_avatar_session(deps.client, deps.cfg, deps.room_manager, meta)
-    register_stop_session_shutdown(ctx, deps.client, handle)
+    from livekit.plugins import silero
 
-    bridge = OutputBridge(deps.socket_manager)
+    proc.userdata["vad"] = silero.VAD.load()
+
+
+async def entrypoint(ctx: Any) -> None:
+    """LiveKit Agents job entrypoint — builds all per-job deps in-process.
+
+    Module-level (no bound deps) so it survives the ``forkserver`` boundary.
+
+    .. note:: Requires :func:`configure` to have been called at import time, the
+       ``liveavatar-voice`` extra, and a live room. Covered by the Phase C
+       integration tests, not the unit tests.
+    """
+    config = _require_config()
+    meta = parse_job_metadata(ctx)
+
+    # Per-job aiohttp client, created in this process/loop and torn down on
+    # shutdown via its own async-context exit (stop_session + session close).
+    client = LiveAvatarClient(config.cfg)
+    await client.__aenter__()
+
+    async def _close_client() -> None:
+        await client.__aexit__(None, None, None)
+
+    ctx.add_shutdown_callback(_close_client)
+
+    await open_avatar_session(client, config.cfg, config.room_manager, meta)
+
+    bridge = OutputBridge(config.output_sink)
     agent = LiveAvatarAgent(
         agent_name=meta.agent_name,
         session_id=meta.session_id,
-        bot_resolver=deps.bot_resolver,
+        bot_resolver=config.bot_resolver,
         output_bridge=bridge,
         tenant_id=meta.tenant_id,
     )
-    session = build_session(deps.vad, session_factory=deps.session_factory)
+    session = build_session(_vad_from_proc(ctx))
 
     await ctx.connect()
     await session.start(agent=agent, room=ctx.room)
 
 
-def run(deps: LiveAvatarWorkerDeps) -> None:  # pragma: no cover - requires the extra
+def run() -> None:  # pragma: no cover - requires the extra
     """Run the LiveKit Agents worker CLI (long-lived stateful worker).
 
-    .. note:: ``lk agent deploy`` applies (the room is ours). P5 RESOLVED:
-       ``WorkerOptions(entrypoint_fnc=...)`` + ``cli.run_app`` validated against
-       livekit-agents 1.6.1.
-
-    .. warning:: **Q-deploy (UNRESOLVED) — process boundary.** livekit-agents
-       runs jobs in separate processes (``job_executor_type=PROCESS``,
-       ``multiprocessing_context='forkserver'``; a warm pool is the prod default
-       via ``num_idle_processes``). Binding non-picklable resources (the aiohttp
-       ``LiveAvatarClient``, ``socket_manager``, ``bot_resolver``) onto the
-       entrypoint via ``functools.partial(entrypoint, deps=deps)`` will NOT
-       survive that boundary — per-process resources must be constructed INSIDE
-       the job (``prewarm_fnc`` → ``proc.userdata`` and/or a module-level deps
-       factory called within ``entrypoint``). Additionally, the worker is a
-       separate process from the AgentChat WS server, so ``OutputBridge`` cannot
-       call the server's ``UserSocketManager`` directly — it must publish via a
-       cross-process channel (e.g. Redis pub/sub) that the server re-broadcasts.
-       This ``run`` helper is a scaffold; finalise the deps/transport model
-       before deploying.
+    Call :func:`configure` at import time first. ``lk agent deploy`` applies
+    (the room is ours). Spawn-per-session vs warm pool is tuned via
+    ``WorkerOptions.num_idle_processes`` (Q-deploy).
     """
-    try:
-        from livekit.agents import WorkerOptions, cli
-    except ImportError as exc:
-        raise ImportError(
-            "livekit-agents is required to run the worker. "
-            "Install the 'liveavatar-voice' extra."
-        ) from exc
+    from livekit.agents import WorkerOptions, cli
 
+    config = _require_config()
     cli.run_app(
-        WorkerOptions(entrypoint_fnc=functools.partial(entrypoint, deps=deps))
+        WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            prewarm_fnc=prewarm,
+            agent_name=config.agent_name,
+        )
     )

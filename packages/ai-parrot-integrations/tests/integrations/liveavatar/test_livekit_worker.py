@@ -1,9 +1,9 @@
-"""Unit tests for the Phase C worker + pipeline (FEAT-243, TASK-004).
+"""Unit tests for the Phase C worker + pipeline (FEAT-243, TASK-004 + Q-deploy).
 
-Run WITHOUT the ``liveavatar-voice`` extra: the pipeline's component factories
-and the ``AgentSession`` constructor are injected as fakes, and the FEAT-242
-client / room-manager are faked. The full ``entrypoint`` / ``run`` path needs a
-live room and is covered by the Phase C integration tests, not here.
+Run WITHOUT a live room: the pipeline's component factories / ``AgentSession``,
+the FEAT-242 client / room-manager, and the per-job ``LiveAvatarClient`` are all
+faked. The PROCESS-model ``entrypoint`` is exercised with those fakes; only the
+real LiveKit room connection is out of scope (Phase C integration tests).
 """
 
 import json
@@ -16,12 +16,17 @@ from parrot.integrations.liveavatar.models import (
     LiveAvatarConfig,
     LiveKitRoomTokens,
 )
+from parrot.integrations.liveavatar.livekit_agent import worker as worker_mod
 from parrot.integrations.liveavatar.livekit_agent.models import AvatarJobMetadata
 from parrot.integrations.liveavatar.livekit_agent.pipeline import build_session
 from parrot.integrations.liveavatar.livekit_agent.worker import (
+    WorkerConfig,
     build_livekit_config,
+    configure,
+    entrypoint,
     open_avatar_session,
     parse_job_metadata,
+    prewarm,
     register_stop_session_shutdown,
 )
 
@@ -224,3 +229,158 @@ async def test_stop_session_shutdown_callback_swallows_errors():
     register_stop_session_shutdown(ctx, client, handle)
     # Must not raise
     await ctx.shutdown_callbacks[0]()
+
+
+# ── PROCESS-model: configure / prewarm / entrypoint (Q-deploy) ──────────────
+
+
+@pytest.fixture(autouse=True)
+def _reset_worker_config():
+    """Isolate the module-level worker config between tests."""
+    worker_mod._CONFIG = None
+    yield
+    worker_mod._CONFIG = None
+
+
+class FakeEntrypointClient:
+    """LiveAvatarClient stand-in with async-context + session lifecycle."""
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.entered = False
+        self.exited = False
+        self.started = []
+
+    async def __aenter__(self):
+        self.entered = True
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.exited = True
+
+    async def create_session_token(self, cfg, *, livekit_config=None):
+        self.livekit_config = livekit_config
+        return _created_handle()
+
+    async def start_session(self, handle):
+        self.started.append(handle)
+
+
+class FakeEntrypointCtx:
+    def __init__(self, metadata, vad="prewarmed-vad"):
+        self.job = SimpleNamespace(metadata=metadata)
+        self.proc = SimpleNamespace(userdata={"vad": vad})
+        self.room = SimpleNamespace(name="room-1")
+        self.shutdown_callbacks = []
+        self.connected = False
+
+    def add_shutdown_callback(self, cb):
+        self.shutdown_callbacks.append(cb)
+
+    async def connect(self):
+        self.connected = True
+
+
+async def _resolver(name):
+    return SimpleNamespace(name=name)
+
+
+def test_configure_sets_module_config_and_defaults():
+    """configure() stores a WorkerConfig with the injected pieces."""
+    sink = object()
+    cfg = configure(
+        bot_resolver=_resolver,
+        cfg=_cfg(),
+        output_sink=sink,
+        room_manager=FakeRoomManager(_tokens()),
+        agent_name="voice-worker",
+    )
+    assert isinstance(cfg, WorkerConfig)
+    assert worker_mod._CONFIG is cfg
+    assert cfg.output_sink is sink
+    assert cfg.agent_name == "voice-worker"
+
+
+@pytest.mark.asyncio
+async def test_entrypoint_raises_without_configure():
+    """entrypoint refuses to run if the worker was never configured."""
+    with pytest.raises(RuntimeError, match="not configured"):
+        await entrypoint(FakeEntrypointCtx("{}"))
+
+
+def test_prewarm_loads_vad_into_userdata(monkeypatch):
+    """prewarm stores a process-wide VAD in proc.userdata."""
+    import sys
+    import types
+
+    fake_silero = types.ModuleType("livekit.plugins.silero")
+    fake_silero.VAD = SimpleNamespace(load=lambda: "FAKE_VAD")
+    monkeypatch.setitem(sys.modules, "livekit.plugins.silero", fake_silero)
+    # also satisfy ``from livekit.plugins import silero``
+    fake_plugins = types.ModuleType("livekit.plugins")
+    fake_plugins.silero = fake_silero
+    monkeypatch.setitem(sys.modules, "livekit.plugins", fake_plugins)
+
+    proc = SimpleNamespace(userdata={})
+    prewarm(proc)
+    assert proc.userdata["vad"] == "FAKE_VAD"
+
+
+@pytest.mark.asyncio
+async def test_entrypoint_builds_deps_in_process_and_starts_session(monkeypatch):
+    """The PROCESS-model entrypoint wires client/session/agent without bound deps."""
+    # Capture the session built and the agent bound at start().
+    started = {}
+
+    class FakeSession:
+        async def start(self, agent, room):
+            started["agent"] = agent
+            started["room"] = room
+
+    captured_vad = {}
+
+    def fake_build_session(vad):
+        captured_vad["vad"] = vad
+        return FakeSession()
+
+    created_clients = []
+
+    def fake_client_ctor(cfg):
+        client = FakeEntrypointClient(cfg)
+        created_clients.append(client)
+        return client
+
+    monkeypatch.setattr(worker_mod, "LiveAvatarClient", fake_client_ctor)
+    monkeypatch.setattr(worker_mod, "build_session", fake_build_session)
+
+    sink = object()
+    configure(
+        bot_resolver=_resolver,
+        cfg=_cfg(),
+        output_sink=sink,
+        room_manager=FakeRoomManager(_tokens()),
+    )
+
+    meta = json.dumps(
+        {"ws_url": "wss://x", "session_id": "s1", "agent_name": "demo", "tenant_id": "t1"}
+    )
+    ctx = FakeEntrypointCtx(meta, vad="prewarmed-vad")
+
+    await entrypoint(ctx)
+
+    # Per-job client built IN-PROCESS (not bound via partial), entered, session started.
+    assert len(created_clients) == 1 and created_clients[0].entered
+    assert created_clients[0].started, "start_session was called"
+    # Prewarmed VAD flowed from ctx.proc.userdata into build_session.
+    assert captured_vad["vad"] == "prewarmed-vad"
+    # Room connected and the LiveAvatarAgent bound with our session_id + sink.
+    assert ctx.connected is True
+    assert started["room"] is ctx.room
+    agent = started["agent"]
+    assert agent._session_id == "s1"
+    assert agent._agent_name == "demo"
+    assert agent._bridge._sockets is sink
+    # Shutdown callback registered; invoking it closes the per-job client.
+    assert ctx.shutdown_callbacks
+    await ctx.shutdown_callbacks[0]()
+    assert created_clients[0].exited is True
