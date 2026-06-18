@@ -116,3 +116,75 @@ def is_avatar_enabled(
         "AvatarOptIn: tenant %r / agent %r → allowed", tenant_id, agent_name
     )
     return True
+
+
+def is_fullmode_enabled(
+    *,
+    tenant_id: Optional[str],
+    agent_name: Optional[str] = None,
+) -> bool:
+    """Return ``True`` iff FULL mode avatar is enabled for the given tenant + agent.
+
+    FULL mode opt-in is a superset of the base avatar opt-in:
+    1. ``is_avatar_enabled()`` must return ``True`` (base gate).
+    2. ``LIVEAVATAR_FULLMODE_ENABLED_TENANTS`` must allow the tenant.
+
+    Default-deny: if the base gate fails, or if
+    ``LIVEAVATAR_FULLMODE_ENABLED_TENANTS`` is absent/empty, FULL mode is OFF.
+
+    Args:
+        tenant_id: Identifier for the tenant/program requesting FULL mode.
+            ``None`` or empty string → deny.
+        agent_name: Optional agent slug forwarded to the base gate.
+
+    Returns:
+        ``True`` if both the base avatar gate and the FULL mode gate allow
+        the tenant.  ``False`` in all other cases.
+
+    Environment variables:
+        ``LIVEAVATAR_FULLMODE_ENABLED_TENANTS``
+            Comma-separated tenant allowlist (or ``"*"`` for all tenants).
+            Absent or empty → default-deny for FULL mode.
+
+    # TODO Q-tenant — replace body with authoritative flag lookup once the
+    #   storage layer is agreed (same as is_avatar_enabled).
+    """
+    # Layer 1: base avatar gate must pass first.
+    if not is_avatar_enabled(tenant_id=tenant_id, agent_name=agent_name):
+        _logger.debug(
+            "AvatarOptIn: FULL mode denied — base avatar gate rejected tenant %r",
+            tenant_id,
+        )
+        return False
+
+    # Layer 2: FULL mode-specific allowlist.
+    fullmode_tenants_raw = os.environ.get(
+        "LIVEAVATAR_FULLMODE_ENABLED_TENANTS", ""
+    ).strip()
+    if not fullmode_tenants_raw:
+        _logger.debug(
+            "AvatarOptIn: LIVEAVATAR_FULLMODE_ENABLED_TENANTS not set — "
+            "FULL mode default-deny for tenant %r",
+            tenant_id,
+        )
+        return False
+
+    if fullmode_tenants_raw == "*":
+        _logger.debug(
+            "AvatarOptIn: FULL mode wildcard — tenant %r allowed", tenant_id
+        )
+        return True
+
+    fullmode_tenants = {
+        t.strip() for t in fullmode_tenants_raw.split(",") if t.strip()
+    }
+    if tenant_id in fullmode_tenants:
+        _logger.debug(
+            "AvatarOptIn: FULL mode tenant %r in allowlist — allowed", tenant_id
+        )
+        return True
+
+    _logger.debug(
+        "AvatarOptIn: FULL mode tenant %r not in allowlist — deny", tenant_id
+    )
+    return False

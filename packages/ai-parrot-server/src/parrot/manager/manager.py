@@ -1538,6 +1538,38 @@ class BotManager:
                 )
         return registered
 
+    def _register_fullmode_avatar_routes(self, router) -> bool:
+        """Register the FULL mode avatar REST endpoints (FEAT-248).
+
+        Delegates to ``parrot.handlers.avatar_fullmode.register_fullmode_routes``
+        which guards on the optional ``ai-parrot-integrations[liveavatar]`` extra
+        and registers start/stop/list/transcript routes.  Also registers a shutdown
+        hook to tear down any lingering FULL mode sessions.
+
+        Args:
+            router: The aiohttp ``UrlDispatcher`` to register routes on.
+
+        Returns:
+            ``True`` if the FULL mode routes were registered, ``False`` otherwise.
+        """
+        try:
+            from ..handlers.avatar_fullmode import (
+                close_all_fullmode_sessions,
+                register_fullmode_routes,
+            )
+        except ImportError as exc:
+            self.logger.warning(
+                "FULL mode avatar endpoints disabled (%s); install "
+                "'ai-parrot-integrations[liveavatar]' to enable "
+                "POST /api/v1/avatar/fullmode/{agent_id}/start.",
+                exc,
+            )
+            return False
+        registered = register_fullmode_routes(router)
+        if registered and self.app is not None:
+            self.app.on_cleanup.append(close_all_fullmode_sessions)
+        return registered
+
     def _setup_liveavatar_voice(self) -> None:
         """Wire the LiveAvatar Phase C output subscriber when enabled (FEAT-243).
 
@@ -1720,6 +1752,10 @@ class BotManager:
         # a missing ai-parrot-integrations[liveavatar] extra logs a warning and
         # skips the routes instead of crashing boot.
         self._register_avatar_routes(router)
+        # FULL mode avatar routes (FEAT-248) — LiveAvatar-managed STT/TTS/lip-sync.
+        # Registered under the same optional-integration guard; a missing stack
+        # logs a warning instead of crashing boot.
+        self._register_fullmode_avatar_routes(router)
         # Dataset Manager for agents:
         router.add_view(
             '/api/v1/agents/datasets/{agent_id}',
