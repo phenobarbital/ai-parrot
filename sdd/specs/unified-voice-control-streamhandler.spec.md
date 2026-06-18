@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-244
 **Date**: 2026-06-18
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 > Builds on **FEAT-243** (`sdd/specs/liveavatar-phase-c-voice-native.spec.md`) —
@@ -449,12 +449,12 @@ No new external dependencies.
 - [x] Should the existing `/ws/user` structured-output path be removed? —
       *Resolved (Non-Goal)*: No. Fan-out is additive; `/ws/user` stays for
       notifications/HITL and continues to receive avatar structured outputs.
-- [ ] Should `voice_start` fail fast (return `error`) when
+- [x] Should `voice_start` fail fast (return `error`) when
       `ENABLE_LIVEAVATAR_VOICE` is off, or dispatch anyway and warn? — *Owner:
       Jesus Lara* (defaults to: dispatch + warn, decide during M2).
-- [ ] Do we want a `voice_status` query message (list active sessions on this
+- [x] Do we want a `voice_status` query message (list active sessions on this
       socket) for the frontend, or is start/stop sufficient for v1? — *Owner:
-      Jesus Lara* (deferrable; not blocking).
+      Jesus Lara* (deferrable; not blocking).: query message for voice_status
 
 ---
 
