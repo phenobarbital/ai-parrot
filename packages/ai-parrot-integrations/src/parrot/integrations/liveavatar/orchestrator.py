@@ -163,10 +163,13 @@ class AvatarSessionOrchestrator:
         tokens = await asyncio.to_thread(
             self._room_manager.mint_room_tokens, session_id, agent_name
         )
+        # Field names match LiveAvatar's LiveKitConfigSchema (snake_case).  The
+        # avatar joins our room as a publisher, so it receives the publish-capable
+        # ``agent_token`` (the subscribe-only client_token stays with the browser).
         livekit_config: Dict[str, Any] = {
-            "url": tokens.livekit_url,
-            "room": tokens.room,
-            "agentToken": tokens.agent_token,
+            "livekit_url": tokens.livekit_url,
+            "livekit_room": tokens.room,
+            "livekit_client_token": tokens.agent_token,
         }
 
         # 2. Create LiveAvatar session (with livekit_config for BYO transport)

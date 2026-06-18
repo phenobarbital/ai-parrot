@@ -51,6 +51,11 @@ _logger = logging.getLogger("Parrot.AvatarSessionView")
 # Maps session_id -> {"client": LiveAvatarClient, "handle": AvatarSessionHandle}.
 AVATAR_SESSIONS_KEY = "avatar_sessions"
 
+# Key under which active Phase C voice-native dispatches are stored (FEAT-243).
+# Maps session_id -> {"room": str, "dispatch_id": str} so /stop (and shutdown
+# cleanup) can delete the worker dispatch explicitly.
+AVATAR_VOICE_SESSIONS_KEY = "avatar_voice_sessions"
+
 
 def _env_max_session_duration() -> Optional[int]:
     """Read the optional ``LIVEAVATAR_MAX_SESSION_DURATION`` env (seconds).
@@ -140,10 +145,13 @@ async def _start_avatar_session(request: web.Request) -> web.Response:
     # Mint viewer + agent tokens.  JWT signing is sync CPU work — keep it off
     # the event loop.
     tokens = await asyncio.to_thread(room_manager.mint_room_tokens, session_id, agent_id)
+    # Field names match LiveAvatar's LiveKitConfigSchema (snake_case).  The
+    # avatar joins our room as a publisher, so it receives the publish-capable
+    # ``agent_token`` (the subscribe-only client_token stays with the browser).
     livekit_config: Dict[str, Any] = {
-        "url": tokens.livekit_url,
-        "room": tokens.room,
-        "agentToken": tokens.agent_token,
+        "livekit_url": tokens.livekit_url,
+        "livekit_room": tokens.room,
+        "livekit_client_token": tokens.agent_token,
     }
 
     # Open the client and KEEP IT ALIVE — ownership transfers to the session
@@ -187,11 +195,39 @@ async def _start_avatar_session(request: web.Request) -> web.Response:
     })
 
 
+async def _delete_voice_dispatch(record: Dict[str, Any]) -> None:
+    """Best-effort delete of a Phase C voice-native worker dispatch.
+
+    Called from :func:`_stop_avatar_session` and shutdown cleanup. Never raises —
+    teardown must stay idempotent even if LiveKit is unreachable or the stack is
+    missing.
+    """
+    room = record.get("room") or ""
+    dispatch_id = record.get("dispatch_id") or ""
+    if not room or not dispatch_id:
+        return
+    try:
+        from parrot.integrations.liveavatar import LiveKitRoomManager
+
+        room_manager = LiveKitRoomManager()
+        await room_manager.delete_dispatch(room=room, dispatch_id=dispatch_id)
+    except Exception:  # noqa: BLE001 - teardown must never raise
+        _logger.warning(
+            "Failed deleting voice-native dispatch %s (room %s)",
+            dispatch_id,
+            room,
+            exc_info=True,
+        )
+
+
 async def _stop_avatar_session(request: web.Request) -> web.Response:
     """POST /api/v1/agents/avatar/{agent_id}/stop — stop an active avatar session.
 
     Identifies the session by ``session_id`` ONLY.  The ``session_token`` is a
-    server-side secret and is never accepted from the client.
+    server-side secret and is never accepted from the client. Handles BOTH
+    Phase A viewer sessions (a stored :class:`LiveAvatarClient`) and Phase C
+    voice-native dispatches (a stored worker dispatch), keyed by the same
+    ``session_id`` — the browser calls one ``/stop`` regardless of phase.
 
     Request body (JSON):
         session_id (str): The session to stop.
@@ -207,11 +243,22 @@ async def _stop_avatar_session(request: web.Request) -> web.Response:
     if not session_id:
         raise web.HTTPBadRequest(reason="'session_id' is required")
 
+    # Phase C: delete the voice-native worker dispatch if one is tracked.
+    voice_store: Dict[str, Any] = request.app.get(AVATAR_VOICE_SESSIONS_KEY, {})
+    voice_record = voice_store.pop(session_id, None)
+    if voice_record:
+        await _delete_voice_dispatch(voice_record)
+        _logger.info("AvatarSessionView: stopped voice-native session %s", session_id)
+
+    # Phase A: tear down a stored viewer session if one exists.
     store: Dict[str, Any] = request.app.get(AVATAR_SESSIONS_KEY, {})
     record = store.pop(session_id, None)
     if not record:
-        # Nothing to stop (already closed / unknown) — idempotent success.
-        _logger.debug("AvatarSessionView: no active session for %s (idempotent)", session_id)
+        # Nothing more to stop (already closed / unknown) — idempotent success.
+        if not voice_record:
+            _logger.debug(
+                "AvatarSessionView: no active session for %s (idempotent)", session_id
+            )
         return web.Response(status=204)
 
     client = record["client"]
@@ -316,7 +363,7 @@ async def _start_voice_native_session(request: web.Request) -> web.Response:
         tenant_id=tenant_id,
     )
     try:
-        await room_manager.dispatch_worker(
+        dispatch_id = await room_manager.dispatch_worker(
             room=session_id,
             worker_agent_name=_worker_agent_name(),
             metadata_json=meta.model_dump_json(),
@@ -330,6 +377,10 @@ async def _start_voice_native_session(request: web.Request) -> web.Response:
         raise web.HTTPServiceUnavailable(
             reason="Failed to dispatch avatar voice worker"
         ) from exc
+
+    # Track the dispatch so /stop (and shutdown cleanup) can delete it.
+    voice_store = request.app.setdefault(AVATAR_VOICE_SESSIONS_KEY, {})
+    voice_store[session_id] = {"room": session_id, "dispatch_id": dispatch_id}
 
     _logger.info(
         "AvatarSessionView: voice-native start session %s for agent %s "
@@ -404,6 +455,12 @@ async def close_all_avatar_sessions(app: web.Application) -> None:
                 except Exception:  # noqa: BLE001
                     pass
     store.clear()
+
+    # Phase C: delete any lingering voice-native worker dispatches.
+    voice_store: Dict[str, Any] = app.get(AVATAR_VOICE_SESSIONS_KEY, {})
+    for session_id, record in list(voice_store.items()):
+        await _delete_voice_dispatch(record)
+    voice_store.clear()
 
 
 def register_avatar_routes(router: Any) -> bool:

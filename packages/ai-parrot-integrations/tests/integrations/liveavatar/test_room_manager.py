@@ -171,3 +171,28 @@ async def test_dispatch_worker_issues_create_dispatch(
     }
     fake_lkapi.aclose.assert_awaited_once()
     fake_service.create_dispatch.assert_awaited_once()
+
+
+async def test_delete_dispatch_calls_service_and_closes(
+    mgr: LiveKitRoomManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """delete_dispatch forwards (dispatch_id, room) and closes the API client."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    fake_service = MagicMock()
+    fake_service.delete_dispatch = AsyncMock(return_value=MagicMock())
+
+    fake_lkapi = MagicMock()
+    fake_lkapi.agent_dispatch = fake_service
+    fake_lkapi.aclose = AsyncMock()
+
+    from livekit import api as livekit_api
+
+    monkeypatch.setattr(
+        livekit_api, "LiveKitAPI", MagicMock(return_value=fake_lkapi)
+    )
+
+    await mgr.delete_dispatch(room="sess-1", dispatch_id="disp-123")
+
+    fake_service.delete_dispatch.assert_awaited_once_with("disp-123", "sess-1")
+    fake_lkapi.aclose.assert_awaited_once()

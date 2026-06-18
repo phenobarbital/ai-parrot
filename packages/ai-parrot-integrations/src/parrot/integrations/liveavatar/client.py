@@ -136,39 +136,48 @@ class LiveAvatarClient:
         Raises:
             aiohttp.ClientResponseError: On non-2xx responses.
         """
-        url = f"{cfg.base_url}/v1/sessions"
+        url = f"{cfg.base_url}/v1/sessions/token"
         headers = self._api_key_headers(cfg)
 
+        # LITE (BYO transport) mode — see LiteSDKSessionTokenConfigDataSchema in
+        # https://docs.liveavatar.com/openapi.json.  All field names are
+        # snake_case and the response is wrapped in a ``data`` envelope.
         payload: Dict[str, Any] = {
-            "avatarId": cfg.avatar_id,
+            "mode": "LITE",
+            "avatar_id": cfg.avatar_id,
         }
         if cfg.is_sandbox:
-            payload["isSandbox"] = True
+            payload["is_sandbox"] = True
         if cfg.max_session_duration is not None:
-            payload["maxSessionDuration"] = cfg.max_session_duration
+            payload["max_session_duration"] = cfg.max_session_duration
         if livekit_config is not None:
-            payload["liveKitConfig"] = livekit_config
+            payload["livekit_config"] = livekit_config
         if cfg.quality is not None or cfg.encoding is not None:
             video_settings: Dict[str, Any] = {}
             if cfg.quality is not None:
                 video_settings["quality"] = cfg.quality  # TODO Q-video-settings
             if cfg.encoding is not None:
                 video_settings["encoding"] = cfg.encoding  # TODO Q-video-settings
-            payload["videoSettings"] = video_settings
+            payload["video_settings"] = video_settings
 
         self.logger.debug("LiveAvatarClient: creating session for avatar %s", cfg.avatar_id)
         response_data = await self._post(url, headers=headers, json=payload)
+        # The API wraps the payload in an envelope: {code, data, message}.
+        data = response_data.get("data") or response_data
 
         # NOTE: ``session_id`` is the ai-parrot/AgentChat session id, which is
         # NOT known to this HTTP client — it is left empty here and the CALLER
         # MUST populate ``handle.session_id`` before using the handle (the
         # orchestrator and the /start endpoint both do).  ``liveavatar_session_id``
         # is the external API's id and is the only id this layer can supply.
+        # NOTE: the /token response carries only session_id + session_token.
+        # ``ws_url`` (and the LiveKit tokens) are returned later by /start, so
+        # the handle's ws_url is populated in :meth:`start_session`.
         handle = AvatarSessionHandle(
             session_id="",
-            liveavatar_session_id=response_data.get("sessionId", ""),
-            session_token=response_data.get("sessionToken", ""),
-            ws_url=response_data.get("wsUrl", ""),
+            liveavatar_session_id=data.get("session_id", ""),
+            session_token=data.get("session_token", ""),
+            ws_url="",
             agent_name=cfg.avatar_id,
         )
         self._handle = handle
@@ -189,11 +198,15 @@ class LiveAvatarClient:
         Raises:
             aiohttp.ClientResponseError: On non-2xx responses.
         """
-        url = f"{self.cfg.base_url}/v1/sessions/{handle.liveavatar_session_id}/start"
+        url = f"{self.cfg.base_url}/v1/sessions/start"
         headers = self._bearer_headers(handle)
 
         self.logger.debug("LiveAvatarClient: starting session %s", handle.liveavatar_session_id)
         result = await self._post(url, headers=headers, json={})
+        # The /start response (StartSessionResponseSchema) carries ws_url and the
+        # LiveKit tokens, wrapped in a ``data`` envelope.  Populate ws_url now.
+        start_data = result.get("data") or result
+        handle.ws_url = start_data.get("ws_url", handle.ws_url)
         self.logger.info("LiveAvatarClient: session started — id=%s", handle.liveavatar_session_id)
 
         # Start the background keep-alive loop after the session is live.
@@ -214,12 +227,14 @@ class LiveAvatarClient:
         if not handle.liveavatar_session_id:
             return
 
-        url = f"{self.cfg.base_url}/v1/sessions/{handle.liveavatar_session_id}/stop"
-        headers = self._api_key_headers(self.cfg)
+        # No session id in the path — the session is identified by the Bearer
+        # ``session_token``.  Body defaults to {"reason": "USER_CLOSED"}.
+        url = f"{self.cfg.base_url}/v1/sessions/stop"
+        headers = self._bearer_headers(handle)
 
         self.logger.debug("LiveAvatarClient: stopping session %s", handle.liveavatar_session_id)
         try:
-            await self._post(url, headers=headers, json={})
+            await self._post(url, headers=headers, json={"reason": "USER_CLOSED"})
         except aiohttp.ClientResponseError as exc:
             # 404 means already closed — treat as success.
             if exc.status == 404:
@@ -243,15 +258,16 @@ class LiveAvatarClient:
     async def keep_alive(self, handle: AvatarSessionHandle) -> None:
         """Send a single HTTP keep-alive ping for the session.
 
-        Calls ``POST /v1/sessions/{id}/keep-alive`` with ``X-API-KEY`` auth.
+        Calls ``POST /v1/sessions/keep-alive`` with Bearer ``session_token``
+        auth (no session id in the path — the token scopes the session).
         # TODO P7 — switch to WS ``session.keep_alive`` here if the WS
         #           variant is chosen as the canonical keep-alive transport.
 
         Args:
             handle: The active session handle.
         """
-        url = f"{self.cfg.base_url}/v1/sessions/{handle.liveavatar_session_id}/keep-alive"
-        headers = self._api_key_headers(self.cfg)
+        url = f"{self.cfg.base_url}/v1/sessions/keep-alive"
+        headers = self._bearer_headers(handle)
         try:
             await self._post(url, headers=headers, json={})
             self.logger.debug("LiveAvatarClient: keep-alive sent for %s", handle.liveavatar_session_id)

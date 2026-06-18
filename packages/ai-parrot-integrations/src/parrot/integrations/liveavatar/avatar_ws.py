@@ -6,12 +6,18 @@ Ports the LiveAvatar starter ``avatar_ws.py`` (websockets library) to
 Responsibilities:
 - Wait for ``session.state_updated == "connected"`` before sending any frames.
 - Emit ``agent.speak`` / ``agent.speak_end`` / ``agent.interrupt`` protocol frames.
-- Send PCM frames (already 24 kHz mono 16-bit from Supertonic) in chunks:
+- Send PCM as base64 INSIDE the ``agent.speak`` JSON message (the LITE-mode
+  protocol carries audio in-band, not as raw binary WS frames):
+    ``{"type": "agent.speak", "audio": "<base64 PCM 16-bit 24 kHz>"}``
+  PCM (already 24 kHz mono 16-bit from Supertonic) is sliced into chunks:
     - First chunk: ≈ 400 ms  (~19 200 bytes)
     - Subsequent:  ≈ 1 s     (~48 000 bytes)
     - Hard cap:    1 MB per packet
-- Reconnect + replay ``start`` handshake on WS disconnect.
+- Reconnect on WS disconnect.  There is NO in-band auth handshake — the
+  ``ws_url`` returned by ``/v1/sessions/start`` is already authenticated.
 - Input PCM is already 24 kHz mono 16-bit — no resampling is done.
+
+Protocol reference: https://docs.liveavatar.com/docs/lite-mode/events
 
 PCM size constants (from supertonic_backend.py, verified):
     _SAMPLE_RATE = 24000
@@ -23,9 +29,11 @@ PCM size constants (from supertonic_backend.py, verified):
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import json
 import logging
+import uuid
 from types import TracebackType
 from typing import Any, Dict, Optional, Type
 
@@ -111,22 +119,26 @@ class AvatarWebSocket:
     # ── Public API ─────────────────────────────────────────────────────
 
     async def start_speaking(self) -> None:
-        """Send the ``agent.speak`` frame, waiting for the connected gate first.
+        """Block until the avatar media server is ready to receive audio.
 
-        Blocks until the ``session.state_updated == "connected"`` event is
-        received from the server.
+        The LITE-mode protocol has no separate "begin speaking" frame — audio
+        is carried per-chunk inside ``agent.speak`` (see :meth:`send_audio_frame`).
+        This method only awaits the ``session.state_updated == "connected"``
+        gate so callers can fail fast if the server never becomes ready.
 
         Raises:
-            RuntimeError: If the WebSocket connection is not open.
+            RuntimeError: If the connected gate is not opened within
+                :data:`_CONNECT_TIMEOUT`.
         """
         await self._await_connected()
-        await self._send_json({"type": "agent.speak"})
-        self.logger.debug("AvatarWebSocket: agent.speak sent")
+        self.logger.debug("AvatarWebSocket: connected — ready to speak")
 
     async def send_audio_frame(self, pcm: bytes) -> None:
-        """Push PCM audio bytes to the avatar, respecting the chunking contract.
+        """Push PCM audio to the avatar as base64 ``agent.speak`` messages.
 
-        Slices ``pcm`` into appropriately-sized chunks:
+        Slices ``pcm`` into appropriately-sized chunks and sends each as a
+        ``{"type": "agent.speak", "audio": "<base64>"}`` JSON frame (LITE-mode
+        carries audio in-band, not as raw binary WS frames):
         - First slice: ≈ 400 ms (~19 200 bytes).
         - Subsequent slices: ≈ 1 s (~48 000 bytes).
         - Hard cap: 1 MB per packet.
@@ -150,22 +162,29 @@ class AvatarWebSocket:
             # Never exceed the hard cap
             chunk_size = min(chunk_size, _MAX_PACKET_BYTES)
             chunk = pcm[offset: offset + chunk_size]
-            await self._send_binary(chunk)
+            audio_b64 = base64.b64encode(chunk).decode("ascii")
+            await self._send_json({"type": "agent.speak", "audio": audio_b64})
             self.logger.debug(
-                "AvatarWebSocket: sent %d-byte PCM chunk (first=%s)", len(chunk), is_first
+                "AvatarWebSocket: sent %d-byte PCM chunk as agent.speak (first=%s)",
+                len(chunk),
+                is_first,
             )
             offset += chunk_size
             is_first = False
 
     async def finish_speaking(self) -> None:
-        """Send the ``agent.speak_end`` frame.
+        """Send the ``agent.speak_end`` frame to flush the playback buffer.
+
+        Carries a fresh ``event_id`` which the server echoes back in its
+        ``agent.speak_ended`` response.
 
         Raises:
             RuntimeError: If the WebSocket connection is not open.
         """
         await self._await_connected()
-        await self._send_json({"type": "agent.speak_end"})
-        self.logger.debug("AvatarWebSocket: agent.speak_end sent")
+        event_id = uuid.uuid4().hex
+        await self._send_json({"type": "agent.speak_end", "event_id": event_id})
+        self.logger.debug("AvatarWebSocket: agent.speak_end sent (event_id=%s)", event_id)
 
     async def interrupt(self) -> None:
         """Send the ``agent.interrupt`` frame to clear scheduled audio.
@@ -182,9 +201,10 @@ class AvatarWebSocket:
     async def _connect(self) -> None:
         """Open the WebSocket connection and start the message-reader loop.
 
-        Sends the ``session.start`` handshake (the server emits
-        ``session.state_updated == "connected"`` only after it), then starts
-        the background reader which sets the ``_connected`` gate.
+        The ``ws_url`` (from ``/v1/sessions/start``) is already authenticated,
+        so no in-band handshake is sent.  The server emits
+        ``session.state_updated == "connected"`` on its own; the background
+        reader sets the ``_connected`` gate when it arrives.
         """
         if self._session is None:
             raise RuntimeError("AvatarWebSocket: no aiohttp session available")
@@ -193,22 +213,11 @@ class AvatarWebSocket:
             "AvatarWebSocket: connecting to %s", self.handle.ws_url
         )
         self._ws = await self._session.ws_connect(self.handle.ws_url)
-        # Send the initial start handshake (mirrors the reconnect path) so the
-        # server proceeds to emit ``session.state_updated == "connected"``.
-        await self._send_start_handshake()
         # Start the reader coroutine in the background; it sets _connected.
         self._reader_task = asyncio.create_task(
             self._reader_loop(),
             name=f"avatar-ws-reader-{self.handle.liveavatar_session_id}",
         )
-
-    async def _send_start_handshake(self) -> None:
-        """Send the ``session.start`` negotiation frame."""
-        await self._send_json({
-            "type": "session.start",
-            "sessionId": self.handle.liveavatar_session_id,
-            "sessionToken": self.handle.session_token,
-        })
 
     async def _reader_loop(self) -> None:
         """Receive server messages and set the connected gate.
@@ -253,10 +262,11 @@ class AvatarWebSocket:
             self.logger.debug("AvatarWebSocket: server event %r", msg_type)
 
     async def _reconnect(self) -> None:
-        """Reconnect the WebSocket and replay the ``start`` handshake.
+        """Reconnect the WebSocket after a drop.
 
-        Clears the connected gate, re-opens the WS, and re-sends the initial
-        session negotiation so the avatar is ready to receive frames again.
+        Clears the connected gate and re-opens the (pre-authenticated) WS so
+        the avatar is ready to receive frames again.  No handshake is replayed
+        — the server re-emits ``session.state_updated == "connected"`` itself.
         """
         self._connected.clear()
         self.logger.info("AvatarWebSocket: reconnecting…")
@@ -269,13 +279,11 @@ class AvatarWebSocket:
         self._reader_task = None
         try:
             self._ws = await self._session.ws_connect(self.handle.ws_url)
-            # Replay the start handshake (per starter avatar_ws.py pattern)
-            await self._send_start_handshake()
             self._reader_task = asyncio.create_task(
                 self._reader_loop(),
                 name=f"avatar-ws-reader-{self.handle.liveavatar_session_id}",
             )
-            self.logger.info("AvatarWebSocket: reconnected and start replayed")
+            self.logger.info("AvatarWebSocket: reconnected")
         except Exception:  # noqa: BLE001
             self.logger.exception("AvatarWebSocket: reconnect failed")
 
@@ -327,16 +335,3 @@ class AvatarWebSocket:
         if self._ws is None or self._ws.closed:
             raise RuntimeError("AvatarWebSocket: cannot send — WS not connected")
         await self._ws.send_json(payload)
-
-    async def _send_binary(self, data: bytes) -> None:
-        """Send a binary frame (PCM chunk).
-
-        Args:
-            data: PCM bytes to send.
-
-        Raises:
-            RuntimeError: If the WebSocket is not open.
-        """
-        if self._ws is None or self._ws.closed:
-            raise RuntimeError("AvatarWebSocket: cannot send — WS not connected")
-        await self._ws.send_bytes(data)

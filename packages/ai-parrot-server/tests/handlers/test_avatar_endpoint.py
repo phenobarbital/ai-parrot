@@ -301,6 +301,8 @@ async def test_voice_native_start_returns_publish_token() -> None:
     req = MagicMock()
     req.match_info = {"agent_id": "meeting_secretary"}
     req.json = AsyncMock(return_value={"session_id": "sess-1", "tenant_id": "acme"})
+    # Real dict app so the dispatch store behaves like aiohttp's MutableMapping.
+    req.app = {}
 
     saved, keys, fake_mgr = _inject_voice_native_stack()
     try:
@@ -326,6 +328,68 @@ async def test_voice_native_start_returns_publish_token() -> None:
     assert kwargs["room"] == "sess-1"
     assert kwargs["worker_agent_name"] == "liveavatar-voice"
     assert kwargs["metadata_json"] == '{"session_id":"sess-1"}'
+
+    # The dispatch is tracked so /stop can delete it later.
+    from parrot.handlers.avatar import AVATAR_VOICE_SESSIONS_KEY
+
+    assert req.app[AVATAR_VOICE_SESSIONS_KEY]["sess-1"] == {
+        "room": "sess-1",
+        "dispatch_id": "disp-1",
+    }
+
+
+async def test_stop_endpoint_deletes_voice_dispatch() -> None:
+    """/stop deletes a tracked voice-native dispatch and removes it from the store."""
+    import sys
+    import types
+    from unittest.mock import AsyncMock, MagicMock
+
+    from parrot.handlers.avatar import (
+        AVATAR_VOICE_SESSIONS_KEY,
+        _stop_avatar_session,
+    )
+
+    fake_mgr = MagicMock()
+    fake_mgr.delete_dispatch = AsyncMock()
+    fake_liveavatar_mod = types.ModuleType("parrot.integrations.liveavatar")
+    fake_liveavatar_mod.LiveKitRoomManager = MagicMock(return_value=fake_mgr)
+
+    req = MagicMock()
+    req.json = AsyncMock(return_value={"session_id": "sess-1"})
+    req.app = {
+        AVATAR_VOICE_SESSIONS_KEY: {
+            "sess-1": {"room": "sess-1", "dispatch_id": "disp-1"},
+        }
+    }
+
+    saved = sys.modules.get("parrot.integrations.liveavatar")
+    sys.modules["parrot.integrations.liveavatar"] = fake_liveavatar_mod
+    try:
+        resp = await _stop_avatar_session(req)
+    finally:
+        if saved is None:
+            sys.modules.pop("parrot.integrations.liveavatar", None)
+        else:
+            sys.modules["parrot.integrations.liveavatar"] = saved
+
+    assert resp.status == 204
+    fake_mgr.delete_dispatch.assert_awaited_once_with(room="sess-1", dispatch_id="disp-1")
+    # Dispatch removed from the store (so a second /stop is a no-op).
+    assert "sess-1" not in req.app[AVATAR_VOICE_SESSIONS_KEY]
+
+
+async def test_stop_endpoint_voice_dispatch_idempotent() -> None:
+    """/stop for an unknown voice-native session returns 204 without LiveKit work."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from parrot.handlers.avatar import _stop_avatar_session
+
+    req = MagicMock()
+    req.json = AsyncMock(return_value={"session_id": "ghost"})
+    req.app = {}
+
+    resp = await _stop_avatar_session(req)
+    assert resp.status == 204
 
 
 async def test_voice_native_start_requires_session_id() -> None:

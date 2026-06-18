@@ -33,10 +33,15 @@ def _fake_session(
 ) -> MagicMock:
     """Build a mock aiohttp.ClientSession with a preset response."""
     if response_json is None:
+        # The /token response wraps the payload in a ``data`` envelope and uses
+        # snake_case keys (matches LiveAvatar's SDKSessionTokenSchema).
         response_json = {
-            "sessionId": "sess-123",
-            "sessionToken": "tok-abc",
-            "wsUrl": "wss://media.liveavatar.com/ws/sess-123",
+            "code": 0,
+            "message": "ok",
+            "data": {
+                "session_id": "sess-123",
+                "session_token": "tok-abc",
+            },
         }
 
     mock_resp = AsyncMock()
@@ -79,6 +84,9 @@ async def test_liveavatar_client_auth_headers_on_create(cfg: LiveAvatarConfig) -
     await client.create_session_token(cfg)
 
     call_args = fake_session.post.call_args
+    # Endpoint is /v1/sessions/token (NOT the bare /v1/sessions, which 405s).
+    url = call_args.args[0] if call_args.args else call_args.kwargs.get("url", "")
+    assert url.endswith("/v1/sessions/token")
     headers = call_args.kwargs.get("headers", call_args[1].get("headers", {}))
     assert headers.get("X-API-KEY") == "test-key"
     assert "Authorization" not in headers
@@ -179,7 +187,7 @@ async def test_max_session_duration_forwarded(cfg: LiveAvatarConfig) -> None:
 
     call_args = fake_session.post.call_args
     body = call_args.kwargs.get("json", {})
-    assert body.get("maxSessionDuration") == 600
+    assert body.get("max_session_duration") == 600
 
 
 # ---------------------------------------------------------------------------

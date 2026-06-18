@@ -458,9 +458,13 @@ async function stopVoiceNative(
 }
 ```
 
-> El backend registra `stop_session` como **shutdown callback** del worker, pero
-> **no dependas de él**: llama a `/stop` explícitamente para liberar el worker y
-> la sesión cuanto antes (es un recurso *stateful* de larga vida).
+> ✅ **`/stop` ahora libera el worker explícitamente.** El backend rastrea el
+> dispatch creado en `/voice-native/start` (por `session_id`) y, al recibir
+> `/stop`, **borra el dispatch** (`delete_dispatch` → `LiveKitAPI.agent_dispatch`)
+> además de la limpieza de Phase A. Es **idempotente** (un `/stop` de una sesión
+> desconocida o ya cerrada también responde `204`) y el mismo `session_id` sirve
+> para ambas fases. Aun así, llama a `/stop` cuanto antes: el worker es un recurso
+> *stateful* de larga vida y no conviene esperar al *empty-timeout* de la sala.
 
 ---
 
@@ -823,7 +827,7 @@ falta mockear `/start`.
   "turn_id": null }   // turn_id == artifact_id
 //    (los turnos de SOLO voz no emiten mensaje)
 
-// 4) POST .../stop    (auth requerida) — homólogo a Phase A, idempotente (204)
+// 4) POST .../stop    (auth requerida) — borra el dispatch del worker; idempotente (204)
 //    body:
 { "session_id": "abc-123" }
 //    204 (idempotente)

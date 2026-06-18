@@ -240,3 +240,35 @@ class LiveKitRoomManager:
             dispatch_id,
         )
         return dispatch_id
+
+    async def delete_dispatch(self, *, room: str, dispatch_id: str) -> None:
+        """Delete a worker dispatch created by :meth:`dispatch_worker` (Phase C).
+
+        Removes the dispatch record so the worker is not (re)assigned to the
+        room — the explicit teardown counterpart of ``/voice-native/start``.
+        Combined with the browser leaving the room, this releases the
+        long-lived worker job promptly instead of waiting for the room's
+        empty-timeout.
+
+        Args:
+            room: Room name the dispatch targeted (the ``session_id``).
+            dispatch_id: The id returned by :meth:`dispatch_worker`.
+
+        Raises:
+            ImportError: If ``livekit-api`` is not installed.
+        """
+        livekit_api = _require_livekit_api()
+
+        lkapi = livekit_api.LiveKitAPI(
+            url=self.url, api_key=self._key, api_secret=self._secret
+        )
+        try:
+            await lkapi.agent_dispatch.delete_dispatch(dispatch_id, room)
+        finally:
+            await lkapi.aclose()
+
+        self.logger.info(
+            "LiveKitRoomManager: deleted dispatch_id=%s from room=%s",
+            dispatch_id,
+            room,
+        )

@@ -2,12 +2,14 @@
 
 Uses a fake WebSocket object (not a real aiohttp WS) to verify:
 - No frames are sent before the connected gate is set.
-- PCM chunking respects ≈400 ms first chunk, ≈1 s thereafter, ≤1 MB cap.
-- Reconnect replays the start handshake.
+- PCM is chunked and sent as base64 ``agent.speak`` JSON frames
+  (≈400 ms first chunk, ≈1 s thereafter, ≤1 MB cap).
+- Reconnect re-opens the (pre-authenticated) WS without any handshake.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
 from typing import Any, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -51,7 +53,7 @@ def _build_fake_ws(closed: bool = False) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 async def test_avatar_ws_waits_for_connected() -> None:
-    """No frames sent until session.state_updated == 'connected'."""
+    """No agent.speak frames sent until session.state_updated == 'connected'."""
     handle = _make_handle()
     ws_obj = _build_fake_ws()
 
@@ -59,7 +61,7 @@ async def test_avatar_ws_waits_for_connected() -> None:
     avatar_ws._ws = ws_obj
 
     # Do NOT set _connected — gate is closed
-    send_task = asyncio.create_task(avatar_ws.start_speaking())
+    send_task = asyncio.create_task(avatar_ws.send_audio_frame(b"\x00" * 100))
     # Give the task a moment to run
     await asyncio.sleep(0.01)
     # Must not have sent anything yet
@@ -69,10 +71,11 @@ async def test_avatar_ws_waits_for_connected() -> None:
     avatar_ws._connected.set()
     await send_task
 
-    # Now the frame was sent
+    # Now the audio frame was sent as a base64 agent.speak message
     ws_obj.send_json.assert_called_once()
     call_arg = ws_obj.send_json.call_args[0][0]
-    assert call_arg == {"type": "agent.speak"}
+    assert call_arg["type"] == "agent.speak"
+    assert base64.b64decode(call_arg["audio"]) == b"\x00" * 100
 
 
 # ---------------------------------------------------------------------------
@@ -92,9 +95,13 @@ async def test_avatar_ws_chunking() -> None:
     pcm_3s = b"\x00" * (48_000 * 3)
     await avatar_ws.send_audio_frame(pcm_3s)
 
-    calls: List[bytes] = [
-        call.args[0] for call in ws_obj.send_bytes.call_args_list
-    ]
+    # Audio rides inside agent.speak JSON frames as base64; decode each back
+    # to raw PCM bytes to verify the chunking contract.
+    calls: List[bytes] = []
+    for call in ws_obj.send_json.call_args_list:
+        payload = call.args[0]
+        assert payload["type"] == "agent.speak"
+        calls.append(base64.b64decode(payload["audio"]))
     assert len(calls) >= 2, "Expected at least 2 chunks for 3 s of PCM"
 
     # First chunk ≈ 400 ms
@@ -129,7 +136,7 @@ async def test_avatar_ws_empty_pcm() -> None:
     avatar_ws._connected.set()
 
     await avatar_ws.send_audio_frame(b"")
-    ws_obj.send_bytes.assert_not_called()
+    ws_obj.send_json.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +153,10 @@ async def test_avatar_ws_finish_speaking() -> None:
     avatar_ws._connected.set()
 
     await avatar_ws.finish_speaking()
-    ws_obj.send_json.assert_called_once_with({"type": "agent.speak_end"})
+    ws_obj.send_json.assert_called_once()
+    payload = ws_obj.send_json.call_args[0][0]
+    assert payload["type"] == "agent.speak_end"
+    assert payload["event_id"]  # a fresh, non-empty correlation id
 
 
 async def test_avatar_ws_interrupt() -> None:
@@ -166,8 +176,8 @@ async def test_avatar_ws_interrupt() -> None:
 # Reconnect replay
 # ---------------------------------------------------------------------------
 
-async def test_avatar_ws_reconnect_replay() -> None:
-    """On reconnect, the start handshake is replayed."""
+async def test_avatar_ws_reconnect_no_handshake() -> None:
+    """On reconnect, the WS is re-opened with NO in-band handshake frame."""
     handle = _make_handle()
     ws_obj = _build_fake_ws()
 
@@ -190,12 +200,10 @@ async def test_avatar_ws_reconnect_replay() -> None:
     with patch("asyncio.create_task", side_effect=_fake_create_task):
         await avatar_ws._reconnect()
 
-    # The start handshake must be sent to the new WS
-    new_ws_obj.send_json.assert_called_once()
-    args = new_ws_obj.send_json.call_args[0][0]
-    assert args["type"] == "session.start"
-    assert args["sessionId"] == handle.liveavatar_session_id
-    assert args["sessionToken"] == handle.session_token
+    # The WS is re-opened to the (pre-authenticated) ws_url …
+    fake_session.ws_connect.assert_awaited_once_with(handle.ws_url)
+    # … and NO handshake frame is sent (auth lives in the ws_url).
+    new_ws_obj.send_json.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
