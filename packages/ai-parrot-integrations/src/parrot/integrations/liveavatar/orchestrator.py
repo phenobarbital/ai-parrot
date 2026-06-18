@@ -35,6 +35,8 @@ import asyncio
 import logging
 from typing import Any, Callable, Dict, Optional
 
+import aiohttp
+
 from parrot.integrations.liveavatar.avatar_ws import AvatarWebSocket
 from parrot.integrations.liveavatar.client import LiveAvatarClient
 from parrot.integrations.liveavatar.models import AvatarSessionHandle, LiveAvatarConfig
@@ -46,15 +48,23 @@ def make_supertonic_pcm_fn(
     *,
     voice: Optional[str] = None,
     language: Optional[str] = None,
+    pipeline: Optional[Any] = None,
 ) -> Callable[[str], bytes]:
     """Factory for a ``synthesize_pcm`` callable backed by Supertonic.
 
-    Lazily imports ``SupertonicONNXBackend`` so the orchestrator does not
+    Lazily imports ``SupertonicPipeline`` so the orchestrator does not
     hard-depend on the ONNX runtime at module-load time.
+
+    PERFORMANCE: constructing a ``SupertonicPipeline`` loads ONNX models and
+    is expensive (seconds).  In production, build ONE pipeline at application
+    startup and pass it via ``pipeline=`` so it is reused across requests —
+    do NOT call this factory per request without a shared ``pipeline``.
 
     Args:
         voice: Optional Supertonic voice identifier.
         language: Optional BCP-47 language tag.
+        pipeline: An existing ``SupertonicPipeline`` to reuse.  When ``None``
+            a new one is constructed (expensive — startup-only).
 
     Returns:
         A synchronous callable ``(text: str) -> bytes`` that returns raw PCM
@@ -64,18 +74,18 @@ def make_supertonic_pcm_fn(
         ImportError: If ``ai-parrot-integrations[voice-supertonic]`` is not
             installed.
     """
-    try:
-        from parrot.voice.tts.supertonic_inference import SupertonicPipeline  # type: ignore[import-untyped]
-    except ImportError as exc:
-        raise ImportError(
-            "Supertonic is not installed.  "
-            "Install ai-parrot-integrations[voice-supertonic]."
-        ) from exc
-
-    _pipeline = SupertonicPipeline()
+    if pipeline is None:
+        try:
+            from parrot.voice.tts.supertonic_inference import SupertonicPipeline  # type: ignore[import-untyped]
+        except ImportError as exc:
+            raise ImportError(
+                "Supertonic is not installed.  "
+                "Install ai-parrot-integrations[voice-supertonic]."
+            ) from exc
+        pipeline = SupertonicPipeline()
 
     def _synthesize_pcm(text: str) -> bytes:
-        return _pipeline.synthesize_pcm(text, voice=voice, language=language)
+        return pipeline.synthesize_pcm(text, voice=voice, language=language)
 
     return _synthesize_pcm
 
@@ -112,7 +122,7 @@ class AvatarSessionOrchestrator:
         client: LiveAvatarClient,
         room_manager: LiveKitRoomManager,
         synthesize_pcm_fn: Callable[[str], bytes],
-        ws_session: Any = None,
+        ws_session: Optional[aiohttp.ClientSession] = None,
     ) -> None:
         self.cfg = cfg
         self.bot = bot
@@ -148,8 +158,11 @@ class AvatarSessionOrchestrator:
         # TODO P6 — per-sentence latency / 400 ms first-chunk feasibility on
         #   target hardware is unconfirmed; tune chunk timing after profiling.
         """
-        # 1. Mint LiveKit room tokens
-        tokens = self._room_manager.mint_room_tokens(room=session_id, identity=agent_name)
+        # 1. Mint LiveKit room tokens.  JWT signing (HMAC) is synchronous CPU
+        #    work — run it off the event loop so it never blocks other tasks.
+        tokens = await asyncio.to_thread(
+            self._room_manager.mint_room_tokens, session_id, agent_name
+        )
         livekit_config: Dict[str, Any] = {
             "url": tokens.livekit_url,
             "room": tokens.room,
@@ -201,17 +214,6 @@ class AvatarSessionOrchestrator:
                     handle.liveavatar_session_id,
                 )
 
-        # Also return the room tokens for TASK-007 to forward to the client
-        handle = AvatarSessionHandle(
-            session_id=handle.session_id,
-            liveavatar_session_id=handle.liveavatar_session_id,
-            session_token=handle.session_token,
-            ws_url=handle.ws_url,
-            tenant_id=handle.tenant_id,
-            agent_name=handle.agent_name,
-        )
-        # Attach room tokens as attributes for the endpoint (TASK-007)
-        object.__setattr__(handle, "_livekit_tokens", tokens)
         return handle
 
     async def _speak(self, ws: AvatarWebSocket, sentence: str) -> None:

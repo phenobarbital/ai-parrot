@@ -1482,6 +1482,38 @@ class BotManager:
         )
         return True
 
+    def _register_avatar_routes(self, router) -> bool:
+        """Register the avatar session start/stop routes (FEAT-242 Phase A).
+
+        Delegates to ``parrot.handlers.avatar.register_avatar_routes`` which
+        guards on the optional ``ai-parrot-integrations[liveavatar]`` extra and
+        serves the routes through the authenticated ``AvatarSessionView``.  Also
+        registers a shutdown hook to tear down any lingering avatar sessions.
+
+        Args:
+            router: The aiohttp ``UrlDispatcher`` to register routes on.
+
+        Returns:
+            ``True`` if the avatar routes were registered, ``False`` otherwise.
+        """
+        try:
+            from ..handlers.avatar import (
+                close_all_avatar_sessions,
+                register_avatar_routes,
+            )
+        except ImportError as exc:
+            self.logger.warning(
+                "Avatar endpoints disabled (%s); install "
+                "'ai-parrot-integrations[liveavatar]' to enable "
+                "POST /api/v1/agents/avatar/{agent_id}/start.",
+                exc,
+            )
+            return False
+        registered = register_avatar_routes(router)
+        if registered and self.app is not None:
+            self.app.on_cleanup.append(close_all_avatar_sessions)
+        return registered
+
     def setup(self, app: web.Application) -> web.Application:
         self.app = None
         if app:
@@ -1642,6 +1674,11 @@ class BotManager:
         # reaches the voice stack (ai-parrot-integrations[voice]) via lazy
         # imports, so a missing stack must degrade gracefully, never crash boot.
         self._register_voice_routes(router)
+        # Avatar session routes (FEAT-242 Phase A) — start/stop the LiveAvatar
+        # session. Registered under the optional-integration guard like voice:
+        # a missing ai-parrot-integrations[liveavatar] extra logs a warning and
+        # skips the routes instead of crashing boot.
+        self._register_avatar_routes(router)
         # Dataset Manager for agents:
         router.add_view(
             '/api/v1/agents/datasets/{agent_id}',

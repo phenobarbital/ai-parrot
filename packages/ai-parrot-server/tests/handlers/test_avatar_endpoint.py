@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
 
 from parrot.handlers.agent_voice import AgentVoiceTalk
 
@@ -100,9 +99,11 @@ async def test_start_endpoint_response_keys() -> None:
 
     from parrot.handlers.avatar import _start_avatar_session
 
-    # Build a fake request
+    # Build a fake request with a REAL dict app so the session store behaves
+    # like the real aiohttp MutableMapping (setdefault/get/pop).
     fake_request = MagicMock()
     fake_request.match_info = {"agent_id": "test-agent"}
+    fake_request.app = {}
     fake_request.json = AsyncMock(return_value={
         "session_id": "sess-1",
         "tenant_id": "t1",
@@ -175,4 +176,67 @@ async def test_start_endpoint_response_keys() -> None:
     assert "session_id" in data
     assert "agent_token" not in data, "agent_token must never be returned to the client"
     assert "ws_url" not in data, "ws_url must never be returned to the client"
+    assert "session_token" not in data, "session_token must never be returned to the client"
     assert data["client_token"] == "viewer-jwt"
+
+    # C-1: the client must be kept ALIVE (not closed on the way out) and stored
+    # in the session store so /stop can reach it.
+    fake_client_ctx.aclose.assert_not_called()
+    store = fake_request.app["avatar_sessions"]
+    assert "sess-1" in store
+    assert store["sess-1"]["client"] is fake_client_ctx
+
+
+# ---------------------------------------------------------------------------
+# Stop endpoint: tears down via the store, no client-supplied session_token
+# ---------------------------------------------------------------------------
+
+async def test_stop_endpoint_tears_down_stored_session() -> None:
+    """_stop_avatar_session stops + closes the stored client; no token from client."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from parrot.handlers.avatar import AVATAR_SESSIONS_KEY, _stop_avatar_session
+
+    fake_client = MagicMock()
+    fake_client.stop_session = AsyncMock()
+    fake_client.aclose = AsyncMock()
+    fake_handle = MagicMock()
+
+    req = MagicMock()
+    req.json = AsyncMock(return_value={"session_id": "sess-1"})  # NO session_token
+    req.app = {AVATAR_SESSIONS_KEY: {"sess-1": {"client": fake_client, "handle": fake_handle}}}
+
+    resp = await _stop_avatar_session(req)
+
+    assert resp.status == 204
+    fake_client.stop_session.assert_awaited_once_with(fake_handle)
+    fake_client.aclose.assert_awaited_once()
+    # Session removed from the store
+    assert "sess-1" not in req.app[AVATAR_SESSIONS_KEY]
+
+
+async def test_stop_endpoint_idempotent_for_unknown_session() -> None:
+    """Stopping an unknown session returns 204 without error."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from parrot.handlers.avatar import _stop_avatar_session
+
+    req = MagicMock()
+    req.json = AsyncMock(return_value={"session_id": "ghost"})
+    req.app = {}
+
+    resp = await _stop_avatar_session(req)
+    assert resp.status == 204
+
+
+# ---------------------------------------------------------------------------
+# Auth: the avatar view requires authentication (C-3)
+# ---------------------------------------------------------------------------
+
+def test_avatar_view_is_baseview_subclass() -> None:
+    """AvatarSessionView is a navigator BaseView (carries auth decorators)."""
+    from navigator.views import BaseView
+
+    from parrot.handlers.avatar import AvatarSessionView
+
+    assert issubclass(AvatarSessionView, BaseView)

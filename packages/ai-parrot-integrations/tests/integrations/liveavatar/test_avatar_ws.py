@@ -8,7 +8,7 @@ Uses a fake WebSocket object (not a real aiohttp WS) to verify:
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Any, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -182,7 +182,12 @@ async def test_avatar_ws_reconnect_replay() -> None:
     fake_session.ws_connect = AsyncMock(return_value=new_ws_obj)
     avatar_ws._session = fake_session
 
-    with patch("asyncio.create_task"):
+    def _fake_create_task(coro: Any, name: str | None = None) -> MagicMock:
+        # Close the coroutine so it does not emit a "never awaited" warning.
+        coro.close()
+        return MagicMock()
+
+    with patch("asyncio.create_task", side_effect=_fake_create_task):
         await avatar_ws._reconnect()
 
     # The start handshake must be sent to the new WS
@@ -218,3 +223,44 @@ async def test_avatar_ws_connected_gate_not_set_for_other_state() -> None:
         '{"type": "session.state_updated", "state": "starting"}'
     )
     assert not avatar_ws._connected.is_set()
+
+
+# ---------------------------------------------------------------------------
+# Connected-gate timeout (I-1)
+# ---------------------------------------------------------------------------
+
+async def test_await_connected_times_out() -> None:
+    """_await_connected raises RuntimeError if 'connected' never arrives."""
+    import parrot.integrations.liveavatar.avatar_ws as ws_mod
+
+    handle = _make_handle()
+    avatar_ws = AvatarWebSocket(handle)
+    avatar_ws._ws = _build_fake_ws()
+
+    # Shrink the timeout so the test is fast.
+    with patch.object(ws_mod, "_CONNECT_TIMEOUT", 0.02):
+        with pytest.raises(RuntimeError, match="timed out waiting"):
+            await avatar_ws.start_speaking()
+
+
+# ---------------------------------------------------------------------------
+# Reader task lifecycle (C-2): _close cancels and awaits the reader
+# ---------------------------------------------------------------------------
+
+async def test_close_cancels_reader_task() -> None:
+    """_close cancels the background reader task and clears the reference."""
+    handle = _make_handle()
+    avatar_ws = AvatarWebSocket(handle)
+    avatar_ws._ws = _build_fake_ws()
+
+    # A long-lived fake reader coroutine standing in for _reader_loop.
+    async def _never_ending() -> None:
+        await asyncio.sleep(3600)
+
+    avatar_ws._reader_task = asyncio.create_task(_never_ending())
+    await asyncio.sleep(0)  # let it start
+
+    await avatar_ws._close()
+
+    assert avatar_ws._reader_task is None
+    assert avatar_ws._ws is None

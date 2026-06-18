@@ -21,6 +21,7 @@ future, move this call to AvatarWebSocket (TASK-003).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import Any, Dict, Optional
 
@@ -70,9 +71,7 @@ class LiveAvatarClient:
 
     async def __aenter__(self) -> "LiveAvatarClient":
         """Open the aiohttp session if not provided externally."""
-        if self._owns_session:
-            self._session = aiohttp.ClientSession()
-        return self
+        return await self.aopen()
 
     async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         """Guarantee stop_session + keep-alive cancellation on exit."""
@@ -81,7 +80,33 @@ class LiveAvatarClient:
                 await self.stop_session(self._handle)
             except Exception:  # noqa: BLE001
                 self.logger.exception("LiveAvatarClient: stop_session failed on exit")
-        self._cancel_keep_alive()
+        await self.aclose()
+
+    async def aopen(self) -> "LiveAvatarClient":
+        """Open the owned aiohttp session (idempotent).
+
+        Used by callers that need to keep the client alive *beyond* a single
+        ``async with`` block — e.g. the avatar ``/start`` endpoint, which hands
+        the live client to a per-session store so ``/stop`` can tear it down
+        later.  Unlike ``__aexit__``, ``aclose`` does NOT call ``stop_session``,
+        so ownership of the LiveAvatar session is transferred to the caller.
+
+        Returns:
+            ``self`` (for fluent use).
+        """
+        if self._owns_session and self._session is None:
+            self._session = aiohttp.ClientSession()
+        return self
+
+    async def aclose(self) -> None:
+        """Cancel the keep-alive loop and close the owned aiohttp session.
+
+        Awaits the keep-alive task's cancellation so no ping can fire against a
+        closing session (avoids "Future exception was never retrieved").  Does
+        NOT call ``stop_session`` — callers that opened the client via
+        ``aopen`` must stop the LiveAvatar session explicitly.
+        """
+        await self._acancel_keep_alive()
         if self._owns_session and self._session is not None:
             await self._session.close()
             self._session = None
@@ -134,8 +159,13 @@ class LiveAvatarClient:
         self.logger.debug("LiveAvatarClient: creating session for avatar %s", cfg.avatar_id)
         response_data = await self._post(url, headers=headers, json=payload)
 
+        # NOTE: ``session_id`` is the ai-parrot/AgentChat session id, which is
+        # NOT known to this HTTP client — it is left empty here and the CALLER
+        # MUST populate ``handle.session_id`` before using the handle (the
+        # orchestrator and the /start endpoint both do).  ``liveavatar_session_id``
+        # is the external API's id and is the only id this layer can supply.
         handle = AvatarSessionHandle(
-            session_id=response_data.get("sessionId", ""),
+            session_id="",
             liveavatar_session_id=response_data.get("sessionId", ""),
             session_token=response_data.get("sessionToken", ""),
             ws_url=response_data.get("wsUrl", ""),
@@ -179,7 +209,7 @@ class LiveAvatarClient:
         Args:
             handle: The session handle to stop.
         """
-        self._cancel_keep_alive()
+        await self._acancel_keep_alive()
 
         if not handle.liveavatar_session_id:
             return
@@ -310,10 +340,28 @@ class LiveAvatarClient:
         )
 
     def _cancel_keep_alive(self) -> None:
-        """Cancel the keep-alive background task if running."""
+        """Cancel the keep-alive task (fire-and-forget, used before restart).
+
+        Synchronous best-effort cancel for the "cancel then immediately
+        re-create" path in :meth:`_start_keep_alive`.  Teardown paths must use
+        :meth:`_acancel_keep_alive` instead so the cancellation is awaited.
+        """
         if self._keep_alive_task is not None and not self._keep_alive_task.done():
             self._keep_alive_task.cancel()
         self._keep_alive_task = None
+
+    async def _acancel_keep_alive(self) -> None:
+        """Cancel the keep-alive task AND await its termination.
+
+        Awaiting guarantees the loop has fully unwound (and cannot fire a ping
+        against a closing aiohttp session) before teardown continues.
+        """
+        task = self._keep_alive_task
+        self._keep_alive_task = None
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     async def _keep_alive_loop(self, handle: AvatarSessionHandle) -> None:
         """Background coroutine that sends periodic keep-alive pings.

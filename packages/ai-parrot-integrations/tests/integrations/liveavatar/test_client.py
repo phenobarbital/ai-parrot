@@ -8,7 +8,6 @@ ClientSession.
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -213,3 +212,40 @@ async def test_stop_session_idempotent_on_404(cfg: LiveAvatarConfig) -> None:
 
     # Must not raise
     await client.stop_session(handle)
+
+
+# ---------------------------------------------------------------------------
+# create_session_token leaves session_id empty for the caller (I-2)
+# ---------------------------------------------------------------------------
+
+async def test_create_session_token_leaves_session_id_empty(cfg: LiveAvatarConfig) -> None:
+    """session_id is the ai-parrot id (unknown here) → empty; liveavatar id set."""
+    fake_session = _fake_session()
+    client = LiveAvatarClient(cfg, session=fake_session)
+    client._session = fake_session
+
+    handle = await client.create_session_token(cfg)
+
+    assert handle.session_id == "", "HTTP layer must not invent the ai-parrot session_id"
+    assert handle.liveavatar_session_id == "sess-123"
+
+
+# ---------------------------------------------------------------------------
+# aclose awaits keep-alive cancellation (C-4)
+# ---------------------------------------------------------------------------
+
+async def test_aclose_cancels_and_awaits_keep_alive(cfg: LiveAvatarConfig) -> None:
+    """aclose cancels the keep-alive task and awaits its termination."""
+    fake_session = _fake_session()
+    client = LiveAvatarClient(cfg, session=fake_session)
+    client._owns_session = False  # keep the injected session
+
+    async def _never_ending() -> None:
+        await asyncio.sleep(3600)
+
+    client._keep_alive_task = asyncio.create_task(_never_ending())
+    await asyncio.sleep(0)  # let it start
+
+    await client.aclose()
+
+    assert client._keep_alive_task is None

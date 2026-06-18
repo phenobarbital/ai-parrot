@@ -1,7 +1,6 @@
 """Unit tests for SpeakableFlattener (TASK-005)."""
 from __future__ import annotations
 
-import pytest
 
 from parrot.integrations.liveavatar import SpeakableFlattener
 

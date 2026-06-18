@@ -23,6 +23,7 @@ PCM size constants (from supertonic_backend.py, verified):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from types import TracebackType
@@ -41,6 +42,11 @@ _BYTES_PER_SECOND: int = _SAMPLE_RATE * _BYTES_PER_SAMPLE  # 48 000
 _FIRST_CHUNK_BYTES: int = int(_BYTES_PER_SECOND * 0.4)   # ≈ 400 ms — 19 200 bytes
 _NORMAL_CHUNK_BYTES: int = _BYTES_PER_SECOND              # ≈ 1 s   — 48 000 bytes
 _MAX_PACKET_BYTES: int = 1_024 * 1_024                    # 1 MB hard cap
+
+# Max time to wait for the server's ``session.state_updated == "connected"``
+# event before giving up (prevents an indefinite hang if the media server
+# never signals readiness — e.g. wrong URL or a server-side error).
+_CONNECT_TIMEOUT: float = 30.0  # seconds
 
 
 class AvatarWebSocket:
@@ -78,6 +84,10 @@ class AvatarWebSocket:
         self._owns_session: bool = session is None
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._connected: asyncio.Event = asyncio.Event()
+        # Tracks the background reader coroutine so it can be cancelled cleanly
+        # on close / reconnect (otherwise the task leaks and two readers can
+        # race over the same connection).
+        self._reader_task: Optional[asyncio.Task[None]] = None
 
     # ── Context manager ────────────────────────────────────────────────
 
@@ -172,8 +182,9 @@ class AvatarWebSocket:
     async def _connect(self) -> None:
         """Open the WebSocket connection and start the message-reader loop.
 
-        After connecting, the method awaits the ``session.state_updated ==
-        "connected"`` server event before signalling the ``_connected`` event.
+        Sends the ``session.start`` handshake (the server emits
+        ``session.state_updated == "connected"`` only after it), then starts
+        the background reader which sets the ``_connected`` gate.
         """
         if self._session is None:
             raise RuntimeError("AvatarWebSocket: no aiohttp session available")
@@ -182,11 +193,22 @@ class AvatarWebSocket:
             "AvatarWebSocket: connecting to %s", self.handle.ws_url
         )
         self._ws = await self._session.ws_connect(self.handle.ws_url)
-        # Start the reader coroutine in the background; it sets _connected
-        asyncio.create_task(
+        # Send the initial start handshake (mirrors the reconnect path) so the
+        # server proceeds to emit ``session.state_updated == "connected"``.
+        await self._send_start_handshake()
+        # Start the reader coroutine in the background; it sets _connected.
+        self._reader_task = asyncio.create_task(
             self._reader_loop(),
             name=f"avatar-ws-reader-{self.handle.liveavatar_session_id}",
         )
+
+    async def _send_start_handshake(self) -> None:
+        """Send the ``session.start`` negotiation frame."""
+        await self._send_json({
+            "type": "session.start",
+            "sessionId": self.handle.liveavatar_session_id,
+            "sessionToken": self.handle.session_token,
+        })
 
     async def _reader_loop(self) -> None:
         """Receive server messages and set the connected gate.
@@ -240,15 +262,16 @@ class AvatarWebSocket:
         self.logger.info("AvatarWebSocket: reconnecting…")
         if self._session is None:
             return
+        # Cancel the current reader before spawning a new one so two readers
+        # never race over the same connection.  This runs from inside the old
+        # reader, so cancel-without-await is correct here (the old task is
+        # about to ``return`` anyway); we only clear the reference.
+        self._reader_task = None
         try:
             self._ws = await self._session.ws_connect(self.handle.ws_url)
             # Replay the start handshake (per starter avatar_ws.py pattern)
-            await self._send_json({
-                "type": "session.start",
-                "sessionId": self.handle.liveavatar_session_id,
-                "sessionToken": self.handle.session_token,
-            })
-            asyncio.create_task(
+            await self._send_start_handshake()
+            self._reader_task = asyncio.create_task(
                 self._reader_loop(),
                 name=f"avatar-ws-reader-{self.handle.liveavatar_session_id}",
             )
@@ -257,7 +280,15 @@ class AvatarWebSocket:
             self.logger.exception("AvatarWebSocket: reconnect failed")
 
     async def _close(self) -> None:
-        """Close the underlying WebSocket gracefully."""
+        """Cancel the reader task and close the underlying WebSocket gracefully."""
+        # Cancel + await the reader FIRST so it cannot re-enter ``_reconnect``
+        # after we close the socket.
+        task = self._reader_task
+        self._reader_task = None
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         if self._ws is not None and not self._ws.closed:
             await self._ws.close()
             self.logger.debug("AvatarWebSocket: connection closed")
@@ -269,9 +300,20 @@ class AvatarWebSocket:
         """Block until the ``session.state_updated == "connected"`` event.
 
         This is the gate: NO protocol commands may be sent before the avatar
-        media server signals it is ready.
+        media server signals it is ready.  Bounded by :data:`_CONNECT_TIMEOUT`
+        so a never-arriving "connected" event cannot hang the turn forever.
+
+        Raises:
+            RuntimeError: If the connected event does not arrive within
+                :data:`_CONNECT_TIMEOUT` seconds.
         """
-        await self._connected.wait()
+        try:
+            await asyncio.wait_for(self._connected.wait(), timeout=_CONNECT_TIMEOUT)
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError(
+                "AvatarWebSocket: timed out waiting for "
+                f"session.state_updated='connected' after {_CONNECT_TIMEOUT}s"
+            ) from exc
 
     async def _send_json(self, payload: Dict[str, Any]) -> None:
         """Send a JSON control frame.
