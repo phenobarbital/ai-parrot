@@ -83,7 +83,6 @@ def _make_supertonic_chunked_stream_cls() -> type:
             super().__init__(tts=tts_instance, input_text=text, conn_options=conn_options)
             self._pipeline = pipeline
             self._text = text
-            self._stream_logger = logging.getLogger(__name__)
 
         async def _run(self, output_emitter: tts.AudioEmitter) -> None:  # type: ignore[override]
             """Synthesize *text* off the event loop and push PCM to *output_emitter*."""
@@ -105,7 +104,7 @@ def _make_supertonic_chunked_stream_cls() -> type:
                     language=None,
                 )
             except Exception:
-                self._stream_logger.exception(
+                logger.exception(
                     "SupertonicTTS: synthesis failed for text %r; emitting silence",
                     self._text[:80],
                 )
@@ -312,15 +311,19 @@ def _make_transcriber_stt_cls() -> type:
             transcript_text = ""
             detected_language = lang or "en"
 
-            try:
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as fh:
-                    tmp_path = Path(fh.name)
-
-                with wave.open(str(tmp_path), "wb") as wf:
+            def _write_wav(path: Path) -> None:
+                with wave.open(str(path), "wb") as wf:
                     wf.setnchannels(num_channels)
                     wf.setsampwidth(2)  # 16-bit signed integer
                     wf.setframerate(sample_rate)
                     wf.writeframes(raw_data)
+
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as fh:
+                    tmp_path = Path(fh.name)
+
+                # Write WAV off the event loop to avoid blocking I/O in the coroutine.
+                await asyncio.to_thread(_write_wav, tmp_path)
 
                 result = await self._backend.transcribe(tmp_path, lang)
                 transcript_text = result.text or ""
@@ -333,13 +336,9 @@ def _make_transcriber_stt_cls() -> type:
                 transcript_text = ""
 
             finally:
-                if tmp_path is not None and tmp_path.exists():
-                    try:
-                        tmp_path.unlink()
-                    except OSError:
-                        self.logger.warning(
-                            "_TranscriberSTT: could not unlink temp file %s", tmp_path
-                        )
+                if tmp_path is not None:
+                    # Unlink off the event loop; missing_ok=True avoids a race condition.
+                    await asyncio.to_thread(tmp_path.unlink, True)
 
             return stt.SpeechEvent(
                 type=stt.SpeechEventType.FINAL_TRANSCRIPT,
@@ -371,7 +370,12 @@ class _TranscriberSTT:
     errors degrade gracefully: an empty transcript event is returned and the
     error is logged (never propagated to crash the session).
 
-    Use concrete subclasses :class:`WhisperSTT` or :class:`MoonshineSTT`.
+    .. note::
+        The leading underscore signals that this class is a **base for
+        subclassing**, not for direct instantiation in application code.
+        Use the concrete subclasses :class:`WhisperSTT` or
+        :class:`MoonshineSTT` instead.  Direct instantiation with a custom
+        ``AbstractTranscriberBackend`` is supported for testing and extension.
 
     Args:
         backend: A concrete
@@ -467,6 +471,9 @@ _DEFAULT_STT_PROVIDER = "whisper"
 #: Default TTS provider (env: ``LIVEAVATAR_TTS_PROVIDER``).
 _DEFAULT_TTS_PROVIDER = "supertonic"
 
+#: Default Deepgram STT model (env: ``LIVEAVATAR_STT_MODEL``).
+_DEFAULT_DEEPGRAM_STT_MODEL = "nova-3"
+
 
 def resolve_stt(vad: Any) -> Any:
     """Build the STT component selected by ``LIVEAVATAR_STT_PROVIDER``.
@@ -516,7 +523,7 @@ def resolve_stt(vad: Any) -> Any:
                 "livekit-plugins-deepgram is required for STT provider 'deepgram'. "
                 "Install the 'liveavatar-voice' extra."
             ) from exc
-        model = os.environ.get("LIVEAVATAR_STT_MODEL", "nova-3")
+        model = os.environ.get("LIVEAVATAR_STT_MODEL", _DEFAULT_DEEPGRAM_STT_MODEL)
         return deepgram.STT(model=model)
 
     if provider == "openai":

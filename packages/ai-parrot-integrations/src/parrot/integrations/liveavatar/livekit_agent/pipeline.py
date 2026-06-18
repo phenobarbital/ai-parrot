@@ -32,9 +32,6 @@ __all__ = ["build_session"]
 
 logger = logging.getLogger(__name__)
 
-#: Default STT model for the Deepgram provider. Override via ``LIVEAVATAR_STT_MODEL``.
-DEFAULT_STT_MODEL = "nova-3"
-
 
 def _default_turn_detection() -> Any:  # pragma: no cover - requires the extra
     """Construct the default multilingual turn-detection model (lazy import)."""

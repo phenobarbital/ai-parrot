@@ -1,6 +1,6 @@
 """Unit tests for FEAT-246 — LiveKit Native Voice Adapters.
 
-Covers the 10 unit tests from the spec (section 4):
+Covers the 11 unit tests from the spec (section 4):
 1. test_supertonic_tts_emits_frames
 2. test_supertonic_tts_blank_text
 3. test_transcriber_stt_recognize
@@ -9,8 +9,9 @@ Covers the 10 unit tests from the spec (section 4):
 6. test_whisper_and_moonshine_select_backend
 7. test_resolve_stt_default_whisper
 8. test_resolve_tts_default_supertonic
-9. test_resolve_providers_env_override
-10. test_build_session_uses_resolved_components
+9. test_resolve_tts_supertonic_raises_without_model_dir
+10. test_resolve_providers_env_override
+11. test_build_session_uses_resolved_components
 
 All tests use fakes so deepgram/cartesia/openai plugins are not required.
 """
@@ -264,20 +265,17 @@ def test_resolve_tts_default_supertonic(monkeypatch, tmp_path):
     monkeypatch.delenv("LIVEAVATAR_TTS_PROVIDER", raising=False)
     monkeypatch.setenv("SUPERTONIC_MODEL_DIR", str(tmp_path))
 
-    # Patch SupertonicPipeline at the location it is imported in _build_supertonic_tts
-    # (it is a local import inside the function, so we patch it in the voice.tts module)
+    # Patch _build_supertonic_tts directly — it owns the SupertonicPipeline import,
+    # so patching the pipeline separately would be unreachable.
     fake_pipeline = MagicMock()
     fake_pipeline.sample_rate = 44100
 
+    from parrot.integrations.liveavatar.livekit_agent.voice_adapters import SupertonicTTS
+
     with patch(
-        "parrot.voice.tts.supertonic_inference.SupertonicPipeline",
-        return_value=fake_pipeline,
-    ), patch(
         "parrot.integrations.liveavatar.livekit_agent.voice_adapters._build_supertonic_tts",
-    ) as mock_build:
-        from parrot.integrations.liveavatar.livekit_agent.voice_adapters import SupertonicTTS
-        # Return a real SupertonicTTS with the fake pipeline
-        mock_build.return_value = SupertonicTTS(pipeline=fake_pipeline)
+        return_value=SupertonicTTS(pipeline=fake_pipeline),
+    ):
         result = resolve_tts()
 
     assert isinstance(result, lk_tts.TTS)
