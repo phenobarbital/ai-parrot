@@ -1,7 +1,9 @@
 # Spec — LiveAvatar FULL Mode as voice/face for ai-parrot (no OpenAI-compatible client)
 
 - **Feature id:** `FEAT-<assign>` (suggested slug: `liveavatar-fullmode-speaktext`)
-- **Status:** Draft spec, to verify against source before `/sdd-task`
+- **Status:** Q1 gate PASSED (validated by `spike_q1_speaktext.py` against the live LiveAvatar
+  sandbox API). Q2 resolved (`ask_stream`). Ready for `/sdd-task` pending the ai-parrot
+  codebase-side `⚠️ VERIFY` items.
 - **Relationship to existing work:** Standalone. Does NOT supersede or modify the
   `liveavatar-ai-parrot-briefing` (LITE Mode, options A/C) already in progress. This is a
   parallel approach for evaluation/implementation.
@@ -167,16 +169,30 @@ project's `Abstract*` extension-seam + registry convention; selection is per ses
   Returns `session_id`, `session_token`. `llm_configuration_id` is **omitted on purpose**
   (we never use the built-in/custom LLM).
 - `POST /v1/sessions/start` (Bearer session_token) → `livekit_url`, `livekit_client_token`, session details.
+  ✅ **Verified (spike):** in FULL the response also carries `livekit_agent_token: null` and
+  `ws_url: null` — there is **no separate avatar media-server WebSocket** (that is LITE only);
+  all control/feedback is over LiveKit data channels (§5.4). Sandbox sessions are capped
+  (`max_session_duration` came back as `60`).
 - `POST /v1/sessions/stop` → end the session.
 - `POST /v1/sessions/keep-alive` (and/or WS `session.keep_alive`) → defeat idle timeout. `⚠️ VERIFY` (Q5).
 - `GET /v1/sessions/{id}/transcript` → server-side transcript (optional persistence aid).
 
 ### 5.4 Events (LiveKit data channels)
+
+✅ **Verified envelope (spike).** Messages are JSON published as LiveKit data on a topic. Send on
+`agent-control`, receive on `agent-response`. Confirmed shape (flat, no nesting):
+```json
+{ "event_id": "<uuid>", "event_type": "avatar.speak_text", "session_id": "<uuid>",
+  "source_event_id": null, "text": "<arbitrary text>" }
+```
+Correlation: `avatar.speak_started`/`avatar.speak_ended` carry a `source_event_id` tying them to
+the triggering speak command.
+
 Send on `agent-control`:
 
 | Event | Payload | Use |
 |---|---|---|
-| `avatar.speak_text` | `{text}` | **Speak ai-parrot's text (no LLM)** — primary output |
+| `avatar.speak_text` | `{text}` | **Speak ai-parrot's text (no LLM)** — primary output. ✅ verified to speak arbitrary text in restricted mode. |
 | `avatar.interrupt` | — | Barge-in: stop + clear queued speech |
 | `avatar.start_listening` / `avatar.stop_listening` | — | Listening-state UX cue |
 | `user.start_push_to_talk` / `user.stop_push_to_talk` | — | PTT only |
@@ -187,9 +203,13 @@ Receive on `agent-response`:
 |---|---|---|
 | `user.transcription` | `{text}` | **STT output** (LiveAvatarSpeechInput) |
 | `user.speak_started` / `user.speak_ended` | — | turn boundaries / trigger interrupt |
-| `avatar.speak_started` / `avatar.speak_ended` | — | avatar speaking state |
-| `avatar.transcription` | `{text}` | echo of spoken text (emitted immediately for `speak_text`) |
+| `avatar.speak_started` / `avatar.speak_ended` | `{source_event_id}` | avatar speaking state (correlated to the speak command) |
+| `avatar.transcription.chunk` | `{text}` | ✅ **(verified, undocumented)** the spoken text streamed **word-by-word** as the avatar talks |
+| `avatar.transcription` | `{text}` | full spoken text, emitted once (for `speak_text`, immediately) |
 | `session.stopped` | `{end_reason}` | teardown (`IDLE_TIMEOUT`, `MAX_DURATION_REACHED`, `NO_CREDITS`, …) |
+
+> Streaming opportunity: pair ai-parrot `ask_stream` (per-sentence `avatar.speak_text`) with
+> `avatar.transcription.chunk` for end-to-end streaming and word-level UI sync.
 
 ### 5.5 Frontend SDK
 - FULL Mode ships `@heygen/liveavatar-web-sdk` — preferred over a hand-rolled LiveKit client.
@@ -233,18 +253,17 @@ Receive on `agent-response`:
 
 ## 7. Cross-cutting behavior
 
-### 7.1 Suppressing LiveAvatar's own LLM (critical)
+### 7.1 Suppressing LiveAvatar's own LLM (critical) — ✅ RESOLVED
 We must ensure the avatar never auto-responds with its built-in LLM (would double up with
-ai-parrot). Lever: **restricted mode** — per docs, with no context supplied the avatar will not
-respond to user input, transcripts are still emitted, and the avatar "can only repeat pre-set
-phrases."
-- `⚠️ VERIFY` **Q1 (blocker):** confirm that in restricted mode (no `context_id`) an
-  `avatar.speak_text` with **arbitrary** text is spoken normally (the "pre-set phrases" wording is
-  ambiguous). If restricted mode limits `speak_text`, fall back to: supply a context but configure
-  it so the LLM never auto-responds, or use PTT and simply never let the built-in LLM fire.
-- Note: PTT controls *when* audio is captured, not *whether* the LLM responds — after
-  `stop_push_to_talk` the docs say the avatar "delivers a response." So PTT alone does not suppress
-  the LLM; restricted mode (or an equivalent) is still required.
+ai-parrot). Lever: **restricted mode** — start the session with **no `context_id`**. Per docs the
+avatar then won't respond to user input on its own; user transcripts are still emitted.
+- ✅ **Q1 confirmed (spike `spike_q1_speaktext.py`):** in restricted mode (no `context_id`),
+  `avatar.speak_text` with fully **arbitrary** text is spoken normally — `avatar.speak_started`
+  → full `avatar.transcription` → `avatar.speak_ended` all fired. The "pre-set phrases" wording
+  does **not** restrict `speak_text`. The approach is viable; no fallback needed.
+- Implementation: never send `avatar.speak_response`; never set `llm_configuration_id`; start
+  sessions without a context. (PTT is orthogonal — it controls *when* audio is captured, not
+  whether the LLM fires — so restricted mode remains the lever, optionally combined with PTT.)
 
 ### 7.2 Session lifecycle
 - `token → start → (loop) → stop`. Always `stop_session` on teardown incl. error paths.
@@ -258,9 +277,9 @@ On `user.speak_started` (or local-STT speech onset) while the avatar is speaking
 `avatar.interrupt` to stop and clear queued speech, then process the new turn.
 
 ### 7.4 Latency / streaming
-- Carry over **Q2** from the briefing: does ai-parrot stream partial tokens (over `ws_channel_id`)
-  or only return the full REST response? If streaming, send `avatar.speak_text` per sentence as
-  text arrives; if not, segment the full response into sentences client-side before speaking.
+- **Resolved:** ai-parrot exposes `ask_stream` (partial response streaming). Plan: consume
+  `ask_stream` and send `avatar.speak_text` per sentence as text arrives, to minimize TTFB.
+  Client-side sentence segmentation is only a fallback for non-streaming agent methods.
 - During long `tool_calls`, the avatar is silent; consider a short `avatar.speak_text` filler or
   a listening/idle state cue.
 
@@ -274,8 +293,10 @@ On `user.speak_started` (or local-STT speech onset) while the avatar is speaking
 ## 8. Open questions
 
 ### 8.1 Resolvable by spike / docs (for Claude Code)
-- **Q1 (blocker):** Does `avatar.speak_text` with arbitrary text work in restricted mode (no context)? (§7.1)
-- **Q2 (blocker):** Does ai-parrot stream partial response tokens, or REST-only? (decides TTFB strategy)
+- ~~**Q1 (blocker):** speak_text in restricted mode?~~ ✅ **RESOLVED** by `spike_q1_speaktext.py`:
+  arbitrary `avatar.speak_text` works with no context. Envelope + `agent-control`/`agent-response`
+  topics also confirmed (§5.4).
+- ~~**Q2 (blocker):** streaming?~~ **RESOLVED** — ai-parrot has `ask_stream` (partial streaming) → speak per sentence.
 - **Q4:** With `LocalSpeechInput`, should the user mic still be published to the LiveAvatar room, or muted/withheld?
 - **Q5:** FULL Mode keep-alive — HTTP `/v1/sessions/keep-alive` vs WS `session.keep_alive`?
 - **Q6:** Does `@heygen/liveavatar-web-sdk` expose `agent-control`/`agent-response` send/subscribe, or do we use `livekit-client` data channels?
@@ -311,8 +332,9 @@ On `user.speak_started` (or local-STT speech onset) while the avatar is speaking
 
 ## 10. Build order (dependency-ordered, for `/sdd-task`)
 
-1. Resolve **Q1** and **Q2** (spike): a throwaway sandbox FULL session that (a) confirms
-   `speak_text` in restricted mode, (b) measures the transcript→ai-parrot→speak loop latency.
+1. ✅ **GATE PASSED — Q1 validated** (`spike_q1_speaktext.py`, run against the LiveAvatar sandbox):
+   arbitrary `avatar.speak_text` is spoken in restricted mode; envelope and
+   `agent-control`/`agent-response` topics confirmed (§5.4). The entire spec is cleared to proceed.
 2. Backend `LiveAvatarClient` + session-mint endpoint (token/start/stop, secrets, voices/avatars list).
 3. Frontend avatar viewer (Web SDK or `livekit-client`) joining the room from minted credentials.
 4. Event plumbing: subscribe `agent-response`, send `agent-control` (`speak_text`, `interrupt`).
