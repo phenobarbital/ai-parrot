@@ -159,7 +159,7 @@
       "feature_id": "FEAT-248",
       "feature": "liveavatar-fullmode-speaktext",
       "spec": "sdd/specs/liveavatar-fullmode-speaktext.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -175,8 +175,8 @@
       "parallelism_notes": "Final validation task — depends on all prior tasks",
       "assigned_to": null,
       "started_at": "2026-06-18T22:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1598-fullmode-tests.md"
+      "completed_at": "2026-06-18T23:31:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1598-fullmode-tests.md"
     }
   ]
 }

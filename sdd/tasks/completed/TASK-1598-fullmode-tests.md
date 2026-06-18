@@ -189,4 +189,21 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (2026-06-19):
+
+Created `test_fullmode_integration.py` with 4 test classes:
+
+- **TestFullModeLifecycle**: config resolution (success + missing-key + missing-avatar-id),
+  create_full_session_token populates handle fields, start_session populates livekit
+  fields, full start-to-stop lifecycle with 3 sequential mocked POST responses.
+- **TestOptinChain**: avatar-disabled blocks fullmode, fullmode env absent blocks,
+  both wildcards allow, tenant-specific fullmode gate, None tenant always denied.
+- **TestErrorHandling**: missing LIVEAVATAR_API_KEY raises RuntimeError, API 500
+  propagates from create_full_session_token and start_session, malformed response
+  (missing 'data' key) uses empty defaults instead of crashing.
+- **TestObserverLifecycle**: instantiation, connect with/without livekit_url (Q-room-token
+  stub), idempotent disconnect, full connect+disconnect cycle, output_bridge wiring,
+  _on_data wrong-topic ignore, malformed JSON handling, valid event processing, bridge
+  forwarding verified via AsyncMock.assert_awaited_once.
+
+All tests are fully independent. No real LiveAvatar API calls.
