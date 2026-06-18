@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-18T17:07:25+00:00",
-  "completed_at": "2026-06-18T20:45:22+00:00",
+  "completed_at": null,
   "tasks": [
     {
       "id": "TASK-1584",
@@ -21,10 +21,9 @@
       "parallel": false,
       "parallelism_notes": "Foundation: extracts start_voice_native / stop_voice_native that TASK-1585 imports. Runs first in the single per-spec worktree. Touches avatar.py only.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-06-18T20:43:53+00:00",
-      "file": "sdd/tasks/completed/TASK-1584-extract-voice-native-helpers.md",
-      "verification": "verified"
+      "started_at": "2026-06-18T18:01:54+00:00",
+      "completed_at": "2026-06-18T18:04:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1584-extract-voice-native-helpers.md"
     },
     {
       "id": "TASK-1585",
@@ -42,10 +41,9 @@
       "parallel": false,
       "parallelism_notes": "Imports the TASK-1584 helpers and adds broadcast_to_channel that TASK-1586 calls. Touches stream.py only but is sequenced between 1584 and 1586.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-06-18T20:45:22+00:00",
-      "file": "sdd/tasks/completed/TASK-1585-streamhandler-voice-control.md",
-      "verification": "verified"
+      "started_at": "2026-06-18T18:01:54+00:00",
+      "completed_at": "2026-06-18T18:07:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1585-streamhandler-voice-control.md"
     },
     {
       "id": "TASK-1586",
@@ -63,10 +61,9 @@
       "parallel": false,
       "parallelism_notes": "Requires StreamHandler.broadcast_to_channel (TASK-1585) to exist as a fan-out target. Touches liveavatar_output.py + manager.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-06-18T20:45:22+00:00",
-      "file": "sdd/tasks/completed/TASK-1586-fanout-output-subscriber.md",
-      "verification": "verified"
+      "started_at": "2026-06-18T18:01:54+00:00",
+      "completed_at": "2026-06-18T18:10:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1586-fanout-output-subscriber.md"
     },
     {
       "id": "TASK-1587",
@@ -86,10 +83,9 @@
       "parallel": false,
       "parallelism_notes": "Cross-module end-to-end tests; must run after all implementation tasks are complete.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-06-18T20:45:22+00:00",
-      "file": "sdd/tasks/completed/TASK-1587-unified-voice-integration-tests.md",
-      "verification": "verified"
+      "started_at": "2026-06-18T18:01:54+00:00",
+      "completed_at": "2026-06-18T18:12:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1587-unified-voice-integration-tests.md"
     }
   ]
 }

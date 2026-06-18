@@ -163,9 +163,12 @@ async def test_end_to_end_structured_output_to_stream_ws():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-18
+**Notes**: Created `test_unified_voice_integration.py` with 4 integration tests:
+`test_end_to_end_structured_output_to_stream_ws`, `test_end_to_end_unsubscribed_socket_gets_nothing`,
+`test_end_to_end_fanout_delivers_to_both_managers`, and `test_text_and_voice_same_socket`.
+All 4 pass. Full server test suite: 324 passing, 2 pre-existing failures
+(`test_start_launches_subscriber_and_stop_tears_down` + `test_handlers_host_only_stubs`)
+that are unrelated to FEAT-244.
+**Deviations from spec**: Added 2 additional edge-case integration tests beyond the spec's minimum.

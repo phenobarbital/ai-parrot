@@ -196,9 +196,11 @@ async def test_stop_voice_native_unknown_is_idempotent(app_with_room_manager):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-18
+**Notes**: Extracted `start_voice_native(app, agent_id, session_id, tenant_id) -> dict`
+and `stop_voice_native(app, session_id) -> None` from `avatar.py`. All LiveAvatar
+imports remain lazy. `_start_voice_native_session` now parses the request and
+delegates to `start_voice_native`. `_stop_avatar_session` Phase C branch delegates to
+`stop_voice_native`. 9 unit tests pass, no ruff errors.
+**Deviations from spec**: none

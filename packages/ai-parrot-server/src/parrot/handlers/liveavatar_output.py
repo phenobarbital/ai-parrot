@@ -16,18 +16,58 @@ and ``liveavatar:structured-outputs``).
 
 import asyncio
 import logging
-from typing import Optional
+from collections.abc import Iterable
+from typing import Any, Optional
 
 from aiohttp import web
 
 from parrot.conf import REDIS_URL
 
-__all__ = ["configure_liveavatar_output_subscriber"]
+__all__ = [
+    "configure_liveavatar_output_subscriber",
+    "_FanOutSink",  # Exported for integration tests; internal implementation detail.
+]
 
 logger = logging.getLogger(__name__)
 
 _REDIS_KEY = "liveavatar_output_redis"
 _TASK_KEY = "liveavatar_output_task"
+
+
+class _FanOutSink:
+    """Duck-typed ``broadcast_to_channel`` sink that fans out to multiple managers.
+
+    Wraps a list of ``user_socket_manager``-compatible managers (anything that
+    exposes ``async broadcast_to_channel(channel, message, exclude_ws=None)``).
+    A failure in one manager does not prevent delivery to the others.
+
+    The class is exported so integration tests can import it directly.
+
+    Args:
+        managers: Iterable of sink objects (``None`` entries are silently dropped).
+    """
+
+    def __init__(self, managers: Iterable[Any]) -> None:
+        self._managers = [m for m in managers if m is not None]
+
+    async def broadcast_to_channel(
+        self, channel: str, message: Any, exclude_ws: Any = None
+    ) -> None:
+        """Forward the broadcast to every non-None manager.
+
+        Args:
+            channel: Target channel (session_id).
+            message: JSON-serialisable message payload.
+            exclude_ws: Passed through to each manager (usually ``None`` for
+                the Redis-sourced path; included for API parity).
+        """
+        for manager in self._managers:
+            try:
+                await manager.broadcast_to_channel(channel, message, exclude_ws=exclude_ws)
+            except Exception:  # noqa: BLE001 — one bad sink must not block the rest
+                logger.exception(
+                    "_FanOutSink: delivery failed for channel %s", channel
+                )
 
 
 def configure_liveavatar_output_subscriber(
@@ -71,13 +111,26 @@ def configure_liveavatar_output_subscriber(
             )
             return
 
-        socket_manager = application.get("user_socket_manager")
-        if socket_manager is None:
+        user_socket_manager = application.get("user_socket_manager")
+        stream_handler = application.get("stream_handler")
+
+        # FEAT-244: build a fan-out sink over both managers so structured outputs
+        # reach the browser via whichever socket(s) are present.
+        # Warn if neither sink is available — no delivery is possible.
+        if user_socket_manager is None and stream_handler is None:
             logger.warning(
-                "configure_liveavatar_output_subscriber: app['user_socket_manager'] "
-                "is not set; structured outputs will not reach the UI."
+                "configure_liveavatar_output_subscriber: neither app['user_socket_manager'] "
+                "nor app['stream_handler'] is set; structured outputs will not be delivered."
             )
             return
+
+        if user_socket_manager is None:
+            logger.warning(
+                "configure_liveavatar_output_subscriber: app['user_socket_manager'] "
+                "is not set; structured outputs will reach only app['stream_handler']."
+            )
+
+        socket_manager = _FanOutSink([user_socket_manager, stream_handler])
 
         sub_channel = channel or DEFAULT_OUTPUT_CHANNEL
         redis = aioredis.from_url(resolved_redis_url, decode_responses=True)

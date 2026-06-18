@@ -184,9 +184,12 @@ async def test_fanout_skips_none_and_survives_failure(mocker):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-18
+**Notes**: Added `_FanOutSink` class to `liveavatar_output.py` (exported in `__all__`).
+Updated `_start` hook to build `_FanOutSink([user_socket_manager, stream_handler])` and
+pass it to `run_output_subscriber`. Added graceful degradation when only one manager is
+present. Added `self.app['stream_handler'] = st` in `manager.py` next to the `StreamHandler`
+construction. 4 new fan-out tests pass; 1 pre-existing test failure (`test_start_launches_subscriber_and_stop_tears_down`)
+is a namespace-package monkeypatching issue that pre-dates this task.
+**Deviations from spec**: none

@@ -1774,6 +1774,11 @@ class BotManager:
         # Streaming Handler:
         st = StreamHandler()
         st.configure_routes(self.app)
+        # FEAT-244: publish the StreamHandler so the LiveAvatar output subscriber
+        # can use it as a fan-out sink for structured-output delivery.
+        # Must be set HERE (before on_startup hooks run) so the subscriber's
+        # _start hook finds it when it reads app['stream_handler'].
+        self.app['stream_handler'] = st
         # Crew Configuration
         if ENABLE_CREWS:
             CrewHandler.configure(self.app, '/api/v1/crew')

@@ -206,9 +206,11 @@ async def test_voice_start_missing_session_id_errors(handler, mocker):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-18
+**Notes**: Added `channel_subscriptions` and `_ws_voice_sessions` to `StreamHandler.__init__`.
+Added `broadcast_to_channel`, `_subscribe_to_channel`, `_unsubscribe_from_channel`, and
+`_cleanup_ws_voice_sessions` methods. Added `voice_start` and `voice_stop` branches to
+`_handle_message`. Added a `finally` block to `stream_websocket` that calls
+`_cleanup_ws_voice_sessions` on socket close. 13 unit tests pass, no ruff errors.
+**Deviations from spec**: none

@@ -243,12 +243,11 @@ async def _stop_avatar_session(request: web.Request) -> web.Response:
     if not session_id:
         raise web.HTTPBadRequest(reason="'session_id' is required")
 
-    # Phase C: delete the voice-native worker dispatch if one is tracked.
+    # Phase C: delegate to the request-agnostic helper (FEAT-244).
     voice_store: Dict[str, Any] = request.app.get(AVATAR_VOICE_SESSIONS_KEY, {})
-    voice_record = voice_store.pop(session_id, None)
-    if voice_record:
-        await _delete_voice_dispatch(voice_record)
-        _logger.info("AvatarSessionView: stopped voice-native session %s", session_id)
+    had_voice_record = session_id in voice_store
+    await stop_voice_native(request.app, session_id)
+    voice_record = had_voice_record  # local alias for the Phase A guard below
 
     # Phase A: tear down a stored viewer session if one exists.
     store: Dict[str, Any] = request.app.get(AVATAR_SESSIONS_KEY, {})
@@ -284,31 +283,36 @@ def _worker_agent_name() -> str:
     return os.environ.get("LIVEAVATAR_WORKER_AGENT_NAME", "liveavatar-voice")
 
 
-async def _start_voice_native_session(request: web.Request) -> web.Response:
-    """POST /api/v1/agents/avatar/{agent_id}/voice-native/start — Phase C (FEAT-243).
+async def start_voice_native(
+    app: web.Application,
+    agent_id: str,
+    session_id: str,
+    tenant_id: Optional[str],
+) -> Dict[str, Any]:
+    """Mint a publish-capable LiveKit token and dispatch the voice-native worker.
 
-    Unlike the Phase A ``/start`` (which spawns a viewer-only avatar session),
-    the voice-native flow lets the **browser publish its microphone** and hands
-    turn-taking to a LiveKit Agents worker. This endpoint does the two things
-    FEAT-243 left to the deployment:
+    Request-agnostic helper extracted from :func:`_start_voice_native_session`
+    (FEAT-244). Both the REST view and :class:`~parrot.handlers.stream.StreamHandler`
+    call this function so the dispatch logic is never duplicated.
 
-    1. Mints a **publish-capable** browser token (``can_publish`` microphone +
-       subscribe) — the Phase A ``client_token`` is subscribe-only and will not
-       let the browser publish audio.
-    2. **Explicitly dispatches** the worker into the room (= ``session_id``) with
-       :class:`AvatarJobMetadata`, so the worker resolves the ai-parrot brain and
-       speaks/streams structured outputs for this conversation.
+    Imports of the optional ``ai-parrot-integrations[liveavatar]`` stack are kept
+    **lazy** (inside this function) so the server never hard-requires the extra.
 
-    Request body (JSON):
-        session_id (str): AgentChat session ID — names the LiveKit room AND the
+    Args:
+        app: The aiohttp Application (carries ``AVATAR_VOICE_SESSIONS_KEY`` store).
+        agent_id: The ai-parrot agent name that acts as the brain for the session.
+        session_id: AgentChat session ID — names the LiveKit room AND the
             structured-output WS channel. Required.
-        tenant_id  (str, optional): Tenant identifier for opt-in gating; also
-            forwarded to the worker via the job metadata.
+        tenant_id: Optional tenant identifier for opt-in gating; forwarded to the
+            worker via job metadata.
 
-    Response (JSON):
-        livekit_url (str): LiveKit WebSocket URL for the browser.
-        token       (str): Publish(audio)+subscribe JWT for the browser.
-        session_id  (str): The shared session ID.
+    Returns:
+        A dict with keys ``livekit_url``, ``token``, ``session_id``.
+
+    Raises:
+        web.HTTPForbidden: When the avatar feature is not enabled for this tenant.
+        web.HTTPServiceUnavailable: When the LiveKit environment is not provisioned
+            or the worker dispatch fails.
     """
     try:
         from parrot.integrations.liveavatar import LiveKitRoomManager
@@ -321,19 +325,6 @@ async def _start_voice_native_session(request: web.Request) -> web.Response:
         raise web.HTTPServiceUnavailable(
             reason="LiveAvatar stack not installed"
         ) from exc
-
-    agent_id = request.match_info["agent_id"]
-
-    try:
-        body: Dict[str, Any] = await request.json()
-    except Exception:  # noqa: BLE001
-        body = {}
-
-    session_id: str = body.get("session_id") or ""
-    tenant_id: Optional[str] = body.get("tenant_id") or None
-
-    if not session_id:
-        raise web.HTTPBadRequest(reason="'session_id' is required")
 
     # Per-tenant opt-in gate (same gate as Phase A).
     if not is_avatar_enabled(tenant_id=tenant_id, agent_name=agent_id):
@@ -379,22 +370,84 @@ async def _start_voice_native_session(request: web.Request) -> web.Response:
         ) from exc
 
     # Track the dispatch so /stop (and shutdown cleanup) can delete it.
-    voice_store = request.app.setdefault(AVATAR_VOICE_SESSIONS_KEY, {})
+    voice_store = app.setdefault(AVATAR_VOICE_SESSIONS_KEY, {})
     voice_store[session_id] = {"room": session_id, "dispatch_id": dispatch_id}
 
     _logger.info(
-        "AvatarSessionView: voice-native start session %s for agent %s "
-        "(tenant set=%s)",
+        "start_voice_native: started session %s for agent %s (tenant set=%s)",
         session_id,
         agent_id,
         tenant_id is not None,
     )
 
-    return web.json_response({
+    return {
         "livekit_url": room_manager.url,
         "token": token,
         "session_id": session_id,
-    })
+    }
+
+
+async def stop_voice_native(app: web.Application, session_id: str) -> None:
+    """Tear down a Phase C voice-native worker dispatch. Idempotent.
+
+    Request-agnostic helper extracted from :func:`_stop_avatar_session`
+    (FEAT-244). Both the REST ``/stop`` view and the
+    :class:`~parrot.handlers.stream.StreamHandler` WebSocket close-cleanup call
+    this function.
+
+    Never raises — teardown must stay idempotent and non-blocking even when the
+    session is unknown or LiveKit is unreachable.
+
+    Args:
+        app: The aiohttp Application (carries ``AVATAR_VOICE_SESSIONS_KEY`` store).
+        session_id: The session to tear down.
+    """
+    voice_store: Dict[str, Any] = app.get(AVATAR_VOICE_SESSIONS_KEY, {})
+    voice_record = voice_store.pop(session_id, None)
+    if voice_record:
+        await _delete_voice_dispatch(voice_record)
+        _logger.info("stop_voice_native: stopped voice-native session %s", session_id)
+    else:
+        _logger.debug(
+            "stop_voice_native: no active voice-native session for %s (idempotent)",
+            session_id,
+        )
+
+
+async def _start_voice_native_session(request: web.Request) -> web.Response:
+    """POST /api/v1/agents/avatar/{agent_id}/voice-native/start — Phase C (FEAT-243).
+
+    Unlike the Phase A ``/start`` (which spawns a viewer-only avatar session),
+    the voice-native flow lets the **browser publish its microphone** and hands
+    turn-taking to a LiveKit Agents worker. This endpoint parses the request and
+    delegates to :func:`start_voice_native` (FEAT-244).
+
+    Request body (JSON):
+        session_id (str): AgentChat session ID — names the LiveKit room AND the
+            structured-output WS channel. Required.
+        tenant_id  (str, optional): Tenant identifier for opt-in gating; also
+            forwarded to the worker via the job metadata.
+
+    Response (JSON):
+        livekit_url (str): LiveKit WebSocket URL for the browser.
+        token       (str): Publish(audio)+subscribe JWT for the browser.
+        session_id  (str): The shared session ID.
+    """
+    agent_id = request.match_info["agent_id"]
+
+    try:
+        body: Dict[str, Any] = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+
+    session_id: str = body.get("session_id") or ""
+    tenant_id: Optional[str] = body.get("tenant_id") or None
+
+    if not session_id:
+        raise web.HTTPBadRequest(reason="'session_id' is required")
+
+    result = await start_voice_native(request.app, agent_id, session_id, tenant_id)
+    return web.json_response(result)
 
 
 @is_authenticated()
