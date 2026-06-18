@@ -72,7 +72,7 @@
       "feature_id": "FEAT-248",
       "feature": "liveavatar-fullmode-speaktext",
       "spec": "sdd/specs/liveavatar-fullmode-speaktext.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Requires both client extension and config resolver",
       "assigned_to": null,
       "started_at": "2026-06-18T22:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1594-fullmode-rest-handler.md"
+      "completed_at": "2026-06-18T23:23:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1594-fullmode-rest-handler.md"
     },
     {
       "id": "TASK-1595",
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-248",
       "feature": "liveavatar-fullmode-speaktext",
       "spec": "sdd/specs/liveavatar-fullmode-speaktext.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Only needs client listing methods from TASK-1592; independent of TASK-1593/1594",
       "assigned_to": null,
       "started_at": "2026-06-18T22:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1595-avatar-voice-listing-handler.md"
+      "completed_at": "2026-06-18T23:23:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1595-avatar-voice-listing-handler.md"
     },
     {
       "id": "TASK-1596",
