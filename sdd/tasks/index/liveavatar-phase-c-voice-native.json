@@ -14,7 +14,7 @@
       "feature_id": "FEAT-243",
       "feature": "liveavatar-phase-c-voice-native",
       "spec": "sdd/specs/liveavatar-phase-c-voice-native.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,7 +22,7 @@
       "parallelism_notes": "Foundation: adds the liveavatar-voice optional extra (P5) and the AvatarJobMetadata/StructuredOutputMessage Pydantic models every downstream task imports. NOT blocked by FEAT-242. All other tasks import from this one, so it runs first in the single Phase C worktree.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-06-18T07:32:24+00:00",
       "file": "sdd/tasks/active/TASK-001-livekit-agent-deps-and-models.md"
     },
     {
@@ -32,15 +32,17 @@
       "feature_id": "FEAT-243",
       "feature": "liveavatar-phase-c-voice-native",
       "spec": "sdd/specs/liveavatar-phase-c-voice-native.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-001"],
+      "depends_on": [
+        "TASK-001"
+      ],
       "parallel": false,
       "parallelism_notes": "Module 3 (P4). Depends only on TASK-001 models + the existing UserSocketManager.broadcast_to_channel (verified user.py:357). NOT blocked by FEAT-242. Sequential in the same worktree; TASK-003 imports it.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-06-18T07:32:24+00:00",
       "file": "sdd/tasks/active/TASK-002-output-bridge.md"
     },
     {
@@ -50,15 +52,18 @@
       "feature_id": "FEAT-243",
       "feature": "liveavatar-phase-c-voice-native",
       "spec": "sdd/specs/liveavatar-phase-c-voice-native.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-001", "TASK-002"],
+      "depends_on": [
+        "TASK-001",
+        "TASK-002"
+      ],
       "parallel": false,
       "parallelism_notes": "Module 2 (llm-node-aiparrot-bridge). BLOCKED on FEAT-242: reuses SpeakableFlattener (speakable.py). Imports TASK-001 models + TASK-002 OutputBridge + ai-parrot ask_stream/AIMessage. Must validate the llm_node signature against the pinned livekit-agents (P5). Sequential.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-06-18T07:32:24+00:00",
       "file": "sdd/tasks/active/TASK-003-llm-node-aiparrot-bridge.md"
     },
     {
@@ -68,15 +73,18 @@
       "feature_id": "FEAT-243",
       "feature": "liveavatar-phase-c-voice-native",
       "spec": "sdd/specs/liveavatar-phase-c-voice-native.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-001", "TASK-003"],
+      "depends_on": [
+        "TASK-001",
+        "TASK-003"
+      ],
       "parallel": false,
       "parallelism_notes": "Module 1. BLOCKED on FEAT-242: reuses LiveKitRoomManager + LiveAvatarClient + LiveAvatarConfig/AvatarSessionHandle. Binds the TASK-003 LiveAvatarAgent as the LLM node; parses ctx.job.metadata via TASK-001 model. Validate LiveKit worker API against the pinned version (P5). Sequential.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-06-18T07:32:24+00:00",
       "file": "sdd/tasks/active/TASK-004-livekit-worker-and-pipeline.md"
     }
   ]
