@@ -162,4 +162,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (2026-06-19):
+
+- `__init__.py`: added exports for `FullModeRoomObserver` and `resolve_fullmode_config`
+  (all FULL mode symbols now importable from `parrot.integrations.liveavatar`).
+- `optin.py`: added `is_fullmode_enabled(*, tenant_id, agent_name=None) -> bool` as a
+  superset gate over `is_avatar_enabled`. Reads `LIVEAVATAR_FULLMODE_ENABLED_TENANTS`
+  (default-deny; `"*"` wildcard; comma-separated list). Fully documented with TODO
+  Q-tenant note.
+- `test_optin.py`: added `TestIsFullmodeEnabled` class with 8 test cases covering
+  disabled-avatar, disabled-fullmode, wildcard, specific-tenant, agent-name propagation,
+  None/empty tenant_id, and whitespace-in-list edge cases.
+- `manager.py`: added `_register_fullmode_avatar_routes()` method (mirrors
+  `_register_avatar_routes` pattern) and wired it in `_setup_routes()` after the LITE
+  avatar routes. The `handlers/__init__.py` listed in the task does not exist in this
+  project; manager.py is the correct registration point per project architecture.
+
+Note: `packages/ai-parrot-server/src/parrot/handlers/__init__.py` does not exist in
+this project — route registration follows the manager.py pattern established by
+FEAT-242. Modified manager.py instead as the architecturally correct location.

@@ -134,7 +134,7 @@
       "feature_id": "FEAT-248",
       "feature": "liveavatar-fullmode-speaktext",
       "spec": "sdd/specs/liveavatar-fullmode-speaktext.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -149,8 +149,8 @@
       "parallelism_notes": "Integration task — wires all prior components together",
       "assigned_to": null,
       "started_at": "2026-06-18T22:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1597-package-wiring-optin.md"
+      "completed_at": "2026-06-18T23:29:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1597-package-wiring-optin.md"
     },
     {
       "id": "TASK-1598",
