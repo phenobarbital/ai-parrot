@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-243
 **Date**: 2026-06-18
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 > Input brainstorm: `sdd/proposals/liveavatar-integration.brainstorm.md` (Option C).
