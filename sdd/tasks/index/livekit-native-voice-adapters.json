@@ -13,12 +13,13 @@
       "feature": "livekit-native-voice-adapters",
       "slug": "voice-adapters-module",
       "title": "Implement voice_adapters.py — SupertonicTTS, _TranscriberSTT, WhisperSTT, MoonshineSTT",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "depends_on": [],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-246-001-voice-adapters-module.md",
-      "started_at": "2026-06-18T18:34:51+00:00"
+      "file": "sdd/tasks/completed/TASK-246-001-voice-adapters-module.md",
+      "started_at": "2026-06-18T18:34:51+00:00",
+      "completed_at": "2026-06-18T18:39:52+00:00"
     },
     {
       "id": "TASK-246-002",
