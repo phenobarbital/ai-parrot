@@ -90,6 +90,9 @@ ENABLE_DASHBOARDS = config.getboolean("ENABLE_DASHBOARDS", fallback=False)
 ENABLE_CREWS = config.getboolean("ENABLE_CREWS", fallback=False)
 ENABLE_DATABASE_BOTS = config.getboolean("ENABLE_DATABASE_BOTS", fallback=False)
 ENABLE_REGISTRY_BOTS = config.getboolean("ENABLE_REGISTRY_BOTS", fallback=True)
+# FEAT-243: enable the LiveAvatar Phase C output subscriber (re-broadcasts the
+# LiveKit voice worker's structured outputs to the AgentChat UI over Redis).
+ENABLE_LIVEAVATAR_VOICE = config.getboolean("ENABLE_LIVEAVATAR_VOICE", fallback=False)
 
 # Bot Model Table Configuration:
 PARROT_BOTS_TABLE = config.get('PARROT_BOTS_TABLE', fallback='ai_bots')

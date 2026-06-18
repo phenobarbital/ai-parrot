@@ -75,6 +75,7 @@ from ..conf import (
     ENABLE_CREWS,
     ENABLE_DATABASE_BOTS,
     ENABLE_DASHBOARDS,
+    ENABLE_LIVEAVATAR_VOICE,
     ENABLE_REGISTRY_BOTS,
     ENABLE_SWAGGER,
     REDIS_URL,
@@ -1514,6 +1515,21 @@ class BotManager:
             self.app.on_cleanup.append(close_all_avatar_sessions)
         return registered
 
+    def _setup_liveavatar_voice(self) -> None:
+        """Wire the LiveAvatar Phase C output subscriber when enabled (FEAT-243).
+
+        Opt-in via ``ENABLE_LIVEAVATAR_VOICE``. The subscriber's own ``on_startup``
+        defers reading ``app['user_socket_manager']``, so registering it here
+        (before that key is populated) is safe.
+        """
+        if not ENABLE_LIVEAVATAR_VOICE:
+            return
+        from ..handlers.liveavatar_output import (
+            configure_liveavatar_output_subscriber,
+        )
+
+        configure_liveavatar_output_subscriber(self.app)
+
     def setup(self, app: web.Application) -> web.Application:
         self.app = None
         if app:
@@ -1570,6 +1586,8 @@ class BotManager:
             await setup_web_hitl(app)
 
         self.app.on_startup.append(_hitl_deferred_startup)
+        # FEAT-243: LiveAvatar Phase C output subscriber (opt-in).
+        self._setup_liveavatar_voice()
         # OAuth2 Integrations routes (FEAT-144)
         router.add_view(
             '/api/v1/agents/integrations/{agent_id}',
