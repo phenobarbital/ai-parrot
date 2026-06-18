@@ -32,7 +32,7 @@
       "feature_id": "FEAT-245",
       "feature": "voicechat-liveavatar-gemini",
       "spec": "sdd/specs/voicechat-liveavatar-gemini.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Imports VoiceAvatarSession (TASK-1588) and wires it into voice/handler.py (start/tee/cleanup). Sequenced after 1588.",
       "assigned_to": null,
       "started_at": "2026-06-18T18:06:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1589-wire-voice-avatar-into-handler.md"
+      "completed_at": "2026-06-18T18:11:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1589-wire-voice-avatar-into-handler.md"
     },
     {
       "id": "TASK-1590",
