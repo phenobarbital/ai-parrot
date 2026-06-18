@@ -38,6 +38,8 @@ import logging
 from typing import Any, Dict, Optional
 
 from aiohttp import web
+from navigator.views import BaseView
+from navigator_auth.decorators import is_authenticated, user_session
 
 _logger = logging.getLogger("Parrot.AvatarFullmodeView")
 
@@ -97,6 +99,15 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
     if not session_id:
         raise web.HTTPBadRequest(reason="'session_id' is required")
 
+    # Guard against concurrent /start calls for the same session_id — two
+    # simultaneous requests would each open a LiveAvatarClient and the second
+    # would overwrite the first, leaving an orphaned keep-alive loop.
+    store = request.app.setdefault(FULLMODE_SESSIONS_KEY, {})
+    if session_id in store:
+        raise web.HTTPConflict(
+            reason=f"A FULL mode session for '{session_id}' is already active"
+        )
+
     # Per-tenant FULL mode opt-in gate (superset of is_avatar_enabled).
     if not is_fullmode_enabled(tenant_id=tenant_id, agent_name=agent_name):
         raise web.HTTPForbidden(
@@ -105,7 +116,7 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
 
     # Resolve config from env (+ future DB overrides).
     try:
-        cfg = resolve_fullmode_config(tenant_id=tenant_id)
+        cfg = await resolve_fullmode_config(tenant_id=tenant_id)
     except RuntimeError as exc:
         _logger.warning("LiveAvatar config error: %s", exc)
         raise web.HTTPServiceUnavailable(
@@ -131,7 +142,6 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
         raise
 
     # Register the live session so /stop (and shutdown cleanup) can reach it.
-    store = request.app.setdefault(FULLMODE_SESSIONS_KEY, {})
     store[session_id] = {"client": client, "handle": handle}
 
     _logger.info(
@@ -221,7 +231,7 @@ async def _list_avatars(request: web.Request) -> web.Response:
     tenant_id: Optional[str] = request.rel_url.query.get("tenant_id") or None
 
     try:
-        cfg = resolve_fullmode_config(tenant_id=tenant_id)
+        cfg = await resolve_fullmode_config(tenant_id=tenant_id)
     except RuntimeError as exc:
         _logger.warning("LiveAvatar config error: %s", exc)
         raise web.HTTPServiceUnavailable(
@@ -265,7 +275,7 @@ async def _list_voices(request: web.Request) -> web.Response:
     tenant_id: Optional[str] = request.rel_url.query.get("tenant_id") or None
 
     try:
-        cfg = resolve_fullmode_config(tenant_id=tenant_id)
+        cfg = await resolve_fullmode_config(tenant_id=tenant_id)
     except RuntimeError as exc:
         _logger.warning("LiveAvatar config error: %s", exc)
         raise web.HTTPServiceUnavailable(
@@ -307,7 +317,7 @@ async def _get_session_transcript(request: web.Request) -> web.Response:
         raise web.HTTPBadRequest(reason="'session_id' path parameter is required")
 
     try:
-        cfg = resolve_fullmode_config()
+        cfg = await resolve_fullmode_config()
     except RuntimeError as exc:
         _logger.warning("LiveAvatar config error: %s", exc)
         raise web.HTTPServiceUnavailable(
@@ -327,6 +337,56 @@ async def _get_session_transcript(request: web.Request) -> web.Response:
 
 
 # ---------------------------------------------------------------------------
+# Authenticated views (MAJOR-1 fix — mirrors AvatarSessionView in avatar.py)
+# ---------------------------------------------------------------------------
+
+
+@is_authenticated()
+@user_session()
+class FullmodeStartView(BaseView):
+    """Authenticated entrypoint for POST .../fullmode/{agent_id}/start."""
+
+    async def post(self) -> web.Response:
+        return await _start_fullmode_session(self.request)
+
+
+@is_authenticated()
+@user_session()
+class FullmodeStopView(BaseView):
+    """Authenticated entrypoint for POST .../fullmode/{agent_id}/stop."""
+
+    async def post(self) -> web.Response:
+        return await _stop_fullmode_session(self.request)
+
+
+@is_authenticated()
+@user_session()
+class FullmodeAvatarsView(BaseView):
+    """Authenticated entrypoint for GET /api/v1/avatar/avatars."""
+
+    async def get(self) -> web.Response:
+        return await _list_avatars(self.request)
+
+
+@is_authenticated()
+@user_session()
+class FullmodeVoicesView(BaseView):
+    """Authenticated entrypoint for GET /api/v1/avatar/voices."""
+
+    async def get(self) -> web.Response:
+        return await _list_voices(self.request)
+
+
+@is_authenticated()
+@user_session()
+class FullmodeTranscriptView(BaseView):
+    """Authenticated entrypoint for GET /api/v1/avatar/session/{session_id}/transcript."""
+
+    async def get(self) -> web.Response:
+        return await _get_session_transcript(self.request)
+
+
+# ---------------------------------------------------------------------------
 # Route registration
 # ---------------------------------------------------------------------------
 
@@ -335,9 +395,9 @@ def register_fullmode_routes(router: Any) -> bool:
     """Register FULL mode avatar endpoints on the provided aiohttp router.
 
     Follows the same defensive-import pattern used by ``register_avatar_routes``
-    in ``avatar.py``.  Routes are registered without authentication decorators
-    at this layer — authentication is applied by the caller's middleware or by
-    wrapping in a ``BaseView`` if the server requires it.
+    in ``avatar.py``.  Routes are served through authenticated
+    :class:`BaseView` subclasses (``@is_authenticated()`` + ``@user_session()``)
+    to match the auth posture of the LITE avatar endpoints.
 
     Args:
         router: The aiohttp ``UrlDispatcher`` to register routes on.
@@ -355,25 +415,22 @@ def register_fullmode_routes(router: Any) -> bool:
         )
         return False
 
-    router.add_route(
-        "POST",
+    router.add_view(
         "/api/v1/avatar/fullmode/{agent_id}/start",
-        _start_fullmode_session,
+        FullmodeStartView,
     )
-    router.add_route(
-        "POST",
+    router.add_view(
         "/api/v1/avatar/fullmode/{agent_id}/stop",
-        _stop_fullmode_session,
+        FullmodeStopView,
     )
-    router.add_route("GET", "/api/v1/avatar/avatars", _list_avatars)
-    router.add_route("GET", "/api/v1/avatar/voices", _list_voices)
-    router.add_route(
-        "GET",
+    router.add_view("/api/v1/avatar/avatars", FullmodeAvatarsView)
+    router.add_view("/api/v1/avatar/voices", FullmodeVoicesView)
+    router.add_view(
         "/api/v1/avatar/session/{session_id}/transcript",
-        _get_session_transcript,
+        FullmodeTranscriptView,
     )
 
-    _logger.info("FULL mode avatar routes registered.")
+    _logger.info("FULL mode avatar routes registered (authenticated).")
     return True
 
 
@@ -390,7 +447,7 @@ async def close_all_fullmode_sessions(app: web.Application) -> None:
         try:
             if client is not None and handle is not None:
                 await client.stop_session(handle)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             _logger.warning(
                 "Failed stopping FULL mode session %s on shutdown",
                 session_id,
@@ -400,6 +457,8 @@ async def close_all_fullmode_sessions(app: web.Application) -> None:
             if client is not None:
                 try:
                     await client.aclose()
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    _logger.warning(
+                        "Failed to close session %s: %s", session_id, exc
+                    )
     store.clear()

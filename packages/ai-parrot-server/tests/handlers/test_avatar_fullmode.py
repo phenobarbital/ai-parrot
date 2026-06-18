@@ -1,10 +1,12 @@
 """Unit tests for the FULL mode avatar handler (TASK-1594 + TASK-1595).
 
 Tests cover:
-- _start_fullmode_session: returns viewer creds, no sensitive fields, opt-in gate
+- _start_fullmode_session: returns viewer creds, no sensitive fields, opt-in gate,
+  tenant_id persisted on handle, HTTPConflict for duplicate session_id
 - _stop_fullmode_session: tears down via store, idempotent
 - _list_avatars: proxies list_avatars() with config resolver
 - _list_voices: proxies list_voices() with config resolver
+- _get_session_transcript: happy path and 404 for missing session
 
 All LiveAvatar and liveavatar stack imports are lazy-injected via sys.modules
 so the test suite never requires ai-parrot-integrations to be installed.
@@ -20,6 +22,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiohttp.web import (
     HTTPBadRequest,
+    HTTPConflict,
     HTTPForbidden,
     HTTPInternalServerError,
     HTTPServiceUnavailable,
@@ -27,6 +30,7 @@ from aiohttp.web import (
 
 from parrot.handlers.avatar_fullmode import (
     FULLMODE_SESSIONS_KEY,
+    _get_session_transcript,
     _list_avatars,
     _list_voices,
     _start_fullmode_session,
@@ -76,10 +80,10 @@ def _inject_fullmode_stack(
     # Fake LiveAvatarClient class — returns our fake instance
     fake_client_cls = MagicMock(return_value=fake_client)
 
-    # Fake resolve_fullmode_config
+    # Fake resolve_fullmode_config (async — must be AsyncMock)
     fake_cfg = MagicMock()
     fake_cfg.api_key = "test-key"
-    fake_resolve = MagicMock(return_value=fake_cfg)
+    fake_resolve = AsyncMock(return_value=fake_cfg)
 
     # Fake is_fullmode_enabled
     fake_is_fullmode = MagicMock(return_value=fullmode_enabled)
@@ -219,7 +223,7 @@ class TestStartFullmodeSession:
         try:
             sys.modules[
                 "parrot.integrations.liveavatar.tenant_config"
-            ].resolve_fullmode_config = MagicMock(
+            ].resolve_fullmode_config = AsyncMock(
                 side_effect=RuntimeError("missing env vars")
             )
             with pytest.raises(HTTPServiceUnavailable):
@@ -347,7 +351,7 @@ class TestListAvatars:
         saved, keys, _, _ = _inject_fullmode_stack()
         sys.modules[
             "parrot.integrations.liveavatar.tenant_config"
-        ].resolve_fullmode_config = MagicMock(
+        ].resolve_fullmode_config = AsyncMock(
             side_effect=RuntimeError("missing vars")
         )
         try:
@@ -389,3 +393,177 @@ class TestListVoices:
                 await _list_voices(req)
         finally:
             _restore_modules(saved, keys)
+
+
+# ---------------------------------------------------------------------------
+# MAJOR-2: handle.tenant_id persists in session store
+# ---------------------------------------------------------------------------
+
+
+class TestTenantIdPersistedInStore:
+    """Verify that handle.tenant_id is correctly set and stored (MAJOR-2)."""
+
+    async def test_tenant_id_persisted_on_handle(self) -> None:
+        """After /start, store['sess-1']['handle'].tenant_id == 'acme'."""
+        req = _make_request({"session_id": "sess-1", "tenant_id": "acme"})
+
+        saved, keys, fake_client, fake_handle = _inject_fullmode_stack()
+        try:
+            await _start_fullmode_session(req)
+        finally:
+            _restore_modules(saved, keys)
+
+        store = req.app[FULLMODE_SESSIONS_KEY]
+        assert "sess-1" in store
+        assert store["sess-1"]["handle"].tenant_id == "acme"
+
+    async def test_tenant_id_none_when_not_provided(self) -> None:
+        """handle.tenant_id is None when tenant_id is absent from the request."""
+        req = _make_request({"session_id": "sess-2"})
+
+        saved, keys, fake_client, fake_handle = _inject_fullmode_stack()
+        try:
+            await _start_fullmode_session(req)
+        finally:
+            _restore_modules(saved, keys)
+
+        store = req.app[FULLMODE_SESSIONS_KEY]
+        assert store["sess-2"]["handle"].tenant_id is None
+
+
+# ---------------------------------------------------------------------------
+# MAJOR-3: duplicate /start raises HTTPConflict (409)
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentStartConflict:
+    """Verify that a second /start for the same session_id raises 409 (MAJOR-3)."""
+
+    async def test_duplicate_session_raises_conflict(self) -> None:
+        """Second /start with an already-active session_id raises HTTPConflict."""
+        req = _make_request({"session_id": "sess-dup", "tenant_id": "acme"})
+        # Pre-populate the store to simulate an already-active session.
+        fake_existing_client = MagicMock()
+        fake_existing_handle = MagicMock()
+        req.app = {
+            FULLMODE_SESSIONS_KEY: {
+                "sess-dup": {
+                    "client": fake_existing_client,
+                    "handle": fake_existing_handle,
+                }
+            }
+        }
+
+        saved, keys, fake_client, _ = _inject_fullmode_stack()
+        try:
+            with pytest.raises(HTTPConflict):
+                await _start_fullmode_session(req)
+        finally:
+            _restore_modules(saved, keys)
+
+        # The existing session must not have been replaced.
+        assert req.app[FULLMODE_SESSIONS_KEY]["sess-dup"]["client"] is fake_existing_client
+        # The new client must not have been opened.
+        fake_client.aopen.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# MINOR-5: _get_session_transcript handler tests
+# ---------------------------------------------------------------------------
+
+
+class TestGetSessionTranscript:
+    """Tests for _get_session_transcript (MINOR-5)."""
+
+    async def test_returns_transcript(self) -> None:
+        """Happy path: returns the transcript dict from the LiveAvatar API."""
+        fake_transcript = {"entries": [{"speaker": "user", "text": "Hello"}]}
+
+        req = MagicMock()
+        req.match_info = {"session_id": "la-session-1"}
+
+        saved, keys, fake_client, _ = _inject_fullmode_stack()
+        fake_client.get_session_transcript = AsyncMock(return_value=fake_transcript)
+        try:
+            resp = await _get_session_transcript(req)
+        finally:
+            _restore_modules(saved, keys)
+
+        body = json.loads(resp.body)  # type: ignore[attr-defined]
+        assert body == fake_transcript
+
+    async def test_missing_session_id_returns_400(self) -> None:
+        """Returns 400 when session_id path parameter is absent."""
+        req = MagicMock()
+        req.match_info = {}
+
+        saved, keys, _, _ = _inject_fullmode_stack()
+        try:
+            with pytest.raises(HTTPBadRequest):
+                await _get_session_transcript(req)
+        finally:
+            _restore_modules(saved, keys)
+
+    async def test_api_error_returns_500(self) -> None:
+        """Returns 500 when the LiveAvatar API raises an exception."""
+        req = MagicMock()
+        req.match_info = {"session_id": "la-session-1"}
+
+        saved, keys, fake_client, _ = _inject_fullmode_stack()
+        fake_client.get_session_transcript = AsyncMock(
+            side_effect=RuntimeError("API down")
+        )
+        try:
+            with pytest.raises(HTTPInternalServerError):
+                await _get_session_transcript(req)
+        finally:
+            _restore_modules(saved, keys)
+
+    async def test_config_error_returns_503(self) -> None:
+        """Returns 503 when resolve_fullmode_config raises RuntimeError."""
+        req = MagicMock()
+        req.match_info = {"session_id": "la-session-1"}
+
+        saved, keys, _, _ = _inject_fullmode_stack()
+        sys.modules[
+            "parrot.integrations.liveavatar.tenant_config"
+        ].resolve_fullmode_config = AsyncMock(
+            side_effect=RuntimeError("missing vars")
+        )
+        try:
+            with pytest.raises(HTTPServiceUnavailable):
+                await _get_session_transcript(req)
+        finally:
+            _restore_modules(saved, keys)
+
+
+# ---------------------------------------------------------------------------
+# MAJOR-1: authenticated view classes are BaseView subclasses
+# ---------------------------------------------------------------------------
+
+
+class TestAuthenticatedViews:
+    """Verify FULL mode views inherit from navigator BaseView (MAJOR-1)."""
+
+    def test_fullmode_views_are_baseview_subclasses(self) -> None:
+        """All FULLMODE view classes are navigator BaseView subclasses."""
+        from navigator.views import BaseView
+
+        from parrot.handlers.avatar_fullmode import (
+            FullmodeAvatarsView,
+            FullmodeStartView,
+            FullmodeStopView,
+            FullmodeTranscriptView,
+            FullmodeVoicesView,
+        )
+
+        for view_cls in (
+            FullmodeStartView,
+            FullmodeStopView,
+            FullmodeAvatarsView,
+            FullmodeVoicesView,
+            FullmodeTranscriptView,
+        ):
+            assert issubclass(view_cls, BaseView), (
+                f"{view_cls.__name__} must be a BaseView subclass"
+            )

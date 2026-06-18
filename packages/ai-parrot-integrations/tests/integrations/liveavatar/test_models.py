@@ -10,11 +10,6 @@ from parrot.integrations.liveavatar import (
     LiveKitRoomTokens,
     TenantAvatarConfig,
 )
-from parrot.integrations.liveavatar.models import (
-    FullModeConfig,
-    FullModeSessionHandle,
-    TenantAvatarConfig,
-)
 
 
 def test_config_defaults():

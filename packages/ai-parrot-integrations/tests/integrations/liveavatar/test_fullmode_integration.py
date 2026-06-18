@@ -72,7 +72,7 @@ class TestFullModeLifecycle:
         """resolve_fullmode_config returns a FullModeConfig from env vars."""
         from parrot.integrations.liveavatar.tenant_config import resolve_fullmode_config
 
-        cfg = resolve_fullmode_config()
+        cfg = await resolve_fullmode_config()
 
         assert cfg.api_key == "test-api-key"
         assert cfg.avatar_id == "avatar-test-001"
@@ -87,7 +87,7 @@ class TestFullModeLifecycle:
         from parrot.integrations.liveavatar.tenant_config import resolve_fullmode_config
 
         with pytest.raises(RuntimeError, match="LIVEAVATAR_API_KEY"):
-            resolve_fullmode_config()
+            await resolve_fullmode_config()
 
     async def test_config_resolution_fails_without_avatar_id(
         self, monkeypatch: pytest.MonkeyPatch
@@ -99,7 +99,7 @@ class TestFullModeLifecycle:
         from parrot.integrations.liveavatar.tenant_config import resolve_fullmode_config
 
         with pytest.raises(RuntimeError, match="LIVEAVATAR_AVATAR_ID"):
-            resolve_fullmode_config()
+            await resolve_fullmode_config()
 
     async def test_create_full_session_token_populates_handle(
         self, fullmode_env: None
@@ -108,7 +108,7 @@ class TestFullModeLifecycle:
         from parrot.integrations.liveavatar.client import LiveAvatarClient
         from parrot.integrations.liveavatar.tenant_config import resolve_fullmode_config
 
-        cfg = resolve_fullmode_config()
+        cfg = await resolve_fullmode_config()
 
         token_data = {
             "code": 200,
@@ -136,7 +136,7 @@ class TestFullModeLifecycle:
         from parrot.integrations.liveavatar.models import FullModeSessionHandle
         from parrot.integrations.liveavatar.tenant_config import resolve_fullmode_config
 
-        cfg = resolve_fullmode_config()
+        cfg = await resolve_fullmode_config()
         handle = FullModeSessionHandle(
             session_id="ai-session-1",
             liveavatar_session_id="la-session-42",
@@ -166,7 +166,7 @@ class TestFullModeLifecycle:
         from parrot.integrations.liveavatar.client import LiveAvatarClient
         from parrot.integrations.liveavatar.tenant_config import resolve_fullmode_config
 
-        cfg = resolve_fullmode_config()
+        cfg = await resolve_fullmode_config()
         client = LiveAvatarClient(cfg)
 
         token_resp = {
@@ -275,7 +275,7 @@ class TestOptinChain:
 class TestErrorHandling:
     """Error paths: missing config, API failures, malformed responses."""
 
-    def test_missing_api_key_raises_runtime_error(
+    async def test_missing_api_key_raises_runtime_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """resolve_fullmode_config raises RuntimeError when API key is missing."""
@@ -285,7 +285,7 @@ class TestErrorHandling:
         from parrot.integrations.liveavatar.tenant_config import resolve_fullmode_config
 
         with pytest.raises(RuntimeError):
-            resolve_fullmode_config()
+            await resolve_fullmode_config()
 
     async def test_api_500_raises_on_create_token(
         self, fullmode_env: None
@@ -296,7 +296,7 @@ class TestErrorHandling:
         from parrot.integrations.liveavatar.client import LiveAvatarClient
         from parrot.integrations.liveavatar.tenant_config import resolve_fullmode_config
 
-        cfg = resolve_fullmode_config()
+        cfg = await resolve_fullmode_config()
         client = LiveAvatarClient(cfg)
 
         err = aiohttp.ClientResponseError(
@@ -313,7 +313,7 @@ class TestErrorHandling:
         from parrot.integrations.liveavatar.client import LiveAvatarClient
         from parrot.integrations.liveavatar.tenant_config import resolve_fullmode_config
 
-        cfg = resolve_fullmode_config()
+        cfg = await resolve_fullmode_config()
         client = LiveAvatarClient(cfg)
 
         # Response that omits 'data' key entirely
@@ -338,7 +338,7 @@ class TestErrorHandling:
         from parrot.integrations.liveavatar.models import FullModeSessionHandle
         from parrot.integrations.liveavatar.tenant_config import resolve_fullmode_config
 
-        cfg = resolve_fullmode_config()
+        cfg = await resolve_fullmode_config()
         handle = FullModeSessionHandle(
             session_id="s1",
             liveavatar_session_id="la-s1",

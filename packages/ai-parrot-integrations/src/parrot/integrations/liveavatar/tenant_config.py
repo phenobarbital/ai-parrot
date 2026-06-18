@@ -75,10 +75,13 @@ def _parse_int_env(name: str) -> Optional[int]:
         return None
 
 
-def resolve_fullmode_config(
+async def resolve_fullmode_config(
     tenant_id: Optional[str] = None,
 ) -> FullModeConfig:
     """Resolve a :class:`FullModeConfig` from env defaults (+ future DB overrides).
+
+    Declared ``async`` so call sites do not need breaking changes when a real
+    DB ``await`` is added to the DB-override layer (TODO Q-tenant-config-store).
 
     Resolution order:
     1. (Future) Per-tenant DB overrides via ``TenantAvatarConfig`` —

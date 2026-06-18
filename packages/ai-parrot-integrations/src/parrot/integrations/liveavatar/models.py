@@ -10,7 +10,7 @@ Open questions deferred to owners:
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -151,7 +151,7 @@ class FullModeConfig(LiveAvatarConfig):
         default="en",
         description="BCP-47 language tag for the avatar persona.",
     )
-    interactivity_type: str = Field(
+    interactivity_type: Literal["CONVERSATIONAL", "PUSH_TO_TALK"] = Field(
         default="CONVERSATIONAL",
         description="Session interactivity mode: CONVERSATIONAL or PUSH_TO_TALK.",
     )
@@ -218,7 +218,7 @@ class TenantAvatarConfig(BaseModel):
         default=None,
         description="Per-tenant BCP-47 language override.",
     )
-    interactivity_type: Optional[str] = Field(
+    interactivity_type: Optional[Literal["CONVERSATIONAL", "PUSH_TO_TALK"]] = Field(
         default=None,
         description="Per-tenant interactivity type override.",
     )
