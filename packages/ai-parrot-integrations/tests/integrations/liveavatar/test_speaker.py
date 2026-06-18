@@ -118,7 +118,7 @@ async def test_speaker_feeds_sentences_and_pushes_pcm(monkeypatch) -> None:
 
     fake_ws = _FakeWS(_make_handle())
     monkeypatch.setattr(
-        speaker_mod, "AvatarWebSocket", lambda handle, session=None: fake_ws
+        speaker_mod, "AvatarWebSocket", lambda handle, session=None, assume_connected=False: fake_ws
     )
 
     async with AvatarTurnSpeaker(_make_handle(), _fake_synth) as speaker:
@@ -140,7 +140,7 @@ async def test_speaker_tts_failure_is_skipped_not_fatal(monkeypatch) -> None:
 
     fake_ws = _FakeWS(_make_handle())
     monkeypatch.setattr(
-        speaker_mod, "AvatarWebSocket", lambda handle, session=None: fake_ws
+        speaker_mod, "AvatarWebSocket", lambda handle, session=None, assume_connected=False: fake_ws
     )
 
     calls = {"n": 0}
@@ -166,7 +166,7 @@ async def test_speaker_aclose_is_idempotent(monkeypatch) -> None:
 
     fake_ws = _FakeWS(_make_handle())
     monkeypatch.setattr(
-        speaker_mod, "AvatarWebSocket", lambda handle, session=None: fake_ws
+        speaker_mod, "AvatarWebSocket", lambda handle, session=None, assume_connected=False: fake_ws
     )
 
     speaker = AvatarTurnSpeaker(_make_handle(), _fake_synth)

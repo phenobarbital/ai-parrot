@@ -252,6 +252,60 @@ async def test_await_connected_times_out() -> None:
 
 
 # ---------------------------------------------------------------------------
+# assume_connected: reused-session path opens the gate on handshake
+# ---------------------------------------------------------------------------
+
+async def test_assume_connected_opens_gate_on_connect_without_server_event() -> None:
+    """With assume_connected=True the gate opens on handshake, no server event.
+
+    Regression for the per-turn AvatarTurnSpeaker reuse path: the LITE server
+    only emits ``session.state_updated == 'connected'`` once (at the session's
+    first connect), so a late-attaching WS never sees it.  assume_connected
+    must open the gate as soon as ws_connect returns so the turn never times
+    out waiting for an event that will never arrive.
+    """
+    handle = _make_handle()
+    ws_obj = _build_fake_ws()
+
+    avatar_ws = AvatarWebSocket(handle, assume_connected=True)
+    fake_session = MagicMock()
+    fake_session.ws_connect = AsyncMock(return_value=ws_obj)
+    avatar_ws._session = fake_session
+
+    def _fake_create_task(coro: Any, name: str | None = None) -> MagicMock:
+        coro.close()  # avoid "never awaited" warning
+        return MagicMock()
+
+    with patch("asyncio.create_task", side_effect=_fake_create_task):
+        await avatar_ws._connect()
+
+    # Gate is open even though NO session.state_updated arrived.
+    assert avatar_ws._connected.is_set()
+    # And start_speaking returns immediately instead of timing out.
+    await avatar_ws.start_speaking()
+
+
+async def test_assume_connected_false_still_gates() -> None:
+    """Default (orchestrator) path: gate stays closed until the server event."""
+    handle = _make_handle()
+    ws_obj = _build_fake_ws()
+
+    avatar_ws = AvatarWebSocket(handle)  # assume_connected defaults to False
+    fake_session = MagicMock()
+    fake_session.ws_connect = AsyncMock(return_value=ws_obj)
+    avatar_ws._session = fake_session
+
+    def _fake_create_task(coro: Any, name: str | None = None) -> MagicMock:
+        coro.close()
+        return MagicMock()
+
+    with patch("asyncio.create_task", side_effect=_fake_create_task):
+        await avatar_ws._connect()
+
+    assert not avatar_ws._connected.is_set()
+
+
+# ---------------------------------------------------------------------------
 # Reader task lifecycle (C-2): _close cancels and awaits the reader
 # ---------------------------------------------------------------------------
 

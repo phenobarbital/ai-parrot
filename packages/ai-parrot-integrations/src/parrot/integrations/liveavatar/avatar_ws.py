@@ -94,6 +94,16 @@ class AvatarWebSocket:
             and session token.
         session: Optional external ``aiohttp.ClientSession``.  When ``None``
             the class creates and owns one.
+        assume_connected: When ``True`` the connected gate is opened as soon as
+            the WS handshake completes, instead of waiting for a fresh
+            ``session.state_updated == "connected"`` event.  Use this when
+            attaching to an **already-started, already-connected** session (the
+            per-turn :class:`AvatarTurnSpeaker` reuse path): the server only
+            emits the ``connected`` state once, at the moment the session first
+            becomes connected — a WS that attaches later never sees a re-emitted
+            event, so waiting for it would always time out.  The one-shot
+            orchestrator, which opens its WS at the exact connect transition,
+            leaves this ``False`` and genuinely waits for the event.
     """
 
     def __init__(
@@ -101,11 +111,13 @@ class AvatarWebSocket:
         handle: AvatarSessionHandle,
         *,
         session: Optional[aiohttp.ClientSession] = None,
+        assume_connected: bool = False,
     ) -> None:
         self.handle = handle
         self.logger = logging.getLogger(__name__)
         self._session: Optional[aiohttp.ClientSession] = session
         self._owns_session: bool = session is None
+        self._assume_connected: bool = assume_connected
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._connected: asyncio.Event = asyncio.Event()
         # Latched True once the connected gate times out, so the remaining
@@ -233,6 +245,14 @@ class AvatarWebSocket:
             "AvatarWebSocket: connecting to %s", self.handle.ws_url
         )
         self._ws = await self._session.ws_connect(self.handle.ws_url)
+        # Reusing an already-connected session: the server will NOT re-emit the
+        # one-time ``connected`` state to this late-attaching WS, so open the
+        # gate now (the session is already live) instead of timing out.
+        if self._assume_connected:
+            self._connected.set()
+            self.logger.debug(
+                "AvatarWebSocket: assume_connected — gate opened on handshake"
+            )
         # Start the reader coroutine in the background; it sets _connected.
         self._reader_task = asyncio.create_task(
             self._reader_loop(),
@@ -273,13 +293,17 @@ class AvatarWebSocket:
             return
 
         msg_type = msg.get("type", "")
+        # Log every inbound server event at INFO so the real LITE-mode protocol
+        # (esp. under LiveKit BYO transport) can be confirmed from logs — the
+        # speaker path was only ever exercised against fakes.
+        self.logger.info(
+            "AvatarWebSocket: server event type=%r payload=%s", msg_type, raw[:300]
+        )
         if msg_type == "session.state_updated":
             state = msg.get("state", "")
             if state == "connected":
                 self._connected.set()
                 self.logger.info("AvatarWebSocket: session connected — gate open")
-        else:
-            self.logger.debug("AvatarWebSocket: server event %r", msg_type)
 
     async def _reconnect(self) -> None:
         """Reconnect the WebSocket after a drop.
@@ -300,6 +324,10 @@ class AvatarWebSocket:
         self._reader_task = None
         try:
             self._ws = await self._session.ws_connect(self.handle.ws_url)
+            # Same rationale as _connect: a reused session never re-emits the
+            # one-time ``connected`` state, so re-open the gate on reconnect.
+            if self._assume_connected:
+                self._connected.set()
             self._reader_task = asyncio.create_task(
                 self._reader_loop(),
                 name=f"avatar-ws-reader-{self.handle.liveavatar_session_id}",

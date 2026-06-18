@@ -87,7 +87,14 @@ class AvatarTurnSpeaker:
     async def __aenter__(self) -> "AvatarTurnSpeaker":
         # Open the WS (fast — does NOT await the connected gate here; the first
         # send_audio_frame awaits it, so entering never blocks the text stream).
-        self._ws = AvatarWebSocket(self._handle, session=self._ws_session)
+        # assume_connected=True: this attaches to an already-started, already-
+        # connected session (created at /start), so the server will NOT re-emit
+        # the one-time ``session.state_updated == "connected"`` event to this
+        # late-attaching WS.  Waiting for it would always time out and latch the
+        # whole turn into failure — open the gate on handshake instead.
+        self._ws = AvatarWebSocket(
+            self._handle, session=self._ws_session, assume_connected=True
+        )
         await self._ws.__aenter__()
         self._consumer = asyncio.create_task(
             self._consume(),
