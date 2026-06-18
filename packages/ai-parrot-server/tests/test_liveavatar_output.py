@@ -73,8 +73,10 @@ async def test_start_launches_subscriber_and_stop_tears_down(monkeypatch):
     await start_cb(app)
     await asyncio.wait_for(started.wait(), timeout=1)
 
-    # Subscriber wired to the app's socket manager + our channel + redis client.
-    assert seen["socket_manager"] is sm
+    # Subscriber wired via a _FanOutSink (FEAT-244) + our channel + redis client.
+    # Check that it's a _FanOutSink wrapping the socket manager.
+    assert isinstance(seen["socket_manager"], _FanOutSink)
+    assert seen["socket_manager"]._managers[0] is sm
     assert seen["channel"] == "test:chan"
     assert seen["redis"] is fake_redis
     assert app["liveavatar_output_redis"] is fake_redis
@@ -141,8 +143,8 @@ async def test_fanout_delivers_to_both():
     sink = _FanOutSink([a, b])
     await sink.broadcast_to_channel("sess-1", {"type": "data"})
 
-    a.broadcast_to_channel.assert_awaited_once_with("sess-1", {"type": "data"})
-    b.broadcast_to_channel.assert_awaited_once_with("sess-1", {"type": "data"})
+    a.broadcast_to_channel.assert_awaited_once_with("sess-1", {"type": "data"}, exclude_ws=None)
+    b.broadcast_to_channel.assert_awaited_once_with("sess-1", {"type": "data"}, exclude_ws=None)
 
 
 @pytest.mark.asyncio
@@ -169,7 +171,7 @@ async def test_fanout_only_user_socket_manager():
     sink = _FanOutSink([sm, None])
     await sink.broadcast_to_channel("sess-1", {"x": 1})
 
-    sm.broadcast_to_channel.assert_awaited_once_with("sess-1", {"x": 1})
+    sm.broadcast_to_channel.assert_awaited_once_with("sess-1", {"x": 1}, exclude_ws=None)
 
 
 @pytest.mark.asyncio
@@ -181,4 +183,4 @@ async def test_fanout_only_stream_handler():
     sink = _FanOutSink([None, sh])
     await sink.broadcast_to_channel("sess-1", {"y": 2})
 
-    sh.broadcast_to_channel.assert_awaited_once_with("sess-1", {"y": 2})
+    sh.broadcast_to_channel.assert_awaited_once_with("sess-1", {"y": 2}, exclude_ws=None)
