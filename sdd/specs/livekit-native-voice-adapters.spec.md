@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-246
 **Date**: 2026-06-18
 **Author**: Jesús Lara (design w/ Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: (next minor)
 
 ---
@@ -367,13 +367,13 @@ async def entrypoint(ctx):  # :247  calls build_session(_vad_from_proc(ctx))  # 
 
 ## 8. Open Questions
 
-- [ ] Should faster-whisper / Supertonic be **prewarmed per worker process**
+- [x] Should faster-whisper / Supertonic be **prewarmed per worker process**
       (into `ctx.proc.userdata`, like the Silero VAD) to avoid first-turn load
-      latency? — *Owner: Jesús* (recommend yes; can defer to a follow-up).
-- [ ] Default faster-whisper model size for the avatar use case
-      (`base` vs `small`)? — *Owner: Jesús* (latency/accuracy tradeoff).
-- [ ] Do we also expose `OpenAIWhisperBackend` as an STT option here, or keep it
-      out until needed? — *Owner: Jesús*.
+      latency? — *Owner: Jesús* (recommend yes; can defer to a follow-up): yes
+- [x] Default faster-whisper model size for the avatar use case
+      (`base` vs `small`)? — *Owner: Jesús* (latency/accuracy tradeoff): start with small by default
+- [x] Do we also expose `OpenAIWhisperBackend` as an STT option here, or keep it
+      out until needed? — *Owner: Jesús*: exponse as option
 
 ---
 

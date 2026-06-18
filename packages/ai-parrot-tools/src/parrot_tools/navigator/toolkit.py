@@ -19,8 +19,8 @@ import json
 import os
 import uuid as _uuid
 from typing import Any, Dict, List, Optional
-from parrot.bots.database.models import TableMetadata
 from parrot.bots.database.toolkits.postgres import PostgresToolkit
+from asyncdb import AsyncPool
 from parrot.tools.decorators import tool_schema
 from .schemas import (
     ExecuteSqlInput,
@@ -146,6 +146,9 @@ class NavigatorToolkit(PostgresToolkit):
             read_only=False,
             **kwargs,
         )
+        self._db: Optional[AsyncPool] = None
+        self._db_lock = asyncio.Lock()
+        super().__init__(**kwargs)
 
     async def stop(self) -> None:
         """Close the underlying DB connection and clear permissions cache."""
@@ -203,6 +206,41 @@ class NavigatorToolkit(PostgresToolkit):
         self._user_clients = None
         self._is_builder = False
         self._builder_programs = set()
+
+    # =========================================================================
+    # DATABASE HELPERS (private - not exposed as tools)
+    # =========================================================================
+
+    async def _get_db(self) -> AsyncPool:
+        async with self._db_lock:
+            if self._db is None:
+                self._db = AsyncPool("pg", params=self.connection_params)
+                await self._db.connect()
+            return self._db
+
+    async def _query(self, sql: str, params: Optional[list] = None) -> list:
+        db = await self._get_db()
+        async with await db.acquire() as conn:
+            result, error = await conn.query(sql, *(params or []))
+            if error:
+                raise RuntimeError(f"DB error: {error}")
+            return [dict(r) for r in result] if result else []
+
+    async def _query_one(self, sql: str, params: Optional[list] = None) -> Optional[dict]:
+        db = await self._get_db()
+        async with await db.acquire() as conn:
+            result, error = await conn.queryrow(sql, *(params or []))
+            if error:
+                raise RuntimeError(f"DB error: {error}")
+            return dict(result) if result else None
+
+    async def _exec(self, sql: str, params: Optional[list] = None) -> Any:
+        db = await self._get_db()
+        async with await db.acquire() as conn:
+            result, error = await conn.execute(sql, *(params or []))
+            if error:
+                raise RuntimeError(f"DB error: {error}")
+            return result
 
     def _jsonb(self, value: Any) -> Optional[str]:
         """Serialize a value to JSON string for JSONB columns."""
