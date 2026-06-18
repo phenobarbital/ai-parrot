@@ -217,9 +217,15 @@ established fixture style.)*
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-18
+**Notes**: Extended `WebSocketConnection` with `avatar_session: Optional[Any] = None` (type
+kept as Any to avoid top-level liveavatar import). In `_handle_start_session`: lazy-import
+liveavatar stack, run `is_avatar_enabled`, call `VoiceAvatarSession.start` on success, store
+on connection, add `avatar` block to `session_started` reply. Graceful degradation handles
+ImportError and any other exception. In `_send_voice_response`: best-effort avatar tee with
+interrupt/speak/finish_turn routing. In `_cleanup_connection`: `aclose` + clear. 11 unit
+tests all green. Ruff clean.
+**Deviations from spec**: Tests use `streaming_mode: "buffered"` for `_handle_start_session`
+tests to avoid the background `_run_voice_session` asyncio task hanging the test suite. This
+is a test-only constraint; production streaming mode works correctly.

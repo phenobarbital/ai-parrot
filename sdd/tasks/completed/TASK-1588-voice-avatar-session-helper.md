@@ -233,9 +233,14 @@ async def test_aclose_idempotent(patched_stack):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-18
+**Notes**: Created `voice_session.py` with `VoiceAvatarSession` class implementing
+the full lifecycle: env-based `LiveAvatarConfig` build, async token minting via
+`asyncio.to_thread`, `LiveAvatarClient` open/create/start, `AvatarWebSocket` enter
+and `start_speaking` gate. `viewer_credentials` exposes only client_token+url+room.
+`speak`/`finish_turn`/`interrupt` delegate directly with no resampling. `aclose` is
+idempotent via a `_closed` flag. 9 unit tests all green. Exported from `__init__.py`.
+**Deviations from spec**: Test for cleanup-on-failure was split into two tests
+(start_session failure vs ws.start_speaking failure) to correctly reflect the actual
+lifecycle order (ws is opened AFTER start_session, not before).

@@ -149,9 +149,13 @@ async def test_barge_in_clears_avatar(patched_stack, handler, connection):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-06-18
+**Notes**: Created `test_voicechat_avatar_integration.py` with 4 cross-module tests
+using a real `VoiceAvatarSession` over mocked transport (reuses patched_stack fixture
+style from TASK-1588). Tests cover: dual delivery end-to-end (browser + avatar receive
+same PCM), mid-turn audio without finish_speaking, barge-in clears avatar without
+speaking, and byte-identity assertion proving zero-copy (no resampling). Full voice
+suite: 94 passed, 1 skipped (pre-existing skip).
+**Deviations from spec**: Added two extra tests beyond the spec's two required tests
+(mid-turn no-finish and byte-identity) for stronger coverage. No production code changes.

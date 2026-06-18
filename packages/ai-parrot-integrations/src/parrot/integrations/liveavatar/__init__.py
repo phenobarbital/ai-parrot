@@ -14,6 +14,7 @@ from .room_manager import LiveKitRoomManager
 from .speakable import SpeakableFlattener
 from .speaker import AvatarTurnSpeaker
 from .voice_provider import AVATAR_PCM_SAMPLE_RATE, AvatarVoiceProvider
+from .voice_session import VoiceAvatarSession
 
 __all__ = [
     "AVATAR_PCM_SAMPLE_RATE",
@@ -27,4 +28,5 @@ __all__ = [
     "LiveKitRoomManager",
     "LiveKitRoomTokens",
     "SpeakableFlattener",
+    "VoiceAvatarSession",
 ]
