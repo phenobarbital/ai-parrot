@@ -14,14 +14,14 @@
       "feature_id": "FEAT-244",
       "feature": "unified-voice-control-streamhandler",
       "spec": "sdd/specs/unified-voice-control-streamhandler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation: extracts start_voice_native / stop_voice_native that TASK-1585 imports. Runs first in the single per-spec worktree. Touches avatar.py only.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-18T18:01:54+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1584-extract-voice-native-helpers.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-244",
       "feature": "unified-voice-control-streamhandler",
       "spec": "sdd/specs/unified-voice-control-streamhandler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1584"],
+      "depends_on": [
+        "TASK-1584"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports the TASK-1584 helpers and adds broadcast_to_channel that TASK-1586 calls. Touches stream.py only but is sequenced between 1584 and 1586.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-18T18:01:54+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1585-streamhandler-voice-control.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-244",
       "feature": "unified-voice-control-streamhandler",
       "spec": "sdd/specs/unified-voice-control-streamhandler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1585"],
+      "depends_on": [
+        "TASK-1585"
+      ],
       "parallel": false,
       "parallelism_notes": "Requires StreamHandler.broadcast_to_channel (TASK-1585) to exist as a fan-out target. Touches liveavatar_output.py + manager.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-18T18:01:54+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1586-fanout-output-subscriber.md"
     },
@@ -68,14 +72,18 @@
       "feature_id": "FEAT-244",
       "feature": "unified-voice-control-streamhandler",
       "spec": "sdd/specs/unified-voice-control-streamhandler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1584", "TASK-1585", "TASK-1586"],
+      "depends_on": [
+        "TASK-1584",
+        "TASK-1585",
+        "TASK-1586"
+      ],
       "parallel": false,
       "parallelism_notes": "Cross-module end-to-end tests; must run after all implementation tasks are complete.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-18T18:01:54+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1587-unified-voice-integration-tests.md"
     }
