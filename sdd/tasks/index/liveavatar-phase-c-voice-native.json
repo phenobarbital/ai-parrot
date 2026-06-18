@@ -52,7 +52,7 @@
       "feature_id": "FEAT-243",
       "feature": "liveavatar-phase-c-voice-native",
       "spec": "sdd/specs/liveavatar-phase-c-voice-native.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -61,10 +61,10 @@
       ],
       "parallel": false,
       "parallelism_notes": "Module 2 (llm-node-aiparrot-bridge). BLOCKED on FEAT-242: reuses SpeakableFlattener (speakable.py). Imports TASK-001 models + TASK-002 OutputBridge + ai-parrot ask_stream/AIMessage. Must validate the llm_node signature against the pinned livekit-agents (P5). Sequential.",
-      "assigned_to": null,
+      "assigned_to": "sdd-worker",
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-003-llm-node-aiparrot-bridge.md"
+      "completed_at": "2026-06-18T00:04:31+00:00",
+      "file": "sdd/tasks/completed/TASK-003-llm-node-aiparrot-bridge.md"
     },
     {
       "id": "TASK-004",

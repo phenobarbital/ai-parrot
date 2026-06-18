@@ -2,15 +2,21 @@
 
 **Feature**: FEAT-243 — LiveAvatar Phase C (voice-native hybrid, ai-parrot as the brain)
 **Spec**: `sdd/specs/liveavatar-phase-c-voice-native.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-001, TASK-002
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker (Opus)
 
 ---
 
-## ⛔ BLOCKED ON FEAT-242
+## ✅ UNBLOCKED — FEAT-243 rebased onto feat-242-liveavatar-phase-a-mouth
+
+The FEAT-242 `SpeakableFlattener` is now present in this worktree (FEAT-243 is
+stacked on the FEAT-242 branch; verified ancestor). Implemented against the
+**real** FEAT-242 API. Original blocker note retained below for history.
+
+## ⛔ (historical) BLOCKED ON FEAT-242
 
 This task references the FEAT-242 `SpeakableFlattener` (Phase A). **Do NOT start
 until FEAT-242 has merged to `dev`** and
@@ -238,8 +244,45 @@ async def test_llm_node_filler_on_tool_calls():
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Opus 4.8)
+**Date**: 2026-06-18
+**Notes**: Created `livekit_agent/agent.py` with `LiveAvatarAgent` overriding
+`llm_node(chat_ctx, tools, model_settings)`. The core bifurcation lives in
+`_stream_response()` (livekit-independent, unit-testable): it extracts the last
+user message via `_last_user_text()`, resolves the ai-parrot bot through an
+injected async `bot_resolver`, calls `ask_stream(question=..., session_id=...)`,
+and:
+- runs plain `str` chunks through the FEAT-242 `SpeakableFlattener` and `yield`s
+  complete sentences (TTS → avatar);
+- on the final `AIMessage` sentinel, publishes structured outputs
+  (`tool_calls` / `data` / non-default `output_mode` / `artifact_id`) to the
+  `OutputBridge` (keyed by `session_id`), classifying the `type` via
+  `_classify()` (e.g. `"tool_call"`, `"chart"`, `"canvas"`, `"data"`);
+- emits a filler utterance (`DEFAULT_FILLER_TEXT`) when a tool turn produced no
+  speech, preventing dead air (Q-filler);
+- speaks a non-streamed block `response` only when nothing was streamed (avoids
+  double-speaking the final message).
+7 unit tests (incl. all 4 spec tests: `test_llm_node_yields_speakable_str`,
+`test_llm_node_last_user_text`, `test_llm_node_filler_on_tool_calls`,
+`test_speakable_flatten_reused`); full liveavatar suite = 72 passed; `ruff` clean.
 
-**Deviations from spec**: none | describe if any
+**Key real-API findings (vs the spec's illustrative contract)**:
+- `ask_stream` has **no** `agent_name`/`tenant_id` params — the bot is selected
+  by the injected resolver (prod: `BotManager.get_bot`); `tenant_id` is kept as
+  an attribute for logging only.
+- FEAT-242 `SpeakableFlattener.feed()/flush()` confirmed; it **drops inline code
+  spans entirely** (code is not read aloud) and strips emphasis markers while
+  keeping the words — the test asserts this real behavior.
+- `AIMessage.tool_calls` requires real `ToolCall` instances; tests use a
+  duck-typed `SimpleNamespace` sentinel for tool/structured turns and a real
+  `AIMessage` for plain/block turns.
+
+**Deviations from spec**: (1) `livekit-agents` import is **guarded** — when the
+`liveavatar-voice` extra is absent, `LiveAvatarAgent` subclasses `object` so the
+module imports and unit-tests run without the heavy dependency (the task
+explicitly required the module be importable/testable without a live room).
+(2) **P5 still open**: the exact `llm_node` signature and `chat_ctx` shape are
+NOT validated against an installed `livekit-agents` (not installed here);
+`_last_user_text` handles the known `.items`/`.messages` shapes defensively and
+the code is marked with P5 notes. Jesús must validate against the pinned version
+before production.
