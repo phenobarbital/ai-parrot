@@ -12,6 +12,7 @@ from .models import AvatarSessionHandle, LiveAvatarConfig, LiveKitRoomTokens
 from .orchestrator import AvatarSessionOrchestrator
 from .room_manager import LiveKitRoomManager
 from .speakable import SpeakableFlattener
+from .voice_session import VoiceAvatarSession
 
 __all__ = [
     "AvatarSessionHandle",
@@ -22,4 +23,5 @@ __all__ = [
     "LiveKitRoomManager",
     "LiveKitRoomTokens",
     "SpeakableFlattener",
+    "VoiceAvatarSession",
 ]
