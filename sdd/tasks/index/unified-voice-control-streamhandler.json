@@ -14,7 +14,7 @@
       "feature_id": "FEAT-244",
       "feature": "unified-voice-control-streamhandler",
       "spec": "sdd/specs/unified-voice-control-streamhandler.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation: extracts start_voice_native / stop_voice_native that TASK-1585 imports. Runs first in the single per-spec worktree. Touches avatar.py only.",
       "assigned_to": null,
       "started_at": "2026-06-18T18:01:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1584-extract-voice-native-helpers.md"
+      "completed_at": "2026-06-18T18:04:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1584-extract-voice-native-helpers.md"
     },
     {
       "id": "TASK-1585",
