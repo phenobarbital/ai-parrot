@@ -295,9 +295,10 @@ class AgentVoiceTalk(AgentTalk):
         When ``_avatar_mode`` is True the opt-in hook from TASK-008 is
         consulted; if avatar mode is enabled for the tenant, the avatar
         session is expected to have been pre-started via the
-        ``/api/v1/agents/avatar/{agent_id}/start`` endpoint.  The voice path
-        itself is unchanged — the avatar session receives PCM via the
-        ``AvatarSessionOrchestrator`` started separately.
+        ``/api/v1/agents/avatar/{agent_id}/start`` endpoint.  The reply is
+        spoken through that session by the inherited ``AgentTalk.post`` path
+        (``_speak_text_to_avatar`` for the non-stream reply, or
+        ``_handle_stream_response`` per-sentence when streaming).
 
         Returns:
             The inherited response, augmented with audio when applicable.

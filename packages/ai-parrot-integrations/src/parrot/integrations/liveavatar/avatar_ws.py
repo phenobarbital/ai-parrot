@@ -33,6 +33,7 @@ import base64
 import contextlib
 import json
 import logging
+import os
 import uuid
 from types import TracebackType
 from typing import Any, Dict, Optional, Type
@@ -54,7 +55,22 @@ _MAX_PACKET_BYTES: int = 1_024 * 1_024                    # 1 MB hard cap
 # Max time to wait for the server's ``session.state_updated == "connected"``
 # event before giving up (prevents an indefinite hang if the media server
 # never signals readiness — e.g. wrong URL or a server-side error).
-_CONNECT_TIMEOUT: float = 30.0  # seconds
+# Kept short: this gate is awaited once per sentence, so a never-arriving
+# "connected" event must fail FAST or it serialises 30 s per sentence into the
+# turn. Once it times out the gate is latched failed (see ``_await_connected``)
+# so the rest of the turn short-circuits instead of paying the timeout again.
+# Override via ``LIVEAVATAR_WS_CONNECT_TIMEOUT`` (seconds).
+def _connect_timeout_default() -> float:
+    raw = os.environ.get("LIVEAVATAR_WS_CONNECT_TIMEOUT", "")
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    return 5.0
+
+
+_CONNECT_TIMEOUT: float = _connect_timeout_default()  # seconds
 
 
 class AvatarWebSocket:
@@ -92,6 +108,10 @@ class AvatarWebSocket:
         self._owns_session: bool = session is None
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._connected: asyncio.Event = asyncio.Event()
+        # Latched True once the connected gate times out, so the remaining
+        # sends of the turn fail fast instead of each paying _CONNECT_TIMEOUT.
+        # Cleared on (re)connect attempts so a later recovery can still speak.
+        self._connect_failed: bool = False
         # Tracks the background reader coroutine so it can be cancelled cleanly
         # on close / reconnect (otherwise the task leaks and two readers can
         # race over the same connection).
@@ -269,6 +289,7 @@ class AvatarWebSocket:
         — the server re-emits ``session.state_updated == "connected"`` itself.
         """
         self._connected.clear()
+        self._connect_failed = False
         self.logger.info("AvatarWebSocket: reconnecting…")
         if self._session is None:
             return
@@ -315,9 +336,18 @@ class AvatarWebSocket:
             RuntimeError: If the connected event does not arrive within
                 :data:`_CONNECT_TIMEOUT` seconds.
         """
+        if self._connected.is_set():
+            return
+        # Already gave up earlier this turn — fail immediately rather than
+        # waiting another full _CONNECT_TIMEOUT for every subsequent sentence.
+        if self._connect_failed:
+            raise RuntimeError(
+                "AvatarWebSocket: connected gate previously timed out this turn"
+            )
         try:
             await asyncio.wait_for(self._connected.wait(), timeout=_CONNECT_TIMEOUT)
         except asyncio.TimeoutError as exc:
+            self._connect_failed = True
             raise RuntimeError(
                 "AvatarWebSocket: timed out waiting for "
                 f"session.state_updated='connected' after {_CONNECT_TIMEOUT}s"

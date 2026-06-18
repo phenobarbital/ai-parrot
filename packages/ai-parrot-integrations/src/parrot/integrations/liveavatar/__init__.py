@@ -12,10 +12,15 @@ from .models import AvatarSessionHandle, LiveAvatarConfig, LiveKitRoomTokens
 from .orchestrator import AvatarSessionOrchestrator
 from .room_manager import LiveKitRoomManager
 from .speakable import SpeakableFlattener
+from .speaker import AvatarTurnSpeaker
+from .voice_provider import AVATAR_PCM_SAMPLE_RATE, AvatarVoiceProvider
 
 __all__ = [
+    "AVATAR_PCM_SAMPLE_RATE",
     "AvatarSessionHandle",
     "AvatarSessionOrchestrator",
+    "AvatarTurnSpeaker",
+    "AvatarVoiceProvider",
     "AvatarWebSocket",
     "LiveAvatarClient",
     "LiveAvatarConfig",

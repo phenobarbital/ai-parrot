@@ -1513,6 +1513,29 @@ class BotManager:
         registered = register_avatar_routes(router)
         if registered and self.app is not None:
             self.app.on_cleanup.append(close_all_avatar_sessions)
+            # Shared avatar voice provider (chat→avatar "mouth"). Cheap to
+            # construct — the heavy Supertonic ONNX load is deferred to the
+            # first avatar turn. Stored on the app so AgentTalk can synthesize
+            # the streamed reply into PCM for the active avatar session.
+            try:
+                import os as _os  # noqa: PLC0415
+
+                from parrot.integrations.liveavatar import AvatarVoiceProvider
+
+                self.app["avatar_voice_provider"] = AvatarVoiceProvider(
+                    voice=_os.environ.get("LIVEAVATAR_VOICE") or None,
+                    language=_os.environ.get("LIVEAVATAR_LANGUAGE") or None,
+                )
+                self.logger.info(
+                    "Avatar voice provider registered (Supertonic loads lazily)."
+                )
+            except ImportError as exc:  # voice-supertonic extra missing
+                self.logger.warning(
+                    "Avatar voice provider unavailable (%s); the avatar will "
+                    "appear but stay silent. Install "
+                    "'ai-parrot-integrations[liveavatar,voice-supertonic]'.",
+                    exc,
+                )
         return registered
 
     def _setup_liveavatar_voice(self) -> None:

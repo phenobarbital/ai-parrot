@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-245
 **Date**: 2026-06-18
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 > Reuses the **avatar session + LiveKit room + LITE-mode "mouth"** from FEAT-242
@@ -435,12 +435,12 @@ No new external dependencies. Env: `LIVEAVATAR_API_KEY`, `LIVEAVATAR_AVATAR_ID`,
 - [x] Where does the user hear the voice? — *Resolved (product decision)*: **dual**
       — raw Gemini over `/ws/voice` AND avatar over LiveKit; client mutes one
       (echo mitigation via `session_started.avatar`).
-- [ ] Should avatar mode be a boolean `avatar:true` on `start_session` (env-default
+- [x] Should avatar mode be a boolean `avatar:true` on `start_session` (env-default
       `avatar_id`) or a nested `avatar:{...}` config object? — *Owner: Jesus Lara*
-      (defaults to boolean + optional `avatar_id` override; decide in M2).
-- [ ] After `finish_speaking()` at turn end, does the next turn need a fresh
+      (defaults to boolean + optional `avatar_id` override; decide in M2): yes
+- [x] After `finish_speaking()` at turn end, does the next turn need a fresh
       `start_speaking()` or can it resume `send_audio_frame` directly? — *Owner:
-      Jesus Lara* (verify against the live LiveAvatar LITE server during M1).
+      Jesus Lara* (verify against the live LiveAvatar LITE server during M1): verify against the live LiveAvatar Lite
 
 ---
 
