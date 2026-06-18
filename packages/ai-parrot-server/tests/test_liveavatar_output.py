@@ -1,11 +1,13 @@
-"""Unit tests for the server-side LiveAvatar output subscriber wiring (FEAT-243)."""
+"""Unit tests for the server-side LiveAvatar output subscriber wiring (FEAT-243/244)."""
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import web
 
 from parrot.handlers.liveavatar_output import (
+    _FanOutSink,
     configure_liveavatar_output_subscriber,
 )
 
@@ -123,3 +125,60 @@ def test_botmanager_wires_subscriber_when_flag_enabled(monkeypatch):
     mgr.BotManager._setup_liveavatar_voice(SimpleNamespace(app=app))
 
     assert called == [app]
+
+
+# ── _FanOutSink unit tests (FEAT-244 TASK-1586) ──────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_fanout_delivers_to_both():
+    """Fan-out sink forwards to both managers when both are present."""
+    a = MagicMock()
+    a.broadcast_to_channel = AsyncMock()
+    b = MagicMock()
+    b.broadcast_to_channel = AsyncMock()
+
+    sink = _FanOutSink([a, b])
+    await sink.broadcast_to_channel("sess-1", {"type": "data"})
+
+    a.broadcast_to_channel.assert_awaited_once_with("sess-1", {"type": "data"})
+    b.broadcast_to_channel.assert_awaited_once_with("sess-1", {"type": "data"})
+
+
+@pytest.mark.asyncio
+async def test_fanout_skips_none_and_survives_failure():
+    """Fan-out sink ignores None entries and continues when one manager raises."""
+    good = MagicMock()
+    good.broadcast_to_channel = AsyncMock()
+    bad = MagicMock()
+    bad.broadcast_to_channel = AsyncMock(side_effect=RuntimeError("boom"))
+
+    # None in the list is silently dropped; bad raises but good still runs.
+    sink = _FanOutSink([None, bad, good])
+    await sink.broadcast_to_channel("sess-1", {"type": "data"})  # must not raise
+
+    good.broadcast_to_channel.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_fanout_only_user_socket_manager():
+    """Fan-out with only user_socket_manager behaves like the pre-FEAT-244 path."""
+    sm = MagicMock()
+    sm.broadcast_to_channel = AsyncMock()
+
+    sink = _FanOutSink([sm, None])
+    await sink.broadcast_to_channel("sess-1", {"x": 1})
+
+    sm.broadcast_to_channel.assert_awaited_once_with("sess-1", {"x": 1})
+
+
+@pytest.mark.asyncio
+async def test_fanout_only_stream_handler():
+    """Fan-out with only stream_handler delivers when user_socket_manager is absent."""
+    sh = MagicMock()
+    sh.broadcast_to_channel = AsyncMock()
+
+    sink = _FanOutSink([None, sh])
+    await sink.broadcast_to_channel("sess-1", {"y": 2})
+
+    sh.broadcast_to_channel.assert_awaited_once_with("sess-1", {"y": 2})
