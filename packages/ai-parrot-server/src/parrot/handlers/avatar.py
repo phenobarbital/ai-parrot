@@ -227,6 +227,125 @@ async def _stop_avatar_session(request: web.Request) -> web.Response:
     return web.Response(status=204)
 
 
+def _worker_agent_name() -> str:
+    """Read the LiveKit worker ``agent_name`` to dispatch (FEAT-243 Phase C).
+
+    This is the LiveKit Agents worker's registered ``WorkerOptions(agent_name=...)``
+    — NOT the ai-parrot brain agent (that travels in the job metadata). Defaults
+    to ``"liveavatar-voice"`` (see ``examples/liveavatar_voice_worker.py``).
+    """
+    return os.environ.get("LIVEAVATAR_WORKER_AGENT_NAME", "liveavatar-voice")
+
+
+async def _start_voice_native_session(request: web.Request) -> web.Response:
+    """POST /api/v1/agents/avatar/{agent_id}/voice-native/start — Phase C (FEAT-243).
+
+    Unlike the Phase A ``/start`` (which spawns a viewer-only avatar session),
+    the voice-native flow lets the **browser publish its microphone** and hands
+    turn-taking to a LiveKit Agents worker. This endpoint does the two things
+    FEAT-243 left to the deployment:
+
+    1. Mints a **publish-capable** browser token (``can_publish`` microphone +
+       subscribe) — the Phase A ``client_token`` is subscribe-only and will not
+       let the browser publish audio.
+    2. **Explicitly dispatches** the worker into the room (= ``session_id``) with
+       :class:`AvatarJobMetadata`, so the worker resolves the ai-parrot brain and
+       speaks/streams structured outputs for this conversation.
+
+    Request body (JSON):
+        session_id (str): AgentChat session ID — names the LiveKit room AND the
+            structured-output WS channel. Required.
+        tenant_id  (str, optional): Tenant identifier for opt-in gating; also
+            forwarded to the worker via the job metadata.
+
+    Response (JSON):
+        livekit_url (str): LiveKit WebSocket URL for the browser.
+        token       (str): Publish(audio)+subscribe JWT for the browser.
+        session_id  (str): The shared session ID.
+    """
+    try:
+        from parrot.integrations.liveavatar import LiveKitRoomManager
+        from parrot.integrations.liveavatar.livekit_agent.models import (
+            AvatarJobMetadata,
+        )
+        from parrot.integrations.liveavatar.optin import is_avatar_enabled
+    except ImportError as exc:
+        _logger.warning("LiveAvatar voice stack unavailable: %s", exc)
+        raise web.HTTPServiceUnavailable(
+            reason="LiveAvatar stack not installed"
+        ) from exc
+
+    agent_id = request.match_info["agent_id"]
+
+    try:
+        body: Dict[str, Any] = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+
+    session_id: str = body.get("session_id") or ""
+    tenant_id: Optional[str] = body.get("tenant_id") or None
+
+    if not session_id:
+        raise web.HTTPBadRequest(reason="'session_id' is required")
+
+    # Per-tenant opt-in gate (same gate as Phase A).
+    if not is_avatar_enabled(tenant_id=tenant_id, agent_name=agent_id):
+        raise web.HTTPForbidden(reason="Avatar mode is not enabled for this tenant")
+
+    # LiveKitRoomManager() reads LIVEKIT_* from env and raises KeyError when a
+    # required var is missing — surface that as 503 (env not provisioned).
+    try:
+        room_manager = LiveKitRoomManager()
+    except KeyError as exc:
+        raise web.HTTPServiceUnavailable(
+            reason="LIVEKIT_* env vars are not set"
+        ) from exc
+
+    # Mint a publish-capable browser token. JWT signing is sync CPU work — keep
+    # it off the event loop.
+    token = await asyncio.to_thread(
+        room_manager.mint_browser_token, session_id, agent_id
+    )
+
+    # Dispatch the worker into the room with the job metadata. ws_url is
+    # informational for the worker (it connects via ctx.connect()).
+    meta = AvatarJobMetadata(
+        ws_url=room_manager.url,
+        session_id=session_id,
+        agent_name=agent_id,
+        tenant_id=tenant_id,
+    )
+    try:
+        await room_manager.dispatch_worker(
+            room=session_id,
+            worker_agent_name=_worker_agent_name(),
+            metadata_json=meta.model_dump_json(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _logger.exception(
+            "Voice-native dispatch failed for session %s (agent %s)",
+            session_id,
+            agent_id,
+        )
+        raise web.HTTPServiceUnavailable(
+            reason="Failed to dispatch avatar voice worker"
+        ) from exc
+
+    _logger.info(
+        "AvatarSessionView: voice-native start session %s for agent %s "
+        "(tenant set=%s)",
+        session_id,
+        agent_id,
+        tenant_id is not None,
+    )
+
+    return web.json_response({
+        "livekit_url": room_manager.url,
+        "token": token,
+        "session_id": session_id,
+    })
+
+
 @is_authenticated()
 @user_session()
 class AvatarSessionView(BaseView):
@@ -245,6 +364,22 @@ class AvatarSessionView(BaseView):
         if action == "stop":
             return await _stop_avatar_session(self.request)
         raise web.HTTPNotFound(reason=f"unknown avatar action '{action}'")
+
+
+@is_authenticated()
+@user_session()
+class VoiceNativeAvatarView(BaseView):
+    """Authenticated entrypoint for the Phase C voice-native start (FEAT-243).
+
+    Routed at ``/api/v1/agents/avatar/{agent_id}/voice-native/start``. Mints a
+    publish-capable browser token and dispatches the LiveKit Agents worker into
+    the room. Kept as a distinct view (not an ``{action}`` of
+    :class:`AvatarSessionView`) because the path has a nested segment and the
+    flow differs from Phase A.
+    """
+
+    async def post(self) -> web.Response:
+        return await _start_voice_native_session(self.request)
 
 
 async def close_all_avatar_sessions(app: web.Application) -> None:
@@ -295,6 +430,12 @@ def register_avatar_routes(router: Any) -> bool:
         )
         return False
 
+    # Phase C voice-native start (FEAT-243) — registered BEFORE the generic
+    # ``{action}`` route so the nested path is matched by its dedicated view.
+    router.add_view(
+        "/api/v1/agents/avatar/{agent_id}/voice-native/start",
+        VoiceNativeAvatarView,
+    )
     router.add_view(
         "/api/v1/agents/avatar/{agent_id}/{action}",
         AvatarSessionView,

@@ -107,6 +107,34 @@ conflicts = [
         { package = "ai-parrot", extra = "gemma4" },
         { package = "ai-parrot-loaders", extra = "all" },
     ],
+    # Every flowtask release hard-pins psutil==6.0.0, while livekit-agents~=1.5
+    # (pulled by liveavatar-voice) requires psutil>=7.0. The two can never share
+    # an environment, so declare them as conflicting extras: this lets `uv lock`
+    # build a universal lock by resolving each in its own split. Like gemma4,
+    # liveavatar-voice is opt-in and excluded from the `--all-extras` dev/install
+    # syncs (see Makefile `--no-extra liveavatar-voice`); install it separately.
+    # flowtask is pulled (unconditionally) by four extras across two packages:
+    # the explicit `flowtask` extra and the `all` bundle of both ai-parrot and
+    # ai-parrot-tools. uv does NOT propagate a conflict from `flowtask` up to a
+    # bundle that includes it, so each flowtask-bearing extra must be paired
+    # against liveavatar-voice individually. The flowtask extras are mutually
+    # compatible (same psutil pin), so they are NOT paired against each other.
+    [
+        { package = "ai-parrot", extra = "flowtask" },
+        { package = "ai-parrot-integrations", extra = "liveavatar-voice" },
+    ],
+    [
+        { package = "ai-parrot", extra = "all" },
+        { package = "ai-parrot-integrations", extra = "liveavatar-voice" },
+    ],
+    [
+        { package = "ai-parrot-tools", extra = "flowtask" },
+        { package = "ai-parrot-integrations", extra = "liveavatar-voice" },
+    ],
+    [
+        { package = "ai-parrot-tools", extra = "all" },
+        { package = "ai-parrot-integrations", extra = "liveavatar-voice" },
+    ],
 ]
 override-dependencies = [
     "moviepy==2.2.1",

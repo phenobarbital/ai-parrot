@@ -230,6 +230,157 @@ async def test_stop_endpoint_idempotent_for_unknown_session() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Phase C voice-native start (FEAT-243): publish token + worker dispatch
+# ---------------------------------------------------------------------------
+
+def _inject_voice_native_stack(
+    *,
+    is_enabled: bool = True,
+):
+    """Build fake liveavatar modules for the voice-native handler lazy imports.
+
+    Returns ``(saved_modules, inject_keys, room_manager_cls)`` so the caller can
+    assert on the room manager and restore ``sys.modules`` afterwards.
+    """
+    import sys
+    import types
+    from unittest.mock import AsyncMock, MagicMock
+
+    # Fake room manager instance: sync mint_browser_token + async dispatch_worker.
+    fake_mgr = MagicMock()
+    fake_mgr.url = "wss://x.livekit.cloud"
+    fake_mgr.mint_browser_token = MagicMock(return_value="browser-jwt")
+    fake_mgr.dispatch_worker = AsyncMock(return_value="disp-1")
+    room_manager_cls = MagicMock(return_value=fake_mgr)
+
+    fake_liveavatar_mod = types.ModuleType("parrot.integrations.liveavatar")
+    fake_liveavatar_mod.LiveKitRoomManager = room_manager_cls
+
+    # AvatarJobMetadata: constructible with kwargs, exposes model_dump_json().
+    fake_meta_instance = MagicMock()
+    fake_meta_instance.model_dump_json = MagicMock(return_value='{"session_id":"sess-1"}')
+    fake_models_mod = types.ModuleType(
+        "parrot.integrations.liveavatar.livekit_agent.models"
+    )
+    fake_models_mod.AvatarJobMetadata = MagicMock(return_value=fake_meta_instance)
+
+    fake_optin_mod = types.ModuleType("parrot.integrations.liveavatar.optin")
+    fake_optin_mod.is_avatar_enabled = MagicMock(return_value=is_enabled)
+
+    inject_keys = [
+        "parrot.integrations.liveavatar",
+        "parrot.integrations.liveavatar.livekit_agent.models",
+        "parrot.integrations.liveavatar.optin",
+    ]
+    saved_modules = {k: sys.modules.get(k) for k in inject_keys}
+    sys.modules["parrot.integrations.liveavatar"] = fake_liveavatar_mod
+    sys.modules[
+        "parrot.integrations.liveavatar.livekit_agent.models"
+    ] = fake_models_mod
+    sys.modules["parrot.integrations.liveavatar.optin"] = fake_optin_mod
+    return saved_modules, inject_keys, fake_mgr
+
+
+def _restore_modules(saved_modules: dict, inject_keys: list) -> None:
+    import sys
+
+    for key in inject_keys:
+        if saved_modules[key] is None:
+            sys.modules.pop(key, None)
+        else:
+            sys.modules[key] = saved_modules[key]
+
+
+async def test_voice_native_start_returns_publish_token() -> None:
+    """voice-native/start returns {livekit_url, token, session_id} and dispatches."""
+    import json
+    from unittest.mock import AsyncMock, MagicMock
+
+    from parrot.handlers.avatar import _start_voice_native_session
+
+    req = MagicMock()
+    req.match_info = {"agent_id": "meeting_secretary"}
+    req.json = AsyncMock(return_value={"session_id": "sess-1", "tenant_id": "acme"})
+
+    saved, keys, fake_mgr = _inject_voice_native_stack()
+    try:
+        resp = await _start_voice_native_session(req)
+    finally:
+        _restore_modules(saved, keys)
+
+    data = json.loads(resp.body)  # type: ignore[attr-defined]
+    assert data == {
+        "livekit_url": "wss://x.livekit.cloud",
+        "token": "browser-jwt",
+        "session_id": "sess-1",
+    }
+    # Never leak the Phase A subscribe-only key name nor an agent token.
+    assert "client_token" not in data
+    assert "agent_token" not in data
+
+    # The browser token must be the publish-capable one.
+    fake_mgr.mint_browser_token.assert_called_once_with("sess-1", "meeting_secretary")
+    # The worker was dispatched into the room (= session_id) with metadata JSON.
+    fake_mgr.dispatch_worker.assert_awaited_once()
+    kwargs = fake_mgr.dispatch_worker.await_args.kwargs
+    assert kwargs["room"] == "sess-1"
+    assert kwargs["worker_agent_name"] == "liveavatar-voice"
+    assert kwargs["metadata_json"] == '{"session_id":"sess-1"}'
+
+
+async def test_voice_native_start_requires_session_id() -> None:
+    """Missing session_id raises 400 before any LiveKit work."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from aiohttp import web
+
+    from parrot.handlers.avatar import _start_voice_native_session
+
+    req = MagicMock()
+    req.match_info = {"agent_id": "meeting_secretary"}
+    req.json = AsyncMock(return_value={})
+
+    saved, keys, _ = _inject_voice_native_stack()
+    try:
+        with __import__("pytest").raises(web.HTTPBadRequest):
+            await _start_voice_native_session(req)
+    finally:
+        _restore_modules(saved, keys)
+
+
+async def test_voice_native_start_blocks_disabled_tenant() -> None:
+    """A tenant without opt-in gets 403 and no dispatch happens."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from aiohttp import web
+
+    from parrot.handlers.avatar import _start_voice_native_session
+
+    req = MagicMock()
+    req.match_info = {"agent_id": "meeting_secretary"}
+    req.json = AsyncMock(return_value={"session_id": "sess-1", "tenant_id": "nope"})
+
+    saved, keys, fake_mgr = _inject_voice_native_stack(is_enabled=False)
+    try:
+        with __import__("pytest").raises(web.HTTPForbidden):
+            await _start_voice_native_session(req)
+    finally:
+        _restore_modules(saved, keys)
+
+    fake_mgr.dispatch_worker.assert_not_awaited()
+
+
+def test_voice_native_worker_agent_name_env(monkeypatch) -> None:
+    """_worker_agent_name reads LIVEAVATAR_WORKER_AGENT_NAME (default liveavatar-voice)."""
+    from parrot.handlers.avatar import _worker_agent_name
+
+    monkeypatch.delenv("LIVEAVATAR_WORKER_AGENT_NAME", raising=False)
+    assert _worker_agent_name() == "liveavatar-voice"
+    monkeypatch.setenv("LIVEAVATAR_WORKER_AGENT_NAME", "custom-worker")
+    assert _worker_agent_name() == "custom-worker"
+
+
+# ---------------------------------------------------------------------------
 # Auth: the avatar view requires authentication (C-3)
 # ---------------------------------------------------------------------------
 
@@ -240,3 +391,12 @@ def test_avatar_view_is_baseview_subclass() -> None:
     from parrot.handlers.avatar import AvatarSessionView
 
     assert issubclass(AvatarSessionView, BaseView)
+
+
+def test_voice_native_view_is_baseview_subclass() -> None:
+    """VoiceNativeAvatarView is a navigator BaseView (carries auth decorators)."""
+    from navigator.views import BaseView
+
+    from parrot.handlers.avatar import VoiceNativeAvatarView
+
+    assert issubclass(VoiceNativeAvatarView, BaseView)

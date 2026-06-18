@@ -169,9 +169,11 @@ install-loaders-all:
 
 # Install EVERYTHING with ALL extras (full monorepo)
 # NOTE: `gemma4` is excluded — it pins transformers>=5.0 which conflicts with
-# the `images`/`all` extras (transformers<5.0). Install it in a separate env.
+# the `images`/`all` extras (transformers<5.0). `liveavatar-voice` is excluded
+# too — livekit-agents needs psutil>=7.0 but flowtask hard-pins psutil==6.0.0.
+# Install either in a separate env.
 install-all:
-	uv sync --frozen --no-dev --all-packages --all-extras --no-extra gemma4
+	uv sync --frozen --no-dev --all-packages --all-extras --no-extra gemma4 --no-extra liveavatar-voice
 	uv pip install querysource
 	@echo "All packages installed with ALL extras (except gemma4)."
 
@@ -189,9 +191,11 @@ endif
 
 # Install all packages in dev mode with all extras
 # NOTE: `gemma4` is excluded — it pins transformers>=5.0 which conflicts with
-# the `images`/`all` extras (transformers<5.0). Install it in a separate env.
+# the `images`/`all` extras (transformers<5.0). `liveavatar-voice` is excluded
+# too — livekit-agents needs psutil>=7.0 but flowtask hard-pins psutil==6.0.0.
+# Install either in a separate env.
 develop:
-	uv sync --all-packages --all-extras --no-extra gemma4
+	uv sync --all-packages --all-extras --no-extra gemma4 --no-extra liveavatar-voice
 	$(MAKE) build-inplace
 	@echo "Full development environment ready (all packages, all extras except gemma4, dev tools)."
 

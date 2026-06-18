@@ -134,3 +134,109 @@ class LiveKitRoomManager:
             client_token=client_token,
             agent_token=agent_token,
         )
+
+    def mint_browser_token(
+        self,
+        room: str,
+        identity: str,
+        *,
+        audio_only: bool = True,
+    ) -> str:
+        """Mint a publish-capable browser JWT for the voice-native flow (Phase C).
+
+        Unlike :meth:`mint_room_tokens` (whose ``client_token`` is subscribe-only,
+        for the Phase A viewer), this token lets the browser **publish its
+        microphone** so the LiveKit Agents worker can run STT/VAD/turn-detection,
+        while still subscribing to the avatar's video/audio.
+
+        Args:
+            room: Room name (the ai-parrot ``session_id``).
+            identity: Browser participant identity.
+            audio_only: When ``True`` (default) the publish grant is restricted to
+                the microphone source — the browser cannot publish video. Set
+                ``False`` to allow any source.
+
+        Returns:
+            A signed JWT string safe to send to the browser (publish-audio +
+            subscribe).
+
+        Raises:
+            ImportError: If ``livekit-api`` is not installed.
+        """
+        livekit_api = _require_livekit_api()
+
+        grants = livekit_api.VideoGrants(
+            room_join=True,
+            room=room,
+            can_publish=True,
+            can_subscribe=True,
+            can_publish_data=True,
+            can_publish_sources=["microphone"] if audio_only else None,
+        )
+        token: str = (
+            livekit_api.AccessToken(self._key, self._secret)
+            .with_identity(identity)
+            .with_grants(grants)
+            .to_jwt()
+        )
+        self.logger.debug(
+            "LiveKitRoomManager: minted browser publish token for room=%s identity=%s "
+            "(audio_only=%s)",
+            room,
+            identity,
+            audio_only,
+        )
+        return token
+
+    async def dispatch_worker(
+        self,
+        *,
+        room: str,
+        worker_agent_name: str,
+        metadata_json: str,
+    ) -> str:
+        """Explicitly dispatch the LiveKit Agents worker into ``room`` (Phase C).
+
+        The Phase C worker registers with a fixed ``WorkerOptions(agent_name=...)``,
+        so it joins a room only via **explicit dispatch** (it is not auto-assigned).
+        This issues a ``CreateAgentDispatchRequest`` carrying the
+        :class:`AvatarJobMetadata` JSON so the worker knows which ai-parrot agent
+        to use as the brain, the conversation ``session_id`` and the tenant.
+
+        Args:
+            room: Room name to dispatch the worker into (the ``session_id``).
+            worker_agent_name: The LiveKit worker's registered ``agent_name``
+                (NOT the ai-parrot agent — that travels inside ``metadata_json``).
+            metadata_json: ``AvatarJobMetadata.model_dump_json()`` for the job.
+
+        Returns:
+            The created dispatch id.
+
+        Raises:
+            ImportError: If ``livekit-api`` is not installed.
+        """
+        livekit_api = _require_livekit_api()
+
+        lkapi = livekit_api.LiveKitAPI(
+            url=self.url, api_key=self._key, api_secret=self._secret
+        )
+        try:
+            dispatch = await lkapi.agent_dispatch.create_dispatch(
+                livekit_api.CreateAgentDispatchRequest(
+                    agent_name=worker_agent_name,
+                    room=room,
+                    metadata=metadata_json,
+                )
+            )
+        finally:
+            await lkapi.aclose()
+
+        dispatch_id = getattr(dispatch, "id", "") or ""
+        self.logger.info(
+            "LiveKitRoomManager: dispatched worker agent_name=%s into room=%s "
+            "(dispatch_id=%s)",
+            worker_agent_name,
+            room,
+            dispatch_id,
+        )
+        return dispatch_id

@@ -15,24 +15,32 @@ avatar; las salidas estructuradas → canal WS de AgentChat (mismo `session_id`)
 
 ---
 
-> ⚠️ **Estado de esta guía (2026-06-18).** El backend de Phase C (FEAT-243) está
-> **en implementación** (tareas `pending`). Esta guía está fundamentada en:
-> - El spec aprobado `sdd/specs/liveavatar-phase-c-voice-native.spec.md` (FEAT-243).
-> - El código **ya fusionado** de Phase A (FEAT-242) que Phase C **reutiliza**:
->   `room_manager.py`, `client.py`, `speakable.py`, `handlers/user.py`.
+> ✅ **Estado de esta guía (2026-06-18, rev 1.1).** El backend de Phase C
+> (FEAT-243) está **implementado y fusionado en `dev`** (rama
+> `feat-243-liveavatar-phase-c-voice-native`, 104 tests en verde). Lo que ya es
+> **código real y verificado**: el worker de LiveKit Agents, el `llm_node` que
+> llama a ai-parrot, el `OutputBridge` y su **contrato de salida estructurada**,
+> y el transporte cross-process por Redis hacia la WS de AgentChat.
 >
-> Las partes marcadas **`[PROPUESTA — confirmar con backend]`** describen el
-> contrato HTTP/dispatch que FEAT-243 todavía debe materializar (ver
-> [§11 Contratos abiertos](#11-contratos-abiertos-p4--p5--dispatch)). El modelo
-> mental, el flujo de LiveKit (publicar mic + suscribir avatar) y el consumo de
-> salidas estructuradas por la WS **sí** están anclados en código real y son
-> estables.
+> **El endpoint de arranque del navegador YA EXISTE** (resuelto post-rev 1.1):
+> `POST /api/v1/agents/avatar/{agent_id}/voice-native/start` acuña un **token con
+> publicación de audio** (`can_publish` micrófono + subscribe) y hace **explicit
+> dispatch del worker** a la sala con la `AvatarJobMetadata`. Contrato real en
+> [§4](#4-paso-1--arrancar-la-sesión-voz-nativa) y estado en
+> [§11](#11-estado-del-arranque-token-de-publicación--dispatch). El modelo mental,
+> el flujo LiveKit y el consumo de salidas estructuradas por la WS **también**
+> están anclados en código real.
 >
-> Archivos fuente verificados (2026-06-18):
-> - `packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/room_manager.py` — `mint_room_tokens` (grants)
-> - `packages/ai-parrot-server/src/parrot/handlers/avatar.py` — `/start` `/stop` (Phase A)
-> - `packages/ai-parrot-server/src/parrot/handlers/user.py:357` — `UserSocketManager.broadcast_to_channel`
-> - `packages/ai-parrot/src/parrot/human/channels/web.py` — patrón canal = `session_id`
+> Archivos fuente verificados (2026-06-18, post-merge):
+> - `…/liveavatar/livekit_agent/models.py` — `AvatarJobMetadata`, `StructuredOutputMessage`
+> - `…/liveavatar/livekit_agent/agent.py` — `LiveAvatarAgent.llm_node` + `_classify` / `_structured_payload`
+> - `…/liveavatar/livekit_agent/worker.py` — `entrypoint`, `parse_job_metadata`, `open_avatar_session`
+> - `…/liveavatar/livekit_agent/pipeline.py` — `build_session` (STT/VAD/turn/TTS)
+> - `…/liveavatar/output_bridge.py` + `output_transport.py` — bridge + Redis pub/sub
+> - `…/liveavatar/room_manager.py` — `mint_room_tokens` (`client_token` subscribe-only, Phase A) + `mint_browser_token` (publish-audio, Phase C) + `dispatch_worker`
+> - `packages/ai-parrot-server/src/parrot/handlers/avatar.py` — `VoiceNativeAvatarView` / `_start_voice_native_session` (endpoint `/voice-native/start`)
+> - `packages/ai-parrot-server/src/parrot/handlers/liveavatar_output.py` — subscriber server-side
+> - `packages/ai-parrot-server/src/parrot/handlers/user.py:357` — `broadcast_to_channel`
 > - `sdd/specs/liveavatar-phase-c-voice-native.spec.md` — especificación (FEAT-243)
 
 ---
@@ -49,7 +57,7 @@ avatar; las salidas estructuradas → canal WS de AgentChat (mismo `session_id`)
 8. [Paso 4 — Cerrar la sesión](#8-paso-4--cerrar-la-sesión)
 9. [Opt-in por tenant y manejo de errores](#9-opt-in-por-tenant-y-errores)
 10. [Ejemplo completo (TS, vanilla)](#10-ejemplo-completo-ts-vanilla)
-11. [Contratos abiertos (P4 / P5 / dispatch)](#11-contratos-abiertos-p4--p5--dispatch)
+11. [Estado del arranque (token de publicación + dispatch)](#11-estado-del-arranque-token-de-publicación--dispatch)
 12. [Componente Svelte 5 (referencia)](#12-componente-svelte-5-referencia)
 13. [Checklist de integración Frontend](#13-checklist-de-integración-frontend)
 14. [Apéndice — Resumen de contratos](#apéndice--resumen-de-contratos)
@@ -125,10 +133,10 @@ son los cambios. **No reutilices el flujo de turno de Phase A en Phase C.**
 | Token de sala | `client_token` **subscribe-only** | token **publish(audio)+subscribe** ⚠️ |
 | Turn-taking | Manual: tu lógica de chat dispara cada turno | **Nativo**: worker LiveKit (STT/VAD/turn/barge-in) |
 | Envío del turno | `POST /voice` con `avatar:true` por turno | **Ninguno** — el usuario habla; el worker escucha |
-| STT | STT del navegador o de `AgentVoiceTalk` | **STT del pipeline LiveKit** (Deepgram) |
-| Barge-in | No nativo | **Nativo** (VAD + turn-detection) |
+| STT | STT del navegador o de `AgentVoiceTalk` | **STT del pipeline LiveKit** (Deepgram `nova-3`) |
+| Barge-in | No nativo | **Nativo** (Silero VAD + MultilingualModel turn-detection) |
 | Salidas estructuradas | En el **envelope REST** de `/voice` | Por la **WS de AgentChat** (`broadcast_to_channel`) |
-| Audio del agente | PCM empujado por backend (Supertonic) | **TTS de LiveKit** por la sala |
+| Audio del agente | PCM empujado por backend (Supertonic) | **TTS (Cartesia)** del pipeline → avatar, por la sala |
 
 > **Regla de oro (igual que Phase A)**: el usuario **oye** el texto hablable por
 > el avatar y **ve** las tablas/gráficos/datos en la UI. LiveKit transporta solo
@@ -154,17 +162,34 @@ La diferencia estructural con Phase A: **desaparece el POST de turno** y
 
 ## 4. Paso 1 — Arrancar la sesión voz-nativa
 
-**`[PROPUESTA — confirmar con backend]`** El spec FEAT-243 define la inyección de
-contexto al worker vía **LiveKit job metadata** (`AvatarJobMetadata`:
-`ws_url`, `session_id`, `agent_name`, `tenant_id`), pero **no fija aún el
-endpoint HTTP** que el frontend llama para (a) acuñar el token de sala y (b)
-**despachar el worker** a la sala con esa metadata. El contrato natural —
-homólogo al `/start` de Phase A — es:
+**✅ Implementado.** El endpoint de arranque voz-nativo **ya existe** y hace las
+dos cosas que el navegador necesita: (a) acuña un **token con publicación de
+audio** y (b) hace **explicit dispatch del worker** a la sala con la
+`AvatarJobMetadata`. El worker de LiveKit Agents corre como proceso de larga vida
+(`WorkerOptions(agent_name=…)`) y recibe su contexto por esa job-metadata:
+
+```python
+# …/liveavatar/livekit_agent/models.py  (verificado)
+class AvatarJobMetadata(BaseModel):
+    ws_url: str          # URL ws de la sala (informativo / diagnóstico)
+    session_id: str      # conversación de AgentChat — sala + canal WS
+    agent_name: str      # agente ai-parrot que actúa de cerebro
+    tenant_id: str | None = None
+```
+
+> **Nota backend (informativa).** El `agent_name` que se despacha en LiveKit es el
+> del **worker** (`WorkerOptions.agent_name`, env `LIVEAVATAR_WORKER_AGENT_NAME`,
+> por defecto `liveavatar-voice`) — **distinto** del `agent_name` ai-parrot que
+> viaja dentro de `AvatarJobMetadata` (el del path `{agent_id}`). El dispatch se
+> hace con `LiveKitAPI().agent_dispatch.create_dispatch(...)` desde
+> `LiveKitRoomManager.dispatch_worker`.
+
+El contrato del endpoint:
 
 | | |
 |---|---|
 | **Método** | `POST` |
-| **Ruta** | `/api/v1/agents/avatar/{agent_id}/start` *(o un `.../voice-native/start` dedicado — a confirmar)* |
+| **Ruta** | `/api/v1/agents/avatar/{agent_id}/voice-native/start` |
 | **Auth** | Requerida (cookie de sesión / `Authorization`, igual que el chat) |
 | **Content-Type** | `application/json` |
 
@@ -173,11 +198,11 @@ homólogo al `/start` de Phase A — es:
 ```jsonc
 {
   "session_id": "abc-123",   // OBLIGATORIO. Clave compartida: sala LiveKit + canal WS.
-  "tenant_id": "acme"        // Opcional. Opt-in por tenant.
+  "tenant_id": "acme"        // Opcional. Opt-in por tenant (va a la job-metadata).
 }
 ```
 
-**Response 200 (propuesta):**
+**Response 200 esperada:**
 
 ```jsonc
 {
@@ -187,27 +212,21 @@ homólogo al `/start` de Phase A — es:
 }
 ```
 
-> ⚠️ **Gap de token (crítico para backend).** El `LiveKitRoomManager.mint_room_tokens`
-> de Phase A acuña el `client_token` con **`can_publish=False`** (subscribe-only,
-> pensado para un viewer). En Phase C el navegador **debe publicar su micrófono**,
-> así que necesita un token con `can_publish=True` (al menos para audio).
-> **FEAT-243 debe acuñar un token publish-capaz para el navegador** (o añadir una
-> variante a `mint_room_tokens`). Como frontend, **asume que recibirás un token
-> que te permite publicar audio**; si al hacer `setMicrophoneEnabled(true)`
-> LiveKit lanza un error de permisos, es este gap del backend, no tu bug.
+> ✅ **Token de publicación (resuelto).** El endpoint usa
+> `LiveKitRoomManager.mint_browser_token`, que acuña un JWT con `can_publish=True`
+> **restringido a la fuente `microphone`** (audio) + `can_subscribe=True`. Es el
+> token que devuelve `/voice-native/start` en el campo **`token`** (no confundir
+> con el `client_token` subscribe-only de Phase A). Con él,
+> `setMicrophoneEnabled(true)` funciona; el navegador **no** puede publicar vídeo.
 
-Además del token, el `/start` debe **despachar el worker de LiveKit Agents** a la
-sala con la job metadata (`session_id`, `agent_name`, `tenant_id`, `ws_url`).
-Eso es responsabilidad del backend; el frontend **no** ve ni toca esa metadata.
-
-**Errores esperados** (homólogos a Phase A):
+**Errores esperados:**
 
 | Código | Significado | Acción de UI |
 |--------|-------------|--------------|
-| `200` | Sesión + worker arrancados | Conéctate a la sala y publica mic |
+| `200` | Token emitido + worker despachado | Conéctate a la sala y publica mic |
 | `400` | Falta `session_id` | Bug del cliente: corrige el payload |
 | `403` | Tenant sin opt-in de avatar | Oculta el avatar; degrada a chat de texto/voz |
-| `503` | Stack/env no disponible (`ai-parrot-integrations[liveavatar]` / `livekit-agents` / env) | Fallback "avatar no disponible" |
+| `503` | Stack/env no disponible (`ai-parrot-integrations[liveavatar-voice]` / `livekit-agents` / env) | Fallback "avatar no disponible" |
 
 ---
 
@@ -289,7 +308,14 @@ Notas clave:
 En Phase C **no hay envelope REST por turno**. Las salidas estructuradas
 (charts, data, canvas, `tool_calls`) llegan por la **WebSocket de AgentChat**
 (`UserSocketManager`, ruta por defecto **`/ws/user`**), cuando el backend hace
-`broadcast_to_channel(session_id, StructuredOutputMessage)`.
+`broadcast_to_channel(session_id, StructuredOutputMessage.model_dump())`.
+
+> **Detalle de backend (informativo).** El worker corre en **otro proceso** que
+> el servidor de AgentChat, así que el `OutputBridge` publica primero a un canal
+> **Redis pub/sub** (`liveavatar:structured-outputs`) y un subscriber del servidor
+> (`configure_liveavatar_output_subscriber`) lo **re-emite** por
+> `broadcast_to_channel`. Para el frontend esto es transparente: tú solo te
+> suscribes al canal `session_id` en `/ws/user`.
 
 El `UserSocketManager` **solo entrega a suscriptores del canal** (si no hay
 nadie suscrito, el mensaje se descarta — **no hay buffer**). Por eso debes
@@ -317,26 +343,47 @@ ws.onmessage = (ev) => {
 };
 ```
 
-**Schema de la salida estructurada** — `StructuredOutputMessage` (spec FEAT-243,
-sección "Data Models"). **`[PROPUESTA — P4, confirmar con backend]`** el contrato
-exacto (nombres de `type`, forma de `payload`) es la **Open Question P4** del
-spec y debe cerrarse antes de implementar el render:
+**Schema de la salida estructurada** — `StructuredOutputMessage` (P4 **resuelto**,
+verificado en `models.py` + `agent.py`). El mensaje que recibes por la WS es
+exactamente el `model_dump()`:
 
 ```jsonc
 {
-  "type": "chart" | "data" | "canvas" | "tool_call",  // discriminador
+  "type": "tool_call" | "canvas" | "data" | "<output_mode>",  // discriminador (ver abajo)
   "session_id": "abc-123",
-  "payload": { /* depende del type — el artefacto a pintar */ },
-  "turn_id": "t-789"        // opcional: agrupa salidas de un mismo turno
+  "payload": {                 // forma FIJA, la produce _structured_payload()
+    "response":    "texto de la respuesta (puede ser null)",
+    "data":        { /* el dato estructurado, ya JSON-safe (frames→records) */ },
+    "code":        "código generado o null",
+    "artifact_id": "id del artefacto o null",
+    "output_mode": "chart | map | table | … o null",
+    "tool_calls":  ["nombre_de_la_tool", "…"]   // solo nombres
+  },
+  "turn_id": "<artifact_id o null>"   // ⚠️ hoy turn_id == artifact_id
 }
 ```
 
-Recomendación de integración: **reaprovecha tu render actual de artefactos**
-estructurados. Si AgentChat ya pinta `output`/`data`/`media`/charts/canvas desde
-el envelope REST de `AgentTalk`, mapea `StructuredOutputMessage.payload` a ese
-mismo render. Lo ideal es que el contrato P4 reutilice las **mismas formas** que
-ya consume tu UI (ver `docs/frontend/structured-artifacts-frontend-guide.md`) —
-plantéalo así al backend para no duplicar renderers.
+**Cómo se decide `type`** (`_classify`, en orden):
+
+| Condición en el `AIMessage` | `type` resultante |
+|---|---|
+| Tiene `tool_calls` | `"tool_call"` |
+| `output_mode` ≠ `default`/`null` | el valor de `output_mode` (p.ej. `"chart"`, `"map"`, `"table"`) |
+| Tiene `artifact_id` | `"canvas"` |
+| En otro caso (lleva `data`) | `"data"` |
+
+> **Importante — qué NO llega por la WS.** Solo se publican los turnos con salida
+> **estructurada** (`tool_calls`, `data`, `artifact_id`, u `output_mode` no
+> default). Un turno de **solo voz** (respuesta hablada sin estructura) **no
+> genera ningún mensaje** en el canal: el usuario lo **oye** por el avatar y no
+> hay nada que pintar. No esperes un "transcript" del texto hablado por esta vía.
+
+Recomendación de integración: **reaprovecha tu render actual de artefactos**.
+El `payload` reusa los mismos campos del envelope de `AgentTalk`
+(`response`/`data`/`code`/`artifact_id`/`output_mode`), así que mapea
+`StructuredOutputMessage.payload` a tu render existente
+(ver `docs/frontend/structured-artifacts-frontend-guide.md`). Usa `type` (o
+`payload.output_mode`) como discriminador del componente a montar.
 
 > **Si ya usas la WS `/ws/user` para el chat**, no abras una segunda conexión:
 > reutiliza la misma y solo añade `subscribe` al canal `session_id`. El canal de
@@ -354,15 +401,17 @@ turno para que se sienta viva.
   pipeline LiveKit **interrumpe** la voz del avatar. No tienes que cortar nada;
   como mucho, refleja "escuchando…" en la UI cuando el VAD detecte voz del
   usuario.
-- **Estado "pensando" durante `tool_calls` largos:** mientras ai-parrot ejecuta
-  herramientas, el avatar puede quedarse en silencio (riesgo de "dead air"). El
-  spec contempla un **filler/"thinking"** (Open Question **Q-filler**). Cómo se
-  señala al frontend está **por definir**; previsiones razonables a confirmar con
-  backend:
-  - un `StructuredOutputMessage` con `type: "tool_call"` (o un `type` de estado)
-    que tu UI traduzca a un indicador "El asistente está consultando datos…", **o**
-  - una utterance hablada por el avatar ("déjame revisar eso…"), que no requiere
-    nada en el frontend.
+- **Estado "pensando" durante `tool_calls` largos (Q-filler — resuelto):** la
+  solución implementada es una **frase hablada por el avatar**. Si un turno se
+  resuelve en `tool_calls` sin producir voz, `LiveAvatarAgent` emite un filler
+  (`DEFAULT_FILLER_TEXT = "Let me look into that for you."`) por TTS para que el
+  avatar **no se quede mudo**. **No** necesitas pintar nada para esto: el usuario
+  lo oye.
+  - De forma **complementaria**, ese mismo turno **sí** publica un
+    `StructuredOutputMessage` con `type: "tool_call"` (con `payload.tool_calls`
+    = nombres de las herramientas). Si quieres, úsalo para un indicador opcional
+    en la UI ("Consultando datos: `revenue_query`…"). Es opcional; el filler
+    hablado ya cubre el "no dead air".
 - **Estados de UI sugeridos:** `idle` → `connecting` → `listening` (VAD del
   usuario) → `speaking` (avatar habla) → `thinking` (tool_calls). Deriva
   `speaking`/`listening` de eventos de `livekit-client` (`RoomEvent`,
@@ -442,10 +491,17 @@ interface StartResponse {
 }
 
 interface StructuredOutputMessage {
-  type: "chart" | "data" | "canvas" | "tool_call";
+  type: string; // "tool_call" | "canvas" | "data" | <output_mode> (chart/map/table/…)
   session_id: string;
-  payload: Record<string, unknown>;
-  turn_id?: string;
+  payload: {
+    response: string | null;
+    data: unknown;            // ya JSON-safe (frames→records)
+    code: string | null;
+    artifact_id: string | null;
+    output_mode: string | null;
+    tool_calls: string[];     // nombres de las tools
+  };
+  turn_id: string | null;     // hoy == artifact_id
 }
 
 export class VoiceNativeAvatarSession {
@@ -466,7 +522,7 @@ export class VoiceNativeAvatarSession {
   /** Paso 1 + 2 + 3: arranca sesión, entra a la sala, publica mic, abre la WS. */
   async start(): Promise<void> {
     // 1) Arranca la sesión voz-nativa (mint token + dispatch worker).
-    const res = await fetch(`/api/v1/agents/avatar/${this.agentId}/start`, {
+    const res = await fetch(`/api/v1/agents/avatar/${this.agentId}/voice-native/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: this.sessionId, tenant_id: this.tenantId }),
@@ -565,24 +621,35 @@ window.addEventListener("beforeunload", () => { session.stop(); });
 
 ---
 
-## 11. Contratos abiertos (P4 / P5 / dispatch)
+## 11. Estado del arranque (token de publicación + dispatch)
 
-Para que el frontend pueda terminarse sin sobresaltos, **alinea estos puntos con
-backend** (son las Open Questions del spec FEAT-243):
+Todas las Open Questions del spec y el **entrypoint del navegador** (token de
+sala + dispatch del worker) están **resueltos e implementados**. Ya no hay
+bloqueantes para el frontend.
 
-| Item | Qué falta | Impacto en frontend |
+| Item | Estado | Impacto en frontend |
 |---|---|---|
-| **Token publish** (§4) | `mint_room_tokens` hoy da el token de viewer **subscribe-only**; Phase C necesita **publish(audio)+subscribe** para el navegador | Sin esto, `setMicrophoneEnabled(true)` falla. **Bloqueante.** |
-| **Endpoint `/start` + dispatch** | El spec define la job metadata pero **no el endpoint** que la frontend invoca ni cómo se despacha el worker | Define ruta, body y forma de respuesta (`livekit_url`, `token`, `session_id`). **Bloqueante.** |
-| **P4 — `StructuredOutputMessage`** | Valores de `type` y forma de `payload` por cada tipo (chart/data/canvas/tool_call) | Define el render. Idealmente reusa las formas del envelope actual. **Bloqueante para render.** |
-| **Q-filler** (§7) | Cómo se señala "pensando" durante `tool_calls` largos (mensaje WS vs utterance) | Determina si pintas un indicador o no haces nada. **No bloqueante.** |
-| **P5 — pin de `livekit-agents`** | Versión fijada del worker | Sin impacto directo en frontend (es server-side), pero condiciona el comportamiento de barge-in/turn. |
-| **Q-deploy** | spawn-per-session vs warm pool | Puede afectar el TTFB del primer turno (latencia percibida). |
+| **Endpoint de arranque + dispatch** (§4) | ✅ **Implementado**: `POST /api/v1/agents/avatar/{agent_id}/voice-native/start` (mint token + `dispatch_worker` con `AvatarJobMetadata`) | Llama a ese endpoint; recibe `{livekit_url, token, session_id}`. |
+| **Token publish para el navegador** (§4) | ✅ **Implementado**: `mint_browser_token` (`can_publish` micrófono + subscribe) | El campo `token` ya permite `setMicrophoneEnabled(true)`. |
+| **P4 — `StructuredOutputMessage`** | ✅ **Resuelto** (implementado, ver §6) | Contrato fijo: `type` + `payload {response,data,code,artifact_id,output_mode,tool_calls}` + `turn_id`. |
+| **Q-filler** (§7) | ✅ **Resuelto**: filler hablado por el avatar | Nada que pintar (opcional: usar el msg `tool_call`). |
+| **P5 — pin de `livekit-agents`** | ✅ **Resuelto**: `~=1.5`, validado en **1.6.1** | Server-side; condiciona barge-in/turn (ya validado). |
+| **Q-plugins** | ✅ **Resuelto**: Deepgram `nova-3` · Cartesia · Silero · MultilingualModel | Determina STT/TTS/VAD (server-side). |
+| **Q-deploy** | ✅ **Resuelto**: modelo `PROCESS` + warm pool (`num_idle_processes`) | Puede afectar el TTFB del primer turno (latencia percibida). |
 
-**Recomendación:** que backend confirme **token publish** + **endpoint `/start`**
-+ **schema P4** antes de cablear el render. Mientras tanto, el frontend puede
-construirse contra los stubs de esta guía (modelo, LiveKit publish/subscribe,
-suscripción WS) ya que esa parte está anclada en código real.
+**Recomendación.** El frontend puede integrarse **directamente** contra esta
+guía: el flujo completo (arranque → publish mic + subscribe avatar → salidas
+estructuradas por la WS) está anclado en código real y con tests. Ya no hace
+falta mockear `/start`.
+
+> **Requisitos de despliegue** (para que el endpoint funcione end-to-end): env
+> `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` (mint + dispatch),
+> `LIVEAVATAR_WORKER_AGENT_NAME` (opcional, default `liveavatar-voice`); el
+> **worker** corriendo (`worker.configure(bot_resolver=…)` + `worker.run()`, ver
+> `examples/liveavatar_voice_worker.py`) y registrado con ese mismo `agent_name`;
+> y el subscriber de salida activo en el server
+> (`configure_liveavatar_output_subscriber(app)`, opt-in `ENABLE_LIVEAVATAR_VOICE`).
+> El opt-in por tenant (`is_avatar_enabled`) sigue gobernando el `403`.
 
 ---
 
@@ -625,7 +692,7 @@ suscripción WS) ya que esa parte está anclada en código real.
     if (!enabled) { status = "disabled"; return; }
     status = "connecting";
 
-    const res = await fetch(`/api/v1/agents/avatar/${agentId}/start`, {
+    const res = await fetch(`/api/v1/agents/avatar/${agentId}/voice-native/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: sessionId, tenant_id: tenantId }),
@@ -722,36 +789,41 @@ suscripción WS) ya que esa parte está anclada en código real.
 - [ ] Fallback elegante ante `503` (stack/env no disponible) y micrófono denegado.
 - [ ] `POST .../stop` + `room.disconnect()` + `ws.close()` al cerrar / `beforeunload`.
 - [ ] Mismas credenciales de auth que el resto de AgentChat (`credentials: "include"`).
-- [ ] **Alinear con backend** los [contratos abiertos](#11-contratos-abiertos-p4--p5--dispatch) (token publish, endpoint `/start`, schema P4).
+- [ ] `POST .../voice-native/start` para arrancar (endpoint **ya implementado**; ver [§11](#11-estado-del-arranque-token-de-publicación--dispatch)). Sin bloqueantes pendientes.
 
 ---
 
 ## Apéndice — Resumen de contratos
 
 ```jsonc
-// 1) POST /api/v1/agents/avatar/{agent_id}/start   (auth requerida) [PROPUESTA]
+// 1) POST /api/v1/agents/avatar/{agent_id}/voice-native/start   (auth requerida) [IMPLEMENTADO]
+//    Acuña token publish(audio) + DESPACHA el worker con AvatarJobMetadata.
 //    body:
 { "session_id": "abc-123", "tenant_id": "acme" }
 //    200:
 { "livekit_url": "wss://<project>.livekit.cloud",
-  "token": "<JWT publish(audio)+subscribe>",   // ⚠️ debe permitir publicar audio
+  "token": "<JWT publish(microphone)+subscribe>",   // NO el client_token subscribe-only de Phase A
   "session_id": "abc-123" }
-//    400 falta session_id · 403 tenant sin opt-in · 503 stack/env no disponible
+//    400 falta session_id · 403 tenant sin opt-in · 503 stack/env/dispatch no disponible
 
 // 2) LiveKit room (livekit-client)
 //    room.connect(livekit_url, token)
 //    room.localParticipant.setMicrophoneEnabled(true)   // publica mic (nuevo)
 //    avatar remoto = identidad "avatar-agent" (suscribe su vídeo+audio)
 
-// 3) WS /ws/user (UserSocketManager) — salidas estructuradas
+// 3) WS /ws/user (UserSocketManager) — salidas estructuradas [P4 RESUELTO]
 //    → { "type": "auth",      "content": { "token": "<bearer>" } }
 //    → { "type": "subscribe", "content": { "channel": "abc-123" } }   // == session_id
 //    ← { "type": "subscribed", "channel": "abc-123" }
-//    ← StructuredOutputMessage:  [PROPUESTA — P4]
-{ "type": "chart" | "data" | "canvas" | "tool_call",
-  "session_id": "abc-123", "payload": { /* artefacto */ }, "turn_id": "t-789" }
+//    ← StructuredOutputMessage (model_dump):
+{ "type": "tool_call" | "canvas" | "data" | "<output_mode>",
+  "session_id": "abc-123",
+  "payload": { "response": null, "data": {}, "code": null,
+               "artifact_id": null, "output_mode": null, "tool_calls": [] },
+  "turn_id": null }   // turn_id == artifact_id
+//    (los turnos de SOLO voz no emiten mensaje)
 
-// 4) POST /api/v1/agents/avatar/{agent_id}/stop    (auth requerida) [PROPUESTA]
+// 4) POST .../stop    (auth requerida) — homólogo a Phase A, idempotente (204)
 //    body:
 { "session_id": "abc-123" }
 //    204 (idempotente)
@@ -769,3 +841,5 @@ suscripción WS) ya que esa parte está anclada en código real.
 | Versión | Fecha | Autor | Cambio |
 |---------|-------|-------|--------|
 | 1.0 | 2026-06-18 | Claude (FEAT-243) | Guía inicial de integración frontend del avatar voz-nativo (Phase C) |
+| 1.1 | 2026-06-18 | Claude (FEAT-243) | Revisada contra el merge en `dev`: contrato `StructuredOutputMessage` real (P4 resuelto), filler hablado (Q-filler), pipeline Deepgram/Cartesia/Silero, `livekit-agents ~=1.5` (P5), transporte Redis. Único bloqueante restante: endpoint de arranque del navegador + token publish |
+| 1.2 | 2026-06-18 | Claude (FEAT-243) | **Bloqueante resuelto**: implementado `POST /api/v1/agents/avatar/{agent_id}/voice-native/start` (`VoiceNativeAvatarView`) que acuña token publish-audio (`mint_browser_token`) y despacha el worker (`dispatch_worker` → `create_dispatch` con `AvatarJobMetadata`). Ejemplos §10/§12 y contratos actualizados a la ruta real. Sin bloqueantes pendientes |
