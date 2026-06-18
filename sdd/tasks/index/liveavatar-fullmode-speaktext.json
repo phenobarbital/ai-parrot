@@ -32,7 +32,7 @@
       "feature_id": "FEAT-248",
       "feature": "liveavatar-fullmode-speaktext",
       "spec": "sdd/specs/liveavatar-fullmode-speaktext.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Imports FullModeConfig and FullModeSessionHandle from TASK-1591",
       "assigned_to": null,
       "started_at": "2026-06-18T22:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1592-fullmode-client-extension.md"
+      "completed_at": "2026-06-18T23:20:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1592-fullmode-client-extension.md"
     },
     {
       "id": "TASK-1593",
