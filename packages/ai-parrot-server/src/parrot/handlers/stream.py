@@ -19,6 +19,13 @@ class StreamHandler(BaseHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.active_connections: Set[web.WebSocketResponse] = set()
+        # channel_subscriptions and _ws_voice_sessions are plain dicts/sets shared
+        # across all WebSocket connections. No asyncio.Lock is needed: aiohttp runs
+        # on a single-threaded event loop, so coroutines only interleave at `await`
+        # points. _subscribe_to_channel and _unsubscribe_from_channel are
+        # synchronous (no await), so they execute atomically w.r.t. other coroutines.
+        # broadcast_to_channel takes a snapshot copy of the set before iterating, so
+        # concurrent modifications during the async send loop are safe.
         # FEAT-244: per-session channel registry for structured-output delivery.
         # Maps session_id -> set of WebSocketResponse objects subscribed to that channel.
         self.channel_subscriptions: Dict[str, Set[web.WebSocketResponse]] = {}
@@ -306,7 +313,24 @@ class StreamHandler(BaseHandler):
         bot: AbstractBot,
         request: web.Request,
     ):
-        """Handle incoming WebSocket messages"""
+        """Handle incoming WebSocket messages dispatched by stream_websocket.
+
+        Args:
+            ws: The active WebSocket connection for this client session.
+            data: Parsed JSON dict from the client. Recognised ``type`` values:
+
+                * ``"stream_request"`` — LLM completion request; ``session_id``,
+                  ``query``, optional ``context`` fields.
+                * ``"voice_start"`` — Start a voice-native LiveAvatar session;
+                  ``session_id`` required. Idempotent: rejected if already active.
+                * ``"voice_stop"``  — Stop a voice-native LiveAvatar session;
+                  ``session_id`` required.
+                * ``"auth"``        — Authenticate the WebSocket; ``token`` required.
+                * ``"ping"``        — Keepalive; replied with ``{"type": "pong"}``.
+
+            bot: The AbstractBot instance bound to this agent session.
+            request: The originating aiohttp request (carries app context).
+        """
         msg_type = data.get('type')
         if msg_type == 'auth':
             auth_header = data.get('authorization', '')
@@ -362,6 +386,15 @@ class StreamHandler(BaseHandler):
                 })
                 return
 
+            # Idempotency guard: reject duplicate voice_start for the same session_id.
+            if session_id in self.channel_subscriptions:
+                await ws.send_str(json_encoder({
+                    "type": "voice_error",
+                    "session_id": session_id,
+                    "error": "Voice session already active for this session_id",
+                }))
+                return
+
             tenant_id: Optional[str] = data.get('tenant_id') or None
             agent_id: str = request.match_info.get('bot_id', '')
 
@@ -412,13 +445,6 @@ class StreamHandler(BaseHandler):
                 )
 
             self._unsubscribe_from_channel(ws, session_id)
-            # Remove from reverse index for this specific session
-            sessions = self._ws_voice_sessions.get(ws)
-            if sessions is not None:
-                sessions.discard(session_id)
-                if not sessions:
-                    self._ws_voice_sessions.pop(ws, None)
-
             self.logger.info("StreamHandler: voice_stop session %s", session_id)
             await ws.send_json({'type': 'voice_stopped', 'session_id': session_id})
 
@@ -518,7 +544,12 @@ class StreamHandler(BaseHandler):
         try:
             from parrot.handlers.avatar import stop_voice_native  # noqa: PLC0415
         except ImportError:
-            stop_voice_native = None  # type: ignore[assignment]
+            self.logger.error(
+                "stop_voice_native unavailable — liveavatar worker dispatches for ws=%s "
+                "will be orphaned. Check parrot.handlers.avatar is installed.",
+                ws,
+            )
+            return
 
         # Tear down all worker dispatches this socket started.
         session_ids = self._ws_voice_sessions.pop(ws, set())
@@ -530,19 +561,18 @@ class StreamHandler(BaseHandler):
                 if not subs:
                     self.channel_subscriptions.pop(session_id, None)
             # Stop the worker dispatch (idempotent — never raises).
-            if stop_voice_native is not None:
-                try:
-                    await stop_voice_native(request.app, session_id)
-                    self.logger.info(
-                        "StreamHandler: cleaned up voice session %s on ws close",
-                        session_id,
-                    )
-                except Exception:  # noqa: BLE001
-                    self.logger.warning(
-                        "StreamHandler: error stopping voice session %s on ws close",
-                        session_id,
-                        exc_info=True,
-                    )
+            try:
+                await stop_voice_native(request.app, session_id)
+                self.logger.info(
+                    "StreamHandler: cleaned up voice session %s on ws close",
+                    session_id,
+                )
+            except Exception:  # noqa: BLE001
+                self.logger.warning(
+                    "StreamHandler: error stopping voice session %s on ws close",
+                    session_id,
+                    exc_info=True,
+                )
 
         # Remove ws from any remaining channel subscriptions (non-voice channels).
         for channel, subs in list(self.channel_subscriptions.items()):

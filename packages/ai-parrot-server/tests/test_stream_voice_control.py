@@ -114,6 +114,14 @@ async def test_broadcast_to_channel_skips_excluded_ws(handler):
 # voice_start
 # ---------------------------------------------------------------------------
 
+# NOTE: stream.py imports start_voice_native / stop_voice_native via a local
+# (deferred) import inside _handle_message and _cleanup_ws_voice_sessions.
+# Python resolves the local `from parrot.handlers.avatar import X` to the same
+# module object as patch("parrot.handlers.avatar.X", ...), so patching the
+# definition site is correct here. If these imports are ever lifted to module
+# level in stream.py, the patch target must change to
+# "parrot.handlers.stream.start_voice_native".
+
 
 @pytest.mark.asyncio
 async def test_voice_start_subscribes_and_acks(handler, fake_request):

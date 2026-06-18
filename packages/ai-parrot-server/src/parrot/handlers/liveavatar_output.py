@@ -16,13 +16,17 @@ and ``liveavatar:structured-outputs``).
 
 import asyncio
 import logging
+from collections.abc import Iterable
 from typing import Any, Optional
 
 from aiohttp import web
 
 from parrot.conf import REDIS_URL
 
-__all__ = ["configure_liveavatar_output_subscriber", "_FanOutSink"]
+__all__ = [
+    "configure_liveavatar_output_subscriber",
+    "_FanOutSink",  # Exported for integration tests; internal implementation detail.
+]
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +47,7 @@ class _FanOutSink:
         managers: Iterable of sink objects (``None`` entries are silently dropped).
     """
 
-    def __init__(self, managers) -> None:
+    def __init__(self, managers: Iterable[Any]) -> None:
         self._managers = [m for m in managers if m is not None]
 
     async def broadcast_to_channel(
@@ -59,7 +63,7 @@ class _FanOutSink:
         """
         for manager in self._managers:
             try:
-                await manager.broadcast_to_channel(channel, message)
+                await manager.broadcast_to_channel(channel, message, exclude_ws=exclude_ws)
             except Exception:  # noqa: BLE001 — one bad sink must not block the rest
                 logger.exception(
                     "_FanOutSink: delivery failed for channel %s", channel
