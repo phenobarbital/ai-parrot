@@ -27,14 +27,15 @@
       "feature": "livekit-native-voice-adapters",
       "slug": "resolve-factories-pipeline-wiring",
       "title": "Add resolve_stt/resolve_tts factories and wire them into pipeline.py",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "depends_on": [
         "TASK-246-001"
       ],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-246-002-resolve-factories-pipeline-wiring.md",
-      "started_at": "2026-06-18T18:34:51+00:00"
+      "file": "sdd/tasks/completed/TASK-246-002-resolve-factories-pipeline-wiring.md",
+      "started_at": "2026-06-18T18:34:51+00:00",
+      "completed_at": "2026-06-18T18:41:33+00:00"
     },
     {
       "id": "TASK-246-003",
