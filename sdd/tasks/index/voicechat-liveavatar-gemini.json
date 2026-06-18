@@ -14,7 +14,7 @@
       "feature_id": "FEAT-245",
       "feature": "voicechat-liveavatar-gemini",
       "spec": "sdd/specs/voicechat-liveavatar-gemini.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation: creates VoiceAvatarSession that TASK-1589 imports. Touches the liveavatar package (voice_session.py + __init__). Runs first in the single per-spec worktree.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1588-voice-avatar-session-helper.md"
+      "completed_at": "2026-06-18T18:06:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1588-voice-avatar-session-helper.md"
     },
     {
       "id": "TASK-1589",
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-245",
       "feature": "voicechat-liveavatar-gemini",
       "spec": "sdd/specs/voicechat-liveavatar-gemini.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1588"],
+      "depends_on": [
+        "TASK-1588"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports VoiceAvatarSession (TASK-1588) and wires it into voice/handler.py (start/tee/cleanup). Sequenced after 1588.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-18T18:06:32+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1589-wire-voice-avatar-into-handler.md"
     },
@@ -50,14 +52,17 @@
       "feature_id": "FEAT-245",
       "feature": "voicechat-liveavatar-gemini",
       "spec": "sdd/specs/voicechat-liveavatar-gemini.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1588", "TASK-1589"],
+      "depends_on": [
+        "TASK-1588",
+        "TASK-1589"
+      ],
       "parallel": false,
       "parallelism_notes": "Cross-module end-to-end tests; runs after both implementation tasks are complete.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-18T18:06:32+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1590-voicechat-avatar-integration-tests.md"
     }
