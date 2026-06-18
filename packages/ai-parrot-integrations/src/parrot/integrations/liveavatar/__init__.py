@@ -8,7 +8,14 @@ from __future__ import annotations
 
 from .avatar_ws import AvatarWebSocket
 from .client import LiveAvatarClient
-from .models import AvatarSessionHandle, LiveAvatarConfig, LiveKitRoomTokens
+from .models import (
+    AvatarSessionHandle,
+    FullModeConfig,
+    FullModeSessionHandle,
+    LiveAvatarConfig,
+    LiveKitRoomTokens,
+    TenantAvatarConfig,
+)
 from .orchestrator import AvatarSessionOrchestrator
 from .room_manager import LiveKitRoomManager
 from .speakable import SpeakableFlattener
@@ -23,10 +30,13 @@ __all__ = [
     "AvatarTurnSpeaker",
     "AvatarVoiceProvider",
     "AvatarWebSocket",
+    "FullModeConfig",
+    "FullModeSessionHandle",
     "LiveAvatarClient",
     "LiveAvatarConfig",
     "LiveKitRoomManager",
     "LiveKitRoomTokens",
     "SpeakableFlattener",
+    "TenantAvatarConfig",
     "VoiceAvatarSession",
 ]
