@@ -307,11 +307,18 @@ approved. The agents under `.claude/agents/`:
   directly, never force-pushes, never works outside feature scope. It *can*
   push the feature branch, open a PR against `dev`, comment/label, draft a PR,
   and optionally update Jira.
+- **`qa-runner`** — the QA stage of `sdd-autopilot`: runs the feature's
+  pytest suite + `ruff`/`mypy` on changed files and maps acceptance criteria
+  to tests, then writes a markdown `.autopilot/qa-report.md` with a
+  greppable `verdict: PASS | FAIL`. Read + shell only (no edits); reports,
+  never fixes.
 - **`sdd-research`** / **`sdd-qa`** — phase subagents for the dev-loop flow
   (FEAT-129): research triages a failure → files Jira → `/sdd-spec` →
   `/sdd-task` → worktree, emitting a `ResearchOutput` JSON contract; QA runs
   acceptance criteria + lint deterministically under a no-edit permission mode
-  and emits a `QAReport` JSON.
+  and emits a `QAReport` JSON. (Distinct from `qa-runner`: `sdd-qa` emits a
+  strict JSON `QAReport` for a programmatic dispatcher, while `qa-runner`
+  emits a human/grep-friendly markdown report for the autopilot loop.)
 - **`code-reviewer`** — the rubric backing `/sdd-codereview`.
 
 ---
