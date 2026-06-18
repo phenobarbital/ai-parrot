@@ -32,7 +32,7 @@
       "feature_id": "FEAT-244",
       "feature": "unified-voice-control-streamhandler",
       "spec": "sdd/specs/unified-voice-control-streamhandler.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Imports the TASK-1584 helpers and adds broadcast_to_channel that TASK-1586 calls. Touches stream.py only but is sequenced between 1584 and 1586.",
       "assigned_to": null,
       "started_at": "2026-06-18T18:01:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1585-streamhandler-voice-control.md"
+      "completed_at": "2026-06-18T18:07:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1585-streamhandler-voice-control.md"
     },
     {
       "id": "TASK-1586",
