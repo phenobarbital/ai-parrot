@@ -85,3 +85,41 @@ async def test_start_launches_subscriber_and_stop_tears_down(monkeypatch):
     assert fake_redis.closed is True
     assert "liveavatar_output_task" not in app
     assert "liveavatar_output_redis" not in app
+
+
+# ── BotManager.setup gating via ENABLE_LIVEAVATAR_VOICE ──────────────────────
+
+
+def test_botmanager_skips_subscriber_when_flag_disabled(monkeypatch):
+    from types import SimpleNamespace
+
+    import parrot.handlers.liveavatar_output as lo
+    from parrot.manager import manager as mgr
+
+    monkeypatch.setattr(mgr, "ENABLE_LIVEAVATAR_VOICE", False)
+    called = []
+    monkeypatch.setattr(
+        lo, "configure_liveavatar_output_subscriber", lambda app: called.append(app)
+    )
+
+    mgr.BotManager._setup_liveavatar_voice(SimpleNamespace(app=object()))
+
+    assert called == []
+
+
+def test_botmanager_wires_subscriber_when_flag_enabled(monkeypatch):
+    from types import SimpleNamespace
+
+    import parrot.handlers.liveavatar_output as lo
+    from parrot.manager import manager as mgr
+
+    monkeypatch.setattr(mgr, "ENABLE_LIVEAVATAR_VOICE", True)
+    called = []
+    monkeypatch.setattr(
+        lo, "configure_liveavatar_output_subscriber", lambda app: called.append(app)
+    )
+
+    app = object()
+    mgr.BotManager._setup_liveavatar_voice(SimpleNamespace(app=app))
+
+    assert called == [app]
