@@ -14,7 +14,10 @@ from parrot.models.responses import AIMessage
 from parrot.integrations.liveavatar.livekit_agent.agent import (
     DEFAULT_FILLER_TEXT,
     LiveAvatarAgent,
+    _json_safe,
     _last_user_text,
+    _message_text,
+    _structured_payload,
 )
 from parrot.integrations.liveavatar.livekit_agent.models import (
     StructuredOutputMessage,
@@ -213,3 +216,128 @@ async def test_block_response_spoken_when_not_streamed():
     )
 
     assert out == ["A single block answer."]
+
+
+# ── Edge cases / robustness (review #6, #7) ─────────────────────────────────
+
+
+def test_message_text_handles_callable_text_content():
+    """_message_text resolves the ``text_content()`` callable form."""
+    msg = SimpleNamespace(role="user", text_content=lambda: "from callable")
+    assert _message_text(msg) == "from callable"
+
+
+def test_message_text_joins_list_content_parts():
+    """_message_text joins string parts of a list ``content``."""
+    msg = SimpleNamespace(role="user", content=["hello", "world"])
+    assert _message_text(msg) == "hello world"
+
+
+@pytest.mark.asyncio
+async def test_empty_user_text_skips_ask_stream():
+    """With no user message, llm_node yields nothing and never calls ask_stream."""
+    bot = FakeBot(["should not be reached"])
+    agent = _make_agent(bot)
+
+    out = await _collect(
+        agent.llm_node(_chat_ctx(_msg("system", "sys only")), tools=None, model_settings=None)
+    )
+
+    assert out == []
+    assert bot.calls == []
+
+
+@pytest.mark.asyncio
+async def test_bridge_failure_does_not_break_speech():
+    """A failing OutputBridge.publish is logged, not propagated — speech continues."""
+
+    class FailingBridge:
+        async def publish(self, msg):
+            raise RuntimeError("socket manager down")
+
+    chart_msg = _ai_message(output_mode="chart", data={"spec": {}})
+    bot = FakeBot(["Here is the chart. ", chart_msg])
+    agent = _make_agent(bot, bridge=FailingBridge())
+
+    out = await _collect(
+        agent.llm_node(_chat_ctx(_msg("user", "chart")), tools=None, model_settings=None)
+    )
+
+    # The spoken text still made it through despite the bridge failure.
+    assert out == ["Here is the chart."]
+
+
+@pytest.mark.asyncio
+async def test_multiple_sentinels_publish_without_double_filler():
+    """Two structured sentinels each publish; filler is not repeated once spoke."""
+    bridge = CapturingBridge()
+    tool_msg_1 = _sentinel(tool_calls=[SimpleNamespace(name="a")], data={"x": 1})
+    tool_msg_2 = _sentinel(tool_calls=[SimpleNamespace(name="b")], data={"y": 2})
+    bot = FakeBot(["Working on it. ", tool_msg_1, tool_msg_2])
+    agent = _make_agent(bot, bridge=bridge)
+
+    out = await _collect(
+        agent.llm_node(_chat_ctx(_msg("user", "go")), tools=None, model_settings=None)
+    )
+
+    # Spoke real text first -> no filler at all; both sentinels published.
+    assert out == ["Working on it."]
+    assert DEFAULT_FILLER_TEXT not in out
+    assert [p.type for p in bridge.published] == ["tool_call", "tool_call"]
+
+
+@pytest.mark.asyncio
+async def test_dataframe_payload_is_json_safe_end_to_end():
+    """A pandas DataFrame in AIMessage.data is sanitized so the broadcast encodes."""
+    pd = pytest.importorskip("pandas")
+    from datamodel.parsers.json import json_encoder
+
+    bridge = CapturingBridge()
+    df_msg = _ai_message(output_mode="table", data=pd.DataFrame({"a": [1, 2]}))
+    bot = FakeBot([df_msg])
+    agent = _make_agent(bot, bridge=bridge)
+
+    await _collect(
+        agent.llm_node(_chat_ctx(_msg("user", "table")), tools=None, model_settings=None)
+    )
+
+    published = bridge.published[0]
+    assert published.type == "table"
+    # The exact failure mode from review A-1: encoding must not raise.
+    json_encoder(published.model_dump())
+    assert published.payload["data"] == [{"a": 1}, {"a": 2}]
+
+
+def test_json_safe_passes_through_plain_types():
+    """_json_safe is a no-op for already-serializable structures."""
+    assert _json_safe({"k": [1, "two", 3.0, None, True]}) == {
+        "k": [1, "two", 3.0, None, True]
+    }
+
+
+def test_structured_payload_normalizes_dataframe():
+    """_structured_payload converts a DataFrame data field to records."""
+    pd = pytest.importorskip("pandas")
+    msg = _ai_message(output_mode="table", data=pd.DataFrame({"a": [1]}))
+    payload = _structured_payload(msg)
+    assert payload["data"] == [{"a": 1}]
+
+
+@pytest.mark.asyncio
+async def test_barge_in_aclose_midstream_does_not_raise():
+    """Closing the generator mid-utterance (barge-in) must not raise.
+
+    Guards the deliberate choice to flush OUTSIDE a ``finally`` — a ``yield`` in
+    ``finally`` would raise GeneratorExit when the LiveKit pipeline interrupts.
+    """
+    bot = FakeBot(["First sentence. ", "Second sentence. ", "Third. "])
+    agent = _make_agent(bot)
+
+    gen = agent.llm_node(
+        _chat_ctx(_msg("user", "talk")), tools=None, model_settings=None
+    )
+    first = await gen.__anext__()
+    assert first == "First sentence."
+
+    # Simulate barge-in: consumer stops and closes the generator early.
+    await gen.aclose()  # must not raise RuntimeError("ignored GeneratorExit")

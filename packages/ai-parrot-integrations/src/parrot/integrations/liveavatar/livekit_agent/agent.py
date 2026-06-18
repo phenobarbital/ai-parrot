@@ -27,7 +27,10 @@ without a live LiveKit room.
 """
 
 import logging
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional
+from dataclasses import asdict, is_dataclass
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Optional
+
+from pydantic import BaseModel
 
 from parrot.integrations.liveavatar.livekit_agent.models import (
     StructuredOutputMessage,
@@ -36,11 +39,11 @@ from parrot.integrations.liveavatar.output_bridge import OutputBridge
 from parrot.integrations.liveavatar.speakable import SpeakableFlattener
 from parrot.models.responses import AIMessage
 
-try:  # optional 'liveavatar-voice' extra (livekit-agents ~= 1.5)
+try:  # pragma: no cover - success path requires the 'liveavatar-voice' extra
     from livekit.agents import Agent as _LiveKitAgent
 
     _HAS_LIVEKIT_AGENTS = True
-except ImportError:  # pragma: no cover - exercised via the absent-extra path
+except ImportError:
     _LiveKitAgent = object  # type: ignore[assignment,misc]
     _HAS_LIVEKIT_AGENTS = False
 
@@ -53,7 +56,33 @@ BotResolver = Callable[[str], Awaitable[Any]]
 #: Default "thinking" filler spoken when a tool turn produces no other speech.
 DEFAULT_FILLER_TEXT = "Let me look into that for you."
 
-logger = logging.getLogger(__name__)
+
+def _json_safe(value: Any) -> Any:
+    """Coerce a structured value into a JSON-serializable form for the UI bridge.
+
+    ``AIMessage.data`` is ``Any`` and is frequently a pandas ``DataFrame`` /
+    ``Series`` (or a dataclass / Pydantic model). The AgentChat broadcast path
+    runs the payload through a strict JSON encoder, which raises on such
+    objects, so they are normalised here before they cross the bridge contract.
+    Recurses into ``dict`` / ``list`` so nested frames are handled too.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _json_safe(val) for key, val in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):  # pandas DataFrame / Series and other mappings
+        try:
+            return _json_safe(value.to_dict(orient="records"))
+        except TypeError:
+            return _json_safe(to_dict())
+    if is_dataclass(value) and not isinstance(value, type):
+        return _json_safe(asdict(value))
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    return str(value)
 
 
 def _message_text(msg: Any) -> str:
@@ -125,11 +154,15 @@ def _classify(msg: AIMessage) -> str:
     return "data"
 
 
-def _structured_payload(msg: AIMessage) -> dict:
-    """Build the (P4-provisional) structured payload for the AgentChat UI."""
+def _structured_payload(msg: AIMessage) -> Dict[str, Any]:
+    """Build the (P4-provisional) structured payload for the AgentChat UI.
+
+    ``data`` is passed through :func:`_json_safe` so a pandas frame / dataclass /
+    Pydantic model never reaches (and crashes) the broadcast JSON encoder.
+    """
     return {
         "response": msg.response,
-        "data": msg.data,
+        "data": _json_safe(msg.data),
         "code": msg.code,
         "artifact_id": getattr(msg, "artifact_id", None),
         "output_mode": getattr(
@@ -187,7 +220,7 @@ class LiveAvatarAgent(_LiveKitAgent):  # type: ignore[misc,valid-type]
 
     async def llm_node(
         self, chat_ctx: Any, tools: Any, model_settings: Any
-    ) -> AsyncIterator[str]:
+    ) -> AsyncGenerator[str, None]:
         """LiveKit ``llm_node`` override: stream ai-parrot speech to the TTS node.
 
         Yields plain ``str`` sentences (consumed by LiveKit's TTS node). The
@@ -198,9 +231,17 @@ class LiveAvatarAgent(_LiveKitAgent):  # type: ignore[misc,valid-type]
         async for sentence in self._stream_response(chat_ctx):
             yield sentence
 
-    async def _stream_response(self, chat_ctx: Any) -> AsyncIterator[str]:
+    async def _stream_response(self, chat_ctx: Any) -> AsyncGenerator[str, None]:
         """Core, livekit-independent streaming bifurcation (unit-testable)."""
         user_text = _last_user_text(chat_ctx)
+        if not user_text:
+            self.logger.warning(
+                "llm_node called with empty user text; agent=%s session=%s",
+                self._agent_name,
+                self._session_id,
+            )
+            return
+
         bot = await self._resolve_bot(self._agent_name)
         flattener = self._flattener_factory()
         spoke = False
@@ -213,36 +254,55 @@ class LiveAvatarAgent(_LiveKitAgent):  # type: ignore[misc,valid-type]
             user_text,
         )
 
-        async for chunk in bot.ask_stream(
-            question=user_text, session_id=self._session_id
-        ):
-            if isinstance(chunk, str):
-                for sentence in flattener.feed(chunk):
-                    spoke = True
-                    yield sentence
-                continue
+        try:
+            async for chunk in bot.ask_stream(
+                question=user_text, session_id=self._session_id
+            ):
+                if isinstance(chunk, str):
+                    for sentence in flattener.feed(chunk):
+                        spoke = True
+                        yield sentence
+                    continue
 
-            # Final AIMessage sentinel — bifurcate structured vs speech.
-            if _is_structured(chunk):
-                await self._bridge.publish(
-                    StructuredOutputMessage(
-                        type=_classify(chunk),
-                        session_id=self._session_id,
-                        payload=_structured_payload(chunk),
-                        turn_id=getattr(chunk, "artifact_id", None),
-                    )
-                )
+                # Final AIMessage sentinel — bifurcate structured vs speech.
+                if _is_structured(chunk):
+                    # A UI-bridge failure must not silence the avatar's speech.
+                    try:
+                        await self._bridge.publish(
+                            StructuredOutputMessage(
+                                type=_classify(chunk),
+                                session_id=self._session_id,
+                                payload=_structured_payload(chunk),
+                                turn_id=getattr(chunk, "artifact_id", None),
+                            )
+                        )
+                    except Exception:  # noqa: BLE001 - bridge errors are non-fatal
+                        self.logger.exception(
+                            "OutputBridge.publish failed; type=%s session=%s",
+                            _classify(chunk),
+                            self._session_id,
+                        )
 
-            if getattr(chunk, "tool_calls", None):
-                # Tool turn: avoid dead air if nothing was spoken.
-                if not spoke:
-                    spoke = True
-                    yield self._filler_text
-            elif not spoke and chunk.response:
-                # Non-streamed block response — speak it now.
-                for sentence in flattener.feed(chunk.response):
-                    spoke = True
-                    yield sentence
+                if getattr(chunk, "tool_calls", None):
+                    # Tool turn: avoid dead air if nothing was spoken.
+                    if not spoke:
+                        spoke = True
+                        yield self._filler_text
+                elif not spoke and chunk.response:
+                    # Non-streamed block response — speak it now.
+                    for sentence in flattener.feed(chunk.response):
+                        spoke = True
+                        yield sentence
+        except Exception:
+            self.logger.exception(
+                "ask_stream failed; agent=%s session=%s",
+                self._agent_name,
+                self._session_id,
+            )
+            raise
 
+        # Flush the buffered tail on NORMAL completion only. This is
+        # deliberately NOT in a ``finally``: yielding while the generator is
+        # being closed (barge-in / ``aclose()``) raises GeneratorExit.
         for sentence in flattener.flush():
             yield sentence

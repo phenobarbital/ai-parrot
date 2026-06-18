@@ -12,7 +12,7 @@ These models are pure Pydantic v2 and intentionally free of any
   WebSocket channel keyed by ``session_id`` (spec section 2, Module 3).
 """
 
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
 
@@ -23,7 +23,10 @@ class AvatarJobMetadata(BaseModel):
     """LiveKit job metadata parsed from ``ctx.job.metadata`` (JSON).
 
     Attributes:
-        ws_url: WebSocket URL of the LiveKit Cloud room the worker joins.
+        ws_url: LiveKit room WebSocket URL carried in the job metadata
+            (informational / diagnostics). The worker connects via
+            ``ctx.connect()`` and the avatar joins through the API-returned
+            config, so this value is not used to establish the connection.
         session_id: AgentChat conversation id shared with the avatar turn.
         agent_name: Name of the ai-parrot agent that acts as the brain.
         tenant_id: Optional tenant/program identifier (avatar is opt-in per
@@ -59,7 +62,7 @@ class StructuredOutputMessage(BaseModel):
         ...,
         description="Conversation id used as the WebSocket channel key.",
     )
-    payload: dict = Field(
+    payload: Dict[str, Any] = Field(
         ...,
         description="Structured payload rendered by the AgentChat UI.",
     )
