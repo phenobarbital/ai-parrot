@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-248
 **Date**: 2026-06-19
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: (next minor)
 
 > Input brainstorm: `sdd/proposals/liveavatar-fullmode.brainstorm.md` (Option A).
