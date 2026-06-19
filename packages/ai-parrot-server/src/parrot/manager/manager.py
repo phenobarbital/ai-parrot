@@ -1483,6 +1483,34 @@ class BotManager:
         )
         return True
 
+    def _register_voice_chat_routes(self, app: web.Application) -> bool:
+        """Register the Gemini Live + LITE avatar WebSocket route (FEAT-245 Mode D).
+
+        Mounts ``VoiceChatHandler`` at ``/ws/voice`` under a lazy-import guard so
+        a server without ``ai-parrot-integrations[voice]`` or Gemini credentials
+        still boots — the route is simply skipped with a warning.
+
+        Args:
+            app: The aiohttp Application.
+
+        Returns:
+            ``True`` if the route was registered, ``False`` otherwise.
+        """
+        try:
+            from parrot.voice.handler import VoiceChatHandler
+        except ImportError as exc:
+            self.logger.warning(
+                "VoiceChatHandler (/ws/voice) disabled (%s); install "
+                "'ai-parrot-integrations[voice]' to enable Mode D (Gemini Live).",
+                exc,
+            )
+            return False
+
+        handler = VoiceChatHandler()
+        handler.setup_routes(app, include_health=False, include_static=False)
+        self.logger.info("VoiceChatHandler registered at /ws/voice (Mode D).")
+        return True
+
     def _register_avatar_routes(self, router) -> bool:
         """Register the avatar session start/stop routes (FEAT-242 Phase A).
 
@@ -1747,6 +1775,9 @@ class BotManager:
         # reaches the voice stack (ai-parrot-integrations[voice]) via lazy
         # imports, so a missing stack must degrade gracefully, never crash boot.
         self._register_voice_routes(router)
+        # Mode D: Gemini Live + LITE avatar WebSocket (FEAT-245/FEAT-249). Mounted
+        # under the optional-integration guard; missing [voice] logs a warning.
+        self._register_voice_chat_routes(self.app)
         # Avatar session routes (FEAT-242 Phase A) — start/stop the LiveAvatar
         # session. Registered under the optional-integration guard like voice:
         # a missing ai-parrot-integrations[liveavatar] extra logs a warning and
