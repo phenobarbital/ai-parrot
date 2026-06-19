@@ -6,9 +6,13 @@ Ports the LiveAvatar starter ``liveavatar_client.py`` (httpx/websockets) to
 Responsibilities:
 - ``create_session_token``: create a LITE session (optionally with
   ``livekit_config`` so the avatar joins our LiveKit Cloud room).
+- ``create_full_session_token``: create a FULL mode session (FEAT-248).
 - ``start_session``: start the created session (Bearer auth).
 - ``stop_session``: stop/close the session (idempotent).
 - ``keep_alive``: periodic HTTP keep-alive (< 5 min interval).
+- ``list_avatars``: list available avatars (FEAT-248).
+- ``list_voices``: list available voices (FEAT-248).
+- ``get_session_transcript``: retrieve session transcript (FEAT-248).
 
 Auth headers:
 - ``X-API-KEY: cfg.api_key`` on create / stop / keep-alive.
@@ -23,11 +27,16 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 
-from parrot.integrations.liveavatar.models import AvatarSessionHandle, LiveAvatarConfig
+from parrot.integrations.liveavatar.models import (
+    AvatarSessionHandle,
+    FullModeConfig,
+    FullModeSessionHandle,
+    LiveAvatarConfig,
+)
 
 # Keep-alive interval must be strictly less than the LiveAvatar 5 min inactivity
 # timeout.  280 s gives a comfortable 20 s safety margin.
@@ -184,13 +193,96 @@ class LiveAvatarClient:
         self.logger.info("LiveAvatarClient: session token created — id=%s", handle.liveavatar_session_id)
         return handle
 
+    async def create_full_session_token(
+        self,
+        cfg: FullModeConfig,
+    ) -> FullModeSessionHandle:
+        """Create a LiveAvatar FULL mode session token (restricted — no LLM, no context).
+
+        Sends ``mode: "FULL"`` with ``avatar_persona`` (voice_id, language),
+        ``interactivity_type``, ``video_settings``, and ``max_session_duration``.
+        Critically: ``llm_configuration_id`` and ``context_id`` are OMITTED so the
+        avatar never auto-responds via its built-in LLM (Q1 confirmed by spike).
+
+        Args:
+            cfg: FULL mode configuration (voice_id, language, interactivity_type,
+                plus all base LiveAvatarConfig fields).
+
+        Returns:
+            A :class:`FullModeSessionHandle` populated with ``session_id`` and
+            ``session_token`` from the API.  ``livekit_url`` and
+            ``livekit_client_token`` are populated later by :meth:`start_session`.
+
+        Raises:
+            aiohttp.ClientResponseError: On non-2xx responses.
+        """
+        url = f"{cfg.base_url}/v1/sessions/token"
+        headers = self._api_key_headers(cfg)
+
+        payload: Dict[str, Any] = {
+            "mode": "FULL",
+            "avatar_id": cfg.avatar_id,
+            "interactivity_type": cfg.interactivity_type,
+        }
+        # avatar_persona — only include voice_id if set (None means use avatar default)
+        persona: Dict[str, Any] = {}
+        if cfg.voice_id:
+            persona["voice_id"] = cfg.voice_id
+        if cfg.language:
+            persona["language"] = cfg.language
+        if persona:
+            payload["avatar_persona"] = persona
+
+        # video_settings (quality / encoding from base config)
+        video_settings: Dict[str, Any] = {}
+        if cfg.quality is not None:
+            video_settings["quality"] = cfg.quality
+        if cfg.encoding is not None:
+            video_settings["encoding"] = cfg.encoding
+        if video_settings:
+            payload["video_settings"] = video_settings
+
+        if cfg.is_sandbox:
+            payload["is_sandbox"] = True
+        if cfg.max_session_duration is not None:
+            payload["max_session_duration"] = cfg.max_session_duration
+
+        # NOTE: ``llm_configuration_id`` and ``context_id`` are intentionally OMITTED.
+        # This puts the avatar in restricted mode — it will never auto-respond
+        # with its built-in LLM (Q1 confirmed by spike_q1_speaktext.py).
+
+        self.logger.debug(
+            "LiveAvatarClient: creating FULL mode session for avatar %s", cfg.avatar_id
+        )
+        response_data = await self._post(url, headers=headers, json=payload)
+        data = response_data.get("data") or response_data
+
+        handle = FullModeSessionHandle(
+            session_id="",
+            liveavatar_session_id=data.get("session_id", ""),
+            session_token=data.get("session_token", ""),
+            ws_url="",  # unused in FULL mode; populated by LITE start_session only
+            agent_name=cfg.avatar_id,
+        )
+        self._handle = handle
+        self.logger.info(
+            "LiveAvatarClient: FULL mode session token created — id=%s",
+            handle.liveavatar_session_id,
+        )
+        return handle
+
     async def start_session(self, handle: AvatarSessionHandle) -> Dict[str, Any]:
         """Start a previously created session.
 
         Uses ``Authorization: Bearer <session_token>`` auth.
 
+        For :class:`FullModeSessionHandle`, the ``/start`` response carries
+        ``livekit_url`` and ``livekit_client_token`` (not ``ws_url``) — both are
+        populated on the handle so the caller can return them to the browser.
+
         Args:
-            handle: The session handle returned by :meth:`create_session_token`.
+            handle: The session handle returned by :meth:`create_session_token`
+                or :meth:`create_full_session_token`.
 
         Returns:
             The raw API response dict.
@@ -207,6 +299,14 @@ class LiveAvatarClient:
         # LiveKit tokens, wrapped in a ``data`` envelope.  Populate ws_url now.
         start_data = result.get("data") or result
         handle.ws_url = start_data.get("ws_url", handle.ws_url)
+
+        # FULL mode: /start returns livekit_url + livekit_client_token (not ws_url).
+        if isinstance(handle, FullModeSessionHandle):
+            handle.livekit_url = start_data.get("livekit_url", handle.livekit_url)
+            handle.livekit_client_token = start_data.get(
+                "livekit_client_token", handle.livekit_client_token
+            )
+
         self.logger.info("LiveAvatarClient: session started — id=%s", handle.liveavatar_session_id)
 
         # Start the background keep-alive loop after the session is live.
@@ -278,6 +378,79 @@ class LiveAvatarClient:
                 exc_info=True,
             )
 
+    async def list_avatars(self, cfg: LiveAvatarConfig) -> List[Dict[str, Any]]:
+        """List available avatars (stock + user-uploaded).
+
+        Calls ``GET /v1/avatars`` with ``X-API-KEY`` auth.
+
+        Args:
+            cfg: LiveAvatar configuration (provides api_key and base_url).
+
+        Returns:
+            List of avatar dicts from the LiveAvatar API.
+
+        Raises:
+            aiohttp.ClientResponseError: On non-2xx responses.
+        """
+        url = f"{cfg.base_url}/v1/avatars"
+        headers = self._api_key_headers(cfg)
+        self.logger.debug("LiveAvatarClient: listing avatars")
+        result = await self._get(url, headers=headers)
+        data = result.get("data") or result
+        if isinstance(data, list):
+            return data
+        return data.get("avatars") or data.get("items") or []
+
+    async def list_voices(self, cfg: LiveAvatarConfig) -> List[Dict[str, Any]]:
+        """List available voices.
+
+        Calls ``GET /v1/voices`` with ``X-API-KEY`` auth.
+
+        Args:
+            cfg: LiveAvatar configuration (provides api_key and base_url).
+
+        Returns:
+            List of voice dicts from the LiveAvatar API.
+
+        Raises:
+            aiohttp.ClientResponseError: On non-2xx responses.
+        """
+        url = f"{cfg.base_url}/v1/voices"
+        headers = self._api_key_headers(cfg)
+        self.logger.debug("LiveAvatarClient: listing voices")
+        result = await self._get(url, headers=headers)
+        data = result.get("data") or result
+        if isinstance(data, list):
+            return data
+        return data.get("voices") or data.get("items") or []
+
+    async def get_session_transcript(
+        self,
+        cfg: LiveAvatarConfig,
+        session_id: str,
+    ) -> Dict[str, Any]:
+        """Retrieve the server-side transcript for a completed session.
+
+        Calls ``GET /v1/sessions/{session_id}/transcript`` with ``X-API-KEY`` auth.
+
+        Args:
+            cfg: LiveAvatar configuration (provides api_key and base_url).
+            session_id: LiveAvatar session ID (``liveavatar_session_id`` on the handle).
+
+        Returns:
+            Transcript dict from the LiveAvatar API.
+
+        Raises:
+            aiohttp.ClientResponseError: On non-2xx responses.
+        """
+        url = f"{cfg.base_url}/v1/sessions/{session_id}/transcript"
+        headers = self._api_key_headers(cfg)
+        self.logger.debug(
+            "LiveAvatarClient: fetching transcript for session %s", session_id
+        )
+        result = await self._get(url, headers=headers)
+        return result.get("data") or result
+
     # ── Internal helpers ───────────────────────────────────────────────
 
     def _api_key_headers(self, cfg: LiveAvatarConfig) -> Dict[str, str]:
@@ -336,6 +509,37 @@ class LiveAvatarClient:
                 "call __aenter__ before using the client."
             )
         async with self._session.post(url, headers=headers, json=json) as resp:
+            resp.raise_for_status()
+            if resp.content_type == "application/json":
+                return await resp.json()  # type: ignore[no-any-return]
+            return {}
+
+    async def _get(
+        self,
+        url: str,
+        *,
+        headers: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """Execute a GET request and return the parsed JSON body.
+
+        Args:
+            url: The request URL.
+            headers: Request headers (typically ``X-API-KEY`` auth).
+
+        Returns:
+            Parsed JSON response dict (may be empty for 204 responses).
+
+        Raises:
+            RuntimeError: If the client session is not initialised.
+            aiohttp.ClientResponseError: On non-2xx responses.
+        """
+        if self._session is None:
+            raise RuntimeError(
+                "LiveAvatarClient has no active aiohttp session. "
+                "Use 'async with LiveAvatarClient(cfg) as client:' or "
+                "call __aenter__ before using the client."
+            )
+        async with self._session.get(url, headers=headers) as resp:
             resp.raise_for_status()
             if resp.content_type == "application/json":
                 return await resp.json()  # type: ignore[no-any-return]

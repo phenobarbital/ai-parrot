@@ -79,8 +79,10 @@ liveavatar = [
 # NOTE (Q-plugins): livekit-plugins-silero and -turn-detector are deprecated for
 #   v2.0 in favour of livekit.agents.inference.{VAD,TurnDetector}; they still work
 #   on 1.6.x (AgentSession also bundles a default Silero VAD).
-# NOTE (deps): livekit-agents constrains opentelemetry-* lower than the host's
-#   otel-observability pins (resolves to ~1.39 vs 1.42) — reconcile in the lock.
+# NOTE (deps): livekit-agents 1.6.1 hard-pins opentelemetry-*~=1.39.0 (<1.40);
+#   the host project uses otel 1.42. The workspace root declares a conflict
+#   split so both otel versions coexist in the universal lock. The flowtask/psutil
+#   conflict is gone as of flowtask 5.12.1 (psutil no longer hard-pinned).
 liveavatar-voice = [
     "ai-parrot-integrations[liveavatar]",
     "livekit-agents~=1.5",
