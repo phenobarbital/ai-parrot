@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-19T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-19T15:44:26+00:00",
   "tasks": [
     {
       "id": "TASK-1599",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Must precede the livekit_agent/ deletion; touches __init__.py + output_bridge.py shared by later tasks.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1599-relocate-structured-output-message.md"
+      "completed_at": "2026-06-19T15:44:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1599-relocate-structured-output-message.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1600",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Edits __init__.py; sequential with sibling deletions.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1600-delete-phase-c-worker-stack.md"
+      "completed_at": "2026-06-19T15:44:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1600-delete-phase-c-worker-stack.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1601",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Edits avatar.py/stream.py/room_manager.py/manager.py; prereq for transport decouple.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1601-delete-phase-c-server-endpoints.md"
+      "completed_at": "2026-06-19T15:44:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1601-delete-phase-c-server-endpoints.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1602",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +85,9 @@
       "parallelism_notes": "Edits __init__.py + models.py shared with other deletion tasks.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1602-delete-dead-code.md"
+      "completed_at": "2026-06-19T15:44:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1602-delete-dead-code.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1603",
@@ -92,7 +96,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +106,9 @@
       "parallelism_notes": "Depends on StreamHandler voice bits removed (1601) and SOM relocated (1599).",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1603-decouple-rename-redis-transport.md"
+      "completed_at": "2026-06-19T15:44:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1603-decouple-rename-redis-transport.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1604",
@@ -112,7 +117,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -123,8 +128,9 @@
       "parallelism_notes": "Green-tree gate closing the deletion phase before feature work.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1604-prune-extras-fix-constants.md"
+      "completed_at": "2026-06-19T15:44:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1604-prune-extras-fix-constants.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1605",
@@ -133,7 +139,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,8 +149,9 @@
       "parallelism_notes": "File-disjoint from TASK-1606 (manager voice-chat mount vs avatar viewers endpoint); could run in a separate worktree, but per-spec strategy runs sequentially.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1605-mount-gemini-voice-handler.md"
+      "completed_at": "2026-06-19T15:44:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1605-mount-gemini-voice-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1606",
@@ -153,7 +160,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -163,8 +170,9 @@
       "parallelism_notes": "File-disjoint from TASK-1605; both depend only on the clean post-deletion tree.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1606-multi-viewer-token-endpoint.md"
+      "completed_at": "2026-06-19T15:44:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1606-multi-viewer-token-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1607",
@@ -173,7 +181,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -184,8 +192,9 @@
       "parallelism_notes": "Needs the renamed/decoupled transport (1603); edits agent.py shared with later Mode B tasks.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1607-fullmode-output-bifurcation-helper.md"
+      "completed_at": "2026-06-19T15:44:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1607-fullmode-output-bifurcation-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1608",
@@ -194,7 +203,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -204,8 +213,9 @@
       "parallelism_notes": "Touches agent_voice.py/manager.py; sequential after the bifurcation helper.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1608-pluggable-stt-mode-b.md"
+      "completed_at": "2026-06-19T15:44:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1608-pluggable-stt-mode-b.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1609",
@@ -214,7 +224,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -224,8 +234,9 @@
       "parallelism_notes": "Docs + tests for the channel produced by 1607.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1609-document-test-ws-userinfo-contract.md"
+      "completed_at": "2026-06-19T15:44:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1609-document-test-ws-userinfo-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1610",
@@ -234,7 +245,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -244,8 +255,9 @@
       "parallelism_notes": "Independent verification task (new test file); can run any time after the clean tree.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1610-mode-a-e2e-validation.md"
+      "completed_at": "2026-06-19T15:44:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1610-mode-a-e2e-validation.md",
+      "verification": "verified"
     }
   ]
 }
