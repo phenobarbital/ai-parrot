@@ -112,7 +112,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Green-tree gate closing the deletion phase before feature work.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1604-prune-extras-fix-constants.md"
+      "completed_at": "2026-06-19T14:28:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1604-prune-extras-fix-constants.md"
     },
     {
       "id": "TASK-1605",
