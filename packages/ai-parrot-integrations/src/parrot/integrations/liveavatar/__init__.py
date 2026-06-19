@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from .avatar_ws import AvatarWebSocket
 from .client import LiveAvatarClient
-from .fullmode_observer import FullModeRoomObserver
 from .models import (
     AvatarSessionHandle,
     FullModeConfig,
@@ -16,9 +15,7 @@ from .models import (
     LiveAvatarConfig,
     LiveKitRoomTokens,
     StructuredOutputMessage,
-    TenantAvatarConfig,
 )
-from .orchestrator import AvatarSessionOrchestrator
 from .room_manager import LiveKitRoomManager
 from .speakable import SpeakableFlattener
 from .speaker import AvatarTurnSpeaker
@@ -29,12 +26,10 @@ from .voice_session import VoiceAvatarSession
 __all__ = [
     "AVATAR_PCM_SAMPLE_RATE",
     "AvatarSessionHandle",
-    "AvatarSessionOrchestrator",
     "AvatarTurnSpeaker",
     "AvatarVoiceProvider",
     "AvatarWebSocket",
     "FullModeConfig",
-    "FullModeRoomObserver",
     "FullModeSessionHandle",
     "LiveAvatarClient",
     "LiveAvatarConfig",
@@ -42,7 +37,6 @@ __all__ = [
     "LiveKitRoomTokens",
     "SpeakableFlattener",
     "StructuredOutputMessage",
-    "TenantAvatarConfig",
     "VoiceAvatarSession",
     "resolve_fullmode_config",
 ]
