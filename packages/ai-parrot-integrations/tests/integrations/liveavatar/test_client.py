@@ -156,6 +156,21 @@ async def test_keep_alive_loop_under_5min(cfg: LiveAvatarConfig) -> None:
     )
 
 
+async def test_keep_alive_sends_session_id_in_body(cfg: LiveAvatarConfig) -> None:
+    """keep_alive POSTs the session_id in the body (empty body → 400)."""
+    fake_session = _fake_session(response_json={})
+    client = LiveAvatarClient(cfg, session=fake_session)
+    client._session = fake_session
+    handle = _make_handle()
+
+    await client.keep_alive(handle)
+
+    call_args = fake_session.post.call_args
+    url = call_args.args[0] if call_args.args else call_args.kwargs.get("url", "")
+    assert url.endswith("/v1/sessions/keep-alive")
+    assert call_args.kwargs.get("json") == {"session_id": "sess-123"}
+
+
 async def test_keep_alive_task_started_on_start(cfg: LiveAvatarConfig) -> None:
     """_start_keep_alive is triggered after start_session."""
     fake_session = _fake_session(response_json={})

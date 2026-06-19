@@ -137,6 +137,21 @@ def test_chunk_text_never_empty():
     assert chunk_text("Hello") == ["Hello"]
 
 
+def test_chunk_text_hard_splits_long_sentence():
+    """A single over-long sentence (no boundaries) is hard-split to <= max_len."""
+    text = "word " * 50  # ~250 chars, no terminal punctuation -> one "sentence"
+    chunks = chunk_text(text, max_len=30)
+    assert len(chunks) > 1
+    assert all(len(c) <= 30 for c in chunks)
+
+
+def test_chunk_text_hard_splits_unbroken_token():
+    """A single token longer than max_len is sliced mid-token, losing nothing."""
+    chunks = chunk_text("x" * 100, max_len=30)
+    assert all(len(c) <= 30 for c in chunks)
+    assert "".join(chunks) == "x" * 100
+
+
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
@@ -169,6 +184,26 @@ def test_pipeline_runs_four_graphs_in_order(tmp_path, fake_onnx):
     assert fake_onnx["vocoder"][0] == {"latent"}
     # Flow-matching loop ran total_step (default 8) times.
     assert len(fake_onnx["vector_estimator"]) == 8
+
+
+def test_infer_chunk_clamps_oversized_duration(tmp_path, fake_onnx):
+    """A pathological duration is clamped so latent_len stays within the limit.
+
+    Without the clamp this overflows the vector estimator's positional table and
+    crashes the ORT kernel ("1000 by <N>" broadcast error).
+    """
+    model_dir = _build_model_dir(tmp_path)
+    pipeline = SupertonicPipeline(str(model_dir))
+
+    # Force the duration predictor to predict an absurd 100s for the chunk.
+    pipeline.dp_ort.run = lambda names, feed: [np.array([100.0], dtype=np.float32)]
+
+    style = pipeline._get_style("M1")
+    _wav, duration = pipeline._infer_chunk("text", "en", style)
+
+    chunk_size = pipeline.base_chunk_size * pipeline.chunk_compress_factor
+    max_duration = pipeline._MAX_LATENT_LEN * chunk_size / pipeline.sample_rate
+    assert float(duration.max()) <= max_duration + 1e-6
 
 
 def test_pipeline_unknown_voice_raises(tmp_path, fake_onnx):
