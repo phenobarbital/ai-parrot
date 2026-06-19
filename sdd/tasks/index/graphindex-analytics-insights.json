@@ -1,0 +1,92 @@
+{
+  "feature": "graphindex-analytics-insights",
+  "feature_id": "FEAT-215",
+  "spec": "sdd/specs/FEAT-215-graphindex-analytics-insights.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-16T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1565",
+      "slug": "knowledge-gap-detection",
+      "title": "Knowledge Gap Detection Functions",
+      "feature_id": "FEAT-215",
+      "feature": "graphindex-analytics-insights",
+      "spec": "sdd/specs/FEAT-215-graphindex-analytics-insights.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Modifies analytics.py — all subsequent tasks extend the same file and depend on the AnalyticsResult changes made here.",
+      "assigned_to": null,
+      "started_at": "2026-06-15T23:53:38+00:00",
+      "completed_at": "2026-06-16T00:00:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1565-knowledge-gap-detection.md"
+    },
+    {
+      "id": "TASK-1566",
+      "slug": "composite-surprise-scoring",
+      "title": "Composite Surprise Scoring",
+      "feature_id": "FEAT-215",
+      "feature": "graphindex-analytics-insights",
+      "spec": "sdd/specs/FEAT-215-graphindex-analytics-insights.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1565"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs CommunitiesResult wiring from TASK-1565's compute_analytics changes. Modifies _rank_surprising_connections in the same file.",
+      "assigned_to": null,
+      "started_at": "2026-06-15T23:53:38+00:00",
+      "completed_at": "2026-06-16T00:04:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1566-composite-surprise-scoring.md"
+    },
+    {
+      "id": "TASK-1567",
+      "slug": "insight-dismissal-and-report-gaps",
+      "title": "Insight Dismissal + GRAPH_REPORT.md Knowledge Gaps Section",
+      "feature_id": "FEAT-215",
+      "feature": "graphindex-analytics-insights",
+      "spec": "sdd/specs/FEAT-215-graphindex-analytics-insights.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1565",
+        "TASK-1566"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Extends _render_report which renders knowledge_gaps (TASK-1565) and composite scores (TASK-1566). Must run after both.",
+      "assigned_to": null,
+      "started_at": "2026-06-15T23:53:38+00:00",
+      "completed_at": "2026-06-16T00:07:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1567-insight-dismissal-and-report-gaps.md"
+    },
+    {
+      "id": "TASK-1568",
+      "slug": "toolkit-gap-and-insight-tools",
+      "title": "Toolkit Gap Detection & Insight Management Tools",
+      "feature_id": "FEAT-215",
+      "feature": "graphindex-analytics-insights",
+      "spec": "sdd/specs/FEAT-215-graphindex-analytics-insights.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1565",
+        "TASK-1566",
+        "TASK-1567"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on all analytics functions from prior tasks. Different file (toolkit.py) but imports the analytics module.",
+      "assigned_to": null,
+      "started_at": "2026-06-15T23:53:38+00:00",
+      "completed_at": "2026-06-16T00:12:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1568-toolkit-gap-and-insight-tools.md"
+    }
+  ]
+}

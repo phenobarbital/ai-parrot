@@ -75,6 +75,7 @@ from ..conf import (
     ENABLE_CREWS,
     ENABLE_DATABASE_BOTS,
     ENABLE_DASHBOARDS,
+    ENABLE_LIVEAVATAR_VOICE,
     ENABLE_REGISTRY_BOTS,
     ENABLE_SWAGGER,
     REDIS_URL,
@@ -1482,6 +1483,108 @@ class BotManager:
         )
         return True
 
+    def _register_avatar_routes(self, router) -> bool:
+        """Register the avatar session start/stop routes (FEAT-242 Phase A).
+
+        Delegates to ``parrot.handlers.avatar.register_avatar_routes`` which
+        guards on the optional ``ai-parrot-integrations[liveavatar]`` extra and
+        serves the routes through the authenticated ``AvatarSessionView``.  Also
+        registers a shutdown hook to tear down any lingering avatar sessions.
+
+        Args:
+            router: The aiohttp ``UrlDispatcher`` to register routes on.
+
+        Returns:
+            ``True`` if the avatar routes were registered, ``False`` otherwise.
+        """
+        try:
+            from ..handlers.avatar import (
+                close_all_avatar_sessions,
+                register_avatar_routes,
+            )
+        except ImportError as exc:
+            self.logger.warning(
+                "Avatar endpoints disabled (%s); install "
+                "'ai-parrot-integrations[liveavatar]' to enable "
+                "POST /api/v1/agents/avatar/{agent_id}/start.",
+                exc,
+            )
+            return False
+        registered = register_avatar_routes(router)
+        if registered and self.app is not None:
+            self.app.on_cleanup.append(close_all_avatar_sessions)
+            # Shared avatar voice provider (chat→avatar "mouth"). Cheap to
+            # construct — the heavy Supertonic ONNX load is deferred to the
+            # first avatar turn. Stored on the app so AgentTalk can synthesize
+            # the streamed reply into PCM for the active avatar session.
+            try:
+                import os as _os  # noqa: PLC0415
+
+                from parrot.integrations.liveavatar import AvatarVoiceProvider
+
+                self.app["avatar_voice_provider"] = AvatarVoiceProvider(
+                    voice=_os.environ.get("LIVEAVATAR_VOICE") or None,
+                    language=_os.environ.get("LIVEAVATAR_LANGUAGE") or None,
+                )
+                self.logger.info(
+                    "Avatar voice provider registered (Supertonic loads lazily)."
+                )
+            except ImportError as exc:  # voice-supertonic extra missing
+                self.logger.warning(
+                    "Avatar voice provider unavailable (%s); the avatar will "
+                    "appear but stay silent. Install "
+                    "'ai-parrot-integrations[liveavatar,voice-supertonic]'.",
+                    exc,
+                )
+        return registered
+
+    def _register_fullmode_avatar_routes(self, router) -> bool:
+        """Register the FULL mode avatar REST endpoints (FEAT-248).
+
+        Delegates to ``parrot.handlers.avatar_fullmode.register_fullmode_routes``
+        which guards on the optional ``ai-parrot-integrations[liveavatar]`` extra
+        and registers start/stop/list/transcript routes.  Also registers a shutdown
+        hook to tear down any lingering FULL mode sessions.
+
+        Args:
+            router: The aiohttp ``UrlDispatcher`` to register routes on.
+
+        Returns:
+            ``True`` if the FULL mode routes were registered, ``False`` otherwise.
+        """
+        try:
+            from ..handlers.avatar_fullmode import (
+                close_all_fullmode_sessions,
+                register_fullmode_routes,
+            )
+        except ImportError as exc:
+            self.logger.warning(
+                "FULL mode avatar endpoints disabled (%s); install "
+                "'ai-parrot-integrations[liveavatar]' to enable "
+                "POST /api/v1/avatar/fullmode/{agent_id}/start.",
+                exc,
+            )
+            return False
+        registered = register_fullmode_routes(router)
+        if registered and self.app is not None:
+            self.app.on_cleanup.append(close_all_fullmode_sessions)
+        return registered
+
+    def _setup_liveavatar_voice(self) -> None:
+        """Wire the LiveAvatar Phase C output subscriber when enabled (FEAT-243).
+
+        Opt-in via ``ENABLE_LIVEAVATAR_VOICE``. The subscriber's own ``on_startup``
+        defers reading ``app['user_socket_manager']``, so registering it here
+        (before that key is populated) is safe.
+        """
+        if not ENABLE_LIVEAVATAR_VOICE:
+            return
+        from ..handlers.liveavatar_output import (
+            configure_liveavatar_output_subscriber,
+        )
+
+        configure_liveavatar_output_subscriber(self.app)
+
     def setup(self, app: web.Application) -> web.Application:
         self.app = None
         if app:
@@ -1538,6 +1641,8 @@ class BotManager:
             await setup_web_hitl(app)
 
         self.app.on_startup.append(_hitl_deferred_startup)
+        # FEAT-243: LiveAvatar Phase C output subscriber (opt-in).
+        self._setup_liveavatar_voice()
         # OAuth2 Integrations routes (FEAT-144)
         router.add_view(
             '/api/v1/agents/integrations/{agent_id}',
@@ -1642,6 +1747,15 @@ class BotManager:
         # reaches the voice stack (ai-parrot-integrations[voice]) via lazy
         # imports, so a missing stack must degrade gracefully, never crash boot.
         self._register_voice_routes(router)
+        # Avatar session routes (FEAT-242 Phase A) — start/stop the LiveAvatar
+        # session. Registered under the optional-integration guard like voice:
+        # a missing ai-parrot-integrations[liveavatar] extra logs a warning and
+        # skips the routes instead of crashing boot.
+        self._register_avatar_routes(router)
+        # FULL mode avatar routes (FEAT-248) — LiveAvatar-managed STT/TTS/lip-sync.
+        # Registered under the same optional-integration guard; a missing stack
+        # logs a warning instead of crashing boot.
+        self._register_fullmode_avatar_routes(router)
         # Dataset Manager for agents:
         router.add_view(
             '/api/v1/agents/datasets/{agent_id}',
@@ -1696,6 +1810,11 @@ class BotManager:
         # Streaming Handler:
         st = StreamHandler()
         st.configure_routes(self.app)
+        # FEAT-244: publish the StreamHandler so the LiveAvatar output subscriber
+        # can use it as a fan-out sink for structured-output delivery.
+        # Must be set HERE (before on_startup hooks run) so the subscriber's
+        # _start hook finds it when it reads app['stream_handler'].
+        self.app['stream_handler'] = st
         # Crew Configuration
         if ENABLE_CREWS:
             CrewHandler.configure(self.app, '/api/v1/crew')

@@ -21,8 +21,11 @@ class TestConceptType:
     """Tests for ConceptType controlled vocabulary."""
 
     def test_all_values_present(self):
-        """All 11 ontological types must be present."""
-        expected = {
+        """All original 11 ontological types must still be present.
+
+        FEAT-239 added 5 graph-native types; original values are unchanged.
+        """
+        original_expected = {
             "Section",
             "Policy",
             "Control",
@@ -35,7 +38,8 @@ class TestConceptType:
             "Regulation",
             "Guideline",
         }
-        assert {t.value for t in ConceptType} == expected
+        actual = {t.value for t in ConceptType}
+        assert original_expected.issubset(actual)
 
     def test_section_is_fallback(self):
         """SECTION is the structural fallback for unavailable classification."""
@@ -48,8 +52,8 @@ class TestConceptType:
         assert ConceptType.CONTROL.value == "Control"
 
     def test_all_values_count(self):
-        """Exactly 11 values in the enum."""
-        assert len(list(ConceptType)) == 11
+        """FEAT-239 extended to 16 values (11 original + 5 graph-native)."""
+        assert len(list(ConceptType)) == 16
 
     def test_case_sensitive_values(self):
         """Values use Title-Case as per spec."""
@@ -66,8 +70,11 @@ class TestRelationType:
     """Tests for RelationType typed edge vocabulary."""
 
     def test_all_values_present(self):
-        """All 8 relation types must be present."""
-        expected = {
+        """All original 8 relation types must still be present.
+
+        FEAT-239 added 4 graph edge kinds; original values are unchanged.
+        """
+        original_expected = {
             "references",
             "maps_to",
             "satisfies",
@@ -77,7 +84,8 @@ class TestRelationType:
             "implements",
             "part_of",
         }
-        assert {r.value for r in RelationType} == expected
+        actual = {r.value for r in RelationType}
+        assert original_expected.issubset(actual)
 
     def test_references_is_default(self):
         """REFERENCES is the default fallback for untyped prose links."""
@@ -85,8 +93,8 @@ class TestRelationType:
         assert RelationType.REFERENCES.value == "references"
 
     def test_all_values_count(self):
-        """Exactly 8 values in the enum."""
-        assert len(list(RelationType)) == 8
+        """FEAT-239 extended to 12 values (8 original + 4 graph edge kinds)."""
+        assert len(list(RelationType)) == 12
 
     def test_str_enum_equality(self):
         """str, Enum values compare equal to plain strings."""

@@ -264,7 +264,15 @@ examples/knowledge_wiki/store/
 # Custom Agents:
 plugins/agents/
 !/crew-builder/src/routes/agents/
+# restored 2026-06-18 after FEAT-240 (odoo-pageindex-documentation-agent) landed.
+# Odoo agent files committed during the feature stay tracked (gitignore does not
+# untrack); only NEW agent files are ignored again.
 /agents/
+# FEAT-240: generated Odoo doc PageIndex trees are large (tens of MB) and
+# regenerable via scripts/odoo_agent/build_rst_pageindex.py — never commit them.
+# Keep the directory placeholder; ignore the generated trees + content stores.
+agents/odoo_agent/documentation/*.json
+agents/odoo_agent/documentation/odoo_*/
 /batch_results/
 
 # SvelteKit build

@@ -1,0 +1,70 @@
+{
+  "feature": "voicechat-liveavatar-gemini",
+  "feature_id": "FEAT-245",
+  "spec": "sdd/specs/voicechat-liveavatar-gemini.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-18T17:38:59+00:00",
+  "completed_at": "2026-06-18T18:13:21+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1588",
+      "slug": "voice-avatar-session-helper",
+      "title": "VoiceAvatarSession helper (drive avatar mouth from a realtime PCM stream)",
+      "feature_id": "FEAT-245",
+      "feature": "voicechat-liveavatar-gemini",
+      "spec": "sdd/specs/voicechat-liveavatar-gemini.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation: creates VoiceAvatarSession that TASK-1589 imports. Touches the liveavatar package (voice_session.py + __init__). Runs first in the single per-spec worktree.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-18T18:06:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1588-voice-avatar-session-helper.md"
+    },
+    {
+      "id": "TASK-1589",
+      "slug": "wire-voice-avatar-into-handler",
+      "title": "Wire VoiceAvatarSession into VoiceChatHandler (lifecycle + audio tee)",
+      "feature_id": "FEAT-245",
+      "feature": "voicechat-liveavatar-gemini",
+      "spec": "sdd/specs/voicechat-liveavatar-gemini.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1588"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports VoiceAvatarSession (TASK-1588) and wires it into voice/handler.py (start/tee/cleanup). Sequenced after 1588.",
+      "assigned_to": null,
+      "started_at": "2026-06-18T18:06:32+00:00",
+      "completed_at": "2026-06-18T18:11:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1589-wire-voice-avatar-into-handler.md"
+    },
+    {
+      "id": "TASK-1590",
+      "slug": "voicechat-avatar-integration-tests",
+      "title": "Integration tests for VoiceChat -> LiveAvatar (Gemini Live)",
+      "feature_id": "FEAT-245",
+      "feature": "voicechat-liveavatar-gemini",
+      "spec": "sdd/specs/voicechat-liveavatar-gemini.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1588",
+        "TASK-1589"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Cross-module end-to-end tests; runs after both implementation tasks are complete.",
+      "assigned_to": null,
+      "started_at": "2026-06-18T18:06:32+00:00",
+      "completed_at": "2026-06-18T18:13:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1590-voicechat-avatar-integration-tests.md"
+    }
+  ]
+}

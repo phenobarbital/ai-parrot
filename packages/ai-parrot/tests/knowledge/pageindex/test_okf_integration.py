@@ -261,11 +261,11 @@ class TestToolkitOKFToolRegistration:
         toolkit.set_okf_toolkit("test_tree", okf_tk)
 
         all_tools = toolkit.get_tools()
-        # OKF toolkit returns 6 tools; combined list must contain them.
-        assert len(okf_tk.get_tools()) == 6
+        # OKF toolkit returns 9 tools (6 read + 3 lint/bundle); combined list must contain them.
+        assert len(okf_tk.get_tools()) == 9
         # Combined list must be larger than base tools alone.
         base_count = len(PageIndexToolkit(adapter=mock_adapter, storage_dir=tmp_path).get_tools())
-        assert len(all_tools) >= base_count + 6
+        assert len(all_tools) >= base_count + 9
 
     def test_get_tools_without_okf_toolkit_unchanged(self, tmp_path: Path):
         """get_tools without OKF toolkit returns only base tools (no crash)."""
@@ -316,3 +316,327 @@ class TestToolkitDeleteNodeConceptIdCleanup:
         # The concept_id-keyed sidecar must be gone.
         # Use the toolkit's own content_store to avoid cross-instance cache issues.
         assert toolkit._content_store.load("guide", "safeguards--hipaa-164") is None
+
+
+# ============================================================================
+# FEAT-216: Lint & Bundle Integration Tests (TASK-1570)
+# ============================================================================
+
+
+# ---------------------------------------------------------------------------
+# Verify FEAT-216 public symbols are importable from okf package
+# ---------------------------------------------------------------------------
+
+
+class TestFeat216Exports:
+    """All FEAT-216 symbols are importable from parrot.knowledge.pageindex.okf."""
+
+    def test_lint_finding_importable(self):
+        """LintFinding is importable from okf package."""
+        from parrot.knowledge.pageindex.okf import LintFinding
+        assert LintFinding is not None
+
+    def test_lint_report_importable(self):
+        """LintReport is importable from okf package."""
+        from parrot.knowledge.pageindex.okf import LintReport
+        assert LintReport is not None
+
+    def test_lint_knowledge_base_importable(self):
+        """lint_knowledge_base is importable from okf package."""
+        from parrot.knowledge.pageindex.okf import lint_knowledge_base
+        assert callable(lint_knowledge_base)
+
+    def test_export_report_importable(self):
+        """ExportReport is importable from okf package."""
+        from parrot.knowledge.pageindex.okf import ExportReport
+        assert ExportReport is not None
+
+    def test_import_report_importable(self):
+        """ImportReport is importable from okf package."""
+        from parrot.knowledge.pageindex.okf import ImportReport
+        assert ImportReport is not None
+
+    def test_export_okf_bundle_importable(self):
+        """export_okf_bundle is importable from okf package."""
+        from parrot.knowledge.pageindex.okf import export_okf_bundle
+        assert callable(export_okf_bundle)
+
+    def test_import_okf_bundle_importable(self):
+        """import_okf_bundle is importable from okf package."""
+        from parrot.knowledge.pageindex.okf import import_okf_bundle
+        assert callable(import_okf_bundle)
+
+
+# ---------------------------------------------------------------------------
+# Round-trip fidelity
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def two_node_tree_feat216():
+    """Simple OKF tree: policy-alpha references control-beta."""
+    return {
+        "tree_name": "test-rt",
+        "structure": [
+            {
+                "node_id": "0001",
+                "concept_id": "policy-alpha",
+                "type": "Policy",
+                "title": "Policy Alpha",
+                "summary": "A test policy.",
+                "categories": [],
+                "timestamp": "2030-01-01T00:00:00Z",
+                "relates_to": [{"concept": "control-beta", "rel": "maps_to"}],
+                "nodes": [],
+            },
+            {
+                "node_id": "0002",
+                "concept_id": "control-beta",
+                "type": "Control",
+                "title": "Control Beta",
+                "summary": "A test control.",
+                "categories": [],
+                "timestamp": "2030-01-01T00:00:00Z",
+                "relates_to": [],
+                "nodes": [],
+            },
+        ],
+    }
+
+
+@pytest.fixture
+def clean_bundle_feat216(tmp_path):
+    """A well-formed OKF bundle: two nodes with mutual references, future timestamps."""
+    alpha_dir = tmp_path / "policies"
+    alpha_dir.mkdir()
+    beta_dir = tmp_path / "controls"
+    beta_dir.mkdir()
+
+    (alpha_dir / "alpha.md").write_text(
+        "---\n"
+        "type: Policy\n"
+        "title: Alpha\n"
+        "id: alpha\n"
+        "tags: []\n"
+        "timestamp: '2030-01-01T00:00:00Z'\n"
+        "summary: Alpha policy\n"
+        "relates_to:\n"
+        "- concept: beta\n"
+        "  rel: references\n"
+        "---\n\n"
+        "# Alpha\n\nBody of alpha.\n",
+        encoding="utf-8",
+    )
+    (beta_dir / "beta.md").write_text(
+        "---\n"
+        "type: Control\n"
+        "title: Beta\n"
+        "id: beta\n"
+        "tags: []\n"
+        "timestamp: '2030-01-01T00:00:00Z'\n"
+        "summary: Beta control\n"
+        "relates_to:\n"
+        "- concept: alpha\n"
+        "  rel: references\n"
+        "---\n\n"
+        "# Beta\n\nBody of beta.\n",
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+@pytest.fixture
+def broken_link_bundle_feat216(tmp_path):
+    """Bundle with one node whose frontmatter relates_to points to a ghost concept."""
+    controls_dir = tmp_path / "controls"
+    controls_dir.mkdir()
+
+    (controls_dir / "orphan-ctrl.md").write_text(
+        "---\n"
+        "type: Control\n"
+        "title: Orphan Ctrl\n"
+        "id: orphan-ctrl\n"
+        "tags: []\n"
+        "timestamp: '2030-01-01T00:00:00Z'\n"
+        "summary: A control with a broken link\n"
+        "relates_to:\n"
+        "- concept: ghost-concept\n"
+        "  rel: references\n"
+        "---\n\n"
+        "# Orphan Ctrl\n\nReferences a non-existent concept.\n",
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+class TestRoundTripFull:
+    """Export → import preserves concept_ids, types, edges, and body content."""
+
+    def test_round_trip_concept_ids(self, two_node_tree_feat216, tmp_path):
+        """Round-trip preserves concept_ids."""
+        from parrot.knowledge.pageindex.okf import export_okf_bundle, import_okf_bundle
+        from parrot.knowledge.pageindex.store import JSONTreeStore
+
+        store = JSONTreeStore(tmp_path / "trees")
+        content_store = NodeContentStore(tmp_path / "content")
+
+        content_store.save("test-rt", "policy-alpha", "# Policy Alpha body\n")
+        content_store.save("test-rt", "control-beta", "# Control Beta body\n")
+
+        export_dir = tmp_path / "bundle"
+        export_okf_bundle(two_node_tree_feat216, "test-rt", content_store, export_dir)
+
+        reimport_content = NodeContentStore(tmp_path / "reimport_content")
+        import_report = import_okf_bundle(export_dir, "reimported", store, reimport_content)
+
+        assert import_report.nodes_created == 2
+        tree = store.load("reimported")
+        by_cid = {n["concept_id"]: n for n in tree.get("structure", [])}
+        assert "policy-alpha" in by_cid
+        assert "control-beta" in by_cid
+
+    def test_round_trip_types(self, two_node_tree_feat216, tmp_path):
+        """Round-trip preserves concept types."""
+        from parrot.knowledge.pageindex.okf import export_okf_bundle, import_okf_bundle
+        from parrot.knowledge.pageindex.store import JSONTreeStore
+
+        store = JSONTreeStore(tmp_path / "trees")
+        content_store = NodeContentStore(tmp_path / "content")
+
+        export_dir = tmp_path / "bundle"
+        export_okf_bundle(two_node_tree_feat216, "test-rt", content_store, export_dir)
+
+        reimport_content = NodeContentStore(tmp_path / "reimport_content")
+        import_okf_bundle(export_dir, "reimported", store, reimport_content)
+
+        tree = store.load("reimported")
+        by_cid = {n["concept_id"]: n for n in tree.get("structure", [])}
+        assert by_cid["policy-alpha"]["type"] == "Policy"
+        assert by_cid["control-beta"]["type"] == "Control"
+
+    def test_round_trip_edges(self, two_node_tree_feat216, tmp_path):
+        """Round-trip preserves relates_to edges."""
+        from parrot.knowledge.pageindex.okf import export_okf_bundle, import_okf_bundle
+        from parrot.knowledge.pageindex.store import JSONTreeStore
+
+        store = JSONTreeStore(tmp_path / "trees")
+        content_store = NodeContentStore(tmp_path / "content")
+
+        export_dir = tmp_path / "bundle"
+        export_okf_bundle(two_node_tree_feat216, "test-rt", content_store, export_dir)
+
+        reimport_content = NodeContentStore(tmp_path / "reimport_content")
+        import_okf_bundle(export_dir, "reimported", store, reimport_content)
+
+        tree = store.load("reimported")
+        by_cid = {n["concept_id"]: n for n in tree.get("structure", [])}
+        relates = by_cid["policy-alpha"].get("relates_to", [])
+        targets = {r["concept"] for r in relates}
+        assert "control-beta" in targets
+
+    def test_round_trip_body_content(self, two_node_tree_feat216, tmp_path):
+        """Round-trip preserves body content in content_store."""
+        from parrot.knowledge.pageindex.okf import export_okf_bundle, import_okf_bundle
+        from parrot.knowledge.pageindex.store import JSONTreeStore
+
+        store = JSONTreeStore(tmp_path / "trees")
+        content_store = NodeContentStore(tmp_path / "content")
+        content_store.save("test-rt", "policy-alpha", "# Alpha body text.\n")
+
+        export_dir = tmp_path / "bundle"
+        export_okf_bundle(two_node_tree_feat216, "test-rt", content_store, export_dir)
+
+        reimport_content = NodeContentStore(tmp_path / "reimport_content")
+        import_okf_bundle(export_dir, "reimported", store, reimport_content)
+
+        alpha_body = reimport_content.load("reimported", "policy-alpha")
+        assert alpha_body is not None
+        assert "Alpha body text" in alpha_body
+
+
+class TestLintAfterImport:
+    """Lint findings reflect the quality of an imported OKF bundle."""
+
+    def test_lint_after_import_no_broken_links(self, clean_bundle_feat216, tmp_path):
+        """Well-formed bundle (mutual refs, future timestamps) → no broken links."""
+        from parrot.knowledge.pageindex.okf import import_okf_bundle, lint_knowledge_base
+        from parrot.knowledge.pageindex.store import JSONTreeStore
+
+        store = JSONTreeStore(tmp_path / "trees")
+        content_store = NodeContentStore(tmp_path / "content")
+        import_okf_bundle(clean_bundle_feat216, "clean-kb", store, content_store)
+
+        tree = store.load("clean-kb")
+        graph = KnowledgeGraph(tree)
+        report = lint_knowledge_base(graph, tree, content_store)
+
+        assert report.broken_links == [], f"Expected no broken links, got: {report.broken_links}"
+
+    def test_lint_after_import_no_stale_claims(self, clean_bundle_feat216, tmp_path):
+        """Well-formed bundle with future timestamps → no stale claims."""
+        from parrot.knowledge.pageindex.okf import import_okf_bundle, lint_knowledge_base
+        from parrot.knowledge.pageindex.store import JSONTreeStore
+
+        store = JSONTreeStore(tmp_path / "trees")
+        content_store = NodeContentStore(tmp_path / "content")
+        import_okf_bundle(clean_bundle_feat216, "clean-kb", store, content_store)
+
+        tree = store.load("clean-kb")
+        graph = KnowledgeGraph(tree)
+        report = lint_knowledge_base(graph, tree, content_store)
+
+        assert report.stale_claims == [], f"Expected no stale claims, got: {report.stale_claims}"
+
+    def test_lint_after_import_with_broken_link(self, broken_link_bundle_feat216, tmp_path):
+        """Bundle with frontmatter edge to ghost concept → ≥ 1 broken_link finding."""
+        from parrot.knowledge.pageindex.okf import import_okf_bundle, lint_knowledge_base
+        from parrot.knowledge.pageindex.store import JSONTreeStore
+
+        store = JSONTreeStore(tmp_path / "trees")
+        content_store = NodeContentStore(tmp_path / "content")
+        import_okf_bundle(broken_link_bundle_feat216, "broken-kb", store, content_store)
+
+        tree = store.load("broken-kb")
+        graph = KnowledgeGraph(tree)
+        report = lint_knowledge_base(graph, tree, content_store)
+
+        assert len(report.broken_links) >= 1, (
+            f"Expected ≥ 1 broken_link, got: {report.broken_links}"
+        )
+
+    def test_lint_broken_link_targets_ghost_concept(self, broken_link_bundle_feat216, tmp_path):
+        """Broken link finding details reference the ghost concept."""
+        from parrot.knowledge.pageindex.okf import import_okf_bundle, lint_knowledge_base
+        from parrot.knowledge.pageindex.store import JSONTreeStore
+
+        store = JSONTreeStore(tmp_path / "trees")
+        content_store = NodeContentStore(tmp_path / "content")
+        import_okf_bundle(broken_link_bundle_feat216, "broken-kb", store, content_store)
+
+        tree = store.load("broken-kb")
+        graph = KnowledgeGraph(tree)
+        report = lint_knowledge_base(graph, tree, content_store)
+
+        broken_details = " ".join(f.detail for f in report.broken_links)
+        assert "ghost-concept" in broken_details
+
+    def test_lint_total_findings_consistency(self, clean_bundle_feat216, tmp_path):
+        """total_findings equals sum of all finding lists."""
+        from parrot.knowledge.pageindex.okf import import_okf_bundle, lint_knowledge_base
+        from parrot.knowledge.pageindex.store import JSONTreeStore
+
+        store = JSONTreeStore(tmp_path / "trees")
+        content_store = NodeContentStore(tmp_path / "content")
+        import_okf_bundle(clean_bundle_feat216, "clean-kb", store, content_store)
+
+        tree = store.load("clean-kb")
+        graph = KnowledgeGraph(tree)
+        report = lint_knowledge_base(graph, tree, content_store)
+
+        expected = (
+            len(report.orphans)
+            + len(report.broken_links)
+            + len(report.missing_concepts)
+            + len(report.stale_claims)
+        )
+        assert report.total_findings == expected

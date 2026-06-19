@@ -18,7 +18,12 @@ import unicodedata
 from typing import Any
 
 
-_MAX_SLUG_LENGTH = 80  # truncate before adding suffix
+# Maximum length for a SINGLE slug segment (before combining with parent path).
+# Distinct from projection._MAX_FLAT_ID_LENGTH (60) which caps the TOTAL
+# flattened filename after all hierarchy levels are joined with "--".
+# Keep these two constants in sync if the NodeContentStore _NODE_ID_RE limit
+# (currently 64 chars) ever changes.
+_MAX_SLUG_LENGTH = 80  # truncate individual segment before adding suffix
 _SAFE_CHARS_RE = re.compile(r"[^a-z0-9-]+")
 _MULTI_DASH_RE = re.compile(r"-{2,}")
 

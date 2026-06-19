@@ -17,9 +17,9 @@ sources:
       Security and Privacy Controls for Information Systems and Organizations.
       Comprehensive baseline of security controls used in SOC 2 audits and
       FedRAMP compliance.
-    url: "https://csrc.nist.gov/extensions/nudp/services/json/nudp/framework/version/sp_800_53_5_1_1/element/all"
-    format: json
-    filename: nist_800_53_r5.json
+    url: "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-53r5.pdf"
+    format: pdf
+    filename: nist_800_53_r5.pdf
     sha256: null
     redistributable: true
     license: "Public Domain (NIST)"
@@ -59,9 +59,9 @@ sources:
       Health Insurance Portability and Accountability Act Security Rule —
       45 CFR Part 164.  Governs technical and administrative safeguards for
       electronic protected health information (ePHI).
-    url: "https://www.govinfo.gov/content/pkg/CFR-2023-title45-vol1/pdf/CFR-2023-title45-vol1-part164.pdf"
+    url: "https://www.govinfo.gov/content/pkg/CFR-2022-title45-vol2/pdf/CFR-2022-title45-vol2-part164.pdf"
     format: pdf
-    filename: hipaa_45cfr164_2023.pdf
+    filename: hipaa_45cfr164_2022.pdf
     sha256: null
     redistributable: true
     license: "Public Domain (US Government)"

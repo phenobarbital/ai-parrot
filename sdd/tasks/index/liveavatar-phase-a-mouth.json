@@ -1,0 +1,192 @@
+{
+  "feature": "liveavatar-phase-a-mouth",
+  "feature_id": "FEAT-242",
+  "spec": "sdd/specs/liveavatar-phase-a-mouth.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-18T00:00:00+00:00",
+  "completed_at": "2026-06-18T00:16:13+00:00",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "slug": "liveavatar-package-models",
+      "title": "LiveAvatar package skeleton, Pydantic models & livekit-api extra",
+      "feature_id": "FEAT-242",
+      "feature": "liveavatar-phase-a-mouth",
+      "spec": "sdd/specs/liveavatar-phase-a-mouth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation. Creates the package + models every other task imports; must complete first.",
+      "assigned_to": null,
+      "started_at": "2026-06-17T23:16:05+00:00",
+      "completed_at": "2026-06-17T23:17:36+00:00",
+      "file": "sdd/tasks/completed/TASK-001-liveavatar-package-models.md"
+    },
+    {
+      "id": "TASK-002",
+      "slug": "liveavatar-client-lifecycle",
+      "title": "LiveAvatar HTTP client & session lifecycle (M1)",
+      "feature_id": "FEAT-242",
+      "feature": "liveavatar-phase-a-mouth",
+      "spec": "sdd/specs/liveavatar-phase-a-mouth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-001"
+      ],
+      "parallel": true,
+      "parallelism_notes": "M1. Own file (client.py); shares only models.py with M2/M3/M4 — can run in a separate worktree after TASK-001.",
+      "assigned_to": null,
+      "started_at": "2026-06-17T23:16:05+00:00",
+      "completed_at": "2026-06-17T23:19:38+00:00",
+      "file": "sdd/tasks/completed/TASK-002-liveavatar-client-lifecycle.md"
+    },
+    {
+      "id": "TASK-003",
+      "slug": "avatar-ws-pcm-bridge",
+      "title": "Avatar audio bridge — WebSocket PCM push (M2)",
+      "feature_id": "FEAT-242",
+      "feature": "liveavatar-phase-a-mouth",
+      "spec": "sdd/specs/liveavatar-phase-a-mouth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-001"
+      ],
+      "parallel": true,
+      "parallelism_notes": "M2. Own file (avatar_ws.py); receives PCM bytes + handle, shares only models.py — parallelizable per spec worktree strategy.",
+      "assigned_to": null,
+      "started_at": "2026-06-17T23:16:05+00:00",
+      "completed_at": "2026-06-17T23:21:40+00:00",
+      "file": "sdd/tasks/completed/TASK-003-avatar-ws-pcm-bridge.md"
+    },
+    {
+      "id": "TASK-004",
+      "slug": "livekit-room-manager",
+      "title": "LiveKit room manager — BYO Cloud tokens (M3)",
+      "feature_id": "FEAT-242",
+      "feature": "liveavatar-phase-a-mouth",
+      "spec": "sdd/specs/liveavatar-phase-a-mouth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-001"
+      ],
+      "parallel": true,
+      "parallelism_notes": "M3. Own file (room_manager.py); shared with Phase C. Independent of M1/M2/M4 — parallelizable after TASK-001.",
+      "assigned_to": null,
+      "started_at": "2026-06-17T23:16:05+00:00",
+      "completed_at": "2026-06-17T23:22:53+00:00",
+      "file": "sdd/tasks/completed/TASK-004-livekit-room-manager.md"
+    },
+    {
+      "id": "TASK-005",
+      "slug": "speakable-flattener",
+      "title": "Speakable-text flattener & sentence segmenter (M4)",
+      "feature_id": "FEAT-242",
+      "feature": "liveavatar-phase-a-mouth",
+      "spec": "sdd/specs/liveavatar-phase-a-mouth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-001"
+      ],
+      "parallel": true,
+      "parallelism_notes": "M4. Own file (speakable.py), stdlib-only, zero deps on other modules. Shared with Phase C — fully parallelizable.",
+      "assigned_to": null,
+      "started_at": "2026-06-17T23:16:05+00:00",
+      "completed_at": "2026-06-17T23:25:51+00:00",
+      "file": "sdd/tasks/completed/TASK-005-speakable-flattener.md"
+    },
+    {
+      "id": "TASK-006",
+      "slug": "avatar-session-orchestrator",
+      "title": "Avatar session orchestrator (M5)",
+      "feature_id": "FEAT-242",
+      "feature": "liveavatar-phase-a-mouth",
+      "spec": "sdd/specs/liveavatar-phase-a-mouth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-002",
+        "TASK-003",
+        "TASK-004",
+        "TASK-005"
+      ],
+      "parallel": false,
+      "parallelism_notes": "M5. Integration glue importing all of M1-M4 + VoiceSynthesizer/ask_stream — must run after them, not parallelizable.",
+      "assigned_to": null,
+      "started_at": "2026-06-17T23:16:05+00:00",
+      "completed_at": "2026-06-17T23:29:25+00:00",
+      "file": "sdd/tasks/completed/TASK-006-avatar-session-orchestrator.md"
+    },
+    {
+      "id": "TASK-007",
+      "slug": "avatar-session-endpoint",
+      "title": "Avatar session endpoint + avatar-mode flag (M6)",
+      "feature_id": "FEAT-242",
+      "feature": "liveavatar-phase-a-mouth",
+      "spec": "sdd/specs/liveavatar-phase-a-mouth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-006"
+      ],
+      "parallel": false,
+      "parallelism_notes": "M6. Extends AgentVoiceTalk (server) and drives the orchestrator — depends on TASK-006.",
+      "assigned_to": null,
+      "started_at": "2026-06-17T23:16:05+00:00",
+      "completed_at": "2026-06-17T23:37:50+00:00",
+      "file": "sdd/tasks/completed/TASK-007-avatar-session-endpoint.md"
+    },
+    {
+      "id": "TASK-008",
+      "slug": "avatar-tenant-optin",
+      "title": "Per-tenant opt-in gating (M7)",
+      "feature_id": "FEAT-242",
+      "feature": "liveavatar-phase-a-mouth",
+      "spec": "sdd/specs/liveavatar-phase-a-mouth.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-007"
+      ],
+      "parallel": false,
+      "parallelism_notes": "M7. Modifies the same agent_voice.py as TASK-007 to gate avatar mode — sequential after TASK-007. Carries unresolved Q-tenant.",
+      "assigned_to": null,
+      "started_at": "2026-06-17T23:16:05+00:00",
+      "completed_at": "2026-06-17T23:39:49+00:00",
+      "file": "sdd/tasks/completed/TASK-008-avatar-tenant-optin.md"
+    },
+    {
+      "id": "TASK-009",
+      "slug": "frontend-livekit-viewer",
+      "title": "Frontend LiveKit viewer (Svelte 5) (M8)",
+      "feature_id": "FEAT-242",
+      "feature": "liveavatar-phase-a-mouth",
+      "spec": "sdd/specs/liveavatar-phase-a-mouth.spec.md",
+      "status": "done-with-issues",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-007"
+      ],
+      "parallel": true,
+      "parallelism_notes": "M8. Lives in the SEPARATE AgentChat Svelte repo — cannot be built in the Python worktree. Consumes the TASK-007 response contract; mark done-with-issues if the frontend repo is unavailable.",
+      "assigned_to": null,
+      "started_at": "2026-06-17T23:16:05+00:00",
+      "completed_at": "2026-06-17T23:40:18+00:00",
+      "file": "sdd/tasks/completed/TASK-009-frontend-livekit-viewer.md"
+    }
+  ]
+}

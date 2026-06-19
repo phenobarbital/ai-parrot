@@ -102,5 +102,5 @@ If the user confirms, save the report to:
 
 ## Reference
 - Completed tasks: `sdd/tasks/completed/`
-- Task index: `sdd/tasks/.index.json`
+- Per-spec task index: `sdd/tasks/index/<feature-slug>.json`
 - SDD methodology: `sdd/WORKFLOW.md`

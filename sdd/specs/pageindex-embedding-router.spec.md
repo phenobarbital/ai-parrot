@@ -7,6 +7,7 @@ base_branch: dev
 # Feature Specification: PageIndex Embedding Router
 
 **Feature ID**: FEAT-237
+**Jira**: NAV-8351 _(pending — ticket to be created manually; API token lacks project access)_
 **Date**: 2026-06-15
 **Author**: Jesus Lara
 **Status**: approved

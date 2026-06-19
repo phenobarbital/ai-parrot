@@ -23,3 +23,5 @@ prune settings
 prune plugins/*
 prune /static/*
 prune */__pycache__
+# Local runtime agents (un-ignored from git for FEAT-240) must never ship in builds.
+prune agents

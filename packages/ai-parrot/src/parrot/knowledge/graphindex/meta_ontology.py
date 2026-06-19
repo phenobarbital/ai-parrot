@@ -2,7 +2,7 @@
 
 Provides the programmatic ``MergedOntology``-compatible definition with:
 - 6 entity types: document, section, symbol, concept, rationale, skill
-- 5 relation types: contains, references, defines, mentions, explains
+- 6 relation types: contains, references, defines, mentions, explains, extends
 
 These definitions are **additive** — they do not conflict with existing
 tenant ontologies.  They are intended to be merged at tenant initialisation
@@ -171,6 +171,15 @@ _RELATION_DEFS: dict[str, RelationDef] = {
         ],
         "discovery": DiscoveryConfig(strategy="field_match"),
     }),
+    "extends": RelationDef(**{
+        "from": "*",
+        "to": "*",
+        "edge_collection": "gi_extends",
+        "properties": [
+            {"provenance": PropertyDef(type="string", required=True)},
+        ],
+        "discovery": DiscoveryConfig(strategy="field_match"),
+    }),
 }
 
 
@@ -198,6 +207,7 @@ EDGE_KIND_TO_COLLECTION: dict[str, str] = {
     "defines": "gi_defines",
     "mentions": "gi_mentions",
     "explains": "gi_explains",
+    "extends": "gi_extends",
 }
 
 
@@ -208,8 +218,8 @@ def build_graphindex_ontology() -> MergedOntology:
     with ``gi_`` that do not overlap with any existing tenant ontology.
 
     Returns:
-        A ``MergedOntology`` instance with 6 entities and 5 relations.
-    """
+        A ``MergedOntology`` instance with 6 entities and 6 relations.
+"""
     return MergedOntology(
         name="graphindex-meta-ontology",
         version="1.0",

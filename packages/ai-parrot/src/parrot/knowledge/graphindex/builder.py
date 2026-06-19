@@ -18,9 +18,11 @@ Entry points:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Type
 
 import pathspec
 
@@ -89,23 +91,28 @@ class GraphIndexBuilder:
             Default False — opt-in.
         community_resolution: Louvain γ resolution parameter
             (>1.0 finds smaller/tighter communities).
+        code_extractor_class: The ``CodeExtractor`` subclass to use for
+            Python source files (FEAT-240). Defaults to ``CodeExtractor``.
+            Pass ``OdooCodeExtractor`` to enable Odoo model extraction.
     """
 
     def __init__(
         self,
         persistence: GraphIndexPersistence,
         embedder: GraphIndexEmbedder,
-        output_dir: Path,
+        output_dir: Optional[Path] = None,
         ignore_file: Optional[Path] = None,
         resolution_config: Optional[ResolutionConfig] = None,
         pageindex_toolkit: Optional[PageIndexToolkit] = None,
         signal_config: Optional[SignalRelevanceConfig] = None,
         detect_communities_enabled: bool = False,
         community_resolution: float = 1.0,
+        code_extractor_class: Type = CodeExtractor,
     ) -> None:
         self.persistence = persistence
         self.embedder = embedder
-        self.output_dir = Path(output_dir)
+        self._code_extractor_class = code_extractor_class
+        self.output_dir = Path(output_dir) if output_dir is not None else None
         self.resolution_config = resolution_config or ResolutionConfig()
         self.pageindex_toolkit = pageindex_toolkit
         self.signal_config = signal_config
@@ -220,15 +227,49 @@ class GraphIndexBuilder:
 
         # Stage 6: Analytics + Report
         report_path: Optional[Path] = None
+        analytics = None
         try:
             analytics = compute_analytics(assembler.graph, all_nodes, all_edges)
             # Attach FEAT-191 partition so the report includes communities.
             analytics.communities = self.last_community_result
-            report_path = generate_report(analytics, self.output_dir)
-            logger.info("Stage 6 complete: report written to %s", report_path)
+            if self.output_dir is not None:
+                report_path = generate_report(
+                    analytics, self.output_dir, tenant_id=ctx.tenant_id
+                )
+                logger.info("Stage 6 complete: report written to %s", report_path)
+            else:
+                logger.info("Stage 6 complete: no output_dir, report generation skipped")
         except Exception as exc:
             logger.error("Analytics stage failed: %s", exc)
             errors.append(f"Analytics failed: {exc}")
+
+        # Stage 6.5: OKF Projection — project per-node .md sidecars (FEAT-239)
+        projection_report = None
+        if self.output_dir is not None:
+            try:
+                # Deferred import: projection imports from schema (which imports
+                # from analytics), creating a cycle if imported at module level.
+                from parrot.knowledge.graphindex.projection import (  # noqa: PLC0415
+                    project_graph_sidecars,
+                )
+
+                content_store = getattr(self.pageindex_toolkit, "_content_store", None)
+                projection_report = await project_graph_sidecars(
+                    all_nodes,
+                    all_edges,
+                    self.output_dir,
+                    content_store=content_store,
+                )
+                # Record whether the analytics report also received frontmatter
+                # (Stage 6 ran successfully and wrote GRAPH_REPORT.md).
+                projection_report.report_frontmatter_added = report_path is not None
+                logger.info(
+                    "Stage 6.5 complete: %d nodes projected",
+                    projection_report.nodes_projected,
+                )
+            except Exception as exc:
+                logger.error("Projection stage failed: %s", exc)
+                errors.append(f"Projection failed: {exc}")
 
         inferred_count = sum(
             1 for e in all_edges if e.provenance == Provenance.INFERRED
@@ -240,6 +281,7 @@ class GraphIndexBuilder:
             inferred_edge_count=inferred_count,
             report_path=report_path,
             errors=errors,
+            projection_report=projection_report,
         )
 
     async def ingest_document(self, uri: str, ctx: TenantContext) -> IngestResult:
@@ -308,18 +350,27 @@ class GraphIndexBuilder:
         triggered automatically by ``ingest_document``.
 
         Args:
-            ctx: Tenant context (used to scope persisted data retrieval).
+            ctx: Tenant context (used to scope persisted data retrieval and
+                the frontmatter resource URI in GRAPH_REPORT.md).
 
         Returns:
             Path to the generated ``GRAPH_REPORT.md``.
+
+        Raises:
+            ValueError: If the builder was constructed without an
+                ``output_dir`` — there is nowhere to write the report.
         """
-        # Build an in-memory assembler from the persisted graph state
+        if self.output_dir is None:
+            raise ValueError(
+                "regenerate_report() requires output_dir to be set on the builder."
+            )
+        # Build an in-memory assembler from the persisted graph state.
         # For now, generate an empty analytics result (full reload from ArangoDB
-        # is planned for a future task — this satisfies the explicit call contract)
-        from parrot.knowledge.graphindex.analytics import AnalyticsResult
+        # is planned for a future task — this satisfies the explicit call contract).
+        from parrot.knowledge.graphindex.analytics import AnalyticsResult  # noqa: PLC0415
 
         analytics = AnalyticsResult()
-        report_path = generate_report(analytics, self.output_dir)
+        report_path = generate_report(analytics, self.output_dir, tenant_id=ctx.tenant_id)
         logger.info("regenerate_report: written to %s", report_path)
         return report_path
 
@@ -370,7 +421,7 @@ class GraphIndexBuilder:
         """
         nodes: list[UniversalNode] = []
         edges: list[UniversalEdge] = []
-        extractor = CodeExtractor()
+        extractor = self._code_extractor_class()
         for path_str in sources.code_paths:
             if self._is_ignored(path_str):
                 logger.debug("Ignoring code path: %s", path_str)
@@ -385,8 +436,22 @@ class GraphIndexBuilder:
                     if self._is_ignored(str(f)):
                         continue
                     try:
+                        mtime = os.stat(f).st_mtime
                         source = f.read_text(encoding="utf-8", errors="replace")
-                        n, e = await extractor.extract(str(f), source)
+                        # Incremental staleness check (FEAT-240): skip unchanged files
+                        if hasattr(self.persistence, "is_stale"):
+                            sha1 = hashlib.sha1(
+                                source.encode("utf-8", errors="replace")
+                            ).hexdigest()
+                            if not await self.persistence.is_stale(
+                                sources.ctx if hasattr(sources, "ctx") else None,
+                                str(f),
+                                mtime,
+                                sha1,
+                            ):
+                                logger.debug("Skipping unchanged file: %s", f)
+                                continue
+                        n, e = await extractor.extract(str(f), source, mtime=mtime)
                         nodes.extend(n)
                         edges.extend(e)
                     except Exception as exc:
@@ -481,9 +546,11 @@ class GraphIndexBuilder:
         if self._is_ignored(uri):
             return [], []
         try:
-            extractor = CodeExtractor()
-            source = Path(uri).read_text(encoding="utf-8", errors="replace")
-            return await extractor.extract(uri, source)
+            extractor = self._code_extractor_class()
+            f = Path(uri)
+            mtime = os.stat(f).st_mtime
+            source = f.read_text(encoding="utf-8", errors="replace")
+            return await extractor.extract(uri, source, mtime=mtime)
         except Exception as exc:
             logger.warning("Code extraction for %s failed: %s", uri, exc)
             return [], []

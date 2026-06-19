@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-15T00:00:00Z",
-  "completed_at": "2026-06-15T17:31:37+00:00",
+  "completed_at": "2026-06-15T21:41:53+00:00",
   "tasks": [
     {
       "id": "TASK-1552",
@@ -21,9 +21,9 @@
       "parallel": true,
       "parallelism_notes": "Leaf module with no shared files — can run in parallel with TASK-1553",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-06-15T17:01:09+00:00",
-      "file": "sdd/tasks/completed/TASK-1552-okf-ontology.md"
+      "started_at": "2026-06-15T16:58:08+00:00",
+      "completed_at": "2026-06-15T21:41:53+00:00",
+      "file": "sdd/tasks/active/TASK-1552-okf-ontology.md"
     },
     {
       "id": "TASK-1553",
@@ -39,9 +39,9 @@
       "parallel": true,
       "parallelism_notes": "Leaf module with no shared files — can run in parallel with TASK-1552",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-06-15T17:03:03+00:00",
-      "file": "sdd/tasks/completed/TASK-1553-okf-concept-id.md"
+      "started_at": "2026-06-15T16:58:08+00:00",
+      "completed_at": "2026-06-15T21:41:53+00:00",
+      "file": "sdd/tasks/active/TASK-1553-okf-concept-id.md"
     },
     {
       "id": "TASK-1554",
@@ -59,9 +59,9 @@
       "parallel": false,
       "parallelism_notes": "Imports ConceptType from TASK-1552 — must run after ontology",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-06-15T17:04:46+00:00",
-      "file": "sdd/tasks/completed/TASK-1554-okf-frontmatter.md"
+      "started_at": "2026-06-15T16:58:08+00:00",
+      "completed_at": "2026-06-15T21:41:53+00:00",
+      "file": "sdd/tasks/active/TASK-1554-okf-frontmatter.md"
     },
     {
       "id": "TASK-1555",
@@ -80,9 +80,9 @@
       "parallel": false,
       "parallelism_notes": "Imports from ontology (TASK-1552) and uses concept_id keying (TASK-1553)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-06-15T17:06:49+00:00",
-      "file": "sdd/tasks/completed/TASK-1555-okf-graph.md"
+      "started_at": "2026-06-15T16:58:08+00:00",
+      "completed_at": "2026-06-15T21:41:53+00:00",
+      "file": "sdd/tasks/active/TASK-1555-okf-graph.md"
     },
     {
       "id": "TASK-1556",
@@ -101,9 +101,9 @@
       "parallel": false,
       "parallelism_notes": "Imports from ontology and frontmatter — must run after TASK-1552 + TASK-1554",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-06-15T17:08:55+00:00",
-      "file": "sdd/tasks/completed/TASK-1556-okf-projection.md"
+      "started_at": "2026-06-15T16:58:08+00:00",
+      "completed_at": "2026-06-15T21:41:53+00:00",
+      "file": "sdd/tasks/active/TASK-1556-okf-projection.md"
     },
     {
       "id": "TASK-1557",
@@ -125,9 +125,9 @@
       "parallel": false,
       "parallelism_notes": "Composes all prior modules — must run after all of TASK-1552 through TASK-1556",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-06-15T17:11:45+00:00",
-      "file": "sdd/tasks/completed/TASK-1557-okf-migrate.md"
+      "started_at": "2026-06-15T16:58:08+00:00",
+      "completed_at": "2026-06-15T21:41:53+00:00",
+      "file": "sdd/tasks/active/TASK-1557-okf-migrate.md"
     },
     {
       "id": "TASK-1558",
@@ -146,9 +146,9 @@
       "parallel": false,
       "parallelism_notes": "Imports ontology enums and KnowledgeGraph — must run after TASK-1552 + TASK-1555",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-06-15T17:13:53+00:00",
-      "file": "sdd/tasks/completed/TASK-1558-okf-tools.md"
+      "started_at": "2026-06-15T16:58:08+00:00",
+      "completed_at": "2026-06-15T21:41:53+00:00",
+      "file": "sdd/tasks/active/TASK-1558-okf-tools.md"
     },
     {
       "id": "TASK-1559",
@@ -172,9 +172,9 @@
       "parallel": false,
       "parallelism_notes": "Wires all OKF modules into existing components — must run last",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-06-15T17:31:37+00:00",
-      "file": "sdd/tasks/completed/TASK-1559-okf-integration.md"
+      "started_at": "2026-06-15T16:58:08+00:00",
+      "completed_at": "2026-06-15T21:41:53+00:00",
+      "file": "sdd/tasks/active/TASK-1559-okf-integration.md"
     }
   ]
 }

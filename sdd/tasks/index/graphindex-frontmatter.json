@@ -1,0 +1,110 @@
+{
+  "feature": "graphindex-frontmatter",
+  "feature_id": "FEAT-239",
+  "spec": "sdd/specs/graphindex-frontmatter.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-16T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1560",
+      "slug": "shared-okf-ontology",
+      "title": "Create Shared OKF Ontology Package + PageIndex Re-exports",
+      "feature_id": "FEAT-239",
+      "feature": "graphindex-frontmatter",
+      "spec": "sdd/specs/graphindex-frontmatter.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task — creates the shared package that all subsequent tasks depend on.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-15T23:57:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1560-shared-okf-ontology.md"
+    },
+    {
+      "id": "TASK-1561",
+      "slug": "shared-okf-frontmatter",
+      "title": "Move Frontmatter Engine to Shared OKF Package",
+      "feature_id": "FEAT-239",
+      "feature": "graphindex-frontmatter",
+      "spec": "sdd/specs/graphindex-frontmatter.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1560"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-1560 for the shared okf package. Modifies the same __init__.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-16T00:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1561-shared-okf-frontmatter.md"
+    },
+    {
+      "id": "TASK-1562",
+      "slug": "knowledge-uri-scheme",
+      "title": "Knowledge URI Scheme",
+      "feature_id": "FEAT-239",
+      "feature": "graphindex-frontmatter",
+      "spec": "sdd/specs/graphindex-frontmatter.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1560"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only depends on the shared package existing (TASK-1560). Touches no files shared with TASK-1561. Could run in parallel with TASK-1561.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-16T00:01:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1562-knowledge-uri-scheme.md"
+    },
+    {
+      "id": "TASK-1563",
+      "slug": "graphindex-projection",
+      "title": "GraphIndex Projection Layer",
+      "feature_id": "FEAT-239",
+      "feature": "graphindex-frontmatter",
+      "spec": "sdd/specs/graphindex-frontmatter.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1561",
+        "TASK-1562"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports from both shared frontmatter (TASK-1561) and URI module (TASK-1562). Must wait for both.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-16T00:09:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1563-graphindex-projection.md"
+    },
+    {
+      "id": "TASK-1564",
+      "slug": "builder-analytics-integration",
+      "title": "Builder & Analytics Integration",
+      "feature_id": "FEAT-239",
+      "feature": "graphindex-frontmatter",
+      "spec": "sdd/specs/graphindex-frontmatter.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1563"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wires projection into the build pipeline. Must have the full projection module available.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-16T00:14:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1564-builder-analytics-integration.md"
+    }
+  ]
+}

@@ -150,7 +150,7 @@ finance = [
 
 # FlowtTask DAG execution (pulls asyncdb[all] — heavy)
 flowtask = [
-    "flowtask>=5.10.2",
+    "flowtask>=5.12.1",
 ]
 
 # GraphIndex knowledge graph indexing (FEAT-187)
@@ -160,6 +160,8 @@ graphindex = [
     "tree-sitter>=0.23",
     "tree-sitter-languages>=1.10",
     "pathspec>=0.12",
+    "aiosqlite>=0.17",
+    "orjson>=3.9",
 ]
 
 # Task scheduling moved to ai-parrot-server[scheduler] in FEAT-203

@@ -122,6 +122,19 @@ from .models.inputs import (
     UpdateRecordInput,
     UpdateRecordsInput,
 )
+from .shell import (
+    OdooCliCommandInput,
+    OdooShellInstallInput,
+    OdooShellUpgradeInput,
+    ShellResult,
+    build_install_argv,
+    default_database,
+    odoo_bin_path,
+    odoo_conf_path,
+    run_odoo_subprocess,
+    validate_subcommand,
+    validate_token,
+)
 from .smart_fields import select_smart_fields
 from .transport import (
     AbstractOdooTransport,
@@ -176,6 +189,15 @@ class OdooToolkit(AbstractToolkit):
     """
 
     tool_prefix = "odoo"
+
+    #: Shell tools that require HITL confirmation before execution (FEAT-240).
+    confirming_tools: frozenset = frozenset(
+        {
+            "odoo_shell_install_module",
+            "odoo_shell_upgrade_module",
+            "odoo_cli_command",
+        }
+    )
 
     def __init__(
         self,
@@ -2098,6 +2120,159 @@ class OdooToolkit(AbstractToolkit):
             installed=installed,
             missing=missing,
         )
+
+    # ── odoo-bin / odoo-cli shell tools (FEAT-240, Module 1) ─────────────────
+    # These tools require HITL confirmation (listed in confirming_tools).
+    # They only work when the odoo-bin binary is reachable via ODOO_BIN env var
+    # or on PATH.  When the binary is absent they return ShellResult(success=False)
+    # without raising — never crash toolkit initialisation.
+
+    @tool_schema(OdooShellInstallInput)
+    async def odoo_shell_install_module(
+        self,
+        modules: list[str],
+        database: Optional[str] = None,
+        upgrade: bool = False,
+    ) -> ShellResult:
+        """Install (or upgrade) one or more Odoo modules via ``odoo-bin``.
+
+        Uses ``odoo-bin -d <db> -i <modules> --stop-after-init`` (or ``-u``
+        for upgrades).  Requires the ``ODOO_BIN`` environment variable to
+        point to the binary.  This tool is HITL-gated: confirmation is
+        required before execution.
+
+        Args:
+            modules: Technical module names to install, e.g. ``['sale', 'stock']``.
+            database: Target database; defaults to ``ODOO_TEST_DATABASE``.
+            upgrade: When True, upgrade (``-u``) instead of install (``-i``).
+
+        Returns:
+            A :class:`ShellResult` with exit code, stdout, and stderr.
+        """
+        bin_path = odoo_bin_path()
+        if not bin_path:
+            msg = (
+                "odoo_shell_install_module is disabled: ODOO_BIN is not set "
+                "and odoo-bin is not on PATH. Set ODOO_BIN to the absolute path "
+                "of the odoo-bin executable."
+            )
+            self.logger.warning(msg)
+            return ShellResult(
+                success=False,
+                returncode=-1,
+                message=msg,
+                argv=[],
+            )
+
+        db = database or default_database()
+        if not db:
+            msg = "odoo_shell_install_module: no database specified and ODOO_TEST_DATABASE is not set"
+            self.logger.error(msg)
+            return ShellResult(success=False, returncode=-1, message=msg, argv=[])
+
+        try:
+            argv = build_install_argv(bin_path, modules, db, upgrade=upgrade)
+        except ValueError as exc:
+            msg = f"odoo_shell_install_module: invalid input — {exc}"
+            self.logger.error(msg)
+            return ShellResult(success=False, returncode=-1, message=msg, argv=[])
+
+        action = "Upgrading" if upgrade else "Installing"
+        self.logger.info("%s modules %s on database %s", action, modules, db)
+        return await run_odoo_subprocess(argv)
+
+    @tool_schema(OdooShellUpgradeInput)
+    async def odoo_shell_upgrade_module(
+        self,
+        modules: list[str],
+        database: Optional[str] = None,
+    ) -> ShellResult:
+        """Upgrade one or more Odoo modules via ``odoo-bin -u``.
+
+        Convenience wrapper around :meth:`odoo_shell_install_module` with
+        ``upgrade=True``.  Requires the ``ODOO_BIN`` environment variable.
+        This tool is HITL-gated: confirmation is required before execution.
+
+        Uses a dedicated :class:`~parrot_tools.odoo.shell.OdooShellUpgradeInput`
+        schema that omits the ``upgrade`` flag — this tool always upgrades,
+        and the LLM cannot accidentally set ``upgrade=False``.
+
+        Args:
+            modules: Technical module names to upgrade.
+            database: Target database; defaults to ``ODOO_TEST_DATABASE``.
+
+        Returns:
+            A :class:`ShellResult` with exit code, stdout, and stderr.
+        """
+        return await self.odoo_shell_install_module(
+            modules=modules,
+            database=database,
+            upgrade=True,
+        )
+
+    @tool_schema(OdooCliCommandInput)
+    async def odoo_cli_command(
+        self,
+        subcommand: str,
+        args: Optional[list[str]] = None,
+        database: Optional[str] = None,
+    ) -> ShellResult:
+        """Run a whitelisted ``odoo-bin`` subcommand.
+
+        Allowed subcommands: ``scaffold``, ``populate``, ``db``, ``shell``,
+        ``cloc``, ``start``.  All other subcommands are rejected.
+        This tool is HITL-gated: confirmation is required before execution.
+
+        Args:
+            subcommand: A whitelisted subcommand (see above).
+            args: Additional positional arguments forwarded to the subcommand.
+            database: Target database; defaults to ``ODOO_TEST_DATABASE``.
+
+        Returns:
+            A :class:`ShellResult` with exit code, stdout, and stderr.
+        """
+        bin_path = odoo_bin_path()
+        if not bin_path:
+            msg = (
+                "odoo_cli_command is disabled: ODOO_BIN is not set and "
+                "odoo-bin is not on PATH."
+            )
+            self.logger.warning(msg)
+            return ShellResult(
+                success=False,
+                returncode=-1,
+                message=msg,
+                argv=[],
+            )
+
+        try:
+            validate_subcommand(subcommand)
+        except ValueError as exc:
+            msg = f"odoo_cli_command: {exc}"
+            self.logger.error(msg)
+            return ShellResult(success=False, returncode=-1, message=msg, argv=[])
+
+        extra_args = args or []
+        for arg in extra_args:
+            try:
+                validate_token(arg, label="argument")
+            except ValueError as exc:
+                msg = f"odoo_cli_command: {exc}"
+                self.logger.error(msg)
+                return ShellResult(success=False, returncode=-1, message=msg, argv=[])
+
+        db = database or default_database()
+        argv: list[str] = [bin_path]
+        conf = odoo_conf_path()
+        if conf:
+            argv.extend(["--conf", conf])
+        if db:
+            argv.extend(["-d", db])
+        argv.append(subcommand)
+        argv.extend(extra_args)
+
+        self.logger.info("Running odoo-bin %s with args=%s db=%s", subcommand, extra_args, db)
+        return await run_odoo_subprocess(argv)
 
 
 # Re-export common errors for convenience so callers don't need a second import.

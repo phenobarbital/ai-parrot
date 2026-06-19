@@ -104,6 +104,28 @@ _VOCODER_ONNX = "vocoder.onnx"
 _CFG_JSON = "tts.json"
 _INDEXER_JSON = "unicode_indexer.json"
 
+
+def _env_int(name: str, default: int) -> int:
+    """Read an integer environment variable, falling back to ``default``.
+
+    Used to tune ONNX Runtime CPU parallelism without a code change. A blank
+    or unparseable value yields ``default``.
+
+    Args:
+        name: Environment variable name.
+        default: Value returned when unset or invalid.
+
+    Returns:
+        The parsed integer, or ``default``.
+    """
+    raw = os.environ.get(name, "")
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
 _EMOJI_RE = re.compile(
     "[\U0001f600-\U0001f64f"
     "\U0001f300-\U0001f5ff"
@@ -401,6 +423,16 @@ class SupertonicPipeline:
                 "SupertonicPipeline: use_gpu requested; falling back to CPU " "(GPU execution is not yet validated)."
             )
         opts = ort.SessionOptions()
+        # Cap ONNX Runtime's CPU parallelism. By default ORT spawns an intra-op
+        # pool sized to ALL physical cores PER graph; with four graphs running
+        # back-to-back inside a worker thread that pegs every core at 100% and
+        # starves the aiohttp event loop (the avatar made the whole server feel
+        # frozen). A small, env-tunable cap leaves headroom for the loop while
+        # keeping synthesis fast enough for real-time speech.
+        _intra = _env_int("SUPERTONIC_ORT_INTRA_OP_THREADS", 2)
+        if _intra > 0:
+            opts.intra_op_num_threads = _intra
+        opts.inter_op_num_threads = _env_int("SUPERTONIC_ORT_INTER_OP_THREADS", 1)
 
         def _load(name: str) -> "ort.InferenceSession":
             return ort.InferenceSession(os.path.join(self.onnx_dir, name), sess_options=opts, providers=providers)

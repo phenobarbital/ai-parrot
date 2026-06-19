@@ -33,6 +33,7 @@ from aiohttp import web
 # See FEAT-152 §1 Goals: "Promote navigator-auth to a hard dependency".
 from navigator_auth.decorators import is_authenticated, user_session
 
+from ..services.public_forms import public_form_paths
 from ..services.registry import FormRegistry
 from . import controls as controls_module
 from . import operations as operations_module
@@ -347,5 +348,80 @@ def setup_form_api(
     app.router.add_post(
         f"{bp}/org/sync/workday", _wrap_auth(handler.sync_workday_identities)
     )
+
+    # FEAT-241 M6: Wire is_public toggle → auth exclude list.
+    # When app["auth"] is present and supports register_exclusions, register an
+    # async callback on the FormRegistry that is invoked whenever a form's
+    # is_public flag changes (False→True registers paths; True→False unregisters).
+    _auth = app.get("auth")
+    if _auth is not None:
+        if not hasattr(_auth, "register_exclusions"):
+            logger.warning(
+                "setup_form_api: app['auth'] is present but lacks register_exclusions — "
+                "is_public toggle disabled. Upgrade navigator-auth to >=0.20.11."
+            )
+        else:
+            _bp = bp  # capture stripped base_path in closure
+
+            async def _public_toggle(form_id: str, is_public: bool) -> None:
+                paths = public_form_paths(form_id, base_path=_bp)
+                if is_public:
+                    _auth.register_exclusions(paths)
+                else:
+                    _auth.unregister_exclusions(paths)
+
+            registry.set_public_toggle_callback(_public_toggle)
+            logger.info(
+                "setup_form_api: is_public toggle wired to auth exclude list (base_path=%s)", _bp
+            )
+
+    # FEAT-241 M7: Register exclude-provider for restart re-hydration.
+    # On each server startup, AuthHandler will invoke this provider and
+    # register the paths for all persisted is_public=True forms, restoring
+    # auth exemptions that were wiped when the exclude list was re-seeded.
+    #
+    # Startup-ordering note: auth_startup (which invokes providers) may fire
+    # before FormRegistry.on_startup (which loads forms from storage) because
+    # aiohttp calls on_startup hooks in FIFO order and AuthHandler.setup() is
+    # typically called before FormRegistry is constructed.  To guarantee correct
+    # results regardless of setup order, the provider calls load_from_storage()
+    # itself when a backend is configured, then lists all tenants so that
+    # multi-tenant deployments are fully covered.
+    if _auth is not None and hasattr(_auth, "add_exclude_provider"):
+        _bp_m7 = bp  # capture stripped base_path in closure
+
+        async def _public_forms_exclude_provider() -> list[str]:
+            """Yield auth-exempt paths for all persisted is_public=True forms.
+
+            Proactively loads from storage (when configured) before listing so
+            this provider returns correct results even when invoked before
+            FormRegistry.on_startup has had a chance to hydrate the in-memory
+            cache.  Iterates all registered tenants to cover multi-tenant
+            deployments.
+            """
+            paths: list[str] = []
+            try:
+                # Proactively hydrate from storage in case auth_startup fires
+                # before FormRegistry.on_startup (startup-ordering safety).
+                if registry.has_storage:
+                    await registry.load_from_storage()
+                # Iterate all tenants so no tenant's public forms are missed.
+                for tenant in await registry.list_tenants():
+                    for form in await registry.list_forms(tenant=tenant):
+                        if form.is_public:
+                            paths.extend(
+                                public_form_paths(form.form_id, base_path=_bp_m7)
+                            )
+            except Exception as exc:
+                logger.warning(
+                    "public_forms_exclude_provider: failed: %s", exc
+                )
+            return paths
+
+        _auth.add_exclude_provider(_public_forms_exclude_provider)
+        logger.info(
+            "setup_form_api: exclude-provider registered for restart re-hydration (base_path=%s)",
+            _bp_m7,
+        )
 
     logger.info("setup_form_api: mounted on %s", bp)

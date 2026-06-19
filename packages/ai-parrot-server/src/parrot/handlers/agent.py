@@ -2030,6 +2030,15 @@ class AgentTalk(BaseView):
                 session_id=session_id or getattr(response, 'session_id', None)
             )
 
+        # FEAT-242: non-streaming path — speak the full reply through an active
+        # avatar session in the background (the streaming path speaks
+        # per-sentence in _handle_stream_response). Best-effort; never blocks
+        # or fails the text reply.
+        if response is not None:
+            await self._speak_text_to_avatar(
+                session_id, getattr(response, 'response', None) or ''
+            )
+
         # Return formatted response
         return self._format_response(
             response,
@@ -2362,6 +2371,132 @@ class AgentTalk(BaseView):
             }
         })
 
+    async def _maybe_start_avatar_speaker(
+        self, session_id: Optional[str]
+    ) -> Optional[Any]:
+        """Return an entered ``AvatarTurnSpeaker`` if an avatar session is live.
+
+        Looks up an active avatar session (created by
+        ``POST /api/v1/agents/avatar/{agent}/start``) for ``session_id`` and the
+        shared voice provider on the app.  When both are present, opens an
+        :class:`AvatarTurnSpeaker` that streams this turn's reply to the avatar.
+
+        Returns ``None`` (and incurs zero overhead) for ordinary chat, when the
+        avatar stack is not installed, or if the speaker fails to start —
+        avatar speech is strictly best-effort and never breaks the text reply.
+
+        Args:
+            session_id: The AgentChat session ID (shared with the avatar
+                ``/start`` call and the LiveKit room).
+
+        Returns:
+            An entered ``AvatarTurnSpeaker`` ready for ``feed()``/``finish()``,
+            or ``None``.
+        """
+        if not session_id:
+            return None
+        app = self.request.app
+        record = (app.get('avatar_sessions') or {}).get(session_id)
+        if not record:
+            return None
+        provider = app.get('avatar_voice_provider')
+        handle = record.get('handle') if isinstance(record, dict) else None
+        if provider is None or handle is None:
+            return None
+        try:
+            from parrot.integrations.liveavatar import AvatarTurnSpeaker
+
+            speaker = AvatarTurnSpeaker(handle, provider.synthesize_pcm)
+            await speaker.__aenter__()
+            self.logger.info(
+                "AgentTalk: streaming reply to active avatar session %s",
+                session_id,
+            )
+            return speaker
+        except Exception:  # noqa: BLE001 - avatar speech is best-effort
+            self.logger.warning(
+                "AgentTalk: could not start avatar speaker for session %s; "
+                "continuing text-only.",
+                session_id,
+                exc_info=True,
+            )
+            return None
+
+    async def _speak_text_to_avatar(
+        self, session_id: Optional[str], text: str
+    ) -> None:
+        """Speak a full reply through an active avatar session (non-stream path).
+
+        Opens an :class:`AvatarTurnSpeaker` for an active session, feeds the
+        whole reply (the flattener segments it into sentences) and lets the
+        speaker synthesize/push the audio **in the background** so the HTTP JSON
+        reply returns immediately.  A no-op when no avatar session is active.
+
+        Args:
+            session_id: The AgentChat session ID (shared with the avatar).
+            text: The full speakable reply (``AIMessage.response``).
+        """
+        if not text or not text.strip():
+            return
+        speaker = await self._maybe_start_avatar_speaker(session_id)
+        if speaker is None:
+            return
+
+        async def _run() -> None:
+            try:
+                speaker.feed(text)
+                await speaker.finish()
+            except Exception:  # noqa: BLE001 - avatar speech is best-effort
+                self.logger.warning(
+                    "Avatar full-text speak failed for session %s",
+                    session_id, exc_info=True,
+                )
+            finally:
+                await speaker.aclose()
+
+        task = asyncio.get_running_loop().create_task(_run())
+        # Surface unexpected failures instead of swallowing them on GC.
+        task.add_done_callback(
+            lambda t: self.logger.warning(
+                "Avatar speak task errored for session %s: %s",
+                session_id, t.exception(),
+            ) if not t.cancelled() and t.exception() else None
+        )
+
+    def _detach_avatar_finish(self, speaker: Any, agent_name: str) -> None:
+        """Drain + close an avatar speaker in the background (FEAT-242).
+
+        The text + metadata are already on the wire by the time the stream
+        ends, so flushing the avatar's trailing audio MUST NOT gate the HTTP
+        response.  ``finish()`` waits for the per-sentence synthesis/send
+        consumer to drain (each ``send_audio_frame`` can wait on the avatar
+        "connected" gate), which is exactly the work that previously wedged
+        the request.  We hand it to a detached task so ``write_eof`` returns
+        immediately; avatar speech stays strictly best-effort.
+
+        Args:
+            speaker: The entered ``AvatarTurnSpeaker`` to flush and close.
+            agent_name: Agent name, for log context only.
+        """
+        async def _run() -> None:
+            try:
+                await speaker.finish()
+            except Exception:  # noqa: BLE001 - avatar speech is best-effort
+                self.logger.warning(
+                    "Avatar speak finish failed for agent '%s'",
+                    agent_name, exc_info=True,
+                )
+            finally:
+                await speaker.aclose()
+
+        task = asyncio.get_running_loop().create_task(_run())
+        task.add_done_callback(
+            lambda t: self.logger.warning(
+                "Avatar finish task errored for agent '%s': %s",
+                agent_name, t.exception(),
+            ) if not t.cancelled() and t.exception() else None
+        )
+
     async def _handle_stream_response(
         self,
         bot: AbstractBot,
@@ -2402,6 +2537,11 @@ class AgentTalk(BaseView):
         await stream_resp.prepare(self.request)
         start_time = time.perf_counter()
         ai_message: Optional[AIMessage] = None
+        # FEAT-242 Phase A: if an avatar session is active for this session_id,
+        # speak the streamed reply through it. Returns None (zero overhead) for
+        # ordinary chat. feed() is non-blocking — synthesis happens in a
+        # background task so the text stream is never stalled by TTS.
+        avatar_speaker = await self._maybe_start_avatar_speaker(session_id)
         try:
             async for chunk in bot.ask_stream(
                 question=query,
@@ -2421,6 +2561,8 @@ class AgentTalk(BaseView):
                 else:
                     await stream_resp.write(chunk.encode('utf-8'))
                     await stream_resp.drain()
+                    if avatar_speaker is not None:
+                        avatar_speaker.feed(chunk)
 
             response_time_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -2510,6 +2652,16 @@ class AgentTalk(BaseView):
             except Exception as ex:
                 self.logger.warning("Error scheduling streamed chat turn save: %s", ex)
 
+            # Flush the final sentence and the avatar's playback buffer in the
+            # BACKGROUND. Text + metadata are already on the wire; draining the
+            # avatar audio must never gate write_eof (finish() waits on the
+            # per-sentence consumer + the avatar "connected" gate, which is
+            # what previously wedged the request). Hand off and clear the local
+            # ref so the finally-block below does not also close it.
+            if avatar_speaker is not None:
+                self._detach_avatar_finish(avatar_speaker, agent_name)
+                avatar_speaker = None
+
         except asyncio.CancelledError:
             self.logger.info("Stream cancelled by client for agent '%s'.", agent_name)
         except Exception as e:
@@ -2519,6 +2671,8 @@ class AgentTalk(BaseView):
             )
             self.logger.error("Error in stream response for agent '%s': %s", agent_name, e)
         finally:
+            if avatar_speaker is not None:
+                await avatar_speaker.aclose()
             await stream_resp.write_eof()
         return stream_resp
 

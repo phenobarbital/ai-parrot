@@ -156,6 +156,11 @@ class WebSocketConnection:
     last_ping: Optional[datetime] = None
     ping_count: int = 0
 
+    # Avatar session (FEAT-245): optional LiveAvatar LITE mouth driven by Gemini audio.
+    # Type is Optional[Any] to avoid importing the liveavatar stack at module level
+    # (lazy import so /ws/voice works without the ai-parrot-integrations[liveavatar] extra).
+    avatar_session: Optional[Any] = None
+
 
 # =============================================================================
 # Main Handler
@@ -720,7 +725,67 @@ class VoiceChatHandler:
                 self._run_voice_session(connection)
             )
 
-        await self._send_message(connection.ws, {
+        # ── Avatar wiring (FEAT-245) ──────────────────────────────────────
+        # Lazy-import the liveavatar stack so /ws/voice works without the
+        # optional ai-parrot-integrations[liveavatar] extra.  All avatar
+        # exceptions are caught and surfaced as avatar.active=false in the
+        # session_started reply (graceful degradation — voice still starts).
+        avatar_block: dict = {}
+        avatar_requested = bool(message.get("avatar", False))
+        if avatar_requested:
+            try:
+                from parrot.integrations.liveavatar import VoiceAvatarSession
+                from parrot.integrations.liveavatar.optin import is_avatar_enabled
+
+                tenant_id: Optional[str] = message.get("tenant_id") or None
+                avatar_id_override: Optional[str] = message.get("avatar_id") or None
+                agent_id: str = (
+                    config.name
+                    if config and config.name
+                    else "voice-assistant"
+                )
+
+                if not is_avatar_enabled(
+                    tenant_id=tenant_id, agent_name=agent_id
+                ):
+                    avatar_block = {
+                        "active": False,
+                        "reason": "avatar mode is not enabled for this tenant",
+                    }
+                    self.logger.info(
+                        "VoiceChatHandler: avatar opt-in denied for tenant=%s agent=%s",
+                        tenant_id,
+                        agent_id,
+                    )
+                else:
+                    session: "VoiceAvatarSession" = await VoiceAvatarSession.start(
+                        agent_id=agent_id,
+                        session_id=connection.session_id,
+                        tenant_id=tenant_id,
+                        avatar_id=avatar_id_override,
+                    )
+                    connection.avatar_session = session
+                    avatar_block = {
+                        "active": True,
+                        **session.viewer_credentials,
+                        "audio": "dual",
+                    }
+                    self.logger.info(
+                        "VoiceChatHandler: avatar session started for session=%s",
+                        connection.session_id,
+                    )
+            except ImportError as exc:
+                avatar_block = {"active": False, "reason": "liveavatar stack not installed"}
+                self.logger.warning(
+                    "VoiceChatHandler: liveavatar import failed — voice-only: %s", exc
+                )
+            except Exception as exc:  # noqa: BLE001
+                avatar_block = {"active": False, "reason": str(exc)[:120]}
+                self.logger.warning(
+                    "VoiceChatHandler: avatar start failed — voice-only: %s", exc
+                )
+
+        session_started_msg: dict = {
             "type": "session_started",
             "session_id": connection.session_id,
             "user_id": connection.user_id,
@@ -730,8 +795,12 @@ class VoiceChatHandler:
                 "language": config.language,
                 "input_format": "audio/pcm;rate=16000",
                 "output_format": "audio/pcm;rate=24000",
-            }
-        })
+            },
+        }
+        if avatar_block:
+            session_started_msg["avatar"] = avatar_block
+
+        await self._send_message(connection.ws, session_started_msg)
 
         await self._send_message(connection.ws, {
             "type": "ready_to_speak",
@@ -739,8 +808,9 @@ class VoiceChatHandler:
         })
 
         self.logger.info(
-            f"Voice session started: {connection.session_id} "
-            f"(mode={streaming_mode})"
+            "Voice session started: %s (mode=%s)",
+            connection.session_id,
+            streaming_mode,
         )
 
     async def _handle_end_session(
@@ -761,6 +831,13 @@ class VoiceChatHandler:
         if connection.bot:
             await connection.bot.close()
             connection.bot = None
+
+        # Tear down avatar session — mirrors _cleanup_connection so that an
+        # explicit end_session from the client does not orphan the LiveAvatar WS.
+        if connection.avatar_session is not None:
+            with contextlib.suppress(Exception):
+                await connection.avatar_session.aclose()
+            connection.avatar_session = None
 
         await self._send_message(connection.ws, {
             "type": "session_ended",
@@ -1271,6 +1348,23 @@ class VoiceChatHandler:
                 "message": "Ready for new question"
             })
 
+        # ── Avatar audio tee (FEAT-245) ───────────────────────────────────
+        # Best-effort: exceptions are caught and logged; the browser audio
+        # path MUST NOT be interrupted by an avatar hiccup (dual audio).
+        if connection.avatar_session is not None:
+            try:
+                if response.is_interrupted:
+                    await connection.avatar_session.interrupt()
+                else:
+                    if response.audio_data:
+                        await connection.avatar_session.speak(response.audio_data)
+                    if response.is_complete:
+                        await connection.avatar_session.finish_turn()
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "VoiceChatHandler: avatar tee error (voice stream unaffected): %s", exc
+                )
+
     # =========================================================================
     # Utilities
     # =========================================================================
@@ -1319,6 +1413,17 @@ class VoiceChatHandler:
 
         # Clear audio buffer
         connection.audio_buffer = b""
+
+        # Tear down avatar session (FEAT-245) — idempotent, never raises
+        if connection.avatar_session is not None:
+            try:
+                await connection.avatar_session.aclose()
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "VoiceChatHandler: avatar session cleanup error: %s", exc
+                )
+            finally:
+                connection.avatar_session = None
 
     async def broadcast(self, message: Dict[str, Any]) -> None:
         """Send message to all active connections."""

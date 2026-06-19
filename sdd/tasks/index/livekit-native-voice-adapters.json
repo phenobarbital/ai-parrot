@@ -1,0 +1,58 @@
+{
+  "feature": "livekit-native-voice-adapters",
+  "feature_id": "FEAT-246",
+  "spec": "sdd/specs/livekit-native-voice-adapters.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-18T00:00:00+00:00",
+  "completed_at": "2026-06-18T21:24:14+00:00",
+  "tasks": [
+    {
+      "id": "TASK-246-001",
+      "feature_id": "FEAT-246",
+      "feature": "livekit-native-voice-adapters",
+      "slug": "voice-adapters-module",
+      "title": "Implement voice_adapters.py — SupertonicTTS, _TranscriberSTT, WhisperSTT, MoonshineSTT",
+      "status": "done",
+      "priority": "high",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-246-001-voice-adapters-module.md",
+      "started_at": "2026-06-18T18:34:51+00:00",
+      "completed_at": "2026-06-18T18:39:52+00:00"
+    },
+    {
+      "id": "TASK-246-002",
+      "feature_id": "FEAT-246",
+      "feature": "livekit-native-voice-adapters",
+      "slug": "resolve-factories-pipeline-wiring",
+      "title": "Add resolve_stt/resolve_tts factories and wire them into pipeline.py",
+      "status": "done",
+      "priority": "high",
+      "depends_on": [
+        "TASK-246-001"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-246-002-resolve-factories-pipeline-wiring.md",
+      "started_at": "2026-06-18T18:34:51+00:00",
+      "completed_at": "2026-06-18T18:41:33+00:00"
+    },
+    {
+      "id": "TASK-246-003",
+      "feature_id": "FEAT-246",
+      "feature": "livekit-native-voice-adapters",
+      "slug": "unit-tests",
+      "title": "Unit tests for voice adapters and provider factories",
+      "status": "done",
+      "priority": "high",
+      "depends_on": [
+        "TASK-246-001",
+        "TASK-246-002"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-246-003-unit-tests.md",
+      "started_at": "2026-06-18T18:34:51+00:00",
+      "completed_at": "2026-06-18T18:44:46+00:00"
+    }
+  ]
+}

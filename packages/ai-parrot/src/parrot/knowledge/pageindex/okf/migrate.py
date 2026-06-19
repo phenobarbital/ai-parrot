@@ -317,6 +317,9 @@ async def okf_migrate(
     report.files_renamed = len(proj_report.old_files_removed)
 
     # 8. Write root index.md
+    # NOTE: "index" is a reserved content-store key for this tree.  A concept
+    # titled "Index" would flatten to the same key and overwrite this file.
+    # Callers should avoid naming root-level concepts "Index" in OKF trees.
     index_content = generate_index_md(tree, tree_name)
     content_store.save(tree_name, "index", index_content)
 

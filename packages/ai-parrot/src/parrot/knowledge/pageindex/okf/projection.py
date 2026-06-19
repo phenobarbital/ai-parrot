@@ -20,16 +20,14 @@ Design notes (from spec §2.2, D1, D8):
   written.
 """
 
-import hashlib
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
-from parrot.knowledge.pageindex.okf.frontmatter import project_frontmatter
+from parrot.knowledge.okf.frontmatter import project_frontmatter
+from parrot.knowledge.okf.utils import flatten_concept_id_for_filename  # noqa: F401 — re-exported for backward compat
 from parrot.knowledge.pageindex.utils import structure_to_list
-
-_MAX_FLAT_ID_LENGTH = 60  # stay safely under the 64-char _NODE_ID_RE limit
 
 
 class ProjectionReport(BaseModel):
@@ -47,34 +45,6 @@ class ProjectionReport(BaseModel):
     files_written: list[str] = Field(default_factory=list)
     old_files_removed: list[str] = Field(default_factory=list)
 
-
-def flatten_concept_id_for_filename(concept_id: str) -> str:
-    """Convert a slash-containing concept_id to a flat filename stem.
-
-    ``NodeContentStore._NODE_ID_RE`` only allows ``[A-Za-z0-9_-]{1,64}``.
-    Slashes in ``concept_id`` are replaced with ``--`` (double-dash).
-
-    If the resulting string exceeds ``_MAX_FLAT_ID_LENGTH`` chars, a
-    deterministic hash suffix is appended to keep uniqueness.
-
-    Args:
-        concept_id: OKF concept_id (may contain ``/`` path separators).
-
-    Returns:
-        Flat filename stem, safe for ``NodeContentStore.save()``.
-
-    Examples:
-        >>> flatten_concept_id_for_filename("aws-ir")
-        'aws-ir'
-        >>> flatten_concept_id_for_filename("playbooks/aws-incident-response")
-        'playbooks--aws-incident-response'
-    """
-    flat = concept_id.replace("/", "--")
-    if len(flat) <= _MAX_FLAT_ID_LENGTH:
-        return flat
-    # Deterministically truncate + append short hash suffix
-    digest = hashlib.sha1(flat.encode()).hexdigest()[:8]
-    return flat[: _MAX_FLAT_ID_LENGTH - 9] + "-" + digest
 
 
 def project_sidecar(node: dict, tree_name: str, body: str) -> str:
@@ -95,8 +65,12 @@ def project_sidecar(node: dict, tree_name: str, body: str) -> str:
 def _strip_frontmatter(content: str) -> str:
     """Strip existing YAML frontmatter from sidecar content.
 
-    If ``content`` starts with ``---\\n``, extract and discard everything up
-    to and including the closing ``---``.  Return the remaining body.
+    If ``content`` starts with ``---`` (LF or CRLF), extract and discard
+    everything up to and including the closing ``---``.  Return the remaining
+    body.
+
+    CRLF line-endings are normalised to LF before processing so the same
+    logic handles Windows-authored sidecars without special cases.
 
     Args:
         content: Sidecar file content (may or may not have frontmatter).
@@ -104,6 +78,8 @@ def _strip_frontmatter(content: str) -> str:
     Returns:
         Body content with frontmatter stripped, or content unchanged.
     """
+    # Normalise CRLF → LF so the rest of the function only needs to handle LF.
+    content = content.replace("\r\n", "\n")
     if not content.startswith("---\n"):
         return content
     # Find the closing "---" on its own line (must be followed by \n or EOF).
@@ -182,8 +158,12 @@ def project_sidecars(
 def generate_index_md(tree: dict, tree_name: str) -> str:
     """Generate a deterministic root-level index.md view of the JSON ToC.
 
-    Lists all top-level concepts with title, concept_id, and summary.
-    No YAML frontmatter in ``index.md`` (per OKF §6).  Entries are sorted
+    Lists **top-level concepts only** — children are intentionally omitted to
+    keep the index concise (per OKF spec §6: "root index lists all top-level
+    concepts with links").  Deeply nested sub-concepts are discoverable via
+    their parent's sidecar body or ``get_related`` traversal.
+
+    No YAML frontmatter in ``index.md`` (per OKF §6).  Entries are ordered
     by their position in the ``structure`` list (preserving JSON ToC order).
 
     Args:

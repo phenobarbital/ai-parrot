@@ -1,0 +1,66 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-241",
+  "mode": "enrichment",
+  "summary_oneline": "Public forms (is_public=True) auto-register their auth-exempt paths into navigator-auth's runtime exclude list; revoked when is_public flips off.",
+  "summary": "The request asks parrot-formdesigner to expose a form's read/representation URLs (get, JSON schema, rendered formats) and its result-submission URL without authentication when a new FormSchema.is_public flag is True, and to revoke that exemption when it is turned off. The source's premise — that navigator-auth's exclude routes are a frozenset frozen at server start — is outdated for the per-app exclude list: AuthHandler already seeds app['auth_exclude_list'] as a mutable list, evaluated at request time via fnmatch by all three middlewares, and exposes add_exclude_list(path). The genuine work is therefore smaller than implied on the middleware side (add a symmetric remove_exclude_list) but larger on the formdesigner side, because every form route is individually wrapped with is_authenticated, a handler-level decorator that ignores the exclude list and will 401 anonymous callers regardless. A complete solution must act at BOTH layers and re-hydrate the in-memory exclude list on startup from persisted public forms.",
+  "localization": [
+    {"path": "../navigator-auth/navigator_auth/auth.py", "symbol": "AuthHandler.setup / add_exclude_list / verify_exceptions", "lines": "534-537, 666-677", "role": "seeds + mutates + request-time-evaluates the per-app exclude list", "evidence": ["F003"]},
+    {"path": "../navigator-auth/navigator_auth/middlewares/abstract.py", "symbol": "base_middleware.excluding_routes / valid_routes", "lines": "46-71", "role": "per-middleware (frozen tuple) exemption matcher via fnmatch", "evidence": ["F001"]},
+    {"path": "../navigator-auth/navigator_auth/conf.py", "symbol": "AUTH_EXCLUDE_LIST_KEY / exclude_list", "lines": "44-58", "role": "app key + default seed for the exclude list", "evidence": ["F002"]},
+    {"path": "../navigator-auth/navigator_auth/decorators.py", "symbol": "is_authenticated / allow_anonymous", "lines": "42-72, 126-176", "role": "handler-level auth gate that ignores the exclude list (hard blocker)", "evidence": ["F004"]},
+    {"path": "../navigator-auth/navigator_auth/abac/middleware.py", "symbol": "abac exclude check", "lines": "33-36", "role": "second middleware reading the same app exclude list", "evidence": ["F003"]},
+    {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/routes.py", "symbol": "setup_form_api / _wrap_auth", "lines": "67-89, 200-241", "role": "mounts form routes, blanket-wraps each with is_authenticated", "evidence": ["F005"]},
+    {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/core/schema.py", "symbol": "FormSchema", "lines": "300-315", "role": "canonical form model; lacks is_public field", "evidence": ["F006"]},
+    {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py", "symbol": "create_form / update_form / patch_form / publish_form", "lines": "741, 915, 963, 1437", "role": "lifecycle hook points that persist via registry.register", "evidence": ["F007"]}
+  ],
+  "constraints": [
+    {"text": "The per-app exclude list app['auth_exclude_list'] is already a mutable list evaluated at request time by all three middlewares (auth, abac, backends/abstract) via fnmatch — runtime add/remove is supported by design; no frozenset exists.", "evidence": ["F002", "F003"], "implication": "formdesigner should target the per-app list (via app['auth'].add_exclude_list), NOT the per-middleware exclude_routes tuple, which is genuinely frozen at init."},
+    {"text": "navigator-auth has add_exclude_list(path) but NO removal method.", "evidence": ["F003"], "implication": "A symmetric remove_exclude_list(path) (idempotent) must be added to AuthHandler to support is_public=False."},
+    {"text": "is_authenticated is a per-handler decorator that checks only request['authenticated'] and 401s otherwise; it does not consult the exclude list or allow_anonymous.", "evidence": ["F004"], "implication": "Exempting a path in the middleware exclude list is necessary but NOT sufficient — formdesigner's _wrap_auth must be conditionally skipped/relaxed for public-form routes, or navigator-auth's is_authenticated must learn to honor the exclude list."},
+    {"text": "The exclude list is in-memory, re-seeded from defaults on every AuthHandler.setup().", "evidence": ["F002", "F003"], "implication": "Runtime-registered public-form paths are LOST on server restart; the solution must re-hydrate them on startup from persisted forms whose is_public=True."},
+    {"text": "All mutating form handlers funnel through registry.register(form, overwrite=True), and registry.get returns the prior form.", "evidence": ["F007"], "implication": "Centralize the add/remove toggle (e.g. in FormRegistry.register or a PublicFormGateway) and diff old-vs-new is_public rather than duplicating logic across 4 handlers."},
+    {"text": "fnmatch patterns are globs.", "evidence": ["F001", "F003"], "implication": "The render endpoint's {format} segment collapses to one pattern /api/v1/forms/<id>/render/* ; other public paths are exact strings."}
+  ],
+  "recent_history": [
+    {"commit": "27b478b", "when": "2026-04-02", "author": "Jesus Lara", "message": "wip: new pbac implementation — introduced the mutable per-app exclude list ('avoids global mutation')", "evidence": ["F003"]}
+  ],
+  "scope": {
+    "whats_new": [
+      "FormSchema.is_public: bool field (core/schema.py)",
+      "AuthHandler.remove_exclude_list(path) in navigator-auth (symmetric to add_exclude_list)",
+      "A public-path computation helper (form_id + base_path -> list of exempt patterns)",
+      "A re-hydration hook on app startup that registers exempt paths for all persisted is_public forms",
+      "A handler-level mechanism to allow anonymous access to public-form routes (the design fork — see open questions)"
+    ],
+    "what_changes": [
+      "setup_form_api / _wrap_auth: public-capable routes need a conditional auth gate",
+      "create_form/update_form/patch_form/publish_form (or registry.register): toggle exclude paths on is_public transitions"
+    ],
+    "non_goals": [
+      "Changing the per-middleware exclude_routes tuple mechanism (frozen by design; not the right hook)",
+      "RBAC/tenant authorization redesign — public means anonymous-readable, orthogonal to RBAC",
+      "Telegram/UI surface (setup_form_ui) — only the JSON REST surface is in scope"
+    ]
+  },
+  "confidence_map": [
+    {"id": "C1", "claim": "navigator-auth's per-app exclude list is a runtime-mutable list evaluated at request time, not a frozenset", "evidence": ["F002", "F003"], "confidence": "high", "reasoning": "direct read of setup() + verify_exceptions + grep showing zero frozenset"},
+    {"id": "C2", "claim": "add_exclude_list exists; no removal method does", "evidence": ["F003"], "confidence": "high", "reasoning": "direct read + grep for remove/discard returned none"},
+    {"id": "C3", "claim": "is_authenticated handler decorator will 401 anonymous callers even on exclude-listed paths", "evidence": ["F004"], "confidence": "high", "reasoning": "decorator body checks only request['authenticated'] and raises HTTPUnauthorized; no exclude-list/allow_anonymous consultation"},
+    {"id": "C4", "claim": "FormSchema has no is_public field today", "evidence": ["F006"], "confidence": "high", "reasoning": "direct read of model + package-wide grep returned zero"},
+    {"id": "C5", "claim": "The candidate public URLs are get_form, /schema, /render/*, and POST /data", "evidence": ["F005"], "confidence": "medium", "reasoning": "derived from route table + source intent; exact set (e.g. whether /validate is public) needs confirmation"},
+    {"id": "C6", "claim": "Runtime-registered exempt paths are lost on restart and need startup re-hydration", "evidence": ["F002", "F003"], "confidence": "high", "reasoning": "setup() unconditionally re-seeds the list from defaults each boot"},
+    {"id": "C7", "claim": "The toggle should be centralized at registry.register / a gateway, not duplicated in handlers", "evidence": ["F007"], "confidence": "medium", "reasoning": "all handlers funnel through register; design recommendation, not a hard constraint"}
+  ],
+  "unknowns": [
+    {"id": "U1", "question": "Exactly which form URLs become anonymous when is_public=True?", "blocks_claims": ["C5"], "plausible_answers": ["read + render + data only", "also validate", "also style/controls"], "user_answer": "All four: GET /forms/{id}, GET /forms/{id}/schema, GET /forms/{id}/render/* (glob), POST /forms/{id}/data, and POST /forms/{id}/validate."},
+    {"id": "U2", "question": "How to bypass the handler-level is_authenticated for public routes?", "blocks_claims": ["C3"], "plausible_answers": ["formdesigner conditional wrapper", "navigator-auth is_authenticated honors exclude list", "unwrapped + in-handler gate"], "user_answer": "navigator-auth honors the exclude list: is_authenticated short-circuits when the path is in app['auth_exclude_list'] or request.allow_anonymous is set. Global fix for all consumers."},
+    {"id": "U3", "question": "Who re-hydrates the in-memory exclude list on restart?", "blocks_claims": ["C6"], "plausible_answers": ["formdesigner on_startup re-registers", "navigator-auth provides a registry/callback hook", "both: callback hook populated by formdesigner"], "user_answer": "navigator-auth exposes an exclude-provider callback API (e.g. add_exclude_provider(async_fn)); navigator-auth invokes all registered providers on_startup. parrot-formdesigner supplies a provider that yields the public paths of persisted is_public forms."},
+    {"id": "U4", "question": "What API should navigator-auth add beyond add_exclude_list(path)?", "blocks_claims": ["C2"], "plausible_answers": ["just remove_exclude_list", "add idempotency + bulk", "evaluator-callback API as source describes"], "user_answer": "Idempotent add + remove_exclude_list, PLUS bulk register_exclusions(paths)/unregister_exclusions(paths) for atomic per-form multi-path toggles."}
+  ],
+  "overall_confidence": "medium",
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence (C1-C4, C6) and the change is well-bounded across two known files per repo; the remaining items (U1-U4) are design decisions a spec can pin down with open questions rather than open architectural exploration. If the handler-level bypass (U2) is contested, escalate to /sdd-brainstorm first."
+  }
+}

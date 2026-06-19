@@ -1,4 +1,4 @@
-from typing import AsyncGenerator, Dict, Any
+from typing import Any, Dict, Optional, Set
 import asyncio
 from aiohttp import web
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
@@ -14,10 +14,24 @@ class StreamHandler(BaseHandler):
     Supports:
     - SSE (Server-Sent Events)
     - WebSockets
+    - Voice control via ``voice_start`` / ``voice_stop`` messages (FEAT-244)
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.active_connections = set()
+        self.active_connections: Set[web.WebSocketResponse] = set()
+        # channel_subscriptions and _ws_voice_sessions are plain dicts/sets shared
+        # across all WebSocket connections. No asyncio.Lock is needed: aiohttp runs
+        # on a single-threaded event loop, so coroutines only interleave at `await`
+        # points. _subscribe_to_channel and _unsubscribe_from_channel are
+        # synchronous (no await), so they execute atomically w.r.t. other coroutines.
+        # broadcast_to_channel takes a snapshot copy of the set before iterating, so
+        # concurrent modifications during the async send loop are safe.
+        # FEAT-244: per-session channel registry for structured-output delivery.
+        # Maps session_id -> set of WebSocketResponse objects subscribed to that channel.
+        self.channel_subscriptions: Dict[str, Set[web.WebSocketResponse]] = {}
+        # FEAT-244: reverse index — tracks which session_ids each socket started,
+        # so ws-close cleanup can tear down worker dispatches without a full scan.
+        self._ws_voice_sessions: Dict[web.WebSocketResponse, Set[str]] = {}
 
     def _get_botmanager(self, request: web.Request):
         """Retrieve the bot manager from the application context."""
@@ -250,12 +264,15 @@ class StreamHandler(BaseHandler):
                 elif msg.type == web.WSMsgType.ERROR:
                     # Handle errors
                     self.logger.error("WebSocket error: %s", ws.exception())
-                    self.active_connections.remove(ws)
         except Exception as e:
-            self.active_connections.remove(ws)
             raise web.HTTPInternalServerError(
                 reason="Error occurred during WebSocket communication."
             ) from e
+        finally:
+            # FEAT-244: tear down every worker dispatch this socket started and
+            # remove it from all channel subscriptions, regardless of close cause.
+            self.active_connections.discard(ws)
+            await self._cleanup_ws_voice_sessions(ws, request)
         return ws
 
     async def _validate_token(self, request: web.Request, token: str) -> bool:
@@ -296,7 +313,24 @@ class StreamHandler(BaseHandler):
         bot: AbstractBot,
         request: web.Request,
     ):
-        """Handle incoming WebSocket messages"""
+        """Handle incoming WebSocket messages dispatched by stream_websocket.
+
+        Args:
+            ws: The active WebSocket connection for this client session.
+            data: Parsed JSON dict from the client. Recognised ``type`` values:
+
+                * ``"stream_request"`` — LLM completion request; ``session_id``,
+                  ``query``, optional ``context`` fields.
+                * ``"voice_start"`` — Start a voice-native LiveAvatar session;
+                  ``session_id`` required. Idempotent: rejected if already active.
+                * ``"voice_stop"``  — Stop a voice-native LiveAvatar session;
+                  ``session_id`` required.
+                * ``"auth"``        — Authenticate the WebSocket; ``token`` required.
+                * ``"ping"``        — Keepalive; replied with ``{"type": "pong"}``.
+
+            bot: The AbstractBot instance bound to this agent session.
+            request: The originating aiohttp request (carries app context).
+        """
         msg_type = data.get('type')
         if msg_type == 'auth':
             auth_header = data.get('authorization', '')
@@ -341,6 +375,79 @@ class StreamHandler(BaseHandler):
                     'message': str(e)
                 })
 
+        elif msg_type == 'voice_start':
+            # FEAT-244: mint a publish-capable LiveKit token, dispatch the worker,
+            # subscribe the socket to the session_id channel, return credentials.
+            session_id: str = data.get('session_id') or ''
+            if not session_id:
+                await ws.send_json({
+                    'type': 'error',
+                    'message': "'session_id' is required for voice_start",
+                })
+                return
+
+            # Idempotency guard: reject duplicate voice_start for the same session_id.
+            if session_id in self.channel_subscriptions:
+                await ws.send_str(json_encoder({
+                    "type": "voice_error",
+                    "session_id": session_id,
+                    "error": "Voice session already active for this session_id",
+                }))
+                return
+
+            tenant_id: Optional[str] = data.get('tenant_id') or None
+            agent_id: str = request.match_info.get('bot_id', '')
+
+            try:
+                from parrot.handlers.avatar import start_voice_native  # noqa: PLC0415
+                result = await start_voice_native(
+                    request.app, agent_id, session_id, tenant_id
+                )
+            except web.HTTPException as exc:
+                await ws.send_json({
+                    'type': 'error',
+                    'message': exc.reason or str(exc),
+                })
+                return
+            except Exception as exc:  # noqa: BLE001
+                self.logger.exception(
+                    "StreamHandler: voice_start failed for session %s", session_id
+                )
+                await ws.send_json({
+                    'type': 'error',
+                    'message': f'voice_start failed: {exc}',
+                })
+                return
+
+            self._subscribe_to_channel(ws, session_id)
+            self.logger.info(
+                "StreamHandler: voice_start session %s (agent %s)", session_id, agent_id
+            )
+            await ws.send_json({'type': 'voice_session', **result})
+
+        elif msg_type == 'voice_stop':
+            # FEAT-244: tear down the worker dispatch and unsubscribe.
+            session_id = data.get('session_id') or ''
+            if not session_id:
+                await ws.send_json({
+                    'type': 'error',
+                    'message': "'session_id' is required for voice_stop",
+                })
+                return
+
+            try:
+                from parrot.handlers.avatar import stop_voice_native  # noqa: PLC0415
+                await stop_voice_native(request.app, session_id)
+            except Exception:  # noqa: BLE001
+                self.logger.warning(
+                    "StreamHandler: error in stop_voice_native for %s", session_id,
+                    exc_info=True,
+                )
+
+            self._unsubscribe_from_channel(ws, session_id)
+            self.logger.info("StreamHandler: voice_stop session %s", session_id)
+            await ws.send_json({'type': 'voice_stopped', 'session_id': session_id})
+
         elif msg_type == 'ping':
             await ws.send_json({'type': 'pong'})
 
@@ -350,6 +457,68 @@ class StreamHandler(BaseHandler):
                 'message': f'Unknown message type: {msg_type}'
             })
 
+    def _subscribe_to_channel(
+        self, ws: web.WebSocketResponse, channel: str
+    ) -> None:
+        """Subscribe ``ws`` to ``channel`` in the channel registry (FEAT-244).
+
+        Args:
+            ws: The WebSocket connection to subscribe.
+            channel: The session_id channel to subscribe to.
+        """
+        self.channel_subscriptions.setdefault(channel, set()).add(ws)
+        self._ws_voice_sessions.setdefault(ws, set()).add(channel)
+
+    def _unsubscribe_from_channel(
+        self, ws: web.WebSocketResponse, channel: str
+    ) -> None:
+        """Unsubscribe ``ws`` from ``channel`` and clean up empty entries (FEAT-244).
+
+        Args:
+            ws: The WebSocket connection to unsubscribe.
+            channel: The session_id channel to unsubscribe from.
+        """
+        subs = self.channel_subscriptions.get(channel)
+        if subs is not None:
+            subs.discard(ws)
+            if not subs:
+                del self.channel_subscriptions[channel]
+        sessions = self._ws_voice_sessions.get(ws)
+        if sessions is not None:
+            sessions.discard(channel)
+            if not sessions:
+                del self._ws_voice_sessions[ws]
+
+    async def broadcast_to_channel(
+        self,
+        channel: str,
+        message: Any,
+        exclude_ws: Optional[web.WebSocketResponse] = None,
+    ) -> None:
+        """Broadcast ``message`` to all sockets subscribed to ``channel`` (FEAT-244).
+
+        Duck-typed to match ``UserSocketManager.broadcast_to_channel`` so that
+        the fan-out sink in ``liveavatar_output.py`` can call either manager
+        with the same interface.
+
+        Args:
+            channel: The session_id channel to broadcast to.
+            message: JSON-serialisable message to send.
+            exclude_ws: Optional WebSocket to skip (mirrors UserSocketManager API).
+        """
+        if channel not in self.channel_subscriptions:
+            return
+        message_str = json_encoder(message)
+        for ws in set(self.channel_subscriptions[channel]):
+            if ws is exclude_ws or ws.closed:
+                continue
+            try:
+                await ws.send_str(message_str)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.error(
+                    "StreamHandler: error broadcasting to channel %s: %s", channel, exc
+                )
+
     async def broadcast(self, message: dict):
         """Broadcast message to all connected clients"""
         for ws in self.active_connections:
@@ -357,6 +526,59 @@ class StreamHandler(BaseHandler):
                 await ws.send_json(message)
             except Exception as e:
                 self.logger.error("Error broadcasting to client: %s", e)
+
+    async def _cleanup_ws_voice_sessions(
+        self, ws: web.WebSocketResponse, request: web.Request
+    ) -> None:
+        """Tear down all voice-native sessions started by ``ws`` (FEAT-244).
+
+        Called from the ``finally`` block of :meth:`stream_websocket` so that
+        abnormal closes (not just clean disconnects) never orphan worker dispatches.
+        Also removes ``ws`` from all ``channel_subscriptions`` entries.
+
+        Args:
+            ws: The WebSocket connection that just closed.
+            request: The originating aiohttp request (carries the app reference).
+        """
+        # Lazy import keeps the voice stack optional (mirrors avatar.py pattern).
+        try:
+            from parrot.handlers.avatar import stop_voice_native  # noqa: PLC0415
+        except ImportError:
+            self.logger.error(
+                "stop_voice_native unavailable — liveavatar worker dispatches for ws=%s "
+                "will be orphaned. Check parrot.handlers.avatar is installed.",
+                ws,
+            )
+            return
+
+        # Tear down all worker dispatches this socket started.
+        session_ids = self._ws_voice_sessions.pop(ws, set())
+        for session_id in session_ids:
+            # Remove ws from channel subscriptions for this session.
+            subs = self.channel_subscriptions.get(session_id)
+            if subs is not None:
+                subs.discard(ws)
+                if not subs:
+                    self.channel_subscriptions.pop(session_id, None)
+            # Stop the worker dispatch (idempotent — never raises).
+            try:
+                await stop_voice_native(request.app, session_id)
+                self.logger.info(
+                    "StreamHandler: cleaned up voice session %s on ws close",
+                    session_id,
+                )
+            except Exception:  # noqa: BLE001
+                self.logger.warning(
+                    "StreamHandler: error stopping voice session %s on ws close",
+                    session_id,
+                    exc_info=True,
+                )
+
+        # Remove ws from any remaining channel subscriptions (non-voice channels).
+        for channel, subs in list(self.channel_subscriptions.items()):
+            subs.discard(ws)
+            if not subs:
+                self.channel_subscriptions.pop(channel, None)
 
     def configure_routes(self, app: web.Application):
         """Configure routes for streaming endpoints."""

@@ -1,0 +1,47 @@
+{
+  "feat_id": "FEAT-240",
+  "title": "GraphIndex Odoo-aware extractor + SQLite persistence + graph reader",
+  "slug": "odoo-graphindex-code",
+  "phase": "proposal_drafted",
+  "started_at": "2026-06-16T00:00:00Z",
+  "updated_at": "2026-06-16T00:00:00Z",
+  "mode": "enrichment",
+  "type": "feature",
+  "base_branch": "dev",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 25,
+    "grep_calls": 18,
+    "git_calls": 6,
+    "depth_reached": 1,
+    "wall_seconds": 180
+  },
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "path": "sdd/proposals/odoo-graphindex-code.brainstorm.md",
+    "summary_oneline": "Odoo-aware code extractor, SQLite persistence backend, and graph reader for navigable Odoo repositories"
+  },
+  "phases": {
+    "plan": { "status": "complete", "approved_by_user": true },
+    "research": { "status": "complete", "files_read": 25, "grep_calls": 18, "git_calls": 6, "findings_count": 9 },
+    "synthesis": { "status": "complete", "overall_confidence": "high", "claims_count": 10, "unknowns_count": 2 },
+    "review_gate": { "status": "pending" },
+    "qa": { "status": "pending" },
+    "output": { "status": "complete", "proposal_path": "sdd/proposals/odoo-graphindex-code.proposal.md" }
+  },
+  "truncated": false,
+  "truncation_reason": null,
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "review_gate",
+    "next_action": "user validates synthesis and proposal"
+  }
+}
