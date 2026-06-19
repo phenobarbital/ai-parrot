@@ -63,7 +63,7 @@ office365 = ["msgraph-sdk>=1.8", "azure-identity>=1.18", "microsoft-kiota-authen
 scraping = ["selenium>=4.35", "undetected-chromedriver>=3.5", "webdriver-manager>=4.0"]
 finance = ["ta-lib>=0.4.32", "pandas-datareader>=0.10.0", "yfinance>=0.2.54", "alpaca-py>=0.43"]
 db = ["querysource>=4.1.11", "psycopg-binary>=3.2"]
-flowtask = ["flowtask>=5.10.2"]
+flowtask = ["flowtask>=5.12.1"]
 google = ["aiogoogle>=5.17", "google-api-python-client>=2.151"]
 arxiv = ["arxiv>=2.2"]
 wikipedia = ["wikipedia>=1.4", "mediawikiapi>=1.2"]

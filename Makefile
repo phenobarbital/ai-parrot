@@ -195,7 +195,7 @@ endif
 # too — livekit-agents needs psutil>=7.0 but flowtask hard-pins psutil==6.0.0.
 # Install either in a separate env.
 develop:
-	uv sync --all-packages --all-extras --no-extra gemma4 --no-extra liveavatar-voice
+	uv sync --all-packages --all-extras --no-extra gemma4
 	$(MAKE) build-inplace
 	@echo "Full development environment ready (all packages, all extras except gemma4, dev tools)."
 

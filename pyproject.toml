@@ -107,41 +107,20 @@ conflicts = [
         { package = "ai-parrot", extra = "gemma4" },
         { package = "ai-parrot-loaders", extra = "all" },
     ],
-    # Every flowtask release hard-pins psutil==6.0.0, while livekit-agents~=1.5
-    # (pulled by liveavatar-voice) requires psutil>=7.0. The two can never share
-    # an environment, so declare them as conflicting extras: this lets `uv lock`
-    # build a universal lock by resolving each in its own split. Like gemma4,
-    # liveavatar-voice is opt-in and excluded from the `--all-extras` dev/install
-    # syncs (see Makefile `--no-extra liveavatar-voice`); install it separately.
-    # flowtask is pulled (unconditionally) by four extras across two packages:
-    # the explicit `flowtask` extra and the `all` bundle of both ai-parrot and
-    # ai-parrot-tools. uv does NOT propagate a conflict from `flowtask` up to a
-    # bundle that includes it, so each flowtask-bearing extra must be paired
-    # against liveavatar-voice individually. The flowtask extras are mutually
-    # compatible (same psutil pin), so they are NOT paired against each other.
-    [
-        { package = "ai-parrot", extra = "flowtask" },
-        { package = "ai-parrot-integrations", extra = "liveavatar-voice" },
-    ],
-    [
-        { package = "ai-parrot", extra = "all" },
-        { package = "ai-parrot-integrations", extra = "liveavatar-voice" },
-    ],
-    [
-        { package = "ai-parrot-tools", extra = "flowtask" },
-        { package = "ai-parrot-integrations", extra = "liveavatar-voice" },
-    ],
-    [
-        { package = "ai-parrot-tools", extra = "all" },
-        { package = "ai-parrot-integrations", extra = "liveavatar-voice" },
-    ],
+    # flowtask/psutil vs liveavatar-voice — RESOLVED (flowtask 5.12.1).
+    # openlit vs liveavatar-voice otel — RESOLVED via override-dependencies:
+    # livekit-agents 1.6.1 pins otel~=1.39.0 (<1.40), but otel 1.39→1.42 is
+    # backwards-compatible (stable semver API). We override the otel pins to
+    # >=1.39.0 (no upper bound) so both openlit (needs 1.42+) and livekit can
+    # share otel 1.42. This avoids conflict splits that cause the resolver to
+    # OOM on the 15+ otel-instrumentation sub-packages.
 ]
 override-dependencies = [
     "moviepy==2.2.1",
     "av>=13.0.0,<14.0.0",
     "watchdog>=6.0.0",
     "selenium==4.36.0",
-    "ortools>=9.11.4210,<=9.14.6206",
+    "ortools==9.14.6206",
     "blinker==1.7.0",
     "folium==0.20.0",
     "emoji==1.7.0",
@@ -162,6 +141,47 @@ override-dependencies = [
     # whisperx can still resolve. Diarization features are unavailable
     # at runtime until upstream republishes `lightning`.
     "pyannote-audio ; sys_platform == 'never'",
+    # livekit-agents 1.6.1 pins otel~=1.39.0 (<1.40), but the otel API is
+    # stable across 1.39→1.42 (semver). Override to >=1.39.0 so livekit and
+    # openlit (needs 1.42+) share a single otel version without a conflict
+    # split (which causes the resolver to OOM on 15+ instrumentation pkgs).
+    "opentelemetry-api>=1.39.0",
+    "opentelemetry-sdk>=1.39.0",
+    "opentelemetry-exporter-otlp>=1.39.0",
+    "opentelemetry-exporter-otlp-proto-common>=1.39.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.39.0",
+    "opentelemetry-proto>=1.39.0",
+]
+constraint-dependencies = [
+    # Narrow the otel instrumentation search space. openlit pulls 15+ otel
+    # instrumentation sub-packages, each with 59 versions and an exact
+    # semantic-conventions pin. Without this, the resolver backtracks hundreds
+    # of times trying combinations. Constraining to >=0.60b0 eliminates
+    # 40+ candidates per package.
+    # In the liveavatar-voice conflict split, livekit-agents~=1.5 pins
+    # otel~=1.39, which maps to sem-conv 0.60b0 — so 0.60b0 is compatible
+    # with BOTH splits.
+    "opentelemetry-semantic-conventions>=0.60b0",
+    "opentelemetry-instrumentation>=0.60b0",
+    "opentelemetry-instrumentation-aiohttp-client>=0.60b0",
+    "opentelemetry-instrumentation-asgi>=0.60b0",
+    "opentelemetry-instrumentation-django>=0.60b0",
+    "opentelemetry-instrumentation-falcon>=0.60b0",
+    "opentelemetry-instrumentation-fastapi>=0.60b0",
+    "opentelemetry-instrumentation-flask>=0.60b0",
+    "opentelemetry-instrumentation-httpx>=0.60b0",
+    "opentelemetry-instrumentation-logging>=0.60b0",
+    "opentelemetry-instrumentation-pyramid>=0.60b0",
+    "opentelemetry-instrumentation-redis>=0.60b0",
+    "opentelemetry-instrumentation-requests>=0.60b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.60b0",
+    "opentelemetry-instrumentation-starlette>=0.60b0",
+    "opentelemetry-instrumentation-threading>=0.60b0",
+    "opentelemetry-instrumentation-tornado>=0.60b0",
+    "opentelemetry-instrumentation-urllib>=0.60b0",
+    "opentelemetry-instrumentation-urllib3>=0.60b0",
+    "opentelemetry-instrumentation-wsgi>=0.60b0",
 ]
 
 [tool.uv.sources]
@@ -175,7 +195,7 @@ ai-parrot-integrations = { workspace = true }
 ai-parrot-advisors = { workspace = true }
 ai-parrot-server = { workspace = true }
 # asyncdb = { path = "../asyncdb", editable = true }
-querysource = { path = "../../parallel/querysource", editable = true }
+# querysource = { path = "../../parallel/querysource", editable = true }
 
 # ---------------------------------------------------------------------------
 # Shared tool configs
