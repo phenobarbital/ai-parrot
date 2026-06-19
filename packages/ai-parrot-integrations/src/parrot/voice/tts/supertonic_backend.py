@@ -37,8 +37,9 @@ from .models import SynthesisResult
 # element without any further conversion.
 _DEFAULT_MIME_FORMAT = "audio/wav"
 
-# Supertonic produces 24 kHz mono 16-bit PCM (matches the upstream model card).
-_SAMPLE_RATE = 24000
+# Supertonic produces 44100 Hz mono 16-bit PCM at runtime (pipeline.sample_rate).
+# Note: the model card mentions 24 kHz but the actual ONNX pipeline outputs 44100 Hz.
+_SAMPLE_RATE = 44100
 _CHANNELS = 1
 _SAMPLE_WIDTH = 2  # bytes per sample (16-bit)
 
@@ -63,8 +64,8 @@ class SupertonicTTSBackend(AbstractTTSBackend):
         model_path: Filesystem path to the Supertonic ONNX weights. When
             ``None`` (default), the ``SUPERTONIC_MODEL_PATH`` environment
             variable is consulted at synthesis time.
-        sample_rate: Output PCM sample rate in Hz. Defaults to 24 kHz to
-            match the Supertonic model card.
+        sample_rate: Output PCM sample rate in Hz. Defaults to 44100 Hz
+            (the actual Supertonic ONNX pipeline output rate).
         **kwargs: Extra keyword arguments are accepted and ignored to allow
             forward-compatible construction.
 
