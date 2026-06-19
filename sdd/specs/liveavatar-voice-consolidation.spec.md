@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-249
 **Date**: 2026-06-19
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: (next minor)
 
 > **Supersedes / consolidates**: FEAT-231, FEAT-242, FEAT-243, FEAT-244,
@@ -65,6 +65,17 @@ specifies the small work left, and removes the rest.
   separate worker process). None of the five canonical modes below use it; it
   has no end-to-end run, only fake tests. → delete.
 - **No production traffic** touches any of the deletion targets.
+- **The server runs multi-process** (gunicorn, `(2×CPUs)+1` workers —
+  `autonomous/deploy/installer.py`). `UserSocketManager.broadcast_to_channel`
+  (`user.py:357`) is **in-process only** (iterates a local WS dict; its Redis
+  use is just user-presence storage, not message fan-out). Therefore a
+  `/ws/userinfo` WS connection and the `/agents/chat` request that produces its
+  structured output can live in **different worker processes** → cross-process
+  delivery **requires Redis pub/sub**. This is exactly what `output_transport.py`
+  (`RedisBroadcastForwarder` → Redis channel → per-process `run_output_subscriber`
+  → local `broadcast_to_channel`) provides. **The Redis structured-output
+  transport is KEPT** (it is generic, not Phase-C-specific) — only the Phase C
+  *worker* that happened to use it is deleted.
 
 ---
 
@@ -170,9 +181,9 @@ The whole "Option C" pipeline — the rejected intermediate mode.
   `packages/ai-parrot-server/src/parrot/manager/bot_resolver.py`'s
   `build_standalone_bot_resolver` (Phase-C worker launcher) — delete if not used
   elsewhere (verify `bot_resolver` has no other consumer first).
-- Manager wiring: `_register_*` calls that mount `/voice-native/start`, and the
-  `ENABLE_LIVEAVATAR_VOICE` subscriber wiring **iff** the Redis output transport
-  is removed (see §3.4).
+- Manager wiring: the `_register_*` calls that mount `/voice-native/start`.
+  (Keep the structured-output subscriber wiring — see §3.4 — just rename its
+  gate and drop the Phase-C coupling.)
 - Tests: `test_livekit_worker.py`, `test_livekit_agent.py`, Phase-C pipeline /
   adapter tests.
 
@@ -206,10 +217,16 @@ The whole "Option C" pipeline — the rejected intermediate mode.
   **Keep**; Mode B publishes structured outputs through it directly to
   `UserSocketManager.broadcast_to_channel` (in-process, **no Redis needed**).
 - **`output_transport.py`** (`RedisBroadcastForwarder`, `run_output_subscriber`)
-  and `handlers/liveavatar_output.py` — these exist for the **cross-process**
-  worker→server hop (Phase C). With Phase C deleted, Mode B runs in-process and
-  needs no Redis bridge. **Delete** unless a cross-process need remains; if any
-  doubt, keep `OutputBridge` + the in-process sink only.
+  and `handlers/liveavatar_output.py` — **KEEP** (Q-redis-transport resolved).
+  These are the **generic cross-process structured-output transport**, required
+  because the server is multi-process and `UserSocketManager.broadcast_to_channel`
+  is in-process only. Modes A/B/C all generate structured outputs in a request
+  worker that may differ from the worker holding the `/ws/userinfo` connection,
+  so the Redis hop is mandatory. **Decouple from Phase C**: rename the gate from
+  `ENABLE_LIVEAVATAR_VOICE` to a transport-neutral flag (e.g.
+  `ENABLE_STRUCTURED_OUTPUT_TRANSPORT`), drop any `AvatarJobMetadata`/worker
+  coupling, and keep `_FanOutSink` fanning to `UserSocketManager` (drop the
+  `StreamHandler` arm if FEAT-244 `StreamHandler` voice bits are removed).
 - **`AvatarSessionOrchestrator`** (`orchestrator.py`) + `make_supertonic_pcm_fn`
   — dead one-shot LITE predecessor, never instantiated. **Delete** (+ export +
   `test_orchestrator.py`).
@@ -240,10 +257,26 @@ backend split the stream instead of doing it itself:
   `session_id`: run each `ask_stream` chunk through `SpeakableFlattener`;
   emit speakable sentences back to the client (which forwards them as
   `avatar.speak_text`), and publish structured payloads
-  (`StructuredOutputMessage{type, session_id, payload, turn_id}`) to
-  `/ws/userinfo` via `OutputBridge` → `UserSocketManager.broadcast_to_channel`.
+  (`StructuredOutputMessage{type, session_id, payload, turn_id}`) through
+  `OutputBridge` → `RedisBroadcastForwarder` → (per-process)
+  `run_output_subscriber` → local `UserSocketManager.broadcast_to_channel` on
+  the `session_id` channel. **Redis is on the path by design** (multi-process
+  server, §1) — the chat worker and the `/ws/userinfo` worker may differ.
 - Keep it **frontend-overridable**: the frontend may still drive `speak_text`
-  itself (today's behavior). No Redis; in-process only.
+  itself (today's behavior).
+
+### M-B3 — Pluggable STT for Mode B (Q-internal-stt-full resolved)
+The transcription source is **selectable per session**:
+- **LiveAvatar STT** (default): the frontend consumes `user.transcription`
+  events from the LiveKit data channel (LiveAvatar's managed room mic).
+- **ai-parrot internal STT**: the frontend captures the mic locally and posts
+  audio to the existing internal transcriber (`VoiceTranscriber`) — local
+  `FasterWhisperBackend` **or** cloud `OpenAIWhisperBackend` — then sends the
+  resulting text to `/agents/chat`. Expose this via the existing
+  `/agents/voice` path or a lightweight transcribe-only endpoint.
+> Note: **Silero is VAD, not STT** — it lives in the (deleted) Phase C pipeline.
+> The internal STT backends are the Whisper family (`FasterWhisper` local /
+> `OpenAIWhisper` cloud / `Moonshine` local-ONNX). "Internal + cloud" = those.
 
 ### M-B2 — Document & test the `/ws/userinfo` structured-output contract
 Make the `session_id`-keyed structured-output channel a documented, tested
@@ -279,8 +312,15 @@ mode needs them — **none of A/B/C/D do**.
       end-to-end against the sandbox (one real integration test green).
 - [ ] Mode B: FULL-mode session works restricted (no `context_id`/
       `llm_configuration_id`); structured outputs reach `/ws/userinfo` keyed by
-      `session_id`; speakable text is flattened per sentence. Backend helper is
-      opt-in and frontend-overridable.
+      `session_id` **even when the chat request and the WS connection are on
+      different gunicorn workers** (verified via the Redis transport); speakable
+      text is flattened per sentence. Backend helper is opt-in and
+      frontend-overridable.
+- [ ] Mode B STT is pluggable: a session can use LiveAvatar STT (default) or
+      ai-parrot internal STT (FasterWhisper local / OpenAI Whisper cloud).
+- [ ] The Redis structured-output transport survives the Phase C deletion,
+      decoupled and re-gated (no `AvatarJobMetadata`/worker references); a
+      two-worker test confirms cross-process delivery.
 - [ ] Mode C: an endpoint mints ≥2 valid subscribe-only viewer tokens for one
       live session's room; multiple browsers can subscribe to the same stream.
 - [ ] Mode D: `/ws/voice` is mounted in `ai-parrot-server`; a Gemini-Live turn
@@ -324,7 +364,10 @@ packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/
   optin.py (is_avatar_enabled, is_fullmode_enabled)
   models.py (LiveAvatarConfig, AvatarSessionHandle, FullModeConfig, FullModeSessionHandle)
   tenant_config.py (resolve_fullmode_config — env-only)
-  output_bridge.py (OutputBridge — keep for in-process structured output)
+  output_bridge.py (OutputBridge — structured output publish)
+  output_transport.py (RedisBroadcastForwarder, run_output_subscriber — KEEP: cross-process transport)
+packages/ai-parrot-server/src/parrot/handlers/liveavatar_output.py
+  configure_..._subscriber / _FanOutSink   # KEEP (rename gate; drop StreamHandler arm)
 packages/ai-parrot-integrations/src/parrot/voice/handler.py
   VoiceChatHandler  (mount this — M-D1)
 packages/ai-parrot/src/parrot/bots/voice.py        VoiceBot (Gemini Live brain)
@@ -339,8 +382,6 @@ packages/ai-parrot-integrations/src/parrot/voice/tts/*          internal TTS (Su
 .../liveavatar/livekit_agent/**           (Phase C worker — FEAT-243/246)
 .../liveavatar/orchestrator.py            (dead LITE predecessor)
 .../liveavatar/fullmode_observer.py       (dead stub)
-.../liveavatar/output_transport.py        (Phase-C Redis bridge — scope-check §3.4)
-packages/ai-parrot-server/.../handlers/liveavatar_output.py   (Phase-C subscriber — scope-check)
 packages/ai-parrot-server/.../handlers/avatar.py  voice-native parts only
 packages/ai-parrot-server/.../handlers/stream.py  voice_start/voice_stop only
 packages/ai-parrot-integrations/.../voice/server.py      (Gemini POC dup)
@@ -359,18 +400,24 @@ models.py: TenantAvatarConfig
 
 ---
 
-## 7. Open Questions
+## 7. Resolved Questions
 
-- [ ] **Q-redis-transport** — Does anything besides Phase C need the
-  cross-process Redis output transport? If no, delete `output_transport.py` +
-  `liveavatar_output.py` and have Mode B publish in-process. — *Owner: Jesús*
-- [ ] **Q-mode-c-scope** — Is Mode C (multi-viewer) needed now, or deferred? It
-  only needs the viewer-token endpoint (M-C1). — *Owner: Jesús*
-- [ ] **Q-mode-d-mount** — Should `/ws/voice` (Gemini Live + avatar) live in the
-  main `ai-parrot-server` process, or stay a separate deployable? — *Owner: Jesús*
-- [ ] **Q-internal-stt-full** — In Mode B, do we want to offer our internal STT
-  as a pluggable alternative to LiveAvatar's STT, or always use LiveAvatar's? —
-  *Owner: Jesús*
+- [x] **Q-redis-transport** — **KEEP the Redis transport.** The server is
+  multi-process (gunicorn) and `UserSocketManager.broadcast_to_channel` is
+  in-process only, so structured outputs must cross processes via Redis pub/sub.
+  `output_transport.py` + `liveavatar_output.py` are generic (not Phase-C-bound)
+  and are retained; only the Phase C worker that used them is deleted. Decouple
+  + rename the gate (see §3.4). — *Resolved: Jesús, 2026-06-19*
+- [x] **Q-mode-c-scope** — **Mode C (multi-viewer) is in scope now.** Implement
+  M-C1 (mint N subscribe-only viewer tokens for a live session's room). —
+  *Resolved: Jesús, 2026-06-19*
+- [x] **Q-mode-d-mount** — **`/ws/voice` (Gemini Live + avatar) lives in the
+  main `ai-parrot-server` process.** Implement M-D1 (mount `VoiceChatHandler`
+  in `BotManager.setup()`). — *Resolved: Jesús, 2026-06-19*
+- [x] **Q-internal-stt-full** — **Offer our internal STT in addition to
+  LiveAvatar's**, selectable per session: internal `FasterWhisper` (local) /
+  `OpenAIWhisper` (cloud) via `VoiceTranscriber`, OR LiveAvatar STT (default).
+  See M-B3. (Silero is VAD, not STT.) — *Resolved: Jesús, 2026-06-19*
 - [x] **Q-openai-shim** — FULL mode without an OpenAI-like API? **Yes** —
   FEAT-248 restricted mode already does this; FEAT-247 rejected.
 - [x] **Q-gemini-resample** — Gemini→LITE resampling? **None needed** (24 kHz
