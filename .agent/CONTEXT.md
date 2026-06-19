@@ -28,11 +28,28 @@ Location: `parrot/tools/`
 - Every tool MUST have a docstring — it becomes the LLM's tool description
 
 ### AgentCrew
-Location: `parrot/bots/orchestration/crew.py`
-Three execution modes:
+Location: `parrot/bots/flows/crew/crew.py`
+(moved from `parrot/bots/orchestration/crew.py` in FEAT-143)
+Four execution modes:
 - `run_sequential()` — agents in chain, output feeds next
 - `run_parallel()` — agents run concurrently, results merged
 - `run_flow()` — DAG-based, dependencies declared via `task_flow()`
+- `run_loop()` — iterate until a stop condition is met
+Build from a `CrewDefinition` via `AgentCrew.from_definition()`.
+
+### AgentsFlow
+Location: `parrot/bots/flows/flow/flow.py`
+Event-driven DAG executor (FEAT-163 rewrite; the legacy
+`parrot/bots/flow/` package was removed in FEAT-196). Operates on a graph
+of `Node` instances from `parrot/bots/flows/core/`.
+- Build programmatically with `add_node()` + `add_edge()` (explicit-edge
+  mode: conditional routing via `predicate`, OR-join, skip-propagation), or
+  declaratively with `AgentsFlow.from_definition(FlowDefinition, ...)`.
+- Run with `run_flow(ctx)` where `ctx` is a `FlowContext` or a prompt string.
+- Specialized nodes in `flows/flow/nodes.py`: `DecisionFlowNode` (CIO/BALLOT/
+  CONSENSUS), `InteractiveDecisionNode`, plus `SynthesisNode`.
+- Attach `on_node_event` listeners for lifecycle telemetry.
+Inherits `PersistenceMixin` (not `SynthesisMixin`).
 
 ### Loaders
 Location: `parrot/loaders/`
@@ -128,7 +145,9 @@ class ToolInput(BaseModel):
 parrot/
 ├── clients/          # LLM provider wrappers (AbstractClient subclasses)
 ├── bots/             # Bot and Agent implementations
-│   └── orchestration/  # AgentCrew, DAG execution
+│   └── flows/          # Orchestration: AgentCrew (crew/), AgentsFlow (flow/),
+│                       #   shared DAG primitives (core/). FEAT-143/163/196.
+│                       #   Legacy bots/orchestration/ and bots/flow/ removed.
 ├── tools/            # Tool definitions and toolkits (AbstractTool, AbstractToolkit)
 ├── skills/           # On-demand skills: file/composite discovery + two
 │                     #   AbstractToolkits — SkillFileToolkit (file-based) and
@@ -185,7 +204,7 @@ Branch: `finance-agents`
 Main: `main`
 
 Active areas (check these before modifying):
-- `parrot/bots/orchestration/` — AgentCrew DAG execution
+- `parrot/bots/flows/` — AgentCrew + AgentsFlow DAG execution
 - `parrot/memory/` — Redis-based conversation memory
 - `parrot/integrations/mcp/` — MCP server implementation
 - `parrot/tools/` — Tool definitions and toolkits
