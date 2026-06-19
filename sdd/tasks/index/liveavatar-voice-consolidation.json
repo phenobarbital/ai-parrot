@@ -32,7 +32,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Edits __init__.py; sequential with sibling deletions.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1600-delete-phase-c-worker-stack.md"
+      "completed_at": "2026-06-19T14:07:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1600-delete-phase-c-worker-stack.md"
     },
     {
       "id": "TASK-1601",
