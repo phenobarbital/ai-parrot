@@ -10,7 +10,7 @@ Open questions deferred to owners:
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -120,4 +120,116 @@ class AvatarSessionHandle(BaseModel):
     )
     agent_name: str = Field(
         ..., description="Logical agent name (used as LiveKit room identity)."
+    )
+
+
+# ---------------------------------------------------------------------------
+# FEAT-248: FULL Mode Models
+# ---------------------------------------------------------------------------
+
+
+class FullModeConfig(LiveAvatarConfig):
+    """FULL mode configuration (extends LITE config with voice/language fields).
+
+    LiveAvatar FULL mode lets the avatar manage its own STT, TTS, and lip-sync.
+    The ai-parrot backend only mints the session (restricted mode — no
+    ``llm_configuration_id``, no ``context_id``) and calls ``avatar.speak_text``.
+
+    Attributes:
+        voice_id: Optional voice ID for the avatar persona.  When ``None`` the
+            avatar uses its default voice.
+        language: BCP-47 language tag for the avatar (default ``"en"``).
+        interactivity_type: Session interactivity mode — either
+            ``"CONVERSATIONAL"`` (default) or ``"PUSH_TO_TALK"``.
+    """
+
+    voice_id: Optional[str] = Field(
+        default=None,
+        description="Voice ID for the avatar persona (uses avatar default when None).",
+    )
+    language: str = Field(
+        default="en",
+        description="BCP-47 language tag for the avatar persona.",
+    )
+    interactivity_type: Literal["CONVERSATIONAL", "PUSH_TO_TALK"] = Field(
+        default="CONVERSATIONAL",
+        description="Session interactivity mode: CONVERSATIONAL or PUSH_TO_TALK.",
+    )
+
+
+class FullModeSessionHandle(AvatarSessionHandle):
+    """Runtime handle for a LiveAvatar FULL mode session.
+
+    Extends :class:`AvatarSessionHandle` with the LiveKit room credentials
+    returned by the FULL mode ``/start`` response.
+
+    NOTE: ``ws_url`` is inherited from :class:`AvatarSessionHandle` but is
+    unused in FULL mode (LITE-only).  It is always empty in FULL mode sessions —
+    this is harmless but callers should not rely on it.
+
+    Attributes:
+        livekit_url: LiveKit WebSocket URL for the browser to connect to the
+            avatar-managed room.  Safe to return to the client.
+        livekit_client_token: Subscribe-only browser JWT for the LiveKit room.
+            Safe to return to the client.
+    """
+
+    livekit_url: str = Field(
+        default="",
+        description="LiveKit WebSocket URL for the browser (safe to expose to clients).",
+    )
+    livekit_client_token: str = Field(
+        default="",
+        description="Subscribe-only browser JWT for the LiveKit room (safe to expose).",
+    )
+
+
+class TenantAvatarConfig(BaseModel):
+    """Per-tenant avatar configuration override (DB layer — FEAT-248).
+
+    Carries per-tenant overrides for FULL mode avatar settings.  When a field is
+    ``None`` the global env-var default is used instead.
+
+    SECURITY NOTE: ``api_key`` is a server-side secret.  It MUST NEVER be
+    serialised into any client-facing HTTP response.
+
+    Attributes:
+        tenant_id: Tenant identifier (required).
+        avatar_id: Per-tenant avatar override.
+        voice_id: Per-tenant voice override.
+        language: Per-tenant language override.
+        interactivity_type: Per-tenant interactivity type override.
+        api_key: Per-tenant API key override.  Server-side only — NEVER expose.
+        fullmode_enabled: Whether FULL mode is enabled for this tenant.
+    """
+
+    tenant_id: str = Field(
+        ..., description="Tenant identifier."
+    )
+    avatar_id: Optional[str] = Field(
+        default=None,
+        description="Per-tenant avatar ID override.",
+    )
+    voice_id: Optional[str] = Field(
+        default=None,
+        description="Per-tenant voice ID override.",
+    )
+    language: Optional[str] = Field(
+        default=None,
+        description="Per-tenant BCP-47 language override.",
+    )
+    interactivity_type: Optional[Literal["CONVERSATIONAL", "PUSH_TO_TALK"]] = Field(
+        default=None,
+        description="Per-tenant interactivity type override.",
+    )
+    api_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "Per-tenant LiveAvatar API key. "
+            "Server-side only — NEVER expose to clients."
+        ),
+    )
+    fullmode_enabled: bool = Field(
+        default=False,
+        description="Whether FULL mode is enabled for this tenant.",
     )
