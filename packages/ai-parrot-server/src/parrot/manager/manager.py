@@ -1483,6 +1483,38 @@ class BotManager:
         )
         return True
 
+    def _register_transcribe_route(self, router) -> bool:
+        """Register the transcribe-only STT endpoint (FEAT-249 Mode B — TASK-1608).
+
+        Mounts ``AgentTranscribeOnly`` at
+        ``POST /api/v1/agents/transcribe/{agent_id}`` under the same
+        lazy-import guard as ``_register_voice_routes``.  When the voice extra is
+        absent, a warning is logged and the route is skipped — server boot is
+        unaffected.
+
+        Args:
+            router: The aiohttp ``UrlDispatcher`` to register the route on.
+
+        Returns:
+            ``True`` if the route was registered, ``False`` if skipped.
+        """
+        try:
+            from ..handlers.agent_voice import AgentTranscribeOnly
+        except ImportError as exc:
+            self.logger.warning(
+                "Transcribe endpoint disabled (%s); install "
+                "'ai-parrot-integrations[voice]' to enable "
+                "POST /api/v1/agents/transcribe/{agent_id}.",
+                exc,
+            )
+            return False
+        router.add_view(
+            '/api/v1/agents/transcribe/{agent_id}',
+            AgentTranscribeOnly,
+        )
+        self.logger.info("Transcribe-only route registered at /api/v1/agents/transcribe/{agent_id} (Mode B).")
+        return True
+
     def _register_voice_chat_routes(self, app: web.Application) -> bool:
         """Register the Gemini Live + LITE avatar WebSocket route (FEAT-245 Mode D).
 
@@ -1775,6 +1807,10 @@ class BotManager:
         # reaches the voice stack (ai-parrot-integrations[voice]) via lazy
         # imports, so a missing stack must degrade gracefully, never crash boot.
         self._register_voice_routes(router)
+        # Mode B: transcribe-only STT endpoint (FEAT-249 TASK-1608). Allows the
+        # FULL-mode frontend to obtain a transcript from ai-parrot's internal STT
+        # without invoking the agent. Registered under the same optional guard.
+        self._register_transcribe_route(router)
         # Mode D: Gemini Live + LITE avatar WebSocket (FEAT-245/FEAT-249). Mounted
         # under the optional-integration guard; missing [voice] logs a warning.
         self._register_voice_chat_routes(self.app)
