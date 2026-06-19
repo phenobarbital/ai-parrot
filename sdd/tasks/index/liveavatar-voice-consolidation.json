@@ -133,7 +133,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "File-disjoint from TASK-1606 (manager voice-chat mount vs avatar viewers endpoint); could run in a separate worktree, but per-spec strategy runs sequentially.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1605-mount-gemini-voice-handler.md"
+      "completed_at": "2026-06-19T14:30:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1605-mount-gemini-voice-handler.md"
     },
     {
       "id": "TASK-1606",
