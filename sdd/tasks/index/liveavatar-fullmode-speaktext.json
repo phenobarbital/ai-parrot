@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-19T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-19T00:02:43+00:00",
   "tasks": [
     {
       "id": "TASK-1591",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-248",
       "feature": "liveavatar-fullmode-speaktext",
       "spec": "sdd/specs/liveavatar-fullmode-speaktext.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundational task — all other tasks depend on these models",
       "assigned_to": null,
       "started_at": "2026-06-18T22:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1591-fullmode-data-models.md"
+      "completed_at": "2026-06-19T00:02:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1591-fullmode-data-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1592",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-248",
       "feature": "liveavatar-fullmode-speaktext",
       "spec": "sdd/specs/liveavatar-fullmode-speaktext.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Imports FullModeConfig and FullModeSessionHandle from TASK-1591",
       "assigned_to": null,
       "started_at": "2026-06-18T22:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1592-fullmode-client-extension.md"
+      "completed_at": "2026-06-19T00:02:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1592-fullmode-client-extension.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1593",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-248",
       "feature": "liveavatar-fullmode-speaktext",
       "spec": "sdd/specs/liveavatar-fullmode-speaktext.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Only imports FullModeConfig from TASK-1591; independent of TASK-1592",
       "assigned_to": null,
       "started_at": "2026-06-18T22:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1593-tenant-config-resolver.md"
+      "completed_at": "2026-06-19T00:02:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1593-tenant-config-resolver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1594",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-248",
       "feature": "liveavatar-fullmode-speaktext",
       "spec": "sdd/specs/liveavatar-fullmode-speaktext.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +86,9 @@
       "parallelism_notes": "Requires both client extension and config resolver",
       "assigned_to": null,
       "started_at": "2026-06-18T22:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1594-fullmode-rest-handler.md"
+      "completed_at": "2026-06-19T00:02:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1594-fullmode-rest-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1595",
@@ -93,7 +97,7 @@
       "feature_id": "FEAT-248",
       "feature": "liveavatar-fullmode-speaktext",
       "spec": "sdd/specs/liveavatar-fullmode-speaktext.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -103,8 +107,9 @@
       "parallelism_notes": "Only needs client listing methods from TASK-1592; independent of TASK-1593/1594",
       "assigned_to": null,
       "started_at": "2026-06-18T22:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1595-avatar-voice-listing-handler.md"
+      "completed_at": "2026-06-19T00:02:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1595-avatar-voice-listing-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1596",
@@ -113,7 +118,7 @@
       "feature_id": "FEAT-248",
       "feature": "liveavatar-fullmode-speaktext",
       "spec": "sdd/specs/liveavatar-fullmode-speaktext.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "L",
       "depends_on": [
@@ -124,8 +129,9 @@
       "parallelism_notes": "Gated by Q-room-token; only needs models + handle from TASK-1591/1592; independent of handler tasks",
       "assigned_to": null,
       "started_at": "2026-06-18T22:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1596-fullmode-room-observer.md"
+      "completed_at": "2026-06-19T00:02:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1596-fullmode-room-observer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1597",
@@ -134,7 +140,7 @@
       "feature_id": "FEAT-248",
       "feature": "liveavatar-fullmode-speaktext",
       "spec": "sdd/specs/liveavatar-fullmode-speaktext.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -149,8 +155,9 @@
       "parallelism_notes": "Integration task — wires all prior components together",
       "assigned_to": null,
       "started_at": "2026-06-18T22:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1597-package-wiring-optin.md"
+      "completed_at": "2026-06-19T00:02:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1597-package-wiring-optin.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1598",
@@ -159,7 +166,7 @@
       "feature_id": "FEAT-248",
       "feature": "liveavatar-fullmode-speaktext",
       "spec": "sdd/specs/liveavatar-fullmode-speaktext.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -175,8 +182,9 @@
       "parallelism_notes": "Final validation task — depends on all prior tasks",
       "assigned_to": null,
       "started_at": "2026-06-18T22:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1598-fullmode-tests.md"
+      "completed_at": "2026-06-19T00:02:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1598-fullmode-tests.md",
+      "verification": "verified"
     }
   ]
 }
