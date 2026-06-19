@@ -92,7 +92,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Depends on StreamHandler voice bits removed (1601) and SOM relocated (1599).",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1603-decouple-rename-redis-transport.md"
+      "completed_at": "2026-06-19T14:26:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1603-decouple-rename-redis-transport.md"
     },
     {
       "id": "TASK-1604",
