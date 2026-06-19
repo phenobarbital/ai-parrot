@@ -52,7 +52,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Edits avatar.py/stream.py/room_manager.py/manager.py; prereq for transport decouple.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1601-delete-phase-c-server-endpoints.md"
+      "completed_at": "2026-06-19T14:15:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1601-delete-phase-c-server-endpoints.md"
     },
     {
       "id": "TASK-1602",
