@@ -1860,6 +1860,10 @@ class AgentTalk(BaseView):
                     )
                 else:
                     start_time = time.perf_counter()
+                    # NOTE (FEAT-249 Mode B): avatar_bifurcate is intentionally
+                    # a no-op on this non-streaming path.  FULL mode always
+                    # streams, so structured-output publishing via Redis only
+                    # happens inside _handle_stream_response above.
                     response: AIMessage = await bot.ask(
                         question=query,
                         session_id=session_id,

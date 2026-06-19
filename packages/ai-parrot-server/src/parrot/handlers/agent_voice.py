@@ -80,8 +80,8 @@ class AgentVoiceTalk(AgentTalk):
         self._stt_backend: Optional[str] = None
         # ── Avatar mode flag (FEAT-242 Phase A — TASK-007) ─────────────────
         # Set to True when the request body carries ``"avatar": true``.
-        # When True the turn is driven through the AvatarSessionOrchestrator;
-        # the orchestrator is gated by the per-tenant opt-in hook from TASK-008.
+        # When True the turn triggers avatar speech via the active LITE/FULL
+        # session speaker; gated by the per-tenant opt-in hook from TASK-008.
         # Absent or False → unchanged text/voice behaviour (no avatar session).
         self._avatar_mode: bool = False
         # Tenant ID for opt-in gating; extracted from the request body.

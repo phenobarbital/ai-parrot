@@ -337,7 +337,12 @@ async def _mint_viewer_tokens(request: web.Request) -> web.Response:
 
     # Room name is the session_id (mirrors _start_avatar_session)
     room = session_id
-    room_manager = LiveKitRoomManager()
+    try:
+        room_manager = LiveKitRoomManager()
+    except KeyError as exc:
+        raise web.HTTPServiceUnavailable(
+            reason="LIVEKIT_* env vars are not configured"
+        ) from exc
 
     viewers: List[Dict[str, str]] = []
     for i in range(count):
