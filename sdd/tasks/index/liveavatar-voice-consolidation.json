@@ -234,7 +234,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -244,8 +244,8 @@
       "parallelism_notes": "Independent verification task (new test file); can run any time after the clean tree.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1610-mode-a-e2e-validation.md"
+      "completed_at": "2026-06-19T14:49:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1610-mode-a-e2e-validation.md"
     }
   ]
 }
