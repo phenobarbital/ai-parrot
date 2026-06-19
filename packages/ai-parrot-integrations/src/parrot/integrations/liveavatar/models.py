@@ -10,7 +10,7 @@ Open questions deferred to owners:
 """
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -181,6 +181,43 @@ class FullModeSessionHandle(AvatarSessionHandle):
     livekit_client_token: str = Field(
         default="",
         description="Subscribe-only browser JWT for the LiveKit room (safe to expose).",
+    )
+
+
+class StructuredOutputMessage(BaseModel):
+    """Output-bridge contract for structured ai-parrot outputs (FEAT-249, relocated).
+
+    Structured outputs (charts, data, canvas updates, tool calls) produced
+    during a voice or chat turn are published to the AgentChat UI WebSocket
+    channel keyed by :attr:`session_id` — the same conversation the avatar is
+    speaking.
+
+    Originally lived in ``livekit_agent/models.py``; relocated here (§3.4) so
+    Mode A/B/C structured-output delivery survives the Phase C deletion.
+
+    Attributes:
+        type: Output kind, e.g. ``"chart"`` | ``"data"`` | ``"canvas"`` |
+            ``"tool_call"``.
+        session_id: Conversation id used as the WebSocket channel key.
+        payload: Arbitrary structured payload the AgentChat UI renders.
+        turn_id: Optional identifier of the turn that produced the output.
+    """
+
+    type: str = Field(
+        ...,
+        description='Output kind, e.g. "chart" | "data" | "canvas" | "tool_call".',
+    )
+    session_id: str = Field(
+        ...,
+        description="Conversation id used as the WebSocket channel key.",
+    )
+    payload: Dict[str, Any] = Field(
+        ...,
+        description="Structured payload rendered by the AgentChat UI.",
+    )
+    turn_id: Optional[str] = Field(
+        default=None,
+        description="Optional id of the turn that produced this output.",
     )
 
 

@@ -7,16 +7,16 @@ These models are pure Pydantic v2 and intentionally free of any
 - :class:`AvatarJobMetadata` is parsed from ``ctx.job.metadata`` (a JSON
   string) and injects ``tenant_id`` / ``agent_name`` / ``session_id`` into the
   worker (spec section 2, Module 1).
-- :class:`StructuredOutputMessage` is the output-bridge contract (Open
-  Question P4): structured ai-parrot outputs are published to the AgentChat UI
-  WebSocket channel keyed by ``session_id`` (spec section 2, Module 3).
+
+Note: ``StructuredOutputMessage`` has been relocated to
+``parrot.integrations.liveavatar.models`` (FEAT-249 §3.4).
 """
 
-from typing import Any, Dict, Optional
+from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-__all__ = ["AvatarJobMetadata", "StructuredOutputMessage"]
+__all__ = ["AvatarJobMetadata"]
 
 
 class AvatarJobMetadata(BaseModel):
@@ -37,36 +37,3 @@ class AvatarJobMetadata(BaseModel):
     session_id: str
     agent_name: str
     tenant_id: Optional[str] = None
-
-
-class StructuredOutputMessage(BaseModel):
-    """Output-bridge contract (P4) for structured ai-parrot outputs.
-
-    Structured outputs (charts, data, canvas updates, tool calls) produced
-    during a voice turn are published to the AgentChat UI WebSocket channel
-    keyed by :attr:`session_id` — the same conversation the avatar is speaking.
-
-    Attributes:
-        type: Output kind, e.g. ``"chart"`` | ``"data"`` | ``"canvas"`` |
-            ``"tool_call"``.
-        session_id: Conversation id used as the WebSocket channel key.
-        payload: Arbitrary structured payload the AgentChat UI renders.
-        turn_id: Optional identifier of the voice turn that produced the output.
-    """
-
-    type: str = Field(
-        ...,
-        description='Output kind, e.g. "chart" | "data" | "canvas" | "tool_call".',
-    )
-    session_id: str = Field(
-        ...,
-        description="Conversation id used as the WebSocket channel key.",
-    )
-    payload: Dict[str, Any] = Field(
-        ...,
-        description="Structured payload rendered by the AgentChat UI.",
-    )
-    turn_id: Optional[str] = Field(
-        default=None,
-        description="Optional id of the voice turn that produced this output.",
-    )

@@ -15,6 +15,7 @@ from .models import (
     FullModeSessionHandle,
     LiveAvatarConfig,
     LiveKitRoomTokens,
+    StructuredOutputMessage,
     TenantAvatarConfig,
 )
 from .orchestrator import AvatarSessionOrchestrator
@@ -40,6 +41,7 @@ __all__ = [
     "LiveKitRoomManager",
     "LiveKitRoomTokens",
     "SpeakableFlattener",
+    "StructuredOutputMessage",
     "TenantAvatarConfig",
     "VoiceAvatarSession",
     "resolve_fullmode_config",

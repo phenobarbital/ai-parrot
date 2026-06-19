@@ -8,10 +8,8 @@ import json
 
 import pytest
 
-from parrot.integrations.liveavatar.livekit_agent.models import (
-    AvatarJobMetadata,
-    StructuredOutputMessage,
-)
+from parrot.integrations.liveavatar.livekit_agent.models import AvatarJobMetadata
+from parrot.integrations.liveavatar.models import StructuredOutputMessage
 
 
 def test_job_metadata_parsing():
