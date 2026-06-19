@@ -214,7 +214,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -224,8 +224,8 @@
       "parallelism_notes": "Docs + tests for the channel produced by 1607.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1609-document-test-ws-userinfo-contract.md"
+      "completed_at": "2026-06-19T14:48:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1609-document-test-ws-userinfo-contract.md"
     },
     {
       "id": "TASK-1610",
