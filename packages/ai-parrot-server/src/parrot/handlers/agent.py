@@ -1667,6 +1667,11 @@ class AgentTalk(BaseView):
         client_message_id = data.pop('message_id', None)
         followup_turn_id = data.pop('turn_id', None)
         followup_data = data.pop('data', None)
+        # FEAT-249 Mode B: opt-in backend bifurcation.  When True and a FULL
+        # mode session is active, structured outputs are published via the Redis
+        # transport to the /ws/userinfo channel keyed by session_id.  Default
+        # False — frontend-driven path is unchanged when this flag is absent.
+        avatar_bifurcate: bool = bool(data.pop('avatar_bifurcate', False))
 
         # FEAT-204: HITL resume branch — detect hitl_response tag in the body.
         # Shape: {"hitl_response": {"turn_id": "<interaction_id>", "value": ...,
@@ -1835,6 +1840,7 @@ class AgentTalk(BaseView):
                         llm=llm,
                         agent_name=agent.name,
                         client_message_id=client_message_id,
+                        avatar_bifurcate=avatar_bifurcate,
                         **data,
                     )
                 if followup_turn_id and followup_data is not None:
@@ -2497,6 +2503,103 @@ class AgentTalk(BaseView):
             ) if not t.cancelled() and t.exception() else None
         )
 
+    async def _maybe_publish_bifurcated_output(
+        self,
+        ai_message: Any,
+        session_id: str,
+        turn_id: Optional[str],
+    ) -> None:
+        """Publish structured output via the Redis transport for Mode B bifurcation.
+
+        Best-effort — any import or publish error is logged and swallowed so it
+        never breaks the text reply path.
+
+        Args:
+            ai_message: The final ``AIMessage`` from the turn.
+            session_id: The conversation ID (Redis channel key).
+            turn_id: Optional turn identifier for deduplication.
+        """
+        try:
+            # Only publish if a FULL mode session is live for this session_id
+            from parrot.handlers.avatar_fullmode import FULLMODE_SESSIONS_KEY
+            fullmode_store = self.request.app.get(FULLMODE_SESSIONS_KEY) or {}
+            if session_id not in fullmode_store:
+                return
+
+            # Only publish when structured content is present
+            has_structured = getattr(ai_message, 'is_structured', False)
+            has_data = getattr(ai_message, 'data', None) is not None
+            has_code = getattr(ai_message, 'code', None) is not None
+            has_tool_calls = bool(getattr(ai_message, 'tool_calls', []))
+
+            if not (has_structured or has_data or has_code or has_tool_calls):
+                return
+
+            from parrot.integrations.liveavatar.models import StructuredOutputMessage
+            from parrot.integrations.liveavatar.output_bridge import OutputBridge
+            from parrot.integrations.liveavatar.output_transport import (
+                DEFAULT_OUTPUT_CHANNEL,
+                RedisBroadcastForwarder,
+            )
+            from parrot.conf import REDIS_URL
+
+            # Build payload from available structured fields
+            payload: Dict[str, Any] = {}
+            if has_data:
+                payload['data'] = getattr(ai_message, 'data')
+            if has_code:
+                payload['code'] = getattr(ai_message, 'code')
+            if has_tool_calls:
+                payload['tool_calls'] = [
+                    {
+                        'name': getattr(t, 'name', 'unknown'),
+                        'status': getattr(t, 'status', 'completed'),
+                        'output': getattr(t, 'output', None),
+                        'arguments': getattr(t, 'arguments', None),
+                    }
+                    for t in getattr(ai_message, 'tool_calls', [])
+                ]
+            if has_structured:
+                so = getattr(ai_message, 'structured_output', None)
+                if so is not None:
+                    try:
+                        payload['structured_output'] = (
+                            so.model_dump() if hasattr(so, 'model_dump') else dict(so)
+                        )
+                    except Exception:  # noqa: BLE001
+                        payload['structured_output'] = str(so)
+
+            output_type = getattr(ai_message, 'output_mode', 'data')
+            if hasattr(output_type, 'value'):
+                output_type = output_type.value
+
+            msg = StructuredOutputMessage(
+                type=str(output_type),
+                session_id=session_id,
+                payload=payload,
+                turn_id=turn_id,
+            )
+
+            forwarder = RedisBroadcastForwarder.from_url(
+                REDIS_URL, channel=DEFAULT_OUTPUT_CHANNEL
+            )
+            bridge = OutputBridge(forwarder)
+            await bridge.publish(msg)
+            try:
+                await forwarder.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+
+            self.logger.debug(
+                "AgentTalk: published bifurcated structured output for session %s",
+                session_id,
+            )
+        except Exception:  # noqa: BLE001 - best-effort, never breaks the reply
+            self.logger.warning(
+                "AgentTalk: bifurcated output publish failed for session %s",
+                session_id, exc_info=True,
+            )
+
     async def _handle_stream_response(
         self,
         bot: AbstractBot,
@@ -2513,6 +2616,7 @@ class AgentTalk(BaseView):
         llm: Optional[Any],
         agent_name: str = '',
         client_message_id: Optional[str] = None,
+        avatar_bifurcate: bool = False,
         **kwargs,
     ) -> web.StreamResponse:
         """Stream bot response via HTTP chunked transfer encoding.
@@ -2521,6 +2625,13 @@ class AgentTalk(BaseView):
         ``bot.ask_stream`` is an ``AIMessage``; its JSON representation is
         appended after an ``\\n\\x00`` separator so the client can split
         text from metadata deterministically.
+
+        When ``avatar_bifurcate=True`` and a FULL mode avatar session is active
+        for ``session_id``, structured outputs (``is_structured``, ``data``,
+        ``code``, ``tool_calls``) in the final ``AIMessage`` are published as a
+        ``StructuredOutputMessage`` via the Redis transport so they reach the
+        browser's ``/ws/userinfo`` channel regardless of which gunicorn worker
+        holds the WebSocket connection.
         """
         stream_resp = web.StreamResponse(
             status=200,
@@ -2651,6 +2762,15 @@ class AgentTalk(BaseView):
                     )
             except Exception as ex:
                 self.logger.warning("Error scheduling streamed chat turn save: %s", ex)
+
+            # FEAT-249 Mode B: publish structured outputs via the Redis transport
+            # when avatar_bifurcate is enabled and a FULL session is active.
+            if avatar_bifurcate and ai_message is not None and session_id:
+                await self._maybe_publish_bifurcated_output(
+                    ai_message=ai_message,
+                    session_id=session_id,
+                    turn_id=client_message_id,
+                )
 
             # Flush the final sentence and the avatar's playback buffer in the
             # BACKGROUND. Text + metadata are already on the wire; draining the
