@@ -163,6 +163,45 @@ Notes:
 - GET `/api/v1/agent_tools` — Returns the list of available tool definitions registered in the app.
 
 ---
+## WebSocket Endpoints
+
+### /ws/userinfo — Structured-output push channel (FEAT-249)
+
+Authenticated WebSocket for real-time push of **structured payloads** and
+in-process user-to-user direct messages.
+
+**Connect**: `wss://<host>/ws/userinfo`
+
+**Subscribe to an agent session's structured output**:
+```json
+{ "type": "subscribe", "content": { "channel": "<session_id>" } }
+```
+Confirmation: `{ "type": "subscribed", "channel": "<session_id>" }`
+
+**Structured-output envelope** (`StructuredOutputMessage`) delivered to subscribers:
+```jsonc
+{
+  "type": "<chart|data|canvas|tool_call>",
+  "session_id": "<session_id>",
+  "payload": { /* type-dependent content */ },
+  "turn_id": "<turn-id | null>"
+}
+```
+
+**Unsubscribe**:
+```json
+{ "type": "unsubscribe", "content": { "channel": "<session_id>" } }
+```
+
+**Cross-worker delivery**: `UserSocketManager.broadcast_to_channel` is in-process.
+For multi-worker (gunicorn) deployments, the agent publishes structured outputs via
+the Redis transport (`RedisBroadcastForwarder`) and `run_output_subscriber` fans them
+out locally. Requires `ENABLE_STRUCTURED_OUTPUT_TRANSPORT=true` and `REDIS_URL`.
+
+See also: `packages/ai-parrot-server/src/parrot/handlers/user.py` (`UserSocketManager`),
+`packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/output_transport.py`.
+
+---
 ## Notes
 - Additional routes may be available depending on navigator integrations. See `app.py` and handler classes for details.
 - Error payloads are standardized via `BaseView.error` and `JSONResponse` helpers.
