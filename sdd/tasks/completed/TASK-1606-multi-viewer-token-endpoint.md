@@ -93,4 +93,8 @@ class LiveKitRoomTokens(BaseModel):            # :58
 Standard SDD flow.
 
 ## Completion Note
-*(Agent fills this in when done)*
+Implemented 2026-06-19. Added `_mint_viewer_tokens` handler function and `AvatarViewersView`
+BaseView class to avatar.py. Route registered at `POST /api/v1/avatar/{agent_id}/viewers`.
+Validates: session_id required (400 if absent), session must exist (404 if not), count bounded
+1-50 (400 otherwise). Mints `count` distinct viewer tokens using uuid4 identities. Returns only
+client_token/identity/livekit_url — never agent_token. 8 tests in test_avatar_viewers.py all pass.
