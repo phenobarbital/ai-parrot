@@ -173,7 +173,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -184,8 +184,8 @@
       "parallelism_notes": "Needs the renamed/decoupled transport (1603); edits agent.py shared with later Mode B tasks.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1607-fullmode-output-bifurcation-helper.md"
+      "completed_at": "2026-06-19T14:40:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1607-fullmode-output-bifurcation-helper.md"
     },
     {
       "id": "TASK-1608",
