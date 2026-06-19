@@ -75,7 +75,7 @@ from ..conf import (
     ENABLE_CREWS,
     ENABLE_DATABASE_BOTS,
     ENABLE_DASHBOARDS,
-    ENABLE_LIVEAVATAR_VOICE,
+    ENABLE_STRUCTURED_OUTPUT_TRANSPORT,
     ENABLE_REGISTRY_BOTS,
     ENABLE_SWAGGER,
     REDIS_URL,
@@ -1570,14 +1570,14 @@ class BotManager:
             self.app.on_cleanup.append(close_all_fullmode_sessions)
         return registered
 
-    def _setup_liveavatar_voice(self) -> None:
-        """Wire the LiveAvatar Phase C output subscriber when enabled (FEAT-243).
+    def _setup_structured_output_transport(self) -> None:
+        """Wire the Redis structured-output transport subscriber when enabled (FEAT-249).
 
-        Opt-in via ``ENABLE_LIVEAVATAR_VOICE``. The subscriber's own ``on_startup``
-        defers reading ``app['user_socket_manager']``, so registering it here
-        (before that key is populated) is safe.
+        Opt-in via ``ENABLE_STRUCTURED_OUTPUT_TRANSPORT``. The subscriber's own
+        ``on_startup`` defers reading ``app['user_socket_manager']``, so registering
+        it here (before that key is populated) is safe.
         """
-        if not ENABLE_LIVEAVATAR_VOICE:
+        if not ENABLE_STRUCTURED_OUTPUT_TRANSPORT:
             return
         from ..handlers.liveavatar_output import (
             configure_liveavatar_output_subscriber,
@@ -1641,8 +1641,8 @@ class BotManager:
             await setup_web_hitl(app)
 
         self.app.on_startup.append(_hitl_deferred_startup)
-        # FEAT-243: LiveAvatar Phase C output subscriber (opt-in).
-        self._setup_liveavatar_voice()
+        # FEAT-249: Redis structured-output transport subscriber (opt-in).
+        self._setup_structured_output_transport()
         # OAuth2 Integrations routes (FEAT-144)
         router.add_view(
             '/api/v1/agents/integrations/{agent_id}',
