@@ -677,7 +677,7 @@ LIVEAVATAR_ENABLED_AGENTS=agent1,agent2   # opcional, filtra por agente
 
 **Guías de frontend relacionadas**
 - `docs/frontend/liveavatar-frontend-guide.md` — Fase A (FEAT-242)
-- `docs/frontend/liveavatar-phase-c-frontend-guide.md` — Fase C (FEAT-243)
+- ~~`docs/frontend/liveavatar-phase-c-frontend-guide.md`~~ — Fase C (FEAT-243, eliminada en FEAT-249)
 - `docs/frontend/agentalk-voice-frontend-guide.md` — voz AgentTalk
 - `docs/frontend/structured-artifacts-frontend-guide.md` — artefactos estructurados
 

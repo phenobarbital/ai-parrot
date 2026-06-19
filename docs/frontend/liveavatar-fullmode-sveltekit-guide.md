@@ -109,9 +109,9 @@ hablar por su cuenta (modo restringido).
 > (`AvatarSessionHandle`) pero **está vacío y no se usa** — solo aplica a LITE.
 > Usa siempre `livekit_url` + `livekit_client_token`.
 
-Esta guía cubre **solo FULL Mode**. Si lo que necesitas es voz-nativa con
-turn-taking gestionado por el backend, mira
-[`liveavatar-phase-c-frontend-guide.md`](./liveavatar-phase-c-frontend-guide.md).
+Esta guía cubre **solo FULL Mode**. Phase C (LiveKit Agents worker) fue eliminado
+en FEAT-249; consulta el [Mode A / B / C / D taxonomy](./liveavatar-frontend-guide.md)
+para el mapa actualizado de modos de voz.
 
 ---
 
@@ -700,5 +700,5 @@ Frontend                      ai-parrot
 
 **Documentos relacionados**:
 - Especificación backend: `sdd/specs/liveavatar-fullmode-speaktext.spec.md` (FEAT-248)
-- Voz-nativo (Phase C): [`liveavatar-phase-c-frontend-guide.md`](./liveavatar-phase-c-frontend-guide.md)
+- Voz-nativo (Phase C): ~~[`liveavatar-phase-c-frontend-guide.md`](./liveavatar-phase-c-frontend-guide.md)~~ *(eliminado en FEAT-249)*
 - LITE (Phase A): [`liveavatar-frontend-guide.md`](./liveavatar-frontend-guide.md)

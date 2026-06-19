@@ -92,7 +92,8 @@ ENABLE_DATABASE_BOTS = config.getboolean("ENABLE_DATABASE_BOTS", fallback=False)
 ENABLE_REGISTRY_BOTS = config.getboolean("ENABLE_REGISTRY_BOTS", fallback=True)
 # FEAT-249: enable the Redis structured-output transport (re-broadcasts
 # structured outputs from any ai-parrot worker to the AgentChat UI over Redis).
-# Replaces the old ENABLE_LIVEAVATAR_VOICE gate; rename env var accordingly.
+# Renamed from ENABLE_LIVEAVATAR_VOICE (FEAT-243) — operators upgrading must
+# rename the env var in their deployment config.
 ENABLE_STRUCTURED_OUTPUT_TRANSPORT = config.getboolean(
     "ENABLE_STRUCTURED_OUTPUT_TRANSPORT", fallback=False
 )

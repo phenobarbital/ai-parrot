@@ -2635,7 +2635,8 @@ class AgentTalk(BaseView):
         ``code``, ``tool_calls``) in the final ``AIMessage`` are published as a
         ``StructuredOutputMessage`` via the Redis transport so they reach the
         browser's ``/ws/userinfo`` channel regardless of which gunicorn worker
-        holds the WebSocket connection.
+        holds the WebSocket connection.  ``avatar_bifurcate`` is a no-op for
+        non-streaming callers (``bot.ask`` path) — FULL mode always streams.
         """
         stream_resp = web.StreamResponse(
             status=200,

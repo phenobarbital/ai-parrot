@@ -344,16 +344,21 @@ async def _mint_viewer_tokens(request: web.Request) -> web.Response:
             reason="LIVEKIT_* env vars are not configured"
         ) from exc
 
-    viewers: List[Dict[str, str]] = []
-    for i in range(count):
-        short_id = uuid.uuid4().hex[:8]
-        identity = f"viewer-{i}-{short_id}"
+    # Mint all viewer tokens in parallel — each call is pure CPU/crypto work
+    # (JWT sign), so asyncio.gather gives a ~count× speedup for large batches.
+    identities = [f"viewer-{i}-{uuid.uuid4().hex[:8]}" for i in range(count)]
+
+    async def _mint_one(identity: str) -> Dict[str, str]:
         tokens = await asyncio.to_thread(room_manager.mint_room_tokens, room, identity)
-        viewers.append({
+        return {
             "identity": identity,
             "livekit_url": tokens.livekit_url,
             "client_token": tokens.client_token,  # subscribe-only; never agent_token
-        })
+        }
+
+    viewers: List[Dict[str, str]] = list(
+        await asyncio.gather(*(_mint_one(ident) for ident in identities))
+    )
 
     _logger.info(
         "AvatarViewersView: minted %d viewer token(s) for session %s",
