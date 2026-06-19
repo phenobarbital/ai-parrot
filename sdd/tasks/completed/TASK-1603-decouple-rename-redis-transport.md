@@ -95,4 +95,10 @@ deleting the transport (it is kept).
 Standard SDD flow.
 
 ## Completion Note
-*(Agent fills this in when done)*
+Implemented 2026-06-19. Renamed `ENABLE_LIVEAVATAR_VOICE` → `ENABLE_STRUCTURED_OUTPUT_TRANSPORT`
+in conf.py. Renamed `_setup_liveavatar_voice` → `_setup_structured_output_transport` in manager.py.
+Dropped `StreamHandler` arm from `_FanOutSink` in liveavatar_output.py (only `UserSocketManager`
+arm remains). Updated docstrings to remove Phase C language. Updated test_liveavatar_output.py to
+use new names and remove stream_handler-only fan-out test. 8 liveavatar_output tests pass.
+test_cross_process_simulation passes with worktree PYTHONPATH; fails with installed pkg (environment
+limitation, resolved on merge).

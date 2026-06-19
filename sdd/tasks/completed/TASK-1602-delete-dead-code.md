@@ -100,4 +100,13 @@ grep -rn "from parrot.voice.server import\|voice.server\|VoiceChatServer" packag
 Standard SDD flow.
 
 ## Completion Note
-*(Agent fills this in when done)*
+Implemented 2026-06-19. Deleted: orchestrator.py (AvatarSessionOrchestrator),
+fullmode_observer.py (FullModeRoomObserver), voice/server.py (VoiceChatServer),
+voice/session.py (VoiceSession/VoiceSessionManager). Removed TenantAvatarConfig
+from models.py. Cleaned liveavatar/__init__.py to remove re-exports of
+AvatarSessionOrchestrator, FullModeRoomObserver, and TenantAvatarConfig.
+Deleted test_orchestrator.py, test_fullmode_observer.py. Removed TestObserverLifecycle
+from test_fullmode_integration.py. Removed deleted-method tests from test_room_manager.py.
+Removed TenantAvatarConfig tests from test_models.py.
+Both `import parrot.integrations.liveavatar` and `import parrot.voice` verified OK.
+133 liveavatar + 97 voice tests pass.

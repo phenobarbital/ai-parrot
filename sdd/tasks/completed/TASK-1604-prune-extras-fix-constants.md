@@ -95,4 +95,9 @@ work begins. (Spec §3.4, §4 M-X, §5.)
 Standard SDD flow.
 
 ## Completion Note
-*(Agent fills this in when done)*
+Implemented 2026-06-19. Removed `liveavatar-voice` extra (and its 7-line comment block)
+from pyproject.toml. Fixed `_SAMPLE_RATE = 44100` in supertonic_backend.py (was 24000).
+Updated docstrings in supertonic_backend.py and SynthesisResult.audio in models.py to
+remove "24 kHz" wording. avatar_ws.py 24000 left untouched (correct, LITE resample).
+`import parrot.integrations.liveavatar; import parrot.voice` OK.
+133 liveavatar + 68 handler tests pass.

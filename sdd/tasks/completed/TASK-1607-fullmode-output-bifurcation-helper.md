@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-249 — LiveAvatar + Voice Consolidation
 **Spec**: `sdd/specs/liveavatar-voice-consolidation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1603, TASK-1604

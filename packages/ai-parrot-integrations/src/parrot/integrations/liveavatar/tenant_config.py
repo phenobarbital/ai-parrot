@@ -5,7 +5,7 @@ public interface for resolving a fully-populated :class:`FullModeConfig` for a
 given tenant.
 
 Resolution order (first match wins):
-1. (Future) Per-tenant DB overrides via ``TenantAvatarConfig`` —
+1. (Future) Per-tenant DB overrides via a tenant config store —
    gated by Q-tenant-config-store (see §8 Open Questions in the spec).
 2. Environment variables (``LIVEAVATAR_*``).
 3. :class:`FullModeConfig` field defaults.
@@ -84,7 +84,7 @@ async def resolve_fullmode_config(
     DB ``await`` is added to the DB-override layer (TODO Q-tenant-config-store).
 
     Resolution order:
-    1. (Future) Per-tenant DB overrides via ``TenantAvatarConfig`` —
+    1. (Future) Per-tenant DB overrides via a tenant config store —
        TODO Q-tenant-config-store: overlay per-tenant DB values here once the
        storage layer (program DB column / NavConfig / feature-flag service) is
        agreed.
@@ -128,7 +128,7 @@ async def resolve_fullmode_config(
     max_session_duration: Optional[int] = _parse_int_env("LIVEAVATAR_MAX_SESSION_DURATION")
 
     # TODO Q-tenant-config-store: if tenant_id is provided, look up a
-    # TenantAvatarConfig record and overlay its non-None fields here.
+    # per-tenant config record and overlay its non-None fields here.
     # Example (pseudocode, not yet implemented):
     #   if tenant_id:
     #       overrides = await TenantConfigStore.get(tenant_id)

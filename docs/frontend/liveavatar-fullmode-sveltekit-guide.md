@@ -109,9 +109,9 @@ hablar por su cuenta (modo restringido).
 > (`AvatarSessionHandle`) pero **está vacío y no se usa** — solo aplica a LITE.
 > Usa siempre `livekit_url` + `livekit_client_token`.
 
-Esta guía cubre **solo FULL Mode**. Si lo que necesitas es voz-nativa con
-turn-taking gestionado por el backend, mira
-[`liveavatar-phase-c-frontend-guide.md`](./liveavatar-phase-c-frontend-guide.md).
+Esta guía cubre **solo FULL Mode**. Phase C (LiveKit Agents worker) fue eliminado
+en FEAT-249; consulta el [Mode A / B / C / D taxonomy](./liveavatar-frontend-guide.md)
+para el mapa actualizado de modos de voz.
 
 ---
 
@@ -637,7 +637,68 @@ idle → starting (POST /start) → connecting (room.connect)
 
 ---
 
+### Canal de salidas estructuradas — `/ws/userinfo` (FEAT-249 Mode B)
+
+El canal `/ws/userinfo` es la superficie de entrega de **payloads estructurados**
+generados por el agente (gráficos, datos, llamadas a herramientas). Es independiente
+de LiveKit — es un WebSocket propio de ai-parrot.
+
+#### Protocolo de suscripción
+
+1. **Conectar** al WebSocket `wss://<host>/ws/userinfo` (requiere autenticación de sesión).
+2. **Suscribirse** al canal del agente enviando:
+
+```jsonc
+{ "type": "subscribe", "content": { "channel": "<session_id>" } }
+```
+
+El backend confirma con:
+
+```jsonc
+{ "type": "subscribed", "channel": "<session_id>" }
+```
+
+3. **Recibir** envelopes `StructuredOutputMessage` cuando el agente produce salida estructurada:
+
+```jsonc
+{
+  "type": "<chart|data|canvas|tool_call>",
+  "session_id": "<session_id>",
+  "payload": { /* contenido dependiente del tipo */ },
+  "turn_id": "<id-del-turno | null>"
+}
+```
+
+#### Tipos de `type`
+
+| Valor | Significado |
+|---|---|
+| `chart` | Artefacto visual (gráfico, infografía) |
+| `data` | Datos tabulares o JSON estructurado |
+| `canvas` | Contenido de canvas / lienzo |
+| `tool_call` | Resultado de llamada a herramienta |
+
+#### Flujo Mode B completo
+
+```
+Frontend                      ai-parrot
+   │                              │
+   │── POST /api/v1/agents/chat ──▶│  (avatar_bifurcate=true en body)
+   │                              │── agente genera respuesta + salida estructurada
+   │◀── texto (stream) ───────────│
+   │◀── StructuredOutputMessage ──│  (publicado por Redis → /ws/userinfo → browser)
+   │    en canal <session_id>     │
+```
+
+> **Nota de arquitectura multi-worker**: `broadcast_to_channel` en
+> `UserSocketManager` es in-process. Para que el payload llegue al worker que
+> sirve la conexión WebSocket del navegador, el agente publica primero en el
+> transporte Redis (`RedisBroadcastForwarder`) y el suscriptor Redis
+> (`run_output_subscriber`) lo reenvía localmente con `broadcast_to_channel`.
+
+---
+
 **Documentos relacionados**:
 - Especificación backend: `sdd/specs/liveavatar-fullmode-speaktext.spec.md` (FEAT-248)
-- Voz-nativo (Phase C): [`liveavatar-phase-c-frontend-guide.md`](./liveavatar-phase-c-frontend-guide.md)
+- Voz-nativo (Phase C): ~~[`liveavatar-phase-c-frontend-guide.md`](./liveavatar-phase-c-frontend-guide.md)~~ *(eliminado en FEAT-249)*
 - LITE (Phase A): [`liveavatar-frontend-guide.md`](./liveavatar-frontend-guide.md)

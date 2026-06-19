@@ -75,7 +75,7 @@ from ..conf import (
     ENABLE_CREWS,
     ENABLE_DATABASE_BOTS,
     ENABLE_DASHBOARDS,
-    ENABLE_LIVEAVATAR_VOICE,
+    ENABLE_STRUCTURED_OUTPUT_TRANSPORT,
     ENABLE_REGISTRY_BOTS,
     ENABLE_SWAGGER,
     REDIS_URL,
@@ -1483,6 +1483,66 @@ class BotManager:
         )
         return True
 
+    def _register_transcribe_route(self, router) -> bool:
+        """Register the transcribe-only STT endpoint (FEAT-249 Mode B — TASK-1608).
+
+        Mounts ``AgentTranscribeOnly`` at
+        ``POST /api/v1/agents/transcribe/{agent_id}`` under the same
+        lazy-import guard as ``_register_voice_routes``.  When the voice extra is
+        absent, a warning is logged and the route is skipped — server boot is
+        unaffected.
+
+        Args:
+            router: The aiohttp ``UrlDispatcher`` to register the route on.
+
+        Returns:
+            ``True`` if the route was registered, ``False`` if skipped.
+        """
+        try:
+            from ..handlers.agent_voice import AgentTranscribeOnly
+        except ImportError as exc:
+            self.logger.warning(
+                "Transcribe endpoint disabled (%s); install "
+                "'ai-parrot-integrations[voice]' to enable "
+                "POST /api/v1/agents/transcribe/{agent_id}.",
+                exc,
+            )
+            return False
+        router.add_view(
+            '/api/v1/agents/transcribe/{agent_id}',
+            AgentTranscribeOnly,
+        )
+        self.logger.info("Transcribe-only route registered at /api/v1/agents/transcribe/{agent_id} (Mode B).")
+        return True
+
+    def _register_voice_chat_routes(self, app: web.Application) -> bool:
+        """Register the Gemini Live + LITE avatar WebSocket route (FEAT-245 Mode D).
+
+        Mounts ``VoiceChatHandler`` at ``/ws/voice`` under a lazy-import guard so
+        a server without ``ai-parrot-integrations[voice]`` or Gemini credentials
+        still boots — the route is simply skipped with a warning.
+
+        Args:
+            app: The aiohttp Application.
+
+        Returns:
+            ``True`` if the route was registered, ``False`` otherwise.
+        """
+        try:
+            from parrot.voice.handler import VoiceChatHandler
+        except ImportError as exc:
+            self.logger.warning(
+                "VoiceChatHandler (/ws/voice) disabled (%s); install "
+                "'ai-parrot-integrations[voice]' to enable Mode D (Gemini Live).",
+                exc,
+            )
+            return False
+
+        handler = VoiceChatHandler()
+        handler.setup_routes(app, include_health=False, include_static=False)
+        self.logger.info("VoiceChatHandler registered at /ws/voice (Mode D).")
+        return True
+
     def _register_avatar_routes(self, router) -> bool:
         """Register the avatar session start/stop routes (FEAT-242 Phase A).
 
@@ -1570,14 +1630,14 @@ class BotManager:
             self.app.on_cleanup.append(close_all_fullmode_sessions)
         return registered
 
-    def _setup_liveavatar_voice(self) -> None:
-        """Wire the LiveAvatar Phase C output subscriber when enabled (FEAT-243).
+    def _setup_structured_output_transport(self) -> None:
+        """Wire the Redis structured-output transport subscriber when enabled (FEAT-249).
 
-        Opt-in via ``ENABLE_LIVEAVATAR_VOICE``. The subscriber's own ``on_startup``
-        defers reading ``app['user_socket_manager']``, so registering it here
-        (before that key is populated) is safe.
+        Opt-in via ``ENABLE_STRUCTURED_OUTPUT_TRANSPORT``. The subscriber's own
+        ``on_startup`` defers reading ``app['user_socket_manager']``, so registering
+        it here (before that key is populated) is safe.
         """
-        if not ENABLE_LIVEAVATAR_VOICE:
+        if not ENABLE_STRUCTURED_OUTPUT_TRANSPORT:
             return
         from ..handlers.liveavatar_output import (
             configure_liveavatar_output_subscriber,
@@ -1641,8 +1701,8 @@ class BotManager:
             await setup_web_hitl(app)
 
         self.app.on_startup.append(_hitl_deferred_startup)
-        # FEAT-243: LiveAvatar Phase C output subscriber (opt-in).
-        self._setup_liveavatar_voice()
+        # FEAT-249: Redis structured-output transport subscriber (opt-in).
+        self._setup_structured_output_transport()
         # OAuth2 Integrations routes (FEAT-144)
         router.add_view(
             '/api/v1/agents/integrations/{agent_id}',
@@ -1747,6 +1807,13 @@ class BotManager:
         # reaches the voice stack (ai-parrot-integrations[voice]) via lazy
         # imports, so a missing stack must degrade gracefully, never crash boot.
         self._register_voice_routes(router)
+        # Mode B: transcribe-only STT endpoint (FEAT-249 TASK-1608). Allows the
+        # FULL-mode frontend to obtain a transcript from ai-parrot's internal STT
+        # without invoking the agent. Registered under the same optional guard.
+        self._register_transcribe_route(router)
+        # Mode D: Gemini Live + LITE avatar WebSocket (FEAT-245/FEAT-249). Mounted
+        # under the optional-integration guard; missing [voice] logs a warning.
+        self._register_voice_chat_routes(self.app)
         # Avatar session routes (FEAT-242 Phase A) — start/stop the LiveAvatar
         # session. Registered under the optional-integration guard like voice:
         # a missing ai-parrot-integrations[liveavatar] extra logs a warning and

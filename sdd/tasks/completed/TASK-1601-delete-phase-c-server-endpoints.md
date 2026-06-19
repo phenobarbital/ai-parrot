@@ -99,4 +99,11 @@ gate rename (TASK-1603); other dead code (TASK-1602).
 Standard SDD flow.
 
 ## Completion Note
-*(Agent fills this in when done)*
+Implemented 2026-06-19. Deleted from avatar.py: `AVATAR_VOICE_SESSIONS_KEY`,
+`_delete_voice_dispatch`, `_worker_agent_name`, `start_voice_native`, `stop_voice_native`,
+`_start_voice_native_session`, `VoiceNativeAvatarView`, voice-native route in `register_avatar_routes`.
+Rewrote stream.py removing `voice_start`/`voice_stop` handlers, `channel_subscriptions`,
+`_ws_voice_sessions`, `_subscribe_to_channel`, `_unsubscribe_from_channel`,
+`broadcast_to_channel`, `_cleanup_ws_voice_sessions`. Removed from room_manager.py:
+`mint_browser_token`, `dispatch_worker`, `delete_dispatch`. Deleted Phase C server tests.
+68 handler tests pass.

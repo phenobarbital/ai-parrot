@@ -8,7 +8,6 @@ from parrot.integrations.liveavatar import (
     FullModeSessionHandle,
     LiveAvatarConfig,
     LiveKitRoomTokens,
-    TenantAvatarConfig,
 )
 
 
@@ -192,42 +191,3 @@ class TestFullModeSessionHandle:
         assert handle.tenant_id == "acme"
 
 
-# ---------------------------------------------------------------------------
-# FEAT-248: TenantAvatarConfig tests (TASK-1591)
-# ---------------------------------------------------------------------------
-
-
-class TestTenantAvatarConfig:
-    """Tests for TenantAvatarConfig (per-tenant DB override model)."""
-
-    def test_required_tenant_id(self) -> None:
-        """TenantAvatarConfig requires tenant_id; other fields default to None/False."""
-        cfg = TenantAvatarConfig(tenant_id="acme")
-        assert cfg.tenant_id == "acme"
-        assert cfg.fullmode_enabled is False
-        assert cfg.avatar_id is None
-        assert cfg.voice_id is None
-        assert cfg.language is None
-        assert cfg.interactivity_type is None
-        assert cfg.api_key is None
-
-    def test_all_optional_fields(self) -> None:
-        """TenantAvatarConfig accepts all optional fields."""
-        cfg = TenantAvatarConfig(
-            tenant_id="acme",
-            avatar_id="av1",
-            voice_id="v1",
-            language="fr",
-            interactivity_type="PUSH_TO_TALK",
-            fullmode_enabled=True,
-        )
-        assert cfg.avatar_id == "av1"
-        assert cfg.voice_id == "v1"
-        assert cfg.language == "fr"
-        assert cfg.interactivity_type == "PUSH_TO_TALK"
-        assert cfg.fullmode_enabled is True
-
-    def test_requires_tenant_id(self) -> None:
-        """TenantAvatarConfig raises ValidationError when tenant_id is missing."""
-        with pytest.raises(ValidationError):
-            TenantAvatarConfig()  # type: ignore[call-arg]

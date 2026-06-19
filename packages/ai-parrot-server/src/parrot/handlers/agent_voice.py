@@ -80,8 +80,8 @@ class AgentVoiceTalk(AgentTalk):
         self._stt_backend: Optional[str] = None
         # ── Avatar mode flag (FEAT-242 Phase A — TASK-007) ─────────────────
         # Set to True when the request body carries ``"avatar": true``.
-        # When True the turn is driven through the AvatarSessionOrchestrator;
-        # the orchestrator is gated by the per-tenant opt-in hook from TASK-008.
+        # When True the turn triggers avatar speech via the active LITE/FULL
+        # session speaker; gated by the per-tenant opt-in hook from TASK-008.
         # Absent or False → unchanged text/voice behaviour (no avatar session).
         self._avatar_mode: bool = False
         # Tenant ID for opt-in gating; extracted from the request body.
@@ -408,3 +408,54 @@ class AgentVoiceTalk(AgentTalk):
 
         audio_b64 = base64.b64encode(result.audio).decode("ascii")
         return audio_b64, result.mime_format
+
+
+@is_authenticated()
+@user_session()
+class AgentTranscribeOnly(AgentVoiceTalk):
+    """Transcribe-only endpoint for Mode B internal STT (FEAT-249 TASK-1608).
+
+    Exposes ``POST /api/v1/agents/transcribe/{agent_id}`` — accepts a multipart
+    audio upload, runs STT via :class:`VoiceTranscriber` (backend selectable via
+    ``stt_backend`` form field), and returns ``{"text": "<transcript>"}`` without
+    invoking the agent.
+
+    This allows the FULL-mode frontend to obtain a transcript from ai-parrot's
+    internal STT (FasterWhisper or OpenAI Whisper) instead of relying on the
+    LiveAvatar data-channel ``user.transcription`` events.  LiveAvatar STT remains
+    the *documented default*; internal STT is opt-in via this endpoint.
+
+    Backend selection mirrors :meth:`AgentVoiceTalk._read_voice_options`:
+        ``stt_backend=faster_whisper`` (local, default) or ``stt_backend=openai``
+        (cloud).  Unknown values are logged and fall back to the configured default.
+
+    Returns:
+        JSON ``{"text": "<transcript>"}`` on success.
+        HTTP 503 when the voice stack (``ai-parrot-integrations[voice]``) is absent.
+        HTTP 400 when transcription fails (e.g. bad audio, duration guard).
+    """
+
+    _logger_name: str = "Parrot.AgentTranscribeOnly"
+
+    async def post(self) -> web.Response:
+        """Handle POST: parse multipart, transcribe audio, return transcript."""
+        data, attachments = await self.handle_upload()
+        self._read_voice_options(data)
+
+        audio_info, _ = self._find_audio_attachment(attachments)
+        if audio_info is None:
+            raise web.HTTPBadRequest(
+                text=json.dumps({"error": "No audio attachment found in the request."}),
+                content_type="application/json",
+            )
+
+        try:
+            text = await self._transcribe_attachment(audio_info)
+        finally:
+            # _transcribe_attachment always unlinks the tempfile; no double-unlink needed.
+            pass
+
+        return web.Response(
+            text=json.dumps({"text": text}),
+            content_type="application/json",
+        )

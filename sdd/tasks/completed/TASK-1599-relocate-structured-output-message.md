@@ -92,4 +92,11 @@ class StructuredOutputMessage(BaseModel):
 Standard SDD flow (verify contract, implement, test, move to completed, update index, fill completion note).
 
 ## Completion Note
-*(Agent fills this in when done)*
+Implemented 2026-06-19. `StructuredOutputMessage` moved from
+`livekit_agent/models.py` to `liveavatar/models.py`. Updated:
+- `output_bridge.py` now imports from `..models`
+- `livekit_agent/models.py` retains only `AvatarJobMetadata`
+- `livekit_agent/__init__.py` re-exports only `AvatarJobMetadata`
+- `liveavatar/__init__.py` re-exports `StructuredOutputMessage`
+- Test files updated to new import path
+All 12 tests pass (`test_output_bridge`, `test_output_transport`, `test_livekit_agent_models`).

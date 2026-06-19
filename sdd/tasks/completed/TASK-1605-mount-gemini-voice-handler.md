@@ -95,4 +95,9 @@ class VoiceAvatarSession:                      # :55
 Standard SDD flow.
 
 ## Completion Note
-*(Agent fills this in when done)*
+Implemented 2026-06-19. Added `_register_voice_chat_routes(app)` to BotManager in manager.py.
+Mirrors the `_register_avatar_routes` pattern: lazy import of `VoiceChatHandler` from
+`parrot.voice.handler`; ImportError → warning + return False. Calls `handler.setup_routes(app,
+include_health=False, include_static=False)`. Wired via `self._register_voice_chat_routes(self.app)`
+in `setup()` after `_register_voice_routes`. 3 tests created in test_voice_chat_mount.py pass.
+Total handler test count: 71.

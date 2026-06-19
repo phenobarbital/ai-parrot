@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-19T00:00:00Z",
-  "completed_at": "2026-06-19T15:44:26+00:00",
+  "completed_at": null,
   "tasks": [
     {
       "id": "TASK-1599",
@@ -22,9 +22,8 @@
       "parallelism_notes": "Must precede the livekit_agent/ deletion; touches __init__.py + output_bridge.py shared by later tasks.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": "2026-06-19T15:44:26+00:00",
-      "file": "sdd/tasks/completed/TASK-1599-relocate-structured-output-message.md",
-      "verification": "verified"
+      "completed_at": "2026-06-19T14:05:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1599-relocate-structured-output-message.md"
     },
     {
       "id": "TASK-1600",
@@ -43,9 +42,8 @@
       "parallelism_notes": "Edits __init__.py; sequential with sibling deletions.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": "2026-06-19T15:44:26+00:00",
-      "file": "sdd/tasks/completed/TASK-1600-delete-phase-c-worker-stack.md",
-      "verification": "verified"
+      "completed_at": "2026-06-19T14:07:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1600-delete-phase-c-worker-stack.md"
     },
     {
       "id": "TASK-1601",
@@ -64,9 +62,8 @@
       "parallelism_notes": "Edits avatar.py/stream.py/room_manager.py/manager.py; prereq for transport decouple.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": "2026-06-19T15:44:26+00:00",
-      "file": "sdd/tasks/completed/TASK-1601-delete-phase-c-server-endpoints.md",
-      "verification": "verified"
+      "completed_at": "2026-06-19T14:15:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1601-delete-phase-c-server-endpoints.md"
     },
     {
       "id": "TASK-1602",
@@ -85,9 +82,8 @@
       "parallelism_notes": "Edits __init__.py + models.py shared with other deletion tasks.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": "2026-06-19T15:44:26+00:00",
-      "file": "sdd/tasks/completed/TASK-1602-delete-dead-code.md",
-      "verification": "verified"
+      "completed_at": "2026-06-19T14:22:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1602-delete-dead-code.md"
     },
     {
       "id": "TASK-1603",
@@ -106,9 +102,8 @@
       "parallelism_notes": "Depends on StreamHandler voice bits removed (1601) and SOM relocated (1599).",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": "2026-06-19T15:44:26+00:00",
-      "file": "sdd/tasks/completed/TASK-1603-decouple-rename-redis-transport.md",
-      "verification": "verified"
+      "completed_at": "2026-06-19T14:26:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1603-decouple-rename-redis-transport.md"
     },
     {
       "id": "TASK-1604",
@@ -128,9 +123,8 @@
       "parallelism_notes": "Green-tree gate closing the deletion phase before feature work.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": "2026-06-19T15:44:26+00:00",
-      "file": "sdd/tasks/completed/TASK-1604-prune-extras-fix-constants.md",
-      "verification": "verified"
+      "completed_at": "2026-06-19T14:28:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1604-prune-extras-fix-constants.md"
     },
     {
       "id": "TASK-1605",
@@ -149,9 +143,8 @@
       "parallelism_notes": "File-disjoint from TASK-1606 (manager voice-chat mount vs avatar viewers endpoint); could run in a separate worktree, but per-spec strategy runs sequentially.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": "2026-06-19T15:44:26+00:00",
-      "file": "sdd/tasks/completed/TASK-1605-mount-gemini-voice-handler.md",
-      "verification": "verified"
+      "completed_at": "2026-06-19T14:30:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1605-mount-gemini-voice-handler.md"
     },
     {
       "id": "TASK-1606",
@@ -170,9 +163,8 @@
       "parallelism_notes": "File-disjoint from TASK-1605; both depend only on the clean post-deletion tree.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": "2026-06-19T15:44:26+00:00",
-      "file": "sdd/tasks/completed/TASK-1606-multi-viewer-token-endpoint.md",
-      "verification": "verified"
+      "completed_at": "2026-06-19T14:32:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1606-multi-viewer-token-endpoint.md"
     },
     {
       "id": "TASK-1607",
@@ -192,9 +184,8 @@
       "parallelism_notes": "Needs the renamed/decoupled transport (1603); edits agent.py shared with later Mode B tasks.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": "2026-06-19T15:44:26+00:00",
-      "file": "sdd/tasks/completed/TASK-1607-fullmode-output-bifurcation-helper.md",
-      "verification": "verified"
+      "completed_at": "2026-06-19T14:40:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1607-fullmode-output-bifurcation-helper.md"
     },
     {
       "id": "TASK-1608",
@@ -213,9 +204,8 @@
       "parallelism_notes": "Touches agent_voice.py/manager.py; sequential after the bifurcation helper.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": "2026-06-19T15:44:26+00:00",
-      "file": "sdd/tasks/completed/TASK-1608-pluggable-stt-mode-b.md",
-      "verification": "verified"
+      "completed_at": "2026-06-19T14:44:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1608-pluggable-stt-mode-b.md"
     },
     {
       "id": "TASK-1609",
@@ -234,9 +224,8 @@
       "parallelism_notes": "Docs + tests for the channel produced by 1607.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": "2026-06-19T15:44:26+00:00",
-      "file": "sdd/tasks/completed/TASK-1609-document-test-ws-userinfo-contract.md",
-      "verification": "verified"
+      "completed_at": "2026-06-19T14:48:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1609-document-test-ws-userinfo-contract.md"
     },
     {
       "id": "TASK-1610",
@@ -255,9 +244,8 @@
       "parallelism_notes": "Independent verification task (new test file); can run any time after the clean tree.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": "2026-06-19T15:44:26+00:00",
-      "file": "sdd/tasks/completed/TASK-1610-mode-a-e2e-validation.md",
-      "verification": "verified"
+      "completed_at": "2026-06-19T14:49:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1610-mode-a-e2e-validation.md"
     }
   ]
 }

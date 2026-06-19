@@ -129,8 +129,8 @@ class SynthesisResult(BaseModel):
         ...,
         description=(
             "Raw audio bytes. For the Google backend this is always raw PCM "
-            "(24 kHz, mono, 16-bit LE); the caller must convert to OGG/Opus "
-            "before sending as a Telegram voice note."
+            "(mono, 16-bit LE); for Supertonic the rate is 44100 Hz. "
+            "The caller must convert to OGG/Opus before sending as a Telegram voice note."
         ),
     )
     mime_format: str = Field(

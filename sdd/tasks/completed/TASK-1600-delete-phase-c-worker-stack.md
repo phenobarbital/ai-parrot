@@ -99,4 +99,8 @@ grep -rn "livekit_agent\|AvatarJobMetadata\|LiveAvatarAgent\|build_standalone_bo
 Standard SDD flow.
 
 ## Completion Note
-*(Agent fills this in when done)*
+Implemented 2026-06-19. Deleted entire `livekit_agent/` subpackage (6 files),
+`examples/liveavatar_voice_worker.py`, `manager/bot_resolver.py` (no other consumers),
+VOICE_ADAPTERS.md, and all Phase C tests (test_livekit_agent.py, test_livekit_worker.py,
+test_livekit_agent_models.py, test_voice_adapters.py). `import parrot.integrations.liveavatar`
+still succeeds. 151 remaining integration tests pass.

@@ -1,17 +1,17 @@
-"""Server-side wiring for the LiveAvatar Phase C structured-output bridge (FEAT-243).
+"""Server-side wiring for the Redis structured-output transport (FEAT-249).
 
-The LiveKit worker runs in a separate process and publishes structured outputs
-(charts/data/canvas/tool_calls) to a Redis pub/sub channel via
+Structured outputs (charts/data/canvas/tool_calls) produced by any ai-parrot
+worker process are published to a Redis pub/sub channel via
 ``RedisBroadcastForwarder``. This module runs the **consumer** side inside the
 ai-parrot-server: a background task that re-broadcasts each envelope through the
 app's ``UserSocketManager`` so it reaches the browser AgentChat UI on the channel
 keyed by ``session_id``.
 
 Opt-in (mirrors ``configure_job_manager``): call
-:func:`configure_liveavatar_output_subscriber` during app assembly for
-deployments running LiveAvatar Phase C. The Redis URL and channel **must match**
-the worker's ``RedisBroadcastForwarder`` (both default to ``parrot.conf.REDIS_URL``
-and ``liveavatar:structured-outputs``).
+:func:`configure_liveavatar_output_subscriber` during app assembly when the Redis
+structured-output transport is enabled (``ENABLE_STRUCTURED_OUTPUT_TRANSPORT``).
+The Redis URL and channel **must match** the publisher's ``RedisBroadcastForwarder``
+(both default to ``parrot.conf.REDIS_URL`` and ``liveavatar:structured-outputs``).
 """
 
 import asyncio
@@ -112,25 +112,15 @@ def configure_liveavatar_output_subscriber(
             return
 
         user_socket_manager = application.get("user_socket_manager")
-        stream_handler = application.get("stream_handler")
-
-        # FEAT-244: build a fan-out sink over both managers so structured outputs
-        # reach the browser via whichever socket(s) are present.
-        # Warn if neither sink is available — no delivery is possible.
-        if user_socket_manager is None and stream_handler is None:
-            logger.warning(
-                "configure_liveavatar_output_subscriber: neither app['user_socket_manager'] "
-                "nor app['stream_handler'] is set; structured outputs will not be delivered."
-            )
-            return
 
         if user_socket_manager is None:
             logger.warning(
                 "configure_liveavatar_output_subscriber: app['user_socket_manager'] "
-                "is not set; structured outputs will reach only app['stream_handler']."
+                "is not set; structured outputs will not be delivered."
             )
+            return
 
-        socket_manager = _FanOutSink([user_socket_manager, stream_handler])
+        socket_manager = _FanOutSink([user_socket_manager])
 
         sub_channel = channel or DEFAULT_OUTPUT_CHANNEL
         redis = aioredis.from_url(resolved_redis_url, decode_responses=True)
@@ -140,7 +130,7 @@ def configure_liveavatar_output_subscriber(
             name="liveavatar-output-subscriber",
         )
         logger.info(
-            "LiveAvatar output subscriber started on redis channel %s", sub_channel
+            "Structured-output subscriber started on redis channel %s", sub_channel
         )
 
     async def _stop(application: web.Application) -> None:

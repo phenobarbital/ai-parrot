@@ -1,21 +1,17 @@
-"""Cross-module integration tests for unified voice control (FEAT-244 TASK-1587).
+"""Cross-module integration tests for the structured-output transport (FEAT-249).
 
 Tests the end-to-end path:
-  Redis envelope → run_output_subscriber → _FanOutSink → StreamHandler.broadcast_to_channel
-  → FakeWS.sent
+  Redis envelope → run_output_subscriber → _FanOutSink → UserSocketManager.broadcast_to_channel
 
-And the coexistence of text (stream_request) and voice (voice_start) on one socket.
-
-No real Redis, LiveKit, or network connections — all replaced by fakes/mocks.
+No real Redis or network connections — all replaced by fakes/mocks.
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from parrot.handlers.liveavatar_output import _FanOutSink
-from parrot.handlers.stream import StreamHandler
 from parrot.integrations.liveavatar.output_transport import run_output_subscriber
 
 
@@ -65,22 +61,19 @@ class FakeRedis:
 
 
 # ---------------------------------------------------------------------------
-# Test 1: end-to-end structured output reaches a StreamHandler socket
+# Test 1: end-to-end structured output reaches a UserSocketManager
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_end_to_end_structured_output_to_stream_ws():
-    """A Redis envelope reaches a StreamHandler socket subscribed to that session_id.
+async def test_end_to_end_structured_output_to_user_socket_manager():
+    """A Redis envelope reaches a UserSocketManager subscribed to that session_id.
 
     Drive the real run_output_subscriber with a one-shot FakeRedis whose envelope
-    has channel=sess-1, wired through _FanOutSink to a StreamHandler with a
-    FakeWS subscribed to sess-1.
+    has channel=sess-1, wired through _FanOutSink to a UserSocketManager duck-type.
     """
-    handler = StreamHandler()
-    ws = FakeWS()
-    # Pre-subscribe the socket (simulates what voice_start does)
-    handler.channel_subscriptions["sess-1"] = {ws}
+    user_sm = MagicMock()
+    user_sm.broadcast_to_channel = AsyncMock()
 
     envelope = {
         "channel": "sess-1",
@@ -92,138 +85,97 @@ async def test_end_to_end_structured_output_to_stream_ws():
         },
     }
 
-    sink = _FanOutSink([handler])
+    sink = _FanOutSink([user_sm])
     await run_output_subscriber(
         FakeRedis(envelope), sink, channel="liveavatar:structured-outputs"
     )
 
-    assert len(ws.sent) == 1
-    received = json.loads(ws.sent[0])
-    assert received["type"] == "data"
-    assert received["session_id"] == "sess-1"
+    user_sm.broadcast_to_channel.assert_awaited_once()
+    call_args = user_sm.broadcast_to_channel.call_args
+    assert call_args[0][0] == "sess-1"  # positional channel
+    assert call_args[0][1] == envelope["message"]  # positional message
 
 
 @pytest.mark.asyncio
-async def test_end_to_end_unsubscribed_socket_gets_nothing():
-    """A socket NOT subscribed to the session_id channel receives nothing."""
-    handler = StreamHandler()
-    ws_subscribed = FakeWS()
-    ws_other = FakeWS()
-    handler.channel_subscriptions["sess-subscribed"] = {ws_subscribed}
-    # ws_other is subscribed to a different channel
-    handler.channel_subscriptions["sess-other"] = {ws_other}
-
-    envelope = {
-        "channel": "sess-subscribed",
-        "message": {"type": "canvas", "session_id": "sess-subscribed", "payload": {}},
-    }
-
-    sink = _FanOutSink([handler])
-    await run_output_subscriber(FakeRedis(envelope), sink, channel="liveavatar:structured-outputs")
-
-    assert ws_subscribed.sent  # got the message
-    assert not ws_other.sent  # wrong channel — got nothing
-
-
-@pytest.mark.asyncio
-async def test_end_to_end_fanout_delivers_to_both_managers():
-    """When both user_socket_manager and StreamHandler are present, both receive the envelope."""
-    handler = StreamHandler()
-    sh_ws = FakeWS()
-    handler.channel_subscriptions["sess-1"] = {sh_ws}
-
-    # Simulate a user_socket_manager (duck-typed)
-    user_sm = MagicMock()
-    user_sm.broadcast_to_channel = AsyncMock()
+async def test_end_to_end_fanout_delivers_to_multiple_managers():
+    """When multiple managers are present, all receive the envelope."""
+    user_sm1 = MagicMock()
+    user_sm1.broadcast_to_channel = AsyncMock()
+    user_sm2 = MagicMock()
+    user_sm2.broadcast_to_channel = AsyncMock()
 
     envelope = {
         "channel": "sess-1",
         "message": {"type": "tool_call", "session_id": "sess-1", "payload": {}},
     }
 
-    sink = _FanOutSink([user_sm, handler])
+    sink = _FanOutSink([user_sm1, user_sm2])
     await run_output_subscriber(FakeRedis(envelope), sink, channel="liveavatar:structured-outputs")
 
-    # StreamHandler socket got the message
-    assert sh_ws.sent
-    # user_socket_manager also got it
-    user_sm.broadcast_to_channel.assert_awaited_once()
-
-
-# ---------------------------------------------------------------------------
-# Test 2: text and voice coexist on one socket
-# ---------------------------------------------------------------------------
+    user_sm1.broadcast_to_channel.assert_awaited_once()
+    user_sm2.broadcast_to_channel.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_text_and_voice_same_socket():
-    """One socket can interleave stream_request (text) and voice_start (voice).
+async def test_cross_process_simulation():
+    """Two-process simulation: published on worker-A reaches WS subscriber on worker-B.
 
-    Verifies:
-    - stream_request produces stream_start + content + stream_complete frames.
-    - voice_start subscribes the socket to session_id and produces voice_session.
-    - The channel subscription from voice_start persists after both operations.
+    Worker A: OutputBridge -> RedisBroadcastForwarder.broadcast_to_channel -> Redis publish
+    Worker B: run_output_subscriber -> _FanOutSink -> UserSocketManager.broadcast_to_channel
+
+    Uses FakeRedis so no actual Redis connection is needed.
     """
-    handler = StreamHandler()
-    ws = FakeWS()
+    from parrot.integrations.liveavatar.models import StructuredOutputMessage
+    from parrot.integrations.liveavatar.output_bridge import OutputBridge
+    from parrot.integrations.liveavatar.output_transport import RedisBroadcastForwarder
 
-    fake_request = MagicMock()
-    fake_request.app = {}
-    fake_request.match_info = {"bot_id": "my-agent"}
+    # Track what would be published to Redis
+    published: list[dict] = []
 
-    # --- text: stream_request ---
-    fake_bot = MagicMock()
+    class FakeRedisPub:
+        async def publish(self, channel: str, data: str) -> None:
+            published.append({"channel": channel, "data": data})
 
-    async def fake_ask_stream(prompt, **kwargs):
-        yield "Hello"
-        yield "!"
+    # Worker A side: publish a StructuredOutputMessage
+    forwarder = RedisBroadcastForwarder(FakeRedisPub())
+    msg = StructuredOutputMessage(
+        type="chart",
+        session_id="sess-cross",
+        payload={"chart": "bar"},
+        turn_id="t-1",
+    )
+    bridge = OutputBridge(forwarder)
+    await bridge.publish(msg)
 
-    fake_bot.ask_stream.return_value = fake_ask_stream("hi")
+    assert len(published) == 1
+    envelope = json.loads(published[0]["data"])
+    assert envelope["channel"] == "sess-cross"
+    assert envelope["message"]["type"] == "chart"
 
-    await handler._handle_message(
-        ws,
-        {"type": "stream_request", "prompt": "hi"},
-        bot=fake_bot,
-        request=fake_request,
+    # Worker B side: receive and re-broadcast
+    user_sm = MagicMock()
+    user_sm.broadcast_to_channel = AsyncMock()
+
+    class _OneShotPubSubFromEnvelope:
+        async def subscribe(self, channel: str) -> None:
+            pass
+
+        async def unsubscribe(self, channel: str) -> None:
+            pass
+
+        async def listen(self):
+            yield {"type": "message", "data": published[0]["data"]}
+
+    class FakeRedisSub:
+        def pubsub(self):
+            return _OneShotPubSubFromEnvelope()
+
+    sink = _FanOutSink([user_sm])
+    await run_output_subscriber(
+        FakeRedisSub(), sink, channel="liveavatar:structured-outputs"
     )
 
-    text_types = []
-    for s in ws.sent:
-        try:
-            text_types.append(json.loads(s).get("type"))
-        except Exception:
-            pass
-
-    assert "stream_start" in text_types
-    assert "stream_complete" in text_types
-
-    # Clear sent buffer for voice messages
-    ws.sent.clear()
-
-    # --- voice: voice_start ---
-    with patch(
-        "parrot.handlers.avatar.start_voice_native",
-        AsyncMock(return_value={
-            "livekit_url": "wss://x",
-            "token": "tok",
-            "session_id": "sess-voice",
-        }),
-    ):
-        await handler._handle_message(
-            ws,
-            {"type": "voice_start", "session_id": "sess-voice"},
-            bot=fake_bot,
-            request=fake_request,
-        )
-
-    voice_types = []
-    for s in ws.sent:
-        try:
-            voice_types.append(json.loads(s).get("type"))
-        except Exception:
-            pass
-
-    assert "voice_session" in voice_types
-    # Channel subscription persists
-    assert ws in handler.channel_subscriptions["sess-voice"]
-    assert "sess-voice" in handler._ws_voice_sessions[ws]
+    user_sm.broadcast_to_channel.assert_awaited_once()
+    call_args = user_sm.broadcast_to_channel.call_args
+    assert call_args[0][0] == "sess-cross"
+    assert call_args[0][1]["type"] == "chart"

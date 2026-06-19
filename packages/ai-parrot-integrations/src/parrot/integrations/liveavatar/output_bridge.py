@@ -1,23 +1,25 @@
-"""Structured-output → AgentChat UI bridge for LiveAvatar Phase C (FEAT-243).
+"""Structured-output → AgentChat UI bridge (FEAT-243 / FEAT-249).
 
-During a voice turn the ai-parrot response bifurcates: plain text is spoken by
-the avatar (see ``livekit_agent.agent.LiveAvatarAgent``), while structured
-outputs (charts, data, canvas updates, tool calls) are pushed to the **existing**
-AgentChat UI WebSocket channel keyed by ``session_id`` — the same conversation
-the avatar is speaking (spec section 3, Module 3; Open Question P4).
+During a chat or voice turn the ai-parrot response bifurcates: plain text is
+spoken by the avatar (via ``AvatarTurnSpeaker`` / ``speak_text``), while
+structured outputs (charts, data, canvas updates, tool calls) are pushed to the
+**existing** AgentChat UI WebSocket channel keyed by ``session_id`` — the same
+conversation the avatar is speaking.
 
 The bridge calls ``UserSocketManager.broadcast_to_channel`` (verified at
 ``packages/ai-parrot-server/src/parrot/handlers/user.py:357``). The socket
 manager is dependency-injected (duck-typed) so this module stays free of a hard
 import on the ai-parrot-server package and is trivially unit-testable.
+
+For cross-process delivery (multi-worker gunicorn), pass a
+:class:`~parrot.integrations.liveavatar.output_transport.RedisBroadcastForwarder`
+as the socket manager; see ``output_transport.py``.
 """
 
 import logging
 from typing import Any
 
-from parrot.integrations.liveavatar.livekit_agent.models import (
-    StructuredOutputMessage,
-)
+from parrot.integrations.liveavatar.models import StructuredOutputMessage
 
 __all__ = ["OutputBridge"]
 
