@@ -72,7 +72,7 @@
       "feature_id": "FEAT-249",
       "feature": "liveavatar-voice-consolidation",
       "spec": "sdd/specs/liveavatar-voice-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Edits __init__.py + models.py shared with other deletion tasks.",
       "assigned_to": null,
       "started_at": "2026-06-19T14:00:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1602-delete-dead-code.md"
+      "completed_at": "2026-06-19T14:22:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1602-delete-dead-code.md"
     },
     {
       "id": "TASK-1603",
