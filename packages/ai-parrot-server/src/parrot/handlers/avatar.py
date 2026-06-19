@@ -1,4 +1,11 @@
-"""Avatar session endpoint — start/stop an avatar session (FEAT-242 Phase A — Module 6).
+"""Avatar session endpoint — start/stop/viewers for an avatar session (FEAT-242, FEAT-249).
+
+Additional endpoint for Mode C (multi-viewer LITE):
+
+    POST /api/v1/avatar/{agent_id}/viewers
+        For an active LITE session, mint up to ``count`` additional subscribe-only
+        viewer tokens and return them as a list. No secrets are ever returned.
+
 
 Provides authenticated REST endpoints for the LiveAvatar LITE avatar session:
 
@@ -30,7 +37,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any, Dict, Optional
+import uuid
+from typing import Any, Dict, List, Optional
 
 from aiohttp import web
 from navconfig.logging import logging
@@ -273,6 +281,96 @@ async def close_all_avatar_sessions(app: web.Application) -> None:
     store.clear()
 
 
+_VIEWERS_MAX_COUNT = 50
+_VIEWERS_MIN_COUNT = 1
+
+
+async def _mint_viewer_tokens(request: web.Request) -> web.Response:
+    """POST /api/v1/avatar/{agent_id}/viewers — mint extra subscribe-only viewer tokens.
+
+    For an existing LITE session identified by ``session_id``, mints ``count``
+    additional subscribe-only tokens with distinct viewer identities so multiple
+    browsers can watch the same avatar stream simultaneously (Mode C).
+
+    Request body (JSON):
+        session_id (str): The active LITE session ID (must be in avatar_sessions store).
+        count (int, optional): Number of tokens to mint (1–50). Default 1.
+
+    Response (JSON):
+        viewers: list of {identity, livekit_url, client_token}
+
+    The ``agent_token`` is NEVER returned.
+    """
+    try:
+        from parrot.integrations.liveavatar import LiveKitRoomManager
+    except ImportError as exc:
+        _logger.warning("LiveAvatar stack unavailable: %s", exc)
+        raise web.HTTPServiceUnavailable(
+            reason="LiveAvatar stack not installed"
+        ) from exc
+
+    try:
+        body: Dict[str, Any] = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+
+    session_id: str = body.get("session_id") or ""
+    if not session_id:
+        raise web.HTTPBadRequest(reason="'session_id' is required")
+
+    raw_count = body.get("count", 1)
+    try:
+        count = int(raw_count)
+    except (TypeError, ValueError):
+        raise web.HTTPBadRequest(reason="'count' must be an integer")
+
+    if count < _VIEWERS_MIN_COUNT or count > _VIEWERS_MAX_COUNT:
+        raise web.HTTPBadRequest(
+            reason=f"'count' must be between {_VIEWERS_MIN_COUNT} and {_VIEWERS_MAX_COUNT}"
+        )
+
+    # Verify the session exists
+    store: Dict[str, Any] = request.app.get(AVATAR_SESSIONS_KEY, {})
+    record = store.get(session_id)
+    if not record:
+        raise web.HTTPNotFound(reason=f"No active avatar session for session_id '{session_id}'")
+
+    # Room name is the session_id (mirrors _start_avatar_session)
+    room = session_id
+    room_manager = LiveKitRoomManager()
+
+    viewers: List[Dict[str, str]] = []
+    for i in range(count):
+        short_id = uuid.uuid4().hex[:8]
+        identity = f"viewer-{i}-{short_id}"
+        tokens = await asyncio.to_thread(room_manager.mint_room_tokens, room, identity)
+        viewers.append({
+            "identity": identity,
+            "livekit_url": tokens.livekit_url,
+            "client_token": tokens.client_token,  # subscribe-only; never agent_token
+        })
+
+    _logger.info(
+        "AvatarViewersView: minted %d viewer token(s) for session %s",
+        count,
+        session_id,
+    )
+    return web.json_response({"viewers": viewers})
+
+
+@is_authenticated()
+@user_session()
+class AvatarViewersView(BaseView):
+    """Authenticated endpoint to mint extra subscribe-only viewer tokens (Mode C).
+
+    Routed at ``POST /api/v1/avatar/{agent_id}/viewers``.  Authentication mirrors
+    :class:`AvatarSessionView` — only authenticated callers may mint viewer tokens.
+    """
+
+    async def post(self) -> web.Response:
+        return await _mint_viewer_tokens(self.request)
+
+
 def register_avatar_routes(router: Any) -> bool:
     """Register avatar session endpoints on the provided aiohttp router.
 
@@ -300,6 +398,11 @@ def register_avatar_routes(router: Any) -> bool:
     router.add_view(
         "/api/v1/agents/avatar/{agent_id}/{action}",
         AvatarSessionView,
+    )
+    # Mode C: multi-viewer token endpoint (FEAT-249).
+    router.add_view(
+        "/api/v1/avatar/{agent_id}/viewers",
+        AvatarViewersView,
     )
     _logger.info("Avatar session routes registered (authenticated).")
     return True
