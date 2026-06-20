@@ -34,6 +34,7 @@ from parrot.flows.dev_loop.models import (
     BugBrief,
     ClaudeCodeDispatchProfile,
     LogSource,
+    RepoSpec,
     ResearchOutput,
     WorkBrief,
 )
@@ -107,11 +108,17 @@ class ResearchNode(DevLoopNode):
         log_toolkits: Optional[Dict[str, Any]] = None,
         summarizer_llm: Optional[str] = None,
         plan_llm: Optional[str] = None,
+        git_toolkit: Optional[Any] = None,
+        repos: Optional[List[RepoSpec]] = None,
         name: str = "research",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_dispatcher", dispatcher)
         object.__setattr__(self, "_jira", jira_toolkit)
+        # FEAT-250: optional repo provisioning before Development. When
+        # ``repos`` is empty the node behaves exactly as before (no clone).
+        object.__setattr__(self, "_git_toolkit", git_toolkit)
+        object.__setattr__(self, "_repos", list(repos or []))
         object.__setattr__(self, "_log_toolkits", log_toolkits or {})
         object.__setattr__(self, "_summarizer_llm", summarizer_llm or _summarizer_llm_default())
         object.__setattr__(self, "_summarizer_client", None)
@@ -223,8 +230,57 @@ class ResearchNode(DevLoopNode):
         # mismatched branch).
         await self._ensure_worktree_safe(research_out.branch_name)
 
+        # 6. FEAT-250: provision the configured repositories before Development
+        # so DevelopmentNode can run with ``cwd=research_out.repo_path``. No-op
+        # when no repos are configured (preserves the legacy worktree path).
+        primary_repo_path = await self._provision_repos(shared.get("run_id", ""))
+        if primary_repo_path:
+            research_out = research_out.model_copy(
+                update={"repo_path": primary_repo_path}
+            )
+
         shared["research_output"] = research_out
         return research_out
+
+    # ------------------------------------------------------------------
+    # Internal — repo provisioning (FEAT-250)
+    # ------------------------------------------------------------------
+
+    async def _provision_repos(self, run_id: str) -> str:
+        """Clone/pull each configured ``RepoSpec``; return the primary path.
+
+        Each repo is cloned into
+        ``<DEV_LOOP_REPO_BASE_PATH>/<run_id>/<alias>`` (kept under
+        ``WORKTREE_BASE_PATH`` so the dispatcher's cwd-safety guard passes).
+        The **primary** repo is the first ``RepoSpec`` (v1 single-primary).
+        Returns ``""`` when no repos are configured (back-compat). Never logs
+        tokens — :class:`GitToolkit` handles scrubbing internally.
+        """
+        if not self._repos or self._git_toolkit is None:
+            return ""
+
+        base = os.path.join(
+            os.path.abspath(conf.DEV_LOOP_REPO_BASE_PATH), run_id or "run"
+        )
+        os.makedirs(base, exist_ok=True)
+
+        primary_path = ""
+        for idx, repo in enumerate(self._repos):
+            dest = os.path.join(base, repo.alias)
+            self.logger.info(
+                "Provisioning repo %r → %s (branch=%s, private=%s)",
+                repo.alias, dest, repo.branch, repo.private,
+            )
+            result = await self._git_toolkit.clone_repo(
+                repo.url,
+                dest,
+                branch=repo.branch,
+                private=repo.private,
+            )
+            path = result.get("path", dest) if isinstance(result, dict) else dest
+            if idx == 0:
+                primary_path = path
+        return primary_path
 
     # ------------------------------------------------------------------
     # Internal
