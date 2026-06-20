@@ -38,7 +38,7 @@ from ..core.storage.synthesis import synthesize_results
 from ..core.types import DependencyResults
 
 # Declarative layer (intra-subpackage)
-from .definition import FlowDefinition
+from .definition import FlowDefinition, NodeDefinition
 
 # Decision-node canonical implementations (TASK-1311)
 from .nodes import (
@@ -207,6 +207,14 @@ class AgentsFlow(PersistenceMixin):
         self.name = name
         self._definition = definition
         self._agent_registry = agent_registry
+        # Optional per-type factories for custom (non agent/start/end) node
+        # types, injected via ``from_definition(node_factories=...)``. Each
+        # factory closes over live dependencies (dispatcher, toolkits, …) and
+        # is called as ``factory(node_def, deps, succs) -> Node`` afresh per
+        # ``run_flow()`` so concurrent runs do not share node state.
+        self._node_factories: dict[
+            str, Callable[["NodeDefinition", set[str], set[str]], Node]
+        ] = {}
         self._nodes: dict[str, Node] = {}
         self._edges: list[FlowEdge] = []
         self._node_event_listeners: list[
@@ -354,6 +362,9 @@ class AgentsFlow(PersistenceMixin):
         definition: FlowDefinition,
         *,
         agent_registry: Optional[AgentRegistry] = None,
+        node_factories: Optional[
+            dict[str, Callable[["NodeDefinition", set[str], set[str]], Node]]
+        ] = None,
     ) -> "AgentsFlow":
         """Materialize an executable ``AgentsFlow`` from a ``FlowDefinition``.
 
@@ -371,6 +382,13 @@ class AgentsFlow(PersistenceMixin):
             agent_registry: ``AgentRegistry`` used to resolve ``agent_ref``
                 strings. If ``None``, ``from_definition`` raises ``ValueError``
                 (no global singleton is assumed).
+            node_factories: Optional ``{node_type: factory}`` map for custom
+                (non ``agent``/``start``/``end``) node types. ``factory`` is
+                called as ``factory(node_def, deps, succs) -> Node`` inside
+                ``_materialize_nodes()`` (fresh per ``run_flow()``), letting the
+                node close over live dependencies (dispatcher, toolkits, …)
+                that cannot travel through the plain ``NodeDefinition.config``
+                dict. Node types still must be registered in ``NODE_REGISTRY``.
 
         Returns:
             Configured ``AgentsFlow`` instance ready to ``run_flow()``.
@@ -433,6 +451,8 @@ class AgentsFlow(PersistenceMixin):
         )
         # Attach pre-resolved agent map (keyed by node_id).
         flow._resolved_agents = resolved_agents
+        # Attach custom-node factories (keyed by NodeDefinition.type).
+        flow._node_factories = dict(node_factories or {})
         return flow
 
     # ── Scheduler (TASK-1067) ─────────────────────────────────────────────
@@ -513,13 +533,21 @@ class AgentsFlow(PersistenceMixin):
                     successors=succs,
                 )
             else:
-                # For other node types, try a generic construction; subclasses
-                # may need additional fields from node_def.config.
-                fresh[nid] = cls(
-                    node_id=nid,
-                    dependencies=deps,
-                    successors=succs,
-                )
+                # Custom node type: prefer a registered factory so the node can
+                # close over live dependencies (dispatcher, toolkits, …) that a
+                # plain ``NodeDefinition.config`` dict cannot carry. The factory
+                # is invoked fresh on every ``run_flow()`` (B-lite contract).
+                factory = self._node_factories.get(node_type)
+                if factory is not None:
+                    fresh[nid] = factory(node_def, deps, succs)
+                else:
+                    # Fallback: generic construction (unchanged behaviour);
+                    # subclasses may pull additional fields from node_def.config.
+                    fresh[nid] = cls(
+                        node_id=nid,
+                        dependencies=deps,
+                        successors=succs,
+                    )
 
         return fresh
 
