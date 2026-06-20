@@ -95,8 +95,9 @@ class DeploymentHandoffNode(DevLoopNode):
             **kwargs: Extra execution context (ignored).
 
         Returns:
-            ``{"status": "ready_to_deploy", "pr_url": "..."}`` on
-            success, or
+            ``{"status": "ready_to_deploy", "pr_url": "...", "pr_number": int}``
+            on success (the PR is opened as a DRAFT; ``pr_number`` enables the
+            revision loop to comment on the same PR), or
             ``{"status": "blocked", "error": "..."}`` after the retry
             budget is exhausted.
         """
@@ -151,6 +152,8 @@ class DeploymentHandoffNode(DevLoopNode):
                 "error": last_error or "unknown PR error",
             }
 
+        pr_number = self._parse_pr_number(pr_url)
+
         # 3. Transition Jira.
         try:
             await self._jira.jira_transition_issue(
@@ -173,7 +176,11 @@ class DeploymentHandoffNode(DevLoopNode):
         except Exception as exc:  # noqa: BLE001 - degraded path
             self.logger.warning("Jira add_comment failed: %s", exc)
 
-        return {"status": "ready_to_deploy", "pr_url": pr_url}
+        return {
+            "status": "ready_to_deploy",
+            "pr_url": pr_url,
+            "pr_number": pr_number,
+        }
 
     # ------------------------------------------------------------------
     # Internal — git push
@@ -204,7 +211,19 @@ class DeploymentHandoffNode(DevLoopNode):
     def _gh_available(self) -> bool:
         return shutil.which(self._gh_cli_path or "gh") is not None
 
+    @staticmethod
+    def _parse_pr_number(pr_url: str) -> Optional[int]:
+        """Extract the trailing PR number from a GitHub PR URL.
+
+        ``https://github.com/owner/repo/pull/42`` → ``42``. Returns ``None``
+        when no integer tail is present. Both the ``gh`` and the REST
+        (``html_url``) paths surface a ``…/pull/<n>`` URL.
+        """
+        tail = pr_url.rstrip("/").rsplit("/", 1)[-1] if pr_url else ""
+        return int(tail) if tail.isdigit() else None
+
     async def _create_pr(self, branch: str, title: str, body: str) -> str:
+        """Open a DRAFT PR; return the PR URL (number derived by the caller)."""
         if self._gh_available():
             return await self._create_pr_with_gh(branch, title, body)
         return await self._create_pr_via_rest(branch, title, body)
@@ -217,6 +236,7 @@ class DeploymentHandoffNode(DevLoopNode):
             gh_path,
             "pr",
             "create",
+            "--draft",
             "--base",
             self._base_branch,
             "--head",
@@ -255,6 +275,7 @@ class DeploymentHandoffNode(DevLoopNode):
             "body": body,
             "head": branch,
             "base": self._base_branch,
+            "draft": True,
         }
         headers = {
             "Authorization": f"Bearer {token}",
