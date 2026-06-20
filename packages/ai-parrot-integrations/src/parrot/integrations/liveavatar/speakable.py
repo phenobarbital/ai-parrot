@@ -37,6 +37,14 @@ from typing import List
 # Code fences: ```...``` (possibly with language tag)
 _RE_CODE_FENCE = re.compile(r"```[\w]*\n?.*?```", re.DOTALL)
 
+# Unterminated (still-streaming) code fence: an opening ``` with no closing
+# fence yet.  Applied AFTER complete fences are removed, so any remaining ```
+# is by definition an unmatched opener — everything from it to the end of the
+# buffer is code-in-progress and must NOT be spoken (e.g. a streamed ```json
+# structured-output block).  The closing fence, when it arrives, makes the
+# whole block match _RE_CODE_FENCE instead.
+_RE_OPEN_CODE_FENCE = re.compile(r"```.*$", re.DOTALL)
+
 # Inline code: `...`
 _RE_INLINE_CODE = re.compile(r"`[^`\n]*`")
 
@@ -142,8 +150,13 @@ class SpeakableFlattener:
         Returns:
             Speakable plaintext with markdown stripped.
         """
-        # 1. Remove code fences and their content entirely
+        # 1. Remove complete code fences and their content entirely
         text = _RE_CODE_FENCE.sub(" ", text)
+
+        # 1b. Remove an unterminated (still-streaming) code fence — see
+        #     _RE_OPEN_CODE_FENCE.  Guards flush() and is a safety net even
+        #     though _extract_sentences splits the open fence off first.
+        text = _RE_OPEN_CODE_FENCE.sub(" ", text)
 
         # 2. Remove inline code content
         text = _RE_INLINE_CODE.sub(" ", text)
@@ -182,24 +195,53 @@ class SpeakableFlattener:
 
         return text
 
+    @staticmethod
+    def _split_open_fence(text: str) -> tuple[str, str]:
+        """Split a raw buffer into its speakable prefix and a trailing open fence.
+
+        While a ```` ``` ```` code block is still streaming (opener seen, closer
+        not yet), everything from the opener onward is code-in-progress and must
+        be held RAW in the buffer until the closing fence arrives — stripping it
+        too early would lose the opener and let the (now fenceless) code leak to
+        the TTS on the next feed.
+
+        Returns:
+            ``(speakable_prefix, open_fence)``.  ``open_fence`` is ``""`` when
+            the buffer contains no unterminated fence.
+        """
+        # An odd number of ``` markers means the last one opens a fence that
+        # has not been closed yet.
+        if text.count("```") % 2 == 1:
+            idx = text.rfind("```")
+            return text[:idx], text[idx:]
+        return text, ""
+
     def _extract_sentences(self) -> List[str]:
         """Split the current buffer on sentence boundaries and drain them.
 
         Strategy:
-        1. Strip markdown from the current raw buffer (BEFORE stripping ws).
-        2. Split on ``_RE_SENTENCE_SPLIT`` (terminal punct + whitespace).
+        1. Hold any trailing unterminated code fence RAW (do not speak code).
+        2. Strip markdown from the speakable prefix (BEFORE stripping ws).
+        3. Split on ``_RE_SENTENCE_SPLIT`` (terminal punct + whitespace).
            Critically: we do NOT strip the cleaned text before splitting so
            that a trailing space in the chunk acts as a valid sentence boundary.
-        3. Emit all segments except the last one as complete sentences.
-        4. If the last segment also ends with terminal punctuation emit it too.
+        4. Emit all segments except the last one as complete sentences.
+        5. If the last segment also ends with terminal punctuation emit it too.
 
         Returns:
             List of complete speakable sentences extracted from the buffer.
         """
+        # Hold back a still-streaming code fence; re-append it (raw) to whatever
+        # remains in the buffer so the next feed() can complete/strip it.
+        speakable, open_fence = self._split_open_fence(self._buffer)
+
         # Clean but do NOT call .strip() here — trailing whitespace from the
         # incoming chunk is the sentence boundary signal we rely on.
-        cleaned = self._strip_markdown(self._buffer)
+        cleaned = self._strip_markdown(speakable)
         if not cleaned.strip():
+            # Nothing speakable yet; retain the raw buffer (an open fence, or a
+            # partial sentence/markdown that completes on a later feed).
+            self._buffer = speakable + open_fence
             return []
 
         # Split gives: ["First sentence.", " Second sentence.", " partial"]
@@ -209,9 +251,9 @@ class SpeakableFlattener:
 
         if len(parts) <= 1:
             # No whitespace-after-punct boundary found yet; keep accumulating.
-            # Store the cleaned version (without raw markdown) as the buffer
-            # so future feeds don't re-process markup that was already removed.
-            self._buffer = cleaned
+            # Store the cleaned prefix (markup already removed) plus the raw
+            # open fence so future feeds don't re-process stripped markup.
+            self._buffer = cleaned + open_fence
             return []
 
         complete = parts[:-1]
@@ -223,8 +265,8 @@ class SpeakableFlattener:
         # it is also a complete sentence (occurs at EOS or when the stream ends).
         if tail.strip() and re.search(r"[.!?]$", tail.strip()):
             sentences.append(tail.strip())
-            self._buffer = ""
+            self._buffer = open_fence
         else:
-            self._buffer = tail.lstrip()  # retain tail for next feed()
+            self._buffer = tail.lstrip() + open_fence  # retain tail for next feed()
 
         return sentences

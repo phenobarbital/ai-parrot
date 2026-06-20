@@ -10,7 +10,7 @@ Open questions deferred to owners:
 """
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -184,52 +184,40 @@ class FullModeSessionHandle(AvatarSessionHandle):
     )
 
 
-class TenantAvatarConfig(BaseModel):
-    """Per-tenant avatar configuration override (DB layer — FEAT-248).
+class StructuredOutputMessage(BaseModel):
+    """Output-bridge contract for structured ai-parrot outputs (FEAT-249, relocated).
 
-    Carries per-tenant overrides for FULL mode avatar settings.  When a field is
-    ``None`` the global env-var default is used instead.
+    Structured outputs (charts, data, canvas updates, tool calls) produced
+    during a voice or chat turn are published to the AgentChat UI WebSocket
+    channel keyed by :attr:`session_id` — the same conversation the avatar is
+    speaking.
 
-    SECURITY NOTE: ``api_key`` is a server-side secret.  It MUST NEVER be
-    serialised into any client-facing HTTP response.
+    Originally lived in ``livekit_agent/models.py``; relocated here (§3.4) so
+    Mode A/B/C structured-output delivery survives the Phase C deletion.
 
     Attributes:
-        tenant_id: Tenant identifier (required).
-        avatar_id: Per-tenant avatar override.
-        voice_id: Per-tenant voice override.
-        language: Per-tenant language override.
-        interactivity_type: Per-tenant interactivity type override.
-        api_key: Per-tenant API key override.  Server-side only — NEVER expose.
-        fullmode_enabled: Whether FULL mode is enabled for this tenant.
+        type: Output kind, e.g. ``"chart"`` | ``"data"`` | ``"canvas"`` |
+            ``"tool_call"``.
+        session_id: Conversation id used as the WebSocket channel key.
+        payload: Arbitrary structured payload the AgentChat UI renders.
+        turn_id: Optional identifier of the turn that produced the output.
     """
 
-    tenant_id: str = Field(
-        ..., description="Tenant identifier."
+    type: str = Field(
+        ...,
+        description='Output kind, e.g. "chart" | "data" | "canvas" | "tool_call".',
     )
-    avatar_id: Optional[str] = Field(
+    session_id: str = Field(
+        ...,
+        description="Conversation id used as the WebSocket channel key.",
+    )
+    payload: Dict[str, Any] = Field(
+        ...,
+        description="Structured payload rendered by the AgentChat UI.",
+    )
+    turn_id: Optional[str] = Field(
         default=None,
-        description="Per-tenant avatar ID override.",
+        description="Optional id of the turn that produced this output.",
     )
-    voice_id: Optional[str] = Field(
-        default=None,
-        description="Per-tenant voice ID override.",
-    )
-    language: Optional[str] = Field(
-        default=None,
-        description="Per-tenant BCP-47 language override.",
-    )
-    interactivity_type: Optional[Literal["CONVERSATIONAL", "PUSH_TO_TALK"]] = Field(
-        default=None,
-        description="Per-tenant interactivity type override.",
-    )
-    api_key: Optional[str] = Field(
-        default=None,
-        description=(
-            "Per-tenant LiveAvatar API key. "
-            "Server-side only — NEVER expose to clients."
-        ),
-    )
-    fullmode_enabled: bool = Field(
-        default=False,
-        description="Whether FULL mode is enabled for this tenant.",
-    )
+
+

@@ -359,7 +359,8 @@ class LiveAvatarClient:
         """Send a single HTTP keep-alive ping for the session.
 
         Calls ``POST /v1/sessions/keep-alive`` with Bearer ``session_token``
-        auth (no session id in the path — the token scopes the session).
+        auth.  The session_id is REQUIRED in the request body (an empty body
+        is rejected with 400 Bad Request).
         # TODO P7 — switch to WS ``session.keep_alive`` here if the WS
         #           variant is chosen as the canonical keep-alive transport.
 
@@ -368,8 +369,11 @@ class LiveAvatarClient:
         """
         url = f"{self.cfg.base_url}/v1/sessions/keep-alive"
         headers = self._bearer_headers(handle)
+        # The keep-alive endpoint REQUIRES the session_id in the body (UUID);
+        # an empty body is rejected with 400 Bad Request.
+        body = {"session_id": handle.liveavatar_session_id}
         try:
-            await self._post(url, headers=headers, json={})
+            await self._post(url, headers=headers, json=body)
             self.logger.debug("LiveAvatarClient: keep-alive sent for %s", handle.liveavatar_session_id)
         except Exception:  # noqa: BLE001
             self.logger.warning(

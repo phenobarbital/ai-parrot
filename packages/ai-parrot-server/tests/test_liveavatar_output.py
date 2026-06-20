@@ -1,4 +1,4 @@
-"""Unit tests for the server-side LiveAvatar output subscriber wiring (FEAT-243/244)."""
+"""Unit tests for the server-side structured-output transport wiring (FEAT-249)."""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
@@ -73,7 +73,7 @@ async def test_start_launches_subscriber_and_stop_tears_down(monkeypatch):
     await start_cb(app)
     await asyncio.wait_for(started.wait(), timeout=1)
 
-    # Subscriber wired via a _FanOutSink (FEAT-244) + our channel + redis client.
+    # Subscriber wired via a _FanOutSink + our channel + redis client.
     # Check that it's a _FanOutSink wrapping the socket manager.
     assert isinstance(seen["socket_manager"], _FanOutSink)
     assert seen["socket_manager"]._managers[0] is sm
@@ -91,7 +91,7 @@ async def test_start_launches_subscriber_and_stop_tears_down(monkeypatch):
     assert "liveavatar_output_redis" not in app
 
 
-# ── BotManager.setup gating via ENABLE_LIVEAVATAR_VOICE ──────────────────────
+# ── BotManager.setup gating via ENABLE_STRUCTURED_OUTPUT_TRANSPORT ───────────
 
 
 def test_botmanager_skips_subscriber_when_flag_disabled(monkeypatch):
@@ -100,13 +100,13 @@ def test_botmanager_skips_subscriber_when_flag_disabled(monkeypatch):
     import parrot.handlers.liveavatar_output as lo
     from parrot.manager import manager as mgr
 
-    monkeypatch.setattr(mgr, "ENABLE_LIVEAVATAR_VOICE", False)
+    monkeypatch.setattr(mgr, "ENABLE_STRUCTURED_OUTPUT_TRANSPORT", False)
     called = []
     monkeypatch.setattr(
         lo, "configure_liveavatar_output_subscriber", lambda app: called.append(app)
     )
 
-    mgr.BotManager._setup_liveavatar_voice(SimpleNamespace(app=object()))
+    mgr.BotManager._setup_structured_output_transport(SimpleNamespace(app=object()))
 
     assert called == []
 
@@ -117,19 +117,19 @@ def test_botmanager_wires_subscriber_when_flag_enabled(monkeypatch):
     import parrot.handlers.liveavatar_output as lo
     from parrot.manager import manager as mgr
 
-    monkeypatch.setattr(mgr, "ENABLE_LIVEAVATAR_VOICE", True)
+    monkeypatch.setattr(mgr, "ENABLE_STRUCTURED_OUTPUT_TRANSPORT", True)
     called = []
     monkeypatch.setattr(
         lo, "configure_liveavatar_output_subscriber", lambda app: called.append(app)
     )
 
     app = object()
-    mgr.BotManager._setup_liveavatar_voice(SimpleNamespace(app=app))
+    mgr.BotManager._setup_structured_output_transport(SimpleNamespace(app=app))
 
     assert called == [app]
 
 
-# ── _FanOutSink unit tests (FEAT-244 TASK-1586) ──────────────────────────────
+# ── _FanOutSink unit tests ──────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -164,23 +164,11 @@ async def test_fanout_skips_none_and_survives_failure():
 
 @pytest.mark.asyncio
 async def test_fanout_only_user_socket_manager():
-    """Fan-out with only user_socket_manager behaves like the pre-FEAT-244 path."""
+    """Fan-out with only user_socket_manager delivers correctly."""
     sm = MagicMock()
     sm.broadcast_to_channel = AsyncMock()
 
-    sink = _FanOutSink([sm, None])
+    sink = _FanOutSink([sm])
     await sink.broadcast_to_channel("sess-1", {"x": 1})
 
     sm.broadcast_to_channel.assert_awaited_once_with("sess-1", {"x": 1}, exclude_ws=None)
-
-
-@pytest.mark.asyncio
-async def test_fanout_only_stream_handler():
-    """Fan-out with only stream_handler delivers when user_socket_manager is absent."""
-    sh = MagicMock()
-    sh.broadcast_to_channel = AsyncMock()
-
-    sink = _FanOutSink([None, sh])
-    await sink.broadcast_to_channel("sess-1", {"y": 2})
-
-    sh.broadcast_to_channel.assert_awaited_once_with("sess-1", {"y": 2}, exclude_ws=None)

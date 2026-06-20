@@ -178,6 +178,61 @@ BugBrief = WorkBrief
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Repository provisioning & revision-mode contracts (FEAT-250)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class RepoSpec(BaseModel):
+    """A git repository the dev-loop run operates on.
+
+    Declared on the flow config (``DEV_LOOP_REPOS``); the repo-provisioning
+    step clones/pulls each spec under ``DEV_LOOP_REPO_BASE_PATH`` before the
+    Development node runs.
+    """
+
+    alias: str = Field(
+        ...,
+        description="Short name; also the clone directory name under the base path.",
+    )
+    url: str = Field(
+        ...,
+        description="HTTPS URL or 'owner/name' slug to clone.",
+    )
+    branch: str = Field(
+        default="main",
+        description="Base branch to clone and branch from.",
+    )
+    private: bool = Field(
+        default=False,
+        description="When True, use the toolkit's token / `gh` auth for the clone.",
+    )
+
+
+class RevisionBrief(BaseModel):
+    """Input to a revision-mode run (no new PR; update an existing one).
+
+    Built by the PR-comment / PR-review webhook handler and passed to
+    ``DevLoopRunner.run_revision(...)``. The revision flow enters at the
+    Development node with ``cwd=repo_path`` (the existing clone + branch),
+    re-runs QA, then pushes to the same branch and comments on the same PR.
+    """
+
+    repo_path: str = Field(
+        ...,
+        description="Existing clone on disk (the Development node's cwd).",
+    )
+    branch: str = Field(..., description="Existing feature branch already checked out.")
+    pr_number: int = Field(..., description="The open draft PR to update.")
+    repository: str = Field(..., description="'owner/name' of the repository.")
+    jira_issue_key: str = Field(..., description="Linked Jira issue key.")
+    feedback: str = Field(..., description="The reviewer comment text to act on.")
+    head_sha: str = Field(
+        ...,
+        description="Head SHA at trigger time; used for dedup (mirrors GitHubReviewer).",
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Per-node dispatch outputs
 # ─────────────────────────────────────────────────────────────────────
 
@@ -226,6 +281,16 @@ class ResearchOutput(BaseModel):
         description="Absolute on-disk worktree path.",
         validation_alias=AliasChoices("worktree_path", "worktree"),
     )
+    repo_path: str = Field(
+        default="",
+        description=(
+            "Absolute path of the primary cloned repository the Development "
+            "node will `cd` into. Set by the repo-provisioning step (FEAT-250). "
+            "Defaults to '' for back-compat; when empty, callers fall back to "
+            "``worktree_path``."
+        ),
+        validation_alias=AliasChoices("repo_path", "repo", "clone_path"),
+    )
     log_excerpts: List[str] = Field(
         default_factory=list,
         description="Short, redacted log excerpts gathered during research.",
@@ -264,6 +329,19 @@ class QAReport(BaseModel):
     lint_passed: bool
     lint_output: str = ""
     notes: str = ""
+    code_review_passed: bool = Field(
+        default=True,
+        description=(
+            "Result of the additive `sdd-codereview` gate (FEAT-250). Defaults "
+            "to True so legacy QA paths that do not run code-review are "
+            "unaffected. The final `passed` is "
+            "``deterministic_passed and code_review_passed``."
+        ),
+    )
+    code_review_findings: List[str] = Field(
+        default_factory=list,
+        description="Qualitative findings emitted by the code-review gate.",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -279,7 +357,9 @@ class ClaudeCodeDispatchProfile(BaseModel):
     and the dispatcher falls back to a generic session.
     """
 
-    subagent: Optional[Literal["sdd-research", "sdd-worker", "sdd-qa"]] = "sdd-worker"
+    subagent: Optional[
+        Literal["sdd-research", "sdd-worker", "sdd-qa", "sdd-codereview"]
+    ] = "sdd-worker"
     system_prompt_override: Optional[str] = None
     allowed_tools: List[str] = Field(default_factory=list)
     permission_mode: Literal[

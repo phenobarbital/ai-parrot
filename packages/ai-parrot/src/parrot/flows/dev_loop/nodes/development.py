@@ -23,9 +23,10 @@ from parrot.flows.dev_loop.models import (
     DevelopmentOutput,
     ResearchOutput,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode
+from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
 
 
+@register_dev_loop_node("dev_loop.development")
 class DevelopmentNode(DevLoopNode):
     """Third node — dispatches the implementation phase to ``sdd-worker``."""
 

@@ -90,9 +90,13 @@ ENABLE_DASHBOARDS = config.getboolean("ENABLE_DASHBOARDS", fallback=False)
 ENABLE_CREWS = config.getboolean("ENABLE_CREWS", fallback=False)
 ENABLE_DATABASE_BOTS = config.getboolean("ENABLE_DATABASE_BOTS", fallback=False)
 ENABLE_REGISTRY_BOTS = config.getboolean("ENABLE_REGISTRY_BOTS", fallback=True)
-# FEAT-243: enable the LiveAvatar Phase C output subscriber (re-broadcasts the
-# LiveKit voice worker's structured outputs to the AgentChat UI over Redis).
-ENABLE_LIVEAVATAR_VOICE = config.getboolean("ENABLE_LIVEAVATAR_VOICE", fallback=False)
+# FEAT-249: enable the Redis structured-output transport (re-broadcasts
+# structured outputs from any ai-parrot worker to the AgentChat UI over Redis).
+# Renamed from ENABLE_LIVEAVATAR_VOICE (FEAT-243) — operators upgrading must
+# rename the env var in their deployment config.
+ENABLE_STRUCTURED_OUTPUT_TRANSPORT = config.getboolean(
+    "ENABLE_STRUCTURED_OUTPUT_TRANSPORT", fallback=False
+)
 
 # Bot Model Table Configuration:
 PARROT_BOTS_TABLE = config.get('PARROT_BOTS_TABLE', fallback='ai_bots')
@@ -858,6 +862,27 @@ ACCEPTANCE_CRITERION_ALLOWLIST: list[str] = config.getlist(
 # for plan-summary generation without affecting log summarisation.
 DEV_LOOP_PLAN_LLM: str = config.get(
     "DEV_LOOP_PLAN_LLM", fallback=""
+)
+# Repositories the dev-loop run clones/pulls before Development (FEAT-250).
+# Raw value parsed into RepoSpec objects by the flow config — NOT here (conf.py
+# must not import dev_loop). Each entry may be an "owner/name" slug or a JSON
+# object string; an empty list disables repo provisioning.
+DEV_LOOP_REPOS: list[str] = config.getlist("DEV_LOOP_REPOS", fallback=[]) or []
+# Base directory for dev-loop clones. Kept under WORKTREE_BASE_PATH so the
+# dispatcher's cwd-safety guard (_enforce_cwd_under_worktree_base) passes (R4).
+DEV_LOOP_REPO_BASE_PATH: str = config.get(
+    "DEV_LOOP_REPO_BASE_PATH", fallback=f"{WORKTREE_BASE_PATH}/repos"
+)
+# What kind of PR feedback triggers a revision-mode run (FEAT-250):
+#   "changes_requested" (default) — human, non-bot, change-requesting reviews,
+#   "any_comment" — any non-bot human comment,
+#   "command" — only comments with the /revise prefix.
+DEV_LOOP_REVISION_TRIGGER: str = config.get(
+    "DEV_LOOP_REVISION_TRIGGER", fallback="changes_requested"
+)
+# Model used by the additive sdd-codereview QA gate (FEAT-250).
+DEV_LOOP_CODEREVIEW_MODEL: str = config.get(
+    "DEV_LOOP_CODEREVIEW_MODEL", fallback="claude-sonnet-4-6"
 )
 
 # ---------------------------------------------------------------------------

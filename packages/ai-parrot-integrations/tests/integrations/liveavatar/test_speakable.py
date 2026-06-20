@@ -149,6 +149,47 @@ def test_flattener_unclosed_code_fence_no_crash() -> None:
     assert isinstance(out, list)
 
 
+def test_flattener_unclosed_fence_not_spoken_while_streaming() -> None:
+    """A still-streaming code fence is never emitted to the TTS."""
+    f = SpeakableFlattener()
+    # Partial JSON structured-output block, fence not yet closed.
+    out = f.feed('```json\n{ "explanation": "Here are the 10 most recent FSOs')
+    assert out == [], "Open code fence content must not be spoken yet"
+
+
+def test_flattener_streamed_json_block_is_silent() -> None:
+    """A full ```json structured-output response yields nothing speakable."""
+    f = SpeakableFlattener()
+    chunks = [
+        "```json\n",
+        '{ "explanation": ',
+        '"Here are the 10 most recent FSOs." }',
+        "\n```",
+    ]
+    spoken: list[str] = []
+    for c in chunks:
+        spoken.extend(f.feed(c))
+    spoken.extend(f.flush())
+    text = " ".join(spoken)
+    assert "explanation" not in text
+    assert "FSO" not in text
+    assert "{" not in text
+
+
+def test_flattener_text_then_streamed_fence() -> None:
+    """Prose before a fenced block is spoken; the fenced block is not."""
+    f = SpeakableFlattener()
+    spoken: list[str] = []
+    spoken.extend(f.feed("Here is the result. "))
+    spoken.extend(f.feed("```json\n{ "))
+    spoken.extend(f.feed('"x": 1 }\n```'))
+    spoken.extend(f.flush())
+    text = " ".join(spoken)
+    assert "Here is the result." in text
+    assert '"x"' not in text
+    assert "```" not in text
+
+
 def test_flattener_plain_text_passthrough() -> None:
     """Plain text with no markdown passes through unchanged (modulo whitespace)."""
     f = SpeakableFlattener()

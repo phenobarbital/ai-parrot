@@ -1,0 +1,137 @@
+"""Node factories that bind live dependencies into the declarative dev-loop.
+
+:func:`build_dev_loop_node_factories` returns the ``{node_type: factory}`` map
+consumed by ``AgentsFlow.from_definition(..., node_factories=...)`` (FEAT-250
+TASK-001). Each factory closes over the live dependencies (dispatcher,
+toolkits, redis url, repo specs) that a plain ``NodeDefinition.config`` dict
+cannot carry, constructs the node with ``node_id == node_def.id``, and stamps
+the ``dependencies``/``successors`` the materializer derived from the edges.
+
+Importing this module also triggers ``@register_node`` registration of every
+``dev_loop.*`` node type (the node classes are imported here).
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable, Dict, List, Optional
+
+from parrot.bots.flows.flow.definition import NodeDefinition
+from parrot.flows.dev_loop.models import RepoSpec
+from parrot.flows.dev_loop.nodes.base import DevLoopNode
+from parrot.flows.dev_loop.nodes.bug_intake import BugIntakeNode
+from parrot.flows.dev_loop.nodes.close import DevLoopCloseNode
+from parrot.flows.dev_loop.nodes.deployment_handoff import DeploymentHandoffNode
+from parrot.flows.dev_loop.nodes.development import DevelopmentNode
+from parrot.flows.dev_loop.nodes.failure_handler import FailureHandlerNode
+from parrot.flows.dev_loop.nodes.intent_classifier import IntentClassifierNode
+from parrot.flows.dev_loop.nodes.qa import QANode
+from parrot.flows.dev_loop.nodes.research import ResearchNode
+from parrot.flows.dev_loop.nodes.revision_handoff import RevisionHandoffNode
+
+# Factory signature consumed by AgentsFlow._materialize_nodes.
+NodeFactory = Callable[[NodeDefinition, set, set], DevLoopNode]
+
+
+def _with_graph(node: DevLoopNode, deps: set, succs: set) -> DevLoopNode:
+    """Stamp the edge-derived ``dependencies``/``successors`` onto ``node``."""
+    return node.model_copy(
+        update={"dependencies": set(deps), "successors": set(succs)}
+    )
+
+
+def build_dev_loop_node_factories(
+    *,
+    dispatcher: Any,
+    jira_toolkit: Any,
+    redis_url: str,
+    git_toolkit: Optional[Any] = None,
+    log_toolkits: Optional[Dict[str, Any]] = None,
+    repos: Optional[List[RepoSpec]] = None,
+) -> Dict[str, NodeFactory]:
+    """Return the ``{dev_loop.* type: factory}`` map binding live deps.
+
+    Args:
+        dispatcher: Shared ``ClaudeCodeDispatcher`` (Research/Development/QA).
+        jira_toolkit: Service-account JiraToolkit.
+        redis_url: Redis URL for the intake nodes' event streams.
+        git_toolkit: Optional ``GitToolkit`` for repo provisioning (FEAT-250).
+        log_toolkits: Optional ``{source_kind: toolkit}`` map for ResearchNode.
+        repos: Optional ``RepoSpec`` list cloned/pulled before Development.
+
+    Returns:
+        A mapping suitable for ``node_factories=`` on
+        ``AgentsFlow.from_definition``.
+    """
+    log_toolkits = log_toolkits or {}
+    repos = repos or []
+
+    def intent_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
+        return _with_graph(
+            IntentClassifierNode(redis_url=redis_url, name=nd.id), deps, succs
+        )
+
+    def bug_intake_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
+        return _with_graph(
+            BugIntakeNode(redis_url=redis_url, name=nd.id), deps, succs
+        )
+
+    def research_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
+        return _with_graph(
+            ResearchNode(
+                dispatcher=dispatcher,
+                jira_toolkit=jira_toolkit,
+                log_toolkits=log_toolkits,
+                git_toolkit=git_toolkit,
+                repos=repos,
+                name=nd.id,
+            ),
+            deps,
+            succs,
+        )
+
+    def development_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
+        return _with_graph(
+            DevelopmentNode(dispatcher=dispatcher, name=nd.id), deps, succs
+        )
+
+    def qa_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
+        return _with_graph(QANode(dispatcher=dispatcher, name=nd.id), deps, succs)
+
+    def handoff_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
+        return _with_graph(
+            DeploymentHandoffNode(
+                jira_toolkit=jira_toolkit, git_toolkit=git_toolkit, name=nd.id
+            ),
+            deps,
+            succs,
+        )
+
+    def failure_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
+        return _with_graph(
+            FailureHandlerNode(jira_toolkit=jira_toolkit, name=nd.id), deps, succs
+        )
+
+    def close_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
+        return _with_graph(
+            DevLoopCloseNode(jira_toolkit, name=nd.id), deps, succs
+        )
+
+    def revision_handoff_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
+        return _with_graph(
+            RevisionHandoffNode(git_toolkit, name=nd.id), deps, succs
+        )
+
+    return {
+        "dev_loop.intent_classifier": intent_factory,
+        "dev_loop.bug_intake": bug_intake_factory,
+        "dev_loop.research": research_factory,
+        "dev_loop.development": development_factory,
+        "dev_loop.qa": qa_factory,
+        "dev_loop.deployment_handoff": handoff_factory,
+        "dev_loop.failure_handler": failure_factory,
+        "dev_loop.close": close_factory,
+        "dev_loop.revision_handoff": revision_handoff_factory,
+    }
+
+
+__all__ = ["build_dev_loop_node_factories"]

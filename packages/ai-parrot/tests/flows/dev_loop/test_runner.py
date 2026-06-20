@@ -150,13 +150,18 @@ class TestEndToEndPaths:
 
         assert result.status == FlowStatus.COMPLETED
         executed = set(result.responses)
+        # FEAT-250 G7: the success path now terminates at the close node.
         assert executed == {
             "intent_classifier", "bug_intake", "research",
-            "development", "qa", "deployment_handoff",
+            "development", "qa", "deployment_handoff", "close",
         }
         assert "failure_handler" not in executed
-        assert result.output["status"] == "ready_to_deploy"
-        assert result.output["pr_url"] == "https://github.com/x/y/pull/1"
+        # The handoff result (PR info) lives in the per-node responses; the
+        # flow's terminal is now the close node.
+        handoff_resp = result.responses["deployment_handoff"]
+        assert handoff_resp["status"] == "ready_to_deploy"
+        assert handoff_resp["pr_url"] == "https://github.com/x/y/pull/1"
+        assert result.responses["close"]["status"] == "closed"
         # Jira moved to Ready to Deploy.
         mock_jira.jira_transition_issue.assert_awaited()
 
@@ -175,7 +180,8 @@ class TestEndToEndPaths:
         executed = set(result.responses)
         assert "failure_handler" in executed
         assert "deployment_handoff" not in executed
-        assert result.output["status"] == "escalated"
+        assert "close" not in executed
+        assert result.responses["failure_handler"]["status"] == "escalated"
         # FailureHandler derived the qa_failed context from shared state.
         bodies = [
             c.kwargs["body"]

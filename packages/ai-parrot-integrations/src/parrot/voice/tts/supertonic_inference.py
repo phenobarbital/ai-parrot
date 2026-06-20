@@ -228,7 +228,15 @@ def chunk_text(text: str, max_len: int = 300) -> list[str]:
         sentences = _SENTENCE_SPLIT_RE.split(paragraph)
         current = ""
         for sentence in sentences:
-            if len(current) + len(sentence) + 1 <= max_len:
+            # A single sentence longer than max_len would otherwise pass through
+            # whole, producing an oversized chunk the model cannot handle. Hard-
+            # split it on word boundaries (and, as a last resort, mid-word).
+            if len(sentence) > max_len:
+                if current:
+                    chunks.append(current.strip())
+                    current = ""
+                chunks.extend(_split_oversized(sentence, max_len))
+            elif len(current) + len(sentence) + 1 <= max_len:
                 current += (" " if current else "") + sentence
             else:
                 if current:
@@ -237,6 +245,32 @@ def chunk_text(text: str, max_len: int = 300) -> list[str]:
         if current:
             chunks.append(current.strip())
     return chunks or [text.strip()]
+
+
+def _split_oversized(sentence: str, max_len: int) -> list[str]:
+    """Break a single over-long sentence into chunks of at most ``max_len``.
+
+    Splits on whitespace; a single token longer than ``max_len`` (e.g. a long
+    URL or unbroken symbol run) is sliced mid-token so no chunk ever exceeds
+    the limit.
+    """
+    out: list[str] = []
+    current = ""
+    for word in sentence.split():
+        if len(word) > max_len:
+            if current:
+                out.append(current)
+                current = ""
+            for i in range(0, len(word), max_len):
+                out.append(word[i : i + max_len])
+        elif len(current) + len(word) + 1 <= max_len:
+            current += (" " if current else "") + word
+        else:
+            out.append(current)
+            current = word
+    if current:
+        out.append(current)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +415,15 @@ class SupertonicPipeline:
         speed: Speech-rate multiplier (>1 = faster). Upstream default is 1.05.
         use_gpu: Reserved; CPU execution only for now.
     """
+
+    # The vector-estimator's rotary attention table is exported with a fixed
+    # maximum sequence length (~1000 latent positions). A pathological duration
+    # prediction (e.g. dense symbol soup that slipped past the text sanitiser)
+    # can produce a latent_len beyond that, which crashes the ONNX kernel with
+    # an opaque broadcast error ("1000 by <N>"). We clamp the predicted duration
+    # so latent_len never exceeds this limit. Kept a touch below the true 1000
+    # for ceil() headroom.
+    _MAX_LATENT_LEN: int = 990
 
     def __init__(
         self,
@@ -528,6 +571,22 @@ class SupertonicPipeline:
         # 1) Duration predictor -> seconds, scaled by speed.
         duration, *_ = self.dp_ort.run(None, {"text_ids": text_ids, "style_dp": style.dp, "text_mask": text_mask})
         duration = duration / self.speed
+
+        # Clamp the predicted duration so the resulting latent_len stays within
+        # the vector estimator's positional limit (see _MAX_LATENT_LEN). Without
+        # this, an over-long duration crashes the ORT kernel with an opaque
+        # broadcast error; clamping truncates the audio instead.
+        chunk_size = self.base_chunk_size * self.chunk_compress_factor
+        max_duration = self._MAX_LATENT_LEN * chunk_size / self.sample_rate
+        if float(duration.max()) > max_duration:
+            self.logger.warning(
+                "SupertonicPipeline: predicted duration %.1fs exceeds model "
+                "limit %.1fs for a %d-char chunk; clamping (audio truncated).",
+                float(duration.max()),
+                max_duration,
+                len(text),
+            )
+            duration = np.minimum(duration, max_duration)
 
         # 2) Text encoder -> text embedding.
         text_emb, *_ = self.text_enc_ort.run(

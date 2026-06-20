@@ -40,7 +40,8 @@ def flow():
 
 
 class TestNodeRegistration:
-    def test_seven_nodes_registered(self, flow):
+    def test_all_nodes_registered(self, flow):
+        # FEAT-250 added the terminal ``close`` node (G7) → eight nodes.
         names = set(flow._nodes.keys())
         assert names == {
             "intent_classifier",
@@ -50,7 +51,12 @@ class TestNodeRegistration:
             "qa",
             "deployment_handoff",
             "failure_handler",
+            "close",
         }
+
+    def test_deployment_handoff_routes_to_close(self, flow):
+        targets = _outgoing_targets(flow, "deployment_handoff")
+        assert "close" in targets
 
 
 class TestLinearChainTransitions:

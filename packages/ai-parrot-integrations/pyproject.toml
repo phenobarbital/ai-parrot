@@ -71,26 +71,6 @@ voice-moonshine = [
 liveavatar = [
     "livekit-api>=1.0",
 ]
-# FEAT-243 (LiveAvatar Phase C): voice-native LiveKit Agents pipeline.
-# P5 RESOLVED: validated end-to-end against livekit-agents 1.6.1 (Agent.llm_node
-# signature, ChatContext.items/ChatMessage.text_content, AgentSession + WorkerOptions).
-# Re-validate before bumping to ~= 2.x. Pulls in the FEAT-242 'liveavatar' extra
-# so livekit-api (room/token minting) is an explicit, not transitive, dependency.
-# NOTE (Q-plugins): livekit-plugins-silero and -turn-detector are deprecated for
-#   v2.0 in favour of livekit.agents.inference.{VAD,TurnDetector}; they still work
-#   on 1.6.x (AgentSession also bundles a default Silero VAD).
-# NOTE (deps): livekit-agents 1.6.1 hard-pins opentelemetry-*~=1.39.0 (<1.40);
-#   the host project uses otel 1.42. The workspace root declares a conflict
-#   split so both otel versions coexist in the universal lock. The flowtask/psutil
-#   conflict is gone as of flowtask 5.12.1 (psutil no longer hard-pinned).
-liveavatar-voice = [
-    "ai-parrot-integrations[liveavatar]",
-    "livekit-agents~=1.5",
-    "livekit-plugins-deepgram~=1.5",
-    "livekit-plugins-cartesia~=1.5",
-    "livekit-plugins-silero~=1.5",
-    "livekit-plugins-turn-detector~=1.5",
-]
 voice = [
     "ai-parrot-integrations[voice-local]",
     "ai-parrot-integrations[voice-openai]",

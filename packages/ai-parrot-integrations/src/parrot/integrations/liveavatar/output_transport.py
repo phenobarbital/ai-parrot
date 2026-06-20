@@ -1,10 +1,10 @@
-"""Cross-process transport for the LiveAvatar Phase C output bridge (FEAT-243).
+"""Cross-process transport for structured-output delivery (FEAT-249).
 
-The LiveKit Agents worker runs in a **separate process** (and possibly a
-separate host) from the ai-parrot-server that owns the AgentChat WebSocket
-(`UserSocketManager`). The worker therefore cannot call
-`broadcast_to_channel` in-process. This module bridges that gap over Redis
-pub/sub (Q-deploy):
+ai-parrot-server is multi-process (gunicorn); ``UserSocketManager.broadcast_to_channel``
+is in-process only. Structured outputs from any ai-parrot worker process must
+cross the process boundary to reach the browser's WebSocket connection, which
+may be held by a different gunicorn worker. This module bridges that gap over
+Redis pub/sub:
 
 - :class:`RedisBroadcastForwarder` is a duck-typed stand-in for
   ``UserSocketManager`` that :class:`OutputBridge` can use unchanged: its
@@ -117,7 +117,7 @@ async def run_output_subscriber(
     """
     pubsub = redis_client.pubsub()
     await pubsub.subscribe(channel)
-    logger.info("LiveAvatar output subscriber listening on redis channel %s", channel)
+    logger.info("Structured-output subscriber listening on redis channel %s", channel)
     try:
         async for raw in pubsub.listen():
             if raw.get("type") != "message":
@@ -130,7 +130,7 @@ async def run_output_subscriber(
                 )
             except Exception:  # noqa: BLE001 - one bad message must not kill the loop
                 logger.exception(
-                    "Failed to re-broadcast LiveAvatar output envelope: %r",
+                    "Failed to re-broadcast structured-output envelope: %r",
                     raw.get("data"),
                 )
     finally:

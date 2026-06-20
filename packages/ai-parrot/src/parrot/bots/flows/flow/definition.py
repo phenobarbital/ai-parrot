@@ -134,9 +134,16 @@ class NodeDefinition(BaseModel):
     - human: Full HITL escalation
     """
     id: str = Field(..., description="Unique node identifier")
-    type: Literal[
-        "start", "end", "agent", "decision", "interactive_decision", "human"
-    ] = Field(..., description="Node type")
+    type: str = Field(
+        ...,
+        description=(
+            "Node type. Built-in types: 'start', 'end', 'agent', 'decision', "
+            "'interactive_decision', 'human'. Custom node types (e.g. "
+            "'dev_loop.development') are also accepted as long as they are "
+            "registered in ``NODE_REGISTRY`` via ``@register_node``; membership "
+            "is validated at flow-build time by ``AgentsFlow.from_definition``."
+        ),
+    )
     label: Optional[str] = Field(
         default=None,
         description="Human-readable label for UI"

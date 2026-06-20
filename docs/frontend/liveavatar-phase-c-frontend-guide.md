@@ -1,4 +1,13 @@
-# Guía Técnica del Avatar Voz-Nativo (LiveAvatar Phase C) para Frontend
+# ⚠️ DEPRECATED — Guía Técnica del Avatar Voz-Nativo (LiveAvatar Phase C) para Frontend
+
+> **DEPRECATED (FEAT-249, 2026-06-19)**
+> Phase C (LiveKit Agents worker stack) was removed from the codebase.
+> All voice modes are now documented under the **Mode A / B / C / D taxonomy**.
+> See [`liveavatar-frontend-guide.md`](./liveavatar-frontend-guide.md) for the
+> current LITE (Mode A) guide, and
+> [`liveavatar-fullmode-sveltekit-guide.md`](./liveavatar-fullmode-sveltekit-guide.md)
+> for FULL (Mode B).  This document is preserved for historical reference only —
+> do **not** use the APIs described here; they no longer exist.
 
 **Audiencia**: equipo de Frontend (AgentChat, Svelte 5) que necesita una
 **conversación de voz fluida con avatar parlante** — el usuario habla por el
@@ -652,7 +661,8 @@ falta mockear `/start`.
 > **worker** corriendo (`worker.configure(bot_resolver=…)` + `worker.run()`, ver
 > `examples/liveavatar_voice_worker.py`) y registrado con ese mismo `agent_name`;
 > y el subscriber de salida activo en el server
-> (`configure_liveavatar_output_subscriber(app)`, opt-in `ENABLE_LIVEAVATAR_VOICE`).
+> (`configure_liveavatar_output_subscriber(app)`, opt-in `ENABLE_STRUCTURED_OUTPUT_TRANSPORT`
+— previously `ENABLE_LIVEAVATAR_VOICE`, renamed in FEAT-249).
 > El opt-in por tenant (`is_avatar_enabled`) sigue gobernando el `403`.
 
 ---

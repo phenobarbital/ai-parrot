@@ -17,6 +17,8 @@ Cross-node payloads (``bug_brief``, ``research_output``,
 
 from __future__ import annotations
 
+import os
+import re
 from typing import Any, Dict, Optional, Set, Union
 
 from pydantic import Field
@@ -24,6 +26,46 @@ from pydantic import Field
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.fsm import AgentTaskMachine
 from parrot.bots.flows.core.node import Node
+from parrot.bots.flows.flow.flow import NODE_REGISTRY, register_node
+
+
+# Matches the userinfo (``user:secret@``) of an https remote URL, e.g. the
+# ``x-access-token:<token>@github.com`` form GitToolkit injects for private
+# clones — so a token can never surface in git CLI error output (R2).
+_GIT_URL_USERINFO_RE = re.compile(r"(https://)[^@/\s]+:[^@/\s]+@")
+
+
+def scrub_git_output(text: str) -> str:
+    """Redact credentials from raw git CLI output before surfacing it.
+
+    Scrubs the userinfo of any https remote URL and, defensively, the value of
+    ``GITHUB_TOKEN`` if it appears verbatim. Used by the push paths so a
+    ``git push`` failure message never leaks a token.
+    """
+    redacted = _GIT_URL_USERINFO_RE.sub(r"\1***@", text)
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        redacted = redacted.replace(token, "***")
+    return redacted
+
+
+def register_dev_loop_node(name: str):
+    """Idempotent ``@register_node`` for the dev-loop node types (FEAT-250).
+
+    The engine's :func:`register_node` deliberately raises on a duplicate
+    registration. The dev-loop's lazy-import guarantee (spec §7 R1, exercised
+    by ``test_lazy_import``) re-imports ``parrot.flows.dev_loop`` after purging
+    it from ``sys.modules`` while the engine's ``NODE_REGISTRY`` persists — so a
+    plain ``@register_node`` decorator would raise on the second import. This
+    wrapper makes registration a no-op when ``name`` is already registered.
+    """
+
+    def _decorator(cls):
+        if name in NODE_REGISTRY:
+            return cls
+        return register_node(name)(cls)
+
+    return _decorator
 
 
 class DevLoopNode(Node):
@@ -100,4 +142,4 @@ class DevLoopNode(Node):
         return ""
 
 
-__all__ = ["DevLoopNode"]
+__all__ = ["DevLoopNode", "register_dev_loop_node", "scrub_git_output"]

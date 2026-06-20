@@ -20,9 +20,10 @@ from typing import Any, Dict, Optional, Union
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.models import BugBrief
-from parrot.flows.dev_loop.nodes.base import DevLoopNode
+from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
 
 
+@register_dev_loop_node("dev_loop.bug_intake")
 class BugIntakeNode(DevLoopNode):
     """Bug-specific intake hook — emits ``flow.bug_brief_validated`` event.
 
@@ -81,8 +82,7 @@ class BugIntakeNode(DevLoopNode):
         """
         shared = self.shared_state(ctx)
         brief = self._load_brief(self.initial_prompt(ctx), shared)
-        run_id = shared.get("run_id", "")
-        if run_id:
+        if run_id := shared.get("run_id", ""):
             await self._emit_validated_event(run_id, brief)
         shared["bug_brief"] = brief
         return brief

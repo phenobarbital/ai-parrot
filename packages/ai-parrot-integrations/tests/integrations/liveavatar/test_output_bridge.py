@@ -7,9 +7,7 @@ live WebSocket nor the ai-parrot-server package.
 import pytest
 
 from parrot.integrations.liveavatar.output_bridge import OutputBridge
-from parrot.integrations.liveavatar.livekit_agent.models import (
-    StructuredOutputMessage,
-)
+from parrot.integrations.liveavatar.models import StructuredOutputMessage
 
 
 class FakeSocketManager:

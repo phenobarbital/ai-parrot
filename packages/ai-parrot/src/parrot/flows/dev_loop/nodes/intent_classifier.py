@@ -26,9 +26,10 @@ from parrot.flows.dev_loop.models import (
     ShellCriterion,
     WorkBrief,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode
+from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
 
 
+@register_dev_loop_node("dev_loop.intent_classifier")
 class IntentClassifierNode(DevLoopNode):
     """Validates a :class:`WorkBrief` and routes by ``kind``.
 

@@ -86,7 +86,7 @@ async def test_synthesize_returns_playable_container(supertonic_stub):
     with wave.open(io.BytesIO(result.audio), "rb") as wav:
         assert wav.getnchannels() == 1
         assert wav.getsampwidth() == 2
-        assert wav.getframerate() == 24000
+        assert wav.getframerate() == 44100
 
 
 async def test_mime_format_is_truthful_even_when_ogg_requested(supertonic_stub):
@@ -118,7 +118,7 @@ async def test_injected_inference_fn_is_used(monkeypatch):
 
     result = await backend.synthesize("Hola")
     assert seen["text"] == "Hola"
-    assert seen["sample_rate"] == 24000
+    assert seen["sample_rate"] == 44100
     assert result.mime_format == "audio/wav"
     assert result.audio
 

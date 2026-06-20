@@ -26,7 +26,73 @@ from parrot import conf
 from parrot.bots.flows import AgentsFlow
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.result import FlowResult
-from parrot.flows.dev_loop.models import WorkBrief
+from parrot.flows.dev_loop.definition import build_dev_loop_definition
+from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
+from parrot.flows.dev_loop.flow import (
+    FlowEventPublisher,
+    _NullAgentRegistry,
+    _qa_failed,
+    _qa_passed,
+)
+from parrot.flows.dev_loop.models import (
+    ResearchOutput,
+    RevisionBrief,
+    ShellCriterion,
+    WorkBrief,
+)
+
+
+def build_dev_loop_revision_flow(
+    *,
+    dispatcher: Any,
+    jira_toolkit: Any,
+    git_toolkit: Any,
+    redis_url: str,
+    name: str = "dev-loop-revision",
+    publish_flow_events: bool = True,
+) -> AgentsFlow:
+    """Build the short revision-mode ``AgentsFlow`` (FEAT-250 G6).
+
+    Mirrors ``build_dev_loop_flow``'s declarative-materialize-then-explicit
+    execution: the nodes come from ``build_dev_loop_definition(revision=True)``
+    via the node factories, and the graph runs in explicit-edge mode (OR-join
+    on the ``failure_handler`` fan-in). Topology: ``development → qa →
+    (pass) revision_handoff → close`` / ``(fail) failure_handler``.
+    """
+    definition = build_dev_loop_definition(revision=True)
+    factories = build_dev_loop_node_factories(
+        dispatcher=dispatcher,
+        jira_toolkit=jira_toolkit,
+        redis_url=redis_url,
+        git_toolkit=git_toolkit,
+    )
+    staged = AgentsFlow.from_definition(
+        definition,
+        agent_registry=_NullAgentRegistry(),
+        node_factories=factories,
+    )
+    nodes = staged._materialize_nodes()
+
+    run_id_holder: Dict[str, str] = {}
+    publisher = (
+        FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
+    )
+    flow = AgentsFlow(name=name, on_node_event=publisher)
+    flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
+    flow._event_publisher = publisher  # type: ignore[attr-defined]
+    flow._dev_loop_definition = definition  # type: ignore[attr-defined]
+
+    for node in nodes.values():
+        flow.add_node(node)
+
+    flow.add_edge("development", "qa")
+    flow.add_edge("qa", "revision_handoff", predicate=_qa_passed)
+    flow.add_edge("qa", "failure_handler", predicate=_qa_failed)
+    flow.add_edge("revision_handoff", "close")
+    for source in ("development", "qa", "revision_handoff"):
+        flow.add_edge(source, "failure_handler", condition="on_error")
+
+    return flow
 
 
 class DevLoopRunner:
@@ -43,6 +109,10 @@ class DevLoopRunner:
         flow: AgentsFlow,
         *,
         max_concurrent_runs: Optional[int] = None,
+        dispatcher: Optional[Any] = None,
+        jira_toolkit: Optional[Any] = None,
+        git_toolkit: Optional[Any] = None,
+        redis_url: Optional[str] = None,
     ) -> None:
         self.flow = flow
         self.max_concurrent_runs = int(
@@ -52,6 +122,15 @@ class DevLoopRunner:
         )
         self._semaphore = asyncio.Semaphore(self.max_concurrent_runs)
         self._active: Set[str] = set()
+        # Deps needed to build the revision-mode flow on demand (FEAT-250 G6).
+        # Optional so the legacy ``DevLoopRunner(flow)`` construction keeps
+        # working; ``run_revision`` raises a clear error when they are absent.
+        self._dispatcher = dispatcher
+        self._jira_toolkit = jira_toolkit
+        self._git_toolkit = git_toolkit
+        self._redis_url = redis_url
+        # Lazily-built, reused revision flow (fixed topology — built once).
+        self._rev_flow: Optional[AgentsFlow] = None
         self.logger = logging.getLogger("parrot.dev_loop.runner")
 
     # ── Introspection ─────────────────────────────────────────────────────
@@ -125,5 +204,114 @@ class DevLoopRunner:
         )
         return result
 
+    async def run_revision(
+        self,
+        brief: RevisionBrief,
+        *,
+        run_id: Optional[str] = None,
+    ) -> FlowResult:
+        """Execute a revision-mode run for *brief* (FEAT-250 G6).
 
-__all__ = ["DevLoopRunner"]
+        Builds the short revision flow (``development → qa → revision_handoff →
+        close`` / fail → ``failure_handler``), seeds the shared state to reuse
+        the existing clone + branch (no Intent/BugIntake/Research/clone), and
+        runs it. ``RevisionHandoffNode`` pushes to the existing branch and
+        comments the same PR — it never opens a new PR.
+
+        Args:
+            brief: The :class:`RevisionBrief` describing the existing clone,
+                branch, PR and reviewer feedback.
+            run_id: Optional externally-minted id (``rev-<hex8>`` otherwise).
+
+        Returns:
+            The aggregated :class:`FlowResult` for the revision run.
+
+        Raises:
+            RuntimeError: If the runner was constructed without the deps needed
+                to build the revision flow.
+        """
+        if not all(
+            (self._dispatcher, self._jira_toolkit, self._git_toolkit, self._redis_url)
+        ):
+            raise RuntimeError(
+                "run_revision requires the runner to be constructed with "
+                "dispatcher, jira_toolkit, git_toolkit and redis_url."
+            )
+
+        rid = run_id or f"rev-{uuid.uuid4().hex[:8]}"
+        # Build the revision flow once (fixed topology) and reuse it — fresh
+        # node FSMs are materialized per run by the scheduler, like ``run``.
+        if self._rev_flow is None:
+            self._rev_flow = build_dev_loop_revision_flow(
+                dispatcher=self._dispatcher,
+                jira_toolkit=self._jira_toolkit,
+                git_toolkit=self._git_toolkit,
+                redis_url=self._redis_url,
+            )
+        rev_flow = self._rev_flow
+
+        # Seed a synthetic ResearchOutput so Development/QA run against the
+        # existing clone without re-cloning. v1 note: the original acceptance
+        # criteria are not carried on RevisionBrief, so QA re-runs a lint gate
+        # by default; the reviewer feedback is surfaced in shared state and the
+        # context's initial_task.
+        research = ResearchOutput(
+            jira_issue_key=brief.jira_issue_key,
+            spec_path="",
+            feat_id="",
+            branch_name=brief.branch,
+            worktree_path=brief.repo_path,
+            repo_path=brief.repo_path,
+        )
+        work = WorkBrief(
+            kind="bug",
+            summary=f"Revision for {brief.jira_issue_key or brief.branch}",
+            description=brief.feedback,
+            affected_component="(revision)",
+            # NOTE: the revision graph skips BugIntakeNode, so this command is
+            # NOT run through ACCEPTANCE_CRITERION_ALLOWLIST. It is injected by
+            # the runner (trusted internal input, run via exec — no shell), so
+            # the allowlist bypass is intentional and safe.
+            acceptance_criteria=[ShellCriterion(name="lint", command="ruff check .")],
+            escalation_assignee="",
+            reporter="",
+        )
+        shared: Dict[str, Any] = {
+            "run_id": rid,
+            "mode": "revision",
+            "research_output": research,
+            "bug_brief": work,
+            "work_brief": work,
+            "repo_path": brief.repo_path,
+            "branch": brief.branch,
+            "pr_number": brief.pr_number,
+            "repository": brief.repository,
+            "jira_issue_key": brief.jira_issue_key,
+            "feedback": brief.feedback,
+            "head_sha": brief.head_sha,
+        }
+        ctx = FlowContext(
+            initial_task=brief.feedback or "revision", shared_data=shared
+        )
+
+        async with self._semaphore:
+            self._active.add(rid)
+            holder = getattr(rev_flow, "_run_id_holder", None)
+            if isinstance(holder, dict):
+                holder["run_id"] = rid
+            self.logger.info(
+                "Starting dev-loop REVISION run %s (PR #%s, branch %s)",
+                rid, brief.pr_number, brief.branch,
+            )
+            try:
+                result = await rev_flow.run_flow(ctx)
+            finally:
+                self._active.discard(rid)
+
+        self.logger.info(
+            "Dev-loop revision run %s finished status=%s", rid, result.status
+        )
+        return result
+
+
+__all__ = ["DevLoopRunner", "build_dev_loop_revision_flow"]
