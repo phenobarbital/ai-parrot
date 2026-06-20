@@ -189,4 +189,34 @@ Follow the standard SDD task lifecycle. Verify the Codebase Contract before
 coding; if `_materialize_nodes` line numbers shifted, update the contract first.
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Status**: done — 2026-06-20
+
+**What changed**
+- `flow/flow.py`: added `self._node_factories` to `__init__`; added the optional
+  `node_factories` keyword to `from_definition` (stored as
+  `flow._node_factories = dict(node_factories or {})`); the
+  `_materialize_nodes()` else-branch now prefers a registered factory
+  (`factory(node_def, deps, succs)`) and falls back to the previous generic
+  `cls(node_id, dependencies, successors)` construction when none is present.
+  `NodeDefinition` added to the `.definition` import for annotation resolution.
+- `flow/definition.py`: `NodeDefinition.type` relaxed from a closed `Literal`
+  to `str` (with a documented description). **Decision (spec §8 OQ)**: chose the
+  `NODE_REGISTRY`-validated approach — membership is already enforced at
+  flow-build time inside `from_definition`, so validating in the model would
+  introduce a circular import (`definition` → `flow`). Relaxing to `str` keeps
+  the model import-light; typos surface as a `ValueError` at `from_definition`.
+- `tests/bots/flows/test_node_factories.py`: 5 tests (factory materialization,
+  injected dep, fresh-per-materialization, backward-compat no-op, start/end
+  unaffected, custom type accepted by `NodeDefinition`).
+
+**Verification**
+- `pytest test_node_factories.py` → 5 passed.
+- Regression: `test_from_definition.py` + `test_agentsflow_models.py` → 20 passed.
+- `ruff check` clean on all three changed files (pre-existing `loader.py`
+  warnings are unrelated and untouched).
+
+**Notes for downstream (TASK-010)**: `from_definition` still requires a
+non-`None` `agent_registry`. A dev-loop graph with no `agent`-type nodes can
+pass an empty/stub registry. Factories must return a `Node` whose `node_id ==
+node_def.id` and should set `dependencies`/`successors` from the passed sets.

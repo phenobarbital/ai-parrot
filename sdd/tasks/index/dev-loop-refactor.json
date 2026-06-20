@@ -14,7 +14,7 @@
       "feature_id": "FEAT-250",
       "feature": "dev-loop-refactor",
       "spec": "sdd/specs/dev-loop-refactor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Touches only the engine (bots/flows/flow/*). No file overlap with dev-loop tasks; foundational for TASK-010.",
       "assigned_to": null,
       "started_at": "2026-06-20T01:22:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-001-engine-node-factories.md"
+      "completed_at": "2026-06-20T01:33:01+00:00",
+      "file": "sdd/tasks/completed/TASK-001-engine-node-factories.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-002",
