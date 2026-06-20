@@ -149,4 +149,56 @@ def test_revision_trigger_filters_bot_comments():
 Standard SDD lifecycle. Verify TASK-010/011/009 are completed first.
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Status**: done — 2026-06-20
+
+**What changed**
+- `nodes/revision_handoff.py` (new): `RevisionHandoffNode(git_toolkit,
+  name="revision_handoff")` — `git push` to the **existing** branch
+  (subprocess, mirroring `_push_branch`) + `git_toolkit.add_pr_comment(pr_number,
+  …)` on the **same** PR. Never calls `create_pull_request`. Sets
+  `shared["mode"]="revision"`. Registered via `@register_dev_loop_node`.
+- `definition.py`: `build_dev_loop_definition(revision=True)` now returns the
+  revision graph (`development → qa → (pass) revision_handoff → close` /
+  `(fail) failure_handler`; on_error fan-in to failure).
+- `factories.py`: added `dev_loop.revision_handoff` factory.
+- `runner.py`: added `build_dev_loop_revision_flow(...)` (declarative-materialize
+  + explicit-edge execution, like the initial flow), extended
+  `DevLoopRunner.__init__` with optional `dispatcher`/`jira_toolkit`/
+  `git_toolkit`/`redis_url`, and `run_revision(brief, *, run_id=None)` which
+  seeds the shared state (synthetic `ResearchOutput` + `WorkBrief` reusing the
+  existing clone/branch) and runs the revision flow.
+- `webhook.py`: `RevisionWebhookHandler` — filters by
+  `DEV_LOOP_REVISION_TRIGGER`, drops bot-authored comments, dedups by
+  `head_sha`, builds a `RevisionBrief`, and calls `run_revision`.
+
+**v1 simplifications (documented):**
+- `RevisionBrief` carries no acceptance criteria, so the revision QA re-runs a
+  default `ruff check .` lint gate; the reviewer feedback is surfaced in shared
+  state + the context `initial_task` (wiring it into the Development dispatch
+  prompt would need a DevelopmentNode change, out of this task's scope).
+- The webhook derives `repo_path = <WORKTREE_BASE_PATH>/<branch>` (the initial
+  run's worktree convention) and reads `jira_issue_key` from the payload when
+  present (close handles an empty key gracefully). `issue_comment` payloads lack
+  a branch/head_sha, so only `pr_review` events build a brief by default.
+
+**Corollary test updates (necessary):** `test_declarative_flow.py` —
+`_DEV_LOOP_TYPES` gained `dev_loop.revision_handoff`;
+`test_definition_revision_not_yet_implemented` → `test_definition_revision_graph`
+(the revision graph is now implemented).
+
+**Test-isolation fix:** `test_lazy_import` purges `parrot.flows.dev_loop` from
+`sys.modules` and re-imports it, creating duplicate class identities. The
+end-to-end `run_revision` test was made immune by driving the real node executes
+with mocked **dependencies** (dispatcher/git/jira) + a patched global
+`asyncio.create_subprocess_exec`, and comparing `output_model` by `__name__`
+(not identity).
+
+**Verification**
+- `pytest test_revision_mode.py` → 9 passed (no-new-PR, push-fail blocks,
+  revision flow shape, enters-at-development e2e, requires-deps, bot filter,
+  changes_requested filter, head_sha dedup, /revise command trigger).
+- Robust under re-import: `test_lazy_import + test_revision_mode` → 11 passed.
+- Full dev_loop suite: 208 passed, only the 10 pre-existing `test_research.py`
+  env failures remain.
+- `ruff check` clean on all 7 touched files.
