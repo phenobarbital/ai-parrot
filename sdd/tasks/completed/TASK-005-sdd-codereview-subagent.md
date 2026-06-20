@@ -114,4 +114,25 @@ def test_codereview_subagent_loads():
 Standard SDD lifecycle.
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Status**: done — 2026-06-20
+
+**What changed**
+- Created `_subagent_data/sdd-codereview.md` — read-only code-review system
+  prompt with YAML frontmatter (`permissionMode: plan`, tools `Read, Bash,
+  Grep, Glob`), an AC-first review posture, an AI-Parrot standards checklist
+  (adapted from `.claude/agents/code-reviewer.md` + `github_reviewer.py`), and a
+  single-JSON-object Output Contract `{passed, findings, summary}`.
+- `_subagent_defs.py`: added `"sdd-codereview"` to `_VALID_NAMES`; updated the
+  module + function docstrings to enumerate the new subagent.
+
+**Scope note**: per file-fidelity, only the package-data `.md` and
+`_subagent_defs.py` were touched (not a repo-level `.claude/agents/*` twin,
+which is not in the task list).
+
+**Verification**
+- `pytest test_subagent_codereview.py` → 5 passed (in `_VALID_NAMES`, loads +
+  frontmatter stripped, JSON contract keys present, read-only posture, unknown
+  name still rejected). `load_subagent_definition` reads it via
+  `importlib.resources`, confirming package-data pickup.
+- `ruff check` clean on both files.
