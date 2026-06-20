@@ -29,7 +29,7 @@ from parrot.flows.dev_loop.models import (
     QAReport,
     ResearchOutput,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode
+from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
 
 
 _DEFAULT_LINT_COMMAND = "ruff check . && mypy --no-incremental"
@@ -77,6 +77,7 @@ class _CodeReviewVerdict(BaseModel):
     summary: str = ""
 
 
+@register_dev_loop_node("dev_loop.qa")
 class QANode(DevLoopNode):
     """Fourth node — runs deterministic acceptance verification."""
 

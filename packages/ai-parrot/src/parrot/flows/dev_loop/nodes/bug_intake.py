@@ -20,9 +20,10 @@ from typing import Any, Dict, Optional, Union
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.models import BugBrief
-from parrot.flows.dev_loop.nodes.base import DevLoopNode
+from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
 
 
+@register_dev_loop_node("dev_loop.bug_intake")
 class BugIntakeNode(DevLoopNode):
     """Bug-specific intake hook — emits ``flow.bug_brief_validated`` event.
 

@@ -29,17 +29,10 @@ import time
 from typing import Any, Dict, Optional
 
 from parrot.bots.flows import AgentsFlow
+from parrot.flows.dev_loop.definition import build_dev_loop_definition
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
-from parrot.flows.dev_loop.models import WorkBrief
-from parrot.flows.dev_loop.nodes.bug_intake import BugIntakeNode
-from parrot.flows.dev_loop.nodes.deployment_handoff import (
-    DeploymentHandoffNode,
-)
-from parrot.flows.dev_loop.nodes.development import DevelopmentNode
-from parrot.flows.dev_loop.nodes.failure_handler import FailureHandlerNode
-from parrot.flows.dev_loop.nodes.intent_classifier import IntentClassifierNode
-from parrot.flows.dev_loop.nodes.qa import QANode
-from parrot.flows.dev_loop.nodes.research import ResearchNode
+from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
+from parrot.flows.dev_loop.models import RepoSpec, WorkBrief
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +140,23 @@ class FlowEventPublisher:
 
 
 # ---------------------------------------------------------------------------
+# Declarative materialization helper
+# ---------------------------------------------------------------------------
+
+
+class _NullAgentRegistry:
+    """Stub registry for ``from_definition`` (the dev-loop has no agent nodes).
+
+    ``AgentsFlow.from_definition`` requires a non-``None`` ``agent_registry`` but
+    only calls ``get_bot_instance`` for ``type="agent"`` nodes — the dev-loop
+    has none, so this stub is never actually queried.
+    """
+
+    def get_bot_instance(self, name: str) -> None:  # noqa: D401 - stub
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
@@ -160,6 +170,8 @@ def build_dev_loop_flow(
     name: str = "dev-loop",
     publish_flow_events: bool = True,
     lifecycle_events: bool = True,
+    git_toolkit: Optional[Any] = None,
+    repos: Optional[list[RepoSpec]] = None,
 ) -> AgentsFlow:
     """Build the seven-node dev-loop ``AgentsFlow`` (FEAT-132).
 
@@ -196,27 +208,46 @@ def build_dev_loop_flow(
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
     """
-    intent_classifier = IntentClassifierNode(redis_url=redis_url)
-    bug_intake = BugIntakeNode(redis_url=redis_url)
-    research = ResearchNode(
+    # 1. Materialize the dev-loop nodes from the DECLARATIVE definition via the
+    # engine's ``node_factories`` hook (FEAT-250 TASK-001). This validates the
+    # definition (referential integrity + acyclic + registered types) and binds
+    # the live dependencies into each node.
+    definition = build_dev_loop_definition()
+    factories = build_dev_loop_node_factories(
         dispatcher=dispatcher,
         jira_toolkit=jira_toolkit,
+        redis_url=redis_url,
+        git_toolkit=git_toolkit,
         log_toolkits=log_toolkits,
+        repos=repos,
     )
-    development = DevelopmentNode(dispatcher=dispatcher)
-    qa = QANode(dispatcher=dispatcher)
-    handoff = DeploymentHandoffNode(jira_toolkit=jira_toolkit)
-    failure = FailureHandlerNode(jira_toolkit=jira_toolkit)
+    staged = AgentsFlow.from_definition(
+        definition,
+        agent_registry=_NullAgentRegistry(),
+        node_factories=factories,
+    )
+    nodes = staged._materialize_nodes()
 
     run_id_holder: Dict[str, str] = {}
     publisher: Optional[FlowEventPublisher] = None
     if publish_flow_events:
         publisher = FlowEventPublisher(redis_url, run_id_holder)
 
+    # 2. Execute in the engine's EXPLICIT-EDGE mode (OR-join + skip-propagation).
+    # The dev-loop merges the bug/non-bug paths at ``research`` — an OR-join the
+    # engine only supports in explicit mode; ``from_definition``'s scheduler uses
+    # an AND-join that would never fire ``research`` when ``bug_intake`` is
+    # skipped (verified empirically against flow.py's scheduler). The topology
+    # below mirrors ``build_dev_loop_definition()`` edge-for-edge, using the
+    # Python predicate callables (CEL equivalents live in the definition).
     flow = AgentsFlow(name=name, on_node_event=publisher)
     # Exposed for DevLoopRunner / callers to bind the current run_id.
     flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
     flow._event_publisher = publisher  # type: ignore[attr-defined]
+    # The declarative definition is kept for reference/visualization ONLY. It is
+    # deliberately NOT bound to ``flow._definition`` — doing so would switch the
+    # scheduler to definition-mode (AND-join) and break the OR-join routing.
+    flow._dev_loop_definition = definition  # type: ignore[attr-defined]
 
     lifecycle_adapter = None
     if lifecycle_events:
@@ -227,38 +258,40 @@ def build_dev_loop_flow(
         flow.add_node_event_listener(lifecycle_adapter)
     flow._lifecycle_adapter = lifecycle_adapter  # type: ignore[attr-defined]
 
-    for node in (
-        intent_classifier,
-        bug_intake,
-        research,
-        development,
-        qa,
-        handoff,
-        failure,
-    ):
+    for node in nodes.values():
         flow.add_node(node)
 
     # FEAT-132: IntentClassifier branches by kind. Register "bug" first so
     # it wins in case of evaluation-order sensitivity (spec §7 R7).
-    flow.add_edge(intent_classifier.name, bug_intake.name, predicate=_is_bug)
-    flow.add_edge(intent_classifier.name, research.name, predicate=_is_not_bug)
+    flow.add_edge("intent_classifier", "bug_intake", predicate=_is_bug)
+    flow.add_edge("intent_classifier", "research", predicate=_is_not_bug)
 
     # Bug path keeps the linear edge to Research (the engine's OR-join
     # merges it with the direct non-bug edge).
-    flow.add_edge(bug_intake.name, research.name)
+    flow.add_edge("bug_intake", "research")
 
     # Remaining linear chain: Research → Development → QA.
-    flow.add_edge(research.name, development.name)
-    flow.add_edge(development.name, qa.name)
+    flow.add_edge("research", "development")
+    flow.add_edge("development", "qa")
 
     # QA branch: passed=True → handoff, passed=False → failure handler.
-    flow.add_edge(qa.name, handoff.name, predicate=_qa_passed)
-    flow.add_edge(qa.name, failure.name, predicate=_qa_failed)
+    flow.add_edge("qa", "deployment_handoff", predicate=_qa_passed)
+    flow.add_edge("qa", "failure_handler", predicate=_qa_failed)
+
+    # Success path terminates at the close node (FEAT-250 G7).
+    flow.add_edge("deployment_handoff", "close")
 
     # Global error route — any hard error from intent_classifier or middle
     # nodes routes to the failure handler (OR-join fan-in).
-    for source in (intent_classifier, bug_intake, research, development, qa, handoff):
-        flow.add_edge(source.name, failure.name, condition="on_error")
+    for source in (
+        "intent_classifier",
+        "bug_intake",
+        "research",
+        "development",
+        "qa",
+        "deployment_handoff",
+    ):
+        flow.add_edge(source, "failure_handler", condition="on_error")
 
     return flow
 

@@ -38,7 +38,7 @@ from parrot.flows.dev_loop.models import (
     ResearchOutput,
     WorkBrief,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode
+from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
 
 
 # Atlassian caps the description field at 32 767 chars; leave a 2K
@@ -86,6 +86,7 @@ def _plan_llm_default() -> str:
     return _summarizer_llm_default()
 
 
+@register_dev_loop_node("dev_loop.research")
 class ResearchNode(DevLoopNode):
     """Second node — Jira + log fetch + sdd-research dispatch.
 

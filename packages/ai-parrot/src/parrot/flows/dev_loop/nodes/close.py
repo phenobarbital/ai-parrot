@@ -19,7 +19,7 @@ from typing import Any, Dict, Optional, Union
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.models import QAReport, ResearchOutput
-from parrot.flows.dev_loop.nodes.base import DevLoopNode
+from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
 
 
 # Transition label per run mode.
@@ -29,6 +29,7 @@ _TRANSITION_BY_MODE = {
 }
 
 
+@register_dev_loop_node("dev_loop.close")
 class DevLoopCloseNode(DevLoopNode):
     """Terminal node — Jira summary comment + transition, then end the flow."""
 

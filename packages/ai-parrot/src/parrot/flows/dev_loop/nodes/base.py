@@ -24,6 +24,26 @@ from pydantic import Field
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.fsm import AgentTaskMachine
 from parrot.bots.flows.core.node import Node
+from parrot.bots.flows.flow.flow import NODE_REGISTRY, register_node
+
+
+def register_dev_loop_node(name: str):
+    """Idempotent ``@register_node`` for the dev-loop node types (FEAT-250).
+
+    The engine's :func:`register_node` deliberately raises on a duplicate
+    registration. The dev-loop's lazy-import guarantee (spec §7 R1, exercised
+    by ``test_lazy_import``) re-imports ``parrot.flows.dev_loop`` after purging
+    it from ``sys.modules`` while the engine's ``NODE_REGISTRY`` persists — so a
+    plain ``@register_node`` decorator would raise on the second import. This
+    wrapper makes registration a no-op when ``name`` is already registered.
+    """
+
+    def _decorator(cls):
+        if name in NODE_REGISTRY:
+            return cls
+        return register_node(name)(cls)
+
+    return _decorator
 
 
 class DevLoopNode(Node):
@@ -100,4 +120,4 @@ class DevLoopNode(Node):
         return ""
 
 
-__all__ = ["DevLoopNode"]
+__all__ = ["DevLoopNode", "register_dev_loop_node"]

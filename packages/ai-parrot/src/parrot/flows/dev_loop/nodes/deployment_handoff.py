@@ -33,9 +33,10 @@ from parrot.flows.dev_loop.models import (
     QAReport,
     ResearchOutput,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode
+from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
 
 
+@register_dev_loop_node("dev_loop.deployment_handoff")
 class DeploymentHandoffNode(DevLoopNode):
     """Fifth (success-path) node — handles PR creation and Jira handoff.
 
