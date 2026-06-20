@@ -137,4 +137,25 @@ def test_profile_accepts_codereview():
 Standard SDD lifecycle.
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Status**: done — 2026-06-20
+
+**What changed** (`dev_loop/models.py`)
+- Added `RepoSpec(alias, url, branch="main", private=False)`.
+- Added `RevisionBrief(repo_path, branch, pr_number, repository, jira_issue_key,
+  feedback, head_sha)`.
+- `QAReport` gained `code_review_passed: bool = True` and
+  `code_review_findings: List[str] = []` (defaults keep legacy paths valid).
+- `ResearchOutput` gained `repo_path: str = ""` (with `validation_alias` for
+  `repo`/`clone_path`); `worktree_path` left untouched/required.
+- `ClaudeCodeDispatchProfile.subagent` Literal widened to include
+  `"sdd-codereview"`.
+
+**Scope note**: per task file-fidelity, `dev_loop/__init__.py` was NOT modified
+(not listed). Downstream tasks import the new models from
+`parrot.flows.dev_loop.models` directly, as the Codebase Contract specifies.
+
+**Verification**
+- `pytest test_models_feat250.py` → 11 passed.
+- Regression: `pytest -k model` (dev_loop) → 33 passed.
+- `ruff check` clean on both files.

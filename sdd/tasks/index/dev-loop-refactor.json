@@ -51,7 +51,7 @@
       "feature_id": "FEAT-250",
       "feature": "dev-loop-refactor",
       "spec": "sdd/specs/dev-loop-refactor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -59,8 +59,9 @@
       "parallelism_notes": "Touches only dev_loop/models.py. Foundational; many tasks depend on it but it shares no files with them.",
       "assigned_to": null,
       "started_at": "2026-06-20T01:22:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-003-dev-loop-models.md"
+      "completed_at": "2026-06-20T01:35:29+00:00",
+      "file": "sdd/tasks/completed/TASK-003-dev-loop-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-004",
