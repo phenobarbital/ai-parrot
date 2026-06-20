@@ -33,7 +33,11 @@ from parrot.flows.dev_loop.models import (
     QAReport,
     ResearchOutput,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
+from parrot.flows.dev_loop.nodes.base import (
+    DevLoopNode,
+    register_dev_loop_node,
+    scrub_git_output,
+)
 
 
 @register_dev_loop_node("dev_loop.deployment_handoff")
@@ -202,7 +206,7 @@ class DeploymentHandoffNode(DevLoopNode):
         _stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
             raise RuntimeError(
-                f"git push failed: {stderr.decode(errors='replace')}"
+                f"git push failed: {scrub_git_output(stderr.decode(errors='replace'))}"
             )
 
     # ------------------------------------------------------------------

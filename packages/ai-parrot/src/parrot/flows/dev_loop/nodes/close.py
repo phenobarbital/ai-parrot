@@ -36,7 +36,7 @@ class DevLoopCloseNode(DevLoopNode):
     def __init__(
         self,
         jira_toolkit: Any,
-        name: str = "dev_loop_close",
+        name: str = "close",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_jira", jira_toolkit)

@@ -17,12 +17,17 @@ import asyncio
 import logging
 import os
 import re
+from collections import OrderedDict
 from typing import Any, Dict, Optional
 
 from parrot import conf
 from parrot.flows.dev_loop.models import RevisionBrief
 
 logger = logging.getLogger(__name__)
+
+# Cap on the revision dedup cache so a long-lived handler cannot grow without
+# bound. Head SHAs evict oldest-first (LRU-ish) once the cap is reached.
+_MAX_SEEN_HEAD_SHAS = 10_000
 
 
 # ---------------------------------------------------------------------------
@@ -174,8 +179,15 @@ class RevisionWebhookHandler:
         self._trigger = trigger or conf.DEV_LOOP_REVISION_TRIGGER
         self._bot_login = bot_login
         self._repo_base = repo_base_path or conf.WORKTREE_BASE_PATH
-        self._seen_head_shas: set[str] = set()
+        # Bounded dedup cache (insertion-ordered → oldest evicted first).
+        self._seen_head_shas: "OrderedDict[str, None]" = OrderedDict()
         self.logger = logging.getLogger("parrot.dev_loop.revision_webhook")
+
+    def _mark_seen(self, head_sha: str) -> None:
+        """Record ``head_sha`` in the bounded dedup cache."""
+        self._seen_head_shas[head_sha] = None
+        while len(self._seen_head_shas) > _MAX_SEEN_HEAD_SHAS:
+            self._seen_head_shas.popitem(last=False)
 
     def _is_bot(self, author: Optional[str]) -> bool:
         return bool(self._bot_login) and author == self._bot_login
@@ -230,7 +242,7 @@ class RevisionWebhookHandler:
         if brief is None:
             return None
         if head_sha:
-            self._seen_head_shas.add(head_sha)
+            self._mark_seen(head_sha)
         self.logger.info(
             "Triggering revision run for PR #%s (branch %s)",
             brief.pr_number, brief.branch,

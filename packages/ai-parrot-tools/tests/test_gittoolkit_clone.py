@@ -127,3 +127,19 @@ async def test_pull_repo_rejects_non_clone(tmp_path):
     tk = _toolkit()
     with pytest.raises(GitToolkitError):
         await tk.pull_repo(str(tmp_path / "not-a-clone"))
+
+
+# ── scrub also covers an App-mode minted token ─────────────────────────
+
+
+def test_scrub_redacts_app_provider_token():
+    tk = _toolkit()
+    # Simulate a GitHub-App provider that has already minted an installation
+    # token (github_token is None in App mode).
+    app_token = "ghs_appinstalltoken000"
+    tk.github_token = None
+    tk._token_provider = type("_P", (), {"_token": app_token})()
+    leaky = f"fatal: https://x-access-token:{app_token}@github.com/o/r.git"
+    out = tk._scrub(leaky)
+    assert app_token not in out
+    assert "***" in out

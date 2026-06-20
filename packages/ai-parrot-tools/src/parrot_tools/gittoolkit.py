@@ -1563,9 +1563,20 @@ class GitToolkit(AbstractToolkit):
         return base_url, token
 
     def _scrub(self, text: str, token: Optional[str] = None) -> str:
-        """Redact known secrets from ``text`` (R2: tokens must never leak)."""
+        """Redact known secrets from ``text`` (R2: tokens must never leak).
+
+        Covers the explicitly-passed ``token`` (the one injected into a clone
+        URL), the PAT (``self.github_token``), and — in GitHub-App mode — any
+        installation token already minted by the token provider. This keeps a
+        leak from slipping through if a future subprocess call forgets to thread
+        ``token`` explicitly.
+        """
+        secrets = [token, self.github_token]
+        provider = getattr(self, "_token_provider", None)
+        if provider is not None:
+            secrets.append(getattr(provider, "_token", None))
         redacted = text
-        for secret in (token, self.github_token):
+        for secret in secrets:
             if secret:
                 redacted = redacted.replace(secret, "***")
         return redacted

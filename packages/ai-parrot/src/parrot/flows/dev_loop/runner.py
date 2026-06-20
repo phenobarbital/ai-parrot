@@ -129,6 +129,8 @@ class DevLoopRunner:
         self._jira_toolkit = jira_toolkit
         self._git_toolkit = git_toolkit
         self._redis_url = redis_url
+        # Lazily-built, reused revision flow (fixed topology — built once).
+        self._rev_flow: Optional[AgentsFlow] = None
         self.logger = logging.getLogger("parrot.dev_loop.runner")
 
     # ── Introspection ─────────────────────────────────────────────────────
@@ -237,12 +239,16 @@ class DevLoopRunner:
             )
 
         rid = run_id or f"rev-{uuid.uuid4().hex[:8]}"
-        rev_flow = build_dev_loop_revision_flow(
-            dispatcher=self._dispatcher,
-            jira_toolkit=self._jira_toolkit,
-            git_toolkit=self._git_toolkit,
-            redis_url=self._redis_url,
-        )
+        # Build the revision flow once (fixed topology) and reuse it — fresh
+        # node FSMs are materialized per run by the scheduler, like ``run``.
+        if self._rev_flow is None:
+            self._rev_flow = build_dev_loop_revision_flow(
+                dispatcher=self._dispatcher,
+                jira_toolkit=self._jira_toolkit,
+                git_toolkit=self._git_toolkit,
+                redis_url=self._redis_url,
+            )
+        rev_flow = self._rev_flow
 
         # Seed a synthetic ResearchOutput so Development/QA run against the
         # existing clone without re-cloning. v1 note: the original acceptance
@@ -262,6 +268,10 @@ class DevLoopRunner:
             summary=f"Revision for {brief.jira_issue_key or brief.branch}",
             description=brief.feedback,
             affected_component="(revision)",
+            # NOTE: the revision graph skips BugIntakeNode, so this command is
+            # NOT run through ACCEPTANCE_CRITERION_ALLOWLIST. It is injected by
+            # the runner (trusted internal input, run via exec — no shell), so
+            # the allowlist bypass is intentional and safe.
             acceptance_criteria=[ShellCriterion(name="lint", command="ruff check .")],
             escalation_assignee="",
             reporter="",

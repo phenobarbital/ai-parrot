@@ -28,6 +28,12 @@ def jira() -> MagicMock:
     return j
 
 
+def test_close_node_default_id_matches_graph():
+    # The graph wires this node as "close" (definition.py CLOSE); the default
+    # node_id must match so a factory-less construction is still dispatchable.
+    assert DevLoopCloseNode(jira_toolkit=MagicMock()).node_id == "close"
+
+
 @pytest.mark.asyncio
 async def test_close_node_transitions_jira_initial(research, jira):
     ctx = {
