@@ -863,6 +863,27 @@ ACCEPTANCE_CRITERION_ALLOWLIST: list[str] = config.getlist(
 DEV_LOOP_PLAN_LLM: str = config.get(
     "DEV_LOOP_PLAN_LLM", fallback=""
 )
+# Repositories the dev-loop run clones/pulls before Development (FEAT-250).
+# Raw value parsed into RepoSpec objects by the flow config — NOT here (conf.py
+# must not import dev_loop). Each entry may be an "owner/name" slug or a JSON
+# object string; an empty list disables repo provisioning.
+DEV_LOOP_REPOS: list[str] = config.getlist("DEV_LOOP_REPOS", fallback=[]) or []
+# Base directory for dev-loop clones. Kept under WORKTREE_BASE_PATH so the
+# dispatcher's cwd-safety guard (_enforce_cwd_under_worktree_base) passes (R4).
+DEV_LOOP_REPO_BASE_PATH: str = config.get(
+    "DEV_LOOP_REPO_BASE_PATH", fallback=f"{WORKTREE_BASE_PATH}/repos"
+)
+# What kind of PR feedback triggers a revision-mode run (FEAT-250):
+#   "changes_requested" (default) — human, non-bot, change-requesting reviews,
+#   "any_comment" — any non-bot human comment,
+#   "command" — only comments with the /revise prefix.
+DEV_LOOP_REVISION_TRIGGER: str = config.get(
+    "DEV_LOOP_REVISION_TRIGGER", fallback="changes_requested"
+)
+# Model used by the additive sdd-codereview QA gate (FEAT-250).
+DEV_LOOP_CODEREVIEW_MODEL: str = config.get(
+    "DEV_LOOP_CODEREVIEW_MODEL", fallback="claude-sonnet-4-6"
+)
 
 # ---------------------------------------------------------------------------
 # Remote Tool Executors (parrot.tools.executors)
