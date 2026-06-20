@@ -119,4 +119,32 @@ async def test_research_clones_configured_repos(mock_dispatcher, mock_jira):
 Standard SDD lifecycle. Confirm `research.py` line numbers before editing.
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Status**: done — 2026-06-20
+
+**What changed** (`nodes/research.py`)
+- `ResearchNode.__init__` gained keyword-only `git_toolkit=None` and
+  `repos: Optional[List[RepoSpec]]=None` (stored via `object.__setattr__`).
+- Added `_provision_repos(run_id)`: clones each `RepoSpec` into
+  `<DEV_LOOP_REPO_BASE_PATH>/<run_id>/<alias>` (under `WORKTREE_BASE_PATH`,
+  R4) via `git_toolkit.clone_repo(url, dest, branch=…, private=…)`; returns the
+  **first** repo's path (v1 single-primary). No-op (returns `""`) when no repos
+  configured.
+- `execute` calls it after the worktree-safety check and, when a primary path
+  is returned, `research_out = research_out.model_copy(update={"repo_path": …})`.
+  Empty repos ⇒ `repo_path` stays `""` and behaviour is unchanged.
+
+**Scope note**: development.py's `cwd` (currently `research.worktree_path`) is
+**not** modified here — it's not in this task's file list. Wiring Development to
+prefer `repo_path` belongs to the integration task **TASK-010**.
+
+**Verification**
+- `pytest test_research_repo_provision.py` → 5 passed (clones each, empty no-op,
+  private/branch forwarded, execute sets `repo_path`, empty leaves it "").
+- **Pre-existing failures unrelated to this task**: `test_research.py` shows 10
+  failures BOTH with and without my change (verified via `git stash` of
+  research.py — identical 10 failed/1 passed). Root cause: the test env has
+  `JIRA_PROJECT` configured, so `_find_existing_issue` reaches
+  `jira_search_issues`, whose fixtures return `{"issues": []}` instead of the
+  `{"status": ...}` shape the code expects. My change does not touch that path.
+- `ruff check` clean on both files.

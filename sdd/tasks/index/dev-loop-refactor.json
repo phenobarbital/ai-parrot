@@ -111,7 +111,7 @@
       "feature_id": "FEAT-250",
       "feature": "dev-loop-refactor",
       "spec": "sdd/specs/dev-loop-refactor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,9 @@
       "parallelism_notes": "Modifies research.py; needs GitToolkit.clone_repo (002) and RepoSpec/ResearchOutput.repo_path (003).",
       "assigned_to": null,
       "started_at": "2026-06-20T01:22:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-006-repo-provisioning.md"
+      "completed_at": "2026-06-20T02:09:55+00:00",
+      "file": "sdd/tasks/completed/TASK-006-repo-provisioning.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-007",
