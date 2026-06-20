@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-20T01:10:13Z",
-  "completed_at": null,
+  "completed_at": "2026-06-20T03:00:03+00:00",
   "tasks": [
     {
       "id": "TASK-001",
@@ -265,7 +265,7 @@
       "feature_id": "FEAT-250",
       "feature": "dev-loop-refactor",
       "spec": "sdd/specs/dev-loop-refactor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -276,8 +276,9 @@
       "parallelism_notes": "End-to-end live tests; exercise the whole feature, so they run last.",
       "assigned_to": null,
       "started_at": "2026-06-20T01:22:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-013-live-integration-tests.md"
+      "completed_at": "2026-06-20T03:00:03+00:00",
+      "file": "sdd/tasks/completed/TASK-013-live-integration-tests.md",
+      "verification": "verified"
     }
   ]
 }

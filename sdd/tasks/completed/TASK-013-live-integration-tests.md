@@ -110,4 +110,30 @@ async def test_e2e_initial_run_draft_pr(fixture_repo):
 Standard SDD lifecycle. Run last (depends on TASK-010 + TASK-012).
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Status**: done — 2026-06-20
+
+**What changed**
+- `conftest.py`: added live skip guards (`skip_unless_claude_available`,
+  `skip_unless_github_available`, `skip_unless_private_repo_configured`),
+  `temp_worktree_base` (points `WORKTREE_BASE_PATH`/`DEV_LOOP_REPO_BASE_PATH` at
+  a tmp dir), and `fixture_git_repo` (disposable local repo with a deliberately
+  broken file).
+- `test_e2e_feat250.py` (new): three `@pytest.mark.live` tests —
+  `test_e2e_initial_run_draft_pr` (Intent→…→QA→draft PR),
+  `test_e2e_revision_updates_same_pr` (revision updates the same PR, no new
+  PR), `test_e2e_private_repo_clone` (real `GitToolkit.clone_repo` of a private
+  repo; asserts the clone lands on disk + token never in the payload).
+
+**Behavior**: all three SKIP cleanly (never error) when prereqs are missing,
+each with a clear reason naming the env-vars to set. The private-clone test is
+the most CI-friendly (only `GITHUB_TOKEN` + `DEV_LOOP_TEST_PRIVATE_REPO`); the
+initial-run/revision tests carry the intended wiring and skip pending a Jira
+sandbox / existing draft PR — mirroring the repo's existing FEAT-129 live-test
+convention (`integration/conftest.py`, `pytestmark = pytest.mark.live`).
+
+**Verification**
+- `pytest test_e2e_feat250.py -m live -v` → 3 skipped (clean, with reasons).
+- Full dev_loop suite unaffected: 208 passed, 10 deselected (live), only the 10
+  pre-existing `test_research.py` env failures remain.
+- `ruff check` clean on both files.
