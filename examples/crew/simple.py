@@ -7,8 +7,8 @@ from typing import Any
 import asyncio
 from parrot.bots.agent import BasicAgent
 from parrot.bots.flows.crew import AgentCrew
-from parrot.bots.flows.core import FlowContext
-from parrot.bots.flow.fsm import AgentsFlow
+from parrot.bots.flows.core import AgentNode, FlowContext
+from parrot.bots.flows import AgentsFlow
 from parrot.bots.flows.agents import OrchestratorAgent
 from parrot.tools.google import GoogleSearchTool
 
@@ -323,7 +323,7 @@ Question: "Tell me about the iPhone 15 Pro - specs and price"
     return orchestrator
 
 async def test_fsm():
-    # DAG:
+    # DAG with the new AgentsFlow (event-driven scheduler, FEAT-163).
     crew = AgentsFlow(name="ResearchCrew")
 
     # Create agents
@@ -350,23 +350,23 @@ async def test_fsm():
         system_prompt="You fix errors in analysis and retry tasks.",
         use_llm='google'
     )
-    # Add agents
+    # Add agents as graph nodes (node_id == agent name here).
     agents = [researcher, analyzer, writer, error_handler]
     for agent in agents:
         web_tool = GoogleSearchTool()
         agent.tool_manager.add_tool(web_tool)
         await agent.configure()
-        crew.add_agent(agent)
+        crew.add_node(AgentNode(node_id=agent.name, agent=agent))
 
-    # Define flow
-    crew.task_flow(researcher, analyzer)
-    crew.task_flow(analyzer, writer)
+    # Define flow with explicit edges. Happy path: Researcher → Analyzer → Writer.
+    crew.add_edge("Researcher", "Analyzer")
+    crew.add_edge("Analyzer", "Writer")
 
-    # Add error handling
-    crew.on_error(analyzer, error_handler,
-        instruction="Fix the error and retry"
-    )
-    crew.task_flow(error_handler, analyzer)
+    # Error handling: if Analyzer fails, route to ErrorHandler.
+    # NOTE: the new AgentsFlow is a STRICT DAG — the legacy retry cycle
+    # (ErrorHandler → Analyzer) is not supported, so ErrorHandler is a
+    # terminal on_error branch instead of a retry loop.
+    crew.add_edge("Analyzer", "ErrorHandler", condition="on_error")
 
     # Execute
     result = await crew.run_flow("Research AI trends in 2025")
@@ -378,13 +378,13 @@ async def test_fsm():
     # Status information
     print(f"\n✓ Status: {result.status}")
     print(f"✓ Total Time: {result.total_time:.2f}s")
-    print(f"✓ Completed Agents: {len([a for a in result.agents if a.status == 'completed'])}/{len(result.agents)}")
+    print(f"✓ Completed Agents: {len([a for a in result.nodes if a.status == 'completed'])}/{len(result.nodes)}")
 
     # Execution order with detailed info
     print(f"\n{'─'*80}")
     print("EXECUTION ORDER:")
     print(f"{'─'*80}")
-    for i, agent_info in enumerate(result.agents, 1):
+    for i, agent_info in enumerate(result.nodes, 1):
         status_icon = "✓" if agent_info.status == "completed" else "✗"
         print(f"{i}. {status_icon} {agent_info.agent_name}")
         print(f"   - Time: {agent_info.execution_time:.2f}s")
