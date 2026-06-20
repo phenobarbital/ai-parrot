@@ -33,7 +33,7 @@
       "feature_id": "FEAT-250",
       "feature": "dev-loop-refactor",
       "spec": "sdd/specs/dev-loop-refactor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -41,8 +41,9 @@
       "parallelism_notes": "Touches only parrot_tools/gittoolkit.py (ai-parrot-tools). No overlap; consumed by TASK-006/012.",
       "assigned_to": null,
       "started_at": "2026-06-20T01:22:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-002-gittoolkit-clone-pull.md"
+      "completed_at": "2026-06-20T01:40:32+00:00",
+      "file": "sdd/tasks/completed/TASK-002-gittoolkit-clone-pull.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-003",

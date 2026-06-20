@@ -147,4 +147,28 @@ Standard SDD lifecycle. Re-verify GitToolkit internal attribute line numbers
 before relying on them.
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Status**: done — 2026-06-20
+
+**What changed** (`parrot_tools/gittoolkit.py`)
+- Added `import shutil`.
+- Added async `clone_repo(repository, dest_dir, branch=None, *, private=False,
+  depth=None)` and `pull_repo(repo_path, branch=None)` plus helpers:
+  `_gh_available` (via `shutil.which`), `_clone_slug` (alias→slug without
+  minting a token — public clones need no creds), `_display_slug`, `_clone_url`
+  (token-in-URL `https://x-access-token:<token>@github.com/<slug>.git` for
+  private), `_scrub` (redacts the token + `self.github_token` to `***`), and a
+  static async `_run_subprocess`.
+- Private clone prefers `gh repo clone` when `gh` is on `$PATH`, else
+  token-in-URL. Idempotent: an existing `.git` dir at `dest_dir` delegates to
+  `pull_repo`. Token never appears in returned payloads or scrubbed errors.
+
+**Line-number note**: contract said GitToolkit at `:968` / ctor `:976`; actual
+ctor is `:986`, helpers `_resolve_repository`/`_resolve_token`/`_default_token`
+present and reused. No other line drift affected the work.
+
+**Verification**
+- `pytest test_gittoolkit_clone.py` → 7 passed (public, private token-in-URL,
+  token-scrub-on-error, gh-preferred, idempotent→pull, pull ff, non-clone
+  reject). Subprocess fully mocked.
+- `ruff check` clean on both files.
