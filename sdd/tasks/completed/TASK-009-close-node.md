@@ -118,4 +118,23 @@ Standard SDD lifecycle. Confirm the JiraToolkit method names used by
 `failure_handler.py`/`deployment_handoff.py` and reuse them verbatim.
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Status**: done — 2026-06-20
+
+**What changed**
+- Created `nodes/close.py` with `DevLoopCloseNode(DevLoopNode)`:
+  `__init__(self, jira_toolkit, name="dev_loop_close")` mirroring
+  `FailureHandlerNode`'s construction (`super().__init__(node_id=name)` +
+  `object.__setattr__(self, "_jira", …)`). `execute` reads `research_output`,
+  `qa_report`, and `deployment_result`/`revision_result` from shared state,
+  posts a Jira summary comment, transitions by `shared.get("mode", "initial")`
+  (`initial`→"Ready to Deploy", `revision`→"In Review – revised"), and returns
+  a terminal status. Never raises — Jira errors yield `close_failed`.
+- Reuses the exact JiraToolkit methods used by `failure_handler.py`:
+  `jira_add_comment` / `jira_transition_issue`.
+
+**Verification**
+- `pytest test_close_node.py` → 5 passed (initial transition, revision
+  transition, no-ticket path, Jira-error degradation, code-review findings in
+  summary).
+- `ruff check` clean on both files.
