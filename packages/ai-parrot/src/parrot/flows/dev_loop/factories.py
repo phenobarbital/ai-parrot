@@ -26,6 +26,7 @@ from parrot.flows.dev_loop.nodes.failure_handler import FailureHandlerNode
 from parrot.flows.dev_loop.nodes.intent_classifier import IntentClassifierNode
 from parrot.flows.dev_loop.nodes.qa import QANode
 from parrot.flows.dev_loop.nodes.research import ResearchNode
+from parrot.flows.dev_loop.nodes.revision_handoff import RevisionHandoffNode
 
 # Factory signature consumed by AgentsFlow._materialize_nodes.
 NodeFactory = Callable[[NodeDefinition, set, set], DevLoopNode]
@@ -115,6 +116,11 @@ def build_dev_loop_node_factories(
             DevLoopCloseNode(jira_toolkit, name=nd.id), deps, succs
         )
 
+    def revision_handoff_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
+        return _with_graph(
+            RevisionHandoffNode(git_toolkit, name=nd.id), deps, succs
+        )
+
     return {
         "dev_loop.intent_classifier": intent_factory,
         "dev_loop.bug_intake": bug_intake_factory,
@@ -124,6 +130,7 @@ def build_dev_loop_node_factories(
         "dev_loop.deployment_handoff": handoff_factory,
         "dev_loop.failure_handler": failure_factory,
         "dev_loop.close": close_factory,
+        "dev_loop.revision_handoff": revision_handoff_factory,
     }
 
 

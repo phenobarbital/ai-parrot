@@ -41,6 +41,7 @@ QA = "qa"
 HANDOFF = "deployment_handoff"
 FAILURE = "failure_handler"
 CLOSE = "close"
+REVISION_HANDOFF = "revision_handoff"
 
 # CEL routing predicates (mirror the legacy Python callables exactly).
 _CEL_IS_BUG = 'result.kind == "bug"'
@@ -72,9 +73,7 @@ def build_dev_loop_definition(*, revision: bool = False) -> FlowDefinition:
         routing plus the new terminal ``close`` node.
     """
     if revision:
-        raise NotImplementedError(
-            "The revision-mode dev-loop graph is authored in FEAT-250 TASK-012."
-        )
+        return _build_revision_definition()
 
     nodes = [
         _node(INTENT),
@@ -124,6 +123,46 @@ def build_dev_loop_definition(*, revision: bool = False) -> FlowDefinition:
     return FlowDefinition(
         flow="dev-loop",
         description="Declarative dev-loop topology (FEAT-250).",
+        nodes=nodes,
+        edges=edges,
+    )
+
+
+def _build_revision_definition() -> FlowDefinition:
+    """Return the short revision-mode graph (FEAT-250 G6).
+
+    Enters at ``development`` (reusing the existing clone + branch — no
+    Intent/BugIntake/Research/clone), re-runs ``qa``, then on pass pushes to the
+    existing branch + comments the same PR via ``revision_handoff`` → ``close``;
+    on fail → ``failure_handler``. Like the initial graph it executes in the
+    engine's explicit-edge mode (the ``failure_handler`` fan-in is an OR-join).
+    """
+    nodes = [
+        _node(DEVELOPMENT),
+        _node(QA),
+        _node(REVISION_HANDOFF),
+        _node(FAILURE),
+        _node(CLOSE),
+    ]
+    edges = [
+        EdgeDefinition(**{"from": DEVELOPMENT}, to=QA, condition="on_success"),
+        EdgeDefinition(
+            **{"from": QA}, to=REVISION_HANDOFF,
+            condition="on_condition", predicate=_CEL_QA_PASSED,
+        ),
+        EdgeDefinition(
+            **{"from": QA}, to=FAILURE,
+            condition="on_condition", predicate=_CEL_QA_FAILED,
+        ),
+        EdgeDefinition(**{"from": REVISION_HANDOFF}, to=CLOSE, condition="on_success"),
+    ]
+    edges.extend(
+        EdgeDefinition(**{"from": src}, to=FAILURE, condition="on_error")
+        for src in (DEVELOPMENT, QA, REVISION_HANDOFF)
+    )
+    return FlowDefinition(
+        flow="dev-loop-revision",
+        description="Declarative dev-loop revision topology (FEAT-250 G6).",
         nodes=nodes,
         edges=edges,
     )

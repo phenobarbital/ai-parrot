@@ -30,6 +30,7 @@ _DEV_LOOP_TYPES = [
     "dev_loop.deployment_handoff",
     "dev_loop.failure_handler",
     "dev_loop.close",
+    "dev_loop.revision_handoff",  # FEAT-250 TASK-012
 ]
 
 
@@ -73,9 +74,12 @@ def test_definition_is_valid_and_complete():
     assert any(e.from_ == "deployment_handoff" and e.to == "close" for e in defn.edges)
 
 
-def test_definition_revision_not_yet_implemented():
-    with pytest.raises(NotImplementedError):
-        build_dev_loop_definition(revision=True)
+def test_definition_revision_graph():
+    # FEAT-250 TASK-012 authored the revision graph.
+    defn = build_dev_loop_definition(revision=True)
+    ids = {n.id for n in defn.nodes}
+    assert ids == {"development", "qa", "revision_handoff", "failure_handler", "close"}
+    assert "research" not in ids and "intent_classifier" not in ids
 
 
 # ── factories ──────────────────────────────────────────────────────────
