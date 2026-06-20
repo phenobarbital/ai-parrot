@@ -7,6 +7,8 @@ The dev-loop flow binds one of three subagents per dispatch:
 * ``sdd-worker`` — feature implementation inside the worktree.
 * ``sdd-qa`` — deterministic acceptance verification under
   ``permission_mode="plan"``.
+* ``sdd-codereview`` — read-only qualitative code-review gate (FEAT-250)
+  under ``permission_mode="plan"``.
 
 The Markdown files for each subagent are dual-sourced (per spec §7
 "Patterns"):
@@ -28,7 +30,7 @@ from __future__ import annotations
 from importlib.resources import files
 
 _VALID_NAMES: frozenset[str] = frozenset(
-    {"sdd-research", "sdd-worker", "sdd-qa"}
+    {"sdd-research", "sdd-worker", "sdd-qa", "sdd-codereview"}
 )
 
 
@@ -61,7 +63,8 @@ def load_subagent_definition(name: str) -> str:
     """Return the system-prompt body of an SDD subagent.
 
     Args:
-        name: One of ``"sdd-research"``, ``"sdd-worker"``, ``"sdd-qa"``.
+        name: One of ``"sdd-research"``, ``"sdd-worker"``, ``"sdd-qa"``,
+            ``"sdd-codereview"``.
 
     Returns:
         The Markdown body of the subagent definition with the YAML
