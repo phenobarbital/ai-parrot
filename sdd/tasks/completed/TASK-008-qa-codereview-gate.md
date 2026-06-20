@@ -123,4 +123,30 @@ async def test_qa_codereview_dispatch_is_read_only(mock_dispatcher):
 Standard SDD lifecycle.
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Status**: done — 2026-06-20
+
+**What changed** (`nodes/qa.py`)
+- Added `_CodeReviewBrief` and `_CodeReviewVerdict` (`{passed=True, findings=[],
+  summary=""}`, tolerant defaults) models, and a `conf` import.
+- `QANode.__init__` gained `codereview_model=None` (defaults to
+  `conf.DEV_LOOP_CODEREVIEW_MODEL`).
+- `execute` now runs `_run_code_review(...)` after the deterministic dispatch +
+  manual merge, and sets `passed = deterministic_passed and cr_passed`,
+  `code_review_passed`, `code_review_findings`.
+- `_run_code_review` dispatches `sdd-codereview` with `permission_mode="plan"`,
+  `allowed_tools=["Read","Bash","Grep","Glob"]` (NEVER Edit/Write),
+  `model=self._codereview_model`, `cwd=research.repo_path or worktree_path`.
+  Never raises: a dispatch error (or a malformed verdict) degrades to
+  `(True, ["code-review could not run: …"])` so an infra hiccup cannot block on
+  non-quality grounds — the deterministic gate stays the hard guarantee.
+
+**Verification**
+- `pytest test_qa_codereview.py` → 6 passed (blocks on review fail, passes when
+  both pass, deterministic-fail stays failed, read-only profile,
+  error-doesn't-block, cwd prefers repo_path).
+- Backward compat: existing `test_qa.py` → 5 passed (11 total). Fixed a subtle
+  bug where the verdict attribute access sat outside the try/except (a mock
+  returning a `QAReport` raised `AttributeError`); moved it inside so any
+  malformed verdict degrades gracefully.
+- `ruff check` clean on both files.
