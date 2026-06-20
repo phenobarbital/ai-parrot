@@ -1,4 +1,4 @@
-# Dev-Loop Orchestration — Examples (FEAT-129 + FEAT-132)
+# Dev-Loop Orchestration — Examples (FEAT-129 + FEAT-132 + FEAT-250)
 
 > **FEAT-132 upgrades** (2026-04-28): The flow now starts with an
 > `IntentClassifierNode` that validates the incoming brief and routes
@@ -7,9 +7,19 @@
 > `ResearchNode`. The Jira issuetype is now derived from the kind field
 > (Bug / Story / New Feature). A plan-summary comment is posted on newly
 > created tickets. See **Routing by kind** below.
+>
+> **FEAT-250 upgrades**: the flow gained a terminal **`CloseNode`** (closes
+> out the run / transitions Jira), the QA node now runs an additional
+> **code-review gate** (`sdd-codereview`) on top of the deterministic
+> criteria, `DeploymentHandoffNode` opens the PR as a **draft**, the clone
+> is **provisioned before Development**, and there is a separate
+> **revision-mode** run (`DevLoopRunner.run_revision`) that updates an
+> existing PR instead of opening a new one. See **What FEAT-250 changed**
+> below.
 
-Runnable examples for the six-node `AgentsFlow`
-(`IntentClassifier → [BugIntake →] Research → Development → QA → DeploymentHandoff`)
+Runnable examples for the eight-node `AgentsFlow`
+(`IntentClassifier → [BugIntake →] Research → Development → QA →
+DeploymentHandoff → Close`, with a `FailureHandler` `on_error` fan-in)
 defined in `sdd/specs/dev-loop-orchestration.spec.md` and implemented
 under `parrot/flows/dev_loop/`.
 
@@ -29,6 +39,38 @@ through `DevLoopRunner` once and exits; `server.py` exposes an HTTP +
 WebSocket surface so the UI client can start runs and visualise the merged
 event stream live.
 
+## Setup — running from a clean checkout
+
+This repository is a **`uv` workspace** (`[tool.uv.workspace]` in the root
+`pyproject.toml`). One sync installs every member package editable, with all
+transitive dependencies, into `.venv`:
+
+```bash
+uv sync                       # creates .venv + installs the workspace
+source .venv/bin/activate
+python examples/dev_loop/e2e_demo.py
+```
+
+That is **all** `e2e_demo.py` needs — it imports only `parrot.*` and simulates
+every external service in-process (no Redis, `claude` CLI, Jira, or API keys).
+
+For the **real-mode** scripts (`quickstart.py` / `server.py`) you additionally
+need:
+
+* the **`jira`** package — `parrot_tools.jiratoolkit.JiraToolkit` imports it
+  lazily and raises `ImportError: Please install the 'jira' package` otherwise:
+  ```bash
+  uv pip install jira
+  ```
+* a running **Redis** and the credentials listed in **Prerequisites (real
+  mode)** below.
+
+> **Note:** a couple of direct imports (`tenacity`, `tqdm`) are currently
+> satisfied transitively rather than being declared in `ai-parrot`'s
+> `pyproject.toml`. `uv sync` resolves them from the lockfile, so a normal
+> workspace sync works; this is only a concern if you install `ai-parrot`
+> standalone outside the workspace.
+
 ## Zero-dependency demo — `e2e_demo.py`
 
 The fastest way to see the whole flow working. It executes the REAL engine
@@ -45,22 +87,34 @@ source .venv/bin/activate
 python examples/dev_loop/e2e_demo.py
 ```
 
-It runs four scenarios and prints, for each: executed/failed/skipped nodes,
+It runs six scenarios and prints, for each: executed/failed/skipped nodes,
 the `FlowResult`, the simulated Jira audit trail, the captured
 `flow:{run_id}:flow` stream events, and the typed FEAT-176 lifecycle event
 timeline (one trace per run, per-node durations):
 
 1. **Bug, happy path** — `IntentClassifier → BugIntake → Research →
-   Development → QA → DeploymentHandoff`; `failure_handler` skip-propagated;
-   PR opened + Jira "Ready to Deploy".
+   Development → QA → DeploymentHandoff → Close`; `failure_handler`
+   skip-propagated; draft PR opened + `Close` transitions Jira.
 2. **Enhancement** — `bug_intake` is skip-propagated (kind routing).
-3. **QA fails** — `deployment_handoff` skipped; escalation comment +
-   "Needs Human Review" + reassignment.
+3. **QA fails (deterministic)** — `deployment_handoff` + `close` skipped;
+   escalation comment + "Needs Human Review" + reassignment.
 4. **Hard error in Development** — the `on_error` fan-in fires
-   `failure_handler`; `qa`/`deployment_handoff` are skipped; status `partial`.
+   `failure_handler`; `qa`/`deployment_handoff`/`close` are skipped; status
+   `partial`.
+5. **Code-review fails (FEAT-250 gate)** — the deterministic criteria pass
+   but the `sdd-codereview` verdict fails, so the QA gate
+   (`passed = deterministic AND code_review`) blocks: `deployment_handoff` +
+   `close` skipped, escalation via `failure_handler`.
+6. **Revision mode (FEAT-250 G6)** — `DevLoopRunner.run_revision(RevisionBrief)`
+   runs the short flow `development → qa → revision_handoff → close`. The
+   `RevisionHandoffNode` pushes the **existing** branch and comments the
+   **same** PR (`add_pr_comment`) — it never opens a new PR — and `Close`
+   runs in `mode="revision"`.
 
 Use it as a template for wiring the flow into your own harness: everything
-specific to the simulation lives in the `Simulated*`/`Fake*` classes.
+specific to the simulation lives in the `Simulated*`/`Fake*` classes
+(`SimulatedDispatcher`, `SimulatedJira`, `SimulatedGit`, `FakeRedis`,
+`FakeLLM`).
 
 ## Prerequisites (real mode)
 
@@ -110,6 +164,56 @@ generation is controlled by `DEV_LOOP_PLAN_LLM` (see Prerequisites table).
 On the **reuse** path (`existing_issue_key` is set), no plan-summary comment
 is posted — only the standard re-trigger comment.
 
+## What FEAT-250 changed
+
+The flow topology and QA gate were extended after FEAT-132. The examples
+exercise all of it:
+
+* **Terminal `CloseNode`** — runs after `DeploymentHandoff` (initial path) or
+  `RevisionHandoff` (revision path) and finalises the run. Its output carries
+  a `mode` field (`"initial"` vs `"revision"`). On failure/QA-fail paths it is
+  skipped and `FailureHandler` runs instead.
+* **Code-review QA gate** — `QANode` now dispatches an `sdd-codereview`
+  subagent in addition to the deterministic `sdd-qa` run. The report's
+  `passed` is `deterministic_passed AND code_review_passed`, so a qualitative
+  review failure blocks deployment even when every executable criterion
+  passes. The verdict is backward-tolerant: a dispatch error is treated as a
+  pass so an infra hiccup never blocks the flow (the deterministic gate is the
+  hard guarantee; code-review is additive). Scenario 5 in `e2e_demo.py`
+  demonstrates the blocking case.
+* **Draft PR** — `DeploymentHandoffNode` opens the PR as a draft.
+* **Repo provisioning before Development** — the clone is provisioned ahead of
+  the Development node rather than inside Research.
+* **Revision mode** — `DevLoopRunner.run_revision(RevisionBrief)` builds a
+  short flow (`development → qa → revision_handoff → close`) that reuses an
+  existing clone + branch + open PR. `RevisionHandoffNode` pushes the existing
+  branch and comments the same PR via `git_toolkit.add_pr_comment(...)`; it
+  never opens a new PR. To use it, construct the runner with the revision
+  dependencies:
+
+  ```python
+  runner = DevLoopRunner(
+      flow,
+      dispatcher=dispatcher,
+      jira_toolkit=jira_toolkit,
+      git_toolkit=git_toolkit,   # exposes async add_pr_comment(pr_number, body)
+      redis_url=redis_url,
+  )
+  result = await runner.run_revision(
+      RevisionBrief(
+          repo_path="…",          # existing clone (the Development node's cwd)
+          branch="feat-999-…",     # existing feature branch
+          pr_number=4242,          # the open draft PR to update
+          repository="owner/name",
+          jira_issue_key="NAV-1",
+          feedback="reviewer comment to act on",
+          head_sha="…",            # head SHA at trigger time (dedup)
+      )
+  )
+  ```
+
+  Scenario 6 in `e2e_demo.py` runs this end-to-end with simulated I/O.
+
 ## Programmatic example — `quickstart.py`
 
 ```bash
@@ -151,9 +255,12 @@ python examples/dev_loop/server.py
 
 The UI is a single static file with no build step:
 
-* Six panels, one per node (IntentClassifier, BugIntake, Research,
-  Development, QA, Handoff), with status pills
-  (`idle / queued / running / passed / failed`).
+* Eight panels, one per node (IntentClassifier, BugIntake, Research,
+  Development, QA, Handoff, Close, Failure), with status pills
+  (`idle / queued / running / passed / failed`). The Close and Failure
+  panels are driven by the flow-level `flow.node_started` /
+  `flow.node_completed` envelopes (those nodes aren't dispatched, so they
+  emit no `dispatch.*` events).
 * "Start dev-loop run" POSTs to `/api/flow/run`, gets back a `run_id`,
   then opens a WebSocket to `/api/flow/{run_id}/ws?view=both&replay=true`.
 * Each event is appended under its node's panel; the pill colour follows

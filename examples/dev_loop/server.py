@@ -1,8 +1,9 @@
-"""FEAT-129 — Dev-Loop Orchestration: real demo server.
+"""FEAT-129 / FEAT-250 — Dev-Loop Orchestration: real demo server.
 
-Hosts an aiohttp app that wires the **real** five-node ``AgentsFlow``
-(BugIntake → Research → Development → QA → DeploymentHandoff) behind
-three HTTP endpoints, plus a vanilla-JS UI client at ``/`` that
+Hosts an aiohttp app that wires the **real** eight-node ``AgentsFlow``
+(IntentClassifier → [BugIntake →] Research → Development → QA →
+DeploymentHandoff → Close, with a FailureHandler ``on_error`` fan-in)
+behind three HTTP endpoints, plus a vanilla-JS UI client at ``/`` that
 visualises the merged event stream.
 
 Endpoints:
