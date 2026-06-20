@@ -52,7 +52,7 @@
       "feature_id": "FEAT-249",
       "feature": "update-agentcrew-agentflow-documentation",
       "spec": "sdd/specs/update-agentcrew-agentflow-documentation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Can run in parallel with TASK-1600 — both depend on TASK-1599 but write to separate files (agentsflow.md vs agentcrew.md)",
       "assigned_to": null,
       "started_at": "2026-06-20T00:41:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1601-agentsflow-user-guide.md"
+      "completed_at": "2026-06-20T00:48:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1601-agentsflow-user-guide.md"
     },
     {
       "id": "TASK-1602",
