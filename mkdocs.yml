@@ -197,12 +197,16 @@ nav:
           - VoiceBot Realtime: frontend/voicebot-realtime-frontend-guide.md
           - AgenTalk Voice: frontend/agentalk-voice-frontend-guide.md
           - Structured Artifacts: frontend/structured-artifacts-frontend-guide.md
+  - Prompts:
+      - PromptBuilder Guide: prompts/promptbuilder.md
+      - Layers Reference: prompts/layers-reference.md
+      - Variables Reference: promptbuilder-variables.md
+      - Jira Specialist Layers: jira-specialist-prompt-layers.md
   - Orchestration & Flows:
       - Decision Nodes: DECISION_NODE_USAGE.md
       - Bot Cleanup Lifecycle: bot-cleanup-lifecycle.md
       - Infographic Handler API: infographic_handler_api.md
       - VectorStore Handler API: vectorstore_handler_api.md
-      - Jira Specialist Prompt Layers: jira-specialist-prompt-layers.md
   - Advanced:
       - API Endpoints (REST): API_ENDPOINTS.md
       - Ephemeral Agents API: api/feat-149-ephemeral-agents-api.md
