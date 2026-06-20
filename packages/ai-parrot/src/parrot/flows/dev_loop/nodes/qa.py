@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
+from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
@@ -49,6 +50,33 @@ class _QABrief(BaseModel):
     summary: str = ""
 
 
+class _CodeReviewBrief(BaseModel):
+    """Brief passed to the ``sdd-codereview`` subagent (FEAT-250).
+
+    Bundles the acceptance criteria the change must satisfy with the path to
+    review and the issue summary, so the reviewer can judge the diff against
+    the criteria + the project's standards in a single JSON payload.
+    """
+
+    acceptance_criteria: List[AcceptanceCriterion]
+    worktree_path: str
+    summary: str = ""
+    jira_issue_key: str = ""
+
+
+class _CodeReviewVerdict(BaseModel):
+    """Structured verdict emitted by the ``sdd-codereview`` subagent.
+
+    Backward-tolerant defaults: a malformed/empty verdict is treated as a
+    pass so an infra hiccup never blocks the flow (the deterministic gate is
+    the hard guarantee; code-review is additive).
+    """
+
+    passed: bool = True
+    findings: List[str] = Field(default_factory=list)
+    summary: str = ""
+
+
 class QANode(DevLoopNode):
     """Fourth node — runs deterministic acceptance verification."""
 
@@ -57,11 +85,17 @@ class QANode(DevLoopNode):
         *,
         dispatcher: ClaudeCodeDispatcher,
         lint_command: Optional[str] = None,
+        codereview_model: Optional[str] = None,
         name: str = "qa",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_dispatcher", dispatcher)
         object.__setattr__(self, "_lint_command", lint_command or _DEFAULT_LINT_COMMAND)
+        object.__setattr__(
+            self,
+            "_codereview_model",
+            codereview_model or conf.DEV_LOOP_CODEREVIEW_MODEL,
+        )
 
     # ------------------------------------------------------------------
     # Execute
@@ -131,15 +165,79 @@ class QANode(DevLoopNode):
         if manual:
             report = self._merge_manual_results(report, manual)
 
+        # FEAT-250 G4: additive code-review gate. A run passes QA only when the
+        # deterministic criteria/lint AND the qualitative review both pass.
+        deterministic_passed = report.passed
+        cr_passed, cr_findings = await self._run_code_review(
+            shared, research, brief
+        )
+        report = report.model_copy(
+            update={
+                "passed": deterministic_passed and cr_passed,
+                "code_review_passed": cr_passed,
+                "code_review_findings": cr_findings,
+            }
+        )
+
         self.logger.info(
-            "QA report: passed=%s, lint_passed=%s, n_executable=%s, n_manual=%s",
+            "QA report: passed=%s, deterministic=%s, code_review=%s, "
+            "lint_passed=%s, n_executable=%s, n_manual=%s",
             report.passed,
+            deterministic_passed,
+            cr_passed,
             report.lint_passed,
             len(executable),
             len(manual),
         )
         shared["qa_report"] = report
         return report
+
+    # ------------------------------------------------------------------
+    # Code-review gate (FEAT-250)
+    # ------------------------------------------------------------------
+
+    async def _run_code_review(
+        self,
+        shared: Dict[str, Any],
+        research: ResearchOutput,
+        brief: BugBrief,
+    ) -> tuple[bool, List[str]]:
+        """Dispatch the read-only ``sdd-codereview`` gate.
+
+        Returns ``(passed, findings)``. A dispatch error never raises and
+        never blocks the flow on infra grounds — it degrades to
+        ``(True, ["code-review could not run: …"])`` so the deterministic
+        gate remains the hard guarantee.
+        """
+        review_cwd = research.repo_path or research.worktree_path
+        profile = ClaudeCodeDispatchProfile(
+            subagent="sdd-codereview",
+            permission_mode="plan",
+            allowed_tools=["Read", "Bash", "Grep", "Glob"],  # NEVER Edit/Write
+            setting_sources=["project"],
+            model=self._codereview_model,
+        )
+        review_brief = _CodeReviewBrief(
+            acceptance_criteria=list(brief.acceptance_criteria),
+            worktree_path=review_cwd,
+            summary=brief.summary,
+            jira_issue_key=research.jira_issue_key,
+        )
+        try:
+            verdict: _CodeReviewVerdict = await self._dispatcher.dispatch(
+                brief=review_brief,
+                profile=profile,
+                output_model=_CodeReviewVerdict,
+                run_id=shared["run_id"],
+                node_id=self.name,
+                cwd=review_cwd,
+            )
+            return verdict.passed, list(verdict.findings)
+        except Exception as exc:  # noqa: BLE001 - never raise from QA
+            self.logger.warning(
+                "Code-review dispatch failed (not blocking): %s", exc
+            )
+            return True, [f"code-review could not run: {exc}"]
 
     @staticmethod
     def _merge_manual_results(
