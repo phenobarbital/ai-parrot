@@ -25,6 +25,7 @@ import base64
 import datetime as _dt
 from datetime import datetime, timezone
 import os
+import shutil
 import threading
 import time
 from dataclasses import dataclass
@@ -1511,6 +1512,171 @@ class GitToolkit(AbstractToolkit):
             draft=draft,
             labels=labels,
         )
+
+    # ------------------------------------------------------------------
+    # Local git operations: clone / pull (FEAT-250)
+    # ------------------------------------------------------------------
+    def _gh_available(self) -> bool:
+        """Return True when the ``gh`` CLI is on ``$PATH``."""
+        return shutil.which("gh") is not None
+
+    def _clone_slug(self, repository: str) -> str:
+        """Resolve ``repository`` (alias | ``owner/name`` | URL) to a slug/URL.
+
+        Alias resolution consults the pre-built connection registry without
+        minting any token (so public clones do not require credentials).
+        URLs and bare ``owner/name`` slugs are returned unchanged.
+        """
+        if "://" in repository or repository.startswith("git@"):
+            return repository
+        conn = self._connections.get(repository)
+        if conn is not None:
+            return conn.repository
+        return repository
+
+    @staticmethod
+    def _display_slug(slug_or_url: str) -> str:
+        """Best-effort ``owner/name`` for the return payload (never a token)."""
+        if "github.com/" in slug_or_url:
+            tail = slug_or_url.rstrip("/").split("github.com/")[-1]
+            return tail[:-4] if tail.endswith(".git") else tail
+        return slug_or_url
+
+    def _clone_url(self, slug_or_url: str, private: bool) -> tuple[str, Optional[str]]:
+        """Build the clone URL and return ``(url, token_or_None)``.
+
+        For private repos the bearer token is injected as
+        ``https://x-access-token:<token>@github.com/<slug>.git``. The token is
+        returned separately *only* so the caller can scrub it from subprocess
+        output — it is never placed in any returned payload.
+        """
+        if "://" in slug_or_url or slug_or_url.startswith("git@"):
+            base_url = slug_or_url
+        else:
+            base_url = f"https://github.com/{slug_or_url}.git"
+        if not private:
+            return base_url, None
+        token = self._resolve_token()
+        if base_url.startswith("https://"):
+            rest = base_url[len("https://"):]
+            return f"https://x-access-token:{token}@{rest}", token
+        return base_url, token
+
+    def _scrub(self, text: str, token: Optional[str] = None) -> str:
+        """Redact known secrets from ``text`` (R2: tokens must never leak)."""
+        redacted = text
+        for secret in (token, self.github_token):
+            if secret:
+                redacted = redacted.replace(secret, "***")
+        return redacted
+
+    @staticmethod
+    async def _run_subprocess(argv: List[str]) -> tuple[int, str, str]:
+        """Run ``argv`` asynchronously; return ``(returncode, stdout, stderr)``."""
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await proc.communicate()
+        return (
+            proc.returncode if proc.returncode is not None else -1,
+            out.decode(errors="replace"),
+            err.decode(errors="replace"),
+        )
+
+    async def clone_repo(
+        self,
+        repository: str,
+        dest_dir: str,
+        branch: Optional[str] = None,
+        *,
+        private: bool = False,
+        depth: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Clone ``repository`` to ``dest_dir``.
+
+        Uses the configured PAT / GitHub-App token (or the ``gh`` CLI when
+        present) for private repos. Idempotent: if ``dest_dir`` already holds a
+        git clone, delegates to :meth:`pull_repo` instead of re-cloning.
+
+        Args:
+            repository: An alias from the configured registry, an ``owner/name``
+                slug, or a full clone URL.
+            dest_dir: Destination directory for the clone.
+            branch: Optional branch to clone (``--branch``).
+            private: When True, authenticate the clone (``gh`` or token-in-URL).
+            depth: Optional shallow-clone depth (``--depth``).
+
+        Returns:
+            ``{"path", "repository", "branch", "updated"}``. Never contains a
+            token.
+
+        Raises:
+            GitToolkitError: If the clone/pull fails (stderr is token-scrubbed).
+        """
+        if os.path.isdir(os.path.join(dest_dir, ".git")):
+            # Already a clone → fast-forward instead of re-cloning (idempotent).
+            return await self.pull_repo(dest_dir, branch)
+
+        slug = self._clone_slug(repository)
+        display = self._display_slug(slug)
+        token: Optional[str] = None
+
+        if private and self._gh_available():
+            argv = ["gh", "repo", "clone", display, dest_dir]
+            if branch:
+                argv += ["--", "--branch", branch]
+        else:
+            url, token = self._clone_url(slug, private)
+            argv = ["git", "clone"]
+            if branch:
+                argv += ["--branch", branch]
+            if depth:
+                argv += ["--depth", str(depth)]
+            argv += [url, dest_dir]
+
+        rc, _out, err = await self._run_subprocess(argv)
+        if rc != 0:
+            raise GitToolkitError(
+                f"clone of {display!r} failed: {self._scrub(err, token)}"
+            )
+        return {
+            "path": dest_dir,
+            "repository": display,
+            "branch": branch,
+            "updated": False,
+        }
+
+    async def pull_repo(
+        self,
+        repo_path: str,
+        branch: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Fast-forward an existing clone at ``repo_path`` to ``branch``.
+
+        Args:
+            repo_path: Path to an existing git clone.
+            branch: Optional branch to pull (``origin <branch>``); defaults to
+                the clone's current upstream.
+
+        Returns:
+            ``{"path", "branch", "updated"}``. Never contains a token.
+
+        Raises:
+            GitToolkitError: If ``repo_path`` is not a clone or the pull fails.
+        """
+        if not os.path.isdir(os.path.join(repo_path, ".git")):
+            raise GitToolkitError(f"{repo_path!r} is not a git clone")
+        argv = ["git", "-C", repo_path, "pull", "--ff-only"]
+        if branch:
+            argv += ["origin", branch]
+        rc, _out, err = await self._run_subprocess(argv)
+        if rc != 0:
+            raise GitToolkitError(
+                f"pull of {repo_path!r} failed: {self._scrub(err)}"
+            )
+        return {"path": repo_path, "branch": branch, "updated": True}
 
     # ------------------------------------------------------------------
     # Pull request read / review helpers (FEAT: github-pr-review-agent)
