@@ -117,4 +117,23 @@ def test_issue_comment_on_plain_issue_ignored(hook):
 Standard SDD lifecycle. Confirm `_classify_event` shape before editing.
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Status**: done — 2026-06-20
+
+**What changed** (`core/hooks/github_webhook.py`)
+- `_classify_event` now also recognises `issue_comment`/`created` **on a PR**
+  (`issue.pull_request` present) → `pr_comment`, and
+  `pull_request_review`/`submitted` → `pr_review`. Existing `pull_request`
+  opened/reopened/synchronize handling is unchanged.
+- Extracted `_build_event_payload(github_event, event_type, payload,
+  delivery_id)` that parses three payload shapes: PR events (from
+  `pull_request`), `pr_comment` (from `issue`+`comment`; `head_sha`/`branch`
+  are `None` — not in the payload, consumer fetches via `pr_number`), and
+  `pr_review` (from `pull_request`+`review`; carries `head_sha`, `branch`,
+  `review_state`). Emits the documented keys plus a `body` alias.
+- HMAC verification + the `github.<event_type>` emission shape preserved.
+
+**Verification**
+- `pytest test_github_webhook_comments.py` → 10 passed.
+- Backward compat: existing `test_github_webhook.py` → 8 passed (18 total).
+- `ruff check` clean on both files.
