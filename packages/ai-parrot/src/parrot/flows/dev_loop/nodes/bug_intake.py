@@ -81,8 +81,7 @@ class BugIntakeNode(DevLoopNode):
         """
         shared = self.shared_state(ctx)
         brief = self._load_brief(self.initial_prompt(ctx), shared)
-        run_id = shared.get("run_id", "")
-        if run_id:
+        if run_id := shared.get("run_id", ""):
             await self._emit_validated_event(run_id, brief)
         shared["bug_brief"] = brief
         return brief

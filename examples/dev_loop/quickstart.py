@@ -30,11 +30,9 @@ Required environment / navconfig settings:
 * ``CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES`` — defaults to ``3``
 """
 from __future__ import annotations
-
 import asyncio
 import logging
 import uuid
-
 from parrot import conf
 from parrot.flows.dev_loop import (
     BugBrief,
