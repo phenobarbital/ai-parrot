@@ -167,4 +167,60 @@ Standard SDD lifecycle. This task integrates TASK-001/003/006/007/008/009 —
 verify they are in `tasks/completed/` first.
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Status**: done — 2026-06-20
+
+**What changed**
+- `@register_dev_loop_node("dev_loop.*")` on all 8 node classes
+  (intent_classifier, bug_intake, research, development, qa,
+  deployment_handoff, failure_handler, close).
+- `definition.py` (new): `build_dev_loop_definition(*, revision=False)` returns
+  the declarative `FlowDefinition` (8 nodes + edges; CEL predicates mirror the
+  legacy callables). `revision=True` raises `NotImplementedError` (TASK-012).
+- `factories.py` (new): `build_dev_loop_node_factories(...)` → `{dev_loop.* type:
+  factory}`; each factory binds live deps and stamps deps/succs.
+- `flow.py`: `build_dev_loop_flow` rewritten — materializes nodes via
+  `AgentsFlow.from_definition(definition, node_factories=...)` then executes in
+  **explicit-edge mode** (see decision below). Signature preserved; added
+  optional `git_toolkit`/`repos`.
+- `nodes/base.py`: added `register_dev_loop_node` (idempotent wrapper).
+
+**KEY DECISION — explicit-mode execution (engine limitation, verified
+empirically).** The engine's `from_definition` scheduler uses an **AND-join**
+(a node spawns only when *all* predecessors completed; flow.py:1046). The
+dev-loop merges the bug/non-bug paths at `research` — an **OR-join**. I verified
+empirically that under `from_definition` the non-bug path never spawns `research`
+(bug_intake is skipped, never "completed"). The OR-join + skip-propagation the
+dev-loop needs exists ONLY in the engine's explicit-edge mode. Therefore
+`build_dev_loop_flow` uses `from_definition`+`node_factories` to *materialize*
+(exercising TASK-001's mechanism + validating the definition) and then executes
+via `add_edge` with the callable predicates, reproducing FEAT-132 routing
+exactly. The declarative definition is the topology source of record (kept on
+`flow._dev_loop_definition`, NOT `flow._definition`, which would re-enable the
+AND-join). This honors the cardinal AC "reproduce FEAT-132 routing exactly".
+
+**Idempotent registration (regression fix).** `register_node` raises on
+duplicate; `test_lazy_import` re-imports dev_loop after purging `sys.modules`
+while the engine's `NODE_REGISTRY` persists → the plain decorator raised on the
+2nd import. `register_dev_loop_node` no-ops when already registered.
+
+**Necessary corollary test updates (mandated by the G7 close node):**
+- `test_flow.py`: `test_seven_nodes_registered` → `test_all_nodes_registered`
+  (now 8 nodes incl. `close`) + new `test_deployment_handoff_routes_to_close`.
+- `test_runner.py`: success path now terminates at `close` (added to the
+  executed set; handoff PR info read from `result.responses`); qa-fail path
+  reads `result.responses["failure_handler"]`. `result.output` is now a
+  multi-leaf map because `close` is a second terminal alongside
+  `failure_handler` — a deliberate consequence of G7.
+
+**Verification**
+- `pytest test_declarative_flow.py` → 8 passed (registration, definition
+  validity, factories, CEL parity, and end-to-end routing parity: non-bug skips
+  bug_intake, bug runs it, qa-fail→failure — driven through the real
+  `build_dev_loop_flow`).
+- `test_flow.py` (20) + `test_runner.py` (7) green.
+- Full `bots/flows` engine suite: 235 passed. Full dev_loop suite: 199 passed,
+  only the 10 **pre-existing** `test_research.py` env failures remain (the
+  `JIRA_PROJECT`/`jira_search_issues` mock-shape issue, present with and without
+  this work).
+- `ruff check` clean on all 15 touched files.
