@@ -102,4 +102,26 @@ async def test_create_pr_via_rest_is_draft(monkeypatch):
 Standard SDD lifecycle.
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Status**: done — 2026-06-20
+
+**What changed** (`nodes/deployment_handoff.py`)
+- `_create_pr_with_gh`: added `--draft` to the `gh pr create` argv.
+- `_create_pr_via_rest`: added `"draft": True` to the REST JSON body.
+- Added static `_parse_pr_number(pr_url)` (`…/pull/<n>` → int).
+- `execute` now computes `pr_number = self._parse_pr_number(pr_url)` and returns
+  `{"status": "ready_to_deploy", "pr_url": ..., "pr_number": ...}`.
+
+**Design decision (non-breaking)**: the spec sketch suggested returning a tuple
+from `_create_pr*`, but the existing `test_deployment_handoff.py` patches
+`_create_pr_via_rest` to return a **string**. To avoid breaking it, the PR
+methods keep returning the URL string and `execute` derives the number by
+parsing the URL — the REST `html_url` also ends in `/pull/<n>`, so a single
+helper covers both paths. This keeps the AC ("return PR number") satisfied with
+zero breakage.
+
+**Verification**
+- `pytest test_deployment_handoff_draft.py` → 3 passed (gh `--draft`, REST
+  `draft:true` + number parse, non-URL parse).
+- Backward compat: existing `test_deployment_handoff.py` → 5 passed (8 total).
+- `ruff check` clean on both files.

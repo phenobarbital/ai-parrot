@@ -131,7 +131,7 @@
       "feature_id": "FEAT-250",
       "feature": "dev-loop-refactor",
       "spec": "sdd/specs/dev-loop-refactor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -139,8 +139,9 @@
       "parallelism_notes": "Touches only deployment_handoff.py. No overlap with other tasks.",
       "assigned_to": null,
       "started_at": "2026-06-20T01:22:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-007-draft-pr.md"
+      "completed_at": "2026-06-20T01:50:46+00:00",
+      "file": "sdd/tasks/completed/TASK-007-draft-pr.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-008",
