@@ -140,11 +140,7 @@ nav:
       - Agent Service: agent_service.md
       - Agent Factory Handler: agent_factory_handler.md
       - Agent Config Creation: agent_config_creation.md
-      - Crews: crew.md
       - Crew Handler: crew_handler.md
-      - Crew Summary: crew_summary.md
-      - Orchestration: orchestration.md
-      - Advanced Orchestration: ORCHESTRATION.md
       - Test Agent: testagent.md
       - UI Agent: uiagent.md
   - Memory & Knowledge:
@@ -198,13 +194,16 @@ nav:
           - AgenTalk Voice: frontend/agentalk-voice-frontend-guide.md
           - Structured Artifacts: frontend/structured-artifacts-frontend-guide.md
   - Orchestration & Flows:
-      - Decision Nodes: DECISION_NODE_USAGE.md
+      - AgentCrew Guide: orchestration/agentcrew.md
+      - AgentsFlow Guide: orchestration/agentsflow.md
+      - Node Types Reference: orchestration/node-types.md
+      - Decision Node Usage: DECISION_NODE_USAGE.md
       - Bot Cleanup Lifecycle: bot-cleanup-lifecycle.md
+  - Advanced:
+      - API Endpoints (REST): API_ENDPOINTS.md
       - Infographic Handler API: infographic_handler_api.md
       - VectorStore Handler API: vectorstore_handler_api.md
       - Jira Specialist Prompt Layers: jira-specialist-prompt-layers.md
-  - Advanced:
-      - API Endpoints (REST): API_ENDPOINTS.md
       - Ephemeral Agents API: api/feat-149-ephemeral-agents-api.md
       - Jupyter Mode: jupyter_mode.md
       - Job Manager: jobmanager.md

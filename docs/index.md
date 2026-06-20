@@ -95,8 +95,8 @@ through a single async interface.
        right execution mode (sequential / parallel / DAG).
     2. For cross-host or cross-process agents, jump to
        [A2A Communication](a2a_communication.md).
-    3. Production patterns live in
-       [Advanced Orchestration](ORCHESTRATION.md).
+    3. Production patterns live in the
+       [AgentsFlow User Guide](orchestration/agentsflow.md).
 
 === "RAG over your documents"
 
