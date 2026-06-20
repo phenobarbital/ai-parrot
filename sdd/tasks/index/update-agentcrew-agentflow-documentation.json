@@ -14,14 +14,14 @@
       "feature_id": "FEAT-249",
       "feature": "update-agentcrew-agentflow-documentation",
       "spec": "sdd/specs/update-agentcrew-agentflow-documentation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "First task — creates the node-types reference that TASK-1600 and TASK-1601 cross-reference",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-20T00:41:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1599-node-types-reference.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-249",
       "feature": "update-agentcrew-agentflow-documentation",
       "spec": "sdd/specs/update-agentcrew-agentflow-documentation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1599"],
+      "depends_on": [
+        "TASK-1599"
+      ],
       "parallel": true,
       "parallelism_notes": "Can run in parallel with TASK-1601 — both depend on TASK-1599 but write to separate files (agentcrew.md vs agentsflow.md)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-20T00:41:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1600-agentcrew-user-guide.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-249",
       "feature": "update-agentcrew-agentflow-documentation",
       "spec": "sdd/specs/update-agentcrew-agentflow-documentation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1599"],
+      "depends_on": [
+        "TASK-1599"
+      ],
       "parallel": true,
       "parallelism_notes": "Can run in parallel with TASK-1600 — both depend on TASK-1599 but write to separate files (agentsflow.md vs agentcrew.md)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-20T00:41:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1601-agentsflow-user-guide.md"
     },
@@ -68,14 +72,18 @@
       "feature_id": "FEAT-249",
       "feature": "update-agentcrew-agentflow-documentation",
       "spec": "sdd/specs/update-agentcrew-agentflow-documentation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1599", "TASK-1600", "TASK-1601"],
+      "depends_on": [
+        "TASK-1599",
+        "TASK-1600",
+        "TASK-1601"
+      ],
       "parallel": false,
       "parallelism_notes": "Must run last — modifies mkdocs.yml to reference all three new guides and deletes superseded pages",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-20T00:41:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1602-mkdocs-nav-update-and-cleanup.md"
     }
