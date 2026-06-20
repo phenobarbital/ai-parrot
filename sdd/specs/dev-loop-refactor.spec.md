@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-250
 **Date**: 2026-06-20
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.7.x (`ai-parrot`)
 
 > **Lineage**: This builds on FEAT-129 (`dev-loop-orchestration.spec.md`) and
@@ -670,12 +670,12 @@ class GitHubWebhookHook(BaseHook):                                             #
   change-requesting comments/reviews), deduped by `head_sha`; `"any_comment"`
   and `"command"` (`/revise` prefix) are configurable alternatives. Revisit if
   noise is observed in practice.
-- [ ] Should `NodeDefinition.type` be widened to a string validated against
+- [x] Should `NodeDefinition.type` be widened to a string validated against
   `NODE_REGISTRY`, or keep the Literal and add the `dev_loop.*` names
-  explicitly? — *Owner: Jesus Lara (decide at /sdd-task)*.
-- [ ] Multi-repo runs: when `DEV_LOOP_REPOS` has >1 repo, which is the primary
+  explicitly? — *Owner: Jesus Lara (decide at /sdd-task)*: be widened.
+- [x] Multi-repo runs: when `DEV_LOOP_REPOS` has >1 repo, which is the primary
   `cwd` for Development, and how are cross-repo changes handled? v1 may restrict
-  Development to a single primary repo. — *Owner: Jesus Lara*.
+  Development to a single primary repo. — *Owner: Jesus Lara*: v1 will be used in a one repo
 
 ---
 
