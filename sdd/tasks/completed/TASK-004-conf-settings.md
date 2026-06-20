@@ -98,4 +98,21 @@ def test_dev_loop_feat250_defaults(monkeypatch):
 Standard SDD lifecycle.
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Status**: done — 2026-06-20
+
+**What changed** (`parrot/conf.py`, after `DEV_LOOP_PLAN_LLM`)
+- `DEV_LOOP_REPOS: list[str]` — `config.getlist(..., fallback=[])` (raw; parsed
+  to `RepoSpec` by the flow, NOT here — no dev_loop import added).
+- `DEV_LOOP_REPO_BASE_PATH: str` — default `f"{WORKTREE_BASE_PATH}/repos"`
+  (stays under `WORKTREE_BASE_PATH`, R4).
+- `DEV_LOOP_REVISION_TRIGGER: str` — default `"changes_requested"`.
+- `DEV_LOOP_CODEREVIEW_MODEL: str` — default `"claude-sonnet-4-6"`.
+
+**Verification**
+- `pytest test_settings_feat250.py` → 2 passed (defaults + base-path-under-
+  worktree-base).
+- `ruff check`: the only reported error is a **pre-existing** `E402` at
+  `conf.py:450` (a deliberate mid-file `from .models.google import GoogleModel`)
+  that I did not touch; my diff is isolated to lines 866+ and the new test file
+  is clean.
