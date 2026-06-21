@@ -1,8 +1,9 @@
 """Dev-loop orchestration flow (FEAT-129).
 
-A seven-node ``AgentsFlow`` (IntentClassifier → [BugIntake] → Research →
-Development → QA → DeploymentHandoff | FailureHandler) that takes a work
-brief and produces a PR plus a Jira ticket transitioned to "Ready to
+An eight-node ``AgentsFlow`` (IntentClassifier → [BugIntake] → Research →
+Development → QA → DeploymentHandoff → Close, with FailureHandler as the
+failure/on-error terminal path) that takes a work brief and produces a PR
+plus a Jira ticket transitioned to "Ready to
 Deploy". See ``sdd/specs/dev-loop-orchestration.spec.md`` for the full
 spec. Runs are hosted by :class:`DevLoopRunner`, which enforces the
 ``FLOW_MAX_CONCURRENT_RUNS`` cap.

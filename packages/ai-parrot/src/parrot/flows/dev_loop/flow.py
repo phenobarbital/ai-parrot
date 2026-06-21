@@ -1,10 +1,10 @@
-"""build_dev_loop_flow — wire the seven dev-loop nodes into an AgentsFlow.
+"""build_dev_loop_flow — wire the eight dev-loop nodes into an AgentsFlow.
 
 Implements **Module 10**. Topology (FEAT-132):
 
 .. code-block:: text
 
-    IntentClassifier ──(kind=="bug")──► BugIntake → Research → Development → QA → DeploymentHandoff
+    IntentClassifier ──(kind=="bug")──► BugIntake → Research → Development → QA → DeploymentHandoff → Close
                      └─(kind!="bug")──────────────► Research      │
                                                                    └─(passed=False)→ FailureHandler
                                                                    ↑(any node hard-error)
@@ -173,7 +173,7 @@ def build_dev_loop_flow(
     git_toolkit: Optional[Any] = None,
     repos: Optional[list[RepoSpec]] = None,
 ) -> AgentsFlow:
-    """Build the seven-node dev-loop ``AgentsFlow`` (FEAT-132).
+    """Build the eight-node dev-loop ``AgentsFlow`` (FEAT-132).
 
     Topology:
 
@@ -182,6 +182,7 @@ def build_dev_loop_flow(
       - ``kind != "bug"`` → ``ResearchNode`` directly
     - ``ResearchNode`` → ``DevelopmentNode`` → ``QANode``
     - ``QANode`` → ``DeploymentHandoffNode`` (passed) or ``FailureHandlerNode``
+    - ``DeploymentHandoffNode`` → ``DevLoopCloseNode``
     - Any hard error from any middle node → ``FailureHandlerNode``
       (``on_error`` edges; untaken paths are skip-propagated by the engine)
 
