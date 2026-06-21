@@ -1,12 +1,18 @@
-"""FEAT-129 — Dev-Loop Orchestration: real-mode quickstart.
+"""FEAT-129 / FEAT-250 — Dev-Loop Orchestration: real-mode quickstart.
 
-Wires the seven-node ``AgentsFlow`` (IntentClassifier → BugIntake →
-Research → Development → QA → DeploymentHandoff | FailureHandler) with a
-real :class:`ClaudeCodeDispatcher`, a service-account ``JiraToolkit``,
-and the CloudWatch / Elasticsearch log toolkits, then runs it end-to-end
-against a sample :class:`BugBrief` via :class:`DevLoopRunner`.
+Wires the eight-node ``AgentsFlow`` (IntentClassifier → [BugIntake →]
+Research → Development → QA → DeploymentHandoff → Close, with a
+FailureHandler ``on_error`` fan-in) with a real
+:class:`ClaudeCodeDispatcher`, a service-account ``JiraToolkit``, and the
+CloudWatch / Elasticsearch log toolkits, then runs it end-to-end against a
+sample :class:`BugBrief` via :class:`DevLoopRunner`.
 
-Use ``server.py`` (next to this file) for a self-contained demo that does
+To update an existing PR instead of opening a new one, build the runner
+with ``dispatcher=``, ``jira_toolkit=``, ``git_toolkit=`` and ``redis_url=``
+and call ``DevLoopRunner.run_revision(RevisionBrief(...))`` — see
+``e2e_demo.py`` scenario 6 and the README's "What FEAT-250 changed".
+
+Use ``e2e_demo.py`` (next to this file) for a self-contained demo that does
 not need Claude / Jira / GitHub credentials.
 
 Run::

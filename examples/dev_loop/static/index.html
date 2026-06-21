@@ -233,6 +233,8 @@ const NODES = [
   { id: "development",        label: "4. Development"},
   { id: "qa",                 label: "5. QA"         },
   { id: "deployment_handoff", label: "6. Handoff"    },
+  { id: "close",              label: "7. Close"      },  // FEAT-250
+  { id: "failure_handler",    label: "8. Failure"    },  // on_error fan-in
 ];
 
 const board    = document.getElementById("board");
@@ -297,6 +299,10 @@ function classify(env) {
   if (k === "flow.bug_brief_validated") return "passed";
   if (k === "flow.intake_validated") return "passed";   // FEAT-132
   if (k === "flow.pr_opened" || k === "flow.completed") return "passed";
+  // Flow-level node lifecycle (FEAT-250): the Close and FailureHandler
+  // nodes aren't dispatched, so they only emit these envelopes.
+  if (k === "flow.node_started")   return "running";
+  if (k === "flow.node_completed") return "passed";
   return null;
 }
 

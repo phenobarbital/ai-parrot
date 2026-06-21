@@ -1,11 +1,15 @@
-"""FEAT-129 — Dev-Loop Orchestration: self-contained end-to-end demo.
+"""FEAT-129 / FEAT-250 — Dev-Loop Orchestration: self-contained end-to-end demo.
 
-Runs the REAL seven-node ``AgentsFlow`` (engine, scheduler, OR-join
-routing, ``DevLoopRunner`` semaphore, lifecycle telemetry) end-to-end —
-but with every external service simulated in-process:
+Runs the REAL eight-node ``AgentsFlow`` (``IntentClassifier → [BugIntake →]
+Research → Development → QA → DeploymentHandoff → Close`` with a
+``FailureHandler`` fan-in) end-to-end — engine, scheduler, OR-join routing,
+``DevLoopRunner`` semaphore, lifecycle telemetry — but with every external
+service simulated in-process:
 
-* ``ClaudeCodeDispatcher``  → ``SimulatedDispatcher`` (canned subagent outputs)
+* ``ClaudeCodeDispatcher``  → ``SimulatedDispatcher`` (canned subagent outputs,
+  including the FEAT-250 code-review verdict the QA gate now dispatches)
 * Jira toolkit              → ``SimulatedJira`` (records every call)
+* git toolkit (PR comments) → ``SimulatedGit`` (records ``add_pr_comment``)
 * Redis streams             → ``FakeRedis`` (captures XADDs in memory)
 * git push / gh pr create   → patched to no-ops returning a fake PR URL
 * Plan/summary LLM          → ``FakeLLM`` (deterministic text)
@@ -19,12 +23,17 @@ Run::
     source .venv/bin/activate
     python examples/dev_loop/e2e_demo.py
 
-Four scenarios are executed:
+Six scenarios are executed:
 
-1. Bug brief, everything green        → PR opened, Jira "Ready to Deploy".
+1. Bug brief, everything green        → PR opened, Close → Jira "Ready to Deploy".
 2. Enhancement brief                  → BugIntake is skip-propagated.
-3. QA fails                           → DeploymentHandoff skipped, escalation.
+3. QA fails (deterministic)           → DeploymentHandoff skipped, escalation.
 4. Hard error in Development          → on_error fan-in fires FailureHandler.
+5. Code-review fails (FEAT-250 gate)  → QA gate blocks even though the
+                                        deterministic criteria pass.
+6. Revision-mode run (FEAT-250 G6)    → ``run_revision`` pushes the existing
+                                        branch + comments the same PR (no new
+                                        PR), then Close in ``mode="revision"``.
 """
 from __future__ import annotations
 
@@ -53,8 +62,10 @@ from parrot.flows.dev_loop import (
     WorkBrief,
     build_dev_loop_flow,
 )
-from parrot.flows.dev_loop.models import DevelopmentOutput
+from parrot.flows.dev_loop.models import DevelopmentOutput, RevisionBrief
 from parrot.flows.dev_loop.nodes.deployment_handoff import DeploymentHandoffNode
+from parrot.flows.dev_loop.nodes.revision_handoff import RevisionHandoffNode
+from parrot.flows.dev_loop.runner import build_dev_loop_revision_flow
 
 logging.basicConfig(level=logging.WARNING)  # keep the demo output readable
 
@@ -70,6 +81,9 @@ class SimulatedDispatcher:
     Args:
         worktree_base: Directory used for the fake worktree path.
         qa_passed: Whether the simulated ``sdd-qa`` run reports success.
+        code_review_passed: Whether the simulated ``sdd-codereview`` verdict
+            passes. The FEAT-250 QA gate is ``deterministic AND code_review``,
+            so a ``False`` here blocks the gate even when ``qa_passed`` is True.
         fail_at_node: Optional node_id whose dispatch raises (hard error).
     """
 
@@ -78,10 +92,12 @@ class SimulatedDispatcher:
         worktree_base: str,
         *,
         qa_passed: bool = True,
+        code_review_passed: bool = True,
         fail_at_node: Optional[str] = None,
     ) -> None:
         self._worktree_base = worktree_base
         self._qa_passed = qa_passed
+        self._code_review_passed = code_review_passed
         self._fail_at_node = fail_at_node
 
     async def dispatch(
@@ -116,6 +132,18 @@ class SimulatedDispatcher:
                 lint_passed=self._qa_passed,
                 notes="(simulated QA run)",
             )
+        # FEAT-250: the QA node now dispatches a code-review verdict in
+        # addition to the deterministic sdd-qa run. Match by name to avoid
+        # importing the private ``_CodeReviewVerdict`` symbol from qa.py.
+        if output_model.__name__ == "_CodeReviewVerdict":
+            return output_model(
+                passed=self._code_review_passed,
+                findings=(
+                    [] if self._code_review_passed
+                    else ["simulated reviewer finding: missing regression test"]
+                ),
+                summary="(simulated code review)",
+            )
         raise AssertionError(f"unexpected output_model: {output_model!r}")
 
 
@@ -149,6 +177,26 @@ class SimulatedJira:
     async def jira_assign_issue(self, *, issue: str, assignee: str, **kw: Any) -> Dict:
         self.actions.append(f"assign {issue} → {assignee}")
         return {"ok": True}
+
+
+class SimulatedGit:
+    """Records git-toolkit interactions for revision mode (FEAT-250 G6).
+
+    ``RevisionHandoffNode`` comments the existing PR via
+    ``git_toolkit.add_pr_comment(...)`` (and pushes the existing branch via a
+    subprocess that ``main()`` patches to a no-op).
+    """
+
+    def __init__(self) -> None:
+        self.comments: List[Tuple[int, str]] = []
+
+    async def add_pr_comment(
+        self, pr_number: int, body: str, **kw: Any
+    ) -> Dict:
+        self.comments.append((pr_number, body))
+        first_line = body.splitlines()[0] if body else ""
+        print(f"    [git] add_pr_comment #{pr_number}: {first_line[:50]}…")
+        return {"id": "prc1"}
 
 
 class FakeRedis:
@@ -224,13 +272,17 @@ async def run_scenario(
     worktree_base: str,
     kind: str = "bug",
     qa_passed: bool = True,
+    code_review_passed: bool = True,
     fail_at_node: Optional[str] = None,
 ) -> None:
     """Build, run, and report one end-to-end scenario."""
     print(f"\n{'=' * 70}\n  {title}\n{'=' * 70}")
 
     dispatcher = SimulatedDispatcher(
-        worktree_base, qa_passed=qa_passed, fail_at_node=fail_at_node
+        worktree_base,
+        qa_passed=qa_passed,
+        code_review_passed=code_review_passed,
+        fail_at_node=fail_at_node,
     )
     jira = SimulatedJira()
     fake_redis = FakeRedis()
@@ -283,9 +335,82 @@ async def run_scenario(
         print(f"    {name:<22} {node:<20}{extra}")
 
 
+async def run_revision_scenario(title: str, *, worktree_base: str) -> None:
+    """Build, run, and report a revision-mode run (FEAT-250 G6).
+
+    Unlike :func:`run_scenario`, this does not start from a brief: it reuses
+    an existing clone + branch + open PR and runs the short revision flow
+    (``development → qa → revision_handoff → close``). ``RevisionHandoffNode``
+    pushes the existing branch and comments the same PR — it never opens a
+    new PR.
+    """
+    print(f"\n{'=' * 70}\n  {title}\n{'=' * 70}")
+
+    # An existing "clone" on disk, inside the worktree sandbox so QA's
+    # deterministic ``ruff check .`` runs under WORKTREE_BASE_PATH. A single
+    # clean file keeps the lint gate green.
+    repo_path = os.path.join(worktree_base, "rev-clone")
+    os.makedirs(repo_path, exist_ok=True)
+    with open(os.path.join(repo_path, "clean.py"), "w", encoding="utf-8") as fh:
+        fh.write('"""A clean module so ruff has something to pass."""\n')
+
+    dispatcher = SimulatedDispatcher(worktree_base)
+    jira = SimulatedJira()
+    git = SimulatedGit()
+    fake_redis = FakeRedis()
+
+    # Build the revision flow explicitly so we can redirect its event
+    # publisher at the in-memory Redis before any run (run_revision would
+    # otherwise lazily build it against the real redis_url).
+    rev_flow = build_dev_loop_revision_flow(
+        dispatcher=dispatcher,
+        jira_toolkit=jira,
+        git_toolkit=git,
+        redis_url="redis://demo-not-used:0/0",
+    )
+    rev_flow._event_publisher._redis = fake_redis
+
+    runner = DevLoopRunner(
+        rev_flow,
+        max_concurrent_runs=2,
+        dispatcher=dispatcher,
+        jira_toolkit=jira,
+        git_toolkit=git,
+        redis_url="redis://demo-not-used:0/0",
+    )
+    runner._rev_flow = rev_flow  # reuse the publisher we just rewired
+
+    brief = RevisionBrief(
+        repo_path=repo_path,
+        branch="feat-999-fix-customer-sync",
+        pr_number=4242,
+        repository="example/repo",
+        jira_issue_key="DEMO-7",
+        feedback="Reviewer: please add a regression test for the 1500-row case.",
+        head_sha="deadbeef",
+    )
+    result = await runner.run_revision(brief)
+    await asyncio.sleep(0.1)  # drain fire-and-forget telemetry tasks
+
+    executed = list(result.responses)
+    skipped = sorted(set(rev_flow._nodes) - set(executed) - set(result.errors))
+    print(f"\n  status      : {result.status.value}")
+    print(f"  executed    : {executed}")
+    print(f"  failed      : {list(result.errors) or '—'}")
+    print(f"  skipped     : {skipped or '—'}")
+    print(f"  flow output : {result.output}")
+    print(f"\n  PR comments (simulated, same PR #{brief.pr_number}):")
+    for pr_number, body in git.comments:
+        print(f"    - #{pr_number}: {body.splitlines()[0][:60]}…")
+    print("\n  Jira actions (simulated):")
+    for action in jira.actions:
+        print(f"    - {action}")
+
+
 async def main() -> None:
-    # SIMULATION: neutralize the two real-world side effects of the
-    # handoff node (git push + gh pr create) for this offline demo.
+    # SIMULATION: neutralize the real-world side effects of the handoff
+    # nodes (git push + gh pr create on the deployment path; git push on the
+    # revision path) for this offline demo.
     async def _fake_push(self: Any, branch: str, cwd: str) -> None:
         print(f"    [git] push -u origin {branch} (simulated)")
 
@@ -295,6 +420,7 @@ async def main() -> None:
 
     DeploymentHandoffNode._push_branch = _fake_push       # type: ignore[method-assign]
     DeploymentHandoffNode._create_pr = _fake_pr           # type: ignore[method-assign]
+    RevisionHandoffNode._push_branch = _fake_push         # type: ignore[method-assign]
 
     with tempfile.TemporaryDirectory(prefix="devloop-demo-") as tmp:
         # Keep the worktree-safety check inside the sandbox dir.
@@ -315,6 +441,14 @@ async def main() -> None:
         await run_scenario(
             "4) Hard error in Development — on_error fan-in fires",
             worktree_base=tmp, fail_at_node="development",
+        )
+        await run_scenario(
+            "5) Code-review fails — QA gate blocks despite green criteria",
+            worktree_base=tmp, code_review_passed=False,
+        )
+        await run_revision_scenario(
+            "6) Revision mode — push existing branch + comment same PR",
+            worktree_base=tmp,
         )
 
     print("\nDone. See quickstart.py / server.py for the real-mode versions.")
