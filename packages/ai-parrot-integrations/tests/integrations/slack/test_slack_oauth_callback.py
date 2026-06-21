@@ -21,12 +21,19 @@ def mock_token_set():
 
 @pytest.fixture
 def slack_state_payload():
-    """State payload for a Slack-originated OAuth callback."""
+    """State payload as produced by JiraOAuthManager.
+
+    Channel-specific data (team_id, slack_user_id) is nested under ``extra`` —
+    this mirrors the real shape returned by ``handle_callback``.
+    """
     return {
         "channel": "slack",
-        "team_id": "T0001",
-        "slack_user_id": "U1234",
         "user_id": "T0001:U1234",
+        "extra": {
+            "channel": "slack",
+            "team_id": "T0001",
+            "slack_user_id": "U1234",
+        },
     }
 
 
@@ -218,3 +225,79 @@ class TestHandleSlackJiraCallback:
         assert response.status == 200
         assert "Authorization Failed" in response.text
         assert "User denied access" in response.text
+
+
+# ---------------------------------------------------------------------------
+# State-payload shape parity (regression for the FEAT-225 nesting bug)
+# ---------------------------------------------------------------------------
+
+class _FakeRedis:
+    """Minimal in-memory async Redis stand-in for shape-parity tests."""
+
+    def __init__(self):
+        self.store = {}
+
+    async def set(self, key, value, ex=None):
+        self.store[key] = value
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def delete(self, key):
+        self.store.pop(key, None)
+
+
+class TestStatePayloadShapeParity:
+    """Drive the *real* payload JiraOAuthManager produces into the handler.
+
+    Guards against drift between what ``create_authorization_url`` stores
+    (channel data nested under ``extra``) and what
+    ``handle_slack_jira_callback`` reads. The original FEAT-225 code read
+    ``team_id``/``slack_user_id`` at top level, so the identity write and DM
+    silently no-op'd in production despite green unit tests.
+    """
+
+    @pytest.mark.asyncio
+    async def test_manager_payload_drives_identity_and_dm(self, mock_token_set):
+        from parrot.auth.jira_oauth import JiraOAuthManager
+        from parrot.integrations.slack.oauth_callback import handle_slack_jira_callback
+
+        fake = _FakeRedis()
+        mgr = JiraOAuthManager(
+            client_id="cid",
+            client_secret="sec",
+            redirect_uri="https://example/api/auth/jira/callback",
+            redis_client=fake,
+        )
+        _url, nonce = await mgr.create_authorization_url(
+            "slack",
+            "T0001:U1234",
+            extra_state={
+                "channel": "slack",
+                "team_id": "T0001",
+                "slack_user_id": "U1234",
+            },
+        )
+        # Exactly the payload handle_callback would return for this nonce.
+        state_payload = await mgr.consume_state(nonce)
+
+        identity = MagicMock()
+        identity.upsert_identity = AsyncMock()
+        notifier = MagicMock()
+        notifier.notify_connected = AsyncMock()
+        request = _make_success_request(
+            app={
+                "identity_mapping_service": identity,
+                "slack_jira_oauth_notifier": notifier,
+            }
+        )
+
+        with patch("asyncio.create_task") as mock_create_task:
+            await handle_slack_jira_callback(request, mock_token_set, state_payload)
+            mock_create_task.assert_called_once()
+
+        identity.upsert_identity.assert_called_once()
+        assert identity.upsert_identity.call_args[1]["auth_data"] == {
+            "team_id": "T0001",
+            "slack_user_id": "U1234",
+        }

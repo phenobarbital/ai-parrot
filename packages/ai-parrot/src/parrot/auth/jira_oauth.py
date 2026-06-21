@@ -316,19 +316,7 @@ class JiraOAuthManager:
             ValueError: If the state nonce is missing/expired or the token
                 exchange fails.
         """
-        nonce_key = self._nonce_key(state)
-        raw_state = await self.redis.get(nonce_key)
-        if not raw_state:
-            raise ValueError("Invalid or expired state nonce.")
-        if isinstance(raw_state, bytes):
-            raw_state = raw_state.decode("utf-8")
-        # One-time use: delete immediately.
-        await self.redis.delete(nonce_key)
-
-        try:
-            state_payload = json.loads(raw_state)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Corrupted state payload: {exc}") from exc
+        state_payload = await self.consume_state(state)
 
         channel = state_payload.get("channel")
         user_id = state_payload.get("user_id")
@@ -378,6 +366,43 @@ class JiraOAuthManager:
             channel, user_id, display_name, site_url,
         )
         return token, state_payload
+
+    async def consume_state(self, state: str) -> Dict[str, Any]:
+        """Resolve and delete a one-time CSRF state nonce.
+
+        Reads the state payload stored under ``jira:nonce:<state>`` and
+        deletes it (single-use semantics) without exchanging an
+        authorization code. This is used by the callback route to handle
+        OAuth *error* redirects — when the user denies consent Atlassian
+        returns ``?error=...&state=...`` with **no** ``code`` — so the route
+        can still dispatch a channel-specific failure notification and avoid
+        leaving the nonce dangling in Redis until its TTL expires.
+
+        :meth:`handle_callback` delegates its nonce resolution here too, so
+        both paths share identical validation semantics.
+
+        Args:
+            state: The CSRF state nonce echoed back by Atlassian.
+
+        Returns:
+            The decoded state payload (``channel``, ``user_id``, ``extra``).
+
+        Raises:
+            ValueError: If the nonce is missing/expired or the payload is
+                corrupt.
+        """
+        nonce_key = self._nonce_key(state)
+        raw_state = await self.redis.get(nonce_key)
+        if not raw_state:
+            raise ValueError("Invalid or expired state nonce.")
+        if isinstance(raw_state, bytes):
+            raw_state = raw_state.decode("utf-8")
+        # One-time use: delete immediately.
+        await self.redis.delete(nonce_key)
+        try:
+            return json.loads(raw_state)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Corrupted state payload: {exc}") from exc
 
     # ------------------------------------------------------------------ reads
 

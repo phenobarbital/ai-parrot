@@ -267,6 +267,31 @@ class TestRegisterJiraCommandsTeams:
 
 
 # ---------------------------------------------------------------------------
+# Menu card contract (Bug 2 regression)
+# ---------------------------------------------------------------------------
+
+class TestJiraMenuCard:
+    """The discoverability menu card's buttons are Action.Submit actions that
+    carry a slash-prefixed ``command`` in their ``data``. The wrapper's
+    _handle_card_submission relies on this key to route the click through the
+    command router (otherwise the buttons silently no-op).
+    """
+
+    def test_menu_buttons_carry_slash_command_data(self):
+        from parrot.integrations.msteams.commands.jira_commands import _jira_menu_card
+
+        card = _jira_menu_card()
+        actions = card["actions"]
+        assert all(a["type"] == "Action.Submit" for a in actions)
+
+        commands = {a["data"]["command"] for a in actions}
+        assert commands == {"/connect_jira", "/disconnect_jira", "/jira_status"}
+        # Every command is slash-prefixed so try_dispatch (which requires a
+        # leading "/") will accept it.
+        assert all(c.startswith("/") for c in commands)
+
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 

@@ -21,14 +21,22 @@ def mock_token_set():
 
 @pytest.fixture
 def msteams_state_payload():
-    """State payload for an MS Teams-originated OAuth callback."""
+    """State payload as produced by JiraOAuthManager.
+
+    Channel-specific data (conversation_reference) is nested under ``extra`` —
+    this mirrors the real shape returned by ``handle_callback``.
+    """
     return {
         "channel": "msteams",
         "user_id": "aad-obj-123",
-        "conversation_reference": {
-            "conversation": {"id": "conv-123", "tenantId": "tenant-456"},
-            "bot": {"id": "bot-app-id"},
-            "user": {"id": "aad-obj-123", "aadObjectId": "aad-obj-123"},
+        "extra": {
+            "channel": "msteams",
+            "user_id": "aad-obj-123",
+            "conversation_reference": {
+                "conversation": {"id": "conv-123", "tenantId": "tenant-456"},
+                "bot": {"id": "bot-app-id"},
+                "user": {"id": "aad-obj-123", "aadObjectId": "aad-obj-123"},
+            },
         },
     }
 
@@ -240,3 +248,82 @@ class TestHandleMSTeamsJiraCallback:
         assert response.status == 200
         assert "Authorization Failed" in response.text
         assert "User denied access" in response.text
+
+
+# ---------------------------------------------------------------------------
+# State-payload shape parity (regression for the FEAT-225 nesting bug)
+# ---------------------------------------------------------------------------
+
+class _FakeRedis:
+    """Minimal in-memory async Redis stand-in for shape-parity tests."""
+
+    def __init__(self):
+        self.store = {}
+
+    async def set(self, key, value, ex=None):
+        self.store[key] = value
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def delete(self, key):
+        self.store.pop(key, None)
+
+
+class TestStatePayloadShapeParity:
+    """Drive the *real* payload JiraOAuthManager produces into the handler.
+
+    Guards against drift between what ``create_authorization_url`` stores
+    (conversation_reference nested under ``extra``) and what
+    ``handle_msteams_jira_callback`` reads. The original FEAT-225 code read
+    ``conversation_reference`` at top level, so the proactive confirmation
+    silently no-op'd in production despite green unit tests.
+    """
+
+    @pytest.mark.asyncio
+    async def test_manager_payload_drives_proactive_notification(self, mock_token_set):
+        from parrot.auth.jira_oauth import JiraOAuthManager
+        from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
+
+        fake = _FakeRedis()
+        mgr = JiraOAuthManager(
+            client_id="cid",
+            client_secret="sec",
+            redirect_uri="https://example/api/auth/jira/callback",
+            redis_client=fake,
+        )
+        conv_ref = {
+            "conversation": {"id": "conv-123", "tenantId": "tenant-456"},
+            "bot": {"id": "bot-app-id"},
+            "user": {"id": "aad-obj-123"},
+        }
+        _url, nonce = await mgr.create_authorization_url(
+            "msteams",
+            "aad-obj-123",
+            extra_state={
+                "channel": "msteams",
+                "user_id": "aad-obj-123",
+                "conversation_reference": conv_ref,
+            },
+        )
+        state_payload = await mgr.consume_state(nonce)
+
+        identity = MagicMock()
+        identity.upsert_identity = AsyncMock()
+        notifier = MagicMock()
+        notifier.notify_connected = AsyncMock()
+        mock_request = _make_success_request(
+            app={
+                "identity_mapping_service": identity,
+                "msteams_jira_oauth_notifier": notifier,
+            }
+        )
+
+        with patch("asyncio.create_task") as mock_create_task:
+            await handle_msteams_jira_callback(mock_request, mock_token_set, state_payload)
+            mock_create_task.assert_called_once()
+
+        identity.upsert_identity.assert_called_once()
+        call_kwargs = identity.upsert_identity.call_args[1]
+        assert call_kwargs["nav_user_id"] == "aad-obj-123"
+        assert call_kwargs["auth_data"]["tenant_id"] == "tenant-456"

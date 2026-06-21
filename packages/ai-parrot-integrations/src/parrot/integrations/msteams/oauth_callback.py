@@ -172,7 +172,7 @@ class MSTeamsOAuthNotifier:
 
 async def handle_msteams_jira_callback(
     request: "web.Request",
-    token_set: "JiraTokenSet",
+    token_set: Optional["JiraTokenSet"],
     state_payload: Dict[str, Any],
 ) -> "web.Response":
     """Process a Jira OAuth callback originating from the MS Teams integration.
@@ -189,13 +189,25 @@ async def handle_msteams_jira_callback(
 
     Args:
         request: The incoming aiohttp request.
-        token_set: Token and identity data from ``JiraOAuthManager.handle_callback``.
-        state_payload: Parsed ``extra_state`` from the CSRF nonce.
+        token_set: Token and identity data from ``JiraOAuthManager.handle_callback``,
+            or ``None`` when invoked on the consent-denial (``?error=``) path.
+        state_payload: Full state payload (``channel``, ``user_id``, ``extra``)
+            decoded from the CSRF nonce.
 
     Returns:
         HTML :class:`aiohttp.web.Response` for the browser.
     """
     from aiohttp import web
+
+    # Channel-specific data is nested under ``state_payload["extra"]`` by
+    # JiraOAuthManager.create_authorization_url. Fall back to top-level keys
+    # for backward compatibility with any caller that flattens the payload.
+    extra: Dict[str, Any] = state_payload.get("extra") or {}
+
+    def _conv_ref() -> Dict[str, Any]:
+        return extra.get("conversation_reference") or state_payload.get(
+            "conversation_reference"
+        ) or {}
 
     # Handle Atlassian consent denial or other OAuth errors carried as query params.
     error_code = request.rel_url.query.get("error")
@@ -208,7 +220,7 @@ async def handle_msteams_jira_callback(
             error_code,
             error_description,
         )
-        conv_ref_err: Dict[str, Any] = state_payload.get("conversation_reference") or {}
+        conv_ref_err: Dict[str, Any] = _conv_ref()
         notifier_err: Optional[MSTeamsOAuthNotifier] = request.app.get(
             "msteams_jira_oauth_notifier"
         )
@@ -224,8 +236,8 @@ async def handle_msteams_jira_callback(
             content_type="text/html",
         )
 
-    conv_ref: Dict[str, Any] = state_payload.get("conversation_reference") or {}
-    nav_user_id: str = state_payload.get("user_id", "")
+    conv_ref: Dict[str, Any] = _conv_ref()
+    nav_user_id: str = state_payload.get("user_id") or extra.get("user_id", "")
 
     # 1. Persist identity mapping row
     identity_service = request.app.get("identity_mapping_service")
@@ -236,11 +248,9 @@ async def handle_msteams_jira_callback(
                 auth_provider="msteams",
                 auth_data={
                     "aad_object_id": nav_user_id,
-                    # tenant_id may be available from the conversation_reference
+                    # tenant_id, when present on the serialized conversation ref.
                     "tenant_id": (
-                        conv_ref.get("conversation", {}).get("tenantId")
-                        or conv_ref.get("activity", {}).get("channelData", {}).get("tenant", {}).get("id")
-                        or ""
+                        conv_ref.get("conversation", {}).get("tenantId") or ""
                     ),
                 },
                 display_name=token_set.display_name or None,

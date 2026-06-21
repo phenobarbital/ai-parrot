@@ -155,7 +155,7 @@ class SlackOAuthNotifier:
 
 async def handle_slack_jira_callback(
     request: "web.Request",
-    token_set: "JiraTokenSet",
+    token_set: Optional["JiraTokenSet"],
     state_payload: Dict[str, Any],
 ) -> "web.Response":
     """Process a Jira OAuth callback originating from the Slack integration.
@@ -171,13 +171,23 @@ async def handle_slack_jira_callback(
 
     Args:
         request: The incoming aiohttp request.
-        token_set: Token and identity data from ``JiraOAuthManager.handle_callback``.
-        state_payload: Parsed ``extra_state`` from the CSRF nonce.
+        token_set: Token and identity data from ``JiraOAuthManager.handle_callback``,
+            or ``None`` when invoked on the consent-denial (``?error=``) path.
+        state_payload: Full state payload (``channel``, ``user_id``, ``extra``)
+            decoded from the CSRF nonce.
 
     Returns:
         HTML :class:`aiohttp.web.Response` for the browser.
     """
     from aiohttp import web
+
+    # Channel-specific data is nested under ``state_payload["extra"]`` by
+    # JiraOAuthManager.create_authorization_url. Fall back to top-level keys
+    # for backward compatibility with any caller that flattens the payload.
+    extra: Dict[str, Any] = state_payload.get("extra") or {}
+
+    def _field(name: str, default: str = "") -> str:
+        return extra.get(name) or state_payload.get(name, default)
 
     # Handle Atlassian consent denial or other OAuth errors carried as query params.
     error_code = request.rel_url.query.get("error")
@@ -190,8 +200,8 @@ async def handle_slack_jira_callback(
             error_code,
             error_description,
         )
-        team_id_err: str = state_payload.get("team_id", "")
-        slack_user_id_err: str = state_payload.get("slack_user_id", "")
+        team_id_err: str = _field("team_id")
+        slack_user_id_err: str = _field("slack_user_id")
         notifier_err: Optional[SlackOAuthNotifier] = request.app.get(
             "slack_jira_oauth_notifier"
         )
@@ -208,10 +218,10 @@ async def handle_slack_jira_callback(
             content_type="text/html",
         )
 
-    team_id: str = state_payload.get("team_id", "")
-    slack_user_id: str = state_payload.get("slack_user_id", "")
-    # The composite user_id used in JiraOAuthManager
-    nav_user_id: str = state_payload.get("user_id", f"{team_id}:{slack_user_id}")
+    team_id: str = _field("team_id")
+    slack_user_id: str = _field("slack_user_id")
+    # The composite user_id used in JiraOAuthManager (stored at top level).
+    nav_user_id: str = state_payload.get("user_id") or f"{team_id}:{slack_user_id}"
 
     # 1. Persist identity mapping row
     identity_service = request.app.get("identity_mapping_service")
