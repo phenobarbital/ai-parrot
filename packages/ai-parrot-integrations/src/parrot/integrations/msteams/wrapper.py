@@ -147,11 +147,20 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if oauth_manager is not None:
             self._command_router = MSTeamsCommandRouter()
             register_jira_commands(self._command_router, oauth_manager)
-            # Register the OAuth notifier for proactive messaging after callback
-            app["msteams_jira_oauth_notifier"] = MSTeamsOAuthNotifier(
-                adapter=self.adapter,
-                app_id=config.client_id or "",
-            )
+            # Register the OAuth notifier for proactive messaging after callback.
+            # continue_conversation needs a valid App ID, so skip (with a
+            # warning) when client_id is not configured rather than registering
+            # a notifier that will always fail.
+            if config.client_id:
+                app["msteams_jira_oauth_notifier"] = MSTeamsOAuthNotifier(
+                    adapter=self.adapter,
+                    app_id=config.client_id,
+                )
+            else:
+                self.logger.warning(
+                    "No client_id configured — MS Teams proactive notification "
+                    "after Jira OAuth will be skipped"
+                )
 
         # Route
         # Clean chatbot_id to be safe for URL
@@ -312,6 +321,18 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             return
 
         self.logger.info("Card submission: %s", submitted_data)
+
+        # Slash-style commands embedded in Adaptive Card Submit actions — e.g.
+        # the Jira menu card buttons send {"command": "/connect_jira"}. These
+        # arrive as activity.value (not activity.text), so the text-based
+        # command interception in on_message_activity never sees them. Route
+        # them through the command router so card buttons behave like typed
+        # slash commands.
+        command = submitted_data.get('command')
+        if command and self._command_router is not None:
+            handled = await self._command_router.try_dispatch(command, turn_context)
+            if handled:
+                return
 
         # Check for action type
         action = submitted_data.get('_action', 'submit')

@@ -183,6 +183,52 @@ async def _notify_telegram(
         )
 
 
+async def _handle_oauth_error(
+    request: web.Request,
+    manager: "JiraOAuthManager",
+    error: str,
+    state: str | None,
+) -> web.Response:
+    """Handle an OAuth error redirect (e.g. the user denied consent).
+
+    Resolves and consumes the CSRF nonce (so it is not left dangling in
+    Redis) and dispatches a channel-specific failure notification by routing
+    to the same per-channel callback handler, which detects the ``?error=``
+    query param and runs its failure branch. Falls back to a generic error
+    page for the web/telegram channels.
+
+    Args:
+        request: The incoming aiohttp request (carries ``?error=``).
+        manager: The Jira OAuth manager (used to consume the state nonce).
+        error: The OAuth ``error`` code from the query string.
+        state: The CSRF state nonce, if present.
+
+    Returns:
+        An HTML error response for the browser.
+    """
+    error_description = request.query.get("error_description", error)
+    logger.warning("Jira OAuth error redirect: %s — %s", error, error_description)
+
+    state_payload: Dict[str, Any] = {}
+    if state:
+        try:
+            state_payload = await manager.consume_state(state)
+        except ValueError:
+            logger.warning(
+                "OAuth error redirect carried an invalid/expired state nonce"
+            )
+
+    channel = state_payload.get("channel", "telegram")
+    if channel == "slack":
+        from parrot.integrations.slack.oauth_callback import handle_slack_jira_callback
+        return await handle_slack_jira_callback(request, None, state_payload)
+    if channel == "msteams":
+        from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
+        return await handle_msteams_jira_callback(request, None, state_payload)
+
+    return _error_response(error_description, status=400)
+
+
 async def jira_oauth_callback(request: web.Request) -> web.Response:
     """Handle ``GET /api/auth/jira/callback``.
 
@@ -193,9 +239,7 @@ async def jira_oauth_callback(request: web.Request) -> web.Response:
     """
     code = request.query.get("code")
     state = request.query.get("state")
-
-    if not code or not state:
-        return _error_response("Missing code or state parameter.", status=400)
+    error = request.query.get("error")
 
     manager: "JiraOAuthManager | None" = request.app.get("jira_oauth_manager")
     if manager is None:
@@ -203,6 +247,16 @@ async def jira_oauth_callback(request: web.Request) -> web.Response:
         return _error_response(
             "OAuth manager not configured on the server.", status=500,
         )
+
+    # OAuth error redirect (e.g. the user denied consent). Atlassian sends
+    # ``?error=...&state=...`` with NO authorization code, so this must be
+    # handled before the code check — otherwise the user-facing failure
+    # notification never fires and the one-time nonce lingers until its TTL.
+    if error:
+        return await _handle_oauth_error(request, manager, error, state)
+
+    if not code or not state:
+        return _error_response("Missing code or state parameter.", status=400)
 
     try:
         token_set, state_payload = await manager.handle_callback(code, state)

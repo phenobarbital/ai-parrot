@@ -256,6 +256,42 @@ class TestHandleCallback:
         assert ttl == 90 * 24 * 60 * 60
 
 
+class TestConsumeState:
+    @pytest.mark.asyncio
+    async def test_returns_payload_and_deletes_nonce(
+        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
+    ) -> None:
+        # Channel data lives under "extra" — the shape the callback handlers read.
+        _, nonce = await manager.create_authorization_url(
+            "slack",
+            "T1:U1",
+            extra_state={"team_id": "T1", "slack_user_id": "U1"},
+        )
+        payload = await manager.consume_state(nonce)
+
+        assert payload["channel"] == "slack"
+        assert payload["user_id"] == "T1:U1"
+        assert payload["extra"] == {"team_id": "T1", "slack_user_id": "U1"}
+        # One-time use: the nonce is deleted after being consumed.
+        assert f"jira:nonce:{nonce}" in fake_redis.deleted
+
+    @pytest.mark.asyncio
+    async def test_second_consume_raises(
+        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
+    ) -> None:
+        _, nonce = await manager.create_authorization_url("telegram", "u1")
+        await manager.consume_state(nonce)
+        with pytest.raises(ValueError, match="Invalid or expired state nonce"):
+            await manager.consume_state(nonce)
+
+    @pytest.mark.asyncio
+    async def test_unknown_state_raises(
+        self, manager: JiraOAuthManager
+    ) -> None:
+        with pytest.raises(ValueError, match="Invalid or expired state nonce"):
+            await manager.consume_state("does-not-exist")
+
+
 class TestGetValidToken:
     @pytest.mark.asyncio
     async def test_returns_none_when_empty(
