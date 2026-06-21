@@ -62,6 +62,7 @@ from ..handlers.agents.ephemeral import EphemeralUserAgentHandler
 from ..handlers.tools_catalog import ToolCatalogHandler
 from ..handlers.prompt import PromptTunerHandler
 from ..handlers.stream import StreamHandler
+from ..handlers.knowledge import AgentKnowledgeHandler
 from ..registry import agent_registry, AgentRegistry, BotConfigStorage
 # Crew:
 from ..bots.flows.crew import AgentCrew
@@ -1688,6 +1689,18 @@ class BotManager:
         router.add_view(
             '/api/v1/agents/chat/{agent_id}/{method_name}',
             AgentTalk
+        )
+        # Agent knowledge index (PageIndex / GraphIndex) management.
+        # Literal action sub-route ({action}: search|ask) MUST be registered
+        # before the bare {agent_id} route so aiohttp resolves /search and /ask
+        # before matching them as agent IDs.
+        router.add_view(
+            '/api/v1/agents/knowledge/{agent_id}/{action}',
+            AgentKnowledgeHandler
+        )
+        router.add_view(
+            '/api/v1/agents/knowledge/{agent_id}',
+            AgentKnowledgeHandler
         )
         # FEAT-146: HITL response endpoint (agent-driven human-in-the-loop)
         router.add_view(

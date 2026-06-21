@@ -53,13 +53,17 @@ class ToolInterface:
                     )
 
                 elif isinstance(tool, type) and issubclass(tool, AbstractToolkit):
-                    # It's a toolkit class, register it
-                    self.tool_manager.register_toolkit(tool)
+                    # It's a toolkit class, register it. Instantiate first so we
+                    # can capture knowledge-index toolkits for the REST surface.
+                    instance = tool()
+                    self.tool_manager.register_toolkit(instance)
+                    self._capture_knowledge_toolkit(instance)
                     self.logger.info(f"Registered toolkit class: {tool.__name__}")
 
                 elif isinstance(tool, AbstractToolkit):
                     # It's a toolkit instance
                     self.tool_manager.register_toolkit(tool)
+                    self._capture_knowledge_toolkit(tool)
                     self.logger.info(f"Registered toolkit instance: {tool.__class__.__name__}")
 
                 elif isinstance(tool, (AbstractTool, ToolDefinition)):
@@ -88,6 +92,75 @@ class ToolInterface:
 
             except Exception as e:
                 self.logger.error(f"Error initializing tool {tool}: {e}")
+
+    # Knowledge-index capability surface (PageIndex / GraphIndex) ----------
+    @property
+    def pageindex_toolkit(self) -> Any:
+        """The bot's ``PageIndexToolkit`` instance, or ``None``.
+
+        Populated by :meth:`_initialize_tools` when a PageIndex toolkit is
+        wired into the bot. Used by the REST knowledge handler to manage the
+        agent's PageIndex documents.
+        """
+        return getattr(self, "_pageindex_toolkit", None)
+
+    @property
+    def graphindex_toolkit(self) -> Any:
+        """The bot's ``GraphIndexToolkit`` instance, or ``None``."""
+        return getattr(self, "_graphindex_toolkit", None)
+
+    @property
+    def graphindex_builder(self) -> Any:
+        """Optional ``GraphIndexBuilder`` enabling document ingestion."""
+        return getattr(self, "_graphindex_builder", None)
+
+    @property
+    def has_pageindex_tools(self) -> bool:
+        """Whether this bot has PageIndex tools incorporated.
+
+        ``True`` when a ``PageIndexToolkit`` instance was captured during tool
+        wiring, or when any registered tool is namespaced under the
+        ``pageindex`` prefix.
+        """
+        if getattr(self, "_pageindex_toolkit", None) is not None:
+            return True
+        return any(
+            name.startswith("pageindex")
+            for name in self.tool_manager.list_tools()
+        )
+
+    @property
+    def has_graphindex_tools(self) -> bool:
+        """Whether this bot has GraphIndex tools incorporated."""
+        if getattr(self, "_graphindex_toolkit", None) is not None:
+            return True
+        return any(
+            name.startswith("graphindex") or name.startswith("graph_")
+            for name in self.tool_manager.list_tools()
+        )
+
+    @property
+    def has_knowledge_index(self) -> bool:
+        """Whether the bot exposes any knowledge index (Page or Graph)."""
+        return self.has_pageindex_tools or self.has_graphindex_tools
+
+    def _capture_knowledge_toolkit(self, toolkit: Any) -> None:
+        """Capture PageIndex / GraphIndex toolkit instances on the bot.
+
+        The ``ToolManager`` only retains a toolkit's *tools*, not the toolkit
+        itself. The REST knowledge handler needs the live toolkit to manage an
+        agent's documents (import / search / delete), so we stash the instance
+        and let ``has_pageindex_tools`` / ``has_graphindex_tools`` report it.
+
+        Detection is by class name to avoid importing ``parrot_tools`` /
+        ``parrot.knowledge`` here (prevents a circular import and keeps the
+        satellite packages optional).
+        """
+        cls_name = type(toolkit).__name__
+        if cls_name == "PageIndexToolkit" and getattr(self, "_pageindex_toolkit", None) is None:
+            self._pageindex_toolkit = toolkit
+        elif cls_name == "GraphIndexToolkit" and getattr(self, "_graphindex_toolkit", None) is None:
+            self._graphindex_toolkit = toolkit
 
     def sync_tools(self, llm: AbstractClient = None) -> None:
         """Assign Bot's ToolManager as a reference to LLM's ToolManager.
@@ -165,7 +238,9 @@ class ToolInterface:
             'is_agent_mode': self.is_agent_mode(),
             'is_conversational_mode': self.is_conversational_mode(),
             'effective_mode': self.get_operation_mode(),
-            'tool_threshold': self.tool_threshold
+            'tool_threshold': self.tool_threshold,
+            'has_pageindex_tools': self.has_pageindex_tools,
+            'has_graphindex_tools': self.has_graphindex_tools,
         }
 
     def validate_tools(self) -> Dict[str, Any]:

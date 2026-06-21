@@ -346,6 +346,14 @@ class AbstractBot(
         )
         self.tool_threshold = tool_threshold
         self.enable_tools: bool = kwargs.get('enable_tools', kwargs.get('use_tools', True))
+        # Knowledge-index toolkits captured during tool registration so the
+        # REST surface (AgentKnowledgeHandler) can manage the agent's PageIndex
+        # / GraphIndex documents. ``_initialize_tools`` populates these when a
+        # PageIndexToolkit / GraphIndexToolkit is wired into the agent.
+        self._pageindex_toolkit: Optional[Any] = None
+        self._graphindex_toolkit: Optional[Any] = None
+        # Optional GraphIndexBuilder enabling document ingestion into the graph.
+        self._graphindex_builder: Optional[Any] = kwargs.pop('graphindex_builder', None)
         # Initialize tools if provided
         if tools:
             self._initialize_tools(tools)
