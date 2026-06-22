@@ -359,23 +359,48 @@ class LiveAvatarClient:
         """Send a single HTTP keep-alive ping for the session.
 
         Calls ``POST /v1/sessions/keep-alive`` with Bearer ``session_token``
-        auth.  The session_id is REQUIRED in the request body (an empty body
-        is rejected with 400 Bad Request).
+        auth, sending the ``session_id`` (UUID) in the body per
+        ``KeepSessionAliveSchema``.
         # TODO P7 — switch to WS ``session.keep_alive`` here if the WS
         #           variant is chosen as the canonical keep-alive transport.
 
         Args:
             handle: The active session handle.
+
+        Raises:
+            aiohttp.ClientResponseError: On a fatal ``4xx`` (the session is no
+                longer keep-alive-able — expired/ended/invalid).  The caller
+                (the keep-alive loop) uses this to stop pinging a dead session.
+                Transient errors (network / ``5xx``) are logged and swallowed.
         """
         url = f"{self.cfg.base_url}/v1/sessions/keep-alive"
         headers = self._bearer_headers(handle)
-        # The keep-alive endpoint REQUIRES the session_id in the body (UUID);
-        # an empty body is rejected with 400 Bad Request.
+        # session_id is an optional UUID field on KeepSessionAliveSchema; we
+        # always send it so the server can scope the ping to this session.
         body = {"session_id": handle.liveavatar_session_id}
         try:
             await self._post(url, headers=headers, json=body)
             self.logger.debug("LiveAvatarClient: keep-alive sent for %s", handle.liveavatar_session_id)
-        except Exception:  # noqa: BLE001
+        except aiohttp.ClientResponseError as exc:
+            # A 4xx means the session is gone (expired/ended/invalid) — there is
+            # no point retrying.  Re-raise so the loop can stop.  A 5xx is a
+            # transient server hiccup: log and swallow so the loop keeps trying.
+            if 400 <= exc.status < 500:
+                self.logger.warning(
+                    "LiveAvatarClient: keep-alive rejected for %s (HTTP %s) — "
+                    "session no longer alive: %s",
+                    handle.liveavatar_session_id,
+                    exc.status,
+                    exc.message,
+                )
+                raise
+            self.logger.warning(
+                "LiveAvatarClient: keep-alive transient failure for %s (HTTP %s): %s",
+                handle.liveavatar_session_id,
+                exc.status,
+                exc.message,
+            )
+        except Exception:  # noqa: BLE001 — network blip, retry next tick
             self.logger.warning(
                 "LiveAvatarClient: keep-alive failed for %s",
                 handle.liveavatar_session_id,
@@ -513,10 +538,44 @@ class LiveAvatarClient:
                 "call __aenter__ before using the client."
             )
         async with self._session.post(url, headers=headers, json=json) as resp:
-            resp.raise_for_status()
+            await self._raise_for_status(resp)
             if resp.content_type == "application/json":
                 return await resp.json()  # type: ignore[no-any-return]
             return {}
+
+    @staticmethod
+    async def _raise_for_status(resp: aiohttp.ClientResponse) -> None:
+        """Raise ``ClientResponseError`` with the response body in the message.
+
+        ``aiohttp.ClientResponse.raise_for_status`` discards the response body,
+        so a LiveAvatar ``400`` surfaces as a bare ``Bad Request`` with no clue
+        as to *why*.  This reads the body (best-effort) and folds it into the
+        exception message so callers and logs can diagnose the failure.
+
+        Args:
+            resp: The aiohttp response to validate.
+
+        Raises:
+            aiohttp.ClientResponseError: On any non-2xx status, with the
+                response body appended to ``message``.
+        """
+        if resp.status < 400:
+            return
+        body = ""
+        try:
+            body = (await resp.text()).strip()
+        except Exception:  # noqa: BLE001 — body read is best-effort
+            pass
+        message = resp.reason or ""
+        if body:
+            message = f"{message}: {body}" if message else body
+        raise aiohttp.ClientResponseError(
+            resp.request_info,
+            resp.history,
+            status=resp.status,
+            message=message,
+            headers=resp.headers,
+        )
 
     async def _get(
         self,
@@ -544,7 +603,7 @@ class LiveAvatarClient:
                 "call __aenter__ before using the client."
             )
         async with self._session.get(url, headers=headers) as resp:
-            resp.raise_for_status()
+            await self._raise_for_status(resp)
             if resp.content_type == "application/json":
                 return await resp.json()  # type: ignore[no-any-return]
             return {}
@@ -599,7 +658,17 @@ class LiveAvatarClient:
         try:
             while True:
                 await asyncio.sleep(_KEEP_ALIVE_INTERVAL)
-                await self.keep_alive(handle)
+                try:
+                    await self.keep_alive(handle)
+                except aiohttp.ClientResponseError:
+                    # Fatal 4xx — the session is gone.  Stop the loop instead of
+                    # hammering a dead session every interval forever.
+                    self.logger.info(
+                        "LiveAvatarClient: stopping keep-alive loop for %s "
+                        "(session no longer alive)",
+                        handle.liveavatar_session_id,
+                    )
+                    return
         except asyncio.CancelledError:
             self.logger.debug(
                 "LiveAvatarClient: keep-alive loop cancelled for %s",

@@ -190,6 +190,54 @@ async def test_keep_alive_task_started_on_start(cfg: LiveAvatarConfig) -> None:
     assert start_ka_called
 
 
+async def test_keep_alive_reraises_on_4xx(cfg: LiveAvatarConfig) -> None:
+    """A fatal 4xx (session gone) is re-raised so the loop can stop."""
+    import aiohttp
+
+    client = LiveAvatarClient(cfg, session=MagicMock())
+    handle = _make_handle()
+
+    err = aiohttp.ClientResponseError(
+        request_info=MagicMock(), history=(), status=400, message="Bad Request"
+    )
+    with patch.object(client, "_post", AsyncMock(side_effect=err)):
+        with pytest.raises(aiohttp.ClientResponseError):
+            await client.keep_alive(handle)
+
+
+async def test_keep_alive_swallows_5xx(cfg: LiveAvatarConfig) -> None:
+    """A transient 5xx is logged and swallowed (loop keeps trying)."""
+    import aiohttp
+
+    client = LiveAvatarClient(cfg, session=MagicMock())
+    handle = _make_handle()
+
+    err = aiohttp.ClientResponseError(
+        request_info=MagicMock(), history=(), status=503, message="Unavailable"
+    )
+    with patch.object(client, "_post", AsyncMock(side_effect=err)):
+        # Must not raise.
+        await client.keep_alive(handle)
+
+
+async def test_keep_alive_loop_stops_on_4xx(cfg: LiveAvatarConfig) -> None:
+    """The keep-alive loop terminates when keep_alive raises a 4xx."""
+    import aiohttp
+
+    client = LiveAvatarClient(cfg, session=MagicMock())
+    handle = _make_handle()
+
+    err = aiohttp.ClientResponseError(
+        request_info=MagicMock(), history=(), status=400, message="Bad Request"
+    )
+    with patch.object(client, "keep_alive", AsyncMock(side_effect=err)):
+        with patch(
+            "parrot.integrations.liveavatar.client._KEEP_ALIVE_INTERVAL", 0
+        ):
+            # Should return (not hang) — the 4xx breaks the loop.
+            await asyncio.wait_for(client._keep_alive_loop(handle), timeout=1.0)
+
+
 # ---------------------------------------------------------------------------
 # max_session_duration forwarded
 # ---------------------------------------------------------------------------
