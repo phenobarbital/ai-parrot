@@ -153,8 +153,10 @@ finance = [
 ]
 
 # FlowtTask DAG execution (pulls asyncdb[all] — heavy)
+# 5.12.3 relaxes its requests pin (==2.32.4 -> >=2.33.0), compatible with
+# the workspace's requests>=2.34 override.
 flowtask = [
-    "flowtask>=5.12.1",
+    "flowtask>=5.12.3",
 ]
 
 # GraphIndex knowledge graph indexing (FEAT-187)
