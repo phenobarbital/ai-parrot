@@ -72,8 +72,16 @@ def _build_mock_jira() -> MagicMock:
         return_value={"key": f"SMOKE-{uuid.uuid4().hex[:4].upper()}"}
     )
     jira.jira_add_comment = AsyncMock(return_value={"id": "c-1"})
-    jira.jira_search_issues = AsyncMock(return_value={"issues": []})
-    jira._resolve_account_id = AsyncMock(side_effect=lambda v: v)
+    # No existing ticket → the create path runs (toolkit shape: {"status": ...}).
+    jira.jira_search_issues = AsyncMock(return_value={"status": "empty"})
+    jira.jira_get_issue = AsyncMock(return_value={"status": "error"})
+    # An email reporter (FLOW_BOT_JIRA_ACCOUNT_ID) is resolved to an accountId.
+    jira.jira_find_user = AsyncMock(
+        side_effect=lambda email: {
+            "found": True,
+            "matches": [{"accountId": f"acct:{email}", "emailAddress": email}],
+        }
+    )
     return jira
 
 

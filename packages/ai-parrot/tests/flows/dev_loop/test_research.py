@@ -58,6 +58,21 @@ def node(research_out_fixture, monkeypatch, tmp_path):
     jira = MagicMock()
     jira.jira_create_issue = AsyncMock(return_value={"key": "OPS-1"})
     jira.jira_add_comment = AsyncMock(return_value={"id": "c1"})
+    # Duplicate-ticket lookup: no existing issue → the create path runs.
+    jira.jira_search_issues = AsyncMock(return_value={"status": "empty"})
+    jira.jira_get_issue = AsyncMock(return_value={"status": "error"})
+    # Email reporters are resolved to an accountId via jira_find_user.
+    jira.jira_find_user = AsyncMock(
+        return_value={
+            "found": True,
+            "matches": [
+                {
+                    "accountId": "557058:resolved",
+                    "emailAddress": "reporter@example.com",
+                }
+            ],
+        }
+    )
 
     dispatcher = MagicMock()
     dispatcher.dispatch = AsyncMock(return_value=research_out_fixture)
@@ -199,6 +214,56 @@ class TestIssueTypeRouting:
         assert kwargs["issuetype"] == expected
 
 
+class TestReporterResolution:
+    """Reporter emails are resolved to an accountId before create_issue."""
+
+    @pytest.mark.asyncio
+    async def test_email_reporter_resolved_to_account_id(
+        self, node: ResearchNode, sample_kwargs: dict
+    ):
+        """An email reporter is sent as the resolved accountId, not the email."""
+        brief = WorkBrief(
+            **sample_kwargs,
+            acceptance_criteria=[ShellCriterion(name="r", command="ruff check .")],
+        )
+        node._jira.jira_create_issue = AsyncMock(return_value={"key": "X-1"})
+        node._jira.jira_add_comment = AsyncMock(return_value={})
+        await node.execute({"bug_brief": brief, "run_id": "r1"})
+        fields = node._jira.jira_create_issue.call_args.kwargs["fields"]
+        assert fields == {"reporter": {"accountId": "557058:resolved"}}
+        node._jira.jira_find_user.assert_awaited_once_with("reporter@example.com")
+
+    @pytest.mark.asyncio
+    async def test_accountid_reporter_passes_through(
+        self, node: ResearchNode, good_brief: BugBrief
+    ):
+        """An accountId reporter is used verbatim — no lookup performed."""
+        node._jira.jira_create_issue = AsyncMock(return_value={"key": "X-1"})
+        node._jira.jira_add_comment = AsyncMock(return_value={})
+        await node.execute({"bug_brief": good_brief, "run_id": "r1"})
+        fields = node._jira.jira_create_issue.call_args.kwargs["fields"]
+        assert fields == {"reporter": {"accountId": "557058:def"}}
+        node._jira.jira_find_user.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_email_omits_reporter(
+        self, node: ResearchNode, sample_kwargs: dict
+    ):
+        """A reporter email with no Jira match omits the field (service acct)."""
+        brief = WorkBrief(
+            **sample_kwargs,
+            acceptance_criteria=[ShellCriterion(name="r", command="ruff check .")],
+        )
+        node._jira.jira_find_user = AsyncMock(
+            return_value={"found": False, "matches": []}
+        )
+        node._jira.jira_create_issue = AsyncMock(return_value={"key": "X-1"})
+        node._jira.jira_add_comment = AsyncMock(return_value={})
+        await node.execute({"bug_brief": brief, "run_id": "r1"})
+        fields = node._jira.jira_create_issue.call_args.kwargs["fields"]
+        assert fields is None
+
+
 class TestPlanSummaryOnCreate:
     """FEAT-132: plan-summary comment is posted on the new-ticket path."""
 
@@ -207,7 +272,7 @@ class TestPlanSummaryOnCreate:
         self, node: ResearchNode, good_brief: BugBrief
     ):
         """When a new ticket is created, a 'Plan for run-' comment is posted."""
-        node._jira.jira_search_issues = AsyncMock(return_value={"issues": []})
+        node._jira.jira_search_issues = AsyncMock(return_value={"status": "empty"})
         node._jira.jira_create_issue = AsyncMock(return_value={"key": "NAV-1"})
         node._jira.jira_add_comment = AsyncMock(return_value={})
         # Stub the plan client so no network call is made.

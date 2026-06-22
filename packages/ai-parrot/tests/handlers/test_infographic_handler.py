@@ -28,7 +28,7 @@ from parrot.models.infographic_templates import (
     InfographicTemplate,
     infographic_registry,
 )
-from parrot.models.responses import AIMessage
+from parrot.models.responses import AIMessage, CompletionUsage
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
@@ -60,7 +60,13 @@ def mock_agent(sample_infographic_response):
     agent.name = "test_agent"
 
     async def _get_infographic(question, accept="text/html", **kw):
-        msg = AIMessage(input=question, output=sample_infographic_response)
+        msg = AIMessage(
+            input=question,
+            output=sample_infographic_response,
+            model="test-model",
+            provider="test",
+            usage=CompletionUsage(),
+        )
         msg.structured_output = sample_infographic_response
         if accept == "text/html":
             msg.content = "<html><body><h1>Mock</h1></body></html>"
@@ -336,7 +342,13 @@ class TestIntegrationRegisterThenGenerate:
 
         async def _capture_get_infographic(question, **kw):
             captured["template"] = kw.get("template")
-            msg = AIMessage(input=question, output="<html>ok</html>")
+            msg = AIMessage(
+                input=question,
+                output="<html>ok</html>",
+                model="test-model",
+                provider="test",
+                usage=CompletionUsage(),
+            )
             msg.content = "<html>ok</html>"
             return msg
 

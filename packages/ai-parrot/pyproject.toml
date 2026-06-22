@@ -62,13 +62,17 @@ dependencies = [
     "navigator-auth>0.20.9",
     "navigator-session>=0.6.5",
     # navigator-api 3.0.3+ ships the FileManager interface AI-Parrot relies on.
-    # Older 2.x releases lack it and fail at import / runtime, so pin the lower
-    # bound to 3.0.3 to prevent silent downgrades from a stale environment.
-    "navigator-api[uvloop,locale,google]>=3.0.3",
+    # 3.1.2 also fixes the aiohttp RequestHandler kwargs warning (invalid
+    # client_timeout/max_request_size were silently dropping every custom
+    # server setting). Pin to 3.1.2 to prevent silent downgrades and to
+    # guarantee that fix is present.
+    "navigator-api[uvloop,locale,google]>=3.1.2",
     # Async DB — base only (asyncpg, aiosqlite, pandas, pgvector)
     "asyncdb>=2.11.6",
     # HTTP / networking
     "rich>=13.0",
+    # requests is otherwise transitive; pin above the 2.33 series.
+    "requests>=2.34",
     "click>=8.1.7",
     "prompt_toolkit>=3.0",
     "aiohttp-swagger3==0.10.0",

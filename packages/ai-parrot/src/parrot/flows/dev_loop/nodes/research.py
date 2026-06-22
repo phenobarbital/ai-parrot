@@ -705,19 +705,68 @@ class ResearchNode(DevLoopNode):
     ) -> Optional[Dict[str, Any]]:
         """Build the ``fields={"reporter": {...}}`` blob for create_issue.
 
-        Accepts either an email or an accountId. Emails are resolved via
-        the toolkit's user lookup so callers can keep BugBrief.reporter
-        in human-readable form (e.g. ``jane@example.com``) rather than
-        the Jira-internal ``557058:abc`` accountId.
+        Accepts either an email or an accountId. Emails are resolved to an
+        accountId via the toolkit's public ``jira_find_user`` lookup so
+        callers can keep ``BugBrief.reporter`` in human-readable form
+        (e.g. ``jane@example.com``) rather than the Jira-internal
+        ``557058:abc`` accountId.
+
+        The reporter slot on Jira Cloud only accepts an ``accountId`` — an
+        email there is rejected with ``400 Specify a valid value for
+        reporter``. If the value is an email and resolution fails (user not
+        found or the lookup errors), we omit the reporter field entirely so
+        the create still succeeds with the authenticated service account as
+        reporter, rather than failing the whole ticket creation.
+
+        Args:
+            reporter: An accountId (used verbatim) or an email to resolve.
+
+        Returns:
+            A ``{"reporter": {"accountId": ...}}`` blob, or ``None`` to omit
+            the reporter field.
         """
         if not reporter:
             return None
-        # Pass the reporter email verbatim — Jira resolves it server-side
-        # via the standard accountId / email lookup. We avoid calling the
-        # private _resolve_account_id method on the toolkit because private
-        # API is not part of the toolkit's contract and may change without notice.
-        account_id = reporter
+        account_id = await self._resolve_reporter_account_id(reporter)
+        if not account_id:
+            return None
         return {"reporter": {"accountId": account_id}}
+
+    async def _resolve_reporter_account_id(self, reporter: str) -> str:
+        """Resolve an email to a Jira accountId; pass accountIds through.
+
+        We use the toolkit's *public* ``jira_find_user`` rather than the
+        private ``_resolve_account_id`` because private API is not part of
+        the toolkit's contract and may change without notice.
+
+        Args:
+            reporter: An accountId (returned as-is) or an email to resolve.
+
+        Returns:
+            The resolved accountId, or ``""`` when the email cannot be
+            resolved (caller then omits the reporter field).
+        """
+        if "@" not in reporter:
+            return reporter  # already an accountId
+        try:
+            result = await self._jira.jira_find_user(reporter)
+        except Exception as exc:  # noqa: BLE001 — never fail ticket creation
+            self.logger.warning(
+                "Could not resolve reporter %r to an accountId: %s; "
+                "omitting reporter field", reporter, exc,
+            )
+            return ""
+        matches = (result or {}).get("matches") or []
+        if not (result or {}).get("found") or not matches:
+            self.logger.warning(
+                "No Jira user found for reporter %r; omitting reporter field",
+                reporter,
+            )
+            return ""
+        for match in matches:
+            if (match.get("emailAddress") or "").lower() == reporter.lower():
+                return match["accountId"]
+        return matches[0]["accountId"]
 
     @staticmethod
     def _extract_issue_key(resp: Any) -> str:
