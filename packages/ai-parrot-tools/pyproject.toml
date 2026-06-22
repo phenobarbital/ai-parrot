@@ -67,7 +67,7 @@ db = ["querysource>=4.1.11", "psycopg-binary>=3.2"]
 # the workspace's requests>=2.34 override.
 flowtask = ["flowtask>=5.12.3"]
 google = ["aiogoogle>=5.17", "google-api-python-client>=2.151"]
-arxiv = ["arxiv>=2.2"]
+arxiv = ["arxiv>=3.0.0"]
 wikipedia = ["wikipedia>=1.4", "mediawikiapi>=1.2"]
 weather = ["pyowm>=3.3"]
 messaging = ["gmqtt>=0.6", "aioimaplib>=1.1"]
