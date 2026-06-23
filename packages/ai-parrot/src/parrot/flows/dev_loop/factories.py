@@ -34,9 +34,7 @@ NodeFactory = Callable[[NodeDefinition, set, set], DevLoopNode]
 
 def _with_graph(node: DevLoopNode, deps: set, succs: set) -> DevLoopNode:
     """Stamp the edge-derived ``dependencies``/``successors`` onto ``node``."""
-    return node.model_copy(
-        update={"dependencies": set(deps), "successors": set(succs)}
-    )
+    return node.model_copy(update={"dependencies": set(deps), "successors": set(succs)})
 
 
 def build_dev_loop_node_factories(
@@ -74,14 +72,10 @@ def build_dev_loop_node_factories(
     development_dispatcher = development_dispatcher or dispatcher
 
     def intent_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
-        return _with_graph(
-            IntentClassifierNode(redis_url=redis_url, name=nd.id), deps, succs
-        )
+        return _with_graph(IntentClassifierNode(redis_url=redis_url, name=nd.id), deps, succs)
 
     def bug_intake_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
-        return _with_graph(
-            BugIntakeNode(redis_url=redis_url, name=nd.id), deps, succs
-        )
+        return _with_graph(BugIntakeNode(redis_url=redis_url, name=nd.id), deps, succs)
 
     def research_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(
@@ -113,27 +107,19 @@ def build_dev_loop_node_factories(
 
     def handoff_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(
-            DeploymentHandoffNode(
-                jira_toolkit=jira_toolkit, git_toolkit=git_toolkit, name=nd.id
-            ),
+            DeploymentHandoffNode(jira_toolkit=jira_toolkit, git_toolkit=git_toolkit, name=nd.id),
             deps,
             succs,
         )
 
     def failure_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
-        return _with_graph(
-            FailureHandlerNode(jira_toolkit=jira_toolkit, name=nd.id), deps, succs
-        )
+        return _with_graph(FailureHandlerNode(jira_toolkit=jira_toolkit, name=nd.id), deps, succs)
 
     def close_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
-        return _with_graph(
-            DevLoopCloseNode(jira_toolkit, name=nd.id), deps, succs
-        )
+        return _with_graph(DevLoopCloseNode(jira_toolkit, name=nd.id), deps, succs)
 
     def revision_handoff_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
-        return _with_graph(
-            RevisionHandoffNode(git_toolkit, name=nd.id), deps, succs
-        )
+        return _with_graph(RevisionHandoffNode(git_toolkit, name=nd.id), deps, succs)
 
     return {
         "dev_loop.intent_classifier": intent_factory,

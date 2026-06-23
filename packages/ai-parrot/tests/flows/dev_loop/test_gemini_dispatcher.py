@@ -1,4 +1,4 @@
-"""Unit tests for the Codex-backed dev-loop dispatcher."""
+"""Unit tests for the Gemini-backed dev-loop dispatcher."""
 
 from __future__ import annotations
 
@@ -10,8 +10,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from parrot.flows.dev_loop import (
-    CodexCodeDispatchProfile,
-    CodexCodeDispatcher,
+    ClaudeCodeDispatchProfile,
+    GeminiCodeDispatchProfile,
+    GeminiCodeDispatcher,
     DevelopmentOutput,
     DispatchExecutionError,
     DispatchOutputValidationError,
@@ -34,7 +35,7 @@ class _AsyncBytesStream:
         return data
 
 
-class _FakeCodexProcess:
+class _FakeGeminiProcess:
     def __init__(
         self,
         *,
@@ -77,10 +78,11 @@ def brief(_patch_worktree_base) -> ResearchOutput:
 
 @pytest.fixture
 def dispatcher(monkeypatch):
-    disp = CodexCodeDispatcher(
+    disp = GeminiCodeDispatcher(
         max_concurrent=2,
         redis_url="redis://localhost:6379/0",
         stream_ttl_seconds=300,
+        gemini_bin="gemini",
     )
     fake_redis = AsyncMock()
     fake_redis.xadd = AsyncMock(return_value=b"1-0")
@@ -103,12 +105,7 @@ def _development_payload() -> str:
     )
 
 
-def _write_output(command: Sequence[str], payload: str) -> None:
-    output_path = Path(command[command.index("-o") + 1])
-    output_path.write_text(payload, encoding="utf-8")
-
-
-def _published_events(dispatcher: CodexCodeDispatcher) -> list[dict[str, Any]]:
+def _published_events(dispatcher: GeminiCodeDispatcher) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for call in dispatcher._fake_redis.xadd.await_args_list:  # type: ignore[attr-defined]
         fields = call.args[1]
@@ -116,21 +113,28 @@ def _published_events(dispatcher: CodexCodeDispatcher) -> list[dict[str, Any]]:
     return events
 
 
-class TestCodexCommandAndEvents:
+class TestGeminiCommandAndEvents:
     @pytest.mark.asyncio
     async def test_dispatch_builds_command_and_maps_jsonl_events(
         self, dispatcher, brief, _patch_worktree_base, monkeypatch
     ):
         captured: dict[str, Sequence[str]] = {}
 
-        async def _fake_create(command: Sequence[str]):
+        async def _fake_create(command: Sequence[str], cwd: str):
             captured["command"] = list(command)
-            _write_output(command, _development_payload())
-            return _FakeCodexProcess(
+            payload_str = _development_payload()
+            assistant_event = {
+                "type": "message",
+                "role": "assistant",
+                "content": f"```json\n{payload_str}\n```",
+                "delta": True,
+            }
+            return _FakeGeminiProcess(
                 stdout_lines=[
-                    ('{"type":"item.started","item":' '{"type":"command_execution","command":"pytest"}}\n'),
-                    ('{"type":"item.completed","item":' '{"type":"command_execution","status":"completed"}}\n'),
-                    '{"type":"turn.completed"}\n',
+                    '{"type":"init","timestamp":"2026-06-23T12:00:00Z"}\n',
+                    '{"type":"tool_call","timestamp":"2026-06-23T12:00:01Z"}\n',
+                    '{"type":"tool_response","timestamp":"2026-06-23T12:00:02Z"}\n',
+                    json.dumps(assistant_event) + "\n",
                 ]
             )
 
@@ -138,7 +142,7 @@ class TestCodexCommandAndEvents:
 
         result = await dispatcher.dispatch(
             brief=brief,
-            profile=CodexCodeDispatchProfile(model="gpt-5.5"),
+            profile=GeminiCodeDispatchProfile(model="gemini-2.5-pro"),
             output_model=DevelopmentOutput,
             run_id="r1",
             node_id="development",
@@ -147,15 +151,16 @@ class TestCodexCommandAndEvents:
 
         assert result.files_changed == ["app.py"]
         command = captured["command"]
-        assert command[:2] == ["codex", "exec"]
-        assert "--json" in command
-        assert command[command.index("--cd") + 1] == str(_patch_worktree_base)
-        assert command[command.index("--model") + 1] == "gpt-5.5"
-        assert command[command.index("--sandbox") + 1] == "workspace-write"
-        assert command[command.index("--ask-for-approval") + 1] == "never"
-        assert "--output-schema" in command
-        assert "-o" in command
-        assert "--ignore-user-config" in command
+        assert "gemini" in command[0]
+        assert "--skip-trust" in command
+        assert "--output-format" in command
+        assert "stream-json" in command
+        assert "--approval-mode" in command
+        assert "auto_edit" in command
+        assert "--model" in command
+        assert "gemini-2.5-pro" in command
+        assert "--sandbox" in command
+        assert "--prompt" in command
 
         kinds = [event["kind"] for event in _published_events(dispatcher)]
         assert "dispatch.queued" in kinds
@@ -164,19 +169,60 @@ class TestCodexCommandAndEvents:
         assert "dispatch.tool_result" in kinds
         assert "dispatch.completed" in kinds
 
+    @pytest.mark.asyncio
+    async def test_dispatch_transparent_profile_conversion(
+        self, dispatcher, brief, _patch_worktree_base, monkeypatch
+    ):
+        captured: dict[str, Sequence[str]] = {}
 
-class TestCodexFailures:
+        async def _fake_create(command: Sequence[str], cwd: str):
+            captured["command"] = list(command)
+            payload_str = _development_payload()
+            assistant_event = {
+                "type": "message",
+                "role": "assistant",
+                "content": payload_str,
+                "delta": True,
+            }
+            return _FakeGeminiProcess(
+                stdout_lines=[
+                    json.dumps(assistant_event) + "\n",
+                ]
+            )
+
+        monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
+
+        # Pass a ClaudeCodeDispatchProfile explicitly
+        result = await dispatcher.dispatch(
+            brief=brief,
+            profile=ClaudeCodeDispatchProfile(
+                subagent="sdd-worker",
+                permission_mode="acceptEdits",
+            ),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+        )
+
+        assert result.files_changed == ["app.py"]
+        command = captured["command"]
+        assert "--approval-mode" in command
+        assert "auto_edit" in command
+
+
+class TestGeminiFailures:
     @pytest.mark.asyncio
     async def test_missing_cli_raises_execution_error(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
-        async def _missing(_command: Sequence[str]):
-            raise FileNotFoundError("codex")
+        async def _missing(_command: Sequence[str], cwd: str):
+            raise FileNotFoundError("gemini")
 
         monkeypatch.setattr(dispatcher, "_create_process", _missing)
 
-        with pytest.raises(DispatchExecutionError, match="Codex CLI"):
+        with pytest.raises(DispatchExecutionError, match="Gemini CLI executable"):
             await dispatcher.dispatch(
                 brief=brief,
-                profile=CodexCodeDispatchProfile(),
+                profile=GeminiCodeDispatchProfile(),
                 output_model=DevelopmentOutput,
                 run_id="r1",
                 node_id="development",
@@ -185,16 +231,15 @@ class TestCodexFailures:
 
     @pytest.mark.asyncio
     async def test_nonzero_exit_raises_execution_error(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
-        async def _fake_create(command: Sequence[str]):
-            _write_output(command, _development_payload())
-            return _FakeCodexProcess(stderr="permission denied", return_code=2)
+        async def _fake_create(command: Sequence[str], cwd: str):
+            return _FakeGeminiProcess(stderr="some error occurred", return_code=1)
 
         monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
 
-        with pytest.raises(DispatchExecutionError, match="exit code 2"):
+        with pytest.raises(DispatchExecutionError, match="exit code 1"):
             await dispatcher.dispatch(
                 brief=brief,
-                profile=CodexCodeDispatchProfile(),
+                profile=GeminiCodeDispatchProfile(),
                 output_model=DevelopmentOutput,
                 run_id="r1",
                 node_id="development",
@@ -203,16 +248,25 @@ class TestCodexFailures:
 
     @pytest.mark.asyncio
     async def test_invalid_output_raises_validation_error(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
-        async def _fake_create(command: Sequence[str]):
-            _write_output(command, '{"files_changed": []}')
-            return _FakeCodexProcess()
+        async def _fake_create(command: Sequence[str], cwd: str):
+            assistant_event = {
+                "type": "message",
+                "role": "assistant",
+                "content": '{"files_changed": []}',
+                "delta": True,
+            }
+            return _FakeGeminiProcess(
+                stdout_lines=[
+                    json.dumps(assistant_event) + "\n"
+                ]
+            )
 
         monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
 
         with pytest.raises(DispatchOutputValidationError):
             await dispatcher.dispatch(
                 brief=brief,
-                profile=CodexCodeDispatchProfile(),
+                profile=GeminiCodeDispatchProfile(),
                 output_model=DevelopmentOutput,
                 run_id="r1",
                 node_id="development",
@@ -224,7 +278,7 @@ class TestCodexFailures:
         with pytest.raises(DispatchExecutionError):
             await dispatcher.dispatch(
                 brief=brief,
-                profile=CodexCodeDispatchProfile(),
+                profile=GeminiCodeDispatchProfile(),
                 output_model=DevelopmentOutput,
                 run_id="r1",
                 node_id="development",

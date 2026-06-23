@@ -65,6 +65,7 @@ Boot::
     python examples/dev_loop/server.py
     # http://localhost:8080
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -85,6 +86,8 @@ from parrot.flows.dev_loop import (
     ClaudeCodeDispatcher,
     CodexCodeDispatcher,
     CodexCodeDispatchProfile,
+    GeminiCodeDispatcher,
+    GeminiCodeDispatchProfile,
     DevLoopRunner,
     build_dev_loop_flow,
     flow_stream_ws,
@@ -92,7 +95,6 @@ from parrot.flows.dev_loop import (
 )
 from parrot_tools.gittoolkit import GitToolkit
 from parrot_tools.jiratoolkit import JiraToolkit
-
 
 logger = logging.getLogger("dev_loop.server")
 STATIC_DIR = Path(__file__).parent / "static"
@@ -144,9 +146,7 @@ def _build_log_toolkits() -> dict[str, object]:
     from parrot_tools.aws.cloudwatch import CloudWatchToolkit
 
     aws_id = conf.config.get("AWS_PROFILE", fallback="cloudwatch")
-    log_group = conf.config.get(
-        "CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch"
-    )
+    log_group = conf.config.get("CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch")
     toolkits: dict[str, object] = {
         "cloudwatch": CloudWatchToolkit(
             aws_id=aws_id,
@@ -155,7 +155,8 @@ def _build_log_toolkits() -> dict[str, object]:
     }
     logger.info(
         "CloudWatch toolkit ready (profile=%s, log_group=%s)",
-        aws_id, log_group,
+        aws_id,
+        log_group,
     )
     return toolkits
 
@@ -166,7 +167,12 @@ def _build_log_toolkits() -> dict[str, object]:
 
 
 _ALLOWED_SHELL_HEADS = {
-    "task", "flowtask", "pytest", "ruff", "mypy", "pylint",
+    "task",
+    "flowtask",
+    "pytest",
+    "ruff",
+    "mypy",
+    "pylint",
 }
 
 # FEAT-132: accepted work-kind values (snake_case, lower).
@@ -205,9 +211,7 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
     # FEAT-132: normalise kind (label → snake_case value).
     raw_kind = (form.get("kind") or "bug").strip().lower().replace(" ", "_")
     if raw_kind not in _KIND_VALUES:
-        logger.warning(
-            "Unknown kind %r submitted; defaulting to 'bug'", raw_kind
-        )
+        logger.warning("Unknown kind %r submitted; defaulting to 'bug'", raw_kind)
         raw_kind = "bug"
 
     summary = (form.get("summary") or "").strip()
@@ -223,11 +227,7 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
     if not component:
         raise ValueError("affected_component is required")
 
-    log_group = (
-        form.get("log_group")
-        or conf.config.get("CLOUDWATCH_LOG_GROUP",
-                           fallback="fluent-bit-cloudwatch")
-    )
+    log_group = form.get("log_group") or conf.config.get("CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch")
     window = int(form.get("time_window_minutes") or 60)
 
     raw_criteria = form.get("acceptance_criteria") or []
@@ -242,14 +242,8 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
         )
 
     bot_account = conf.config.get("FLOW_BOT_JIRA_ACCOUNT_ID", fallback="")
-    reporter = (
-        form.get("reporter")
-        or conf.config.get("JIRA_REPORTER_ACCOUNT_ID", fallback=bot_account)
-    )
-    escalation = (
-        form.get("escalation_assignee")
-        or conf.config.get("JIRA_ESCALATION_ACCOUNT_ID", fallback=bot_account)
-    )
+    reporter = form.get("reporter") or conf.config.get("JIRA_REPORTER_ACCOUNT_ID", fallback=bot_account)
+    escalation = form.get("escalation_assignee") or conf.config.get("JIRA_ESCALATION_ACCOUNT_ID", fallback=bot_account)
     if not reporter or not escalation:
         raise ValueError(
             "reporter and escalation_assignee are required; set "
@@ -327,17 +321,21 @@ def _normalise_criteria(raw: Any) -> list[dict[str, Any]]:
         head = head_token.rstrip(":")
         if head in _ALLOWED_SHELL_HEADS:
             cmd = head + (f" {tail}" if tail else "")
-            out.append({
-                "kind": "shell",
-                "name": f"{head}-criterion-{idx}",
-                "command": cmd,
-            })
+            out.append(
+                {
+                    "kind": "shell",
+                    "name": f"{head}-criterion-{idx}",
+                    "command": cmd,
+                }
+            )
         else:
-            out.append({
-                "kind": "manual",
-                "name": f"manual-criterion-{idx}",
-                "text": line,
-            })
+            out.append(
+                {
+                    "kind": "manual",
+                    "name": f"manual-criterion-{idx}",
+                    "text": line,
+                }
+            )
     return out
 
 
@@ -358,19 +356,13 @@ async def handle_run(request: web.Request) -> web.Response:
     the incident form.
     """
     if not request.can_read_body:
-        return web.json_response(
-            {"error": "JSON body required"}, status=400
-        )
+        return web.json_response({"error": "JSON body required"}, status=400)
     try:
         form = await request.json()
     except Exception as exc:  # noqa: BLE001
-        return web.json_response(
-            {"error": f"invalid JSON: {exc}"}, status=400
-        )
+        return web.json_response({"error": f"invalid JSON: {exc}"}, status=400)
     if not isinstance(form, dict):
-        return web.json_response(
-            {"error": "body must be a JSON object"}, status=400
-        )
+        return web.json_response({"error": "body must be a JSON object"}, status=400)
 
     try:
         payload = _build_brief_from_form(form)
@@ -392,8 +384,7 @@ async def handle_run(request: web.Request) -> web.Response:
                 run_id=run_id,
                 initial_task=f"resolve: {brief.summary[:120]}",
             )
-            logger.info("Flow run_id=%s finished status=%s in %.1fs",
-                        run_id, result.status, time.time() - started_at)
+            logger.info("Flow run_id=%s finished status=%s in %.1fs", run_id, result.status, time.time() - started_at)
         except Exception:
             logger.exception("Flow run_id=%s failed", run_id)
 
@@ -401,9 +392,7 @@ async def handle_run(request: web.Request) -> web.Response:
     request.app["flow_tasks"].add(task)
     task.add_done_callback(request.app["flow_tasks"].discard)
 
-    return web.json_response(
-        {"run_id": run_id, "ws_url": f"/api/flow/{run_id}/ws"}
-    )
+    return web.json_response({"run_id": run_id, "ws_url": f"/api/flow/{run_id}/ws"})
 
 
 async def handle_replay(request: web.Request) -> web.Response:
@@ -411,9 +400,7 @@ async def handle_replay(request: web.Request) -> web.Response:
     run_id = request.match_info["run_id"]
     redis = request.app["redis"]
     flow_key = f"flow:{run_id}:flow"
-    dispatch_keys = [
-        k async for k in redis.scan_iter(match=f"flow:{run_id}:dispatch:*")
-    ]
+    dispatch_keys = [k async for k in redis.scan_iter(match=f"flow:{run_id}:dispatch:*")]
     out: list[dict[str, Any]] = []
     for key in [flow_key, *dispatch_keys]:
         for _entry_id, fields in await redis.xrange(key, "-", "+"):
@@ -441,9 +428,7 @@ async def _on_startup(app: web.Application) -> None:
     )
     development_dispatcher: object = dispatcher
     development_profile: object | None = None
-    development_agent = conf.config.get(
-        "DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code"
-    ).strip().lower()
+    development_agent = conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code").strip().lower()
     if development_agent == "codex":
         development_dispatcher = CodexCodeDispatcher(
             max_concurrent=conf.config.getint(
@@ -461,10 +446,7 @@ async def _on_startup(app: web.Application) -> None:
             development_profile.model,
         )
     elif development_agent not in {"claude", "claude-code"}:
-        raise RuntimeError(
-            "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code' or 'codex', "
-            f"got {development_agent!r}"
-        )
+        raise RuntimeError("DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code' or 'codex', " f"got {development_agent!r}")
 
     # FEAT-253: parse DEV_LOOP_REPOS -> list[RepoSpec] and wire git_toolkit.
     # When DEV_LOOP_REPOS is unset/empty, repos == [] and the flow falls
@@ -473,12 +455,11 @@ async def _on_startup(app: web.Application) -> None:
     if repos:
         logger.info(
             "DEV_LOOP_REPOS configured: %d repo(s) — primary alias=%r",
-            len(repos), repos[0].alias,
+            len(repos),
+            repos[0].alias,
         )
     else:
-        logger.info(
-            "DEV_LOOP_REPOS not set; flow will target local checkout at BASE_DIR"
-        )
+        logger.info("DEV_LOOP_REPOS not set; flow will target local checkout at BASE_DIR")
     app["flow"] = build_dev_loop_flow(
         dispatcher=dispatcher,
         jira_toolkit=_build_jira_toolkit(),
@@ -523,8 +504,7 @@ async def _on_cleanup(app: web.Application) -> None:
             try:
                 await redis.close()
             except Exception:  # pragma: no cover
-                logger.debug("redis close raised during shutdown",
-                             exc_info=True)
+                logger.debug("redis close raised during shutdown", exc_info=True)
         except Exception:  # pragma: no cover
             logger.debug("redis aclose raised during shutdown", exc_info=True)
 
@@ -552,9 +532,7 @@ def main() -> None:
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8080"))
     app = build_app(redis_url=redis_url)
-    logger.info(
-        "Dev-loop demo on http://%s:%s (Redis=%s)", host, port, redis_url
-    )
+    logger.info("Dev-loop demo on http://%s:%s (Redis=%s)", host, port, redis_url)
     web.run_app(app, host=host, port=port, print=None)
 
 

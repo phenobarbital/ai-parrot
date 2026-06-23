@@ -81,11 +81,7 @@ class TestPropagatesValidationError:
     @pytest.mark.asyncio
     async def test_validation_error_bubbles_up(self, research_out):
         dispatcher = MagicMock()
-        dispatcher.dispatch = AsyncMock(
-            side_effect=DispatchOutputValidationError(
-                "no JSON", raw_payload=""
-            )
-        )
+        dispatcher.dispatch = AsyncMock(side_effect=DispatchOutputValidationError("no JSON", raw_payload=""))
         node = DevelopmentNode(dispatcher=dispatcher)
         with pytest.raises(DispatchOutputValidationError):
             await node.execute(
@@ -96,9 +92,7 @@ class TestPropagatesValidationError:
 
 class TestStoresOutputInContext:
     @pytest.mark.asyncio
-    async def test_writes_development_output_to_ctx(
-        self, research_out, dev_out
-    ):
+    async def test_writes_development_output_to_ctx(self, research_out, dev_out):
         dispatcher = MagicMock()
         dispatcher.dispatch = AsyncMock(return_value=dev_out)
         node = DevelopmentNode(dispatcher=dispatcher)

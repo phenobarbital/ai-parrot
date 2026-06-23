@@ -228,13 +228,9 @@ class RepoSpec(BaseModel):
         if not v or v in (".", ".."):
             raise ValueError("alias must not be empty, '.', or '..'")
         if "/" in v or "\\" in v:
-            raise ValueError(
-                f"alias must not contain path separators, got {v!r}"
-            )
+            raise ValueError(f"alias must not contain path separators, got {v!r}")
         if v.startswith("."):
-            raise ValueError(
-                f"alias must not start with '.', got {v!r}"
-            )
+            raise ValueError(f"alias must not start with '.', got {v!r}")
         return v
 
 
@@ -285,9 +281,7 @@ class ResearchOutput(BaseModel):
     jira_issue_key: str = Field(
         ...,
         description="e.g. 'OPS-4321'",
-        validation_alias=AliasChoices(
-            "jira_issue_key", "jira_key", "issue_key", "ticket_key"
-        ),
+        validation_alias=AliasChoices("jira_issue_key", "jira_key", "issue_key", "ticket_key"),
     )
     spec_path: str = Field(
         ...,
@@ -297,9 +291,7 @@ class ResearchOutput(BaseModel):
     feat_id: str = Field(
         ...,
         description="e.g. 'FEAT-130'",
-        validation_alias=AliasChoices(
-            "feat_id", "feature_id", "feat", "feature"
-        ),
+        validation_alias=AliasChoices("feat_id", "feature_id", "feat", "feature"),
     )
     branch_name: str = Field(
         ...,
@@ -387,17 +379,11 @@ class ClaudeCodeDispatchProfile(BaseModel):
     and the dispatcher falls back to a generic session.
     """
 
-    subagent: Optional[
-        Literal["sdd-research", "sdd-worker", "sdd-qa", "sdd-codereview"]
-    ] = "sdd-worker"
+    subagent: Optional[Literal["sdd-research", "sdd-worker", "sdd-qa", "sdd-codereview"]] = "sdd-worker"
     system_prompt_override: Optional[str] = None
     allowed_tools: List[str] = Field(default_factory=list)
-    permission_mode: Literal[
-        "default", "acceptEdits", "plan", "bypassPermissions"
-    ] = "default"
-    setting_sources: List[Literal["user", "project", "local"]] = Field(
-        default_factory=lambda: ["project"]
-    )
+    permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "default"
+    setting_sources: List[Literal["user", "project", "local"]] = Field(default_factory=lambda: ["project"])
     strict_mcp_config: bool = Field(
         default=True,
         description=(
@@ -425,9 +411,7 @@ class CodexCodeDispatchProfile(BaseModel):
 
     subagent: Literal["sdd-worker"] = "sdd-worker"
     model: str = "gpt-5.5"
-    sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = (
-        "workspace-write"
-    )
+    sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "workspace-write"
     approval_policy: Literal["untrusted", "on-request", "never"] = "never"
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
     ignore_user_config: bool = Field(
@@ -444,6 +428,23 @@ class CodexCodeDispatchProfile(BaseModel):
             "AGENTS.md / rules still guide the coding agent."
         ),
     )
+
+
+class GeminiCodeDispatchProfile(BaseModel):
+    """Declarative profile consumed by ``GeminiCodeDispatcher.dispatch()``.
+
+    The Gemini integration is designed to run the Google Gemini Agent
+    supporting tool calling and structured output extraction.
+    """
+
+    subagent: Literal["sdd-worker"] = "sdd-worker"
+    model: str = "auto"
+    sandbox: bool = Field(
+        default=True,
+        description="Whether to run the gemini session in a sandbox.",
+    )
+    approval_mode: Literal["default", "auto_edit", "yolo", "plan"] = "auto_edit"
+    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
 
 
 class DispatchEvent(BaseModel):

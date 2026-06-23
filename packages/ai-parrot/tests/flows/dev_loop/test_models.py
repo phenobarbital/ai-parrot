@@ -136,9 +136,7 @@ class TestDispatchProfile:
         assert profile.timeout_seconds == 1800
 
     def test_generic_session_when_subagent_none(self):
-        profile = ClaudeCodeDispatchProfile(
-            subagent=None, system_prompt_override="be terse"
-        )
+        profile = ClaudeCodeDispatchProfile(subagent=None, system_prompt_override="be terse")
         assert profile.subagent is None
         assert profile.system_prompt_override == "be terse"
 
@@ -168,9 +166,7 @@ class TestDispatchEvent:
         ],
     )
     def test_kind_literal_round_trip(self, kind):
-        ev = DispatchEvent(
-            kind=kind, ts=0.0, run_id="r", node_id="n", payload={}
-        )
+        ev = DispatchEvent(kind=kind, ts=0.0, run_id="r", node_id="n", payload={})
         assert ev.kind == kind
 
     def test_invalid_kind_rejected(self):
