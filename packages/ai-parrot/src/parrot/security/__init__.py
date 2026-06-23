@@ -1,8 +1,9 @@
 """
 Security utilities for AI-Parrot.
 
-Includes prompt injection detection, query validation, and vault credential
-utilities relocated from parrot.handlers in FEAT-203.
+Includes prompt injection detection, query validation, vault credential
+utilities relocated from parrot.handlers in FEAT-203, and the shared
+command-sanitizer engine relocated from parrot_tools in FEAT-252.
 """
 from .prompt_injection import (
     PromptInjectionDetector,
@@ -26,6 +27,15 @@ from .credentials_utils import (
     encrypt_credential,
     decrypt_credential,
 )
+from .command_sanitizer import (
+    SecurityLevel,
+    CommandVerdict,
+    ValidationResult,
+    CommandRule,
+    CommandSecurityError,
+    SecurityPolicy,
+    CommandSanitizer,
+)
 
 __all__ = [
     'PromptInjectionDetector',
@@ -42,4 +52,12 @@ __all__ = [
     'VAULT_CRED_COLLECTION',
     'encrypt_credential',
     'decrypt_credential',
+    # Command sanitizer engine (FEAT-252)
+    'SecurityLevel',
+    'CommandVerdict',
+    'ValidationResult',
+    'CommandRule',
+    'CommandSecurityError',
+    'SecurityPolicy',
+    'CommandSanitizer',
 ]
