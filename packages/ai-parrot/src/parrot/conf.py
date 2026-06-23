@@ -842,10 +842,15 @@ FLOW_MAX_CONCURRENT_RUNS: int = config.getint(
 FLOW_BOT_JIRA_ACCOUNT_ID: str = config.get(
     "FLOW_BOT_JIRA_ACCOUNT_ID", fallback=""
 )
-# Repo-relative path under which feature worktrees are created.
-WORKTREE_BASE_PATH: str = config.get(
-    "WORKTREE_BASE_PATH", fallback=".claude/worktrees"
+# Absolute path under which feature worktrees are created.
+# Defaults to BASE_DIR/.claude/worktrees so the location is deterministic
+# regardless of the process's launch directory (FEAT-253 G1).
+# A relative value from the environment is joined onto BASE_DIR;
+# an absolute value is honored verbatim (R1 backward-compat).
+_wt: str = config.get(
+    "WORKTREE_BASE_PATH", fallback=str(BASE_DIR / ".claude/worktrees")
 )
+WORKTREE_BASE_PATH: str = _wt if os.path.isabs(_wt) else str(BASE_DIR / _wt)
 # Redis stream retention for both flow and dispatch streams (default 7 days).
 FLOW_STREAM_TTL_SECONDS: int = config.getint(
     "FLOW_STREAM_TTL_SECONDS", fallback=604800
@@ -868,10 +873,16 @@ DEV_LOOP_PLAN_LLM: str = config.get(
 # must not import dev_loop). Each entry may be an "owner/name" slug or a JSON
 # object string; an empty list disables repo provisioning.
 DEV_LOOP_REPOS: list[str] = config.getlist("DEV_LOOP_REPOS", fallback=[]) or []
-# Base directory for dev-loop clones. Kept under WORKTREE_BASE_PATH so the
-# dispatcher's cwd-safety guard (_enforce_cwd_under_worktree_base) passes (R4).
-DEV_LOOP_REPO_BASE_PATH: str = config.get(
-    "DEV_LOOP_REPO_BASE_PATH", fallback=f"{WORKTREE_BASE_PATH}/repos"
+# Absolute path for dev-loop clones (FEAT-253 G1).
+# Defaults to BASE_DIR/.claude/worktrees/repos (under WORKTREE_BASE_PATH) so
+# the dispatcher's cwd-safety guard (_enforce_cwd_under_worktree_base) passes.
+# Same relative→join / absolute→verbatim rule as WORKTREE_BASE_PATH.
+_repos: str = config.get(
+    "DEV_LOOP_REPO_BASE_PATH",
+    fallback=str(BASE_DIR / ".claude/worktrees/repos"),
+)
+DEV_LOOP_REPO_BASE_PATH: str = (
+    _repos if os.path.isabs(_repos) else str(BASE_DIR / _repos)
 )
 # What kind of PR feedback triggers a revision-mode run (FEAT-250):
 #   "changes_requested" (default) — human, non-bot, change-requesting reviews,
