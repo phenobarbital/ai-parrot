@@ -231,6 +231,50 @@ class TestStartFullmodeSession:
         finally:
             _restore_modules(saved, keys)
 
+    async def test_avatar_id_override_applied(self) -> None:
+        """A request-supplied avatar_id overrides the resolved config avatar_id."""
+        req = _make_request(
+            {"session_id": "sess-1", "tenant_id": "acme", "avatar_id": "custom-av"}
+        )
+
+        saved, keys, fake_client, _ = _inject_fullmode_stack()
+        try:
+            # The resolved config is a MagicMock — capture the overridden copy it
+            # produces so we can assert it is the cfg actually used downstream.
+            fake_cfg = await sys.modules[
+                "parrot.integrations.liveavatar.tenant_config"
+            ].resolve_fullmode_config()
+            overridden_cfg = fake_cfg.model_copy.return_value
+
+            await _start_fullmode_session(req)
+
+            # cfg.model_copy must be called with the request avatar_id override.
+            fake_cfg.model_copy.assert_called_once_with(
+                update={"avatar_id": "custom-av"}
+            )
+            # And the OVERRIDDEN cfg must be the one passed to session creation.
+            fake_client.create_full_session_token.assert_awaited_once_with(
+                overridden_cfg
+            )
+        finally:
+            _restore_modules(saved, keys)
+
+    async def test_no_avatar_id_uses_config_default(self) -> None:
+        """Without avatar_id in the body, model_copy is NOT called (config default)."""
+        req = _make_request({"session_id": "sess-1", "tenant_id": "acme"})
+
+        saved, keys, _, _ = _inject_fullmode_stack()
+        try:
+            fake_cfg = await sys.modules[
+                "parrot.integrations.liveavatar.tenant_config"
+            ].resolve_fullmode_config()
+
+            await _start_fullmode_session(req)
+
+            fake_cfg.model_copy.assert_not_called()
+        finally:
+            _restore_modules(saved, keys)
+
 
 # ---------------------------------------------------------------------------
 # TASK-1594: _stop_fullmode_session

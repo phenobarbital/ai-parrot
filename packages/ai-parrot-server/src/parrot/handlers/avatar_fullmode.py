@@ -67,6 +67,10 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
         tenant_id  (str, optional): Tenant identifier for opt-in gating.
         agent_name (str, optional): Logical agent name for logging (defaults to
             the ``agent_id`` path parameter).
+        avatar_id  (str, optional): Per-request avatar override. When provided it
+            takes precedence over the resolved config's ``avatar_id`` (the
+            ``LIVEAVATAR_AVATAR_ID`` env default). When omitted, the configured
+            default avatar is used.
 
     Response (JSON):
         session_id          (str): The shared session ID.
@@ -95,6 +99,7 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
     session_id: str = body.get("session_id") or ""
     tenant_id: Optional[str] = body.get("tenant_id") or None
     agent_name: str = body.get("agent_name") or agent_id
+    avatar_id: Optional[str] = (body.get("avatar_id") or "").strip() or None
 
     if not session_id:
         raise web.HTTPBadRequest(reason="'session_id' is required")
@@ -123,6 +128,12 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
             reason="LiveAvatar configuration is incomplete — check LIVEAVATAR_* env vars"
         ) from exc
 
+    # Per-request avatar override: a client may pick a specific avatar for this
+    # session. When present, it wins over the env/config default; otherwise the
+    # resolved config's avatar_id is used.
+    if avatar_id:
+        cfg = cfg.model_copy(update={"avatar_id": avatar_id})
+
     # Open the client and KEEP IT ALIVE — ownership transfers to the session
     # store; /stop tears it down.  We deliberately do NOT use ``async with``
     # here (that would call stop_session on block exit and kill the session
@@ -145,10 +156,12 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
     store[session_id] = {"client": client, "handle": handle}
 
     _logger.info(
-        "AvatarFullmode: started session %s for agent %s (tenant set=%s)",
+        "AvatarFullmode: started session %s for agent %s (tenant set=%s, avatar=%s%s)",
         session_id,
         agent_id,
         tenant_id is not None,
+        cfg.avatar_id,
+        " [request override]" if avatar_id else " [config default]",
     )
 
     # Return viewer credentials ONLY — session_token stays server-side.
