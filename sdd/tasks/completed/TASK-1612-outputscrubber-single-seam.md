@@ -188,4 +188,10 @@ class TestOutputScrubber:
 (standard — verify contract first; this MUST land before TASK-1613.)
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+Implemented by sdd-worker (FEAT-252). `ScrubPolicy` (frozen dataclass) and
+`OutputScrubber` added to `parrot/security/redaction.py`. Both exported from
+`parrot.security.__init__`. Single-seam hook added in `AbstractTool.execute()`
+just before `return tool_result` (scrubs `result` and `error`). Egress scrub
+added in `bots/base.py` for TELEGRAM/MSTEAMS output modes. 22 unit tests pass;
+existing pythonrepl_security 7 tests still pass; ruff clean on changed files.

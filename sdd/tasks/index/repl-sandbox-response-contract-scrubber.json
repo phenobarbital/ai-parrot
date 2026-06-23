@@ -32,7 +32,7 @@
       "feature_id": "FEAT-252",
       "feature": "repl-sandbox-response-contract-scrubber",
       "spec": "sdd/specs/repl-sandbox-response-contract-scrubber.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "MUST land before TASK-1613 (Risk R1: removing the scattered Gemini redact calls must not open a coverage gap). Touches redaction.py + abstract.py + bots/base.py + security/__init__.py.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1612-outputscrubber-single-seam.md"
+      "completed_at": "2026-06-23T13:55:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1612-outputscrubber-single-seam.md"
     },
     {
       "id": "TASK-1613",
