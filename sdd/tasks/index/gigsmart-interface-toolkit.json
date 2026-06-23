@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-23T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-23T15:58:09+00:00",
   "tasks": [
     {
       "id": "TASK-1616",
@@ -153,7 +153,7 @@
       "feature_id": "FEAT-253",
       "feature": "gigsmart-interface-toolkit",
       "spec": "sdd/specs/gigsmart-interface-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -169,8 +169,8 @@
       "parallelism_notes": "Final wiring task: depends on all other tasks being complete.",
       "assigned_to": null,
       "started_at": "2026-06-23T15:41:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1623-gigsmart-package-init.md"
+      "completed_at": "2026-06-23T15:58:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1623-gigsmart-package-init.md"
     }
   ]
 }
