@@ -17,9 +17,10 @@ Cross-node payloads (``bug_brief``, ``research_output``,
 
 from __future__ import annotations
 
+import logging
 import os
 import re
-from typing import Any, Dict, Optional, Set, Union
+from typing import Any, Dict, Optional, Sequence, Set, Union
 
 from pydantic import Field
 
@@ -47,6 +48,77 @@ def scrub_git_output(text: str) -> str:
     if token:
         redacted = redacted.replace(token, "***")
     return redacted
+
+
+async def transition_issue_with_candidates(
+    jira: Any,
+    issue: str,
+    candidates: Sequence[str],
+    *,
+    logger: logging.Logger,
+    **kwargs: Any,
+) -> Optional[Dict[str, Any]]:
+    """Apply the first candidate Jira transition that the workflow exposes.
+
+    The dev-loop drives many Jira projects, each with its own workflow
+    transition names — a single hard-coded label (e.g. ``"Ready to Deploy"``)
+    only exists in one of them. Callers therefore pass an *ordered* list of
+    synonym labels (most specific first). Each is handed to
+    ``jira_transition_issue``, whose alias/substring matcher resolves it against
+    the issue's live available-transitions; the first label that resolves is
+    applied and its result returned.
+
+    A non-matching label raises ``ValueError`` inside the toolkit (it lists the
+    available transitions) — that is treated as "try the next candidate", not a
+    failure. Any other exception (network/auth) propagates so the caller's own
+    error handling sees it. Returns ``None`` when no candidate matched, leaving
+    the decision of whether that is fatal to the caller.
+
+    Args:
+        jira: A ``JiraToolkit`` instance.
+        issue: Issue key (e.g. ``"NAV-6239"``).
+        candidates: Ordered transition-label synonyms; empties are skipped.
+        logger: Logger for diagnostics.
+        **kwargs: Forwarded to ``jira_transition_issue`` (``fields``,
+            ``resolution``, ``assignee`` …).
+
+    Returns:
+        The toolkit's ``jira_transition_issue`` result on success, else
+        ``None``.
+    """
+    last_error: Optional[ValueError] = None
+    tried: list[str] = []
+    for label in candidates:
+        if not label:
+            continue
+        tried.append(label)
+        try:
+            result = await jira.jira_transition_issue(
+                issue=issue, transition=label, **kwargs
+            )
+            if label != (candidates[0] if candidates else label):
+                logger.info(
+                    "Applied fallback transition %r for %s (preferred %r unavailable).",
+                    label,
+                    issue,
+                    candidates[0],
+                )
+            return result
+        except ValueError as exc:
+            last_error = exc
+            logger.debug(
+                "Transition candidate %r not available for %s: %s",
+                label,
+                issue,
+                exc,
+            )
+    logger.warning(
+        "No candidate transition resolved for %s (tried %s). Last error: %s",
+        issue,
+        tried,
+        last_error,
+    )
+    return None
 
 
 def register_dev_loop_node(name: str):
@@ -142,4 +214,9 @@ class DevLoopNode(Node):
         return ""
 
 
-__all__ = ["DevLoopNode", "register_dev_loop_node", "scrub_git_output"]
+__all__ = [
+    "DevLoopNode",
+    "register_dev_loop_node",
+    "scrub_git_output",
+    "transition_issue_with_candidates",
+]

@@ -65,6 +65,29 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 T = TypeVar("T", bound=BaseModel)
 
+# Tools that let a dispatched session mutate the filesystem. A dispatch whose
+# profile excludes ALL of these AND runs in ``permission_mode="plan"`` cannot
+# write, so the WORKTREE_BASE_PATH confinement (which exists to stop a
+# write-capable agent escaping the worktree) does not apply to it.
+_WRITE_CAPABLE_TOOLS = frozenset(
+    {"Edit", "Write", "MultiEdit", "NotebookEdit", "Bash"}
+)
+
+
+def _claude_profile_is_read_only(profile: ClaudeCodeDispatchProfile) -> bool:
+    """True when a Claude Code profile cannot mutate the filesystem.
+
+    Read-only means ``permission_mode="plan"`` (plan mode forbids edits) AND
+    no write-capable tool in ``allowed_tools``. ``Bash`` is treated as
+    write-capable (it can shell out to edit files) — a code-review gate that
+    needs shell still benefits from plan mode, but we keep the guard for it
+    unless it is also plan-mode. The combination (plan + no write tools) is
+    the strict definition used to waive the worktree-confinement check.
+    """
+    if profile.permission_mode != "plan":
+        return False
+    return not (set(profile.allowed_tools) & _WRITE_CAPABLE_TOOLS)
+
 
 # ---------------------------------------------------------------------------
 # Exceptions

@@ -188,6 +188,84 @@ async def test_start_endpoint_response_keys() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Per-agent avatar_id resolution (body > BotConfig > env)
+# ---------------------------------------------------------------------------
+
+async def test_resolve_avatar_id_body_override() -> None:
+    """An explicit ``avatar_id`` in the request body wins over config and env."""
+    import os
+    from unittest.mock import MagicMock
+    from unittest.mock import patch as _patch
+
+    from parrot.handlers.avatar import _resolve_avatar_id
+
+    req = MagicMock()
+    req.app = {}  # no bot_config_storage
+    with _patch.dict(os.environ, {"LIVEAVATAR_AVATAR_ID": "env-avatar"}):
+        resolved = await _resolve_avatar_id(req, "agent-x", {"avatar_id": "body-avatar"})
+    assert resolved == "body-avatar"
+
+
+async def test_resolve_avatar_id_from_bot_config() -> None:
+    """Falls back to BotConfig.config['avatar_id'] when body has none."""
+    import os
+    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import patch as _patch
+
+    from parrot.handlers.avatar import _resolve_avatar_id
+
+    bot_config = MagicMock()
+    bot_config.config = {"avatar_id": "agent-avatar"}
+    storage = MagicMock()
+    storage.get = AsyncMock(return_value=bot_config)
+
+    req = MagicMock()
+    req.app = {"bot_config_storage": storage}
+    with _patch.dict(os.environ, {"LIVEAVATAR_AVATAR_ID": "env-avatar"}):
+        resolved = await _resolve_avatar_id(req, "agent-x", {})
+    assert resolved == "agent-avatar"
+    storage.get.assert_awaited_once_with("agent-x")
+
+
+async def test_resolve_avatar_id_env_fallback() -> None:
+    """Falls back to LIVEAVATAR_AVATAR_ID when neither body nor config provide one."""
+    import os
+    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import patch as _patch
+
+    from parrot.handlers.avatar import _resolve_avatar_id
+
+    bot_config = MagicMock()
+    bot_config.config = {}  # no avatar_id pinned
+    storage = MagicMock()
+    storage.get = AsyncMock(return_value=bot_config)
+
+    req = MagicMock()
+    req.app = {"bot_config_storage": storage}
+    with _patch.dict(os.environ, {"LIVEAVATAR_AVATAR_ID": "env-avatar"}):
+        resolved = await _resolve_avatar_id(req, "agent-x", {})
+    assert resolved == "env-avatar"
+
+
+async def test_resolve_avatar_id_config_lookup_failure_falls_back() -> None:
+    """A storage error never propagates — it falls back to env."""
+    import os
+    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import patch as _patch
+
+    from parrot.handlers.avatar import _resolve_avatar_id
+
+    storage = MagicMock()
+    storage.get = AsyncMock(side_effect=RuntimeError("redis down"))
+
+    req = MagicMock()
+    req.app = {"bot_config_storage": storage}
+    with _patch.dict(os.environ, {"LIVEAVATAR_AVATAR_ID": "env-avatar"}):
+        resolved = await _resolve_avatar_id(req, "agent-x", {})
+    assert resolved == "env-avatar"
+
+
+# ---------------------------------------------------------------------------
 # Stop endpoint: tears down via the store, no client-supplied session_token
 # ---------------------------------------------------------------------------
 

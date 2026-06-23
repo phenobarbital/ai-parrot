@@ -73,6 +73,60 @@ def _env_max_session_duration() -> Optional[int]:
         return None
 
 
+async def _resolve_avatar_id(
+    request: web.Request,
+    agent_id: str,
+    body: Dict[str, Any],
+) -> str:
+    """Resolve the LiveAvatar ``avatar_id`` for this request.
+
+    Per-agent avatar selection (rather than the single global
+    ``LIVEAVATAR_AVATAR_ID``).  Resolution order, first non-empty wins:
+
+    1. **Request body** — an explicit ``avatar_id`` in the POST payload lets a
+       caller override the avatar for a single session.
+    2. **Per-agent stored config** — ``avatar_id`` under the agent's
+       :class:`BotConfig.config` dict (Redis-backed ``bot_config_storage``),
+       so each agent can pin its own avatar declaratively.
+    3. **Environment** — the global ``LIVEAVATAR_AVATAR_ID`` fallback (legacy
+       behaviour, used when neither override is present).
+
+    Args:
+        request: The incoming aiohttp request (carries ``app`` for storage).
+        agent_id: The agent slug from the URL path.
+        body: The already-parsed JSON request body.
+
+    Returns:
+        The resolved avatar ID, or ``""`` if no source provides one.
+    """
+    # 1. Explicit per-call override from the request body.
+    body_avatar = str(body.get("avatar_id") or "").strip()
+    if body_avatar:
+        _logger.debug("avatar_id resolved from request body for agent %s", agent_id)
+        return body_avatar
+
+    # 2. Per-agent declarative config (BotConfig.config["avatar_id"]).
+    storage = request.app.get("bot_config_storage")
+    if storage is not None:
+        try:
+            bot_config = await storage.get(agent_id)
+        except Exception as exc:  # noqa: BLE001 — config lookup must never 500 the start
+            _logger.warning(
+                "avatar_id config lookup failed for agent %s: %s", agent_id, exc
+            )
+            bot_config = None
+        if bot_config is not None:
+            cfg_avatar = str((bot_config.config or {}).get("avatar_id") or "").strip()
+            if cfg_avatar:
+                _logger.debug(
+                    "avatar_id resolved from BotConfig for agent %s", agent_id
+                )
+                return cfg_avatar
+
+    # 3. Global env fallback (legacy single-avatar behaviour).
+    return os.environ.get("LIVEAVATAR_AVATAR_ID", "").strip()
+
+
 async def _start_avatar_session(request: web.Request) -> web.Response:
     """POST /api/v1/agents/avatar/{agent_id}/start — start an avatar session.
 
@@ -83,6 +137,9 @@ async def _start_avatar_session(request: web.Request) -> web.Response:
     Request body (JSON):
         session_id (str): AgentChat session ID (shared with the browser).
         tenant_id  (str, optional): Tenant identifier for opt-in gating.
+        avatar_id  (str, optional): Override the avatar for this session.
+            When absent, the agent's stored ``BotConfig.config['avatar_id']``
+            is used, falling back to the global ``LIVEAVATAR_AVATAR_ID`` env.
 
     Response (JSON):
         livekit_url  (str): LiveKit WebSocket URL for the browser.
@@ -121,9 +178,10 @@ async def _start_avatar_session(request: web.Request) -> web.Response:
     if not is_avatar_enabled(tenant_id=tenant_id, agent_name=agent_id):
         raise web.HTTPForbidden(reason="Avatar mode is not enabled for this tenant")
 
-    # Build the config from env
+    # api_key stays a global secret; avatar_id is resolved per-agent
+    # (body > BotConfig > env). is_sandbox remains a global env switch.
     api_key = os.environ.get("LIVEAVATAR_API_KEY", "")
-    avatar_id = os.environ.get("LIVEAVATAR_AVATAR_ID", "")
+    avatar_id = await _resolve_avatar_id(request, agent_id, body)
     if not api_key or not avatar_id:
         raise web.HTTPServiceUnavailable(
             reason="LIVEAVATAR_API_KEY / LIVEAVATAR_AVATAR_ID env vars are not set"
