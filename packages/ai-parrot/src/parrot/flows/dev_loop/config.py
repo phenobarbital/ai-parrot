@@ -11,9 +11,11 @@ any other consumer that needs to turn string env-var entries into
 """
 
 import json
-from typing import List
+import logging
 
 from parrot.flows.dev_loop.models import RepoSpec
+
+_logger = logging.getLogger(__name__)
 
 
 def _alias_from_url(url: str) -> str:
@@ -37,7 +39,7 @@ def _alias_from_url(url: str) -> str:
     return name[:-4] if name.endswith(".git") else name
 
 
-def parse_repo_specs(raw: List[str]) -> List[RepoSpec]:
+def parse_repo_specs(raw: list[str]) -> list[RepoSpec]:
     """Parse ``DEV_LOOP_REPOS`` entries into :class:`RepoSpec` objects.
 
     Each entry is one of:
@@ -55,7 +57,9 @@ def parse_repo_specs(raw: List[str]) -> List[RepoSpec]:
 
     Blank / whitespace-only entries are silently skipped.  Invalid JSON
     falls back to URL/slug handling so a slightly-malformed entry still
-    produces a usable ``RepoSpec``.
+    produces a usable ``RepoSpec``.  Entries for which no alias can be
+    derived (e.g. bare ``git@github.com:``) are also skipped with a
+    warning.
 
     Args:
         raw: List of raw string entries from ``DEV_LOOP_REPOS``.
@@ -63,7 +67,7 @@ def parse_repo_specs(raw: List[str]) -> List[RepoSpec]:
     Returns:
         List of :class:`RepoSpec` instances, in order.
     """
-    specs: List[RepoSpec] = []
+    specs: list[RepoSpec] = []
     for entry in raw or []:
         entry = (entry or "").strip()
         if not entry:
@@ -74,5 +78,11 @@ def parse_repo_specs(raw: List[str]) -> List[RepoSpec]:
                 continue
             except (ValueError, TypeError, KeyError):
                 pass  # fall through to url/slug handling
-        specs.append(RepoSpec(alias=_alias_from_url(entry), url=entry))
+        alias = _alias_from_url(entry)
+        if not alias:
+            _logger.warning(
+                "Could not derive a safe alias from %r; skipping entry.", entry
+            )
+            continue
+        specs.append(RepoSpec(alias=alias, url=entry))
     return specs

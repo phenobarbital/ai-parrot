@@ -850,7 +850,10 @@ FLOW_BOT_JIRA_ACCOUNT_ID: str = config.get(
 _wt: str = config.get(
     "WORKTREE_BASE_PATH", fallback=str(BASE_DIR / ".claude/worktrees")
 )
-WORKTREE_BASE_PATH: str = _wt if os.path.isabs(_wt) else str(BASE_DIR / _wt)
+WORKTREE_BASE_PATH: str = (
+    os.path.normpath(_wt) if os.path.isabs(_wt)
+    else os.path.normpath(str(BASE_DIR / _wt))
+)
 # Redis stream retention for both flow and dispatch streams (default 7 days).
 FLOW_STREAM_TTL_SECONDS: int = config.getint(
     "FLOW_STREAM_TTL_SECONDS", fallback=604800
@@ -882,7 +885,8 @@ _repos: str = config.get(
     fallback=str(BASE_DIR / ".claude/worktrees/repos"),
 )
 DEV_LOOP_REPO_BASE_PATH: str = (
-    _repos if os.path.isabs(_repos) else str(BASE_DIR / _repos)
+    os.path.normpath(_repos) if os.path.isabs(_repos)
+    else os.path.normpath(str(BASE_DIR / _repos))
 )
 # What kind of PR feedback triggers a revision-mode run (FEAT-250):
 #   "changes_requested" (default) — human, non-bot, change-requesting reviews,

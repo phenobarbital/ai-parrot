@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 # ─────────────────────────────────────────────────────────────────────
 # Acceptance criteria (discriminated union)
@@ -206,6 +206,36 @@ class RepoSpec(BaseModel):
         default=False,
         description="When True, use the toolkit's token / `gh` auth for the clone.",
     )
+
+    @field_validator("alias")
+    @classmethod
+    def alias_is_safe_dirname(cls, v: str) -> str:
+        """Reject alias values that could escape the clone base directory.
+
+        Guards against path-traversal attacks when the JSON form of
+        ``DEV_LOOP_REPOS`` is used (e.g. ``{"alias": "../../etc", ...}``).
+
+        Args:
+            v: Raw alias value.
+
+        Returns:
+            The alias unchanged if it is safe.
+
+        Raises:
+            ValueError: If the alias contains path separators, starts with
+                a dot, or is one of the reserved names ``.`` / ``..``.
+        """
+        if not v or v in (".", ".."):
+            raise ValueError("alias must not be empty, '.', or '..'")
+        if "/" in v or "\\" in v:
+            raise ValueError(
+                f"alias must not contain path separators, got {v!r}"
+            )
+        if v.startswith("."):
+            raise ValueError(
+                f"alias must not start with '.', got {v!r}"
+            )
+        return v
 
 
 class RevisionBrief(BaseModel):

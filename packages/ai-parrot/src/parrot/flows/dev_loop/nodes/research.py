@@ -299,16 +299,33 @@ class ResearchNode(DevLoopNode):
         primary_path = ""
         for idx, repo in enumerate(self._repos):
             dest = os.path.join(base, repo.alias)
+
+            # Defense-in-depth: alias already validated by RepoSpec, but guard
+            # against any normpath escape that slips through at the OS level.
+            if not os.path.normpath(dest).startswith(os.path.normpath(base)):
+                raise ValueError(
+                    f"RepoSpec alias {repo.alias!r} would escape the clone "
+                    f"base {base!r} — refusing to provision."
+                )
+
             self.logger.info(
                 "Provisioning repo %r → %s (branch=%s, private=%s)",
                 repo.alias, dest, repo.branch, repo.private,
             )
-            result = await self._git_toolkit.clone_repo(
-                repo.url,
-                dest,
-                branch=repo.branch,
-                private=repo.private,
-            )
+            try:
+                result = await self._git_toolkit.clone_repo(
+                    repo.url,
+                    dest,
+                    branch=repo.branch,
+                    private=repo.private,
+                )
+            except Exception as exc:
+                self.logger.error(
+                    "Failed to provision repo %r → %s: %s. "
+                    "Falling back to local BASE_DIR checkout.",
+                    repo.alias, dest, exc,
+                )
+                return str(BASE_DIR)
             path = result.get("path", dest) if isinstance(result, dict) else dest
             if idx == 0:
                 primary_path = path
