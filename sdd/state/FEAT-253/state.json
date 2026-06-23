@@ -1,0 +1,60 @@
+{
+  "feat_id": "FEAT-253",
+  "title": "GigSmart Interface Toolkit",
+  "type": "feature",
+  "base_branch": "dev",
+  "phase": "synthesis_complete",
+  "started_at": "2026-06-23T00:00:00Z",
+  "updated_at": "2026-06-23T00:00:00Z",
+  "mode": "enrichment",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary": "GigSmart interface toolkit: aiohttp GraphQL client + GigSmartToolkit for LLM-driven API interaction",
+    "brainstorm_ref": "sdd/proposals/GigSmartToolkit_SPEC.md"
+  },
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 28,
+    "grep_calls": 18,
+    "git_calls": 2,
+    "depth_reached": 2
+  },
+  "truncated": false,
+  "truncation_reason": null,
+  "phases": {
+    "source": { "status": "complete" },
+    "plan": { "status": "complete" },
+    "research": {
+      "status": "complete",
+      "findings_count": 12,
+      "files_read": 28,
+      "grep_calls": 18,
+      "git_calls": 2
+    },
+    "synthesis": {
+      "status": "complete",
+      "overall_confidence": "medium",
+      "claims_high": 9,
+      "claims_medium": 2,
+      "claims_low": 1,
+      "unknowns": 4,
+      "corrections_to_spec": 8
+    },
+    "review_gate": { "status": "pending" },
+    "qa": { "status": "pending" },
+    "output": { "status": "pending" }
+  },
+  "resume_hint": {
+    "next_phase": "review_gate",
+    "next_action": "Present synthesis to user for validation"
+  },
+  "errors": []
+}

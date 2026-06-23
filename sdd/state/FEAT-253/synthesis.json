@@ -1,0 +1,115 @@
+{
+  "mode": "enrichment",
+  "overall_confidence": "medium",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+      "symbol": "AbstractToolkit",
+      "lines": "207-602",
+      "role": "Base class for GigSmartToolkit",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/decorators.py",
+      "symbol": "tool_schema",
+      "lines": "37-52",
+      "role": "Decorator for Pydantic-validated tool inputs",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/interfaces/http.py",
+      "symbol": "HTTPService",
+      "lines": "126-549",
+      "role": "Base HTTP client pattern (aiohttp) for transport layer",
+      "evidence": ["F004", "F012"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/massive/client.py",
+      "symbol": "MassiveAPIError hierarchy",
+      "lines": "16-35",
+      "role": "Reference pattern for typed exception hierarchy + retry",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/resttool.py",
+      "symbol": "RESTTool",
+      "lines": "34-127",
+      "role": "Base REST tool wrapping HTTPService — candidate parent for GigSmart client",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+      "symbol": "WorkingMemoryToolkit",
+      "lines": "43-500",
+      "role": "Reference for DataFrame spilling pattern; compose with, not inherit from",
+      "evidence": ["F001"]
+    }
+  ],
+  "hypotheses": [
+    {
+      "statement": "Build a two-layer architecture: (1) GigSmartClient (aiohttp GraphQL transport with OAuth 2.1 token management) in parrot_tools/gigsmart/, and (2) GigSmartToolkit extending AbstractToolkit with confirming_tools for write mutations",
+      "confidence": "high",
+      "supporting": ["F001", "F002", "F003", "F004", "F006", "F007"],
+      "reasoning": "All codebase patterns converge: AbstractToolkit is the base, aiohttp is mandated, confirming_tools replaces DeterministicGuard, and OAuth 2.1 is confirmed from live docs"
+    }
+  ],
+  "scope": {
+    "two_layers": {
+      "transport": "GigSmartClient — aiohttp-based GraphQL client with OAuth 2.1 token lifecycle (client_credentials for reads, auth_code+PKCE for writes)",
+      "toolkit": "GigSmartToolkit — AbstractToolkit subclass exposing tool methods for each API surface"
+    },
+    "surfaces": [
+      "auth: verify_auth (viewer query)",
+      "locations: search_address (placeAutocomplete), create_location (addOrganizationLocation), list_locations, get_location",
+      "positions: create_position, list_positions, get_position",
+      "gigs: post_shift (postShift), list_gigs, get_gig, cancel_gig (transitionGig)",
+      "engagements: list_engagements, get_engagement, hire_worker, end_engagement, send_message",
+      "timesheets: list_timesheets, get_timesheet, edit_timesheet, approve_timesheet, respond_to_dispute"
+    ],
+    "corrections_from_spec": 8
+  },
+  "confidence_map": [
+    {"claim": "API is GraphQL at https://api.gigsmart.com/graphql", "confidence": "high", "evidence": ["F007"], "basis": "directly confirmed from live docs"},
+    {"claim": "Auth is OAuth 2.1 (PKCE + client_credentials), NOT simple API key", "confidence": "high", "evidence": ["F006", "F008"], "basis": "directly confirmed from live docs"},
+    {"claim": "Write scopes require auth_code grant (not client_credentials)", "confidence": "high", "evidence": ["F008"], "basis": "directly confirmed from scope table"},
+    {"claim": "Mutation names are camelCase: addOrganizationLocation, postShift, transitionGig", "confidence": "high", "evidence": ["F007", "F010", "F011"], "basis": "directly confirmed from live docs"},
+    {"claim": "Relay connection pagination (edges/node, not simple nodes[])", "confidence": "high", "evidence": ["F007", "F010"], "basis": "directly confirmed from query examples"},
+    {"claim": "GigSmartToolkit should inherit AbstractToolkit, NOT WorkingMemoryToolkit", "confidence": "high", "evidence": ["F001"], "basis": "WorkingMemoryToolkit is a sibling toolkit, not a base"},
+    {"claim": "Use confirming_tools for write mutation safety, NOT DeterministicGuard", "confidence": "high", "evidence": ["F003"], "basis": "DeterministicGuard does not exist in codebase"},
+    {"claim": "Use aiohttp for transport, NOT httpx", "confidence": "high", "evidence": ["F004", "F012"], "basis": "CLAUDE.md mandates aiohttp"},
+    {"claim": "Module goes in packages/ai-parrot-tools/src/parrot_tools/gigsmart/", "confidence": "medium", "evidence": ["F005", "F012"], "basis": "follows existing external tool pattern, but user mentioned parrot_tools/interfaces/"},
+    {"claim": "GigSmart has native MCP endpoint — alternative integration path", "confidence": "medium", "evidence": ["F009"], "basis": "discovered from docs, but unclear if it covers all needed operations"},
+    {"claim": "Token refresh logic needed — access tokens expire (1h auth_code, 15min client_credentials)", "confidence": "high", "evidence": ["F006"], "basis": "directly confirmed from auth docs"},
+    {"claim": "Timesheet operations exist but exact mutations/scopes unknown", "confidence": "low", "evidence": ["F008"], "basis": "no timesheet-specific scopes visible; may be under engagements"}
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should the toolkit support both grant types (client_credentials for read-only agents, auth_code+PKCE for full-access agents), or just client_credentials?",
+      "affects_claims": ["write scope availability"],
+      "plausible_answers": ["Both (full flexibility)", "Client credentials only (read-only initially, add write later)", "Auth code only (full access from start)"]
+    },
+    {
+      "id": "U2",
+      "question": "Where should the GigSmart module live: parrot_tools/gigsmart/ (following existing external tool pattern) or parrot_tools/interfaces/gigsmart/ (as the user's invocation suggests)?",
+      "affects_claims": ["module location"],
+      "plausible_answers": ["parrot_tools/gigsmart/ (matches workday, ibkr, sassie pattern)", "parrot_tools/interfaces/gigsmart/ (as user specified)"]
+    },
+    {
+      "id": "U3",
+      "question": "Should we also configure the native GigSmart MCP endpoint (requester-mcp.prod.gigsmart.com/mcp) as a complementary integration, or is the custom toolkit sufficient?",
+      "affects_claims": ["integration strategy"],
+      "plausible_answers": ["Custom toolkit only", "Both toolkit + MCP registration", "MCP only (skip custom toolkit)"]
+    },
+    {
+      "id": "U4",
+      "question": "Are GigSmart API credentials (client_id, client_secret) already provisioned, or do we need a sandbox registration flow first?",
+      "affects_claims": ["Phase 1 feasibility"],
+      "plausible_answers": ["Credentials available", "Need to register at developers.gigsmart.ninja/register", "Unknown — check with team"]
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Research is comprehensive (12 findings, 12 high-confidence claims). The brainstorm SPEC needs significant corrections but the architecture is clear. A spec should incorporate the corrected API shape and codebase patterns."
+  }
+}
