@@ -20,6 +20,7 @@ from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
 from ..models.outputs import OutputMode
 from ..utils.helpers import RequestContext, _current_ctx
 from ..security import PromptInjectionException
+from ..security.redaction import OutputScrubber, ScrubPolicy  # FEAT-252 (TASK-1612)
 from .prompts import (
     OUTPUT_SYSTEM_PROMPT
 )
@@ -43,6 +44,9 @@ from parrot.core.events.lifecycle.events import (
 )
 # FEAT-228: Per-agent cost & usage metrics — bind agent identity around each invocation
 from parrot.observability.context import current_agent_name
+
+# FEAT-252 (TASK-1612): module-level egress scrubber singleton for channel delivery
+_BOT_EGRESS_SCRUBBER: OutputScrubber = OutputScrubber(ScrubPolicy())
 
 
 class BaseBot(AbstractBot):
@@ -1317,7 +1321,14 @@ class BaseBot(AbstractBot):
                 elif output_mode in [
                     OutputMode.TELEGRAM,
                     OutputMode.MSTEAMS,
+                    OutputMode.SLACK,
+                    OutputMode.WHATSAPP,
                 ]:
+                    # FEAT-252 (TASK-1612): scrub at channel egress before delivery
+                    if isinstance(response.output, str):
+                        response.output = _BOT_EGRESS_SCRUBBER.scrub(
+                            response.output, tool_name=self.name
+                        )
                     response.output_mode = output_mode
 
                 elif output_mode != OutputMode.DEFAULT:

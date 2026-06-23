@@ -192,6 +192,7 @@ class PythonREPLTool(AbstractTool):
         auto_save_plots: bool = True,
         return_plot_as_base64: bool = False,
         debug: bool = False,
+        policy=None,  # FEAT-252 (TASK-1614): PythonExecutionPolicy | None
         **kwargs,
     ):
         """
@@ -207,6 +208,8 @@ class PythonREPLTool(AbstractTool):
             sanitize_input_enabled: Whether to sanitize input
             auto_save_plots: Whether to automatically save plots to files
             return_plot_as_base64: Whether to return plots as base64 strings
+            policy: ``PythonExecutionPolicy`` for the allowlist-first AST gate.
+                Defaults to ``general_profile()``.
             **kwargs: Additional arguments for AbstractTool
         """
         # Check Python version
@@ -219,6 +222,11 @@ class PythonREPLTool(AbstractTool):
 
         # Initialize parent class
         super().__init__(output_dir=report_dir, **kwargs)
+
+        # FEAT-252 (TASK-1614): allowlist-first AST gate
+        from parrot.security.python_sanitizer import PythonCodeSanitizer, general_profile
+        _policy = policy if policy is not None else general_profile()
+        self._code_sanitizer = PythonCodeSanitizer(_policy)
 
         # Configuration
         self.sanitize_input_enabled = sanitize_input_enabled
@@ -649,6 +657,13 @@ print("Use 'execution_results' dict to store intermediate results.")
                 return f"SyntaxError: {str(e)}"
 
             if enforce_security:
+                # FEAT-252 (TASK-1614): allowlist-first AST gate (runs before the denylist)
+                _allowlist_result = self._code_sanitizer.validate(query)
+                if _allowlist_result.is_denied:
+                    _reasons = "; ".join(_allowlist_result.reasons[:3])
+                    return f"SecurityError: code denied by allowlist gate — {_reasons}"
+
+                # Existing denylist as defence-in-depth layer (keep, do NOT remove)
                 security_error = self._check_ast_security(tree)
                 if security_error:
                     return security_error

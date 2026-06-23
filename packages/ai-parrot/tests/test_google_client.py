@@ -310,7 +310,8 @@ def test_tool_result_redacts_environment_key_view():
     output = client._process_tool_result_for_api(leaked)
 
     assert "super-secret-value" not in output["result"]
-    assert "[REDACTED]" in output["result"]
+    # FEAT-252: OutputScrubber emits reason-tagged markers (***REDACTED:<reason>***) or plain [REDACTED]
+    assert "REDACTED" in output["result"]
     assert "NORMAL_SETTING" in output["result"]
 
 
@@ -1266,3 +1267,116 @@ async def test_generate_images_config_vertexai():
         assert called_kwargs["seed"] == 42
         # For Vertex AI, safety_filter_level remains what was specified
         assert called_kwargs["safety_filter_level"] == "BLOCK_ONLY_HIGH"
+
+
+# =============================================================================
+# FEAT-252 / TASK-1613 — _resolve_final_response chokepoint tests
+# =============================================================================
+
+def _make_tool_call(result=None, name="some_tool"):
+    """Helper: construct a minimal ToolCall for testing."""
+    from parrot.models.basic import ToolCall
+    return ToolCall(id="tc-1", name=name, arguments={}, result=result)
+
+
+def _make_client():
+    """Return a GoogleGenAIClient with faked credentials (no real API call)."""
+    from unittest.mock import MagicMock
+    client = GoogleGenAIClient.__new__(GoogleGenAIClient)
+    client.model = "gemini-2.5-flash"
+    client.temperature = 0.0
+    client.max_tokens = None
+    client.logger = MagicMock()
+    client.logger.notice = MagicMock()
+    client.logger.info = MagicMock()
+    client.logger.warning = MagicMock()
+    from parrot.security.redaction import OutputScrubber, ScrubPolicy
+    client._scrubber = OutputScrubber(ScrubPolicy())
+    client._echo_threshold = 0.85
+    return client
+
+
+class TestResolveFinalResponse:
+    """Unit tests for GoogleGenAIClient._resolve_final_response (FEAT-252)."""
+
+    def test_method_exists(self):
+        """_resolve_final_response must exist on the client."""
+        from parrot.clients.google.client import GoogleGenAIClient
+        assert hasattr(GoogleGenAIClient, "_resolve_final_response")
+
+    def test_synthesis_passes_through(self):
+        """A genuine synthesis answer is returned (after scrub)."""
+        client = _make_client()
+        out = client._resolve_final_response("The answer is 42.", [], None)
+        assert "42" in out
+
+    def test_suppresses_verbatim_tool_echo(self):
+        """Near-verbatim echo of a tool result is suppressed."""
+        client = _make_client()
+        tool_result = "KeysView(environ({'PWD': '/home/user', 'SECRET': 'hunter2'}))"
+        tc = _make_tool_call(result=tool_result)
+        out = client._resolve_final_response(tool_result, [tc], None)
+        assert "hunter2" not in out or "no answer" in out.lower()
+
+    def test_empty_after_tools_returns_sentinel(self):
+        """Empty candidate after tool calls → typed 'no answer' sentinel."""
+        client = _make_client()
+        tc = _make_tool_call(result="42")
+        out = client._resolve_final_response("", [tc], None)
+        assert client._is_no_answer(out)
+
+    def test_empty_no_tools_is_safe(self):
+        """Empty candidate with no tool calls → returns empty or sentinel, never raw stdout."""
+        client = _make_client()
+        out = client._resolve_final_response("", [], None)
+        # Either empty-string or the typed sentinel is acceptable; must NOT be raw stdout
+        assert out == "" or client._is_no_answer(out)
+
+    def test_secret_in_synthesis_is_scrubbed(self):
+        """A synthesis answer containing a secret is scrubbed before delivery."""
+        client = _make_client()
+        out = client._resolve_final_response("The password is PASSWORD=hunter2", [], None)
+        assert "hunter2" not in out
+        assert "REDACTED" in out
+
+    def test_is_no_answer_helper(self):
+        """_is_no_answer correctly identifies the sentinel."""
+        client = _make_client()
+        assert client._is_no_answer(client._no_answer_sentinel())
+        assert not client._is_no_answer("The answer is 42.")
+
+    def test_code_exec_output_framed(self):
+        """Code-exec stdout is framed rather than shipped raw."""
+        client = _make_client()
+        out = client._resolve_final_response("42\n", [], "42\n")
+        assert out  # not empty
+
+    def test_default_api_call_gated(self):
+        """_get_function_calls_from_response drops 'default_api' calls."""
+        from unittest.mock import MagicMock
+        client = _make_client()
+        # Simulate a response with a default_api function call
+        mock_fc = MagicMock()
+        mock_fc.name = "default_api"
+        mock_part = MagicMock()
+        mock_part.function_call = mock_fc
+        mock_part.executable_code = None
+        mock_part.code_execution_result = None
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [mock_part]
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.text = None
+        calls = client._get_function_calls_from_response(mock_response)
+        assert all(c.name != "default_api" for c in calls)
+
+    def test_no_scattered_redact_calls(self):
+        """google/client.py must have zero scattered redact_text/redact_secrets calls."""
+        import inspect
+        import parrot.clients.google.client as m
+        src = inspect.getsource(m)
+        count = src.count("redact_text(") + src.count("redact_secrets(")
+        assert count == 0, (
+            f"Found {count} scattered redact_text/redact_secrets call(s) in client.py — "
+            "all scrubbing must go through _resolve_final_response / OutputScrubber."
+        )

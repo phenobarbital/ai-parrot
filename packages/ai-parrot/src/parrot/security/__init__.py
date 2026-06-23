@@ -1,8 +1,9 @@
 """
 Security utilities for AI-Parrot.
 
-Includes prompt injection detection, query validation, and vault credential
-utilities relocated from parrot.handlers in FEAT-203.
+Includes prompt injection detection, query validation, vault credential
+utilities relocated from parrot.handlers in FEAT-203, and the shared
+command-sanitizer engine relocated from parrot_tools in FEAT-252.
 """
 from .prompt_injection import (
     PromptInjectionDetector,
@@ -26,6 +27,25 @@ from .credentials_utils import (
     encrypt_credential,
     decrypt_credential,
 )
+from .command_sanitizer import (
+    SecurityLevel,
+    CommandVerdict,
+    ValidationResult,
+    CommandRule,
+    CommandSecurityError,
+    SecurityPolicy,
+    CommandSanitizer,
+)
+from .redaction import (
+    OutputScrubber,
+    ScrubPolicy,
+)
+from .python_sanitizer import (
+    PythonExecutionPolicy,
+    PythonCodeSanitizer,
+    general_profile,
+    data_analysis_profile,
+)
 
 __all__ = [
     'PromptInjectionDetector',
@@ -42,4 +62,20 @@ __all__ = [
     'VAULT_CRED_COLLECTION',
     'encrypt_credential',
     'decrypt_credential',
+    # Command sanitizer engine (FEAT-252 / TASK-1611)
+    'SecurityLevel',
+    'CommandVerdict',
+    'ValidationResult',
+    'CommandRule',
+    'CommandSecurityError',
+    'SecurityPolicy',
+    'CommandSanitizer',
+    # Output scrubber (FEAT-252 / TASK-1612)
+    'OutputScrubber',
+    'ScrubPolicy',
+    # Python AST gate (FEAT-252 / TASK-1614)
+    'PythonExecutionPolicy',
+    'PythonCodeSanitizer',
+    'general_profile',
+    'data_analysis_profile',
 ]

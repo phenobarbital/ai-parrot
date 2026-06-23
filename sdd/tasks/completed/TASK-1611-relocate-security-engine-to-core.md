@@ -189,4 +189,11 @@ class TestRelocatedEngine:
 `tasks/completed/` on done.)
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+Implemented by sdd-worker (FEAT-252). The full `CommandSanitizer` / `SecurityPolicy` /
+`SecurityLevel` / `CommandVerdict` / `ValidationResult` / `CommandRule` /
+`CommandSecurityError` engine was copied verbatim (stdlib-only) to
+`packages/ai-parrot/src/parrot/security/command_sanitizer.py`.
+`parrot/security/__init__.py` exports all 7 symbols in `__all__`.
+`parrot_tools/shell_tool/security.py` is now a re-export shim plus
+the shell-specific `SecureShellMixin`. All 14 unit tests pass; ruff clean.
