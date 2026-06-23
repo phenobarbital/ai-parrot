@@ -40,7 +40,7 @@ import os
 import uuid
 from typing import Any, Dict, List, Optional
 
-from aiohttp import web
+from aiohttp import web, ClientResponseError
 from navconfig.logging import logging
 from navigator.views import BaseView
 from navigator_auth.decorators import is_authenticated, user_session
@@ -224,6 +224,20 @@ async def _start_avatar_session(request: web.Request) -> web.Response:
         handle.session_id = session_id
         handle.tenant_id = tenant_id
         await client.start_session(handle)
+    except ClientResponseError as exc:
+        # Upstream LiveAvatar rejected the start (e.g. no credits). Close the
+        # client and return a clean, machine-readable status the frontend can
+        # act on instead of leaking a bare 500.
+        try:
+            await client.aclose()
+        finally:
+            pass
+        _logger.warning(
+            "AvatarSessionView: LiveAvatar start failed for session %s: %s",
+            session_id,
+            getattr(exc, "message", exc),
+        )
+        return avatar_upstream_error_response(exc)
     except Exception:
         # On any failure, do not leak the client/session.
         try:
@@ -250,6 +264,36 @@ async def _start_avatar_session(request: web.Request) -> web.Response:
         "client_token": tokens.client_token,
         "session_id": session_id,
     })
+
+
+def avatar_upstream_error_response(exc: ClientResponseError) -> web.Response:
+    """Translate a LiveAvatar upstream error into a clean JSON response.
+
+    Without this, the upstream ``ClientResponseError`` propagates and aiohttp
+    returns a bare ``500`` whose body does NOT carry the reason — the frontend
+    cannot tell "no credits" from a real server bug.  Map the two cases the
+    frontend acts on:
+
+      * "No credits" (LiveAvatar code ``4033`` / ``403``) -> ``402`` so the UI
+        can show an actionable "avatar has no credits" message.
+      * Any other upstream failure -> ``502`` (provider error).
+    """
+    message = str(getattr(exc, "message", "") or "")
+    if "4033" in message or "credit" in message.lower():
+        return web.json_response(
+            {
+                "error": "avatar_no_credits",
+                "message": "No credits available for the avatar session.",
+            },
+            status=402,
+        )
+    return web.json_response(
+        {
+            "error": "avatar_upstream_error",
+            "message": message or "The avatar provider returned an error.",
+        },
+        status=502,
+    )
 
 
 async def _stop_avatar_session(request: web.Request) -> web.Response:
