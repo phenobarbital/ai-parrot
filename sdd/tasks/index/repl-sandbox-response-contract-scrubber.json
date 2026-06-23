@@ -52,7 +52,7 @@
       "feature_id": "FEAT-252",
       "feature": "repl-sandbox-response-contract-scrubber",
       "spec": "sdd/specs/repl-sandbox-response-contract-scrubber.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Primary containment. Hard-depends on TASK-1612 so removing the ~14 scattered redact_* calls never loses coverage. Isolated to google/client.py + its tests.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1613-gemini-resolve-final-response-chokepoint.md"
+      "completed_at": "2026-06-23T14:13:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1613-gemini-resolve-final-response-chokepoint.md"
     },
     {
       "id": "TASK-1614",
