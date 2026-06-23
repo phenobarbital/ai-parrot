@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-253
 **Date**: 2026-06-23
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.7.x (`ai-parrot`)
 
 > **Lineage**: Completes the repo-provisioning half of FEAT-250
@@ -493,9 +493,9 @@ def build_dev_loop_node_factories(*, dispatcher, jira_toolkit, redis_url,
   outer `BASE_DIR` repo? — *Resolved (2026-06-23)*: from the **clone** (the
   `sdd-research` dispatch runs with `cwd = repo_path`), which implies
   provisioning runs before that dispatch.
-- [ ] Multi-repo runs (>1 `RepoSpec`): secondary repos are cloned but not used as
+- [x] Multi-repo runs (>1 `RepoSpec`): secondary repos are cloned but not used as
   the Development base. Confirm whether secondary clones are needed at all in v1
-  or should be deferred entirely. — *Owner: Jesus Lara (decide at /sdd-task)*
+  or should be deferred entirely. — *Owner: Jesus Lara (decide at /sdd-task)*: secondary clones are not needed in v1, defer to follow-up
 
 ---
 
