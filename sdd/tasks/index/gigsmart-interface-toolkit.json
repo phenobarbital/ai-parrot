@@ -52,7 +52,7 @@
       "feature_id": "FEAT-253",
       "feature": "gigsmart-interface-toolkit",
       "spec": "sdd/specs/gigsmart-interface-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Depends on exceptions and config modules.",
       "assigned_to": null,
       "started_at": "2026-06-23T15:41:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1618-gigsmart-oauth.md"
+      "completed_at": "2026-06-23T15:45:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1618-gigsmart-oauth.md"
     },
     {
       "id": "TASK-1619",
