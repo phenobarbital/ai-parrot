@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-23T11:08:48Z",
-  "completed_at": null,
+  "completed_at": "2026-06-23T12:43:20+00:00",
   "tasks": [
     {
       "id": "TASK-001",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-253",
       "feature": "complete-feat-250-dev-loop-repo-wiring",
       "spec": "sdd/specs/complete-feat-250-dev-loop-repo-wiring.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Touches only conf.py + its own test file; shares no files with TASK-002. Can run in parallel with TASK-002.",
       "assigned_to": null,
       "started_at": "2026-06-23T11:13:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-001-base-dir-anchored-config.md"
+      "completed_at": "2026-06-23T12:43:20+00:00",
+      "file": "sdd/tasks/completed/TASK-001-base-dir-anchored-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-002",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-253",
       "feature": "complete-feat-250-dev-loop-repo-wiring",
       "spec": "sdd/specs/complete-feat-250-dev-loop-repo-wiring.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "New dev_loop/config.py + __init__ re-export + own test file; disjoint from conf.py (TASK-001). Can run in parallel with TASK-001.",
       "assigned_to": null,
       "started_at": "2026-06-23T11:13:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-002-parse-repo-specs.md"
+      "completed_at": "2026-06-23T12:43:20+00:00",
+      "file": "sdd/tasks/completed/TASK-002-parse-repo-specs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-003",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-253",
       "feature": "complete-feat-250-dev-loop-repo-wiring",
       "spec": "sdd/specs/complete-feat-250-dev-loop-repo-wiring.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -61,8 +63,9 @@
       "parallelism_notes": "Core wiring in research.py; consumes anchored conf paths (TASK-001) and the parser's RepoSpec contract (TASK-002). Must run after both.",
       "assigned_to": null,
       "started_at": "2026-06-23T11:13:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-003-provision-local-fallback-and-clone-worktree.md"
+      "completed_at": "2026-06-23T12:43:20+00:00",
+      "file": "sdd/tasks/completed/TASK-003-provision-local-fallback-and-clone-worktree.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-004",
@@ -71,7 +74,7 @@
       "feature_id": "FEAT-253",
       "feature": "complete-feat-250-dev-loop-repo-wiring",
       "spec": "sdd/specs/complete-feat-250-dev-loop-repo-wiring.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -82,8 +85,9 @@
       "parallelism_notes": "server.py uses parse_repo_specs (TASK-002) and the provisioning path (TASK-003). Must run after both.",
       "assigned_to": null,
       "started_at": "2026-06-23T11:13:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-004-wire-demo-server.md"
+      "completed_at": "2026-06-23T12:43:20+00:00",
+      "file": "sdd/tasks/completed/TASK-004-wire-demo-server.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-005",
@@ -92,7 +96,7 @@
       "feature_id": "FEAT-253",
       "feature": "complete-feat-250-dev-loop-repo-wiring",
       "spec": "sdd/specs/complete-feat-250-dev-loop-repo-wiring.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -103,8 +107,9 @@
       "parallelism_notes": "End-to-end git behavior; depends on the implementation landing (TASK-003/004).",
       "assigned_to": null,
       "started_at": "2026-06-23T11:13:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-005-live-integration-tests.md"
+      "completed_at": "2026-06-23T12:43:20+00:00",
+      "file": "sdd/tasks/completed/TASK-005-live-integration-tests.md",
+      "verification": "verified"
     }
   ]
 }
