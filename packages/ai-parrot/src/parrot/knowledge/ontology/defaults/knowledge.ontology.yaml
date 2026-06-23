@@ -8,6 +8,44 @@ description: >
   authoritative documents via curated graph edges.
 
 entities:
+  # Employee extension: adds team and role properties to the base Employee entity.
+  # key_field and collection are immutable — omit them to avoid OntologyMergeError.
+  Employee:
+    extend: true
+    source: workday
+    properties:
+      - team:
+          type: string
+          description: Team identifier (used for member_of relation)
+      - role:
+          type: string
+          description: Role within the team (e.g. lead, member, contributor)
+    vectorize:
+      - role
+
+  Team:
+    collection: teams
+    key_field: team_id
+    properties:
+      - team_id:
+          type: string
+          required: true
+          unique: true
+          description: Unique team identifier
+      - name:
+          type: string
+          required: true
+          description: Team display name
+      - description:
+          type: string
+          description: What the team does
+      - department:
+          type: string
+          description: Department this team belongs to
+    vectorize:
+      - name
+      - description
+
   Document:
     collection: documents
     source: confluence
@@ -87,6 +125,18 @@ entities:
       - synonyms
 
 relations:
+  member_of:
+    from: Employee
+    to: Team
+    edge_collection: member_of_team
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: team
+          target_field: team_id
+          match_type: exact
+          description: Team membership via team field
+
   covers_topic:
     from: Document
     to: Concept
@@ -114,6 +164,35 @@ relations:
     edge_collection: concept_is_a
 
 traversal_patterns:
+  employee_team_workload:
+    description: >
+      Find what a user's team is working on by traversing member_of
+      edges to reach the team node and then collecting all teammates.
+      Answers queries like "What is my team working on?".
+    trigger_intents:
+      - what is my team working on
+      - what is my team doing
+      - team workload
+      - what are we working on
+      - my team projects
+      - what does my team do
+    query_template: |
+      LET team_node = (
+        FOR t IN 1..1 OUTBOUND @user_id @@member_of_team
+          RETURN t
+      )[0]
+      FOR teammate IN employees
+        FOR edge IN member_of_team
+          FILTER edge._to == team_node._id
+          FILTER teammate._id == edge._from
+          RETURN {
+            employee: teammate.name,
+            email:    teammate.email,
+            role:     teammate.role,
+            team:     team_node.name
+          }
+    post_action: none
+
   authoritative_doc_for_topic:
     description: >
       Route topical queries through curated authority edges into PageIndex.

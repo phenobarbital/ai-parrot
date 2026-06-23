@@ -42,4 +42,7 @@ None (Jira API call only)
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-06-24.
+
+- Posted comment ID 59435 to NAV-8350 via Jira REST API.
+- Comment confirms: (1) Ontology RAG exists in parrot/knowledge/ontology/ (FEAT-053/158), (2) Employee KB ontology updated in FEAT-255/TASK-1624, (3) smoke test passes at test_employee_ontology_smoke.py.

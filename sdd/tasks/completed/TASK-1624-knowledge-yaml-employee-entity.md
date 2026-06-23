@@ -98,4 +98,10 @@ is a new entity not overriding a base entity.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-06-24.
+
+- Added `Employee` extension (`extend: true`) with `team` and `role` properties.
+- Added `Team` entity (collection: `teams`, key_field: `team_id`) with `name`, `description`, `department` properties.
+- Added `member_of` relation: Employee → Team (edge_collection: `member_of_team`).
+- Added `employee_team_workload` traversal pattern triggered by "what is my team working on?" intents.
+- Merged ontology integrity passes: 6 entities, 6 relations, 5 patterns.

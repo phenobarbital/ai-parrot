@@ -115,4 +115,9 @@ class TestEmployeeOntologySmoke:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-06-24.
+
+- Created `packages/ai-parrot/tests/knowledge/test_employee_ontology_smoke.py` with 10 tests.
+- Added `OntologyParser.load_default(name)` static method to support named default loading.
+- All 10 smoke tests pass; no ArangoDB or Redis required.
+- Test covers: Employee entity present, required properties, team/role properties, Team entity, reports_to relation, member_of relation, employee_team_workload pattern, merge integrity, and layer count.

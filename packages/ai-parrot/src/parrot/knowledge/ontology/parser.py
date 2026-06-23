@@ -90,6 +90,25 @@ class OntologyParser:
         return OntologyParser.load(base_path)
 
     @staticmethod
+    def load_default(name: str) -> OntologyDefinition:
+        """Load a named default ontology file shipped with the package.
+
+        Args:
+            name: Short name of the ontology file, e.g. ``"base"`` or
+                ``"knowledge"``.  Resolves to
+                ``<defaults_dir>/<name>.ontology.yaml``.
+
+        Returns:
+            Validated OntologyDefinition for the requested layer.
+
+        Raises:
+            FileNotFoundError: If no matching file exists in the defaults
+                directory.
+        """
+        yaml_path = _DEFAULTS_DIR / f"{name}.ontology.yaml"
+        return OntologyParser.load(yaml_path)
+
+    @staticmethod
     def get_defaults_dir() -> Path:
         """Return the path to the package-bundled defaults directory.
 
