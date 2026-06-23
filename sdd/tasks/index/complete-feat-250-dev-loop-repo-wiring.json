@@ -32,7 +32,7 @@
       "feature_id": "FEAT-253",
       "feature": "complete-feat-250-dev-loop-repo-wiring",
       "spec": "sdd/specs/complete-feat-250-dev-loop-repo-wiring.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "New dev_loop/config.py + __init__ re-export + own test file; disjoint from conf.py (TASK-001). Can run in parallel with TASK-001.",
       "assigned_to": null,
       "started_at": "2026-06-23T11:13:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-002-parse-repo-specs.md"
+      "completed_at": "2026-06-23T11:21:01+00:00",
+      "file": "sdd/tasks/completed/TASK-002-parse-repo-specs.md"
     },
     {
       "id": "TASK-003",
