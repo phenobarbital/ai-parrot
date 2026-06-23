@@ -1,4 +1,4 @@
-"""FEAT-129 / FEAT-250 — Dev-Loop Orchestration: real demo server.
+"""FEAT-129 / FEAT-250 / FEAT-253 — Dev-Loop Orchestration: real demo server.
 
 Hosts an aiohttp app that wires the **real** eight-node ``AgentsFlow``
 (IntentClassifier → [BugIntake →] Research → Development → QA →
@@ -21,6 +21,10 @@ Runtime requirements:
 * Redis on ``REDIS_URL`` (default ``redis://localhost:6379/0``)
 * ``ANTHROPIC_API_KEY`` (or any provider key the Claude Agent SDK accepts)
 * ``claude`` CLI on ``$PATH`` and authenticated
+* Optional Codex Development mode:
+  ``DEV_LOOP_DEVELOPMENT_AGENT=codex``, ``codex`` CLI on ``$PATH`` and
+  authenticated (or ``OPENAI_API_KEY`` available), and
+  ``DEV_LOOP_CODEX_MODEL`` (default ``gpt-5.5``)
 * Jira service account: ``JIRA_INSTANCE``, ``JIRA_USERNAME``,
   ``JIRA_API_TOKEN`` and (optionally) ``JIRA_PROJECT`` — the toolkit uses
   ``basic_auth``
@@ -28,13 +32,40 @@ Runtime requirements:
   log toolkits — set ``LOG_TOOLKITS`` (comma-separated) to limit.
 * ``gh`` CLI authenticated for the DeploymentHandoff PR step
 
+Repository targeting (FEAT-253):
+
+* Set ``DEV_LOOP_REPOS`` (comma-separated or repeated) to declare one or
+  more target repositories. Each entry is one of:
+
+  - An ``owner/name`` slug:        ``phenobarbital/ai-parrot``
+  - A full HTTPS clone URL:        ``https://github.com/phenobarbital/ai-parrot.git``
+  - A full SSH clone URL:          ``git@github.com:phenobarbital/ai-parrot.git``
+  - A JSON object string:
+    ``{"alias":"ai-parrot","url":"git@github.com:phenobarbital/ai-parrot.git","branch":"dev","private":true}``
+
+  The **primary** repo (first entry) is cloned/pulled into
+  ``BASE_DIR/.claude/worktrees/repos/<run_id>/<alias>`` before the
+  ``sdd-research`` dispatch; ``ResearchOutput.repo_path`` is set to that
+  clone path and the per-run worktree is branched from the clone.
+
+  When ``DEV_LOOP_REPOS`` is unset or empty the flow targets the local
+  checkout at ``BASE_DIR`` (no clone; the ``sdd-research`` dispatch runs
+  with ``cwd = WORKTREE_BASE_PATH`` and branches the worktree from
+  ``BASE_DIR``).
+
+  Private SSH repos require an SSH key/agent on the host. For ``gh``-based
+  auth set ``GITHUB_TOKEN``.
+
 Boot::
 
     docker run --rm -p 6379:6379 redis:7    # if you don't have one
     source .venv/bin/activate
+    # Optional: target a specific repo
+    # export DEV_LOOP_REPOS="git@github.com:phenobarbital/ai-parrot.git"
     python examples/dev_loop/server.py
     # http://localhost:8080
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -53,12 +84,17 @@ from parrot import conf
 from parrot.flows.dev_loop import (
     BugBrief,
     ClaudeCodeDispatcher,
+    CodexCodeDispatcher,
+    CodexCodeDispatchProfile,
+    GeminiCodeDispatcher,
+    GeminiCodeDispatchProfile,
     DevLoopRunner,
     build_dev_loop_flow,
     flow_stream_ws,
+    parse_repo_specs,
 )
+from parrot_tools.gittoolkit import GitToolkit
 from parrot_tools.jiratoolkit import JiraToolkit
-
 
 logger = logging.getLogger("dev_loop.server")
 STATIC_DIR = Path(__file__).parent / "static"
@@ -80,6 +116,25 @@ def _build_jira_toolkit() -> JiraToolkit:
     )
 
 
+def _build_git_toolkit() -> GitToolkit:
+    """Build a GitToolkit for repo clone/pull operations (FEAT-253).
+
+    Reads credentials from the environment:
+
+    * ``GITHUB_TOKEN`` — personal access token (PAT) for private HTTPS
+      repos or ``gh``-style auth; can be left unset when using SSH keys.
+    * ``GIT_DEFAULT_BRANCH`` — default branch for clones (default: ``main``).
+
+    For private SSH repos (``git@github.com:...``) ensure an SSH key/agent
+    is configured on the host — ``GitToolkit`` passes the URL as-is to the
+    ``git`` CLI and relies on the host's SSH configuration.
+    """
+    return GitToolkit(
+        github_token=conf.config.get("GITHUB_TOKEN", fallback=None),
+        default_branch=conf.config.get("GIT_DEFAULT_BRANCH", fallback="main"),
+    )
+
+
 def _build_log_toolkits() -> dict[str, object]:
     """Real-mode log toolkits.
 
@@ -91,9 +146,7 @@ def _build_log_toolkits() -> dict[str, object]:
     from parrot_tools.aws.cloudwatch import CloudWatchToolkit
 
     aws_id = conf.config.get("AWS_PROFILE", fallback="cloudwatch")
-    log_group = conf.config.get(
-        "CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch"
-    )
+    log_group = conf.config.get("CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch")
     toolkits: dict[str, object] = {
         "cloudwatch": CloudWatchToolkit(
             aws_id=aws_id,
@@ -102,7 +155,8 @@ def _build_log_toolkits() -> dict[str, object]:
     }
     logger.info(
         "CloudWatch toolkit ready (profile=%s, log_group=%s)",
-        aws_id, log_group,
+        aws_id,
+        log_group,
     )
     return toolkits
 
@@ -113,7 +167,12 @@ def _build_log_toolkits() -> dict[str, object]:
 
 
 _ALLOWED_SHELL_HEADS = {
-    "task", "flowtask", "pytest", "ruff", "mypy", "pylint",
+    "task",
+    "flowtask",
+    "pytest",
+    "ruff",
+    "mypy",
+    "pylint",
 }
 
 # FEAT-132: accepted work-kind values (snake_case, lower).
@@ -152,9 +211,7 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
     # FEAT-132: normalise kind (label → snake_case value).
     raw_kind = (form.get("kind") or "bug").strip().lower().replace(" ", "_")
     if raw_kind not in _KIND_VALUES:
-        logger.warning(
-            "Unknown kind %r submitted; defaulting to 'bug'", raw_kind
-        )
+        logger.warning("Unknown kind %r submitted; defaulting to 'bug'", raw_kind)
         raw_kind = "bug"
 
     summary = (form.get("summary") or "").strip()
@@ -170,11 +227,7 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
     if not component:
         raise ValueError("affected_component is required")
 
-    log_group = (
-        form.get("log_group")
-        or conf.config.get("CLOUDWATCH_LOG_GROUP",
-                           fallback="fluent-bit-cloudwatch")
-    )
+    log_group = form.get("log_group") or conf.config.get("CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch")
     window = int(form.get("time_window_minutes") or 60)
 
     raw_criteria = form.get("acceptance_criteria") or []
@@ -189,14 +242,8 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
         )
 
     bot_account = conf.config.get("FLOW_BOT_JIRA_ACCOUNT_ID", fallback="")
-    reporter = (
-        form.get("reporter")
-        or conf.config.get("JIRA_REPORTER_ACCOUNT_ID", fallback=bot_account)
-    )
-    escalation = (
-        form.get("escalation_assignee")
-        or conf.config.get("JIRA_ESCALATION_ACCOUNT_ID", fallback=bot_account)
-    )
+    reporter = form.get("reporter") or conf.config.get("JIRA_REPORTER_ACCOUNT_ID", fallback=bot_account)
+    escalation = form.get("escalation_assignee") or conf.config.get("JIRA_ESCALATION_ACCOUNT_ID", fallback=bot_account)
     if not reporter or not escalation:
         raise ValueError(
             "reporter and escalation_assignee are required; set "
@@ -274,17 +321,21 @@ def _normalise_criteria(raw: Any) -> list[dict[str, Any]]:
         head = head_token.rstrip(":")
         if head in _ALLOWED_SHELL_HEADS:
             cmd = head + (f" {tail}" if tail else "")
-            out.append({
-                "kind": "shell",
-                "name": f"{head}-criterion-{idx}",
-                "command": cmd,
-            })
+            out.append(
+                {
+                    "kind": "shell",
+                    "name": f"{head}-criterion-{idx}",
+                    "command": cmd,
+                }
+            )
         else:
-            out.append({
-                "kind": "manual",
-                "name": f"manual-criterion-{idx}",
-                "text": line,
-            })
+            out.append(
+                {
+                    "kind": "manual",
+                    "name": f"manual-criterion-{idx}",
+                    "text": line,
+                }
+            )
     return out
 
 
@@ -305,19 +356,13 @@ async def handle_run(request: web.Request) -> web.Response:
     the incident form.
     """
     if not request.can_read_body:
-        return web.json_response(
-            {"error": "JSON body required"}, status=400
-        )
+        return web.json_response({"error": "JSON body required"}, status=400)
     try:
         form = await request.json()
     except Exception as exc:  # noqa: BLE001
-        return web.json_response(
-            {"error": f"invalid JSON: {exc}"}, status=400
-        )
+        return web.json_response({"error": f"invalid JSON: {exc}"}, status=400)
     if not isinstance(form, dict):
-        return web.json_response(
-            {"error": "body must be a JSON object"}, status=400
-        )
+        return web.json_response({"error": "body must be a JSON object"}, status=400)
 
     try:
         payload = _build_brief_from_form(form)
@@ -339,8 +384,7 @@ async def handle_run(request: web.Request) -> web.Response:
                 run_id=run_id,
                 initial_task=f"resolve: {brief.summary[:120]}",
             )
-            logger.info("Flow run_id=%s finished status=%s in %.1fs",
-                        run_id, result.status, time.time() - started_at)
+            logger.info("Flow run_id=%s finished status=%s in %.1fs", run_id, result.status, time.time() - started_at)
         except Exception:
             logger.exception("Flow run_id=%s failed", run_id)
 
@@ -348,9 +392,7 @@ async def handle_run(request: web.Request) -> web.Response:
     request.app["flow_tasks"].add(task)
     task.add_done_callback(request.app["flow_tasks"].discard)
 
-    return web.json_response(
-        {"run_id": run_id, "ws_url": f"/api/flow/{run_id}/ws"}
-    )
+    return web.json_response({"run_id": run_id, "ws_url": f"/api/flow/{run_id}/ws"})
 
 
 async def handle_replay(request: web.Request) -> web.Response:
@@ -358,9 +400,7 @@ async def handle_replay(request: web.Request) -> web.Response:
     run_id = request.match_info["run_id"]
     redis = request.app["redis"]
     flow_key = f"flow:{run_id}:flow"
-    dispatch_keys = [
-        k async for k in redis.scan_iter(match=f"flow:{run_id}:dispatch:*")
-    ]
+    dispatch_keys = [k async for k in redis.scan_iter(match=f"flow:{run_id}:dispatch:*")]
     out: list[dict[str, Any]] = []
     for key in [flow_key, *dispatch_keys]:
         for _entry_id, fields in await redis.xrange(key, "-", "+"):
@@ -386,12 +426,69 @@ async def _on_startup(app: web.Application) -> None:
         redis_url=redis_url,
         stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
     )
+    development_dispatcher: object = dispatcher
+    development_profile: object | None = None
+    development_agent = conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code").strip().lower()
+    if development_agent == "codex":
+        development_dispatcher = CodexCodeDispatcher(
+            max_concurrent=conf.config.getint(
+                "CODEX_CODE_MAX_CONCURRENT_DISPATCHES",
+                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+            ),
+            redis_url=redis_url,
+            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+        )
+        development_profile = CodexCodeDispatchProfile(
+            model=conf.config.get("DEV_LOOP_CODEX_MODEL", fallback="gpt-5.5")
+        )
+        logger.info(
+            "Development node using Codex CLI (model=%s)",
+            development_profile.model,
+        )
+    elif development_agent == "gemini":
+        development_dispatcher = GeminiCodeDispatcher(
+            max_concurrent=conf.config.getint(
+                "GEMINI_CODE_MAX_CONCURRENT_DISPATCHES",
+                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+            ),
+            redis_url=redis_url,
+            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+        )
+        development_profile = GeminiCodeDispatchProfile(
+            model=conf.config.get("DEV_LOOP_GEMINI_MODEL", fallback="auto")
+        )
+        logger.info(
+            "Development node using Gemini CLI (model=%s)",
+            development_profile.model,
+        )
+    elif development_agent not in {"claude", "claude-code"}:
+        raise RuntimeError(
+            "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', or 'gemini', "
+            f"got {development_agent!r}"
+        )
+
+    # FEAT-253: parse DEV_LOOP_REPOS -> list[RepoSpec] and wire git_toolkit.
+    # When DEV_LOOP_REPOS is unset/empty, repos == [] and the flow falls
+    # back to the local checkout at BASE_DIR (no clone, no network call).
+    repos = parse_repo_specs(conf.DEV_LOOP_REPOS)
+    if repos:
+        logger.info(
+            "DEV_LOOP_REPOS configured: %d repo(s) — primary alias=%r",
+            len(repos),
+            repos[0].alias,
+        )
+    else:
+        logger.info("DEV_LOOP_REPOS not set; flow will target local checkout at BASE_DIR")
     app["flow"] = build_dev_loop_flow(
         dispatcher=dispatcher,
         jira_toolkit=_build_jira_toolkit(),
         log_toolkits=_build_log_toolkits(),
         redis_url=redis_url,
+        development_dispatcher=development_dispatcher,
+        development_profile=development_profile,
         name="dev-loop-demo",
+        git_toolkit=_build_git_toolkit(),
+        repos=repos,
     )
     # Orchestrator-side run cap (FLOW_MAX_CONCURRENT_RUNS) — spec G5.
     app["runner"] = DevLoopRunner(app["flow"])
@@ -426,8 +523,7 @@ async def _on_cleanup(app: web.Application) -> None:
             try:
                 await redis.close()
             except Exception:  # pragma: no cover
-                logger.debug("redis close raised during shutdown",
-                             exc_info=True)
+                logger.debug("redis close raised during shutdown", exc_info=True)
         except Exception:  # pragma: no cover
             logger.debug("redis aclose raised during shutdown", exc_info=True)
 
@@ -455,9 +551,7 @@ def main() -> None:
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8080"))
     app = build_app(redis_url=redis_url)
-    logger.info(
-        "Dev-loop demo on http://%s:%s (Redis=%s)", host, port, redis_url
-    )
+    logger.info("Dev-loop demo on http://%s:%s (Redis=%s)", host, port, redis_url)
     web.run_app(app, host=host, port=port, print=None)
 
 

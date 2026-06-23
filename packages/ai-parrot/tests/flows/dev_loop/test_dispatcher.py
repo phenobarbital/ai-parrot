@@ -42,8 +42,22 @@ class _AssistantMessage:
 
 
 class _ResultMessage:
-    def __init__(self, *, success: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        success: bool = True,
+        is_error: bool = False,
+        api_error_status: Any = None,
+        result: Any = None,
+        num_turns: int = 1,
+        permission_denials: Any = None,
+    ) -> None:
         self.subtype = "success" if success else "failure"
+        self.is_error = is_error
+        self.api_error_status = api_error_status
+        self.result = result
+        self.num_turns = num_turns
+        self.permission_denials = permission_denials
         self.content: List[Any] = []
 
 
@@ -135,6 +149,90 @@ class TestProfileResolution:
         # wiring up connectors (e.g. the claude.ai Design MCP connector).
         assert opts.strict_mcp_config is True
 
+    def test_prefer_subscription_blanks_key_when_login_present(
+        self, dispatcher, monkeypatch, _patch_worktree_base
+    ):
+        """Default policy: subscription detected → blank the key so the
+        subprocess uses the claude.ai login instead of API billing."""
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatcher.conf.CLAUDE_CODE_DISPATCH_AUTH",
+            "prefer-subscription",
+            raising=False,
+        )
+        monkeypatch.setattr(dispatcher, "_subscription_available", lambda: True)
+        opts = dispatcher._resolve_run_options(
+            ClaudeCodeDispatchProfile(), str(_patch_worktree_base)
+        )
+        assert opts.env == {"ANTHROPIC_API_KEY": ""}
+
+    def test_prefer_subscription_falls_back_to_api_key(
+        self, dispatcher, monkeypatch, _patch_worktree_base
+    ):
+        """No subscription login → inherit ANTHROPIC_API_KEY (API fallback)."""
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatcher.conf.CLAUDE_CODE_DISPATCH_AUTH",
+            "prefer-subscription",
+            raising=False,
+        )
+        monkeypatch.setattr(
+            dispatcher, "_subscription_available", lambda: False
+        )
+        opts = dispatcher._resolve_run_options(
+            ClaudeCodeDispatchProfile(), str(_patch_worktree_base)
+        )
+        # env None/empty means "inherit parent env unchanged".
+        assert not opts.env
+
+    def test_api_key_mode_never_blanks(
+        self, dispatcher, monkeypatch, _patch_worktree_base
+    ):
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatcher.conf.CLAUDE_CODE_DISPATCH_AUTH",
+            "api-key",
+            raising=False,
+        )
+        # Even with a subscription present, api-key mode inherits the key.
+        monkeypatch.setattr(dispatcher, "_subscription_available", lambda: True)
+        opts = dispatcher._resolve_run_options(
+            ClaudeCodeDispatchProfile(), str(_patch_worktree_base)
+        )
+        assert not opts.env
+
+    def test_subscription_mode_forces_blank(
+        self, dispatcher, monkeypatch, _patch_worktree_base
+    ):
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatcher.conf.CLAUDE_CODE_DISPATCH_AUTH",
+            "subscription",
+            raising=False,
+        )
+        monkeypatch.setattr(
+            dispatcher, "_subscription_available", lambda: False
+        )
+        opts = dispatcher._resolve_run_options(
+            ClaudeCodeDispatchProfile(), str(_patch_worktree_base)
+        )
+        assert opts.env == {"ANTHROPIC_API_KEY": ""}
+
+    def test_subscription_available_reads_credentials(
+        self, dispatcher, monkeypatch, tmp_path
+    ):
+        """_subscription_available honours CLAUDE_CONFIG_DIR + OAuth block."""
+        cfg = tmp_path / "cfgdir"
+        cfg.mkdir()
+        # No file yet → False.
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(cfg))
+        assert dispatcher._subscription_available() is False
+        # OAuth block with an access token → True.
+        (cfg / ".credentials.json").write_text(
+            '{"claudeAiOauth": {"accessToken": "tok", '
+            '"subscriptionType": "max"}}'
+        )
+        assert dispatcher._subscription_available() is True
+        # Block present but no token → False.
+        (cfg / ".credentials.json").write_text('{"claudeAiOauth": {}}')
+        assert dispatcher._subscription_available() is False
+
     def test_generic_session_fallback(
         self, dispatcher, _patch_worktree_base
     ):
@@ -170,6 +268,42 @@ class TestCwdSafetyCheck:
                 node_id="n",
                 cwd="/etc",
             )
+
+    def test_cwd_outside_waived_for_readonly_codereview_profile(self, dispatcher):
+        # A read-only (plan-mode, no Edit/Write) profile such as the
+        # sdd-codereview gate may run against a checkout outside the worktree
+        # base — the confinement only protects write-capable sessions.
+        readonly = ClaudeCodeDispatchProfile(
+            subagent="sdd-codereview",
+            permission_mode="plan",
+            allowed_tools=["Read", "Bash", "Grep", "Glob"],
+        )
+        # Must NOT raise.
+        dispatcher._enforce_cwd_under_worktree_base("/etc", readonly)
+
+    def test_cwd_outside_still_rejected_for_write_profile(self, dispatcher):
+        write = ClaudeCodeDispatchProfile(
+            subagent="sdd-worker",
+            permission_mode="acceptEdits",
+            allowed_tools=["Read", "Edit", "Write"],
+        )
+        with pytest.raises(DispatchExecutionError):
+            dispatcher._enforce_cwd_under_worktree_base("/etc", write)
+
+    def test_cwd_outside_rejected_when_plan_mode_but_edit_tool_present(
+        self, dispatcher
+    ):
+        # plan mode alone is not enough: an Edit tool makes it write-capable.
+        mixed = ClaudeCodeDispatchProfile(
+            permission_mode="plan", allowed_tools=["Read", "Edit"]
+        )
+        with pytest.raises(DispatchExecutionError):
+            dispatcher._enforce_cwd_under_worktree_base("/etc", mixed)
+
+    def test_no_profile_arg_preserves_strict_check(self, dispatcher):
+        # Backward-compat: called without a profile, the guard stays strict.
+        with pytest.raises(DispatchExecutionError):
+            dispatcher._enforce_cwd_under_worktree_base("/etc")
 
 
 # ---------------------------------------------------------------------------
@@ -364,6 +498,94 @@ class TestDispatchSessionFailure:
             )
         # queued + started + dispatch.failed = 3
         assert dispatcher._fake_redis.xadd.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_api_error_status_surfaced_when_sdk_raises(
+        self, dispatcher, monkeypatch, _patch_worktree_base
+    ):
+        """The opaque SDK ProcessError is replaced with the real diagnosis.
+
+        The CLI emits an ``is_error`` ResultMessage carrying
+        ``api_error_status=401`` and a human ``result`` string, then exits
+        non-zero; the SDK collapses that to "error result: success". The
+        dispatcher must recover the buffered ResultMessage and raise a
+        DispatchExecutionError that names the status and the message.
+        """
+        err_result = _ResultMessage(
+            is_error=True,
+            api_error_status=401,
+            result="Invalid API key · Fix external API key",
+        )
+
+        class _ErrAfterResultClient:
+            async def stream_messages(
+                self, prompt: str, *, run_options: Any
+            ):
+                yield err_result
+                raise Exception(
+                    "Claude Code returned an error result: success"
+                )
+
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+            lambda *a, **kw: _ErrAfterResultClient(),
+        )
+
+        brief = ResearchOutput(
+            jira_issue_key="OPS-0",
+            spec_path="x",
+            feat_id="FEAT-0",
+            branch_name="b",
+            worktree_path=str(_patch_worktree_base),
+        )
+        with pytest.raises(DispatchExecutionError) as excinfo:
+            await dispatcher.dispatch(
+                brief=brief,
+                profile=ClaudeCodeDispatchProfile(),
+                output_model=ResearchOutput,
+                run_id="run-401",
+                node_id="research",
+                cwd=str(_patch_worktree_base),
+            )
+        msg = str(excinfo.value)
+        assert "401" in msg
+        assert "Invalid API key" in msg
+        assert "error result: success" not in msg
+
+    @pytest.mark.asyncio
+    async def test_error_result_without_raise_still_fails(
+        self, dispatcher, monkeypatch, _patch_worktree_base
+    ):
+        """An ``is_error`` result must fail the dispatch even if the SDK
+        closes the stream cleanly (no exception) — never fall through to
+        JSON validation on a failed turn."""
+        err_result = _ResultMessage(
+            is_error=True,
+            api_error_status=529,
+            result="Overloaded",
+        )
+
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+            lambda *a, **kw: _FakeClient([err_result]),
+        )
+
+        brief = ResearchOutput(
+            jira_issue_key="OPS-0",
+            spec_path="x",
+            feat_id="FEAT-0",
+            branch_name="b",
+            worktree_path=str(_patch_worktree_base),
+        )
+        with pytest.raises(DispatchExecutionError, match="529"):
+            await dispatcher.dispatch(
+                brief=brief,
+                profile=ClaudeCodeDispatchProfile(),
+                output_model=ResearchOutput,
+                run_id="run-529",
+                node_id="research",
+                cwd=str(_patch_worktree_base),
+            )
 
 
 # ---------------------------------------------------------------------------

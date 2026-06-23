@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from parrot.flows.dev_loop import (
     BugBrief,
     ClaudeCodeDispatchProfile,
+    CodexCodeDispatchProfile,
     DispatchEvent,
     FlowtaskCriterion,
     LogSource,
@@ -135,11 +136,19 @@ class TestDispatchProfile:
         assert profile.timeout_seconds == 1800
 
     def test_generic_session_when_subagent_none(self):
-        profile = ClaudeCodeDispatchProfile(
-            subagent=None, system_prompt_override="be terse"
-        )
+        profile = ClaudeCodeDispatchProfile(subagent=None, system_prompt_override="be terse")
         assert profile.subagent is None
         assert profile.system_prompt_override == "be terse"
+
+    def test_codex_defaults(self):
+        profile = CodexCodeDispatchProfile()
+        assert profile.subagent == "sdd-worker"
+        assert profile.model == "gpt-5.5"
+        assert profile.sandbox == "workspace-write"
+        assert profile.approval_policy == "never"
+        assert profile.timeout_seconds == 1800
+        assert profile.ignore_user_config is True
+        assert profile.ignore_rules is False
 
 
 class TestDispatchEvent:
@@ -157,9 +166,7 @@ class TestDispatchEvent:
         ],
     )
     def test_kind_literal_round_trip(self, kind):
-        ev = DispatchEvent(
-            kind=kind, ts=0.0, run_id="r", node_id="n", payload={}
-        )
+        ev = DispatchEvent(kind=kind, ts=0.0, run_id="r", node_id="n", payload={})
         assert ev.kind == kind
 
     def test_invalid_kind_rejected(self):

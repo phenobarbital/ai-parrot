@@ -9,8 +9,12 @@ spec. Runs are hosted by :class:`DevLoopRunner`, which enforces the
 ``FLOW_MAX_CONCURRENT_RUNS`` cap.
 """
 
+from parrot.flows.dev_loop.config import parse_repo_specs
 from parrot.flows.dev_loop.dispatcher import (
     ClaudeCodeDispatcher,
+    CodexCodeDispatcher,
+    GeminiCodeDispatcher,
+    DevLoopCodeDispatcher,
     DispatchExecutionError,
     DispatchOutputValidationError,
 )
@@ -29,6 +33,8 @@ from parrot.flows.dev_loop.models import (
     AcceptanceCriterion,
     BugBrief,
     ClaudeCodeDispatchProfile,
+    CodexCodeDispatchProfile,
+    GeminiCodeDispatchProfile,
     CriterionResult,
     DevelopmentOutput,
     DispatchEvent,
@@ -46,9 +52,14 @@ __all__ = [
     "BugBrief",
     "ClaudeCodeDispatcher",
     "ClaudeCodeDispatchProfile",
+    "CodexCodeDispatcher",
+    "CodexCodeDispatchProfile",
+    "GeminiCodeDispatcher",
+    "GeminiCodeDispatchProfile",
     "CriterionResult",
     "DevelopmentOutput",
     "DevLoopRunner",
+    "DevLoopCodeDispatcher",
     "DispatchEvent",
     "DispatchExecutionError",
     "DispatchOutputValidationError",
@@ -65,5 +76,6 @@ __all__ = [
     "build_dev_loop_flow",
     "cleanup_worktree",
     "flow_stream_ws",
+    "parse_repo_specs",
     "register_pull_request_webhook",
 ]
