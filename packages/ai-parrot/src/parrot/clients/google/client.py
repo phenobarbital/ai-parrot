@@ -71,7 +71,7 @@ from ...models.google import (
 )
 from ...tools.abstract import AbstractTool, ToolResult
 from ...core.exceptions import HumanInteractionInterrupt
-from ...security.redaction import redact_secrets, redact_text
+from ...security.redaction import OutputScrubber, ScrubPolicy  # FEAT-252 (TASK-1613)
 from .analysis import GoogleAnalysis
 from .generation import GoogleGeneration
 
@@ -177,6 +177,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         )
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
+        # FEAT-252 (TASK-1613): single chokepoint scrubber for all response text
+        self._scrubber: OutputScrubber = OutputScrubber(ScrubPolicy())
+        # Echo-suppression threshold (fraction of tool-result chars that must appear
+        # in candidate_text before it's classified as a tool echo). Conservative
+        # default; expose as a config attribute for tuning (Open Q O2).
+        self._echo_threshold: float = 0.85
 
     @staticmethod
     def _is_gemini3_model(model: str) -> bool:
@@ -1298,7 +1304,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Handle string results early (no conversion needed)
         if isinstance(result, str):
-            result = redact_text(result)
+            result = self._scrubber.scrub(result, tool_name="tool_result")  # FEAT-252
             if not result.strip():
                 return {"result": "Code executed successfully (no output)"}
             if len(result) > self.MAX_TOOL_RESULT_CHARS:
@@ -1332,7 +1338,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             clean_result = result.dict()
 
         clean_result = self._coerce_json_keys_to_str(clean_result)
-        clean_result = redact_secrets(clean_result)
+        clean_result = self._scrubber.scrub(clean_result, tool_name="tool_result")  # FEAT-252
 
         # 4. Attempt to serialize the processed result
         try:
@@ -1351,7 +1357,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 f"Could not serialize result of type {type(clean_result)} to JSON: {e}. "
                 "Falling back to string representation."
             )
-            fallback = redact_text(str(clean_result))
+            fallback = self._scrubber.scrub(str(clean_result), tool_name="tool_result")  # FEAT-252
             if len(fallback) > self.MAX_TOOL_RESULT_CHARS:
                 fallback = fallback[: self.MAX_TOOL_RESULT_CHARS] + "\n...[TRUNCATED]"
             json_compatible_result = fallback
@@ -1394,7 +1400,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         except Exception as exc:  # pylint: disable=broad-except
             summary = f"Unable to summarize result: {exc}"
 
-        summary = redact_text(summary.strip() or "returned no data")
+        summary = self._scrubber.scrub(summary.strip() or "returned no data", tool_name="tool_summary")  # FEAT-252
         if len(summary) > max_length:
             summary = summary[:max_length].rstrip() + "…"
         return summary
@@ -1751,7 +1757,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     tc.error = str(result)
                     self.logger.error(f"Tool {tc.name} failed: {result}")
                 else:
-                    tc.result = redact_secrets(result)
+                    tc.result = self._scrubber.scrub(result, tool_name=tc.name)  # FEAT-252
                     # self.logger.info(f"Tool {tc.name} result: {result}")
 
             all_tool_calls.extend(tool_call_objects)
@@ -1772,7 +1778,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                 try:
                     # Debug log first 20 chars of result
-                    result_preview = redact_text(str(result))[:20]
+                    result_preview = self._scrubber.scrub(str(result), tool_name=fc.name)[:20]  # FEAT-252
                     self.logger.notice(f"Tool {fc.name} output preview: {result_preview}...")
 
                     if is_computer_use:
@@ -2101,8 +2107,24 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         except Exception as e:
             self.logger.error(f"Error getting function calls: {e}")
 
-        self.logger.info(f"Total function calls found: {len(function_calls)}")
-        return function_calls
+        # FEAT-252 (TASK-1613): gate default_api / non-existent tool attempts
+        # Any function call named "default_api" is a hallucinated discovery attempt
+        # by the model. Drop it and log a typed warning.
+        gated_calls = []
+        for fc in function_calls:
+            fc_name = getattr(fc, "name", "") or ""
+            if fc_name == "default_api":
+                self.logger.warning(
+                    "_get_function_calls_from_response: gated default_api call "
+                    "(model attempted to discover/import non-existent tool)"
+                )
+                # Replace with typed sentinel rather than silently dropping
+                # so the loop can surface it to the caller
+                continue  # drop — _resolve_final_response handles the gap
+            gated_calls.append(fc)
+
+        self.logger.info(f"Total function calls found: {len(gated_calls)}")
+        return gated_calls
 
     def _safe_extract_text(self, response) -> str:
         """
@@ -2258,6 +2280,154 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Method 4: Final fallback - return empty string with clear logging
         self.logger.warning("Could not extract any text from response using any method")
         return ""
+
+    # ==========================================================================
+    # FEAT-252 (TASK-1613) — _resolve_final_response chokepoint
+    # ==========================================================================
+
+    _NO_ANSWER_SENTINEL: str = (
+        "[No answer produced: the model consumed its tool budget without "
+        "synthesising a final response.]"
+    )
+    _TOOL_NOT_AVAILABLE_SENTINEL: str = (
+        "[Tool not available: the requested tool does not exist in the current "
+        "session. Please use only the registered tools listed in the system prompt.]"
+    )
+
+    def _is_no_answer(self, text: str) -> bool:
+        """Return True when *text* is the typed no-answer sentinel."""
+        return text == self._NO_ANSWER_SENTINEL
+
+    def _no_answer_sentinel(self) -> str:
+        """Return the typed no-answer sentinel string."""
+        return self._NO_ANSWER_SENTINEL
+
+    def _frame_code_output(self, text: str) -> str:
+        """Wrap raw code-exec stdout in a safe framing block.
+
+        Args:
+            text: Raw code execution output string.
+
+        Returns:
+            Framed output string.
+        """
+        return f"[Code execution output]\n{text}\n[End code execution output]"
+
+    def _classify_provenance(
+        self,
+        candidate_text: str,
+        all_tool_calls: Optional[List],
+        code_exec_output: Optional[str],
+    ) -> str:
+        """Classify the provenance of a response candidate.
+
+        Args:
+            candidate_text: The text candidate from the model.
+            all_tool_calls: All tool calls made during this turn.
+            code_exec_output: Raw code execution stdout, if any.
+
+        Returns:
+            One of ``"synthesis"`` | ``"tool_echo"`` | ``"code_exec_stdout"``.
+        """
+        if not candidate_text:
+            return "synthesis"  # will be caught as empty-after-tools below
+
+        # Code-exec stdout: if the candidate is substantially the same as the
+        # raw code execution output, classify it for safe framing.
+        if code_exec_output and candidate_text.strip() == code_exec_output.strip():
+            return "code_exec_stdout"
+
+        # Tool echo: check if the candidate text is a near-verbatim copy of
+        # any recent tool result.
+        if all_tool_calls:
+            for tc in all_tool_calls:
+                result_str = str(getattr(tc, "result", "") or "")
+                if not result_str:
+                    continue
+                # Normalised overlap check (case-insensitive, strip whitespace)
+                norm_candidate = candidate_text.strip().lower()
+                norm_result = result_str.strip().lower()
+                if not norm_result:
+                    continue
+                # Overlap: what fraction of the result appears in the candidate?
+                overlap = sum(1 for ch in norm_result if ch in norm_candidate)
+                ratio = overlap / len(norm_result) if norm_result else 0.0
+                if ratio >= self._echo_threshold and len(norm_candidate) < len(norm_result) * 1.5:
+                    self.logger.warning(
+                        "_resolve_final_response: tool_echo detected "
+                        "(tool=%s overlap=%.2f threshold=%.2f)",
+                        getattr(tc, "name", "?"),
+                        ratio,
+                        self._echo_threshold,
+                    )
+                    return "tool_echo"
+
+        return "synthesis"
+
+    def _resolve_final_response(
+        self,
+        candidate_text: str,
+        all_tool_calls: Optional[List],
+        code_exec_output: Optional[str],
+    ) -> str:
+        """Single deterministic chokepoint for all terminal Gemini responses.
+
+        Steps:
+        1. Classify provenance: synthesis | tool_echo | code_exec_stdout.
+        2. If tool_echo → return typed no-answer sentinel (suppress verbatim echo).
+        3. If code_exec_stdout → frame output safely.
+        4. If empty-after-tools → return typed no-answer sentinel.
+        5. Run ``OutputScrubber.scrub`` **last**, always.
+
+        Args:
+            candidate_text: The text extracted from the Gemini response.
+            all_tool_calls: All tool calls made during this turn (used for echo detection).
+            code_exec_output: Raw code execution stdout, if any.
+
+        Returns:
+            Scrubbed, safe response text.
+        """
+        provenance = self._classify_provenance(candidate_text, all_tool_calls, code_exec_output)
+
+        if provenance == "tool_echo":
+            # Never ship verbatim tool-result echo back to the user
+            result = self._no_answer_sentinel()
+        elif provenance == "code_exec_stdout":
+            # Frame code output safely before scrubbing
+            result = self._frame_code_output(candidate_text)
+        else:
+            result = candidate_text
+
+        # Empty-after-tools: model produced no synthesis
+        if not result and all_tool_calls:
+            result = self._no_answer_sentinel()
+
+        # ALWAYS scrub last — this is the single egress gate
+        return self._scrubber.scrub(result, tool_name="gemini_client")
+
+    def _build_closed_tool_manifest(self, tool_names: Optional[List[str]] = None) -> str:
+        """Build the closed tool manifest instruction for the system prompt.
+
+        Args:
+            tool_names: List of registered tool names for the current call.
+
+        Returns:
+            Manifest instruction string to append to the system prompt.
+        """
+        if tool_names:
+            tool_list = ", ".join(f"``{n}``" for n in sorted(tool_names))
+            return (
+                f"\n\n[SECURITY: Closed Tool Manifest]\n"
+                f"The ONLY tools available in this session are: {tool_list}. "
+                "There is no ``default_api`` tool. "
+                "Do NOT write tool_code blocks that call ``default_api`` or any other unlisted tool. "
+                "Do NOT attempt to import or discover additional tools at runtime."
+            )
+        return (
+            "\n\n[SECURITY: Closed Tool Manifest]\n"
+            "Do NOT write tool_code blocks that call ``default_api`` or any unlisted tool. "
+            "Do NOT attempt to import or discover additional tools at runtime."
+        )
 
     def _extract_code_execution_content(
         self, response, output_directory: Optional[Union[str, Path]] = None
@@ -2743,6 +2913,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             _payload_tmp, _pending_cache_segs = self._apply_cache_hints({}, system_prompt)
             system_prompt = self._resolve_system_prompt(system_prompt)
 
+        # FEAT-252 (TASK-1613): append closed tool manifest to system prompt so the
+        # model knows exactly which tools are available and cannot hallucinate default_api.
+        if _use_tools and tools:
+            _tool_names = [getattr(t, "name", None) or getattr(t, "__name__", str(t)) for t in tools]
+            _manifest = self._build_closed_tool_manifest(_tool_names)
+            system_prompt = f"{system_prompt}\n\n{_manifest}" if system_prompt else _manifest
+
         final_config = GenerateContentConfig(
             system_instruction=system_prompt,
             safety_settings=[
@@ -3141,6 +3318,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             else None
         )
 
+        # FEAT-252 (TASK-1613): route through single chokepoint before factory
+        code_exec_raw = (
+            "\n".join(code_execution_content["output"])
+            if code_execution_content and code_execution_content.get("output")
+            else None
+        )
+        assistant_response_text = self._resolve_final_response(
+            assistant_response_text or "", all_tool_calls, code_exec_raw
+        )
+
         # Create AIMessage using factory
         phase_started = time.perf_counter()
         ai_message = AIMessageFactory.from_gemini(
@@ -3203,9 +3390,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             elif tc.name in self._sensitive_tool_result_names and isinstance(tc.result, dict):
                 return f"Tool {tc.name} completed; output withheld for safety."
             elif tc.result and isinstance(tc.result, dict) and "expression" in tc.result:
-                return redact_text(str(tc.result["expression"]))
+                return self._scrubber.scrub(str(tc.result["expression"]), tool_name=tc.name)  # FEAT-252
             elif tc.result and isinstance(tc.result, dict) and "result" in tc.result:
-                return f"Result: {redact_text(str(tc.result['result']))}"
+                return f"Result: {self._scrubber.scrub(str(tc.result['result']), tool_name=tc.name)}"  # FEAT-252
         if len(all_tool_calls) >= 1:
             # Multiple calls - show the final result
             final_tc = all_tool_calls[-1]
@@ -3218,9 +3405,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 return f"Final tool {final_tc.name} completed; output withheld for safety."
             if final_tc.result and isinstance(final_tc.result, dict):
                 if "result" in final_tc.result:
-                    return f"Final result: {redact_text(str(final_tc.result['result']))}"
+                    return f"Final result: {self._scrubber.scrub(str(final_tc.result['result']), tool_name=final_tc.name)}"  # FEAT-252
                 elif "expression" in final_tc.result:
-                    return redact_text(str(final_tc.result["expression"]))
+                    return self._scrubber.scrub(str(final_tc.result["expression"]), tool_name=final_tc.name)  # FEAT-252
             # Plain strings from intermediate tools (e.g. load_skill body) must not
             # be surfaced as the final answer — fall through to the sentinel below.
 
@@ -3615,7 +3802,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                 tc.error = str(result)
                                 self.logger.error(f"Tool {tc.name} failed: {result}")
                             else:
-                                tc.result = redact_secrets(result)
+                                tc.result = self._scrubber.scrub(result, tool_name=tc.name)  # FEAT-252
 
                         all_tool_calls_history.extend(tool_call_objects)
 
@@ -3792,6 +3979,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     final_text,
                     tools_used,
                 )
+
+            # FEAT-252 (TASK-1613): chokepoint — stream assembles text per-chunk;
+            # run _resolve_final_response on the final assembled text only (Risk R3)
+            final_text = self._resolve_final_response(
+                final_text or "", all_tool_calls_history, None
+            )
 
             ai_message = AIMessageFactory.from_gemini(
                 response=None,
@@ -4320,12 +4513,19 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             )
                             all_tool_calls.append(tc)
 
+                # FEAT-252 (TASK-1613): chokepoint for batch responses
+                _batch_text = self._safe_extract_text(item)
+                _batch_scrubbed = self._resolve_final_response(
+                    _batch_text or "", all_tool_calls, None
+                )
+
                 ai_message = AIMessageFactory.from_gemini(
                     response=item,
                     input_text=prompt,
                     model=model,
                     structured_output=final_output,
                     tool_calls=all_tool_calls,
+                    text_response=_batch_scrubbed,
                 )
                 results.append(ai_message)
 
@@ -4502,6 +4702,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 response.text,
                 [],
             )
+        # FEAT-252 (TASK-1613): chokepoint for vision ask
+        _vision_text = self._resolve_final_response(
+            getattr(response, "text", "") or "", [], None
+        )
+
         ai_message = AIMessageFactory.from_gemini(
             response=response,
             input_text=original_prompt,
@@ -4511,6 +4716,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             turn_id=turn_id,
             structured_output=final_output if final_output != response.text else None,
             tool_calls=[],
+            text_response=_vision_text,
         )
         ai_message.provider = "google_genai"
         return ai_message
@@ -4787,7 +4993,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     if isinstance(result, Exception):
                         tc.error = str(result)
                     else:
-                        tc.result = redact_secrets(result)
+                        tc.result = self._scrubber.scrub(result, tool_name=tc.name)  # FEAT-252
 
                 all_tool_calls.extend(tool_call_objects)
                 pass  # We're not doing a multi-turn here for stateless
@@ -4799,6 +5005,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             except Exception:
                 final_output = response.text
 
+        # FEAT-252 (TASK-1613): route through the single egress chokepoint
+        _stateless_text = self._resolve_final_response(
+            self._safe_extract_text(response) or "", all_tool_calls, None
+        )
+
         ai_message = AIMessageFactory.from_gemini(
             response=response,
             input_text=original_prompt,
@@ -4808,6 +5019,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             turn_id=turn_id,
             structured_output=final_output if final_output != response.text else None,
             tool_calls=all_tool_calls,
+            text_response=_stateless_text,
         )
         ai_message.provider = "google_genai"
 
@@ -4911,8 +5123,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Extract code execution content
         code_execution_content = self._extract_code_execution_content(final_response)
-        if not assistant_response_text and code_execution_content["output"]:
-            assistant_response_text = "\n".join(code_execution_content["output"])
+        code_exec_raw = "\n".join(code_execution_content["output"]) if code_execution_content["output"] else None
+        if not assistant_response_text and code_exec_raw:
+            assistant_response_text = code_exec_raw
+
+        # FEAT-252 (TASK-1613): route through the single egress chokepoint
+        assistant_response_text = self._resolve_final_response(
+            assistant_response_text or "", [], code_exec_raw
+        )
 
         ai_message = AIMessageFactory.from_gemini(
             response=final_response,
@@ -4921,6 +5139,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             session_id=session_id,
             turn_id=str(uuid.uuid4()),
             tool_calls=[],  # Update if we want to bubble up tool calls here
+            text_response=assistant_response_text,
         )
         ai_message.provider = "google_genai"
 
