@@ -14,7 +14,7 @@
       "feature_id": "FEAT-253",
       "feature": "gigsmart-interface-toolkit",
       "spec": "sdd/specs/gigsmart-interface-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "No shared files or imports with other root tasks (TASK-1619, TASK-1620). Can run in parallel.",
       "assigned_to": null,
       "started_at": "2026-06-23T15:41:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1616-gigsmart-exceptions.md"
+      "completed_at": "2026-06-23T15:43:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1616-gigsmart-exceptions.md"
     },
     {
       "id": "TASK-1617",
