@@ -71,7 +71,7 @@
       "feature_id": "FEAT-253",
       "feature": "complete-feat-250-dev-loop-repo-wiring",
       "spec": "sdd/specs/complete-feat-250-dev-loop-repo-wiring.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "server.py uses parse_repo_specs (TASK-002) and the provisioning path (TASK-003). Must run after both.",
       "assigned_to": null,
       "started_at": "2026-06-23T11:13:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-004-wire-demo-server.md"
+      "completed_at": "2026-06-23T11:28:52+00:00",
+      "file": "sdd/tasks/completed/TASK-004-wire-demo-server.md"
     },
     {
       "id": "TASK-005",
