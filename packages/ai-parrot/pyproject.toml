@@ -71,8 +71,9 @@ dependencies = [
     "asyncdb>=2.11.6",
     # HTTP / networking
     "rich>=13.0",
-    # requests is otherwise transitive; pin above the 2.33 series.
-    "requests>=2.34",
+    # requests is otherwise transitive; pin to the 2.33 series — the intersection
+    # of flowtask 5.12.3 (>=2.33.0) and arxiv>=3.0.0 (<2.34).
+    "requests>=2.33,<2.34",
     "click>=8.1.7",
     "prompt_toolkit>=3.0",
     "aiohttp-swagger3==0.10.0",
@@ -154,7 +155,7 @@ finance = [
 
 # FlowtTask DAG execution (pulls asyncdb[all] — heavy)
 # 5.12.3 relaxes its requests pin (==2.32.4 -> >=2.33.0), compatible with
-# the workspace's requests>=2.34 override.
+# the workspace's requests>=2.33,<2.34 pin (intersection with arxiv>=3.0.0).
 flowtask = [
     "flowtask>=5.12.3",
 ]
@@ -223,7 +224,7 @@ agents = [
     "selenium==4.35.0",
     "playwright==1.52.0",
     "jira==3.10.5",
-    "arxiv==2.2.0",
+    "arxiv>=3.0.0",
     "docker==7.1.0",
     "aiogoogle==5.17.0",
     "rq==2.6.0",
@@ -274,7 +275,7 @@ agents-lite = [
     "sse-starlette==3.0.2",
     "requests-oauthlib==2.0.0",
     "jira==3.10.5",
-    "arxiv==2.2.0",
+    "arxiv>=3.0.0",
     "docker==7.1.0",
     "aiogoogle==5.17.0",
     "rq==2.6.0",
@@ -307,7 +308,7 @@ mcp = [
     "sse-starlette==3.0.2",
     "requests-oauthlib==2.0.0",
     "jira==3.10.5",
-    "arxiv==2.2.0",
+    "arxiv>=3.0.0",
     "docker==7.1.0",
     "aiogoogle==5.17.0",
     "rq==2.6.0",

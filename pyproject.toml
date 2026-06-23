@@ -152,10 +152,10 @@ override-dependencies = [
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
     "opentelemetry-exporter-otlp-proto-http>=1.39.0",
     "opentelemetry-proto>=1.39.0",
-    # arxiv (any version, incl. 4.0.0) caps requests<2.34, but AI-Parrot wants
-    # requests above the 2.33 series. The <2.34 ceiling is precautionary, not a
-    # real incompatibility, so override it to let requests reach 2.34.x.
-    "requests>=2.34",
+    # arxiv>=3.0.0 caps requests<2.34 (>=2.32); flowtask 5.12.3 needs >=2.33.0.
+    # The intersection is the 2.33 series, so pin requests there to let arxiv and
+    # flowtask co-resolve cleanly without forcing arxiv's ceiling open.
+    "requests>=2.33,<2.34",
 ]
 constraint-dependencies = [
     # Narrow the otel instrumentation search space. openlit pulls 15+ otel
