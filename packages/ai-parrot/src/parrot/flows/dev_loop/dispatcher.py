@@ -65,6 +65,29 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 T = TypeVar("T", bound=BaseModel)
 
+# Edit/Write tools that let a dispatched session mutate the filesystem through
+# the SDK's own tool surface. A dispatch whose profile excludes ALL of these
+# AND runs in ``permission_mode="plan"`` cannot make changes, so the
+# WORKTREE_BASE_PATH confinement (which exists to stop a write-capable agent
+# escaping the worktree) does not apply to it. ``Bash`` is intentionally NOT
+# here: plan mode gates command execution to read-only behaviour, and the
+# read-only QA/code-review gates legitimately need a shell.
+_WRITE_CAPABLE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
+
+
+def _claude_profile_is_read_only(profile: ClaudeCodeDispatchProfile) -> bool:
+    """True when a Claude Code profile cannot mutate the filesystem.
+
+    Read-only means ``permission_mode="plan"`` (plan mode forbids edits) AND no
+    Edit/Write tool in ``allowed_tools``. Such a dispatch (e.g. the additive
+    ``sdd-codereview`` gate) is safe to run against a path outside
+    ``WORKTREE_BASE_PATH`` — an already-checked-out repo or the demo's own
+    checkout — because the confinement only matters for write-capable sessions.
+    """
+    if profile.permission_mode != "plan":
+        return False
+    return not (set(profile.allowed_tools) & _WRITE_CAPABLE_TOOLS)
+
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -190,8 +213,10 @@ class ClaudeCodeDispatcher:
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         json_schema_path: Optional[str] = None
 
-        # Spec §7 R4 — defense in depth.
-        self._enforce_cwd_under_worktree_base(cwd)
+        # Spec §7 R4 — defense in depth. Waived for read-only (plan-mode,
+        # no-edit) dispatches such as the sdd-codereview gate, which may run
+        # against a checkout outside the worktree base.
+        self._enforce_cwd_under_worktree_base(cwd, profile)
 
         await self._publish_event(
             stream_key,
@@ -346,12 +371,24 @@ class ClaudeCodeDispatcher:
     # Internal helpers (underscored — but accessible to unit tests)
     # ------------------------------------------------------------------
 
-    def _enforce_cwd_under_worktree_base(self, cwd: str) -> None:
+    def _enforce_cwd_under_worktree_base(
+        self,
+        cwd: str,
+        profile: Optional[ClaudeCodeDispatchProfile] = None,
+    ) -> None:
         """Spec §7 R4: refuse dispatch when ``cwd`` is not in worktree base.
+
+        The confinement protects against a *write-capable* session escaping its
+        worktree. A read-only dispatch (plan mode, no Edit/Write tools) cannot
+        write anywhere, so when *profile* is read-only the check is waived —
+        this lets the additive ``sdd-codereview`` gate review a checkout that
+        legitimately lives outside ``WORKTREE_BASE_PATH``.
 
         Raises:
             DispatchExecutionError: when the path check fails.
         """
+        if profile is not None and _claude_profile_is_read_only(profile):
+            return
         base = os.path.abspath(conf.WORKTREE_BASE_PATH)
         target = os.path.abspath(cwd)
         try:

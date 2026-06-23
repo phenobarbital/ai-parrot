@@ -25,6 +25,7 @@ import os
 import shutil
 from typing import Any, Dict, Optional, Union
 
+from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.models import (
@@ -37,6 +38,7 @@ from parrot.flows.dev_loop.nodes.base import (
     DevLoopNode,
     register_dev_loop_node,
     scrub_git_output,
+    transition_issue_with_candidates,
 )
 
 
@@ -161,8 +163,11 @@ class DeploymentHandoffNode(DevLoopNode):
 
         # 3. Transition Jira.
         try:
-            await self._jira.jira_transition_issue(
-                issue=issue_key, transition="Ready to Deploy"
+            await transition_issue_with_candidates(
+                self._jira,
+                issue_key,
+                conf.DEV_LOOP_JIRA_TRANSITIONS_READY,
+                logger=self.logger,
             )
         except Exception as exc:  # noqa: BLE001 - degraded path
             self.logger.warning(
@@ -305,8 +310,11 @@ class DeploymentHandoffNode(DevLoopNode):
 
     async def _mark_blocked(self, issue_key: str, error: str) -> None:
         try:
-            await self._jira.jira_transition_issue(
-                issue=issue_key, transition="Deployment Blocked"
+            await transition_issue_with_candidates(
+                self._jira,
+                issue_key,
+                conf.DEV_LOOP_JIRA_TRANSITIONS_BLOCKED,
+                logger=self.logger,
             )
         except Exception as exc:  # noqa: BLE001 - degraded path
             self.logger.warning("Blocked transition failed: %s", exc)
