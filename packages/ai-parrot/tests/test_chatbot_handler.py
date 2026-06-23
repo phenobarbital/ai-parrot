@@ -8,9 +8,30 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+# ---------------------------------------------------------------------------
+# Fix aiohttp's read-only ``request`` property so that
+#   handler.request = MagicMock()
+# works in tests that build handlers via ``Handler.__new__(Handler)``.
+# This mirrors the patch applied in tests/handlers/conftest.py but is
+# needed here because test_chatbot_handler.py lives at the root of tests/
+# and therefore does not pick up the handlers sub-conftest.
+# ---------------------------------------------------------------------------
+try:
+    from aiohttp.abc import AbstractView as _AbstractView  # noqa: E402
+    if (
+        isinstance(getattr(_AbstractView, "request", None), property)
+        and _AbstractView.request.fset is None  # type: ignore[union-attr]
+    ):
+        _AbstractView.request = property(  # type: ignore[assignment]
+            _AbstractView.request.fget,  # type: ignore[union-attr]
+            lambda self, value: setattr(self, "_request", value),
+        )
+except Exception:  # pragma: no cover — only fails in environments without aiohttp
+    pass
 
 # ---------------------------------------------------------------------------
 # Lightweight fakes to avoid importing the full navigator / asyncdb stack
@@ -117,6 +138,14 @@ class FakeAgentRegistry:
 
     def has(self, name: str) -> bool:
         return name in self._registered_agents
+
+    def get_metadata(self, name: str) -> Optional[FakeBotMetadata]:
+        """Return metadata for *name*, or None if not registered."""
+        return self._registered_agents.get(name)
+
+    def list_bots_by_priority(self):
+        """Return all registered agent metadata ordered by priority (stub: arbitrary order)."""
+        return list(self._registered_agents.values())
 
     def create_agent_factory(self, config):
         return MagicMock()
@@ -526,3 +555,135 @@ class TestHelperMethods:
         result = await handler._check_duplicate("new_bot")
 
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# NAV-6239 Regression Tests — BotManager Hot Registration
+#
+# These tests lock the behaviour confirmed during triage: bots created,
+# updated, or deleted via the HTTP handlers are immediately reflected in
+# BotManager._bots — no server restart required.
+# ---------------------------------------------------------------------------
+
+
+def _make_async_db_handler():
+    """Return a mock for ``self.handler`` that satisfies the DB context-manager pattern.
+
+    The handler code calls:
+        async with await db(self.request) as conn:
+
+    So the mock must be:
+        - callable (returning a coroutine) — handled by AsyncMock
+        - its return_value must support ``async with`` — handled by making
+          return_value an AsyncMock with __aenter__/__aexit__
+    """
+    conn_mock = MagicMock(name="db_conn")
+    db_cm = MagicMock(name="db_context_manager")
+    db_cm.__aenter__ = AsyncMock(return_value=conn_mock)
+    db_cm.__aexit__ = AsyncMock(return_value=False)
+    db_callable = AsyncMock(return_value=db_cm)
+    return db_callable
+
+
+class TestHotRegistrationRegression:
+    """NAV-6239 — Bot hot-registration regression tests.
+
+    Verifies that ChatbotHandler mutates BotManager._bots immediately on
+    PUT (create), POST (update) and DELETE — no service restart needed.
+    """
+
+    @pytest.mark.asyncio
+    async def test_put_database_registers_bot_immediately(self):
+        """Bot created via PUT /api/v1/bots is immediately in BotManager._bots.
+
+        Regression guard for NAV-6239: _put_database calls
+        _register_bot_into_manager → manager.add_bot before returning HTTP 201.
+        """
+        manager = FakeBotManager()
+        handler = _make_handler(manager=manager)
+
+        # Override the DB connection handler with an async context-manager mock.
+        handler.handler = _make_async_db_handler()
+
+        # Stub _provision_vector_store so no real store provisioning occurs.
+        handler._provision_vector_store = AsyncMock(return_value={"status": "none"})
+
+        with (
+            patch("parrot.handlers.bots.BotModel") as MockBotModel,
+            patch("parrot.handlers.bots.create_reranker", return_value=None),
+            patch("parrot.handlers.bots.create_parent_searcher", return_value=None),
+        ):
+            instance = FakeBotModel(name="my_new_bot", bot_class="BasicBot")
+            MockBotModel.return_value = instance
+            # Allow ``BotModel.Meta.connection = conn`` without error.
+            MockBotModel.Meta = type("Meta", (), {"connection": None})()
+
+            await handler._put_database({"name": "my_new_bot", "bot_class": "BasicBot"})
+
+        assert "my_new_bot" in manager._bots, (
+            "Bot must be in BotManager._bots immediately after PUT — "
+            "no server restart required (NAV-6239)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_post_database_reregisters_updated_bot(self):
+        """POST /api/v1/bots/{name} replaces the old bot instance in BotManager._bots.
+
+        Regression guard for NAV-6239: _post_database calls manager.remove_bot
+        then _register_bot_into_manager → manager.add_bot, so the updated bot
+        is available immediately.
+        """
+        manager = FakeBotManager()
+        old_bot = MagicMock(name="old_bot_instance")
+        old_bot.name = "my_bot"
+        manager._bots["my_bot"] = old_bot
+
+        agent = FakeBotModel(name="my_bot", bot_class="BasicBot")
+        handler = _make_handler(manager=manager)
+        handler.handler = _make_async_db_handler()
+
+        with (
+            patch("parrot.handlers.bots.BotModel") as MockBotModel,
+            patch("parrot.handlers.bots.create_reranker", return_value=None),
+            patch("parrot.handlers.bots.create_parent_searcher", return_value=None),
+        ):
+            MockBotModel.Meta = type("Meta", (), {"connection": None})()
+
+            await handler._post_database(agent, {"description": "updated description"})
+
+        assert "my_bot" in manager._bots, (
+            "Bot must still be in BotManager._bots after POST update — "
+            "no server restart required (NAV-6239)"
+        )
+        # The NEW instance was registered; the old mock should have been replaced.
+        assert manager._bots["my_bot"] is not old_bot, (
+            "BotManager must hold the NEW bot instance after POST update"
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_database_removes_bot_from_manager(self):
+        """DELETE /api/v1/bots/{name} removes the bot from BotManager._bots immediately.
+
+        Regression guard for NAV-6239: delete() calls manager.remove_bot so
+        the bot is unavailable right after the HTTP response — no restart needed.
+        """
+        manager = FakeBotManager()
+        existing_bot = MagicMock(name="existing_bot_instance")
+        existing_bot.name = "my_bot"
+        manager._bots["my_bot"] = existing_bot
+
+        handler = _make_handler(match_info={"id": "my_bot"}, manager=manager)
+        handler.handler = _make_async_db_handler()
+
+        db_agent = FakeBotModel(name="my_bot")
+        handler._get_db_agent = AsyncMock(return_value=db_agent)
+
+        with patch("parrot.handlers.bots.BotModel") as MockBotModel:
+            MockBotModel.Meta = type("Meta", (), {"connection": None})()
+
+            await handler.delete()
+
+        assert "my_bot" not in manager._bots, (
+            "Bot must be absent from BotManager._bots immediately after DELETE — "
+            "no server restart required (NAV-6239)"
+        )
