@@ -109,7 +109,7 @@
       "feature_id": "FEAT-253",
       "feature": "gigsmart-interface-toolkit",
       "spec": "sdd/specs/gigsmart-interface-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Hub task: depends on all foundation modules. Must wait for exceptions, config, auth, models, and queries.",
       "assigned_to": null,
       "started_at": "2026-06-23T15:41:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1621-gigsmart-graphql-client.md"
+      "completed_at": "2026-06-23T15:53:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1621-gigsmart-graphql-client.md"
     },
     {
       "id": "TASK-1622",
