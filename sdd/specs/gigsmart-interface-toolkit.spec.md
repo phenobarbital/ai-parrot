@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-253
 **Date**: 2026-06-23
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -162,18 +162,24 @@ class OrganizationLocation(BaseModel):
 #### Position
 
 ```python
-class CreatePositionInput(BaseModel, frozen=True):
+class AddOrganizationPositionInput(BaseModel, frozen=True):
     organization_id: str
-    title: str = Field(min_length=1, max_length=120)
-    description: str = Field(min_length=1, max_length=5000)
-    category: str | None = None
-    pay_rate: dict | None = None  # Money type — exact shape from introspection
-    skills: list[str] = Field(default_factory=list)
+    name: str | None = None
+    description: str | None = None
+    pay_rate: str | None = None  # Money scalar — ISO-4217 string e.g. "20.00"
+    pay_schedule: Literal["FIXED", "HOURLY", "INFO_REQUIRED"] | None = None
+    gig_category_id: str | None = None
+    gig_position_id: str | None = None
+    state: str | None = None  # OrganizationPositionState
+    accepts_tips: bool | None = None
+    requires_vehicle: bool | None = None
+    estimated_mileage: float | None = None
 
 class Position(BaseModel):
-    id: str
-    title: str
-    description: str
+    id: str  # prefixed opaque ID, e.g. "pos_..."
+    name: str | None = None
+    description: str | None = None
+    pay_rate: str | None = None  # Money scalar
     created_at: datetime | None = None
 ```
 
@@ -186,64 +192,93 @@ class PostShiftInput(BaseModel, frozen=True):
     organization_location_id: str
     starts_at: datetime
     ends_at: datetime
-    pay_rate: dict | None = None  # defaults to position rate
+    pay_rate: str | None = None  # Money scalar — defaults to position rate
     slots_available: int = Field(default=1, ge=1)
     description: str | None = Field(default=None, max_length=5000)
+    requester_id: str | None = None
 
+class TransitionGigInput(BaseModel, frozen=True):
+    gig_id: str
+    action: Literal["CANCEL", "CLOSE", "MARK_AS_COMPLETE", "PUBLISH"]
+
+# GigStateName enum: ACTIVE, CANCELED, COMPLETED, DRAFT, EXPIRED,
+#   IN_PROGRESS, INACTIVE, INCOMPLETE, PENDING_REVIEW, RECONCILED, UPCOMING
 class Gig(BaseModel):
-    id: str
+    id: str  # prefixed opaque ID, e.g. "gig_9ucAiJfkccqJKbnVytgviu"
     name: str | None = None
     starts_at: datetime
     ends_at: datetime
-    current_state: dict  # { "name": "UPCOMING" | "ACTIVE" | "IN_PROGRESS" }
+    current_state: dict  # { "name": "<GigStateName>" }
     slots_available: int | None = None
 ```
 
 #### Engagement
 
 ```python
+class AddEngagementInput(BaseModel, frozen=True):
+    gig_id: str
+    worker_id: str | None = None
+    initial_state: Literal["OFFERED", "BID_REQUESTED", "SCHEDULED"] | None = None
+    pay_rate: str | None = None  # Money scalar
+    pay_schedule: Literal["FIXED", "HOURLY", "INFO_REQUIRED"] | None = None
+    note: str | None = None
+    cancel_conflicting_engagements: bool | None = None
+
+class TransitionEngagementInput(BaseModel, frozen=True):
+    """Single mutation for ALL engagement state transitions."""
+    engagement_id: str
+    action: str  # EngagementStateAction — e.g. "HIRE", "ACCEPT", "START", "END", "CANCEL"
+    cancel_conflicting_engagements: bool | None = None
+
+# EngagementStateName enum (32 values): APPLIED, OFFERED, SCHEDULED,
+#   AWAITING_START, CONFIRMING, EN_ROUTE, WORKING, PAUSED, ENDED,
+#   PENDING_REVIEW, PENDING_TIMESHEET_APPROVAL, DISBURSED, CANCELED, ...
 class Engagement(BaseModel):
-    id: str
+    id: str  # prefixed opaque ID, e.g. "eng_0WjivXE8xbrgBuEkfpANQP"
     gig_id: str | None = None
     worker_display_name: str | None = None
-    state: str
+    current_state: dict  # { "name": "<EngagementStateName>" }
     applied_at: datetime | None = None
     hired_at: datetime | None = None
-
-class HireWorkerInput(BaseModel, frozen=True):
-    engagement_id: str
-
-class EndEngagementInput(BaseModel, frozen=True):
-    engagement_id: str
-    reason: str = Field(min_length=1)
 ```
 
 #### Timesheet
 
 ```python
-class Timesheet(BaseModel):
-    id: str
+# No TimesheetState enum — lifecycle tracked via EngagementStateName
+# (PENDING_TIMESHEET_APPROVAL, DISBURSED) + isApproved boolean on EngagementTimesheet.
+# Variants: ADMIN, FINAL, LATEST, REQUESTER, SYSTEM, WORKER
+# Payment styles: CALCULATED, FIXED_AMOUNT, FIXED_HOURS
+class EngagementTimesheet(BaseModel):
+    id: str  # prefixed opaque ID, e.g. "engts_9fesLHHFy0By8MC6FvbYiv"
+    engagement_id: str | None = None
+    is_approved: bool = False
+    variant: str | None = None  # EngagementTimesheetVariant
+    payment_style: str | None = None  # EngagementTimesheetPaymentStyle
+
+class ApproveEngagementTimesheetInput(BaseModel, frozen=True):
+    timesheet_id: str
+    mutation_lock: str | None = None  # optimistic concurrency
+
+class RemoveEngagementTimesheetInput(BaseModel, frozen=True):
+    """Reject/send back — worker can resubmit."""
+    timesheet_id: str
+
+# Disputes are separate from timesheets:
+class AddEngagementDisputeInput(BaseModel, frozen=True):
     engagement_id: str
-    clock_in: datetime | None = None
-    clock_out: datetime | None = None
-    state: str
-    submitted_at: datetime | None = None
-    approved_at: datetime | None = None
+    # exact fields TBD from schema — dispute reason, notes
 
-class EditTimesheetInput(BaseModel, frozen=True):
-    timesheet_id: str
-    clock_in: datetime | None = None
-    clock_out: datetime | None = None
-    adjustment_reason: str = Field(min_length=1, max_length=500)
-
-class ApproveTimesheetInput(BaseModel, frozen=True):
-    timesheet_id: str
+class SetEngagementDisputeApprovalInput(BaseModel, frozen=True):
+    dispute_id: str
+    accept: bool
+    response_note: str | None = None
 ```
 
-> **Note**: All model field names and types are best-effort from the API docs.
-> Phase 1 implementation MUST run a schema introspection query against the sandbox
-> and update these models to match the actual GraphQL schema exactly. Persist the
-> introspected schema as `schema.graphql` in the module for diff tracking.
+> **Note**: Models above are derived from the introspected schema (1270 types, 27 mutations).
+> IDs are prefixed opaque strings (e.g., `gig_9ucAiJfk...`, `eng_0WjivXE8...`).
+> Money is an ISO-4217 string scalar (e.g., `"20.00"`), not an object.
+> Phase 1 should still persist the full introspected schema as `schema.graphql` for diff tracking.
 
 ### New Public Interfaces
 
@@ -268,9 +303,10 @@ class GigSmartAuth:
 class GigSmartToolkit(AbstractToolkit):
     tool_prefix: str = "gigsmart"
     confirming_tools: frozenset[str] = frozenset({
-        "post_shift", "cancel_gig", "hire_worker",
-        "end_engagement", "edit_timesheet", "approve_timesheet",
-        "respond_to_dispute", "create_location", "create_position",
+        "post_shift", "transition_gig", "add_engagement",
+        "transition_engagement", "approve_timesheet",
+        "remove_timesheet", "add_dispute", "resolve_dispute",
+        "create_location", "create_position",
     })
 ```
 
@@ -349,23 +385,24 @@ Tool methods (all `@tool_schema` decorated, all `async`):
 | `create_location` | `addOrganizationLocation` | locations |
 | `list_locations` | `organization { locations(...) }` | locations |
 | `get_location` | `node(id: ...)` | locations |
-| `create_position` | `createOrganizationPosition` (verify) | positions |
+| `create_position` | `addOrganizationPosition` | positions |
 | `list_positions` | `organization { positions(...) }` | positions |
 | `get_position` | `node(id: ...)` | positions |
 | `post_shift` | `postShift` | gigs |
 | `list_gigs` | `organization { gigs(...) }` | gigs |
 | `get_gig` | `node(id: ...)` | gigs |
-| `cancel_gig` | `transitionGig(action: CANCEL)` | gigs |
+| `transition_gig` | `transitionGig(action: CANCEL\|CLOSE\|PUBLISH\|MARK_AS_COMPLETE)` | gigs |
+| `add_engagement` | `addEngagement` | engagements |
 | `list_engagements` | `gig { engagements(...) }` | engagements |
 | `get_engagement` | `node(id: ...)` | engagements |
-| `hire_worker` | engagement state transition | engagements |
-| `end_engagement` | engagement state transition | engagements |
-| `send_message` | messaging mutation | engagements |
-| `list_timesheets` | timesheet query | timesheets |
+| `transition_engagement` | `transitionEngagement(action: HIRE\|ACCEPT\|START\|END\|CANCEL\|...)` | engagements |
+| `send_message` | `addUserMessage` | messages |
+| `list_timesheets` | engagement timesheet query | timesheets |
 | `get_timesheet` | `node(id: ...)` | timesheets |
-| `edit_timesheet` | timesheet edit mutation | timesheets |
-| `approve_timesheet` | timesheet approve mutation | timesheets |
-| `respond_to_dispute` | dispute response mutation | timesheets |
+| `approve_timesheet` | `approveEngagementTimesheet` | timesheets |
+| `remove_timesheet` | `removeEngagementTimesheet` | timesheets |
+| `add_dispute` | `addEngagementDispute` | disputes |
+| `resolve_dispute` | `setEngagementDisputeApproval` | disputes |
 
 ### Module 8: Package Init & Registration
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/gigsmart/__init__.py` and `interfaces/gigsmart/__init__.py`
@@ -446,8 +483,8 @@ def mock_graphql_error():
 - [ ] GigSmartClient connects to sandbox and executes viewer query successfully
 - [ ] OAuth token acquisition works for both grant types (client_credentials and auth_code+PKCE)
 - [ ] OAuth tokens auto-refresh before expiry (proactive renewal when <2min remaining)
-- [ ] All 22 toolkit methods are discoverable via `GigSmartToolkit.get_tools()`
-- [ ] Write mutations (post_shift, hire_worker, etc.) require HITL confirmation via `confirming_tools`
+- [ ] All 23 toolkit methods are discoverable via `GigSmartToolkit.get_tools()`
+- [ ] Write mutations (post_shift, transition_engagement, etc.) require HITL confirmation via `confirming_tools`
 - [ ] GraphQL errors are classified into typed exceptions matching error code table
 - [ ] Retry logic activates on 5xx and 429, with exponential backoff and Retry-After
 - [ ] Relay connection pagination (edges/node) works for all list methods
@@ -548,9 +585,15 @@ class MassiveTransientError(MassiveAPIError):  # line 33
 - ~~`httpx`~~ — do NOT use httpx; CLAUDE.md mandates aiohttp
 - ~~`GigSmartGraphQLClient`~~ — the brainstorm SPEC name; use `GigSmartClient` instead (consistent with `MassiveClient`)
 - ~~`createLocation` mutation~~ — actual mutation is `addOrganizationLocation`
+- ~~`createOrganizationPosition` mutation~~ — actual is `addOrganizationPosition`
 - ~~`postGig` / `PostGigInput`~~ — actual mutation is `postShift` / `PostShiftInput`
 - ~~`workers_needed` field~~ — actual field is `slotsAvailable`
+- ~~`hireWorker` / `endEngagement` / `acceptEngagement` mutations~~ — ALL state transitions go through single `transitionEngagement(action: ...)` mutation
+- ~~`editTimesheet` mutation~~ — does NOT exist; only `approveEngagementTimesheet` and `removeEngagementTimesheet`
+- ~~`TimesheetState` enum~~ — does NOT exist; timesheet lifecycle tracked via `EngagementStateName` + `isApproved` boolean
+- ~~Money as `{ amount, currency }` object~~ — Money is a plain ISO-4217 string scalar (e.g., `"20.00"`)
 - ~~Simple `Authorization: Bearer <api_key>` auth~~ — actual auth is OAuth 2.1 token exchange
+- ~~UUID or Relay base64 IDs~~ — IDs are prefixed opaque strings (e.g., `gig_9ucAiJ...`, `eng_0WjivX...`)
 
 ---
 
@@ -642,13 +685,19 @@ No new external dependencies required.
 - [x] **MCP endpoint** — *Resolved in proposal*: Custom toolkit only; do not register native MCP endpoint
 - [x] **API credentials** — *Resolved in proposal*: Available for development
 
-### Unresolved (resolve during Phase 1 introspection)
+### Resolved (via schema introspection)
 
-- [ ] **Exact timesheet mutation names** — *Owner: implementer*. Run introspection against sandbox to discover timesheet-related mutations and their input types.
-- [ ] **Exact enum values for states** — *Owner: implementer*. Gig states (confirmed: UPCOMING, ACTIVE, IN_PROGRESS), engagement states, timesheet states — get full enum from introspection.
-- [ ] **Money type representation** — *Owner: implementer*. Is it `{ amount: Int, currency: String }`, a scalar, or a string? Introspect to confirm.
-- [ ] **Position creation mutation name** — *Owner: implementer*. Likely `createOrganizationPosition` or similar — confirm via introspection.
-- [ ] **ID format** — *Owner: implementer*. Relay global IDs (`gid://...`), UUIDs, or opaque strings? Confirm from introspection.
+- [x] **Exact timesheet mutation names** — *Resolved via introspection*: Only 2 mutations — `approveEngagementTimesheet` (approve) and `removeEngagementTimesheet` (reject/send back). No edit mutation exists. Disputes are separate: `addEngagementDispute` and `setEngagementDisputeApproval`.
+- [x] **Exact enum values for states** — *Resolved via introspection*: GigStateName has 11 values (ACTIVE, CANCELED, COMPLETED, DRAFT, EXPIRED, IN_PROGRESS, INACTIVE, INCOMPLETE, PENDING_REVIEW, RECONCILED, UPCOMING). EngagementStateName has 32 values. EngagementStateAction has 48 values (HIRE, ACCEPT, START, END, CANCEL, APPROVE_TIMESHEET, etc.). No TimesheetState enum — tracked via EngagementStateName + isApproved boolean.
+- [x] **Money type representation** — *Resolved via introspection*: Money is a custom scalar in ISO-4217 format, serialized as a plain decimal string (e.g., `"20.00"`). Not an object type.
+- [x] **Position creation mutation name** — *Resolved via introspection*: `addOrganizationPosition` (not `createOrganizationPosition`).
+- [x] **ID format** — *Resolved via introspection*: Prefixed opaque strings — type prefix + underscore + ~22-char base62 hash (e.g., `gig_9ucAiJfkccqJKbnVytgviu`, `eng_0WjivXE8xbrgBuEkfpANQP`, `engts_9fesLHHFy0By8MC6FvbYiv`).
+
+### Additional Schema Discoveries
+
+- [x] **Engagement transitions** — *Resolved via introspection*: `transitionEngagement` is a single mutation for ALL state changes via `action: EngagementStateAction`. There are NO separate hire/accept/end mutations. Key actions: HIRE, ACCEPT, START, END, CANCEL, APPROVE_TIMESHEET, OFFER, PAUSE, RESUME.
+- [x] **Full mutation list** — *Resolved via introspection*: 27 mutations total. Key ones for toolkit: `addOrganizationLocation`, `addOrganizationPosition`, `postShift`, `transitionGig`, `addEngagement`, `transitionEngagement`, `approveEngagementTimesheet`, `removeEngagementTimesheet`, `addEngagementDispute`, `setEngagementDisputeApproval`, `addUserMessage`.
+- [x] **Custom scalars** — *Resolved via introspection*: DateTime, Duration (ISO-8601), Money (ISO-4217 string), PhoneNumber (E.164), Json, EncodedPolyline, IpAddress.
 
 ---
 
@@ -666,3 +715,4 @@ No new external dependencies required.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-06-23 | Jesus Lara / Claude | Initial draft from research-grounded proposal FEAT-253 |
+| 1.0 | 2026-06-23 | Jesus Lara / Claude | All open questions resolved via schema introspection (1270 types, 27 mutations). Status: approved. |
