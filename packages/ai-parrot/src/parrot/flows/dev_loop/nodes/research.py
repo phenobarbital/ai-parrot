@@ -25,6 +25,8 @@ import asyncio
 import os
 from typing import Any, Dict, List, Optional, Union
 
+from navconfig import BASE_DIR
+
 from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
@@ -196,7 +198,22 @@ class ResearchNode(DevLoopNode):
             )
         shared["jira_issue_key"] = issue_key
 
-        # 3. Dispatch the sdd-research subagent.
+        # 3. FEAT-253: Provision repos BEFORE the sdd-research dispatch so
+        # the dispatch cwd is set correctly (clone path when a repo is
+        # declared, WORKTREE_BASE_PATH when local).
+        # _provision_repos now returns str(BASE_DIR) when no repos are
+        # configured (local fallback) and the clone path otherwise.
+        repo_path = await self._provision_repos(shared.get("run_id", ""))
+        is_clone = bool(self._repos and self._git_toolkit is not None)
+        dispatch_cwd: str = (
+            repo_path if is_clone else os.path.abspath(conf.WORKTREE_BASE_PATH)
+        )
+        self.logger.info(
+            "Base repository: %s (clone=%s), dispatch cwd: %s",
+            repo_path, is_clone, dispatch_cwd,
+        )
+
+        # 4. Dispatch the sdd-research subagent.
         profile = ClaudeCodeDispatchProfile(
             subagent="sdd-research",
             permission_mode="acceptEdits",
@@ -208,8 +225,7 @@ class ResearchNode(DevLoopNode):
             ],
             model="claude-sonnet-4-6",
         )
-        cwd = os.path.abspath(conf.WORKTREE_BASE_PATH)
-        os.makedirs(cwd, exist_ok=True)
+        os.makedirs(dispatch_cwd, exist_ok=True)
         # Stash the excerpts on the brief so the subagent gets them.
         # We pass the brief through as-is since BugBrief already carries
         # log_sources; the prompt builder embeds excerpts separately.
@@ -221,29 +237,28 @@ class ResearchNode(DevLoopNode):
             output_model=ResearchOutput,
             run_id=shared["run_id"],
             node_id=self.name,
-            cwd=cwd,
+            cwd=dispatch_cwd,
         )
 
-        # 4. If the subagent left jira_issue_key blank, inject ours.
+        # 5. If the subagent left jira_issue_key blank, inject ours.
         if not research_out.jira_issue_key:
             research_out = research_out.model_copy(
                 update={"jira_issue_key": issue_key}
             )
 
-        # 5. Spec §7 R5 (relaxed) — reuse existing worktree if it's
+        # 6. Spec §7 R5 (relaxed) — reuse existing worktree if it's
         # already a registered git worktree on the expected branch;
         # fail fast only on the unsafe shapes (untracked directory or
         # mismatched branch).
         await self._ensure_worktree_safe(research_out.branch_name)
 
-        # 6. FEAT-250: provision the configured repositories before Development
-        # so DevelopmentNode can run with ``cwd=research_out.repo_path``. No-op
-        # when no repos are configured (preserves the legacy worktree path).
-        primary_repo_path = await self._provision_repos(shared.get("run_id", ""))
-        if primary_repo_path:
-            research_out = research_out.model_copy(
-                update={"repo_path": primary_repo_path}
-            )
+        # 7. Set repo_path on the output to record the base repository.
+        # repo_path is str(BASE_DIR) (local) or the clone path (declared
+        # repo). worktree_path remains the per-run worktree — distinct from
+        # repo_path (FEAT-253 G2/G3).
+        research_out = research_out.model_copy(
+            update={"repo_path": repo_path}
+        )
 
         shared["research_output"] = research_out
         return research_out
@@ -253,17 +268,28 @@ class ResearchNode(DevLoopNode):
     # ------------------------------------------------------------------
 
     async def _provision_repos(self, run_id: str) -> str:
-        """Clone/pull each configured ``RepoSpec``; return the primary path.
+        """Clone/pull each configured ``RepoSpec``; return the base repo path.
 
-        Each repo is cloned into
-        ``<DEV_LOOP_REPO_BASE_PATH>/<run_id>/<alias>`` (kept under
-        ``WORKTREE_BASE_PATH`` so the dispatcher's cwd-safety guard passes).
-        The **primary** repo is the first ``RepoSpec`` (v1 single-primary).
-        Returns ``""`` when no repos are configured (back-compat). Never logs
-        tokens — :class:`GitToolkit` handles scrubbing internally.
+        **Local fallback (FEAT-253 G2)**: when no repos are declared or no
+        ``git_toolkit`` is set, the base repository is the local checkout at
+        ``BASE_DIR``. Returns ``str(BASE_DIR)`` (no clone; worktree will be
+        branched from the outer ``BASE_DIR`` repo by the ``sdd-research``
+        dispatch).
+
+        **Declared-repo path (FEAT-253 G3)**: the primary repo (first
+        ``RepoSpec``) is cloned/pulled into
+        ``<DEV_LOOP_REPO_BASE_PATH>/<run_id>/<alias>`` — anchored under
+        ``WORKTREE_BASE_PATH`` so the dispatcher's cwd-safety guard passes.
+        Returns the clone path (the base repository from which the worktree
+        will be created). Secondary repos are **not** cloned in v1.
+
+        Never logs tokens — :class:`GitToolkit` handles scrubbing internally.
         """
         if not self._repos or self._git_toolkit is None:
-            return ""
+            self.logger.info(
+                "No repos declared; base repository = BASE_DIR (%s)", BASE_DIR
+            )
+            return str(BASE_DIR)
 
         base = os.path.join(
             os.path.abspath(conf.DEV_LOOP_REPO_BASE_PATH), run_id or "run"

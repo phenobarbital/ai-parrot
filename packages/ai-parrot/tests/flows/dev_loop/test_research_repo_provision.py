@@ -86,11 +86,15 @@ async def test_provision_repos_clones_each(research_out_fixture, monkeypatch, tm
 
 @pytest.mark.asyncio
 async def test_provision_repos_empty_no_clone(research_out_fixture):
+    """FEAT-253: no repos -> local fallback returns str(BASE_DIR), no clone."""
+    from navconfig import BASE_DIR  # noqa: PLC0415
+
     git = MagicMock()
     git.clone_repo = AsyncMock()
     node = _make_node(research_out_fixture, git_toolkit=git, repos=[])
     primary = await node._provision_repos("run-x")
-    assert primary == ""
+    # FEAT-253: returns str(BASE_DIR) instead of "" (local fallback)
+    assert primary == str(BASE_DIR)
     git.clone_repo.assert_not_called()
 
 
@@ -136,9 +140,12 @@ async def test_execute_sets_repo_path(research_out_fixture, monkeypatch, tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_execute_without_repos_leaves_repo_path_empty(
+async def test_execute_without_repos_sets_repo_path_to_base_dir(
     research_out_fixture, monkeypatch, tmp_path
 ):
+    """FEAT-253: no repos -> execute sets repo_path to str(BASE_DIR)."""
+    from navconfig import BASE_DIR  # noqa: PLC0415
+
     node = _make_node(research_out_fixture, git_toolkit=None, repos=[],
                       monkeypatch=monkeypatch, tmp_path=tmp_path)
     brief = BugBrief(
@@ -150,4 +157,5 @@ async def test_execute_without_repos_leaves_repo_path_empty(
         reporter="557058:def",
     )
     result = await node.execute({"bug_brief": brief, "run_id": "run-x"})
-    assert result.repo_path == ""
+    # FEAT-253: local fallback -> repo_path == str(BASE_DIR)
+    assert result.repo_path == str(BASE_DIR)
