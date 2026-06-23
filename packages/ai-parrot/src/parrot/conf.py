@@ -900,6 +900,26 @@ DEV_LOOP_CODEREVIEW_MODEL: str = config.get(
     "DEV_LOOP_CODEREVIEW_MODEL", fallback="claude-sonnet-4-6"
 )
 
+# Jira transition labels the dev-loop applies at each hand-off point. Every
+# Jira project ships its own workflow, so each setting is an *ordered list of
+# candidate labels* (most specific first); the dev-loop tries them against the
+# issue's live available-transitions and applies the first that resolves. This
+# keeps the flow working across projects with no config, while letting an
+# operator pin exact labels via env when the defaults don't cover their
+# workflow. Matching is alias/substring-tolerant (jira_transition_issue).
+DEV_LOOP_JIRA_TRANSITIONS_READY: list[str] = config.getlist(
+    "DEV_LOOP_JIRA_TRANSITIONS_READY",
+    fallback=["Ready to Deploy", "Resolve Issue", "Resolved", "Done", "Close Issue", "Closed"],
+) or ["Ready to Deploy", "Resolve Issue", "Resolved", "Done", "Close Issue", "Closed"]
+DEV_LOOP_JIRA_TRANSITIONS_BLOCKED: list[str] = config.getlist(
+    "DEV_LOOP_JIRA_TRANSITIONS_BLOCKED",
+    fallback=["Deployment Blocked", "Blocked", "On Hold", "Stop Progress"],
+) or ["Deployment Blocked", "Blocked", "On Hold", "Stop Progress"]
+DEV_LOOP_JIRA_TRANSITIONS_REVISION: list[str] = config.getlist(
+    "DEV_LOOP_JIRA_TRANSITIONS_REVISION",
+    fallback=["In Review – revised", "In Review", "Resolve Issue", "In Progress", "Reopen"],
+) or ["In Review – revised", "In Review", "Resolve Issue", "In Progress", "Reopen"]
+
 # ---------------------------------------------------------------------------
 # Remote Tool Executors (parrot.tools.executors)
 # ---------------------------------------------------------------------------
