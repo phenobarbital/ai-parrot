@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Source is a verified-anchor brainstorm defining three new workstreams to BUILD (not a bug to localize). Research verifies the brainstorm's anchors, closes its two flagged VERIFY items (abstract.py scrub seam, full set of Gemini terminal return paths), and accounts for partial implementation already present uncommitted in the working tree.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Confirm the shared security engine source: CommandSanitizer, SecurityPolicy, ValidationResult, SecurityLevel in shell_tool to reuse/relocate into core",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot-tools/src/parrot_tools/shell_tool/security.py"}
+    },
+    {
+      "id": "Q002",
+      "intent": "Verify python_repl current state (exec path, BLOCKED_IMPORTS, sanitize_input, namespace seeding) and any in-tree modifications",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/tools/pythonrepl.py"},
+      "priority": 1
+    },
+    {
+      "id": "Q003",
+      "intent": "Map ALL Gemini terminal return paths (ask, ask_stream, resume, invoke) and the multiturn loop tail to size the _resolve_final_response chokepoint — brainstorm VERIFY item",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/clients/google/client.py"}
+    },
+    {
+      "id": "Q004",
+      "intent": "Locate the AbstractTool result-handling seam (Raw Result Type / output preview NOTICE) where the in-bound scrubber emplacement (a) hooks — brainstorm VERIFY item",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/tools/abstract.py"}
+    },
+    {
+      "id": "Q005",
+      "intent": "Inspect the already-written uncommitted scrubber implementation to fold actual state into the proposal (what exists vs does-not-exist)",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/security/redaction.py"}
+    },
+    {
+      "id": "Q006",
+      "intent": "Confirm bots/base.py _sanitize_tool_data (JSON-only, not secret redaction) and output_mode TELEGRAM/MSTEAMS egress formatting",
+      "type": "grep",
+      "priority": 2,
+      "params": {"pattern": "_sanitize_tool_data|output_mode|OutputMode\\.(TELEGRAM|MSTEAMS)", "path": "packages/ai-parrot/src/parrot/bots/base.py", "include": "*.py"}
+    },
+    {
+      "id": "Q007",
+      "intent": "Locate the bots/data.py forbidden-pattern list (Q4) to be promoted into the deterministic PythonCodeSanitizer",
+      "type": "grep",
+      "priority": 2,
+      "params": {"pattern": "forbidden|os\\.environ|read_csv|open\\(|eval\\(|exec\\(|__import__", "path": "packages/ai-parrot/src/parrot/bots/data.py", "include": "*.py"}
+    },
+    {
+      "id": "Q008",
+      "intent": "Confirm the shared-state coupling the in-process decision depends on: dataset_manager locals getter and agent context injection into the REPL",
+      "type": "grep",
+      "priority": 2,
+      "params": {"pattern": "_repl_locals_getter|_inject_context_to_repl|python_repl\\.globals|store_dataframe", "path": "packages/ai-parrot/src/parrot/tools", "include": "*.py"}
+    },
+    {
+      "id": "Q009",
+      "intent": "Check whether a core parrot.security package already exists and what it exports, to settle the module-placement decision against reality",
+      "type": "tree",
+      "priority": 2,
+      "params": {"path": "packages/ai-parrot/src/parrot/security", "max_depth": 2}
+    },
+    {
+      "id": "Q010",
+      "intent": "Establish recent activity / authorship on the incident-relevant files to ground §2.3 Recent History",
+      "type": "git_log",
+      "priority": 3,
+      "params": {"path": "packages/ai-parrot/src/parrot/tools/pythonrepl.py", "since": "60.days.ago", "max_results": 15}
+    }
+  ],
+  "expected_findings": [
+    "shell_tool security primitives exist and are reusable; dependency direction parrot_tools -> core mandates relocation into core",
+    "python_repl in-process exec confirmed; uncommitted edits may already add a sanitizer hook",
+    "Gemini client has >=4 terminal return paths; not all currently funnel through one chokepoint",
+    "abstract.py has a single result-materialization seam suitable for in-bound scrub emplacement (a)",
+    "an uncommitted security/redaction.py already implements part of WS3",
+    "bots/data.py forbidden-pattern list exists at the prompt layer and can be promoted",
+    "shared in-process namespace coupling confirms why subprocess isolation is deferred"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": ["python_repl", "os.environ", "Gemini client", "OutputScrubber", "PythonCodeSanitizer", "shell_tool", "CommandSanitizer"],
+      "verbs": ["leaked", "contain", "sandbox", "scrub", "redact", "gate"],
+      "polarity": "negative"
+    },
+    "estimated_budget_use": {"files_read": 12, "grep_calls": 4, "git_calls": 1}
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-252",
+  "feature_slug": "repl-sandbox-response-contract-scrubber",
+  "started_at": "2026-06-23T03:51:00Z",
+  "updated_at": "2026-06-23T04:02:00Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/brainstorm-repl-sandbox-response-contract-scrubber.md",
+    "raw_path": "sdd/state/FEAT-252/source.md",
+    "fetched_at": "2026-06-23T03:51:00Z",
+    "summary_oneline": "REPL allowlist sandbox + Gemini final-response contract + deterministic secret scrubber to contain arbitrary-exec credential leakage"
+  },
+  "mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-06-23T03:51:00Z",
+      "completed_at": "2026-06-23T03:51:00Z"
+    },
+    "plan": {
+      "status": "completed",
+      "queries_total": 10,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-252/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "queries_executed": 10,
+      "queries_skipped": 0,
+      "depth_reached": 0,
+      "files_read": 7,
+      "grep_calls": 4,
+      "git_calls": 1,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-252/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 8,
+      "claims_high_conf": 7,
+      "claims_medium_conf": 1,
+      "claims_low_conf": 0,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 4,
+      "questions_answered": 4,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/repl-sandbox-response-contract-scrubber.proposal.md",
+      "commit_sha": "ec33b4f9aca7aa7d0a3e6bc7ff6572cd64c4810c",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "High-confidence localization + 4 resolved design decisions become spec acceptance criteria; contract already verified so brainstorm would be redundant."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 7,
+    "grep_calls": 4,
+    "git_calls": 1,
+    "wall_seconds": 420
+  },
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "git commit proposal + state."
+  },
+  "detected_mode": "enrichment"
+}
