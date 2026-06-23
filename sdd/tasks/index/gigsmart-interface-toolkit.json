@@ -133,7 +133,7 @@
       "feature_id": "FEAT-253",
       "feature": "gigsmart-interface-toolkit",
       "spec": "sdd/specs/gigsmart-interface-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "Depends on the GraphQL client which aggregates all prior tasks.",
       "assigned_to": null,
       "started_at": "2026-06-23T15:41:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1622-gigsmart-toolkit.md"
+      "completed_at": "2026-06-23T15:57:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1622-gigsmart-toolkit.md"
     },
     {
       "id": "TASK-1623",
