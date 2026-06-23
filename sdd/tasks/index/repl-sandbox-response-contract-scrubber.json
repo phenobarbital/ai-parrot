@@ -72,7 +72,7 @@
       "feature_id": "FEAT-252",
       "feature": "repl-sandbox-response-contract-scrubber",
       "spec": "sdd/specs/repl-sandbox-response-contract-scrubber.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Depends only on TASK-1611; shares NO files with TASK-1612/1613 (new python_sanitizer.py + pythonrepl.py + bots/data.py). COULD run in a parallel worktree after 1611, but kept sequential per the spec's per-spec isolation decision (both 1612 and 1614 edit security/__init__.py).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1614-pythoncodesanitizer-allowlist-gate.md"
+      "completed_at": "2026-06-23T14:19:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1614-pythoncodesanitizer-allowlist-gate.md"
     },
     {
       "id": "TASK-1615",
