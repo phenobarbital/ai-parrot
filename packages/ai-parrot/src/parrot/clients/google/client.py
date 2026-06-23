@@ -28,6 +28,7 @@ try:
     )
     from google.oauth2 import service_account
     from google.genai import types
+
     _GOOGLE_SDK_AVAILABLE = True
 except ImportError:  # pragma: no cover - exercised when extra is missing
     genai = None  # type: ignore[assignment]
@@ -46,15 +47,12 @@ def _require_google_sdk() -> None:
     """Raise an actionable ImportError when google-genai is not installed."""
     if not _GOOGLE_SDK_AVAILABLE:
         raise ImportError(
-            "GoogleGenAIClient requires the 'google-genai' SDK. "
-            "Install with: pip install ai-parrot[google]"
+            "GoogleGenAIClient requires the 'google-genai' SDK. " "Install with: pip install ai-parrot[google]"
         )
+
+
 import pandas as pd
-from ..base import (
-    AbstractClient,
-    ToolDefinition,
-    StreamingRetryConfig
-)
+from ..base import AbstractClient, ToolDefinition, StreamingRetryConfig
 from ...models import (
     AIMessage,
     AIMessageFactory,
@@ -73,15 +71,12 @@ from ...models.google import (
 )
 from ...tools.abstract import AbstractTool, ToolResult
 from ...core.exceptions import HumanInteractionInterrupt
+from ...security.redaction import redact_secrets, redact_text
 from .analysis import GoogleAnalysis
 from .generation import GoogleGeneration
 
-logging.getLogger(
-    name='PIL.TiffImagePlugin'
-).setLevel(logging.ERROR)  # Suppress TiffImagePlugin warnings
-logging.getLogger(
-    name='google_genai'
-).setLevel(logging.WARNING)  # Suppress GenAI warnings
+logging.getLogger(name="PIL.TiffImagePlugin").setLevel(logging.ERROR)  # Suppress TiffImagePlugin warnings
+logging.getLogger(name="google_genai").setLevel(logging.WARNING)  # Suppress GenAI warnings
 
 
 # Sentinel returned by ``_create_simple_summary`` when the LLM consumed
@@ -109,10 +104,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     For all other models (e.g. ``gemini-2.5-pro``), the legacy two-phase flow is preserved.
     Override the whitelist per-instance via ``GoogleGenAIClient(combined_call_prefixes=...)``.
     """
-    client_type: str = 'google'
-    client_name: str = 'google'
+
+    client_type: str = "google"
+    client_name: str = "google"
     _default_model: str = GoogleModel.GEMINI_FLASH_LATEST.value
-    _fallback_model: str = 'gemini-3.1-flash-lite-preview'
+    _fallback_model: str = "gemini-3.1-flash-lite-preview"
     _model_garden: bool = False
     _lightweight_model: str = "gemini-3.1-flash-lite-preview"
     # Default prefixes for which tools + response_schema may be sent in a
@@ -125,6 +121,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         "gemini-3.5-flash",
         "gemini-3.1-flash-lite",
     )
+    _sensitive_tool_result_names: frozenset[str] = frozenset({"python_repl", "python_repl_pandas"})
     # Default model used to reformat tool-using responses into structured
     # output for models that cannot combine tools + response_schema in one
     # call (e.g., gemini-2.5-pro). Override per-instance via the
@@ -151,16 +148,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         _require_google_sdk()
         self.model_garden = model_garden
         self.vertexai: bool = True if model_garden else vertexai
-        self.vertex_location = kwargs.get('location', config.get('VERTEX_REGION'))
-        self.vertex_project = kwargs.get('project', config.get('VERTEX_PROJECT_ID'))
+        self.vertex_location = kwargs.get("location", config.get("VERTEX_REGION"))
+        self.vertex_project = kwargs.get("project", config.get("VERTEX_PROJECT_ID"))
         self._credentials_file = kwargs.get(
-            'credentials_file',
-            config.get('VERTEX_CREDENTIALS_FILE') or config.get('GENAI_APPLICATION_CREDENTIALS')
+            "credentials_file", config.get("VERTEX_CREDENTIALS_FILE") or config.get("GENAI_APPLICATION_CREDENTIALS")
         )
         if isinstance(self._credentials_file, str):
             self._credentials_file = Path(self._credentials_file).expanduser()
 
-        self.api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
+        self.api_key = kwargs.pop("api_key", config.get("GOOGLE_API_KEY"))
 
         # Suppress httpcore logs as requested
         logging.getLogger("httpcore").setLevel(logging.WARNING)
@@ -168,11 +164,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         logging.getLogger("httpcore.http11").setLevel(logging.WARNING)
 
         super().__init__(**kwargs)
-        self.max_tokens = kwargs.get('max_tokens', None)
+        self.max_tokens = kwargs.get("max_tokens", None)
         # Resolve reformat_model: explicit kwarg > class default. Accepts
         # both ``GoogleModel`` enum members and raw strings.
-        self._reformat_model: str = self._as_model_str(reformat_model) \
-            or self._default_reformat_model
+        self._reformat_model: str = self._as_model_str(reformat_model) or self._default_reformat_model
         # Resolve combined_call_prefixes: explicit kwarg > class default.
         # Coerce to tuple so callers can pass any sequence (list, tuple, generator).
         self._combined_call_prefixes: tuple[str, ...] = (
@@ -193,7 +188,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
-        return model.startswith('gemini-3')
+        return model.startswith("gemini-3")
 
     @staticmethod
     def _is_preview_model(model: str) -> bool:
@@ -201,7 +196,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
-        return 'preview' in model
+        return "preview" in model
 
     # Maps the native computer-use predefined function names (returned by the
     # model) to the prefixed tool names registered by ComputerInteractionToolkit
@@ -234,9 +229,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if not model:
             return False
         return (
-            model.startswith('gemini-2.5-pro')
-            or model.startswith('gemini-3.1-pro')
-            or model.startswith('gemini-3-pro')
+            model.startswith("gemini-2.5-pro")
+            or model.startswith("gemini-3.1-pro")
+            or model.startswith("gemini-3-pro")
             or GoogleGenAIClient._is_computer_use_model(model)
         )
 
@@ -258,10 +253,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
-        return (
-            model.startswith("gemini-2.5-computer-use")
-            or model.startswith("gemini-3-flash-preview")
-        )
+        return model.startswith("gemini-2.5-computer-use") or model.startswith("gemini-3-flash-preview")
 
     @staticmethod
     def _supports_combined_tools_and_schema(
@@ -311,9 +303,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         client when switching between incompatible model families.
         """
         if self._is_gemini3_model(model):
-            suffix = 'preview' if self._is_preview_model(model) else 'stable'
-            return f'gemini3_{suffix}'
-        return 'default'
+            suffix = "preview" if self._is_preview_model(model) else "stable"
+            return f"gemini3_{suffix}"
+        return "default"
 
     def _filter_get_client_hints(self, **hints: Any) -> dict:
         """Forward ``model`` hint to ``get_client()`` when present.
@@ -419,6 +411,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         try:
             from google.genai import types as genai_types
+
             cacheable_text = "\n\n".join(s.text for s in segments if s.cacheable)
             cached = await client.aio.caches.create(
                 model=model,
@@ -429,9 +422,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 ),
             )
             payload["cached_content"] = cached.name
-            self.logger.debug(
-                "Gemini CachedContent created: %s (model=%s)", cached.name, model
-            )
+            self.logger.debug("Gemini CachedContent created: %s (model=%s)", cached.name, model)
         except Exception as exc:
             self.logger.warning(
                 "Gemini CachedContent creation failed (proceeding without cache): %s",
@@ -543,11 +534,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
             # Gemini 3.x family requires location='global' on Vertex AI
             if self._is_gemini3_model(resolved_model):
-                location = 'global'
+                location = "global"
 
-            self.logger.info(
-                f"Initializing Vertex AI for project {self.vertex_project} in {location}"
-            )
+            self.logger.info(f"Initializing Vertex AI for project {self.vertex_project} in {location}")
             try:
                 if self._credentials_file and self._credentials_file.exists():
                     credentials = service_account.Credentials.from_service_account_file(
@@ -558,27 +547,22 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     credentials = None  # Use default credentials
 
                 client_kwargs = {
-                    'vertexai': True,
-                    'project': self.vertex_project,
-                    'location': location,
-                    'credentials': credentials,
+                    "vertexai": True,
+                    "project": self.vertex_project,
+                    "location": location,
+                    "credentials": credentials,
                 }
 
                 # Preview models require v1beta1 API version
                 if self._is_preview_model(resolved_model):
-                    client_kwargs['http_options'] = HttpOptions(
-                        api_version='v1beta1'
-                    )
+                    client_kwargs["http_options"] = HttpOptions(api_version="v1beta1")
 
                 client_kwargs.update(kwargs)
                 return genai.Client(**client_kwargs)
             except Exception as exc:
                 self.logger.error(f"Failed to initialize Vertex AI client: {exc}")
                 raise
-        return genai.Client(
-            api_key=self.api_key,
-            **kwargs
-        )
+        return genai.Client(api_key=self.api_key, **kwargs)
 
     async def close(self) -> None:
         """Close all per-loop SDK clients.
@@ -615,7 +599,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         error_text = str(error)
         delay = min(2 ** max(retry_count, 1), 60)
         try:
-            match = re.search(r'retryDelay.*?(\d+)s', error_text, re.IGNORECASE)
+            match = re.search(r"retryDelay.*?(\d+)s", error_text, re.IGNORECASE)
             if match:
                 hinted_delay = int(match.group(1)) + 1
                 delay = max(delay, hinted_delay)
@@ -637,7 +621,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """Recursively converts schema type values to uppercase for GenAI compatibility."""
         if isinstance(schema, dict):
             for key, value in schema.items():
-                if key == 'type' and isinstance(value, str):
+                if key == "type" and isinstance(value, str):
                     schema[key] = value.upper()
                 else:
                     self._fix_tool_schema(value)
@@ -653,16 +637,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """
         prompt_lower = prompt.lower()
         # Keywords that suggest need for built-in tools
-        search_keywords = [
-            'search',
-            'find',
-            'google',
-            'web',
-            'internet',
-            'latest',
-            'news',
-            'weather'
-        ]
+        search_keywords = ["search", "find", "google", "web", "internet", "latest", "news", "weather"]
         has_search_intent = any(keyword in prompt_lower for keyword in search_keywords)
         if has_search_intent:
             return "builtin_tools"
@@ -676,35 +651,32 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         This is crucial for Pydantic v2 schemas used with Gemini.
         """
         if defs is None:
-            defs = schema.get('$defs', schema.get('definitions', {}))
+            defs = schema.get("$defs", schema.get("definitions", {}))
 
         if not isinstance(schema, dict):
             return schema
 
         # Handle $ref
-        if '$ref' in schema:
-            ref_path = schema['$ref']
+        if "$ref" in schema:
+            ref_path = schema["$ref"]
             # Extract definition name (e.g., "#/$defs/MyModel" -> "MyModel")
-            def_name = ref_path.split('/')[-1]
+            def_name = ref_path.split("/")[-1]
             if def_name in defs:
                 # Get the definition
                 resolved = self._resolve_schema_refs(defs[def_name], defs)
                 # Merge with any other properties in the current schema (rare but possible)
-                merged = {k: v for k, v in schema.items() if k != '$ref'}
+                merged = {k: v for k, v in schema.items() if k != "$ref"}
                 merged.update(resolved)
                 return merged
 
         # Process children
         new_schema = {}
         for key, value in schema.items():
-            if key == 'properties' and isinstance(value, dict):
-                new_schema[key] = {
-                    k: self._resolve_schema_refs(v, defs)
-                    for k, v in value.items()
-                }
-            elif key == 'items' and isinstance(value, dict):
+            if key == "properties" and isinstance(value, dict):
+                new_schema[key] = {k: self._resolve_schema_refs(v, defs) for k, v in value.items()}
+            elif key == "items" and isinstance(value, dict):
                 new_schema[key] = self._resolve_schema_refs(value, defs)
-            elif key in ('anyOf', 'allOf', 'oneOf') and isinstance(value, list):
+            elif key in ("anyOf", "allOf", "oneOf") and isinstance(value, list):
                 new_schema[key] = [self._resolve_schema_refs(item, defs) for item in value]
             else:
                 new_schema[key] = value
@@ -721,82 +693,82 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # 1. Resolve References FIRST
         # Pydantic v2 uses $defs, v1 uses definitions
-        if '$defs' in schema or 'definitions' in schema:
+        if "$defs" in schema or "definitions" in schema:
             schema = self._resolve_schema_refs(schema)
 
         cleaned = {}
 
         # Fields that Google Function Calling supports
-        supported_fields = {
-            'type', 'description', 'enum', 'default', 'properties',
-            'required', 'items'
-        }
+        supported_fields = {"type", "description", "enum", "default", "properties", "required", "items"}
 
         # Copy supported fields
         for key, value in schema.items():
             if key in supported_fields:
-                if key == 'properties':
+                if key == "properties":
                     cleaned[key] = {k: self.clean_google_schema(v) for k, v in value.items()}
-                elif key == 'items':
+                elif key == "items":
                     cleaned[key] = self.clean_google_schema(value)
                 else:
                     cleaned[key] = value
 
         # ... [Rest of your existing type conversion logic stays the same] ...
-        if 'type' in cleaned:
-            if cleaned['type'] == 'integer':
-                cleaned['type'] = 'number'  # Google prefers 'number' over 'integer'
-            elif cleaned['type'] == 'object' and 'properties' not in cleaned:
+        if "type" in cleaned:
+            if cleaned["type"] == "integer":
+                cleaned["type"] = "number"  # Google prefers 'number' over 'integer'
+            elif cleaned["type"] == "object" and "properties" not in cleaned:
                 # Ensure objects have properties field, even if empty, to prevent confusion
-                cleaned['properties'] = {}
-            elif isinstance(cleaned['type'], list):
-                non_null_types = [t for t in cleaned['type'] if t != 'null']
-                cleaned['type'] = non_null_types[0] if non_null_types else 'string'
+                cleaned["properties"] = {}
+            elif isinstance(cleaned["type"], list):
+                non_null_types = [t for t in cleaned["type"] if t != "null"]
+                cleaned["type"] = non_null_types[0] if non_null_types else "string"
 
         # Handle anyOf (union types) - Simplified for Gemini
-        if 'anyOf' in schema:
-             # Pick the first non-null type, effectively flattening the union
-             found_valid_option = False
-             for option in schema['anyOf']:
-                if not isinstance(option, dict): continue
-                option_type = option.get('type')
-                if option_type and option_type != 'null':
-                    cleaned['type'] = option_type
-                    if option_type == 'array' and 'items' in option:
-                        cleaned['items'] = self.clean_google_schema(option['items'])
-                    if option_type == 'object' and 'properties' in option:
-                        cleaned['properties'] = {k: self.clean_google_schema(v) for k, v in option['properties'].items()}
-                        if 'required' in option:
-                            cleaned['required'] = option['required']
+        if "anyOf" in schema:
+            # Pick the first non-null type, effectively flattening the union
+            found_valid_option = False
+            for option in schema["anyOf"]:
+                if not isinstance(option, dict):
+                    continue
+                option_type = option.get("type")
+                if option_type and option_type != "null":
+                    cleaned["type"] = option_type
+                    if option_type == "array" and "items" in option:
+                        cleaned["items"] = self.clean_google_schema(option["items"])
+                    if option_type == "object" and "properties" in option:
+                        cleaned["properties"] = {
+                            k: self.clean_google_schema(v) for k, v in option["properties"].items()
+                        }
+                        if "required" in option:
+                            cleaned["required"] = option["required"]
                     found_valid_option = True
                     break
 
-             if not found_valid_option:
-                 # If no valid option found (e.g. only nulls?), default to string
-                 cleaned['type'] = 'string'
+            if not found_valid_option:
+                # If no valid option found (e.g. only nulls?), default to string
+                cleaned["type"] = "string"
 
-             # IMPORTANT: Remove anyOf after processing to avoid confusion
-             cleaned.pop('anyOf', None)
+            # IMPORTANT: Remove anyOf after processing to avoid confusion
+            cleaned.pop("anyOf", None)
 
         # Ensure type is present
-        if 'type' not in cleaned:
-             # Heuristic: if properties exist, it's an object
-             if 'properties' in cleaned:
-                 cleaned['type'] = 'object'
-             elif 'items' in cleaned:
-                 cleaned['type'] = 'array'
-             else:
-                 cleaned['type'] = 'string'
+        if "type" not in cleaned:
+            # Heuristic: if properties exist, it's an object
+            if "properties" in cleaned:
+                cleaned["type"] = "object"
+            elif "items" in cleaned:
+                cleaned["type"] = "array"
+            else:
+                cleaned["type"] = "string"
 
         # Ensure object-like schemas always advertise an object type
-        if 'properties' in cleaned and cleaned.get('type') != 'object':
-            cleaned['type'] = 'object'
+        if "properties" in cleaned and cleaned.get("type") != "object":
+            cleaned["type"] = "object"
 
         # Ensure objects always have a properties key (Gemini requires it).
         # This handles cases where `type: object` was set via anyOf processing
         # AFTER the earlier type-check block ran, so properties: {} was never added.
-        if cleaned.get('type') == 'object' and 'properties' not in cleaned:
-            cleaned['properties'] = {}
+        if cleaned.get("type") == "object" and "properties" not in cleaned:
+            cleaned["properties"] = {}
 
         # Gemini requires every array schema to carry an `items` schema and does
         # NOT understand `prefixItems` (the draft-2020-12 keyword Pydantic v2
@@ -806,23 +778,42 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # with "...properties[<field>].items: missing field". Backfill `items`
         # from the first `prefixItems` entry (tuples are homogeneous in practice,
         # e.g. coordinate pairs), or fall back to a permissive string item.
-        if cleaned.get('type') == 'array' and 'items' not in cleaned:
-            prefix_items = schema.get('prefixItems')
+        if cleaned.get("type") == "array" and "items" not in cleaned:
+            prefix_items = schema.get("prefixItems")
             if isinstance(prefix_items, list) and prefix_items:
-                cleaned['items'] = self.clean_google_schema(prefix_items[0])
+                cleaned["items"] = self.clean_google_schema(prefix_items[0])
             else:
-                cleaned['items'] = {'type': 'string'}
+                cleaned["items"] = {"type": "string"}
 
         # Vertex AI requires function parameters to be of type OBJECT.
         # Keep empty-property objects as OBJECT (don't coerce to string).
 
         # Remove problematic fields
         problematic_fields = {
-            'prefixItems', 'additionalItems', 'minItems', 'maxItems',
-            'minLength', 'maxLength', 'pattern', 'format', 'minimum',
-            'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf',
-            'allOf', 'anyOf', 'oneOf', 'not', 'const', 'examples',
-            '$defs', 'definitions', '$ref', 'title', 'additionalProperties'
+            "prefixItems",
+            "additionalItems",
+            "minItems",
+            "maxItems",
+            "minLength",
+            "maxLength",
+            "pattern",
+            "format",
+            "minimum",
+            "maximum",
+            "exclusiveMinimum",
+            "exclusiveMaximum",
+            "multipleOf",
+            "allOf",
+            "anyOf",
+            "oneOf",
+            "not",
+            "const",
+            "examples",
+            "$defs",
+            "definitions",
+            "$ref",
+            "title",
+            "additionalProperties",
         }
 
         for field in problematic_fields:
@@ -842,10 +833,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         elif isinstance(data, str):
             data = data.strip()
             # fast check if it looks like json
-            if (data.startswith('{') and data.endswith('}')) or \
-               (data.startswith('[') and data.endswith(']')):
+            if (data.startswith("{") and data.endswith("}")) or (data.startswith("[") and data.endswith("]")):
                 try:
                     import json
+
                     parsed = json.loads(data)
                     # Recurse into the parsed object in case it has nested strings
                     return self._recursive_json_repair(parsed)
@@ -856,10 +847,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     def _coerce_json_keys_to_str(self, data: Any) -> Any:
         """Recursively coerce mapping keys to strings for JSON compatibility."""
         if isinstance(data, dict):
-            return {
-                str(k): self._coerce_json_keys_to_str(v)
-                for k, v in data.items()
-            }
+            return {str(k): self._coerce_json_keys_to_str(v) for k, v in data.items()}
         if isinstance(data, list):
             return [self._coerce_json_keys_to_str(item) for item in data]
         if isinstance(data, tuple):
@@ -869,9 +857,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         return data
 
     def _apply_structured_output_schema(
-        self,
-        generation_config: Dict[str, Any],
-        output_config: Optional[StructuredOutputConfig]
+        self, generation_config: Dict[str, Any], output_config: Optional[StructuredOutputConfig]
     ) -> Optional[Dict[str, Any]]:
         """Apply a cleaned structured output schema to the generationho config."""
         if not output_config or output_config.format != OutputFormat.JSON:
@@ -882,9 +868,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             cleaned_schema = self.clean_google_schema(raw_schema)
             fixed_schema = self._fix_tool_schema(cleaned_schema)
         except Exception as exc:
-            self.logger.error(
-                f"Failed to generate structured output schema for Gemini: {exc}"
-            )
+            self.logger.error(f"Failed to generate structured output schema for Gemini: {exc}")
             return None
 
         generation_config["response_mime_type"] = "application/json"
@@ -946,9 +930,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # budget=0 is accepted. Do NOT remove this.
         reformat_model = self._reformat_model
         if not self._requires_thinking(reformat_model):
-            structured_config["thinking_config"] = ThinkingConfig(
-                thinking_budget=0
-            )
+            structured_config["thinking_config"] = ThinkingConfig(thinking_budget=0)
 
         # Create a new client call without tools for structured output
         format_prompt = (
@@ -972,8 +954,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             f"Return only the JSON object:\n\n{text}"
         )
         self.logger.debug(
-            "Reformatting response as structured output using %s "
-            "(thinking=%s, input_chars=%d)...",
+            "Reformatting response as structured output using %s " "(thinking=%s, input_chars=%d)...",
             reformat_model,
             structured_config.get("thinking_config") and "off" or "default",
             len(format_prompt),
@@ -982,7 +963,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         structured_response = await self.client.aio.models.generate_content(
             model=reformat_model,
             contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
-            config=GenerateContentConfig(**structured_config)
+            config=GenerateContentConfig(**structured_config),
         )
         _reformat_elapsed = time.perf_counter() - _reformat_start
         self.logger.info(
@@ -993,17 +974,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Extract and parse the structured text
         structured_text = self._safe_extract_text(structured_response)
         if not structured_text:
-            self.logger.warning(
-                "No structured text received, falling back to original response"
-            )
+            self.logger.warning("No structured text received, falling back to original response")
             return text
 
         if isinstance(output_config, StructuredOutputConfig):
             return await self._parse_structured_output(structured_text, output_config)
         elif isinstance(output_config, type):
-            if hasattr(output_config, 'model_validate_json'):
+            if hasattr(output_config, "model_validate_json"):
                 return output_config.model_validate_json(structured_text)
-            elif hasattr(output_config, 'model_validate'):
+            elif hasattr(output_config, "model_validate"):
                 parsed_json = self._json.loads(structured_text)
                 return output_config.model_validate(parsed_json)
         return self._json.loads(structured_text)
@@ -1029,10 +1008,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if tool_type == "computer_use":
             # ComputerUse tool type for vision-based browser automation.
             # Requires self._computer_use_config (set by ComputerAgent or caller).
-            config = getattr(self, '_computer_use_config', None)
+            config = getattr(self, "_computer_use_config", None)
             excluded = []
             if config is not None:
-                excluded = getattr(config, 'excluded_actions', [])
+                excluded = getattr(config, "excluded_actions", [])
             try:
                 computer_tool = types.Tool(
                     computer_use=types.ComputerUse(
@@ -1076,7 +1055,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             #      live only for the duration of this call. Win on collisions.
             #   2. ``self.tool_manager.all_tools()`` — persistent tools.
             declarations_by_category = defaultdict(list)
-            request_tools = getattr(self, '_request_tools', None) or {}
+            request_tools = getattr(self, "_request_tools", None) or {}
             seen_names: set = set()
             tool_sources = []
             tool_sources.extend(request_tools.values())
@@ -1090,7 +1069,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     continue
 
                 tool_name = tool.name
-                category = getattr(tool, 'category', 'tools')
+                category = getattr(tool, "category", "tools")
                 if isinstance(tool, AbstractTool):
                     full_schema = tool.get_schema()
                     tool_description = full_schema.get("description", tool.description)
@@ -1103,22 +1082,19 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     schema = self.clean_google_schema(tool.input_schema.copy())
                 else:
                     # Fallback for other tool types
-                    tool_description = getattr(tool, 'description', f"Tool: {tool_name}")
-                    schema = getattr(tool, 'input_schema', {})
+                    tool_description = getattr(tool, "description", f"Tool: {tool_name}")
+                    schema = getattr(tool, "input_schema", {})
                     schema = self.clean_google_schema(schema)
 
                 # Ensure we have a valid parameters schema
                 if not schema:
-                    schema = {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
+                    schema = {"type": "object", "properties": {}, "required": []}
                 try:
                     fixed_schema = self._fix_tool_schema(schema)
                     # Diagnostic: log the exact schema for tools known to cause issues
                     if tool_name in ("nav_execute_sql", "nav_create_program"):
                         import json as _json
+
                         try:
                             self.logger.debug(
                                 "SCHEMA DECL [%s]: %s",
@@ -1128,9 +1104,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         except Exception:
                             pass
                     declaration = types.FunctionDeclaration(
-                        name=tool_name,
-                        description=tool_description,
-                        parameters=fixed_schema
+                        name=tool_name, description=tool_description, parameters=fixed_schema
                     )
                     declarations_by_category[category].append(declaration)
                 except Exception as e:
@@ -1141,17 +1115,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             tool_list = []
             for category, declarations in declarations_by_category.items():
                 if declarations:
-                    tool_list.append(
-                        types.Tool(
-                            function_declarations=declarations
-                        )
-                    )
+                    tool_list.append(types.Tool(function_declarations=declarations))
             return tool_list
         elif tool_type == "builtin_tools":
             return [
-                types.Tool(
-                    google_search=types.GoogleSearch()
-                ),
+                types.Tool(google_search=types.GoogleSearch()),
             ]
 
         return None
@@ -1212,9 +1180,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 shell = {k: v for k, v in data.items() if k != largest_key}
                 shell_size = len(self._json.dumps(shell))
                 list_budget = max(max_chars - shell_size - 100, 1024)
-                trimmed_list = self._truncate_large_result(
-                    data[largest_key], list_budget
-                )
+                trimmed_list = self._truncate_large_result(data[largest_key], list_budget)
                 result = dict(data)
                 result[largest_key] = trimmed_list
                 return result
@@ -1297,9 +1263,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     id=tool_id,
                     name=tool_name,
                     response=text_fields if text_fields else {"ok": True},
-                    parts=[
-                        types.FunctionResponsePart(inline_data=blob)
-                    ],
+                    parts=[types.FunctionResponsePart(inline_data=blob)],
                 )
             )
         else:
@@ -1327,17 +1291,18 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Handle ToolResult wrapper
         if isinstance(result, ToolResult):
             content = result.result
-            if result.metadata and 'stdout' in result.metadata:
+            if result.metadata and "stdout" in result.metadata:
                 # Prioritize stdout if exists
-                content = result.metadata['stdout']
-            result = content # The actual result to process is the content
+                content = result.metadata["stdout"]
+            result = content  # The actual result to process is the content
 
         # Handle string results early (no conversion needed)
         if isinstance(result, str):
+            result = redact_text(result)
             if not result.strip():
                 return {"result": "Code executed successfully (no output)"}
             if len(result) > self.MAX_TOOL_RESULT_CHARS:
-                result = result[:self.MAX_TOOL_RESULT_CHARS] + "\n...[TRUNCATED]"
+                result = result[: self.MAX_TOOL_RESULT_CHARS] + "\n...[TRUNCATED]"
             return {"result": result}
 
         # Convert complex types to basic Python types
@@ -1346,33 +1311,28 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if isinstance(result, pd.DataFrame):
             # For large DataFrames, limit rows to prevent context overflow
             if len(result) > 500:
-                self.logger.warning(
-                    f"DataFrame has {len(result)} rows, truncating to 500 "
-                    f"for API response"
-                )
+                self.logger.warning(f"DataFrame has {len(result)} rows, truncating to 500 " f"for API response")
                 result = result.head(500)
             # Convert DataFrame to records and ensure all keys are strings
-            records = result.to_dict(orient='records')
-            clean_result = [
-                {str(k): v for k, v in record.items()}
-                for record in records
-            ]
+            records = result.to_dict(orient="records")
+            clean_result = [{str(k): v for k, v in record.items()} for record in records]
         elif isinstance(result, list):
             # Handle lists (including lists of Pydantic models)
             clean_result = []
             for item in result:
-                if hasattr(item, 'model_dump'):  # Pydantic v2
+                if hasattr(item, "model_dump"):  # Pydantic v2
                     clean_result.append(item.model_dump())
-                elif hasattr(item, 'dict'):  # Pydantic v1
+                elif hasattr(item, "dict"):  # Pydantic v1
                     clean_result.append(item.dict())
                 else:
                     clean_result.append(item)
-        elif hasattr(result, 'model_dump'):  # Pydantic v2 single model
+        elif hasattr(result, "model_dump"):  # Pydantic v2 single model
             clean_result = result.model_dump()
-        elif hasattr(result, 'dict'):  # Pydantic v1 single model
+        elif hasattr(result, "dict"):  # Pydantic v1 single model
             clean_result = result.dict()
 
         clean_result = self._coerce_json_keys_to_str(clean_result)
+        clean_result = redact_secrets(clean_result)
 
         # 4. Attempt to serialize the processed result
         try:
@@ -1380,12 +1340,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             # --- truncation gate ---
             if len(serialized) > self.MAX_TOOL_RESULT_CHARS:
                 self.logger.warning(
-                    f"Tool result too large ({len(serialized)} chars), "
-                    f"truncating to {self.MAX_TOOL_RESULT_CHARS}"
+                    f"Tool result too large ({len(serialized)} chars), " f"truncating to {self.MAX_TOOL_RESULT_CHARS}"
                 )
-                truncated = self._truncate_large_result(
-                    clean_result, self.MAX_TOOL_RESULT_CHARS
-                )
+                truncated = self._truncate_large_result(clean_result, self.MAX_TOOL_RESULT_CHARS)
                 return {"result": truncated}
             json_compatible_result = self._json.loads(serialized)
         except Exception as e:
@@ -1394,13 +1351,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 f"Could not serialize result of type {type(clean_result)} to JSON: {e}. "
                 "Falling back to string representation."
             )
-            fallback = str(clean_result)
+            fallback = redact_text(str(clean_result))
             if len(fallback) > self.MAX_TOOL_RESULT_CHARS:
-                fallback = fallback[:self.MAX_TOOL_RESULT_CHARS] + "\n...[TRUNCATED]"
+                fallback = fallback[: self.MAX_TOOL_RESULT_CHARS] + "\n...[TRUNCATED]"
             json_compatible_result = fallback
 
         # Wrap for Google Function Calling format
-        if isinstance(json_compatible_result, dict) and 'result' in json_compatible_result:
+        if isinstance(json_compatible_result, dict) and "result" in json_compatible_result:
             return json_compatible_result
         else:
             return {"result": json_compatible_result}
@@ -1426,31 +1383,24 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     return "returned no data (empty DataFrame)"
                 preview = result.head(5)
                 summary = preview.to_string(index=True)
-            elif hasattr(result, 'model_dump'):
-                summary = self._json.dumps(
-                    self._coerce_json_keys_to_str(result.model_dump())
-                )
+            elif hasattr(result, "model_dump"):
+                summary = self._json.dumps(self._coerce_json_keys_to_str(result.model_dump()))
             elif isinstance(result, (dict, list)):
                 if not result:
                     return "returned no data (empty result)"
-                summary = self._json.dumps(
-                    self._coerce_json_keys_to_str(result)
-                )
+                summary = self._json.dumps(self._coerce_json_keys_to_str(result))
             else:
                 summary = str(result)
         except Exception as exc:  # pylint: disable=broad-except
             summary = f"Unable to summarize result: {exc}"
 
-        summary = summary.strip() or "returned no data"
+        summary = redact_text(summary.strip() or "returned no data")
         if len(summary) > max_length:
             summary = summary[:max_length].rstrip() + "…"
         return summary
 
     def _create_tool_summary_part(
-        self,
-        function_calls,
-        tool_results,
-        original_prompt: Optional[str] = None
+        self, function_calls, tool_results, original_prompt: Optional[str] = None
     ) -> Optional[Part]:
         """Disabled. Returns ``None`` so the next-turn payload only carries
         the canonical ``function_response`` parts.
@@ -1486,9 +1436,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return False
 
     @staticmethod
-    def _adapt_computer_use_args(
-        native_name: str, args: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _adapt_computer_use_args(native_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Adapt native computer-use call args to the toolkit method signature.
 
         Most predefined actions map 1:1 (coordinates are already 0-1000
@@ -1509,9 +1457,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 args["keys"] = ",".join(k.strip() for k in keys.split("+"))
         return args
 
-    async def _execute_computer_use_call(
-        self, tool_name: str, args: Dict[str, Any]
-    ) -> Any:
+    async def _execute_computer_use_call(self, tool_name: str, args: Dict[str, Any]) -> Any:
         """Execute a single computer-use function call, handling safety.
 
         The model embeds an optional ``safety_decision`` object inside the
@@ -1529,9 +1475,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if isinstance(safety, dict) and safety.get("decision") == "require_confirmation":
             approved = await self._confirm_computer_use_safety(tool_name, safety, args)
             if not approved:
-                self.logger.warning(
-                    "Computer-use action %r rejected by safety confirmation.", tool_name
-                )
+                self.logger.warning("Computer-use action %r rejected by safety confirmation.", tool_name)
                 return {
                     "error": "rejected_by_user",
                     "message": "The user did not approve this action.",
@@ -1545,9 +1489,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             result["safety_acknowledgement"] = "true"
         return result
 
-    async def _confirm_computer_use_safety(
-        self, tool_name: str, safety: Dict[str, Any], args: Dict[str, Any]
-    ) -> bool:
+    async def _confirm_computer_use_safety(self, tool_name: str, safety: Dict[str, Any], args: Dict[str, Any]) -> bool:
         """Ask the configured handler whether a flagged action may proceed.
 
         Returns True (proceed) when no handler is configured — preserving the
@@ -1573,9 +1515,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 res = await res
             return bool(res)
         except Exception as exc:
-            self.logger.error(
-                "Computer-use safety handler raised (denying action): %s", exc
-            )
+            self.logger.error("Computer-use safety handler raised (denying action): %s", exc)
             return False
 
     async def _execute_tool(
@@ -1602,10 +1542,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             parameters = self._adapt_computer_use_args(tool_name, dict(parameters or {}))
             tool_name = mapped
 
-        request_tools = getattr(self, '_request_tools', None) or {}
+        request_tools = getattr(self, "_request_tools", None) or {}
         if tool_name in request_tools:
             tool = request_tools[tool_name]
-            ctx = tool_context or getattr(self, '_tool_context', None)
+            ctx = tool_context or getattr(self, "_tool_context", None)
             if ctx:
                 # Filter ctx keys to those the tool actually declares —
                 # request-scoped tools that don't accept ``user_id`` /
@@ -1618,13 +1558,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 merged = {**filtered_ctx, **parameters}
             else:
                 merged = dict(parameters)
-            perm_ctx = getattr(self, '_permission_context', None)
+            perm_ctx = getattr(self, "_permission_context", None)
             if perm_ctx is not None:
-                merged['_permission_context'] = perm_ctx
+                merged["_permission_context"] = perm_ctx
             try:
                 result = await tool.execute(**merged)
                 if isinstance(result, ToolResult):
-                    if result.status == 'error':
+                    if result.status == "error":
                         raise ValueError(result.error)
                     return result.result
                 return result
@@ -1650,7 +1590,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         lazy_loading: bool = False,
         active_tool_names: Optional[set] = None,
         session_id: Optional[str] = None,
-        messages: Optional[List[Dict[str, Any]]] = None
+        messages: Optional[List[Dict[str, Any]]] = None,
     ) -> Any:
         """
         Simple multi-turn function calling - just keep going until no more function calls.
@@ -1680,9 +1620,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     # (e.g. a skill body that references a tool with the wrong name).
                     finish_reason_str = ""
                     try:
-                        if (hasattr(current_response, 'candidates')
-                                and current_response.candidates):
-                            fr = getattr(current_response.candidates[0], 'finish_reason', None)
+                        if hasattr(current_response, "candidates") and current_response.candidates:
+                            fr = getattr(current_response.candidates[0], "finish_reason", None)
                             finish_reason_str = str(fr) if fr else ""
                     except Exception:
                         pass
@@ -1731,14 +1670,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     # except Exception as e:
                     #     self.logger.error(f"Synthesis attempt failed: {e}")
 
-                self.logger.info(
-                    f"No function calls found - completed after {iteration-1} iterations"
-                )
+                self.logger.info(f"No function calls found - completed after {iteration-1} iterations")
                 break
 
-            self.logger.info(
-                f"Iteration {iteration}: Processing {len(function_calls)} function calls"
-            )
+            self.logger.info(f"Iteration {iteration}: Processing {len(function_calls)} function calls")
 
             # Execute function calls
             tool_call_objects = []
@@ -1746,20 +1681,20 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 tc = ToolCall(
                     id=f"call_{uuid.uuid4().hex[:8]}",
                     name=fc.name,
-                    arguments=dict(fc.args) if hasattr(fc.args, 'items') else fc.args
+                    arguments=dict(fc.args) if hasattr(fc.args, "items") else fc.args,
                 )
                 tool_call_objects.append(tc)
 
             if messages is not None:
-                messages.append({
-                    "role": "model",
-                    "function_calls": [
-                        {
-                            "name": fc.name,
-                            "arguments": dict(fc.args) if hasattr(fc.args, 'items') else fc.args
-                        } for fc in function_calls
-                    ]
-                })
+                messages.append(
+                    {
+                        "role": "model",
+                        "function_calls": [
+                            {"name": fc.name, "arguments": dict(fc.args) if hasattr(fc.args, "items") else fc.args}
+                            for fc in function_calls
+                        ],
+                    }
+                )
 
             # Execute tools
             start_time = time.time()
@@ -1773,14 +1708,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         tool_results.append(
                             await self._execute_computer_use_call(
                                 fc.name,
-                                dict(fc.args) if hasattr(fc.args, 'items') else (fc.args or {}),
+                                dict(fc.args) if hasattr(fc.args, "items") else (fc.args or {}),
                             )
                         )
                     except Exception as exc:  # mirror gather(return_exceptions=True)
                         tool_results.append(exc)
             else:
                 tool_execution_tasks = [
-                    self._execute_tool(fc.name, dict(fc.args) if hasattr(fc.args, 'items') else fc.args)
+                    self._execute_tool(fc.name, dict(fc.args) if hasattr(fc.args, "items") else fc.args)
                     for fc in function_calls
                 ]
                 tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
@@ -1816,7 +1751,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     tc.error = str(result)
                     self.logger.error(f"Tool {tc.name} failed: {result}")
                 else:
-                    tc.result = result
+                    tc.result = redact_secrets(result)
                     # self.logger.info(f"Tool {tc.name} result: {result}")
 
             all_tool_calls.extend(tool_call_objects)
@@ -1824,8 +1759,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             # After the first tool round, relax function-calling to AUTO so the
             # model can synthesize a final text answer. ANY was only used on
             # the initial turn to guarantee the model started calling tools.
-            fcc = getattr(getattr(current_config, "tool_config", None),
-                          "function_calling_config", None)
+            fcc = getattr(getattr(current_config, "tool_config", None), "function_calling_config", None)
             if fcc is not None and getattr(fcc, "mode", None) == types.FunctionCallingConfigMode.ANY:
                 fcc.mode = types.FunctionCallingConfigMode.AUTO
 
@@ -1838,16 +1772,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                 try:
                     # Debug log first 20 chars of result
-                    result_preview = str(result)[:20]
+                    result_preview = redact_text(str(result))[:20]
                     self.logger.notice(f"Tool {fc.name} output preview: {result_preview}...")
 
                     if is_computer_use:
                         # Computer-use tools may return screenshot bytes that
                         # must be wrapped in FunctionResponseBlob so Gemini
                         # can process the screenshot visually.
-                        part = self._build_computer_use_function_response_part(
-                            tool_id, fc.name, result
-                        )
+                        part = self._build_computer_use_function_response_part(tool_id, fc.name, result)
                     else:
                         response_content = self._process_tool_result_for_api(result)
                         part = Part(
@@ -1865,18 +1797,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     function_response_parts.append(
                         Part(
                             function_response=types.FunctionResponse(
-                                id=tool_id,
-                                name=fc.name,
-                                response={"result": f"Tool error: {str(e)}", "error": True}
+                                id=tool_id, name=fc.name, response={"result": f"Tool error: {str(e)}", "error": True}
                             )
                         )
                     )
 
-            summary_part = self._create_tool_summary_part(
-                function_calls,
-                tool_results,
-                original_prompt
-            )
+            summary_part = self._create_tool_summary_part(function_calls, tool_results, original_prompt)
             # Combine the tool results with the textual summary prompt
             next_prompt_parts = function_response_parts.copy()
             if summary_part:
@@ -1885,21 +1811,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             # Send responses back
             retry_count = 0
             try:
-                self.logger.debug(
-                    f"Sending {len(next_prompt_parts)} responses back to model"
-                )
+                self.logger.debug(f"Sending {len(next_prompt_parts)} responses back to model")
                 while retry_count < max_retries:
                     try:
-                        current_response = await chat.send_message(
-                            next_prompt_parts,
-                            config=current_config
-                        )
-                        finish_reason = getattr(current_response.candidates[0], 'finish_reason', None)
+                        current_response = await chat.send_message(next_prompt_parts, config=current_config)
+                        finish_reason = getattr(current_response.candidates[0], "finish_reason", None)
                         if finish_reason:
                             if finish_reason.name == "MAX_TOKENS" and current_config.max_output_tokens < 8192:
-                                self.logger.warning(
-                                    "Hit MAX_TOKENS limit. Retrying with increased token limit."
-                                )
+                                self.logger.warning("Hit MAX_TOKENS limit. Retrying with increased token limit.")
                                 retry_count += 1
                                 current_config.max_output_tokens = 8192
                                 continue
@@ -1908,51 +1827,47 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                 try:
                                     cand = current_response.candidates[0]
                                     n_cands = len(current_response.candidates)
-                                    content = getattr(cand, 'content', None)
+                                    content = getattr(cand, "content", None)
                                     self.logger.error(
                                         "MALFORMED details: candidates=%d, content=%s",
                                         n_cands,
                                         type(content).__name__ if content else "None",
                                     )
-                                    if content and hasattr(content, 'parts'):
-                                        for p in (content.parts or []):
-                                            if hasattr(p, 'function_call') and p.function_call:
+                                    if content and hasattr(content, "parts"):
+                                        for p in content.parts or []:
+                                            if hasattr(p, "function_call") and p.function_call:
                                                 fc = p.function_call
                                                 self.logger.error(
                                                     "MALFORMED call: tool=%s args=%s",
-                                                    getattr(fc, 'name', '?'),
-                                                    dict(fc.args) if hasattr(fc.args, 'items') else str(fc.args),
+                                                    getattr(fc, "name", "?"),
+                                                    dict(fc.args) if hasattr(fc.args, "items") else str(fc.args),
                                                 )
-                                            elif hasattr(p, 'text') and p.text:
-                                                self.logger.error(
-                                                    "MALFORMED part text: %s", str(p.text)[:200]
-                                                )
+                                            elif hasattr(p, "text") and p.text:
+                                                self.logger.error("MALFORMED part text: %s", str(p.text)[:200])
                                     # Also log what we sent (function responses)
                                     for part in next_prompt_parts:
                                         try:
-                                            fr = getattr(part, 'function_response', None)
+                                            fr = getattr(part, "function_response", None)
                                             if fr:
                                                 self.logger.error(
                                                     "MALFORMED context — sent FunctionResponse: name=%s response_keys=%s",
-                                                    getattr(fr, 'name', '?'),
-                                                    list((getattr(fr, 'response', None) or {}).keys()),
+                                                    getattr(fr, "name", "?"),
+                                                    list((getattr(fr, "response", None) or {}).keys()),
                                                 )
                                         except Exception:
                                             pass
                                 except Exception as _diag_exc:
                                     self.logger.error("MALFORMED diagnostic failed: %s", _diag_exc)
-                                self.logger.warning(
-                                    "Malformed function call detected. Retrying..."
-                                )
+                                self.logger.warning("Malformed function call detected. Retrying...")
                                 retry_count += 1
-                                await asyncio.sleep(2 ** retry_count)
+                                await asyncio.sleep(2**retry_count)
                                 continue
                         break
                     except Exception as e:
                         error_str = str(e)
                         retry_count += 1
                         delay = self._retry_delay_from_error(retry_count, e)
-                        if '429' in error_str or 'RESOURCE_EXHAUSTED' in error_str:
+                        if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
                             self.logger.warning(
                                 "Rate limited (429). Waiting %ss before retry %d/%d",
                                 delay,
@@ -1961,8 +1876,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             )
                         elif self._is_capacity_error(e):
                             self.logger.warning(
-                                "Google model under high demand (503/UNAVAILABLE). "
-                                "Waiting %ss before retry %d/%d.",
+                                "Google model under high demand (503/UNAVAILABLE). " "Waiting %ss before retry %d/%d.",
                                 delay,
                                 retry_count,
                                 max_retries,
@@ -1975,13 +1889,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         await asyncio.sleep(delay)
 
                 # Check for UNEXPECTED_TOOL_CALL error
-                if (hasattr(current_response, 'candidates') and
-                    current_response.candidates and
-                    hasattr(current_response.candidates[0], 'finish_reason')):
+                if (
+                    hasattr(current_response, "candidates")
+                    and current_response.candidates
+                    and hasattr(current_response.candidates[0], "finish_reason")
+                ):
 
                     finish_reason = current_response.candidates[0].finish_reason
 
-                    if str(finish_reason) == 'FinishReason.UNEXPECTED_TOOL_CALL':
+                    if str(finish_reason) == "FinishReason.UNEXPECTED_TOOL_CALL":
                         self.logger.warning("Received UNEXPECTED_TOOL_CALL")
 
                 # Debug what we got back — lightweight check that avoids
@@ -1990,9 +1906,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     next_fc = self._get_function_calls_from_response(current_response)
                     if next_fc:
                         names = [fc.name for fc in next_fc]
-                        self.logger.debug(
-                            f"Model requested {len(next_fc)} more tool call(s): {names}"
-                        )
+                        self.logger.debug(f"Model requested {len(next_fc)} more tool call(s): {names}")
                     else:
                         preview_text = self._safe_extract_text(current_response)
                         preview = preview_text[:100] if preview_text else "(empty)"
@@ -2009,10 +1923,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # tool-calling disabled. Otherwise we return a function-call-only
         # response with no text, and the caller is left to reformat raw tool
         # output into the answer (producing garbage such as a column dump).
-        if (
-            iteration >= max_iterations
-            and self._get_function_calls_from_response(current_response)
-        ):
+        if iteration >= max_iterations and self._get_function_calls_from_response(current_response):
             self.logger.warning(
                 "Reached max_iterations (%d) with the model still requesting "
                 "tools — forcing a final tool-free synthesis turn.",
@@ -2037,9 +1948,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     "question now. If what you gathered is not enough to fully "
                     "answer, say so explicitly and summarize what you did find."
                 )
-                current_response = await chat.send_message(
-                    synthesis_prompt, config=current_config
-                )
+                current_response = await chat.send_message(synthesis_prompt, config=current_config)
             except Exception as e:
                 self.logger.error("Forced synthesis turn failed: %s", e)
 
@@ -2050,11 +1959,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """Convert tool_code blocks to function call objects."""
         function_calls = []
 
-        if '```tool_code' not in text:
+        if "```tool_code" not in text:
             return function_calls
 
         # Simple regex to extract tool calls
-        pattern = r'```tool_code\s*\n\s*print\(default_api\.(\w+)\((.*?)\)\)\s*\n\s*```'
+        pattern = r"```tool_code\s*\n\s*print\(default_api\.(\w+)\((.*?)\)\)\s*\n\s*```"
         matches = re.findall(pattern, text, re.DOTALL)
 
         for tool_name, args_str in matches:
@@ -2062,15 +1971,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             try:
                 # Parse arguments like: a = 9310, b = 3, operation = "divide"
                 args = {}
-                for arg_part in args_str.split(','):
-                    if '=' in arg_part:
-                        key, value = arg_part.split('=', 1)
+                for arg_part in args_str.split(","):
+                    if "=" in arg_part:
+                        key, value = arg_part.split("=", 1)
                         key = key.strip()
-                        value = value.strip().strip('"\'')  # Remove quotes
+                        value = value.strip().strip("\"'")  # Remove quotes
 
                         # Try to convert to number
                         try:
-                            if '.' in value:
+                            if "." in value:
                                 args[key] = float(value)
                             else:
                                 args[key] = int(value)
@@ -2080,11 +1989,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 tool = self.tool_manager.get_tool(tool_name)
                 if tool:
                     # Create function call
-                    fc = types.FunctionCall(
-                        id=f"call_{uuid.uuid4().hex[:8]}",
-                        name=tool_name,
-                        args=args
-                    )
+                    fc = types.FunctionCall(id=f"call_{uuid.uuid4().hex[:8]}", name=tool_name, args=args)
                     function_calls.append(fc)
                     self.logger.info(f"Created function call: {tool_name}({args})")
 
@@ -2129,7 +2034,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 if fc:
                     self.logger.debug(
                         "Non-text part [%s #%d]: function_call %s(%s) id=%s",
-                        where, idx, fc.name,
+                        where,
+                        idx,
+                        fc.name,
                         self._format_function_call_args(fc),
                         getattr(fc, "id", None),
                     )
@@ -2138,7 +2045,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     res = part.code_execution_result
                     self.logger.debug(
                         "Non-text part [%s #%d]: code_execution_result outcome=%s",
-                        where, idx, getattr(res, "outcome", None),
+                        where,
+                        idx,
+                        getattr(res, "outcome", None),
                     )
                     continue
                 if getattr(part, "executable_code", None):
@@ -2146,7 +2055,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     code = getattr(ec, "code", "") or ""
                     self.logger.debug(
                         "Non-text part [%s #%d]: executable_code lang=%s code_chars=%d",
-                        where, idx, getattr(ec, "language", None), len(code),
+                        where,
+                        idx,
+                        getattr(ec, "language", None),
+                        len(code),
                     )
         except Exception as exc:
             self.logger.debug(f"_log_non_text_parts failed: {exc}")
@@ -2156,13 +2068,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         function_calls = []
 
         try:
-            if (response.candidates and
-                response.candidates[0].content and
-                response.candidates[0].content.parts):
+            if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
 
                 for part in response.candidates[0].content.parts:
                     # Check for proper function calls first
-                    if hasattr(part, 'function_call') and part.function_call:
+                    if hasattr(part, "function_call") and part.function_call:
                         function_calls.append(part.function_call)
                         self.logger.debug(
                             "Found proper function call: %s(%s)",
@@ -2181,7 +2091,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         self.logger.debug("Skipping reasoning/thought part during function extraction")
 
                     # Check for tool_code in text parts
-                    elif hasattr(part, 'text') and part.text and '```tool_code' in part.text:
+                    elif hasattr(part, "text") and part.text and "```tool_code" in part.text:
                         self.logger.info("Found tool_code block - converting to function call")
                         code_function_calls = self._parse_tool_code_blocks(part.text)
                         function_calls.extend(code_function_calls)
@@ -2208,13 +2118,18 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         has_thought = False
         has_content_parts = False
         try:
-            if (hasattr(response, 'candidates') and response.candidates and
-                len(response.candidates) > 0 and hasattr(response.candidates[0], 'content') and
-                response.candidates[0].content and hasattr(response.candidates[0].content, 'parts') and
-                response.candidates[0].content.parts):
+            if (
+                hasattr(response, "candidates")
+                and response.candidates
+                and len(response.candidates) > 0
+                and hasattr(response.candidates[0], "content")
+                and response.candidates[0].content
+                and hasattr(response.candidates[0].content, "parts")
+                and response.candidates[0].content.parts
+            ):
                 has_content_parts = True
                 for part in response.candidates[0].content.parts:
-                    if hasattr(part, 'function_call') and part.function_call:
+                    if hasattr(part, "function_call") and part.function_call:
                         has_function_call = True
                     # Match SDK filter exactly (``types.py:7993``):
                     # only ``part.thought is True`` marks a thought.
@@ -2228,23 +2143,25 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # include planning text that should not be shown to callers.
         if not has_content_parts and not has_function_call and not has_thought:
             try:
-                if hasattr(response, 'text') and response.text:
-                    if (text := response.text.strip()):
-                        self.logger.debug(
-                            f"Extracted text via response.text: '{text[:100]}...'"
-                        )
+                if hasattr(response, "text") and response.text:
+                    if text := response.text.strip():
+                        self.logger.debug(f"Extracted text via response.text: '{text[:100]}...'")
                         return text
             except Exception as e:
                 # This is expected with reasoning models that have mixed content
-                self.logger.debug(
-                    f"response.text failed (normal for reasoning models): {e}"
-                )
+                self.logger.debug(f"response.text failed (normal for reasoning models): {e}")
 
         # Method 2: Manual extraction from parts (more robust)
         try:
-            if (hasattr(response, 'candidates') and response.candidates and len(response.candidates) > 0 and
-                hasattr(response.candidates[0], 'content') and response.candidates[0].content and
-                hasattr(response.candidates[0].content, 'parts') and response.candidates[0].content.parts):
+            if (
+                hasattr(response, "candidates")
+                and response.candidates
+                and len(response.candidates) > 0
+                and hasattr(response.candidates[0], "content")
+                and response.candidates[0].content
+                and hasattr(response.candidates[0].content, "parts")
+                and response.candidates[0].content.parts
+            ):
 
                 text_parts = []
                 thought_parts_found = 0
@@ -2264,32 +2181,26 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         continue
 
                     # Check for regular text content
-                    if hasattr(part, 'text') and part.text:
-                        if (clean_text := part.text.strip()):
+                    if hasattr(part, "text") and part.text:
+                        if clean_text := part.text.strip():
                             text_parts.append(clean_text)
-                            self.logger.debug(
-                                f"Found text part: '{clean_text[:50]}...'"
-                            )
+                            self.logger.debug(f"Found text part: '{clean_text[:50]}...'")
 
                     # Check for code execution result (contains output from executed code)
-                    elif hasattr(part, 'code_execution_result') and part.code_execution_result:
+                    elif hasattr(part, "code_execution_result") and part.code_execution_result:
                         result = part.code_execution_result
-                        outcome = getattr(result, 'outcome', None)
-                        output = getattr(result, 'output', None)
-                        self.logger.debug(
-                            f"Found code_execution_result: outcome={outcome}"
-                        )
+                        outcome = getattr(result, "outcome", None)
+                        output = getattr(result, "output", None)
+                        self.logger.debug(f"Found code_execution_result: outcome={outcome}")
                         if output and isinstance(output, str) and output.strip():
                             text_parts.append(output.strip())
-                            self.logger.debug(
-                                f"Extracted code execution output: '{output[:50]}...'"
-                            )
+                            self.logger.debug(f"Extracted code execution output: '{output[:50]}...'")
 
                     # Check for executable code (the code that was executed)
-                    elif hasattr(part, 'executable_code') and part.executable_code:
+                    elif hasattr(part, "executable_code") and part.executable_code:
                         exec_code = part.executable_code
-                        code_text = getattr(exec_code, 'code', None)
-                        language = getattr(exec_code, 'language', 'PYTHON')
+                        code_text = getattr(exec_code, "code", None)
+                        language = getattr(exec_code, "language", "PYTHON")
                         self.logger.debug(
                             f"Found executable_code part: language={language}, code_len={len(code_text) if code_text else 0}"
                         )
@@ -2298,16 +2209,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                 # Log reasoning model detection
                 if thought_parts_found > 0:
-                    self.logger.debug(
-                        f"Detected reasoning model with {thought_parts_found} thought parts"
-                    )
+                    self.logger.debug(f"Detected reasoning model with {thought_parts_found} thought parts")
 
                 # Combine text parts
                 if text_parts:
-                    if (combined_text := "".join(text_parts).strip()):
-                        self.logger.debug(
-                            f"Successfully extracted text from {len(text_parts)} parts"
-                        )
+                    if combined_text := "".join(text_parts).strip():
+                        self.logger.debug(f"Successfully extracted text from {len(text_parts)} parts")
                         return combined_text
                 else:
                     self.logger.debug("No text parts found in response parts")
@@ -2317,28 +2224,31 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Method 3: Deep inspection for debugging (fallback)
         try:
-            if hasattr(response, 'candidates') and response.candidates:
+            if hasattr(response, "candidates") and response.candidates:
                 candidate = response.candidates[0] if len(response.candidates) > 0 else None
                 if candidate:
-                    if hasattr(candidate, 'finish_reason'):
+                    if hasattr(candidate, "finish_reason"):
                         finish_reason = str(candidate.finish_reason)
                         self.logger.debug(f"Response finish reason: {finish_reason}")
-                        if 'MAX_TOKENS' in finish_reason:
+                        if "MAX_TOKENS" in finish_reason:
                             self.logger.warning("Response truncated due to token limit")
-                        elif 'SAFETY' in finish_reason:
+                        elif "SAFETY" in finish_reason:
                             self.logger.warning("Response blocked by safety filters")
-                        elif 'STOP' in finish_reason:
+                        elif "STOP" in finish_reason:
                             self.logger.debug("Response completed normally but no text found")
 
-                    if hasattr(candidate, 'content') and candidate.content:
-                        if hasattr(candidate.content, 'parts'):
+                    if hasattr(candidate, "content") and candidate.content:
+                        if hasattr(candidate.content, "parts"):
                             parts_count = len(candidate.content.parts) if candidate.content.parts else 0
                             self.logger.debug(f"Response has {parts_count} parts but no extractable text")
                             if candidate.content.parts:
                                 part_types = []
                                 for part in candidate.content.parts:
-                                    part_attrs = [attr for attr in dir(part)
-                                                    if not attr.startswith('_') and hasattr(part, attr) and getattr(part, attr)]
+                                    part_attrs = [
+                                        attr
+                                        for attr in dir(part)
+                                        if not attr.startswith("_") and hasattr(part, attr) and getattr(part, attr)
+                                    ]
                                     part_types.append(part_attrs)
                                 self.logger.debug(f"Part attribute types found: {part_types}")
 
@@ -2346,15 +2256,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             self.logger.error(f"Deep inspection failed: {e}")
 
         # Method 4: Final fallback - return empty string with clear logging
-        self.logger.warning(
-            "Could not extract any text from response using any method"
-        )
+        self.logger.warning("Could not extract any text from response using any method")
         return ""
 
     def _extract_code_execution_content(
-        self,
-        response,
-        output_directory: Optional[Union[str, Path]] = None
+        self, response, output_directory: Optional[Union[str, Path]] = None
     ) -> Dict[str, Any]:
         """
         Extract code execution content from response including code, results, and images.
@@ -2373,84 +2279,76 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 - 'images': List of PIL Image objects or saved file paths
                 - 'has_content': Boolean indicating if any content was extracted
         """
-        result = {
-            'code': [],
-            'output': [],
-            'images': [],
-            'has_content': False
-        }
+        result = {"code": [], "output": [], "images": [], "has_content": False}
 
         try:
-            if not (hasattr(response, 'candidates') and response.candidates and
-                    len(response.candidates) > 0 and
-                    hasattr(response.candidates[0], 'content') and
-                    response.candidates[0].content and
-                    hasattr(response.candidates[0].content, 'parts') and
-                    response.candidates[0].content.parts):
+            if not (
+                hasattr(response, "candidates")
+                and response.candidates
+                and len(response.candidates) > 0
+                and hasattr(response.candidates[0], "content")
+                and response.candidates[0].content
+                and hasattr(response.candidates[0].content, "parts")
+                and response.candidates[0].content.parts
+            ):
                 return result
 
             for part in response.candidates[0].content.parts:
                 # Extract executable code
-                if hasattr(part, 'executable_code') and part.executable_code:
+                if hasattr(part, "executable_code") and part.executable_code:
                     exec_code = part.executable_code
-                    code_text = getattr(exec_code, 'code', None)
+                    code_text = getattr(exec_code, "code", None)
                     if code_text:
-                        result['code'].append(code_text)
-                        result['has_content'] = True
-                        self.logger.debug(
-                            f"Extracted executable code: {len(code_text)} chars"
-                        )
+                        result["code"].append(code_text)
+                        result["has_content"] = True
+                        self.logger.debug(f"Extracted executable code: {len(code_text)} chars")
 
                 # Extract code execution result
-                elif hasattr(part, 'code_execution_result') and part.code_execution_result:
+                elif hasattr(part, "code_execution_result") and part.code_execution_result:
                     exec_result = part.code_execution_result
-                    outcome = getattr(exec_result, 'outcome', None)
-                    output_text = getattr(exec_result, 'output', None)
+                    outcome = getattr(exec_result, "outcome", None)
+                    output_text = getattr(exec_result, "output", None)
 
-                    self.logger.debug(
-                        f"Code execution result: outcome={outcome}"
-                    )
+                    self.logger.debug(f"Code execution result: outcome={outcome}")
 
                     if output_text and isinstance(output_text, str) and output_text.strip():
-                        result['output'].append(output_text.strip())
-                        result['has_content'] = True
+                        result["output"].append(output_text.strip())
+                        result["has_content"] = True
 
                 # Extract images from inline_data (matplotlib charts, generated images)
-                elif hasattr(part, 'inline_data') and part.inline_data:
+                elif hasattr(part, "inline_data") and part.inline_data:
                     try:
                         inline_data = part.inline_data
-                        mime_type = getattr(inline_data, 'mime_type', '')
+                        mime_type = getattr(inline_data, "mime_type", "")
 
                         # Check if it's an image
-                        if mime_type and mime_type.startswith('image/'):
-                            image_data = getattr(inline_data, 'data', None)
+                        if mime_type and mime_type.startswith("image/"):
+                            image_data = getattr(inline_data, "data", None)
                             if image_data:
                                 # Convert to PIL Image
                                 image = Image.open(io.BytesIO(image_data))
-                                self.logger.debug(
-                                    f"Extracted image from inline_data: {mime_type}, size={image.size}"
-                                )
+                                self.logger.debug(f"Extracted image from inline_data: {mime_type}, size={image.size}")
 
                                 # Save to file if output_directory is provided
                                 if output_directory:
                                     output_dir = Path(output_directory)
                                     output_dir.mkdir(parents=True, exist_ok=True)
                                     # Generate unique filename
-                                    ext = mime_type.split('/')[-1] if '/' in mime_type else 'png'
+                                    ext = mime_type.split("/")[-1] if "/" in mime_type else "png"
                                     filename = f"chart_{uuid.uuid4().hex[:8]}.{ext}"
                                     file_path = output_dir / filename
                                     image.save(file_path)
-                                    result['images'].append(file_path)
+                                    result["images"].append(file_path)
                                     self.logger.debug(f"Saved image to: {file_path}")
                                 else:
-                                    result['images'].append(image)
+                                    result["images"].append(image)
 
-                                result['has_content'] = True
+                                result["has_content"] = True
                     except Exception as e:
                         self.logger.warning(f"Failed to extract image from inline_data: {e}")
 
                 # Try as_image() method for parts that support it
-                elif hasattr(part, 'as_image') and callable(getattr(part, 'as_image')):
+                elif hasattr(part, "as_image") and callable(getattr(part, "as_image")):
                     try:
                         # Check if this part can be converted to an image
                         # The as_image() method is available on parts with image content
@@ -2466,18 +2364,18 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                 filename = f"chart_{uuid.uuid4().hex[:8]}.png"
                                 file_path = output_dir / filename
                                 image.save(file_path)
-                                result['images'].append(file_path)
+                                result["images"].append(file_path)
                                 self.logger.debug(f"Saved image to: {file_path}")
                             else:
-                                result['images'].append(image)
+                                result["images"].append(image)
 
-                            result['has_content'] = True
+                            result["has_content"] = True
                     except Exception as e:
                         # as_image() may fail if the part doesn't actually contain image data
                         self.logger.debug(f"as_image() not applicable for this part: {e}")
 
             # Log summary
-            if result['has_content']:
+            if result["has_content"]:
                 self.logger.info(
                     f"Extracted code execution content: "
                     f"{len(result['code'])} code blocks, "
@@ -2509,7 +2407,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         file_search_store_names: Optional[List[str]] = None,
         lazy_loading: bool = False,
         max_iterations: int = 15,
-        **kwargs
+        **kwargs,
     ) -> AIMessage:
         """
         Ask a question to Google's Generative AI with support for parallel tool calls.
@@ -2532,8 +2430,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             file_search_store_names (Optional[List[str]]): Names of file search stores for deep research.
             max_iterations (int): Maximum number of tool-calling rounds (default 15).
         """
-        max_retries = kwargs.pop('max_retries', 2)
-        retry_on_fail = kwargs.pop('retry_on_fail', True)
+        max_retries = kwargs.pop("max_retries", 2)
+        retry_on_fail = kwargs.pop("retry_on_fail", True)
 
         if not retry_on_fail:
             max_retries = 1
@@ -2546,7 +2444,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 file_search_store_names=file_search_store_names,
                 user_id=user_id,
                 session_id=session_id,
-                files=files
+                files=files,
             )
 
         # If use_tools is None, use the instance default
@@ -2580,10 +2478,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Store runtime context so _execute_tool can inject it into tools
         self._tool_context = {
-            k: v for k, v in {
+            k: v
+            for k, v in {
                 "user_id": user_id,
                 "session_id": session_id,
-            }.items() if v is not None
+            }.items()
+            if v is not None
         }
 
         # Per-call overlay of request-scoped tools. Tools passed via
@@ -2591,11 +2491,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # they are combined with manager tools only when building this call's
         # function declarations and when looking up a tool to execute.
         # Indexed by tool name; request-scoped tools win on collisions.
-        self._request_tools = {
-            getattr(t, 'name', None): t
-            for t in (tools or [])
-            if getattr(t, 'name', None)
-        }
+        self._request_tools = {getattr(t, "name", None): t for t in (tools or []) if getattr(t, "name", None)}
 
         # Prepare conversation context using unified memory system
         conversation_history = None
@@ -2624,32 +2520,30 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Construct history directly from the 'messages' array, which should be in the correct format
         if messages:
             for msg in messages[:-1]:  # Exclude the current user message (last in list)
-                role = msg['role'].lower()
+                role = msg["role"].lower()
                 # Assuming content is already in the format [{"type": "text", "text": "..."}]
                 # or other GenAI Part types if files were involved.
                 # Here, we only expect text content for history, as images/files are for the current turn.
-                if role == 'user':
+                if role == "user":
                     # Content can be a list of dicts (for text/parts) or a single string.
                     # Standardize to list of Parts.
                     parts = []
-                    for part_content in msg.get('content', []):
-                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
-                            parts.append(Part(text=part_content.get('text', '')))
+                    for part_content in msg.get("content", []):
+                        if isinstance(part_content, dict) and part_content.get("type") == "text":
+                            parts.append(Part(text=part_content.get("text", "")))
                         # Add other part types if necessary for history (e.g., function responses)
                     if parts:
                         history.append(UserContent(parts=parts))
-                elif role in ['assistant', 'model']:
+                elif role in ["assistant", "model"]:
                     parts = []
-                    for part_content in msg.get('content', []):
-                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
-                            parts.append(Part(text=part_content.get('text', '')))
+                    for part_content in msg.get("content", []):
+                        if isinstance(part_content, dict) and part_content.get("type") == "text":
+                            parts.append(Part(text=part_content.get("text", "")))
                     if parts:
                         history.append(ModelContent(parts=parts))
 
         default_tokens = max_tokens or self.max_tokens
-        generation_config = {
-            "temperature": temperature or self.temperature
-        }
+        generation_config = {"temperature": temperature or self.temperature}
         if default_tokens:
             generation_config["max_output_tokens"] = default_tokens
         base_temperature = generation_config["temperature"]
@@ -2698,15 +2592,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         tool_names = []
         if tools:
             for tool in tools:
-                if getattr(tool, 'function_declarations', None):
+                if getattr(tool, "function_declarations", None):
                     tool_names.extend([fd.name for fd in tool.function_declarations])
-            self.logger.debug(f'TOOLS ({len(tool_names)}): {tool_names}')
+            self.logger.debug(f"TOOLS ({len(tool_names)}): {tool_names}")
             self.logger.debug(f'request_form in tools: {"request_form" in tool_names}')
 
         if _use_tools and tool_type == "custom_functions" and not tools:
-            self.logger.info(
-                "Tool usage requested but no tools are registered - disabling tools for this request."
-            )
+            self.logger.info("Tool usage requested but no tools are registered - disabling tools for this request.")
             _use_tools = False
             tool_type = None
             tools = []
@@ -2721,11 +2613,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             active_tool_names.add("search_tools")
             tools = self._build_tools("custom_functions", filter_names=["search_tools"])
             # Add system prompt instruction
-            search_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            search_prompt = (
+                "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            )
             system_prompt = f"{system_prompt}\n\n{search_prompt}" if system_prompt else search_prompt
             # Update final_config later with this new system prompt if needed,
             # but system_prompt is passed to GenerateContentConfig below.
-
 
         self.logger.debug(
             f"Using model: {model}, max_tokens: {default_tokens}, temperature: {temperature}, "
@@ -2793,28 +2686,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             thinking_config = ThinkingConfig(include_thoughts=True)
         elif _requires_thinking:
             # Pro models (2.5-pro, 3-pro, 3.1-pro) are thinking-only — budget=0 is invalid.
-            thinking_config = ThinkingConfig(
-                thinking_budget=8192,
-                include_thoughts=False
-            )
-        elif 'flash' in model.lower():
+            thinking_config = ThinkingConfig(thinking_budget=8192, include_thoughts=False)
+        elif "flash" in model.lower():
             # Flash puede deshabilitarse con budget=0
-            thinking_config = ThinkingConfig(
-                thinking_budget=0,
-                include_thoughts=False
-            )
+            thinking_config = ThinkingConfig(thinking_budget=0, include_thoughts=False)
         elif use_tools:
             # Gemini 2.5 Pro + thinking + tool schemas → MALFORMED_FUNCTION_CALL.
             # Disable thinking when tools are active to ensure reliable function calls.
-            thinking_config = ThinkingConfig(
-                thinking_budget=0,
-                include_thoughts=False
-            )
+            thinking_config = ThinkingConfig(thinking_budget=0, include_thoughts=False)
         else:
-            thinking_config = ThinkingConfig(
-                thinking_budget=8192,
-                include_thoughts=False
-            )
+            thinking_config = ThinkingConfig(thinking_budget=8192, include_thoughts=False)
         # Use AUTO: let Gemini decide whether a tool call is needed.
         # Previous default was ANY (forced tool use on the first turn),
         # which caused two problems: (a) on generic questions Gemini would
@@ -2827,16 +2708,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # ``force_tool_call=True`` via generation_config.
         tool_config = None
         if tools and tool_type == "custom_functions":
-            force_tool_call = bool(generation_config.pop("force_tool_call", False)) \
-                if isinstance(generation_config, dict) else False
+            force_tool_call = (
+                bool(generation_config.pop("force_tool_call", False)) if isinstance(generation_config, dict) else False
+            )
             mode = (
                 types.FunctionCallingConfigMode.ANY
                 if force_tool_call and bool((prompt or "").strip())
                 else types.FunctionCallingConfigMode.AUTO
             )
-            tool_config = types.ToolConfig(
-                function_calling_config=types.FunctionCallingConfig(mode=mode)
-            )
+            tool_config = types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode=mode))
 
         # Computer-use requests send a native ComputerUse tool alongside any
         # genuinely-custom FunctionDeclaration tools (computer_screenshot,
@@ -2879,7 +2759,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             tool_config=tool_config,
             thinking_config=thinking_config,
             automatic_function_calling=afc_config,
-            **generation_config
+            **generation_config,
         )
         # FEAT-181: if we have pending cache segments, attempt to create
         # a Gemini CachedContent resource (fail-open on any error).
@@ -2893,8 +2773,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     final_config.cached_content = _cache_payload["cached_content"]
                 except (AttributeError, TypeError):
                     self.logger.debug(
-                        "GenerateContentConfig does not support cached_content assignment; "
-                        "continuing without cache."
+                        "GenerateContentConfig does not support cached_content assignment; " "continuing without cache."
                     )
 
         # Single execution path for both stateless and stateful modes.
@@ -2904,10 +2783,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # In stateless mode ``history`` is empty; in stateful mode it carries
         # the prior turns. Everything else is identical.
         current_model = model
-        chat = self.client.aio.chats.create(
-            model=current_model,
-            history=history
-        )
+        chat = self.client.aio.chats.create(model=current_model, history=history)
         retry_count = 0
         while retry_count < max_retries:
             try:
@@ -2922,17 +2798,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     stateless,
                     len(history),
                 )
-                response = await chat.send_message(
-                    message=prompt,
-                    config=final_config
-                )
+                response = await chat.send_message(message=prompt, config=final_config)
                 self.logger.info(
                     "Google ask timing: chat.send_message_ms=%.1f model=%s attempt=%d",
                     (time.perf_counter() - phase_started) * 1000,
                     current_model,
                     retry_count + 1,
                 )
-                finish_reason = getattr(response.candidates[0], 'finish_reason', None)
+                finish_reason = getattr(response.candidates[0], "finish_reason", None)
                 if finish_reason:
                     if finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] <= 1024:
                         retry_count += 1
@@ -2945,8 +2818,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         retry_count += 1
                         if retry_count >= max_retries:
                             self.logger.error(
-                                "Malformed function call detected. "
-                                "Exhausted %d retries — raising.",
+                                "Malformed function call detected. " "Exhausted %d retries — raising.",
                                 max_retries,
                             )
                             raise RuntimeError(
@@ -2956,26 +2828,22 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             )
                         self.logger.warning(
                             "Malformed function call detected. Retrying %d/%d...",
-                            retry_count, max_retries,
+                            retry_count,
+                            max_retries,
                         )
-                        await asyncio.sleep(2 ** retry_count)
+                        await asyncio.sleep(2**retry_count)
                         continue
                 break
             except Exception as e:
                 # Handle specific network client error (socket/aiohttp issue)
                 if "'NoneType' object has no attribute 'getaddrinfo'" in str(e):
                     retry_count += 1
-                    self.logger.warning(
-                        f"Encountered network client error: {e}. Resetting client and retrying."
-                    )
+                    self.logger.warning(f"Encountered network client error: {e}. Resetting client and retrying.")
                     # Reset the current-loop client only; sibling loops are unaffected.
                     await self._close_current_loop_entry()
                     await self._ensure_client(model=current_model)
                     # Recreate the chat session
-                    chat = self.client.aio.chats.create(
-                        model=current_model,
-                        history=history
-                    )
+                    chat = self.client.aio.chats.create(model=current_model, history=history)
                     delay = self._retry_delay_from_error(retry_count, e)
                     if retry_count >= max_retries:
                         raise
@@ -2985,22 +2853,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 retry_count += 1
                 if self._should_use_fallback(current_model, e):
                     self.logger.warning(
-                        "Google model '%s' capacity error: %s. "
-                        "Retrying once with fallback: '%s'.",
+                        "Google model '%s' capacity error: %s. " "Retrying once with fallback: '%s'.",
                         current_model,
                         e,
                         self._fallback_model,
                     )
                     current_model = self._fallback_model
-                    chat = self.client.aio.chats.create(
-                        model=current_model,
-                        history=history
-                    )
+                    chat = self.client.aio.chats.create(model=current_model, history=history)
 
                 delay = self._retry_delay_from_error(retry_count, e)
                 self.logger.warning(
-                    "Error during initial chat.send_message (attempt %d/%d): %s. "
-                    "Retrying in %ss.",
+                    "Error during initial chat.send_message (attempt %d/%d): %s. " "Retrying in %ss.",
                     retry_count,
                     max_retries,
                     e,
@@ -3016,14 +2879,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             content = getattr(candidate, "content", None) if candidate else None
             parts = getattr(content, "parts", None) if content else None
             if parts:
-                has_function_calls = any(
-                    hasattr(p, 'function_call') and p.function_call
-                    for p in parts
-                )
+                has_function_calls = any(hasattr(p, "function_call") and p.function_call for p in parts)
 
-        self.logger.debug(
-            f"Initial response has function calls: {has_function_calls}"
-        )
+        self.logger.debug(f"Initial response has function calls: {has_function_calls}")
         if has_function_calls:
             self._log_non_text_parts(response, where="initial response")
 
@@ -3041,7 +2899,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             lazy_loading=lazy_loading,
             active_tool_names=active_tool_names,
             session_id=session_id,
-            messages=messages
+            messages=messages,
         )
         self.logger.debug(
             "Google ask timing: function_loop_ms=%.1f tool_calls=%d",
@@ -3058,17 +2916,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         code_execution_content = self._extract_code_execution_content(final_response)
 
         # If code execution produced output but we don't have text, use the code execution output
-        if not assistant_response_text and code_execution_content['output']:
-            assistant_response_text = "\n".join(code_execution_content['output'])
-            self.logger.info(
-                f"Using code execution output as response text: {len(assistant_response_text)} chars"
-            )
+        if not assistant_response_text and code_execution_content["output"]:
+            assistant_response_text = "\n".join(code_execution_content["output"])
+            self.logger.info(f"Using code execution output as response text: {len(assistant_response_text)} chars")
 
         # If we still don't have text but have tool calls, generate a summary
         if not assistant_response_text and all_tool_calls:
-            assistant_response_text = self._create_simple_summary(
-                all_tool_calls
-            )
+            assistant_response_text = self._create_simple_summary(all_tool_calls)
         self.logger.debug(
             "Google ask timing: response_text_extract_ms=%.1f text_chars=%d",
             (time.perf_counter() - phase_started) * 1000,
@@ -3083,7 +2937,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 _max = max_tokens or self.max_tokens
                 structured_config = {
                     "temperature": temperature or self.temperature,
-                    "response_mime_type": "application/json"
+                    "response_mime_type": "application/json",
                 }
                 if _max:
                     structured_config["max_output_tokens"] = _max
@@ -3096,16 +2950,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     # Check if text looks like JSON before trying to parse (avoids warnings)
                     text_to_check = assistant_response_text.strip()
                     is_json_candidate = (
-                        text_to_check.startswith('{') or
-                        text_to_check.startswith('[') or
-                        '```json' in text_to_check
+                        text_to_check.startswith("{") or text_to_check.startswith("[") or "```json" in text_to_check
                     )
 
                     if is_json_candidate:
                         # We accept the result if it is NOT just the original string (which implies parsing failure return)
                         fast_parsed = await self._parse_structured_output(
-                            assistant_response_text,
-                            structured_output_for_later
+                            assistant_response_text, structured_output_for_later
                         )
 
                         # _parse_structured_output returns the (possibly stripped) response
@@ -3148,9 +2999,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     # `_requires_thinking` is False for flash-preview, so
                     # budget=0 is accepted. Do NOT remove this.
                     if not self._requires_thinking(reformat_model):
-                        structured_config["thinking_config"] = ThinkingConfig(
-                            thinking_budget=0
-                        )
+                        structured_config["thinking_config"] = ThinkingConfig(thinking_budget=0)
                     # Create a new client call without tools for structured output
                     format_prompt = (
                         "Convert the following response into the requested JSON structure.\n\n"
@@ -3173,8 +3022,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         f"Return only the JSON object:\n\n{assistant_response_text}"
                     )
                     self.logger.debug(
-                        "Reformatting response as structured output using %s "
-                        "(thinking=%s, input_chars=%d)...",
+                        "Reformatting response as structured output using %s " "(thinking=%s, input_chars=%d)...",
                         reformat_model,
                         structured_config.get("thinking_config") and "off" or "default",
                         len(format_prompt),
@@ -3183,7 +3031,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     structured_response = await self.client.aio.models.generate_content(
                         model=reformat_model,
                         contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
-                        config=GenerateContentConfig(**structured_config)
+                        config=GenerateContentConfig(**structured_config),
                     )
                     _reformat_elapsed = time.perf_counter() - _reformat_start
                     self.logger.info(
@@ -3195,21 +3043,18 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         # Parse the structured output
                         if isinstance(structured_output_for_later, StructuredOutputConfig):
                             final_output = await self._parse_structured_output(
-                                structured_text,
-                                structured_output_for_later
+                                structured_text, structured_output_for_later
                             )
                         elif isinstance(structured_output_for_later, type):
-                            if hasattr(structured_output_for_later, 'model_validate_json'):
+                            if hasattr(structured_output_for_later, "model_validate_json"):
                                 final_output = structured_output_for_later.model_validate_json(structured_text)
-                            elif hasattr(structured_output_for_later, 'model_validate'):
+                            elif hasattr(structured_output_for_later, "model_validate"):
                                 parsed_json = self._json.loads(structured_text)
                                 final_output = structured_output_for_later.model_validate(parsed_json)
                         else:
                             final_output = self._json.loads(structured_text)
                     else:
-                        self.logger.warning(
-                            "No structured text received, falling back to original response"
-                        )
+                        self.logger.warning("No structured text received, falling back to original response")
                         final_output = assistant_response_text
             except Exception as e:
                 self.logger.error(f"Error parsing structured output: {e}")
@@ -3252,10 +3097,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     final_output = assistant_response_text
         elif output_config and not use_tools:
             try:
-                final_output = await self._parse_structured_output(
-                    assistant_response_text,
-                    output_config
-                )
+                final_output = await self._parse_structured_output(assistant_response_text, output_config)
             except Exception:
                 final_output = assistant_response_text
         else:
@@ -3267,9 +3109,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             "content": [
                 {
                     "type": "text",
-                    "text": str(final_output) if final_output != assistant_response_text else assistant_response_text
+                    "text": str(final_output) if final_output != assistant_response_text else assistant_response_text,
                 }
-            ]
+            ],
         }
 
         # Update conversation memory with unified system
@@ -3285,17 +3127,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 turn_id,
                 original_prompt,
                 assistant_response_text,
-                tools_used
+                tools_used,
             )
             self.logger.debug(
                 "Google ask timing: update_conversation_memory_ms=%.1f",
                 (time.perf_counter() - phase_started) * 1000,
             )
         # Prepare code execution content for AIMessage
-        extracted_images = code_execution_content.get('images', []) if code_execution_content else []
+        extracted_images = code_execution_content.get("images", []) if code_execution_content else []
         extracted_code = (
-            "\n\n".join(code_execution_content['code'])
-            if code_execution_content and code_execution_content.get('code')
+            "\n\n".join(code_execution_content["code"])
+            if code_execution_content and code_execution_content.get("code")
             else None
         )
 
@@ -3314,7 +3156,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             text_response=assistant_response_text,
             files=extracted_images,
             images=extracted_images,
-            code=extracted_code
+            code=extracted_code,
         )
         self.logger.debug(
             "Google ask timing: ai_message_factory_ms=%.1f total_ms=%.1f",
@@ -3330,12 +3172,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         self._request_tools = {}
 
         # FEAT-176: lifecycle event — AfterClientCallEvent
-        _lc_google_usage = getattr(ai_message, 'usage', None)
+        _lc_google_usage = getattr(ai_message, "usage", None)
         await self._emit_after_call(
-            _lc_tc_google, client_name="google", model=str(model) if model else "",
+            _lc_tc_google,
+            client_name="google",
+            model=str(model) if model else "",
             duration_ms=(time.perf_counter() - ask_started) * 1000,
-            input_tokens=getattr(_lc_google_usage, 'prompt_tokens', None) if _lc_google_usage else None,
-            output_tokens=getattr(_lc_google_usage, 'completion_tokens', None) if _lc_google_usage else None,
+            input_tokens=getattr(_lc_google_usage, "prompt_tokens", None) if _lc_google_usage else None,
+            output_tokens=getattr(_lc_google_usage, "completion_tokens", None) if _lc_google_usage else None,
             finish_reason=None,
         )
         return ai_message
@@ -3354,10 +3198,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     return f"Tool {tc.name} returned a DataFrame with {len(tc.result)} rows."
                 else:
                     return f"Tool {tc.name} returned an empty DataFrame."
-            elif tc.result and isinstance(tc.result, dict) and 'expression' in tc.result:
-                return tc.result['expression']
-            elif tc.result and isinstance(tc.result, dict) and 'result' in tc.result:
-                return f"Result: {tc.result['result']}"
+            elif tc.name in self._sensitive_tool_result_names and isinstance(tc.result, str):
+                return f"Tool {tc.name} completed; output withheld for safety."
+            elif tc.name in self._sensitive_tool_result_names and isinstance(tc.result, dict):
+                return f"Tool {tc.name} completed; output withheld for safety."
+            elif tc.result and isinstance(tc.result, dict) and "expression" in tc.result:
+                return redact_text(str(tc.result["expression"]))
+            elif tc.result and isinstance(tc.result, dict) and "result" in tc.result:
+                return f"Result: {redact_text(str(tc.result['result']))}"
         if len(all_tool_calls) >= 1:
             # Multiple calls - show the final result
             final_tc = all_tool_calls[-1]
@@ -3366,11 +3214,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     return f"Data: {final_tc.result.to_string()}"
                 else:
                     return f"Final tool {final_tc.name} returned an empty DataFrame."
+            if final_tc.name in self._sensitive_tool_result_names and isinstance(final_tc.result, (str, dict)):
+                return f"Final tool {final_tc.name} completed; output withheld for safety."
             if final_tc.result and isinstance(final_tc.result, dict):
-                if 'result' in final_tc.result:
-                    return f"Final result: {final_tc.result['result']}"
-                elif 'expression' in final_tc.result:
-                    return final_tc.result['expression']
+                if "result" in final_tc.result:
+                    return f"Final result: {redact_text(str(final_tc.result['result']))}"
+                elif "expression" in final_tc.result:
+                    return redact_text(str(final_tc.result["expression"]))
             # Plain strings from intermediate tools (e.g. load_skill body) must not
             # be surfaced as the final answer — fall through to the sentinel below.
 
@@ -3382,9 +3232,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         )
         if skill_tc is not None and isinstance(skill_tc.result, str):
             skill_name = (
-                skill_tc.arguments.get("name", "unknown")
-                if isinstance(skill_tc.arguments, dict)
-                else "unknown"
+                skill_tc.arguments.get("name", "unknown") if isinstance(skill_tc.arguments, dict) else "unknown"
             )
             self.logger.error(
                 "Skill '%s' loaded but subsequent tool call was malformed — "
@@ -3403,8 +3251,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # detect this via the LLM_NO_FINAL_ANSWER sentinel below.
         tool_names = [tc.name for tc in all_tool_calls]
         self.logger.error(
-            "LLM exhausted tool-calling loop without producing a final "
-            "answer. Tools invoked (%d): %s",
+            "LLM exhausted tool-calling loop without producing a final " "answer. Tools invoked (%d): %s",
             len(all_tool_calls),
             ", ".join(tool_names),
         )
@@ -3426,8 +3273,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 tool_description = tool.description
                 schema = self.clean_google_schema(tool.input_schema.copy())
             else:
-                tool_description = getattr(tool, 'description', f"Tool: {tool_name}")
-                schema = getattr(tool, 'input_schema', {})
+                tool_description = getattr(tool, "description", f"Tool: {tool_name}")
+                schema = getattr(tool, "input_schema", {})
                 schema = self.clean_google_schema(schema)
 
             if not schema:
@@ -3435,9 +3282,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
             try:
                 declaration = types.FunctionDeclaration(
-                    name=tool_name,
-                    description=tool_description,
-                    parameters=self._fix_tool_schema(schema)
+                    name=tool_name, description=tool_description, parameters=self._fix_tool_schema(schema)
                 )
                 function_declarations.append(declaration)
             except Exception as e:
@@ -3467,7 +3312,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         agent_config: Optional[Dict[str, Any]] = None,
         lazy_loading: bool = False,
         max_iterations: int = 15,
-        **kwargs
+        **kwargs,
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """
         Stream Google Generative AI's response using AsyncIterator with support for Tool Calling.
@@ -3480,9 +3325,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             deep_research: If True, use Google's deep research agent (stream mode)
             agent_config: Optional configuration for deep research (e.g., thinking_summaries)
         """
-        model = (
-            model.value if isinstance(model, GoogleModel) else model
-        ) or (self.model or GoogleModel.GEMINI_2_5_FLASH.value)
+        model = (model.value if isinstance(model, GoogleModel) else model) or (
+            self.model or GoogleModel.GEMINI_2_5_FLASH.value
+        )
 
         # Handle case where model is passed as a tuple or list
         if isinstance(model, (list, tuple)):
@@ -3492,6 +3337,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
         from parrot.core.events.lifecycle.events import ClientStreamChunkEvent as _GoogleStreamChunkEvent
+
         _lc_tc_googles = self._emit_before_call(
             client_name="google",
             model=str(model) if model else "",
@@ -3506,10 +3352,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Store runtime context so _execute_tool can inject it into tools
         self._tool_context = {
-            k: v for k, v in {
+            k: v
+            for k, v in {
                 "user_id": user_id,
                 "session_id": session_id,
-            }.items() if v is not None
+            }.items()
+            if v is not None
         }
 
         if deep_research:
@@ -3517,17 +3365,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             yield "_Gathering information and exploring sources..._\n\n"
             try:
                 ai_message = await self._deep_research_ask(
-                    prompt=prompt,
-                    model=model,
-                    agent_config=agent_config,
-                    user_id=user_id,
-                    session_id=session_id
+                    prompt=prompt, model=model, agent_config=agent_config, user_id=user_id, session_id=session_id
                 )
                 yield ai_message.text_response
                 yield ai_message
             except Exception as e:
                 self.logger.error(f"Deep Research failed: {e}")
                 import traceback
+
                 traceback.print_exc()
                 yield f"\n\n❌ **Deep Research failed: {str(e)}**\n"
             return
@@ -3544,30 +3389,26 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         history = []
         if messages:
             for msg in messages[:-1]:  # Exclude current user message
-                role = msg['role'].lower()
-                if role == 'user':
+                role = msg["role"].lower()
+                if role == "user":
                     parts = []
-                    for part_content in msg.get('content', []):
-                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
-                            parts.append(Part(text=part_content.get('text', '')))
+                    for part_content in msg.get("content", []):
+                        if isinstance(part_content, dict) and part_content.get("type") == "text":
+                            parts.append(Part(text=part_content.get("text", "")))
                     if parts:
                         history.append(UserContent(parts=parts))
-                elif role in ['assistant', 'model']:
+                elif role in ["assistant", "model"]:
                     parts = []
-                    for part_content in msg.get('content', []):
-                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
-                            parts.append(Part(text=part_content.get('text', '')))
+                    for part_content in msg.get("content", []):
+                        if isinstance(part_content, dict) and part_content.get("type") == "text":
+                            parts.append(Part(text=part_content.get("text", "")))
                     if parts:
                         history.append(ModelContent(parts=parts))
 
         _use_tools = use_tools if use_tools is not None else getattr(self, "enable_tools", False)
 
         # Per-call overlay
-        self._request_tools = {
-            getattr(t, 'name', None): t
-            for t in (tools or [])
-            if getattr(t, 'name', None)
-        }
+        self._request_tools = {getattr(t, "name", None): t for t in (tools or []) if getattr(t, "name", None)}
 
         try:
             if _use_tools:
@@ -3576,13 +3417,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             elif _use_tools is None:
                 tool_type = self._analyze_prompt_for_tools(prompt)
             else:
-                tool_type = 'builtin_tools' if _use_tools else None
+                tool_type = "builtin_tools" if _use_tools else None
 
             active_tool_names = set()
             if tool_type and _use_tools and lazy_loading:
                 active_tool_names.add("search_tools")
                 gemini_tools = self._build_tools("custom_functions", filter_names=["search_tools"])
-                search_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+                search_prompt = (
+                    "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+                )
                 system_prompt = f"{system_prompt}\n\n{search_prompt}" if system_prompt else search_prompt
             else:
                 gemini_tools = self._build_tools(tool_type) if tool_type else []
@@ -3600,25 +3443,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     max_thinking_time=10,
                 )
             elif _requires_thinking:
-                thinking_config = ThinkingConfig(
-                    thinking_budget=8192,
-                    include_thoughts=False
-                )
-            elif 'flash' in model.lower():
-                thinking_config = ThinkingConfig(
-                    thinking_budget=0,
-                    include_thoughts=False
-                )
+                thinking_config = ThinkingConfig(thinking_budget=8192, include_thoughts=False)
+            elif "flash" in model.lower():
+                thinking_config = ThinkingConfig(thinking_budget=0, include_thoughts=False)
             elif _use_tools:
-                thinking_config = ThinkingConfig(
-                    thinking_budget=0,
-                    include_thoughts=False
-                )
+                thinking_config = ThinkingConfig(thinking_budget=0, include_thoughts=False)
             else:
-                thinking_config = ThinkingConfig(
-                    thinking_budget=8192,
-                    include_thoughts=False
-                )
+                thinking_config = ThinkingConfig(thinking_budget=8192, include_thoughts=False)
 
             current_max_tokens = max_tokens or getattr(self, "max_tokens", 8192)
             retry_count = 0
@@ -3668,9 +3499,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         )
 
             chat = self.client.aio.chats.create(
-                model=model,
-                history=history,
-                config=GenerateContentConfig(**generation_config_args)
+                model=model, history=history, config=GenerateContentConfig(**generation_config_args)
             )
 
             all_assistant_text = []
@@ -3687,20 +3516,23 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     collected_function_calls = []
 
                     async for chunk in await chat.send_message_stream(current_message_content):
-                        if hasattr(chunk, 'candidates') and chunk.candidates:
+                        if hasattr(chunk, "candidates") and chunk.candidates:
                             candidate = chunk.candidates[0]
-                            if hasattr(candidate, 'finish_reason') and str(candidate.finish_reason) == 'FinishReason.MAX_TOKENS':
+                            if (
+                                hasattr(candidate, "finish_reason")
+                                and str(candidate.finish_reason) == "FinishReason.MAX_TOKENS"
+                            ):
                                 max_tokens_reached = True
                                 if on_max_tokens == "notify":
                                     yield f"\n\n⚠️ **Response truncated due to token limit ({current_max_tokens} tokens).**\n"
                                 elif on_max_tokens == "retry" and retry_config.auto_retry_on_max_tokens:
                                     break
 
-                        if hasattr(chunk, 'candidates') and chunk.candidates:
+                        if hasattr(chunk, "candidates") and chunk.candidates:
                             for candidate in chunk.candidates:
-                                if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
+                                if hasattr(candidate, "content") and candidate.content and candidate.content.parts:
                                     for part in candidate.content.parts:
-                                        if hasattr(part, 'function_call') and part.function_call:
+                                        if hasattr(part, "function_call") and part.function_call:
                                             collected_function_calls.append(part.function_call)
 
                         if chunk.text:
@@ -3708,13 +3540,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             all_assistant_text.append(chunk.text)
                             # FEAT-176: per-chunk event
                             if _lc_has_chunk_subs_google:
-                                await self.events.emit(_GoogleStreamChunkEvent(
-                                    trace_context=_lc_tc_googles, client_name="google",
-                                    model=str(model) if model else "",
-                                    chunk_index=_lc_chunk_idx_google,
-                                    chunk_size_bytes=len(chunk.text.encode("utf-8")),
-                                    source_type="client", source_name="google",
-                                ))
+                                await self.events.emit(
+                                    _GoogleStreamChunkEvent(
+                                        trace_context=_lc_tc_googles,
+                                        client_name="google",
+                                        model=str(model) if model else "",
+                                        chunk_index=_lc_chunk_idx_google,
+                                        chunk_size_bytes=len(chunk.text.encode("utf-8")),
+                                        source_type="client",
+                                        source_name="google",
+                                    )
+                                )
                                 _lc_chunk_idx_google += 1
                             yield chunk.text
 
@@ -3738,13 +3574,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             tc = ToolCall(
                                 id=f"call_{uuid.uuid4().hex[:8]}",
                                 name=fc.name,
-                                arguments=dict(fc.args) if hasattr(fc.args, 'items') else fc.args
+                                arguments=dict(fc.args) if hasattr(fc.args, "items") else fc.args,
                             )
                             tool_call_objects.append(tc)
 
                         start_time = time.time()
                         tool_execution_tasks = [
-                            self._execute_tool(fc.name, dict(fc.args) if hasattr(fc.args, 'items') else fc.args)
+                            self._execute_tool(fc.name, dict(fc.args) if hasattr(fc.args, "items") else fc.args)
                             for fc in collected_function_calls
                         ]
                         tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
@@ -3761,7 +3597,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                             found_new = True
 
                             if found_new:
-                                new_tools_list = self._build_tools("custom_functions", filter_names=list(active_tool_names))
+                                new_tools_list = self._build_tools(
+                                    "custom_functions", filter_names=list(active_tool_names)
+                                )
                                 chat._config.tools = new_tools_list
                                 self.logger.info(f"Updated tools for next turn. Count: {len(active_tool_names)}")
 
@@ -3770,27 +3608,22 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             if isinstance(result, HumanInteractionInterrupt):
                                 result.session_id = session_id
                                 result.messages = messages.copy() if messages else []
-                                result.tool_call_id = getattr(fc, 'id', '')
+                                result.tool_call_id = getattr(fc, "id", "")
                                 result.agent_name = getattr(self, "name", "Google_Agent")
                                 raise result
                             elif isinstance(result, Exception):
                                 tc.error = str(result)
                                 self.logger.error(f"Tool {tc.name} failed: {result}")
                             else:
-                                tc.result = result
-                                
+                                tc.result = redact_secrets(result)
+
                         all_tool_calls_history.extend(tool_call_objects)
 
                         function_response_parts = []
                         for fc, result in zip(collected_function_calls, tool_results):
                             response_content = self._process_tool_result_for_api(result)
                             function_response_parts.append(
-                                Part(
-                                    function_response=types.FunctionResponse(
-                                        name=fc.name,
-                                        response=response_content
-                                    )
-                                )
+                                Part(function_response=types.FunctionResponse(name=fc.name, response=response_content))
                             )
 
                         current_message_content = function_response_parts
@@ -3802,11 +3635,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             self.logger.warning(f"Encountered network client error during stream: {e}. Resetting...")
                             await self._close_current_loop_entry()
                             await self._ensure_client(model=model)
-                            
+
                             chat = self.client.aio.chats.create(
-                                model=model,
-                                history=history,
-                                config=GenerateContentConfig(**generation_config_args)
+                                model=model, history=history, config=GenerateContentConfig(**generation_config_args)
                             )
                             retry_count += 1
                             await self._wait_with_backoff(retry_count, retry_config)
@@ -3825,11 +3656,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         break
 
             final_text = "".join(all_assistant_text)
-            
+
             if not final_text and all_tool_calls_history:
                 final_text = self._create_simple_summary(all_tool_calls_history)
                 yield final_text
-                
+
             final_output = None
             if structured_output and final_text:
                 if combined_mode:
@@ -3876,9 +3707,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     # EXISTING two-phase path — unchanged.
                     try:
                         is_json_candidate = (
-                            final_text.strip().startswith('{') or
-                            final_text.strip().startswith('[') or
-                            '```json' in final_text.strip()
+                            final_text.strip().startswith("{")
+                            or final_text.strip().startswith("[")
+                            or "```json" in final_text.strip()
                         )
                         if is_json_candidate:
                             fast_parsed = await self._parse_structured_output(final_text, structured_output)
@@ -3887,7 +3718,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                         if final_output is None:
                             struct_cfg = {"response_mime_type": "application/json"}
-                            if schema_config := (structured_output if isinstance(structured_output, StructuredOutputConfig) else self._get_structured_config(structured_output)):
+                            if schema_config := (
+                                structured_output
+                                if isinstance(structured_output, StructuredOutputConfig)
+                                else self._get_structured_config(structured_output)
+                            ):
                                 self._apply_structured_output_schema(struct_cfg, schema_config)
 
                             reformat_model = self._reformat_model
@@ -3917,15 +3752,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             structured_response = await self.client.aio.models.generate_content(
                                 model=reformat_model,
                                 contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
-                                config=GenerateContentConfig(**struct_cfg)
+                                config=GenerateContentConfig(**struct_cfg),
                             )
                             if structured_text := self._safe_extract_text(structured_response):
                                 if isinstance(structured_output, StructuredOutputConfig):
-                                    final_output = await self._parse_structured_output(structured_text, structured_output)
+                                    final_output = await self._parse_structured_output(
+                                        structured_text, structured_output
+                                    )
                                 elif isinstance(structured_output, type):
-                                    if hasattr(structured_output, 'model_validate_json'):
+                                    if hasattr(structured_output, "model_validate_json"):
                                         final_output = structured_output.model_validate_json(structured_text)
-                                    elif hasattr(structured_output, 'model_validate'):
+                                    elif hasattr(structured_output, "model_validate"):
                                         parsed_json = self._json.loads(structured_text)
                                         final_output = structured_output.model_validate(parsed_json)
                                 else:
@@ -3941,9 +3778,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if final_text and not stateless:
                 final_assistant_message = {
                     "role": "model",
-                    "content": [
-                        {"type": "text", "text": str(final_output) if final_output else final_text}
-                    ]
+                    "content": [{"type": "text", "text": str(final_output) if final_output else final_text}],
                 }
                 tools_used = [tc.name for tc in all_tool_calls_history]
                 await self._update_conversation_memory(
@@ -3955,7 +3790,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     turn_id,
                     prompt,
                     final_text,
-                    tools_used
+                    tools_used,
                 )
 
             ai_message = AIMessageFactory.from_gemini(
@@ -3971,16 +3806,18 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 text_response=final_text,
                 files=[],
                 images=[],
-                code=None
+                code=None,
             )
             ai_message.provider = "google_genai"
             # FEAT-176: lifecycle event — AfterClientCallEvent (stream)
-            _lc_google_s_usage = getattr(ai_message, 'usage', None)
+            _lc_google_s_usage = getattr(ai_message, "usage", None)
             await self._emit_after_call(
-                _lc_tc_googles, client_name="google", model=str(model) if model else "",
+                _lc_tc_googles,
+                client_name="google",
+                model=str(model) if model else "",
                 duration_ms=(time.perf_counter() - _lc_t0_googles) * 1000,
-                input_tokens=getattr(_lc_google_s_usage, 'prompt_tokens', None) if _lc_google_s_usage else None,
-                output_tokens=getattr(_lc_google_s_usage, 'completion_tokens', None) if _lc_google_s_usage else None,
+                input_tokens=getattr(_lc_google_s_usage, "prompt_tokens", None) if _lc_google_s_usage else None,
+                output_tokens=getattr(_lc_google_s_usage, "completion_tokens", None) if _lc_google_s_usage else None,
                 finish_reason=None,
             )
             yield ai_message
@@ -3997,7 +3834,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         prompt = req.get("prompt", "")
         model = req.get("model") or self.model or GoogleModel.GEMINI_2_5_FLASH.value
         model = self._as_model_str(model) or model
-        
+
         # Determine tools
         use_tools = req.get("use_tools") if req.get("use_tools") is not None else self.enable_tools
         tools = req.get("tools")
@@ -4017,7 +3854,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # System prompt
         system_prompt = req.get("system_prompt")
-        
+
         # Generation config
         generation_config = {
             "temperature": req.get("temperature") if req.get("temperature") is not None else self.temperature
@@ -4025,7 +3862,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         max_tokens = req.get("max_tokens") or self.max_tokens
         if max_tokens:
             generation_config["max_output_tokens"] = max_tokens
-            
+
         # Structured output
         structured_output = req.get("structured_output")
         if structured_output:
@@ -4041,7 +3878,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 path = Path(file_path).resolve()
                 self.logger.info(f"Uploading {path.name} to Gemini File API for batch request...")
                 file_obj = await self.client.aio.files.upload(file=path)
-                
+
                 # Wait for file to process if it's a video/etc.
                 processing_start = time.monotonic()
                 while file_obj.state == "PROCESSING":
@@ -4049,33 +3886,20 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         raise TimeoutError(f"File processing timed out for {path.name}")
                     await asyncio.sleep(5)
                     file_obj = await self.client.aio.files.get(name=file_obj.name)
-                
-                contents.append({
-                    "parts": [{
-                        "file_data": {
-                            "file_uri": file_obj.uri,
-                            "mime_type": file_obj.mime_type
-                        }
-                    }]
-                })
+
+                contents.append({"parts": [{"file_data": {"file_uri": file_obj.uri, "mime_type": file_obj.mime_type}}]})
 
         # Add the main prompt content
-        contents.append({
-            "parts": [{"text": prompt}]
-        })
+        contents.append({"parts": [{"text": prompt}]})
 
-        request_payload = {
-            "contents": contents
-        }
+        request_payload = {"contents": contents}
         if system_prompt:
-            request_payload["system_instruction"] = {
-                "parts": [{"text": system_prompt}]
-            }
-        
+            request_payload["system_instruction"] = {"parts": [{"text": system_prompt}]}
+
         generation_config = {k: v for k, v in generation_config.items() if v is not None}
         if generation_config:
             request_payload["generation_config"] = generation_config
-            
+
         if built_tools:
             serialized_tools = []
             for t in built_tools:
@@ -4095,7 +3919,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         poll_interval: int = 30,
         webhook_uri: Optional[str] = None,
         display_name: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> Union[Any, List[AIMessage]]:
         """
         Execute a list of requests using Gemini Batch Mode or Flex Inference.
@@ -4131,7 +3955,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 for k, v in kwargs.items():
                     req_copy.setdefault(k, v)
                 tasks.append(self.ask(**req_copy))
-            
+
             results = await asyncio.gather(*tasks, return_exceptions=True)
             processed_results = []
             for r in results:
@@ -4144,33 +3968,29 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Standard asynchronous Batch API
         self.logger.info(f"Preparing {len(requests)} requests for Gemini asynchronous Batch API...")
-        
+
         # Determine the model. Batch jobs require all requests to run on the same model.
         first_req = requests[0]
         batch_model = first_req.get("model") or self.model or GoogleModel.GEMINI_2_5_FLASH.value
         batch_model = self._as_model_str(batch_model) or batch_model
-        
+
         # Build requests payloads
         payload_tasks = [self._build_batch_request_payload(req) for req in requests]
         payloads = await asyncio.gather(*payload_tasks)
-        
+
         # Write .jsonl input file
         with tempfile.NamedTemporaryFile(suffix=".jsonl", mode="w+", delete=False, encoding="utf-8") as temp_file:
             temp_path = Path(temp_file.name)
             try:
                 for i, payload in enumerate(payloads):
-                    line = {
-                        "key": f"req_{i}",
-                        "request": payload
-                    }
+                    line = {"key": f"req_{i}", "request": payload}
                     temp_file.write(json_encoder(line) + "\n")
                 temp_file.flush()
                 temp_file.close()
-                
+
                 self.logger.info("Uploading input JSONL file to Gemini files service...")
                 uploaded_file = await self.client.aio.files.upload(
-                    file=temp_path,
-                    config={"mime_type": "application/jsonl"}
+                    file=temp_path, config={"mime_type": "application/jsonl"}
                 )
                 self.logger.info(f"Uploaded input file: {uploaded_file.name}")
             finally:
@@ -4178,19 +3998,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     temp_path.unlink()
 
         # Create config
-        config_args = {
-            "display_name": display_name or f"batch_job_{int(time.time())}"
-        }
+        config_args = {"display_name": display_name or f"batch_job_{int(time.time())}"}
         if webhook_uri:
             config_args["webhook_config"] = types.WebhookConfig(uris=[webhook_uri])
-            
+
         create_config = types.CreateBatchJobConfig(**config_args)
-        
+
         self.logger.info(f"Creating Gemini Batch Job with model: {batch_model}...")
         batch_job = await self.client.aio.batches.create(
-            model=batch_model,
-            src=types.BatchJobSource(file_name=uploaded_file.name),
-            config=create_config
+            model=batch_model, src=types.BatchJobSource(file_name=uploaded_file.name), config=create_config
         )
         self.logger.info(f"Batch Job created successfully. Name: {batch_job.name}, State: {batch_job.state}")
 
@@ -4207,18 +4023,18 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if batch_job.state == "JOB_STATE_SUCCEEDED":
             self.logger.info("Batch Job succeeded! Downloading and parsing results...")
             results = await self.download_and_parse_batch_results(batch_job, requests)
-            
+
             try:
                 await self.persist_batch_results(results, batch_id=batch_job.name)
             except Exception as e:
                 self.logger.error(f"Failed to automatically persist batch results: {e}")
-            
+
             # Clean up uploaded input file
             try:
                 await self.client.aio.files.delete(name=uploaded_file.name)
             except Exception as e:
                 self.logger.warning(f"Failed to delete uploaded input file {uploaded_file.name}: {e}")
-                
+
             return results
         else:
             error_msg = f"Gemini Batch Job finished with terminal state: {batch_job.state}."
@@ -4246,10 +4062,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         return jobs
 
     async def persist_batch_results(
-        self,
-        results: List[AIMessage],
-        batch_id: str,
-        save_dir: Optional[Union[str, Path]] = None
+        self, results: List[AIMessage], batch_id: str, save_dir: Optional[Union[str, Path]] = None
     ) -> Path:
         """
         Serialize and persist batch results (AIMessage objects, images, videos, and structured data)
@@ -4289,7 +4102,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
             # Copy media files to the job directory and update their paths in serialized dict
             msg_dict = msg.model_dump(mode="json")
-            
+
             # Helper to copy list of files
             def copy_files(file_paths, key_name):
                 new_paths = []
@@ -4412,9 +4225,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         return False
 
     async def download_and_parse_batch_results(
-        self,
-        job: Any,
-        original_requests: List[Dict[str, Any]]
+        self, job: Any, original_requests: List[Dict[str, Any]]
     ) -> List[AIMessage]:
         """Download output file from completed Batch Job and parse to List[AIMessage]."""
         from datamodel.parsers.json import json_decoder
@@ -4424,10 +4235,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         output_file_name = job.dest.file_name
         self.logger.info(f"Downloading batch job results from: {output_file_name}")
-        
+
         results_bytes = await self.client.aio.files.download(file=output_file_name)
         results_text = results_bytes.decode("utf-8")
-        
+
         # Parse output JSONL
         output_map = {}
         for line in results_text.splitlines():
@@ -4437,7 +4248,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             key = line_dict.get("key")
             if not key:
                 continue
-            
+
             if "response" in line_dict:
                 resp_dict = line_dict["response"]
                 response_obj = self._validate_genai_response(resp_dict)
@@ -4452,7 +4263,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             prompt = req.get("prompt", "")
             model = req.get("model") or self.model or GoogleModel.GEMINI_2_5_FLASH.value
             model = self._as_model_str(model) or model
-            
+
             if key not in output_map:
                 err_msg = AIMessage(
                     input=prompt,
@@ -4460,11 +4271,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     response=f"Error: Missing response for {key} in batch output",
                     model=str(model),
                     provider="google_genai",
-                    usage=CompletionUsage(total_time=0)
+                    usage=CompletionUsage(total_time=0),
                 )
                 results.append(err_msg)
                 continue
-                
+
             item = output_map[key]
             if isinstance(item, dict):  # Error dictionary
                 err_msg = AIMessage(
@@ -4473,22 +4284,19 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     response=f"Error {item.get('code', 'unknown')}: {item.get('message', 'unknown')}",
                     model=str(model),
                     provider="google_genai",
-                    usage=CompletionUsage(total_time=0)
+                    usage=CompletionUsage(total_time=0),
                 )
                 results.append(err_msg)
             else:  # types.GenerateContentResponse object
                 structured_output = req.get("structured_output")
                 final_output = None
                 text_response = self._safe_extract_text(item)
-                
+
                 if structured_output and text_response:
                     try:
                         output_config = self._get_structured_config(structured_output)
                         if isinstance(output_config, StructuredOutputConfig):
-                            final_output = await self._parse_structured_output(
-                                text_response,
-                                output_config
-                            )
+                            final_output = await self._parse_structured_output(text_response, output_config)
                         elif isinstance(structured_output, type):
                             if hasattr(structured_output, "model_validate_json"):
                                 final_output = structured_output.model_validate_json(text_response)
@@ -4499,7 +4307,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             final_output = json_decoder(text_response)
                     except Exception as e:
                         self.logger.error(f"Error parsing structured output for batch response: {e}")
-                
+
                 # Check for any tool calls in response
                 all_tool_calls = []
                 if item.candidates and item.candidates[0].content and item.candidates[0].content.parts:
@@ -4508,7 +4316,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             tc = ToolCall(
                                 id=f"call_{uuid.uuid4().hex[:8]}",
                                 name=part.function_call.name,
-                                arguments=dict(part.function_call.args)
+                                arguments=dict(part.function_call.args),
                             )
                             all_tool_calls.append(tc)
 
@@ -4564,29 +4372,27 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Prepare conversation history for Google GenAI format
         history = []
         if messages:
-            for msg in messages[:-1]: # Exclude the current user message (last in list)
-                role = msg['role'].lower()
-                if role == 'user':
+            for msg in messages[:-1]:  # Exclude the current user message (last in list)
+                role = msg["role"].lower()
+                if role == "user":
                     parts = []
-                    for part_content in msg.get('content', []):
-                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
-                            parts.append(Part(text=part_content.get('text', '')))
+                    for part_content in msg.get("content", []):
+                        if isinstance(part_content, dict) and part_content.get("type") == "text":
+                            parts.append(Part(text=part_content.get("text", "")))
                     if parts:
                         history.append(UserContent(parts=parts))
-                elif role in ['assistant', 'model']:
+                elif role in ["assistant", "model"]:
                     parts = []
-                    for part_content in msg.get('content', []):
-                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
-                            parts.append(Part(text=part_content.get('text', '')))
+                    for part_content in msg.get("content", []):
+                        if isinstance(part_content, dict) and part_content.get("type") == "text":
+                            parts.append(Part(text=part_content.get("text", "")))
                     if parts:
                         history.append(ModelContent(parts=parts))
 
         # --- Multi-Modal Content Preparation ---
         if isinstance(image, Path):
             if not image.exists():
-                raise FileNotFoundError(
-                    f"Image file not found: {image}"
-                )
+                raise FileNotFoundError(f"Image file not found: {image}")
             # Load the primary image
             primary_image = Image.open(image)
         elif isinstance(image, bytes):
@@ -4594,22 +4400,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         elif isinstance(image, Image.Image):
             primary_image = image
         else:
-            raise ValueError(
-                "Image must be a Path, bytes, or PIL.Image object."
-            )
+            raise ValueError("Image must be a Path, bytes, or PIL.Image object.")
 
         # The content for the API call is a list containing images and the final prompt
         contents = [primary_image]
         if reference_images:
             for ref_path in reference_images:
-                self.logger.debug(
-                    f"Loading reference image from: {ref_path}"
-                )
+                self.logger.debug(f"Loading reference image from: {ref_path}")
                 if isinstance(ref_path, Path):
                     if not ref_path.exists():
-                        raise FileNotFoundError(
-                            f"Reference image file not found: {ref_path}"
-                        )
+                        raise FileNotFoundError(f"Reference image file not found: {ref_path}")
                     contents.append(Image.open(ref_path))
                 elif isinstance(ref_path, bytes):
                     contents.append(Image.open(io.BytesIO(ref_path)))
@@ -4617,11 +4417,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     # is already a PIL.Image Object
                     contents.append(ref_path)
                 else:
-                    raise ValueError(
-                        "Reference Image must be a Path, bytes, or PIL.Image object."
-                    )
+                    raise ValueError("Reference Image must be a Path, bytes, or PIL.Image object.")
 
-        contents.append(prompt) # The text prompt always comes last
+        contents.append(prompt)  # The text prompt always comes last
         _max = max_tokens or self.max_tokens
         generation_config = {
             "temperature": temperature or self.temperature,
@@ -4645,8 +4443,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Pro models (2.5-pro, 3-pro, 3.1-pro) are thinking-only and reject budget=0.
         _thinking_budget = 8192 if self._requires_thinking(model) else 0
         final_config = GenerateContentConfig(
-            **generation_config,
-            thinking_config=ThinkingConfig(thinking_budget=_thinking_budget)
+            **generation_config, thinking_config=ThinkingConfig(thinking_budget=_thinking_budget)
         )
 
         # Make the primary multi-modal call with retry for transient 503 errors
@@ -4655,16 +4452,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         _retry_delay = 1.0
         for _attempt in range(_max_retries):
             try:
-                response = await chat.send_message(
-                    message=contents,
-                    config=final_config
-                )
+                response = await chat.send_message(message=contents, config=final_config)
                 break
             except Exception as _e:
                 _err_str = str(_e).lower()
-                if _attempt < _max_retries - 1 and any(
-                    kw in _err_str for kw in ("503", "unavailable", "overloaded")
-                ):
+                if _attempt < _max_retries - 1 and any(kw in _err_str for kw in ("503", "unavailable", "overloaded")):
                     self.logger.warning(
                         f"ask_to_image: transient error on attempt {_attempt + 1}/{_max_retries}: {_e}. "
                         f"Retrying in {_retry_delay:.1f}s..."
@@ -4679,51 +4471,36 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         final_output = None
         if structured_output_config:
             try:
-                final_output = await self._parse_structured_output(
-                    response.text,
-                    structured_output_config
-                )
+                final_output = await self._parse_structured_output(response.text, structured_output_config)
             except Exception as e:
-                self.logger.error(
-                    f"Failed to parse structured output from vision model: {e}"
-                )
+                self.logger.error(f"Failed to parse structured output from vision model: {e}")
                 final_output = response.text
-        elif '```json' in response.text:
+        elif "```json" in response.text:
             # Attempt to extract JSON from markdown code block
             try:
                 final_output = self._parse_json_from_text(response.text)
             except Exception as e:
-                self.logger.error(
-                    f"Failed to parse JSON from markdown in vision model response: {e}"
-                )
+                self.logger.error(f"Failed to parse JSON from markdown in vision model response: {e}")
                 final_output = response.text
         else:
             final_output = response.text
 
-        final_assistant_message = {
-            "role": "model", "content": [
-                {"type": "text", "text": final_output}
-            ]
-        }
+        final_assistant_message = {"role": "model", "content": [{"type": "text", "text": final_output}]}
         if no_memory is False:
             await self._update_conversation_memory(
                 user_id,
                 session_id,
                 conversation_session,
-                messages + [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": f"[Image Analysis]: {prompt}"}
-                        ]
-                    },
-                    final_assistant_message
+                messages
+                + [
+                    {"role": "user", "content": [{"type": "text", "text": f"[Image Analysis]: {prompt}"}]},
+                    final_assistant_message,
                 ],
                 None,
                 turn_id,
                 original_prompt,
                 response.text,
-                []
+                [],
             )
         ai_message = AIMessageFactory.from_gemini(
             response=response,
@@ -4733,7 +4510,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             session_id=session_id,
             turn_id=turn_id,
             structured_output=final_output if final_output != response.text else None,
-            tool_calls=[]
+            tool_calls=[],
         )
         ai_message.provider = "google_genai"
         return ai_message
@@ -4744,30 +4521,24 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         file_search_store_names: Optional[List[str]] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        files: Optional[List[str]] = None
+        files: Optional[List[str]] = None,
     ) -> AIMessage:
         """
         Perform deep research using Google's interactions.create() API.
         """
         model = "deep-research-pro-preview-12-2025"
 
-        agent_config = {
-            "type": "deep-research",
-            "thinking_summaries": "auto"
-        }
+        agent_config = {"type": "deep-research", "thinking_summaries": "auto"}
 
         tools = []
         if file_search_store_names:
-            tools.append({
-                "type": "file_search",
-                "file_search_store_names": file_search_store_names
-            })
+            tools.append({"type": "file_search", "file_search_store_names": file_search_store_names})
 
         try:
             self.logger.info(f"Starting Deep Research Interaction: {prompt}")
 
             # Check if interactions API is supported
-            if not hasattr(self.client, 'interactions'):
+            if not hasattr(self.client, "interactions"):
                 raise NotImplementedError(
                     "The installed google-genai SDK does not support 'interactions' API. "
                     "Deep Research feature is unavailable."
@@ -4775,12 +4546,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
             # Create interaction stream
             stream = self.client.interactions.create(
-                input=prompt,
-                agent=model,
-                background=True,
-                stream=True,
-                tools=tools,
-                agent_config=agent_config
+                input=prompt, agent=model, background=True, stream=True, tools=tools, agent_config=agent_config
             )
 
             interaction_id = None
@@ -4792,7 +4558,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             # We wrap it in to_thread if it blocks, but let's assume standard iteration for now
             # loops over the stream
             for chunk in stream:
-                if hasattr(chunk, 'event_type'):
+                if hasattr(chunk, "event_type"):
                     if chunk.event_type == "interaction.start":
                         interaction_id = chunk.interaction.id
                         self.logger.info(f"Interaction started: {interaction_id}")
@@ -4820,12 +4586,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 is_structured=False,
                 model=model,
                 provider="google",
-                usage=CompletionUsage(
-                    total_tokens=0,
-                    prompt_tokens=0,
-                    completion_tokens=0
-                ),
-                finish_reason="stop"
+                usage=CompletionUsage(total_tokens=0, prompt_tokens=0, completion_tokens=0),
+                finish_reason="stop",
             )
 
             # Attach metadata
@@ -4845,7 +4607,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         query: str,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        files: Optional[List[Union[str, Path]]] = None
+        files: Optional[List[Union[str, Path]]] = None,
     ) -> AIMessage:
         """
         Execute a Deep Research task, optionally uploading files first.
@@ -4892,13 +4654,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         self.logger.error(f"File {f.name} failed processing with state: {f.state.name}")
 
                 if active_files:
-                     # Create a temporary store or just use the files directly if supported
-                     # The SDK example uses 'file_search_store_names' which implies we need a store
-                     # For now, let's assume we pass a store name if we had one, or maybe just the file names
-                     # The example code showed: "file_search_store_names": ['fileSearchStores/my-store-name']
-                     # We might need to creates a store. But for this preview, let's see if we can just skip store
-                     # creation if not strictly required or if we can infer it.
-                     pass
+                    # Create a temporary store or just use the files directly if supported
+                    # The SDK example uses 'file_search_store_names' which implies we need a store
+                    # For now, let's assume we pass a store name if we had one, or maybe just the file names
+                    # The example code showed: "file_search_store_names": ['fileSearchStores/my-store-name']
+                    # We might need to creates a store. But for this preview, let's see if we can just skip store
+                    # creation if not strictly required or if we can infer it.
+                    pass
 
             except Exception as e:
                 self.logger.error(f"Error handling files for deep research: {e}")
@@ -4907,10 +4669,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 raise
 
         return await self._deep_research_ask(
-            prompt=query,
-            user_id=user_id,
-            session_id=session_id,
-            file_search_store_names=file_search_store_names
+            prompt=query, user_id=user_id, session_id=session_id, file_search_store_names=file_search_store_names
         )
 
     async def question(
@@ -4924,7 +4683,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         session_id: Optional[str] = None,
         system_prompt: Optional[str] = None,
         structured_output: Union[type, StructuredOutputConfig] = None,
-        use_internal_tools: bool = False, # New parameter to control internal tools
+        use_internal_tools: bool = False,  # New parameter to control internal tools
     ) -> AIMessage:
         """
         Ask a question to Google's Generative AI in a stateless manner,
@@ -4945,15 +4704,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """
         # Store runtime context so _execute_tool can inject it into tools
         self._tool_context = {
-            k: v for k, v in {
+            k: v
+            for k, v in {
                 "user_id": user_id,
                 "session_id": session_id,
-            }.items() if v is not None
+            }.items()
+            if v is not None
         }
 
-        self.logger.info(
-            f"Initiating RAG pipeline for prompt: '{prompt[:50]}...'"
-        )
+        self.logger.info(f"Initiating RAG pipeline for prompt: '{prompt[:50]}...'")
 
         model = model.value if isinstance(model, GoogleModel) else model
         turn_id = str(uuid.uuid4())
@@ -4973,10 +4732,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         tools = None
         if use_internal_tools:
-            tools = self._build_tools("builtin_tools") # Only built-in tools
-            self.logger.debug(
-                "Enabled internal tool usage."
-            )
+            tools = self._build_tools("builtin_tools")  # Only built-in tools
+            self.logger.debug("Enabled internal tool usage.")
 
         # Build contents for the stateless call
         contents = []
@@ -4989,31 +4746,20 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         "part": {
                             "inline_data": {
                                 "mime_type": "application/octet-stream",
-                                "data": "BASE64_ENCODED_FILE_CONTENT"
+                                "data": "BASE64_ENCODED_FILE_CONTENT",
                             }
                         }
                     }
                 )
 
         # Add the user prompt as the first part
-        contents.append({
-            "role": "user",
-            "parts": [{"text": prompt}]
-        })
+        contents.append({"role": "user", "parts": [{"text": prompt}]})
 
-        all_tool_calls = [] # To capture any tool calls made by internal tools
+        all_tool_calls = []  # To capture any tool calls made by internal tools
 
-        final_config = GenerateContentConfig(
-            system_instruction=system_prompt,
-            tools=tools,
-            **generation_config
-        )
+        final_config = GenerateContentConfig(system_instruction=system_prompt, tools=tools, **generation_config)
 
-        response = await self.client.aio.models.generate_content(
-            model=model,
-            contents=contents,
-            config=final_config
-        )
+        response = await self.client.aio.models.generate_content(model=model, contents=contents, config=final_config)
 
         # Handle potential internal tool calls if they are part of the direct generate_content response
         # Gemini can sometimes decide to use internal tools even without explicit function calling setup
@@ -5023,26 +4769,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             function_calls = [
                 part.function_call
                 for part in response.candidates[0].content.parts
-                if hasattr(part, 'function_call') and part.function_call
+                if hasattr(part, "function_call") and part.function_call
             ]
             if function_calls:
                 tool_call_objects = []
                 for fc in function_calls:
-                    tc = ToolCall(
-                        id=f"call_{uuid.uuid4().hex[:8]}",
-                        name=fc.name,
-                        arguments=dict(fc.args)
-                    )
+                    tc = ToolCall(id=f"call_{uuid.uuid4().hex[:8]}", name=fc.name, arguments=dict(fc.args))
                     tool_call_objects.append(tc)
 
                 start_time = time.time()
-                tool_execution_tasks = [
-                    self._execute_tool(fc.name, dict(fc.args)) for fc in function_calls
-                ]
-                tool_results = await asyncio.gather(
-                    *tool_execution_tasks,
-                    return_exceptions=True
-                )
+                tool_execution_tasks = [self._execute_tool(fc.name, dict(fc.args)) for fc in function_calls]
+                tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
                 execution_time = time.time() - start_time
 
                 for tc, result in zip(tool_call_objects, tool_results):
@@ -5050,18 +4787,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     if isinstance(result, Exception):
                         tc.error = str(result)
                     else:
-                        tc.result = result
+                        tc.result = redact_secrets(result)
 
                 all_tool_calls.extend(tool_call_objects)
-                pass # We're not doing a multi-turn here for stateless
+                pass  # We're not doing a multi-turn here for stateless
 
         final_output = None
         if output_config:
             try:
-                final_output = await self._parse_structured_output(
-                    response.text,
-                    output_config
-                )
+                final_output = await self._parse_structured_output(response.text, output_config)
             except Exception:
                 final_output = response.text
 
@@ -5073,18 +4807,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             session_id=session_id,
             turn_id=turn_id,
             structured_output=final_output if final_output != response.text else None,
-            tool_calls=all_tool_calls
+            tool_calls=all_tool_calls,
         )
         ai_message.provider = "google_genai"
 
         return ai_message
 
-    async def resume(
-        self,
-        session_id: str,
-        user_input: str,
-        state: Dict[str, Any]
-    ) -> AIMessage:
+    async def resume(self, session_id: str, user_input: str, state: Dict[str, Any]) -> AIMessage:
         """Resume a suspended model execution.
 
         Args:
@@ -5110,55 +4839,47 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             # We skip the very last message if it's the model's tool calls that we're responding to,
             # or rather we map everything to UserContent/ModelContent.
             for msg in messages:
-                role = msg.get('role', 'user').lower()
+                role = msg.get("role", "user").lower()
 
-                if role == 'user':
+                if role == "user":
                     parts = []
                     # We might have various content types here
-                    for part_content in msg.get('content', []):
-                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
-                            parts.append(Part(text=part_content.get('text', '')))
-                        elif isinstance(part_content, dict) and part_content.get('type') == 'image_url':
+                    for part_content in msg.get("content", []):
+                        if isinstance(part_content, dict) and part_content.get("type") == "text":
+                            parts.append(Part(text=part_content.get("text", "")))
+                        elif isinstance(part_content, dict) and part_content.get("type") == "image_url":
                             # Basic string fallback for images in history if needed, though usually omitted
                             pass
                     if parts:
                         history.append(UserContent(parts=parts))
 
-                elif role in ['assistant', 'model']:
+                elif role in ["assistant", "model"]:
                     parts = []
                     # Handle text output
-                    for part_content in msg.get('content', []):
-                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
-                            parts.append(Part(text=part_content.get('text', '')))
+                    for part_content in msg.get("content", []):
+                        if isinstance(part_content, dict) and part_content.get("type") == "text":
+                            parts.append(Part(text=part_content.get("text", "")))
                     # Handle function calls
-                    for fc_data in msg.get('function_calls', []):
+                    for fc_data in msg.get("function_calls", []):
                         # Convert back to types.FunctionCall
-                        fc = types.FunctionCall(
-                            name=fc_data['name'],
-                            args=fc_data['arguments']
-                        )
+                        fc = types.FunctionCall(name=fc_data["name"], args=fc_data["arguments"])
                         parts.append(Part(function_call=fc))
                     if parts:
                         history.append(ModelContent(parts=parts))
 
         # 1. Initialize the Chat Session with rebuilt history
-        chat = self.client.aio.chats.create(
-            model=model_str,
-            history=history
-        )
+        chat = self.client.aio.chats.create(model=model_str, history=history)
 
         # 2. Inject the human user's input as the Tool Response
         response_part = Part(
             function_response=types.FunctionResponse(
                 id=tool_call_id,
-                name="handoff_to_human", # Based on parrot's HandoffTool.name
-                response={"result": user_input}
+                name="handoff_to_human",  # Based on parrot's HandoffTool.name
+                response={"result": user_input},
             )
         )
 
-        generation_config = {
-            "temperature": getattr(self, "temperature", 0.0)
-        }
+        generation_config = {"temperature": getattr(self, "temperature", 0.0)}
         final_config = GenerateContentConfig(**generation_config)
 
         # 3. Send the response back to the model
@@ -5166,10 +4887,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         max_retries = 3
         while retry_count < max_retries:
             try:
-                response = await chat.send_message(
-                    [response_part],
-                    config=final_config
-                )
+                response = await chat.send_message([response_part], config=final_config)
                 break
             except Exception as e:
                 retry_count += 1
@@ -5181,28 +4899,28 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         final_response = await self._handle_multiturn_function_calls(
             chat=chat,
             initial_response=response,
-            all_tool_calls=[], # We can pass empty, or load previous if we decided to persist them
+            all_tool_calls=[],  # We can pass empty, or load previous if we decided to persist them
             model=model_str,
             config=final_config,
             max_retries=max_retries,
             session_id=session_id,
-            messages=messages
+            messages=messages,
         )
 
         assistant_response_text = self._safe_extract_text(final_response)
 
         # Extract code execution content
         code_execution_content = self._extract_code_execution_content(final_response)
-        if not assistant_response_text and code_execution_content['output']:
-            assistant_response_text = "\n".join(code_execution_content['output'])
+        if not assistant_response_text and code_execution_content["output"]:
+            assistant_response_text = "\n".join(code_execution_content["output"])
 
         ai_message = AIMessageFactory.from_gemini(
             response=final_response,
-            input_text="resume", # Original prompt is lost in resume statelessness, we use this as placeholder
+            input_text="resume",  # Original prompt is lost in resume statelessness, we use this as placeholder
             model=model_str,
             session_id=session_id,
             turn_id=str(uuid.uuid4()),
-            tool_calls=[] # Update if we want to bubble up tool calls here
+            tool_calls=[],  # Update if we want to bubble up tool calls here
         )
         ai_message.provider = "google_genai"
 
@@ -5254,9 +4972,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             resolved_model = self._resolve_invoke_model(model)
 
             if not self.client:
-                raise RuntimeError(
-                    "GoogleGenAIClient not initialised. Use async context manager."
-                )
+                raise RuntimeError("GoogleGenAIClient not initialised. Use async context manager.")
 
             needs_two_call = use_tools and config is not None
 
@@ -5276,11 +4992,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 )
                 # Extract raw text from first response
                 first_text = ""
-                if hasattr(first_response, 'text') and first_response.text:
+                if hasattr(first_response, "text") and first_response.text:
                     first_text = first_response.text
-                elif hasattr(first_response, 'candidates') and first_response.candidates:
+                elif hasattr(first_response, "candidates") and first_response.candidates:
                     for part in first_response.candidates[0].content.parts:
-                        if hasattr(part, 'text'):
+                        if hasattr(part, "text"):
                             first_text += part.text
 
                 # --- Second call: structured output, no tools ---
@@ -5301,11 +5017,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     config=second_config,
                 )
                 raw_text = ""
-                if hasattr(second_response, 'text') and second_response.text:
+                if hasattr(second_response, "text") and second_response.text:
                     raw_text = second_response.text
-                elif hasattr(second_response, 'candidates') and second_response.candidates:
+                elif hasattr(second_response, "candidates") and second_response.candidates:
                     for part in second_response.candidates[0].content.parts:
-                        if hasattr(part, 'text'):
+                        if hasattr(part, "text"):
                             raw_text += part.text
 
                 final_response = second_response
@@ -5332,11 +5048,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     config=gen_config,
                 )
                 raw_text = ""
-                if hasattr(final_response, 'text') and final_response.text:
+                if hasattr(final_response, "text") and final_response.text:
                     raw_text = final_response.text
-                elif hasattr(final_response, 'candidates') and final_response.candidates:
+                elif hasattr(final_response, "candidates") and final_response.candidates:
                     for part in final_response.candidates[0].content.parts:
-                        if hasattr(part, 'text'):
+                        if hasattr(part, "text"):
                             raw_text += part.text
 
             # Parse output
@@ -5349,18 +5065,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
             # Extract usage
             usage_dict: Dict[str, Any] = {}
-            if hasattr(final_response, 'usage_metadata') and final_response.usage_metadata:
+            if hasattr(final_response, "usage_metadata") and final_response.usage_metadata:
                 um = final_response.usage_metadata
                 usage_dict = {
-                    "prompt_token_count": getattr(um, 'prompt_token_count', 0),
-                    "candidates_token_count": getattr(um, 'candidates_token_count', 0),
-                    "total_token_count": getattr(um, 'total_token_count', 0),
+                    "prompt_token_count": getattr(um, "prompt_token_count", 0),
+                    "candidates_token_count": getattr(um, "candidates_token_count", 0),
+                    "total_token_count": getattr(um, "total_token_count", 0),
                 }
             usage = CompletionUsage.from_gemini(usage_dict)
 
-            return self._build_invoke_result(
-                output, output_type, resolved_model, usage, final_response
-            )
+            return self._build_invoke_result(output, output_type, resolved_model, usage, final_response)
         except InvokeError:
             raise
         except Exception as exc:
