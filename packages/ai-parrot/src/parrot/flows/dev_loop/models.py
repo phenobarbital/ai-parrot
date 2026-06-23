@@ -368,6 +368,19 @@ class ClaudeCodeDispatchProfile(BaseModel):
     setting_sources: List[Literal["user", "project", "local"]] = Field(
         default_factory=lambda: ["project"]
     )
+    strict_mcp_config: bool = Field(
+        default=True,
+        description=(
+            "When True (the default), the dispatched headless CLI ignores "
+            "claude.ai account connectors and filesystem .mcp.json, using "
+            "only MCP servers explicitly provided. This isolates server-side "
+            "dispatches from the operator's interactive Claude Code "
+            "environment, whose connector/OAuth setup (e.g. the claude.ai "
+            "Design MCP connector) otherwise makes the non-interactive run "
+            "exit with an empty error result. Set False only when a dispatch "
+            "genuinely needs the inherited MCP surface."
+        ),
+    )
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
     model: str = "claude-sonnet-4-6"
 

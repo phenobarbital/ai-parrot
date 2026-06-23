@@ -129,6 +129,11 @@ class TestProfileResolution:
         assert opts.agents is not None
         assert "sdd-worker" in opts.agents
         assert opts.setting_sources == ["project"]
+        # Headless dispatches must isolate from the operator's claude.ai
+        # account connectors / filesystem .mcp.json by default, otherwise
+        # the non-interactive CLI exits with an empty error result while
+        # wiring up connectors (e.g. the claude.ai Design MCP connector).
+        assert opts.strict_mcp_config is True
 
     def test_generic_session_fallback(
         self, dispatcher, _patch_worktree_base

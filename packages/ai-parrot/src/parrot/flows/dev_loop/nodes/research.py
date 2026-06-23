@@ -200,7 +200,12 @@ class ResearchNode(DevLoopNode):
         profile = ClaudeCodeDispatchProfile(
             subagent="sdd-research",
             permission_mode="acceptEdits",
-            allowed_tools=["Read", "Grep", "Glob", "Bash"],
+            # SlashCommand: the subagent runs /sdd-spec and /sdd-task.
+            # Write: it scaffolds spec/task files under sdd/. Read/Grep/Glob
+            # for triage, Bash for git worktree plumbing.
+            allowed_tools=[
+                "Read", "Grep", "Glob", "Bash", "Write", "SlashCommand",
+            ],
             model="claude-sonnet-4-6",
         )
         cwd = os.path.abspath(conf.WORKTREE_BASE_PATH)

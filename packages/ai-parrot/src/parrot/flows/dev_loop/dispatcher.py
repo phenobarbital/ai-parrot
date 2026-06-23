@@ -389,6 +389,7 @@ class ClaudeCodeDispatcher:
             setting_sources=list(profile.setting_sources)
             if profile.setting_sources
             else None,
+            strict_mcp_config=profile.strict_mcp_config,
             extra_args=extra_args,
             system_prompt=system_prompt,
             model=profile.model,
