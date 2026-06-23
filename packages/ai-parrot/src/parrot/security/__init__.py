@@ -40,6 +40,12 @@ from .redaction import (
     OutputScrubber,
     ScrubPolicy,
 )
+from .python_sanitizer import (
+    PythonExecutionPolicy,
+    PythonCodeSanitizer,
+    general_profile,
+    data_analysis_profile,
+)
 
 __all__ = [
     'PromptInjectionDetector',
@@ -67,4 +73,9 @@ __all__ = [
     # Output scrubber (FEAT-252 / TASK-1612)
     'OutputScrubber',
     'ScrubPolicy',
+    # Python AST gate (FEAT-252 / TASK-1614)
+    'PythonExecutionPolicy',
+    'PythonCodeSanitizer',
+    'general_profile',
+    'data_analysis_profile',
 ]
