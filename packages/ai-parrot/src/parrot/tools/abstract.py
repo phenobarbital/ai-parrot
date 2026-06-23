@@ -638,6 +638,12 @@ class AbstractTool(EventEmitterMixin, ABC):
                             tool_result.error, tool_name=_tool_name
                         )}
                     )
+                if tool_result.metadata:
+                    tool_result = tool_result.model_copy(
+                        update={"metadata": _scrubber.scrub(
+                            tool_result.metadata, tool_name=_tool_name
+                        )}
+                    )
             except Exception as _scrub_exc:  # never let scrub errors break tool execution
                 self.logger.warning(
                     "OutputScrubber error in tool %s (non-fatal): %s",
@@ -681,6 +687,12 @@ class AbstractTool(EventEmitterMixin, ABC):
             error_msg = f"Error in {self.name}: {str(e)}"
             self.logger.error("%s", error_msg)
             self.logger.debug("%s", traceback.format_exc())
+
+            try:
+                _scrubber = _default_scrubber()
+                error_msg = _scrubber.scrub(error_msg, tool_name=_tool_name)
+            except Exception:
+                pass
 
             return ToolResult(
                 status="error",

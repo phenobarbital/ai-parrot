@@ -18,11 +18,16 @@ Usage:
 from __future__ import annotations
 
 import ast
+import builtins
 import logging
 from dataclasses import dataclass, field
 from typing import FrozenSet, List, Optional
 
 from .command_sanitizer import CommandVerdict, SecurityLevel, ValidationResult
+
+# Frozenset of all Python builtin names — used by the allowlist gate to
+# distinguish builtin references from user-defined variable names.
+_PYTHON_BUILTINS: FrozenSet[str] = frozenset(vars(builtins))
 
 logger = logging.getLogger(__name__)
 
@@ -93,15 +98,12 @@ _BASELINE_BUILTINS: FrozenSet[str] = frozenset(
         "bytes",
         "chr",
         "dict",
-        "dir",
         "divmod",
         "enumerate",
         "filter",
         "float",
         "format",
         "frozenset",
-        "getattr",
-        "hasattr",
         "hash",
         "hex",
         "id",
@@ -125,14 +127,12 @@ _BASELINE_BUILTINS: FrozenSet[str] = frozenset(
         "reversed",
         "round",
         "set",
-        "setattr",
         "slice",
         "sorted",
         "str",
         "sum",
         "tuple",
         "type",
-        "vars",  # allow vars() but deny via categorical rule for introspection with no args
         "zip",
         "True",
         "False",
@@ -147,7 +147,11 @@ _BASELINE_BUILTINS: FrozenSet[str] = frozenset(
 _ENV_ACCESS_IMPORTS: FrozenSet[str] = frozenset({"os", "posix", "nt", "environ"})
 _INTROSPECTION_IMPORTS: FrozenSet[str] = frozenset({"inspect", "dis", "gc", "sys", "ctypes"})
 _DYNAMIC_EXEC_NAMES: FrozenSet[str] = frozenset(
-    {"eval", "exec", "compile", "__import__", "execfile", "reload"}
+    {
+        "eval", "exec", "compile", "__import__", "execfile", "reload",
+        "getattr", "setattr", "hasattr",
+        "breakpoint", "input",
+    }
 )
 _DATA_IO_IMPORTS: FrozenSet[str] = frozenset(
     {
@@ -180,6 +184,7 @@ _DATA_IO_IMPORTS: FrozenSet[str] = frozenset(
 #: pandas IO function names that are categorically denied even when pandas is allowed.
 _PANDAS_IO_NAMES: FrozenSet[str] = frozenset(
     {
+        "read_clipboard",
         "read_csv",
         "read_excel",
         "read_json",
@@ -204,7 +209,7 @@ _PANDAS_IO_NAMES: FrozenSet[str] = frozenset(
 #: Builtins / names categorically denied for data-IO.
 _DATA_IO_NAMES: FrozenSet[str] = frozenset({"open", "file"})
 #: os attribute names denied when os access is blocked.
-_ENV_ATTR_NAMES: FrozenSet[str] = frozenset({"environ", "getenv", "putenv", "unsetenv", "environ"})
+_ENV_ATTR_NAMES: FrozenSet[str] = frozenset({"environ", "getenv", "putenv", "unsetenv"})
 #: Introspection builtins always denied.
 _INTROSPECTION_NAMES: FrozenSet[str] = frozenset({"globals", "locals", "vars", "dir", "__class__", "__bases__"})
 
@@ -224,6 +229,8 @@ class PythonExecutionPolicy:
             the allowlist is denied. Set to ``False`` only for trusted contexts.
         allowed_imports: Frozenset of module root names that may be imported.
         allowed_builtins: Frozenset of builtin names that may be called.
+            Wired into ``_check_name``: when ``default_deny=True`` and this set
+            is non-empty, any name not in this allowlist is denied (spec §WS1).
         deny_env_access: Deny all ``os.environ`` / ``os.getenv`` access (default ``True``).
         deny_introspection: Deny ``globals``, ``locals``, ``__class__.__bases__`` etc.
             (default ``True``).
@@ -281,7 +288,7 @@ def data_analysis_profile() -> PythonExecutionPolicy:
         level=SecurityLevel.MODERATE,
         default_deny=True,
         allowed_imports=_BASELINE_IMPORTS | _GENERAL_IMPORTS | _DATA_ANALYSIS_IMPORTS,
-        allowed_builtins=_BASELINE_BUILTINS | frozenset({"open"}),  # wide surface — open blocked categorically
+        allowed_builtins=_BASELINE_BUILTINS,
         deny_env_access=True,
         deny_introspection=True,
         deny_dynamic_exec=True,
@@ -449,8 +456,21 @@ class PythonCodeSanitizer:
             return f"denied: data-IO builtin '{name}' is categorically denied"
 
         # Categorical: introspection builtins
-        if p.deny_introspection and name in _INTROSPECTION_NAMES and name not in {"vars"}:
+        if p.deny_introspection and name in _INTROSPECTION_NAMES:
             return f"denied: introspection name '{name}' is categorically denied"
+
+        # Allowlist gate: if default_deny + allowed_builtins is set, any name
+        # that is a Python builtin AND is NOT on the allowlist is denied
+        # (allowlist-first policy, spec §WS1).
+        # User-defined variable names are never blocked here — only builtin
+        # function/constant references that shadow controlled names.
+        if (
+            p.default_deny
+            and p.allowed_builtins
+            and name in _PYTHON_BUILTINS
+            and name not in p.allowed_builtins
+        ):
+            return f"denied: name '{name}' is not on the allowed_builtins allowlist"
 
         return None
 
@@ -468,7 +488,7 @@ class PythonCodeSanitizer:
             return f"denied: data-IO attribute '.{attr}' is categorically denied"
 
         # Introspection dunder attributes
-        if p.deny_introspection and attr in {"__bases__", "__subclasses__", "__mro__", "__dict__"}:
+        if p.deny_introspection and attr in {"__class__", "__bases__", "__subclasses__", "__mro__", "__dict__"}:
             return f"denied: introspection attribute '.{attr}' is categorically denied"
 
         return None

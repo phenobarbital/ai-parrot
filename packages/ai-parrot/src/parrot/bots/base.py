@@ -1321,6 +1321,8 @@ class BaseBot(AbstractBot):
                 elif output_mode in [
                     OutputMode.TELEGRAM,
                     OutputMode.MSTEAMS,
+                    OutputMode.SLACK,
+                    OutputMode.WHATSAPP,
                 ]:
                     # FEAT-252 (TASK-1612): scrub at channel egress before delivery
                     if isinstance(response.output, str):

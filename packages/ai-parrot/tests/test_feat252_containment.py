@@ -109,7 +109,7 @@ class TestLayer2OutputScrubber:
 
         import asyncio
         tool = EnvDumpTool()
-        result = asyncio.get_event_loop().run_until_complete(tool.execute())
+        result = asyncio.run(tool.execute())
         assert isinstance(result, ToolResult)
         assert "hunter2" not in str(result.result)
         assert "REDACTED" in str(result.result)

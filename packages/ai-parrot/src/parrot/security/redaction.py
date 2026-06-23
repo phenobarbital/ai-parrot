@@ -158,10 +158,10 @@ class OutputScrubber:
 
     Example:
         >>> scrubber = OutputScrubber(ScrubPolicy())
-        >>> scrubber.scrub("PASSWORD=hunter2")
-        '***REDACTED:secret_kv***'
-        >>> scrubber.scrub({"token": "abc", "ok": "plain"})
-        {'token': '***REDACTED:secret_kv***', 'ok': 'plain'}
+        >>> scrubber.scrub("PASSWORD=hunter2", tool_name="my_tool")
+        '***REDACTED:secret_kv:tool=my_tool***'
+        >>> scrubber.scrub({"token": "abc", "ok": "plain"}, tool_name="my_tool")
+        {'token': '***REDACTED:secret_kv:tool=my_tool***', 'ok': 'plain'}
     """
 
     def __init__(
@@ -221,13 +221,10 @@ class OutputScrubber:
     def _scrub_str(self, text: str, tool_name: str) -> str:
         """Scrub a single string value.
 
-        Idempotency guard: if the string already contains a redaction marker
-        produced by this scrubber or the legacy helpers, skip re-scrubbing.
+        Re-scrubbing an already-redacted string is safe and idempotent by
+        nature of the regex substitutions — the patterns will not match the
+        redaction markers themselves.
         """
-        # Idempotency: already scrubbed
-        if _already_scrubbed(text):
-            return text
-
         # Allowlist check: if any allowlisted substring appears, skip
         for allowed in self.policy.allowlist:
             if allowed in text:
@@ -275,10 +272,10 @@ class OutputScrubber:
         yield _DICT_ITEM_RE, _kv_sub
         yield _ASSIGNMENT_RE, _kv_sub
 
-    def _emit_tag(self, reason: str, tool_name: str) -> str:  # noqa: ARG002
+    def _emit_tag(self, reason: str, tool_name: str) -> str:
         """Return the redaction marker string for a given reason tag."""
         if self.policy.reason_tags:
-            return f"***REDACTED:{reason}***"
+            return f"***REDACTED:{reason}:tool={tool_name}***"
         return REDACTION_MARKER
 
     def _audit(self, reason: str, tool_name: str) -> None:

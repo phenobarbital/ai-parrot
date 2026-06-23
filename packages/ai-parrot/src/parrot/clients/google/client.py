@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, AsyncIterator, Dict, List, Optional, Union
 from collections import defaultdict
 import copy
+import difflib
 import re
 import asyncio
 import inspect
@@ -2344,14 +2345,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 result_str = str(getattr(tc, "result", "") or "")
                 if not result_str:
                     continue
-                # Normalised overlap check (case-insensitive, strip whitespace)
+                # Normalised similarity check using SequenceMatcher (case-insensitive)
                 norm_candidate = candidate_text.strip().lower()
                 norm_result = result_str.strip().lower()
                 if not norm_result:
                     continue
-                # Overlap: what fraction of the result appears in the candidate?
-                overlap = sum(1 for ch in norm_result if ch in norm_candidate)
-                ratio = overlap / len(norm_result) if norm_result else 0.0
+                ratio = difflib.SequenceMatcher(
+                    None, norm_result, norm_candidate
+                ).ratio()
                 if ratio >= self._echo_threshold and len(norm_candidate) < len(norm_result) * 1.5:
                     self.logger.warning(
                         "_resolve_final_response: tool_echo detected "
