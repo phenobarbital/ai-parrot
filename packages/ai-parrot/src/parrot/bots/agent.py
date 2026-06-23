@@ -13,21 +13,13 @@ from .chatbot import Chatbot
 from .prompts import AGENT_PROMPT
 from .prompts.builder import PromptBuilder
 from ..tools.abstract import AbstractTool
-from ..tools.pythonrepl import PythonREPLTool
 from ..tools.json_tool import ToJsonTool
 from ..tools.pythonpandas import PythonPandasTool
 from ..tools.agent import AgentTool, AgentContext
-from ..models.google import (
-    ConversationalScriptConfig,
-    FictionalSpeaker
-)
+from ..models.google import ConversationalScriptConfig, FictionalSpeaker
+
 # MCP Integration
-from ..mcp import (
-    MCPServerConfig,
-    create_http_mcp_server,
-    create_local_mcp_server,
-    create_api_key_mcp_server
-)
+from ..mcp import MCPServerConfig, create_http_mcp_server, create_local_mcp_server, create_api_key_mcp_server
 
 from ..conf import STATIC_DIR, AGENTS_DIR
 from ..notifications import NotificationMixin
@@ -35,22 +27,22 @@ from ..memory import AnswerMemory
 
 
 class BasicAgent(Chatbot, NotificationMixin):
-
     """Represents an Agent in Navigator.
 
-        Agents are chatbots that can access to Tools and execute commands.
-        Each Agent has a name, a role, a goal, a backstory,
-        and an optional language model (llm).
+    Agents are chatbots that can access to Tools and execute commands.
+    Each Agent has a name, a role, a goal, a backstory,
+    and an optional language model (llm).
 
-        These agents are designed to interact with structured and unstructured data sources.
+    These agents are designed to interact with structured and unstructured data sources.
 
-        Features:
-        - Built-in MCP server support (no separate mixin needed)
-        - Can connect to HTTP, OAuth, API-key authenticated, and local MCP servers
-        - Automatic tool registration from MCP servers
-        - Compatible with all existing agent functionality
-        - Notification capabilities through various channels (e.g., email, Slack, Teams)
+    Features:
+    - Built-in MCP server support (no separate mixin needed)
+    - Can connect to HTTP, OAuth, API-key authenticated, and local MCP servers
+    - Automatic tool registration from MCP servers
+    - Compatible with all existing agent functionality
+    - Notification capabilities through various channels (e.g., email, Slack, Teams)
     """
+
     agent_id: Optional[str] = None
     agent_name: Optional[str] = None
     _agent_response = AgentResponse
@@ -60,18 +52,8 @@ class BasicAgent(Chatbot, NotificationMixin):
     speech_length: int = 20  # Default length for the speech report
     num_speakers: int = 1  # Default number of speakers for the podcast
     speakers: Dict[str, str] = {
-        "interviewer": {
-            "name": "Lydia",
-            "role": "interviewer",
-            "characteristic": "Bright",
-            "gender": "female"
-        },
-        "interviewee": {
-            "name": "Brian",
-            "role": "interviewee",
-            "characteristic": "Informative",
-            "gender": "male"
-        }
+        "interviewer": {"name": "Lydia", "role": "interviewer", "characteristic": "Bright", "gender": "female"},
+        "interviewee": {"name": "Brian", "role": "interviewee", "characteristic": "Informative", "gender": "male"},
     }
     max_tokens: int = None  # Use default max tokens from Chatbot
     report_template: str = "report_template.html"
@@ -79,9 +61,9 @@ class BasicAgent(Chatbot, NotificationMixin):
 
     def __init__(
         self,
-        name: str = 'Agent',
-        agent_id: str = 'agent',
-        use_llm: str = 'google',
+        name: str = "Agent",
+        agent_id: str = "agent",
+        use_llm: str = "google",
         llm: str = None,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
@@ -89,7 +71,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         use_tools: bool = True,
         instructions: Optional[str] = None,
         dataframes: Optional[Dict[str, pd.DataFrame]] = None,
-        **kwargs
+        **kwargs,
     ):
         # to work with dataframes:
         self.dataframes = dataframes or {}
@@ -105,25 +87,20 @@ class BasicAgent(Chatbot, NotificationMixin):
             human_prompt=human_prompt,
             tools=tools,
             use_tools=use_tools,
-            **kwargs
+            **kwargs,
         )
         # Default to composable PromptBuilder for agents unless:
         # 1. A custom system_prompt was given (legacy caller expects legacy behavior)
         # 2. An explicit prompt_builder or prompt_preset was already set by super()
-        if (
-            system_prompt is None
-            and getattr(self, '_prompt_builder', None) is None
-        ):
+        if system_prompt is None and getattr(self, "_prompt_builder", None) is None:
             self._prompt_builder = PromptBuilder.agent()
         if instructions:
             self.goal = instructions
         self.enable_tools = True  # Enable tools by default
-        self.operation_mode = 'agentic'  # Default operation mode
+        self.operation_mode = "agentic"  # Default operation mode
         self.auto_tool_detection = True  # Enable auto tool detection by default
         ##  Logging:
-        self.logger = logging.getLogger(
-            f'{self.name}.Agent'
-        )
+        self.logger = logging.getLogger(f"{self.name}.Agent")
         ## Google GenAI Client (for multi-modal responses and TTS generation):
         self.client = GoogleGenAIClient()
         # Initialize the underlying AbstractBot LLM with the same client
@@ -133,21 +110,17 @@ class BasicAgent(Chatbot, NotificationMixin):
         extra_tools = self.agent_tools()
         if extra_tools:
             # Fix: Ensure self.tools is initialized
-            if not hasattr(self, 'tools') or self.tools is None:
+            if not hasattr(self, "tools") or self.tools is None:
                 self.tools = []
-            
+
             self.tools.extend(extra_tools)
             try:
                 self.tool_manager.register_tools(extra_tools)
             except Exception as exc:  # pragma: no cover - defensive
-                self.logger.error(
-                    "Failed to register agent tools: %s", exc, exc_info=True
-                )
+                self.logger.error("Failed to register agent tools: %s", exc, exc_info=True)
         # Initialize MCP support
         self._mcp_initialized = True
-        self.answer_memory = AnswerMemory(
-            agent_id=self.agent_id
-        )
+        self.answer_memory = AnswerMemory(agent_id=self.agent_id)
         # Auto-inject answer_memory into any registered WorkingMemoryToolkit.
         # Lazy import avoids circular dependencies and keeps working_memory optional.
         self._inject_answer_memory_into_toolkits()
@@ -170,7 +143,17 @@ class BasicAgent(Chatbot, NotificationMixin):
             from parrot.tools.working_memory import WorkingMemoryToolkit
         except ImportError:
             return
-        for tool in tool_manager.get_tools():
+        if hasattr(tool_manager, "get_tools"):
+            tools = tool_manager.get_tools()
+            if isinstance(tools, dict):
+                tool_iter = tools.values()
+            else:
+                tool_iter = tools
+        elif hasattr(tool_manager, "all_tools"):
+            tool_iter = tool_manager.all_tools()
+        else:
+            tool_iter = getattr(tool_manager, "_tools", {}).values()
+        for tool in tool_iter:
             if isinstance(tool, WorkingMemoryToolkit) and tool._answer_memory is None:
                 tool._answer_memory = self.answer_memory
                 self.logger.debug(
@@ -203,31 +186,32 @@ class BasicAgent(Chatbot, NotificationMixin):
         for filename, file_data in attachments.items():
             try:
                 # Handle aiohttp FileField objects
-                if hasattr(file_data, 'file'):
+                if hasattr(file_data, "file"):
                     content = file_data.file.read()
-                elif hasattr(file_data, 'read'):
+                elif hasattr(file_data, "read"):
                     content = file_data.read()
                 else:
                     content = file_data
 
                 # Create BytesIO object
                 import io
+
                 if isinstance(content, bytes):
                     file_obj = io.BytesIO(content)
                 else:
-                    file_obj = io.BytesIO(content.encode('utf-8'))
+                    file_obj = io.BytesIO(content.encode("utf-8"))
 
                 # Determine file type and read into DataFrame
                 df = None
-                if filename.lower().endswith(('.xlsx', '.xls')):
+                if filename.lower().endswith((".xlsx", ".xls")):
                     df = pd.read_excel(file_obj)
-                elif filename.lower().endswith('.csv'):
+                elif filename.lower().endswith(".csv"):
                     df = pd.read_csv(file_obj)
 
                 if df is not None:
                     # Generate slug for dataframe name
-                    name_base = filename.rsplit('.', 1)[0]
-                    slug = slugify(name_base).replace('-', '_')
+                    name_base = filename.rsplit(".", 1)[0]
+                    slug = slugify(name_base).replace("-", "_")
 
                     # Add to this agent
                     self.add_dataframe(df, name=slug)
@@ -249,14 +233,12 @@ class BasicAgent(Chatbot, NotificationMixin):
         base_tools: List[AbstractTool] = list(tools) if tools else []
         if not use_tools:
             return base_tools
-        base_tools.extend(
-            [
-                PythonREPLTool(
-                    report_dir=AGENTS_DIR.joinpath(self.agent_id, 'documents')
-                ),
-                ToJsonTool(),
-            ]
-        )
+        # NOTE: Arbitrary Python execution (PythonREPLTool) is intentionally NOT
+        # provided by BasicAgent. Letting every LLM-driven agent run arbitrary
+        # Python is a security risk. Agents that genuinely need it (e.g. data
+        # agents using the sandboxed `python_repl_pandas`) wire their own tool
+        # explicitly, and trusted callers can still pass one via `tools=[...]`.
+        base_tools.append(ToJsonTool())
         return base_tools
 
     def agent_tools(self) -> List[AbstractTool]:
@@ -267,36 +249,28 @@ class BasicAgent(Chatbot, NotificationMixin):
         """Set the response for the agent."""
         self._agent_response = response
 
-
-    def _create_filename(self, prefix: str = 'report', extension: str = 'pdf') -> str:
+    def _create_filename(self, prefix: str = "report", extension: str = "pdf") -> str:
         """Create a unique filename for the report."""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"{prefix}_{timestamp}.{extension}"
 
     async def save_document(
         self,
         content: str,
-        prefix: str = 'report',
-        extension: str = 'txt',
+        prefix: str = "report",
+        extension: str = "txt",
         directory: Optional[Path] = None,
-        subdir: str = 'documents'
+        subdir: str = "documents",
     ) -> None:
         """Save the document to a file."""
-        report_filename = self._create_filename(
-            prefix=prefix, extension=extension
-        )
+        report_filename = self._create_filename(prefix=prefix, extension=extension)
         if not directory:
             directory = STATIC_DIR.joinpath(self.agent_id, subdir)
         try:
-            async with aiofiles.open(
-                directory.joinpath(report_filename),
-                'w'
-            ) as report_file:
+            async with aiofiles.open(directory.joinpath(report_filename), "w") as report_file:
                 await report_file.write(content)
         except Exception as e:
-            self.logger.error(
-                f"Failed to save document {report_filename}: {e}"
-            )
+            self.logger.error(f"Failed to save document {report_filename}: {e}")
 
     async def open_prompt(self, prompt_file: str = None) -> str:
         """
@@ -304,15 +278,13 @@ class BasicAgent(Chatbot, NotificationMixin):
         """
         if not prompt_file:
             raise ValueError("No prompt file specified.")
-        file = AGENTS_DIR.joinpath(self.agent_id, 'prompts', prompt_file)
+        file = AGENTS_DIR.joinpath(self.agent_id, "prompts", prompt_file)
         try:
-            async with aiofiles.open(file, 'r') as f:
+            async with aiofiles.open(file, "r") as f:
                 content = await f.read()
             return content
         except Exception as e:
-            self.logger.error(
-                f"Failed to read prompt file {prompt_file}: {e}"
-            )
+            self.logger.error(f"Failed to read prompt file {prompt_file}: {e}")
             return None
 
     async def open_query(self, query: str, directory: Optional[Path] = None, **kwargs) -> str:
@@ -322,22 +294,16 @@ class BasicAgent(Chatbot, NotificationMixin):
         if not query:
             raise ValueError("No query specified.")
         if not directory:
-            directory = AGENTS_DIR.joinpath(self.agent_id, 'queries')
+            directory = AGENTS_DIR.joinpath(self.agent_id, "queries")
         try:
             query_file = directory.joinpath(query)
             return query_file.read_text().format(**kwargs)
         except Exception as e:
-            self.logger.error(
-                f"Failed to format query: {e}"
-            )
+            self.logger.error(f"Failed to format query: {e}")
             return None
 
     async def generate_report(
-        self,
-        prompt_file: str,
-        save: bool = False,
-        directory: Optional[Path] = None,
-        **kwargs
+        self, prompt_file: str, save: bool = False, directory: Optional[Path] = None, **kwargs
     ) -> Tuple[AIMessage, AgentResponse]:
         """Generate a report based on the provided prompt."""
         try:
@@ -349,7 +315,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         # Format the question based on keyword arguments:
         question = query.format(**kwargs)
         if not directory:
-            directory = STATIC_DIR.joinpath(self.agent_id, 'documents')
+            directory = STATIC_DIR.joinpath(self.agent_id, "documents")
         try:
             response = await self.invoke(
                 question=question,
@@ -367,18 +333,13 @@ class BasicAgent(Chatbot, NotificationMixin):
                 status="success",
                 created_at=datetime.now(),
                 output=response.output,
-                **kwargs
+                **kwargs,
             )
             # before returning, we can save the report if needed:
             if save:
                 try:
-                    report_filename = self._create_filename(
-                        prefix='report', extension='txt'
-                    )
-                    async with aiofiles.open(
-                        directory.joinpath(report_filename),
-                        'w'
-                    ) as report_file:
+                    report_filename = self._create_filename(prefix="report", extension="txt")
+                    async with aiofiles.open(directory.joinpath(report_filename), "w") as report_file:
                         await report_file.write(final_report)
                     response_data.document_path = report_filename
                     self.logger.info(f"Report saved as {report_filename}")
@@ -393,9 +354,9 @@ class BasicAgent(Chatbot, NotificationMixin):
         self,
         transcript: str,
         filename: str = None,
-        prefix: str = 'transcript',
+        prefix: str = "transcript",
         directory: Optional[str] = None,
-        subdir='transcripts'
+        subdir="transcripts",
     ) -> str:
         """Save the transcript to a file."""
         if not directory:
@@ -403,52 +364,47 @@ class BasicAgent(Chatbot, NotificationMixin):
         directory.mkdir(parents=True, exist_ok=True)
         # Create a unique filename if not provided
         if not filename:
-            filename = self._create_filename(prefix=prefix, extension='txt')
+            filename = self._create_filename(prefix=prefix, extension="txt")
         file_path = directory.joinpath(filename)
         try:
-            async with aiofiles.open(file_path, 'w') as f:
+            async with aiofiles.open(file_path, "w") as f:
                 await f.write(transcript)
             self.logger.info(f"Transcript saved to {file_path}")
             return file_path
         except Exception as e:
             self.logger.error(f"Error saving transcript: {e}")
-            raise RuntimeError(
-                f"Failed to save transcript: {e}"
-            ) from e
+            raise RuntimeError(f"Failed to save transcript: {e}") from e
 
     async def pdf_report(
         self,
         content: str,
-        filename_prefix: str = 'report',
+        filename_prefix: str = "report",
         directory: Optional[Path] = None,
         title: str = None,
-        **kwargs
+        **kwargs,
     ) -> str:
         """Generate a report based on the provided prompt."""
         # Create a unique filename for the report
         from parrot_tools.pdfprint import PDFPrintTool
+
         if not directory:
-            directory = STATIC_DIR.joinpath(self.agent_id, 'documents')
-        pdf_tool = PDFPrintTool(
-            templates_dir=BASE_DIR.joinpath('templates'),
-            output_dir=directory
-        )
+            directory = STATIC_DIR.joinpath(self.agent_id, "documents")
+        pdf_tool = PDFPrintTool(templates_dir=BASE_DIR.joinpath("templates"), output_dir=directory)
         return await pdf_tool.execute(
             text=content,
-            template_vars={"title": title or 'Report'},
+            template_vars={"title": title or "Report"},
             template_name=self.report_template,
             file_prefix=filename_prefix,
-
         )
 
     async def markdown_report(
         self,
         content: str,
         filename: Optional[str] = None,
-        filename_prefix: str = 'report',
+        filename_prefix: str = "report",
         directory: Optional[Path] = None,
-        subdir: str = 'documents',
-        **kwargs
+        subdir: str = "documents",
+        **kwargs,
     ) -> str:
         """Saving Markdown report based on provided file."""
         # Create a unique filename for the report
@@ -457,59 +413,51 @@ class BasicAgent(Chatbot, NotificationMixin):
         directory.mkdir(parents=True, exist_ok=True)
         # Create a unique filename if not provided
         if not filename:
-            filename = self._create_filename(prefix=filename_prefix, extension='md')
+            filename = self._create_filename(prefix=filename_prefix, extension="md")
         file_path = directory.joinpath(filename)
         try:
-            async with aiofiles.open(file_path, 'w') as f:
+            async with aiofiles.open(file_path, "w") as f:
                 await f.write(content)
             self.logger.info(f"Transcript saved to {file_path}")
             return file_path
         except Exception as e:
             self.logger.error(f"Error saving transcript: {e}")
-            raise RuntimeError(
-                f"Failed to save transcript: {e}"
-            ) from e
+            raise RuntimeError(f"Failed to save transcript: {e}") from e
 
     async def speech_report(
         self,
         report: str,
         max_lines: int = 15,
         num_speakers: int = 2,
-        podcast_instructions: Optional[str] = 'for_podcast.txt',
+        podcast_instructions: Optional[str] = "for_podcast.txt",
         directory: Optional[Path] = None,
         output_directory: Optional[Path] = None,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         """Generate a Transcript Report and a Podcast based on findings."""
         if directory:
             script_output_directory = directory
         else:
-            script_output_directory = STATIC_DIR.joinpath(self.agent_id, 'generated_scripts')
+            script_output_directory = STATIC_DIR.joinpath(self.agent_id, "generated_scripts")
         script_output_directory.mkdir(parents=True, exist_ok=True)
-        script_name = self._create_filename(prefix='script', extension='txt')
+        script_name = self._create_filename(prefix="script", extension="txt")
         # creation of speakers:
         speakers = []
         for _, speaker in self.speakers.items():
-            speaker['gender'] = speaker.get('gender', 'neutral').lower()
+            speaker["gender"] = speaker.get("gender", "neutral").lower()
             speakers.append(FictionalSpeaker(**speaker))
             if len(speakers) > num_speakers:
-                self.logger.warning(
-                    f"Too many speakers defined, limiting to {num_speakers}."
-                )
+                self.logger.warning(f"Too many speakers defined, limiting to {num_speakers}.")
                 break
 
         # 1. Define the script configuration
         # Check if podcast_instructions is content or filename
-        if podcast_instructions and (
-            '\n' in podcast_instructions or len(podcast_instructions) > 100
-        ):
+        if podcast_instructions and ("\n" in podcast_instructions or len(podcast_instructions) > 100):
             # It's likely content (has newlines or is long), use it directly
             podcast_instruction = podcast_instructions
         else:
             # It's a filename, load it — fall back to generic instruction if missing
-            podcast_instruction = await self.open_prompt(
-                podcast_instructions or 'for_podcast.txt'
-            )
+            podcast_instruction = await self.open_prompt(podcast_instructions or "for_podcast.txt")
             if not podcast_instruction:
                 podcast_instruction = (
                     "Create an engaging podcast conversation about the following report. "
@@ -518,7 +466,7 @@ class BasicAgent(Chatbot, NotificationMixin):
                 )
 
         # Format the instruction with report text if it has placeholders
-        if podcast_instruction and '{report_text}' in podcast_instruction:
+        if podcast_instruction and "{report_text}" in podcast_instruction:
             podcast_instruction = podcast_instruction.format(report_text=report)
         script_config = ConversationalScriptConfig(
             context=self.speech_context,
@@ -526,24 +474,24 @@ class BasicAgent(Chatbot, NotificationMixin):
             report_text=report,
             system_prompt=self.speech_system_prompt,
             length=self.speech_length,  # Use the speech_length attribute
-            system_instruction=podcast_instruction or None
+            system_instruction=podcast_instruction or None,
         )
         async with self.client as client:
             # 2. Generate the conversational script
             response = await client.create_conversation_script(
                 report_data=script_config,
                 max_lines=max_lines,  # Limit to 15 lines for brevity,
-                use_structured_output=True  # Use structured output for TTS
+                use_structured_output=True,  # Use structured output for TTS
             )
             voice_prompt = response.output
             # 3. Save the script to a File:
             script_output_path = script_output_directory.joinpath(script_name)
-            async with aiofiles.open(script_output_path, 'w') as script_file:
+            async with aiofiles.open(script_output_path, "w") as script_file:
                 await script_file.write(voice_prompt.prompt)
             self.logger.info(f"Script saved to {script_output_path}")
         # 4. Generate the audio podcast
         if output_directory is None:
-            output_directory = STATIC_DIR.joinpath(self.agent_id, 'podcasts')
+            output_directory = STATIC_DIR.joinpath(self.agent_id, "podcasts")
         output_directory.mkdir(parents=True, exist_ok=True)
         async with self.client as client:
             speech_result = await client.generate_speech(
@@ -554,51 +502,40 @@ class BasicAgent(Chatbot, NotificationMixin):
                 print(f"✅ Multi-voice speech saved to: {speech_result.files[0]}")
             # 5 Return the script and audio file paths
             return {
-                'script_path': script_output_path,
-                'podcast_path': speech_result.files[0] if speech_result.files else None
+                "script_path": script_output_path,
+                "podcast_path": speech_result.files[0] if speech_result.files else None,
             }
 
     async def report(self, prompt_file: str, **kwargs) -> AgentResponse:
         """Generate a report based on the provided prompt."""
         query = await self.open_prompt(prompt_file)
-        question = query.format(
-            **kwargs
-        )
+        question = query.format(**kwargs)
         try:
-            response = await self.conversation(
-                question=question,
-                max_tokens=8192
-            )
+            response = await self.conversation(question=question, max_tokens=8192)
             if isinstance(response, Exception):
                 raise response
         except Exception as e:
             print(f"Error invoking agent: {e}")
-            raise RuntimeError(
-                f"Failed to generate report due to an error in the agent invocation: {e}"
-            ) from e
+            raise RuntimeError(f"Failed to generate report due to an error in the agent invocation: {e}") from e
         # Prepare the response object:
         final_report = response.output.strip()
         for key, value in kwargs.items():
             if hasattr(response, key):
                 setattr(response, key, value)
         response = self._agent_response(
-            user_id=str(kwargs.get('user_id', 1)),
+            user_id=str(kwargs.get("user_id", 1)),
             agent_name=self.name,
-            attributes=kwargs.pop('attributes', {}),
+            attributes=kwargs.pop("attributes", {}),
             data=final_report,
             status="success",
             created_at=datetime.now(),
             output=response.output,
             response=response,
-            **kwargs
+            **kwargs,
         )
         return await self._generate_report(response)
 
-    async def _generate_report(
-        self,
-        response: AgentResponse,
-        with_speech: bool = True
-    ) -> AgentResponse:
+    async def _generate_report(self, response: AgentResponse, with_speech: bool = True) -> AgentResponse:
         """Generate a report from the response data."""
         final_report = response.output.strip()
         if not final_report:
@@ -615,29 +552,21 @@ class BasicAgent(Chatbot, NotificationMixin):
             self.logger.error(f"Error generating transcript: {e}")
         # generate the PDF file:
         try:
-            pdf_output = await self.pdf_report(
-                content=final_report
-            )
-            response.set_pdf_path(
-                pdf_output.result.get('file_path', None)
-            )
+            pdf_output = await self.pdf_report(content=final_report)
+            response.set_pdf_path(pdf_output.result.get("file_path", None))
         except Exception as e:
             self.logger.error(f"Error generating PDF: {e}")
         # generate the podcast file:
         if with_speech:
             try:
                 podcast_output = await self.speech_report(
-                    report=final_report,
-                    max_lines=self.speech_length,
-                    num_speakers=self.num_speakers
+                    report=final_report, max_lines=self.speech_length, num_speakers=self.num_speakers
                 )
-                response.podcast_path = str(podcast_output.get('podcast_path', None))
-                response.script_path = str(podcast_output.get('script_path', None))
-                response.set_podcast_path(podcast_output.get('podcast_path', None))
+                response.podcast_path = str(podcast_output.get("podcast_path", None))
+                response.script_path = str(podcast_output.get("script_path", None))
+                response.set_podcast_path(podcast_output.get("podcast_path", None))
             except Exception as e:
-                self.logger.error(
-                    f"Error generating podcast: {e}"
-                )
+                self.logger.error(f"Error generating podcast: {e}")
         # Save the final report to the response
         response.output = textwrap.fill(final_report, width=80)
         response.status = "success"
@@ -646,21 +575,19 @@ class BasicAgent(Chatbot, NotificationMixin):
     async def generate_presentation(
         self,
         content: str,
-        filename_prefix: str = 'report',
+        filename_prefix: str = "report",
         template_name: Optional[str] = None,
         pptx_template: str = "corporate_template.pptx",
         output_dir: Optional[Path] = None,
         title: str = None,
-        **kwargs
+        **kwargs,
     ):
         """Generate a PowerPoint presentation using the provided tool."""
         from parrot_tools.powerpoint import PowerPointTool
+
         if not output_dir:
-            output_dir = STATIC_DIR.joinpath(self.agent_id, 'documents')
-        tool = PowerPointTool(
-            templates_dir=BASE_DIR.joinpath('templates'),
-            output_dir=output_dir
-        )
+            output_dir = STATIC_DIR.joinpath(self.agent_id, "documents")
+        tool = PowerPointTool(templates_dir=BASE_DIR.joinpath("templates"), output_dir=output_dir)
         return await tool.execute(
             content=content,
             template_name=None,  # Explicitly disable HTML template
@@ -668,34 +595,20 @@ class BasicAgent(Chatbot, NotificationMixin):
             split_by_headings=True,  # Ensure heading-based splitting is enabled
             pptx_template=pptx_template,
             slide_layout=1,
-            title_styles={
-                "font_name": "Segoe UI",
-                "font_size": 24,
-                "bold": True,
-                "font_color": "#1f497d"
-            },
-            content_styles={
-                "font_name": "Segoe UI",
-                "font_size": 14,
-                "alignment": "left",
-                "font_color": "#333333"
-            },
+            title_styles={"font_name": "Segoe UI", "font_size": 24, "bold": True, "font_color": "#1f497d"},
+            content_styles={"font_name": "Segoe UI", "font_size": 14, "alignment": "left", "font_color": "#333333"},
             max_slides=20,
             file_prefix=filename_prefix,
         )
 
     async def create_speech(
-        self,
-        content: str,
-        language: str = "en-US",
-        only_script: bool = False,
-        **kwargs
+        self, content: str, language: str = "en-US", only_script: bool = False, **kwargs
     ) -> Dict[str, Any]:
         """Generate a Transcript Report and a Podcast based on findings."""
-        output_directory = STATIC_DIR.joinpath(self.agent_id, 'documents')
+        output_directory = STATIC_DIR.joinpath(self.agent_id, "documents")
         output_directory.mkdir(parents=True, exist_ok=True)
-        script_name = self._create_filename(prefix='script', extension='txt')
-        podcast_name = self._create_filename(prefix='podcast', extension='wav')
+        script_name = self._create_filename(prefix="script", extension="txt")
+        podcast_name = self._create_filename(prefix="podcast", extension="wav")
         try:
             async with self.client as client:
                 # 1. Generate the conversational script and podcast:
@@ -708,12 +621,8 @@ class BasicAgent(Chatbot, NotificationMixin):
                     language=language,
                 )
         except Exception as e:
-            self.logger.error(
-                f"Error generating speech: {e}"
-            )
-            raise RuntimeError(
-                f"Failed to generate speech: {e}"
-            ) from e
+            self.logger.error(f"Error generating speech: {e}")
+            raise RuntimeError(f"Failed to generate speech: {e}") from e
 
     # =================================================================
     # MCP Server Management Methods
@@ -741,10 +650,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         try:
             return await self.tool_manager.add_mcp_server(config)
         except Exception as exc:  # pragma: no cover - defensive
-            self.logger.error(
-                "Failed to add MCP server %s: %s", getattr(config, "name", "unknown"), exc,
-                exc_info=True
-            )
+            self.logger.error("Failed to add MCP server %s: %s", getattr(config, "name", "unknown"), exc, exc_info=True)
             return []
 
     async def add_mcp_server_url(
@@ -756,7 +662,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         headers: Optional[Dict[str, str]] = None,
         allowed_tools: Optional[List[str]] = None,
         blocked_tools: Optional[List[str]] = None,
-        **kwargs
+        **kwargs,
     ) -> List[str]:
         """
         Convenience method to add a public URL-based MCP server.
@@ -801,12 +707,7 @@ class BasicAgent(Chatbot, NotificationMixin):
             ... )
         """
         config = create_http_mcp_server(
-            name=name,
-            url=url,
-            auth_type=auth_type,
-            auth_config=auth_config,
-            headers=headers,
-            **kwargs
+            name=name, url=url, auth_type=auth_type, auth_config=auth_config, headers=headers, **kwargs
         )
 
         # Apply tool filtering if specified
@@ -818,11 +719,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         return await self.add_mcp_server(config)
 
     async def add_local_mcp_server(
-        self,
-        name: str,
-        script_path: Union[str, Path],
-        interpreter: str = "python",
-        **kwargs
+        self, name: str, script_path: Union[str, Path], interpreter: str = "python", **kwargs
     ) -> List[str]:
         """
         Add a local stdio MCP server.
@@ -852,7 +749,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         auth_type: Optional[str] = None,
         auth_config: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        **kwargs
+        **kwargs,
     ) -> List[str]:
         """
         Add an HTTP MCP server with optional authentication.
@@ -870,9 +767,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         Returns:
             List of registered tool names
         """
-        config = create_http_mcp_server(
-            name, url, auth_type, auth_config, headers, **kwargs
-        )
+        config = create_http_mcp_server(name, url, auth_type, auth_config, headers, **kwargs)
         return await self.add_mcp_server(config)
 
     async def add_api_key_mcp_server(
@@ -882,7 +777,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         api_key: str,
         header_name: str = "X-API-Key",
         use_bearer_prefix: bool = False,
-        **kwargs
+        **kwargs,
     ) -> List[str]:
         """
         Add an API-key authenticated MCP server.
@@ -916,12 +811,7 @@ class BasicAgent(Chatbot, NotificationMixin):
             ... )
         """
         config = create_api_key_mcp_server(
-            name=name,
-            url=url,
-            api_key=api_key,
-            header_name=header_name,
-            use_bearer_prefix=use_bearer_prefix,
-            **kwargs
+            name=name, url=url, api_key=api_key, header_name=header_name, use_bearer_prefix=use_bearer_prefix, **kwargs
         )
         return await self.add_mcp_server(config)
 
@@ -960,11 +850,11 @@ class BasicAgent(Chatbot, NotificationMixin):
         """
         Shutdown the agent and disconnect all MCP servers.
         """
-        if hasattr(self, 'tool_manager'):
+        if hasattr(self, "tool_manager"):
             await self.tool_manager.disconnect_all_mcp()
             self.logger.info("Disconnected all MCP servers")
 
-        if hasattr(super(), 'shutdown'):
+        if hasattr(super(), "shutdown"):
             await super().shutdown(**kwargs)
 
     def as_tool(
@@ -972,8 +862,8 @@ class BasicAgent(Chatbot, NotificationMixin):
         tool_name: str = None,
         tool_description: str = None,
         use_conversation_method: bool = True,
-        context_filter: Optional[Callable[[AgentContext], AgentContext]] = None
-    ) -> 'AgentTool':
+        context_filter: Optional[Callable[[AgentContext], AgentContext]] = None,
+    ) -> "AgentTool":
         """
         Convert this agent into an AgentTool that can be used by other agents.
 
@@ -998,11 +888,7 @@ class BasicAgent(Chatbot, NotificationMixin):
             >>> orchestrator.tool_manager.add_tool(hr_tool)
         """
         # Default descriptions based on agent properties
-        default_description = (
-            f"Specialized agent: {self.name}. "
-            f"Role: {self.role}. "
-            f"Goal: {self.goal}."
-        )
+        default_description = f"Specialized agent: {self.name}. " f"Role: {self.role}. " f"Goal: {self.goal}."
 
         return AgentTool(
             agent=self,
@@ -1013,11 +899,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         )
 
     def register_as_tool(
-        self,
-        target_agent: 'BasicAgent',
-        tool_name: str = None,
-        tool_description: str = None,
-        **kwargs
+        self, target_agent: "BasicAgent", tool_name: str = None, tool_description: str = None, **kwargs
     ) -> None:
         """
         Register this agent as a tool in another agent's tool manager.
@@ -1044,22 +926,17 @@ class BasicAgent(Chatbot, NotificationMixin):
             ...     tool_description="Manages employee data"
             ... )
         """
-        agent_tool = self.as_tool(
-            tool_name=tool_name,
-            tool_description=tool_description,
-            **kwargs
-        )
+        agent_tool = self.as_tool(tool_name=tool_name, tool_description=tool_description, **kwargs)
 
         # Register in bot's tool manager
         target_agent.tool_manager.add_tool(agent_tool)
 
         # CRITICAL: Sync tools to LLM after registration
-        if hasattr(target_agent, 'sync_tools'):
+        if hasattr(target_agent, "sync_tools"):
             target_agent.sync_tools()
 
         self.logger.info(
-            f"Registered {self.name} as tool '{agent_tool.name}' "
-            f"in {target_agent.name}'s tool manager"
+            f"Registered {self.name} as tool '{agent_tool.name}' " f"in {target_agent.name}'s tool manager"
         )
 
     def add_dataframe(self, df, name: str = None):
@@ -1101,9 +978,7 @@ class BasicAgent(Chatbot, NotificationMixin):
 
         if pandas_tool is None:
             # Create new PythonPandasTool
-            pandas_tool = PythonPandasTool(
-                dataframes=self.dataframes
-            )
+            pandas_tool = PythonPandasTool(dataframes=self.dataframes)
             self.tool_manager.add_tool(pandas_tool)
         else:
             # Update existing tool with new dataframes
@@ -1131,7 +1006,7 @@ class BasicAgent(Chatbot, NotificationMixin):
             info_parts.extend(f"  - {col}: {dtype}" for col, dtype in df.dtypes.items())
 
             # Add sample statistics for numeric columns
-            numeric_cols = df.select_dtypes(include=['number']).columns
+            numeric_cols = df.select_dtypes(include=["number"]).columns
             if len(numeric_cols) > 0:
                 info_parts.append("- Summary Statistics (numeric columns):")
                 info_parts.extend(
@@ -1160,6 +1035,7 @@ class BasicAgent(Chatbot, NotificationMixin):
 
         if self._prompt_builder is not None:
             from .prompts.domain_layers import DATAFRAME_CONTEXT_LAYER
+
             self._prompt_builder.add(DATAFRAME_CONTEXT_LAYER)
             self._dataframe_schemas = df_info
             return
@@ -1177,7 +1053,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         self.system_prompt_template = f"{parts[0]}{df_info}\n\n{marker}{parts[1]}"
 
     async def create_system_prompt(self, **kwargs):
-        if self._prompt_builder and hasattr(self, '_dataframe_schemas'):
+        if self._prompt_builder and hasattr(self, "_dataframe_schemas"):
             if "dataframe_schemas" not in kwargs and self._dataframe_schemas:
                 kwargs["dataframe_schemas"] = self._dataframe_schemas
         return await super().create_system_prompt(**kwargs)
@@ -1204,7 +1080,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         output_mode: Any = None,
         format_kwargs: dict = None,
         return_structured: bool = True,
-        **kwargs
+        **kwargs,
     ) -> AIMessage:
         """Generate a follow-up question using a previous turn as context."""
         if not turn_id:
@@ -1222,10 +1098,12 @@ class BasicAgent(Chatbot, NotificationMixin):
         else:
             try:
                 import json
+
                 context_str = json.dumps(data, indent=2, default=str)
             except Exception:
                 context_str = str(data)
         from string import Template
+
         followup_prompt = Template(
             "Based on the previous question "
             "$prev_question and answer $prev_answer "
@@ -1233,8 +1111,8 @@ class BasicAgent(Chatbot, NotificationMixin):
             "you need to answer this question:\n"
             "$question"
         ).safe_substitute(
-            prev_question=previous_interaction['question'],
-            prev_answer=previous_interaction['answer'],
+            prev_question=previous_interaction["question"],
+            prev_answer=previous_interaction["answer"],
             context=context_str,
             question=question,
         )
@@ -1252,6 +1130,7 @@ class BasicAgent(Chatbot, NotificationMixin):
             return_structured=return_structured,
             **kwargs,
         )
+
 
 class Agent(BasicAgent):
     """A general-purpose agent with no additional tools."""

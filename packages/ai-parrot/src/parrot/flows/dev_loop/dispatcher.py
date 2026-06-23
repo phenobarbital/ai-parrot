@@ -32,6 +32,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import tempfile
 import time
 from typing import (
@@ -39,6 +40,8 @@ from typing import (
     Dict,
     List,
     Optional,
+    Protocol,
+    Sequence,
     TYPE_CHECKING,
     Type,
     TypeVar,
@@ -52,6 +55,8 @@ from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
 from parrot.flows.dev_loop.models import (
     ClaudeCodeDispatchProfile,
+    CodexCodeDispatchProfile,
+    GeminiCodeDispatchProfile,
     DispatchEvent,
 )
 
@@ -59,6 +64,29 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from claude_agent_sdk.types import AgentDefinition  # noqa: F401
 
 T = TypeVar("T", bound=BaseModel)
+
+# Edit/Write tools that let a dispatched session mutate the filesystem through
+# the SDK's own tool surface. A dispatch whose profile excludes ALL of these
+# AND runs in ``permission_mode="plan"`` cannot make changes, so the
+# WORKTREE_BASE_PATH confinement (which exists to stop a write-capable agent
+# escaping the worktree) does not apply to it. ``Bash`` is intentionally NOT
+# here: plan mode gates command execution to read-only behaviour, and the
+# read-only QA/code-review gates legitimately need a shell.
+_WRITE_CAPABLE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
+
+
+def _claude_profile_is_read_only(profile: ClaudeCodeDispatchProfile) -> bool:
+    """True when a Claude Code profile cannot mutate the filesystem.
+
+    Read-only means ``permission_mode="plan"`` (plan mode forbids edits) AND no
+    Edit/Write tool in ``allowed_tools``. Such a dispatch (e.g. the additive
+    ``sdd-codereview`` gate) is safe to run against a path outside
+    ``WORKTREE_BASE_PATH`` — an already-checked-out repo or the demo's own
+    checkout — because the confinement only matters for write-capable sessions.
+    """
+    if profile.permission_mode != "plan":
+        return False
+    return not (set(profile.allowed_tools) & _WRITE_CAPABLE_TOOLS)
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +115,22 @@ class DispatchOutputValidationError(Exception):
     def __init__(self, message: str, *, raw_payload: str = "") -> None:
         super().__init__(message)
         self.raw_payload = raw_payload
+
+
+class DevLoopCodeDispatcher(Protocol):
+    """Shared dispatch contract consumed by dev-loop code-agent nodes."""
+
+    async def dispatch(
+        self,
+        *,
+        brief: BaseModel,
+        profile: BaseModel,
+        output_model: Type[T],
+        run_id: str,
+        node_id: str,
+        cwd: str,
+    ) -> T:
+        """Dispatch a code-agent run and return validated structured output."""
 
 
 # ---------------------------------------------------------------------------
@@ -169,8 +213,10 @@ class ClaudeCodeDispatcher:
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         json_schema_path: Optional[str] = None
 
-        # Spec §7 R4 — defense in depth.
-        self._enforce_cwd_under_worktree_base(cwd)
+        # Spec §7 R4 — defense in depth. Waived for read-only (plan-mode,
+        # no-edit) dispatches such as the sdd-codereview gate, which may run
+        # against a checkout outside the worktree base.
+        self._enforce_cwd_under_worktree_base(cwd, profile)
 
         await self._publish_event(
             stream_key,
@@ -190,9 +236,7 @@ class ClaudeCodeDispatcher:
                 # CLI-level conflict. Output validation falls back to
                 # best-effort JSON parsing of the final assistant text
                 # (spec §7 R2).
-                run_options = self._resolve_run_options(
-                    profile, cwd, json_schema_path=None
-                )
+                run_options = self._resolve_run_options(profile, cwd, json_schema_path=None)
 
                 client = LLMFactory.create(f"claude-agent:{profile.model}")
 
@@ -213,13 +257,9 @@ class ClaudeCodeDispatcher:
                     # raises TimeoutError on expiry, which we surface as
                     # ``dispatch.failed`` and re-raise as DispatchExecutionError.
                     async with asyncio.timeout(profile.timeout_seconds):
-                        async for msg in client.stream_messages(
-                            prompt, run_options=run_options
-                        ):
+                        async for msg in client.stream_messages(prompt, run_options=run_options):
                             messages.append(msg)
-                            await self._publish_message_event(
-                                stream_key, msg, run_id, node_id
-                            )
+                            await self._publish_message_event(stream_key, msg, run_id, node_id)
                 except TimeoutError as exc:
                     await self._publish_event(
                         stream_key,
@@ -228,10 +268,7 @@ class ClaudeCodeDispatcher:
                         node_id=node_id,
                         payload={
                             "error_class": "TimeoutError",
-                            "error_message": (
-                                f"dispatch exceeded "
-                                f"{profile.timeout_seconds}s wall-clock cap"
-                            ),
+                            "error_message": (f"dispatch exceeded " f"{profile.timeout_seconds}s wall-clock cap"),
                         },
                     )
                     self.logger.warning(
@@ -241,28 +278,64 @@ class ClaudeCodeDispatcher:
                         profile.timeout_seconds,
                     )
                     raise DispatchExecutionError(
-                        f"Dispatch exceeded {profile.timeout_seconds}s "
-                        f"wall-clock cap"
+                        f"Dispatch exceeded {profile.timeout_seconds}s " f"wall-clock cap"
                     ) from exc
                 except Exception as exc:  # session failure
+                    # The SDK collapses an erroring ``ResultMessage`` into an
+                    # opaque ``ProcessError`` ("Claude Code returned an error
+                    # result: success") because the CLI exits non-zero after
+                    # emitting the result. The actionable detail —
+                    # ``api_error_status`` (e.g. 401/429/529) and the human
+                    # ``result`` text ("Invalid API key · Fix external API
+                    # key") — lives on the ResultMessage we already buffered.
+                    # Recover it so the failure is diagnosable instead of
+                    # mysterious.
+                    err_detail = self._extract_result_error(messages)
+                    failure_payload: Dict[str, Any] = {
+                        "error_class": type(exc).__name__,
+                        "error_message": str(exc),
+                    }
+                    if err_detail:
+                        failure_payload.update(err_detail)
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload=failure_payload,
+                    )
+                    self.logger.error(
+                        "Dispatch session failure for run=%s node=%s: %s",
+                        run_id,
+                        node_id,
+                        self._format_result_error(err_detail) or str(exc),
+                    )
+                    raise DispatchExecutionError(self._compose_session_error(exc, err_detail)) from exc
+
+                # Even when the SDK does NOT raise (some CLI versions emit
+                # the erroring result and close the stream cleanly), an
+                # ``is_error`` ResultMessage must fail the dispatch — never
+                # fall through to JSON validation on a half-finished turn.
+                err_detail = self._extract_result_error(messages)
+                if err_detail:
                     await self._publish_event(
                         stream_key,
                         kind="dispatch.failed",
                         run_id=run_id,
                         node_id=node_id,
                         payload={
-                            "error_class": type(exc).__name__,
-                            "error_message": str(exc),
+                            "error_class": "ResultError",
+                            "error_message": self._format_result_error(err_detail),
+                            **err_detail,
                         },
                     )
-                    self.logger.exception(
-                        "Dispatch session failure for run=%s node=%s",
+                    self.logger.error(
+                        "Dispatch returned an error result for run=%s " "node=%s: %s",
                         run_id,
                         node_id,
+                        self._format_result_error(err_detail),
                     )
-                    raise DispatchExecutionError(
-                        f"ClaudeAgentClient.ask_stream raised: {exc}"
-                    ) from exc
+                    raise DispatchExecutionError(self._format_result_error(err_detail))
 
                 try:
                     result = self._validate_output(messages, output_model)
@@ -298,12 +371,24 @@ class ClaudeCodeDispatcher:
     # Internal helpers (underscored — but accessible to unit tests)
     # ------------------------------------------------------------------
 
-    def _enforce_cwd_under_worktree_base(self, cwd: str) -> None:
+    def _enforce_cwd_under_worktree_base(
+        self,
+        cwd: str,
+        profile: Optional[ClaudeCodeDispatchProfile] = None,
+    ) -> None:
         """Spec §7 R4: refuse dispatch when ``cwd`` is not in worktree base.
+
+        The confinement protects against a *write-capable* session escaping its
+        worktree. A read-only dispatch (plan mode, no Edit/Write tools) cannot
+        write anywhere, so when *profile* is read-only the check is waived —
+        this lets the additive ``sdd-codereview`` gate review a checkout that
+        legitimately lives outside ``WORKTREE_BASE_PATH``.
 
         Raises:
             DispatchExecutionError: when the path check fails.
         """
+        if profile is not None and _claude_profile_is_read_only(profile):
+            return
         base = os.path.abspath(conf.WORKTREE_BASE_PATH)
         target = os.path.abspath(cwd)
         try:
@@ -311,9 +396,7 @@ class ClaudeCodeDispatcher:
         except ValueError:
             common = ""
         if common != base:
-            raise DispatchExecutionError(
-                f"cwd {cwd!r} is not under WORKTREE_BASE_PATH={base!r}"
-            )
+            raise DispatchExecutionError(f"cwd {cwd!r} is not under WORKTREE_BASE_PATH={base!r}")
 
     def _resolve_run_options(
         self,
@@ -386,13 +469,74 @@ class ClaudeCodeDispatcher:
             permission_mode=profile.permission_mode,
             allowed_tools=list(profile.allowed_tools) or None,
             agents=agents_dict,
-            setting_sources=list(profile.setting_sources)
-            if profile.setting_sources
-            else None,
+            setting_sources=list(profile.setting_sources) if profile.setting_sources else None,
+            strict_mcp_config=profile.strict_mcp_config,
+            env=self._resolve_dispatch_env() or None,
             extra_args=extra_args,
             system_prompt=system_prompt,
             model=profile.model,
         )
+
+    def _resolve_dispatch_env(self) -> Dict[str, str]:
+        """Compute env overrides that steer the subprocess auth method.
+
+        Claude Code prefers ``ANTHROPIC_API_KEY`` over the interactive
+        claude.ai subscription whenever the key is present in the
+        environment, silently switching billing to API credits (and
+        failing outright when that account is keyless / out of credit:
+        ``401 Invalid API key`` or ``400 Credit balance is too low``).
+
+        Policy is set by ``conf.CLAUDE_CODE_DISPATCH_AUTH``:
+
+        * ``"prefer-subscription"`` (default) — blank ``ANTHROPIC_API_KEY``
+          for the subprocess when a subscription login is detected so the
+          CLI uses it; otherwise inherit the key (API-key fallback).
+        * ``"subscription"`` — always blank the key (force subscription).
+        * ``"api-key"`` — inherit the key unchanged (API billing).
+
+        Returns a dict suitable for ``ClaudeAgentRunOptions.env``; empty
+        means "inherit the parent environment unchanged".
+        """
+        mode = (getattr(conf, "CLAUDE_CODE_DISPATCH_AUTH", "") or "").strip()
+        if mode == "api-key":
+            chosen = "api-key (inherited ANTHROPIC_API_KEY)"
+            env: Dict[str, str] = {}
+        elif mode == "subscription":
+            chosen = "subscription (forced)"
+            env = {"ANTHROPIC_API_KEY": ""}
+        else:  # prefer-subscription (default / unknown values)
+            if self._subscription_available():
+                chosen = "subscription (detected claude.ai login)"
+                # Blank the key only for the subprocess; the parent process
+                # keeps it for the AnthropicClient summarizer / plan LLM.
+                env = {"ANTHROPIC_API_KEY": ""}
+            else:
+                chosen = "api-key (no subscription login detected)"
+                env = {}
+        self.logger.debug("Dispatch auth resolved: %s", chosen)
+        return env
+
+    @staticmethod
+    def _subscription_available() -> bool:
+        """Return True when a claude.ai subscription login is on disk.
+
+        Reads ``$CLAUDE_CONFIG_DIR/.credentials.json`` (default
+        ``~/.claude``) and looks for a ``claudeAiOauth.accessToken``. The
+        presence of a refresh token means the CLI renews an expired access
+        token itself, so expiry is intentionally NOT checked here. Any
+        error (missing file, unreadable, macOS keychain storage) returns
+        False so the policy degrades to the API-key path rather than
+        blanking a key that is the only working credential.
+        """
+        config_dir = os.environ.get("CLAUDE_CONFIG_DIR", os.path.expanduser("~/.claude"))
+        cred_path = os.path.join(config_dir, ".credentials.json")
+        try:
+            with open(cred_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            return False
+        oauth = data.get("claudeAiOauth") if isinstance(data, dict) else None
+        return bool(isinstance(oauth, dict) and oauth.get("accessToken"))
 
     def _materialize_json_schema(self, output_model: Type[BaseModel]) -> str:
         """Write ``output_model.model_json_schema()`` to a tempfile.
@@ -415,9 +559,7 @@ class ClaudeCodeDispatcher:
             raise
         return path
 
-    def _build_prompt(
-        self, brief: BaseModel, output_model: Type[BaseModel]
-    ) -> str:
+    def _build_prompt(self, brief: BaseModel, output_model: Type[BaseModel]) -> str:
         """Compose the prompt body for a dispatch.
 
         Embeds:
@@ -440,11 +582,7 @@ class ClaudeCodeDispatcher:
         required = schema.get("required", []) or []
         field_lines: List[str] = []
         for fname, fmeta in properties.items():
-            ftype = (
-                fmeta.get("type")
-                or fmeta.get("$ref", "").rsplit("/", 1)[-1]
-                or "any"
-            )
+            ftype = fmeta.get("type") or fmeta.get("$ref", "").rsplit("/", 1)[-1] or "any"
             fdesc = (fmeta.get("description") or "").strip()
             mandatory = " (required)" if fname in required else ""
             line = f"  - {fname}: {ftype}{mandatory}"
@@ -452,9 +590,7 @@ class ClaudeCodeDispatcher:
                 line += f" — {fdesc}"
             field_lines.append(line)
         fields_block = "\n".join(field_lines) or "  (no fields)"
-        required_block = (
-            ", ".join(required) if required else "(none)"
-        )
+        required_block = ", ".join(required) if required else "(none)"
 
         return (
             f"Input brief:\n{brief_json}\n\n"
@@ -471,9 +607,7 @@ class ClaudeCodeDispatcher:
             f"exact names."
         )
 
-    def _validate_output(
-        self, messages: List[Any], output_model: Type[T]
-    ) -> T:
+    def _validate_output(self, messages: List[Any], output_model: Type[T]) -> T:
         """Best-effort JSON parse + Pydantic validate against ``output_model``.
 
         Concatenates the text of every ``AssistantMessage``'s
@@ -501,6 +635,74 @@ class ClaudeCodeDispatcher:
                 f"Output failed {output_model.__name__} validation: {exc}",
                 raw_payload=json_text,
             ) from exc
+
+    @staticmethod
+    def _extract_result_error(messages: List[Any]) -> Optional[Dict[str, Any]]:
+        """Return error details from an ``is_error`` ResultMessage, if any.
+
+        The Claude Agent SDK's terminal ``ResultMessage`` carries the only
+        actionable diagnosis when a dispatch fails:
+
+        * ``is_error`` — True when the CLI's underlying API call failed.
+        * ``api_error_status`` — the HTTP status of that call (e.g. 401
+          auth, 429 rate-limit, 529 overloaded). Set by the CLI when
+          ``is_error`` is True while ``subtype`` stays ``"success"``.
+        * ``result`` — the human-readable CLI message (e.g.
+          ``"Invalid API key · Fix external API key"``).
+        * ``permission_denials`` — tools the run was refused.
+
+        Duck-typed (no eager SDK import) on the ``is_error`` attribute —
+        only the terminal ``ResultMessage`` carries it, so this also
+        identifies the result without importing the SDK class. Scans in
+        reverse so the terminal result wins. Returns ``None`` when no
+        erroring result is present.
+        """
+        for msg in reversed(messages):
+            if not hasattr(msg, "is_error"):
+                continue
+            if not getattr(msg, "is_error", False):
+                return None
+            detail: Dict[str, Any] = {
+                "api_error_status": getattr(msg, "api_error_status", None),
+                "subtype": getattr(msg, "subtype", None),
+                "result_text": getattr(msg, "result", None),
+                "num_turns": getattr(msg, "num_turns", None),
+            }
+            denials = getattr(msg, "permission_denials", None)
+            if denials:
+                detail["permission_denials"] = [str(d) for d in denials]
+            return detail
+        return None
+
+    @staticmethod
+    def _format_result_error(detail: Optional[Dict[str, Any]]) -> str:
+        """Render :meth:`_extract_result_error` output as a one-line message."""
+        if not detail:
+            return ""
+        status = detail.get("api_error_status")
+        text = (detail.get("result_text") or "").strip()
+        parts: List[str] = ["Claude Code dispatch failed"]
+        if status is not None:
+            parts.append(f"with API error {status}")
+        if text:
+            parts.append(f"— {text}")
+        elif detail.get("subtype"):
+            parts.append(f"(subtype={detail['subtype']})")
+        msg = " ".join(parts)
+        if detail.get("permission_denials"):
+            msg += f" [permission_denials={detail['permission_denials']}]"
+        return msg
+
+    def _compose_session_error(self, exc: Exception, detail: Optional[Dict[str, Any]]) -> str:
+        """Build the DispatchExecutionError message for a session failure.
+
+        Prefers the structured ResultMessage diagnosis when present;
+        otherwise falls back to the raw SDK exception text.
+        """
+        formatted = self._format_result_error(detail)
+        if formatted:
+            return formatted
+        return f"ClaudeAgentClient.ask_stream raised: {exc}"
 
     @staticmethod
     def _concatenate_assistant_text(messages: List[Any]) -> str:
@@ -602,13 +804,9 @@ class ClaudeCodeDispatcher:
         maxlen = max(1, self.stream_ttl_seconds // 60)
         fields = {"event": event.model_dump_json()}
         try:
-            await redis_client.xadd(
-                stream_key, fields, maxlen=maxlen, approximate=True
-            )
+            await redis_client.xadd(stream_key, fields, maxlen=maxlen, approximate=True)
         except Exception as exc:  # pragma: no cover - best-effort publish
-            self.logger.warning(
-                "Failed to XADD %s to %s: %s", kind, stream_key, exc
-            )
+            self.logger.warning("Failed to XADD %s to %s: %s", kind, stream_key, exc)
 
     async def _publish_message_event(
         self,
@@ -636,9 +834,15 @@ class ClaudeCodeDispatcher:
                 if cls_name == "ToolResultBlock":
                     kind = "dispatch.tool_result"
                     break
-        payload = {
+        payload: Dict[str, Any] = {
             "message_class": type(message).__name__,
         }
+        # Surface terminal-result error metadata inline so the live stream
+        # shows *why* a dispatch died, not just that a ResultMessage arrived.
+        if getattr(message, "is_error", False):
+            payload["is_error"] = True
+            payload["api_error_status"] = getattr(message, "api_error_status", None)
+            payload["result_text"] = getattr(message, "result", None)
         await self._publish_event(
             stream_key,
             kind=kind,
@@ -648,8 +852,901 @@ class ClaudeCodeDispatcher:
         )
 
 
+class CodexCodeDispatcher:
+    """Thin orchestration class over ``codex exec --json``.
+
+    The class mirrors the public ``dispatch`` contract of
+    :class:`ClaudeCodeDispatcher` so Development can choose a coding-agent
+    backend without changing the dev-loop graph.
+    """
+
+    _TOOL_ITEM_TYPES = {
+        "command_execution",
+        "file_change",
+        "mcp_tool_call",
+        "web_search",
+    }
+
+    def __init__(
+        self,
+        *,
+        max_concurrent: int,
+        redis_url: str,
+        stream_ttl_seconds: int,
+        codex_bin: str = "codex",
+    ) -> None:
+        if max_concurrent < 1:
+            raise ValueError("max_concurrent must be >= 1")
+        self.logger = logging.getLogger(__name__)
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._redis_url = redis_url
+        self.stream_ttl_seconds = stream_ttl_seconds
+        self.codex_bin = codex_bin
+        self._redis: Any = None
+
+    async def dispatch(
+        self,
+        *,
+        brief: BaseModel,
+        profile: CodexCodeDispatchProfile,
+        output_model: Type[T],
+        run_id: str,
+        node_id: str,
+        cwd: str,
+    ) -> T:
+        """Dispatch a single Codex CLI session and return parsed output."""
+        stream_key = f"flow:{run_id}:dispatch:{node_id}"
+        schema_path: Optional[str] = None
+        output_path: Optional[str] = None
+        process: Any = None
+
+        self._enforce_cwd_under_worktree_base(cwd)
+
+        await self._publish_event(
+            stream_key,
+            kind="dispatch.queued",
+            run_id=run_id,
+            node_id=node_id,
+            payload={"profile": profile.model_dump(mode="json")},
+        )
+
+        async with self._semaphore:
+            try:
+                schema_path = self._materialize_json_schema(output_model)
+                output_path = self._reserve_output_path()
+                prompt = self._build_codex_prompt(profile, brief, output_model)
+                command = self._build_command(
+                    profile=profile,
+                    cwd=cwd,
+                    schema_path=schema_path,
+                    output_path=output_path,
+                    prompt=prompt,
+                )
+
+                await self._publish_event(
+                    stream_key,
+                    kind="dispatch.started",
+                    run_id=run_id,
+                    node_id=node_id,
+                    payload={
+                        "cwd": cwd,
+                        "subagent": profile.subagent,
+                        "model": profile.model,
+                        "sandbox": profile.sandbox,
+                    },
+                )
+
+                try:
+                    async with asyncio.timeout(profile.timeout_seconds):
+                        process = await self._create_process(command)
+                        stderr_task = asyncio.create_task(self._read_stream(process.stderr))
+                        await self._stream_stdout_events(
+                            process.stdout,
+                            stream_key=stream_key,
+                            run_id=run_id,
+                            node_id=node_id,
+                        )
+                        return_code = await process.wait()
+                        stderr = await stderr_task
+                except FileNotFoundError as exc:
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "error_class": "FileNotFoundError",
+                            "error_message": (f"Codex CLI executable {self.codex_bin!r} " "was not found on PATH"),
+                        },
+                    )
+                    raise DispatchExecutionError(f"Codex CLI executable {self.codex_bin!r} was not found") from exc
+                except TimeoutError as exc:
+                    if process is not None:
+                        process.kill()
+                        await process.wait()
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "error_class": "TimeoutError",
+                            "error_message": (f"dispatch exceeded " f"{profile.timeout_seconds}s wall-clock cap"),
+                        },
+                    )
+                    raise DispatchExecutionError(
+                        f"Dispatch exceeded {profile.timeout_seconds}s " f"wall-clock cap"
+                    ) from exc
+
+                if return_code != 0:
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "exit_code": return_code,
+                            "stderr_tail": stderr[-4000:],
+                        },
+                    )
+                    raise DispatchExecutionError(
+                        "Codex CLI dispatch failed with exit code " f"{return_code}: {stderr[-1000:]}"
+                    )
+
+                try:
+                    result = self._validate_output_file(output_path, output_model)
+                except DispatchOutputValidationError as exc:
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.output_invalid",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "raw_payload": exc.raw_payload[:8000],
+                            "error_message": str(exc),
+                        },
+                    )
+                    raise
+
+                await self._publish_event(
+                    stream_key,
+                    kind="dispatch.completed",
+                    run_id=run_id,
+                    node_id=node_id,
+                    payload={"output_model": output_model.__name__},
+                )
+                return result
+            finally:
+                for path in (schema_path, output_path):
+                    if path is None:
+                        continue
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+
+    def _build_command(
+        self,
+        *,
+        profile: CodexCodeDispatchProfile,
+        cwd: str,
+        schema_path: str,
+        output_path: str,
+        prompt: str,
+    ) -> List[str]:
+        """Build the ``codex exec`` command line."""
+        cmd = [
+            self.codex_bin,
+            "exec",
+            "--json",
+            "--cd",
+            cwd,
+            "--model",
+            profile.model,
+            "--sandbox",
+            profile.sandbox,
+            "--ask-for-approval",
+            profile.approval_policy,
+            "--output-schema",
+            schema_path,
+            "-o",
+            output_path,
+        ]
+        if profile.ignore_user_config:
+            cmd.append("--ignore-user-config")
+        if profile.ignore_rules:
+            cmd.append("--ignore-rules")
+        cmd.append(prompt)
+        return cmd
+
+    def _build_codex_prompt(
+        self,
+        profile: CodexCodeDispatchProfile,
+        brief: BaseModel,
+        output_model: Type[BaseModel],
+    ) -> str:
+        body = load_subagent_definition(profile.subagent)
+        output_prompt = self._build_prompt(brief, output_model)
+        return (
+            f"You are the `{profile.subagent}` dev-loop subagent.\n\n"
+            f"Subagent instructions:\n{body}\n\n"
+            f"{output_prompt}"
+        )
+
+    async def _create_process(self, command: Sequence[str]) -> Any:
+        """Spawn the Codex CLI subprocess."""
+        return await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+    async def _stream_stdout_events(
+        self,
+        stdout: Any,
+        *,
+        stream_key: str,
+        run_id: str,
+        node_id: str,
+    ) -> None:
+        if stdout is None:
+            return
+        while True:
+            raw = await stdout.readline()
+            if not raw:
+                return
+            line = raw.decode("utf-8", errors="replace").strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                await self._publish_event(
+                    stream_key,
+                    kind="dispatch.message",
+                    run_id=run_id,
+                    node_id=node_id,
+                    payload={"raw_line": line},
+                )
+                continue
+            await self._publish_codex_event(stream_key, event, run_id, node_id)
+
+    async def _publish_codex_event(
+        self,
+        stream_key: str,
+        event: Dict[str, Any],
+        run_id: str,
+        node_id: str,
+    ) -> None:
+        await self._publish_event(
+            stream_key,
+            kind=self._codex_event_kind(event),
+            run_id=run_id,
+            node_id=node_id,
+            payload={"codex_event": event},
+        )
+
+    def _codex_event_kind(self, event: Dict[str, Any]) -> str:
+        event_type = event.get("type")
+        item = event.get("item")
+        item_type = item.get("type") if isinstance(item, dict) else None
+        if event_type == "item.started" and item_type in self._TOOL_ITEM_TYPES:
+            return "dispatch.tool_use"
+        if event_type == "item.completed" and item_type in self._TOOL_ITEM_TYPES:
+            return "dispatch.tool_result"
+        return "dispatch.message"
+
+    async def _read_stream(self, stream: Any) -> str:
+        if stream is None:
+            return ""
+        data = await stream.read()
+        if isinstance(data, bytes):
+            return data.decode("utf-8", errors="replace")
+        return str(data or "")
+
+    def _validate_output_file(
+        self,
+        output_path: str,
+        output_model: Type[T],
+    ) -> T:
+        try:
+            with open(output_path, "r", encoding="utf-8") as fh:
+                raw_payload = fh.read()
+        except OSError as exc:
+            raise DispatchOutputValidationError(
+                "Codex did not write a structured output file.",
+                raw_payload="",
+            ) from exc
+        if not raw_payload.strip():
+            raise DispatchOutputValidationError(
+                "Codex structured output file was empty.",
+                raw_payload="",
+            )
+        try:
+            return output_model.model_validate_json(raw_payload)
+        except ValidationError as exc:
+            raise DispatchOutputValidationError(
+                f"Output failed {output_model.__name__} validation: {exc}",
+                raw_payload=raw_payload,
+            ) from exc
+
+    def _enforce_cwd_under_worktree_base(self, cwd: str) -> None:
+        base = os.path.abspath(conf.WORKTREE_BASE_PATH)
+        target = os.path.abspath(cwd)
+        try:
+            common = os.path.commonpath([base, target])
+        except ValueError:
+            common = ""
+        if common != base:
+            raise DispatchExecutionError(f"cwd {cwd!r} is not under WORKTREE_BASE_PATH={base!r}")
+
+    def _materialize_json_schema(self, output_model: Type[BaseModel]) -> str:
+        schema = output_model.model_json_schema()
+        fd, path = tempfile.mkstemp(prefix="dev_loop_codex_schema_", suffix=".json")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(schema, fh)
+        except Exception:
+            os.close(fd)
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            raise
+        return path
+
+    @staticmethod
+    def _reserve_output_path() -> str:
+        fd, path = tempfile.mkstemp(prefix="dev_loop_codex_output_", suffix=".json")
+        os.close(fd)
+        return path
+
+    def _build_prompt(self, brief: BaseModel, output_model: Type[BaseModel]) -> str:
+        brief_json = brief.model_dump_json()
+        schema = output_model.model_json_schema()
+        properties = schema.get("properties", {}) or {}
+        required = schema.get("required", []) or []
+        field_lines: List[str] = []
+        for fname, fmeta in properties.items():
+            ftype = fmeta.get("type") or fmeta.get("$ref", "").rsplit("/", 1)[-1] or "any"
+            fdesc = (fmeta.get("description") or "").strip()
+            mandatory = " (required)" if fname in required else ""
+            line = f"  - {fname}: {ftype}{mandatory}"
+            if fdesc:
+                line += f" — {fdesc}"
+            field_lines.append(line)
+        fields_block = "\n".join(field_lines) or "  (no fields)"
+        required_block = ", ".join(required) if required else "(none)"
+        return (
+            f"Input brief:\n{brief_json}\n\n"
+            f"Respond with a single JSON object that matches the "
+            f"`{output_model.__name__}` schema. Use these EXACT field "
+            f"names — do not invent shorter aliases:\n"
+            f"{fields_block}\n\n"
+            f"Required fields (must be present and non-empty): "
+            f"{required_block}.\n\n"
+            f"Output rules:\n"
+            f"  1. Emit ONE JSON object — no surrounding prose.\n"
+            f"  2. No markdown fences around the JSON.\n"
+            f"  3. All required fields above must appear under their "
+            f"exact names."
+        )
+
+    async def _ensure_redis(self) -> Any:
+        if self._redis is not None:
+            return self._redis
+        import redis.asyncio as aioredis
+
+        self._redis = aioredis.from_url(self._redis_url)
+        return self._redis
+
+    async def _publish_event(
+        self,
+        stream_key: str,
+        *,
+        kind: str,
+        run_id: str,
+        node_id: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        event = DispatchEvent(
+            kind=kind,  # type: ignore[arg-type]
+            ts=time.time(),
+            run_id=run_id,
+            node_id=node_id,
+            payload=payload,
+        )
+        try:
+            redis_client = await self._ensure_redis()
+        except Exception as exc:  # pragma: no cover - dev-mode fallback
+            self.logger.warning(
+                "Redis unavailable (%s); dropping event %s for %s",
+                exc,
+                kind,
+                stream_key,
+            )
+            return
+        maxlen = max(1, self.stream_ttl_seconds // 60)
+        fields = {"event": event.model_dump_json()}
+        try:
+            await redis_client.xadd(stream_key, fields, maxlen=maxlen, approximate=True)
+        except Exception as exc:  # pragma: no cover - best-effort publish
+            self.logger.warning("Failed to XADD %s to %s: %s", kind, stream_key, exc)
+
+
+class GeminiCodeDispatcher:
+    """Thin orchestration class over ``gemini --output-format stream-json``.
+
+    The class mirrors the public ``dispatch`` contract of
+    :class:`ClaudeCodeDispatcher` and :class:`CodexCodeDispatcher` so
+    Development can choose a coding-agent backend without changing the
+    dev-loop graph.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_concurrent: int,
+        redis_url: str,
+        stream_ttl_seconds: int,
+        gemini_bin: str = "gemini",
+    ) -> None:
+        if max_concurrent < 1:
+            raise ValueError("max_concurrent must be >= 1")
+        self.logger = logging.getLogger(__name__)
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._redis_url = redis_url
+        self.stream_ttl_seconds = stream_ttl_seconds
+        self.gemini_bin = gemini_bin
+        self._redis: Any = None
+
+        # Resolve binary path
+        resolved = shutil.which(self.gemini_bin) or shutil.which("gemini-cli") or shutil.which("gemini")
+        if not resolved:
+            # check common local path as fallback
+            local_fallback = "/home/jesuslara/.nvm/versions/node/v23.0.0/bin/gemini"
+            if os.path.exists(local_fallback):
+                resolved = local_fallback
+            else:
+                resolved = self.gemini_bin
+        self.resolved_bin = resolved
+
+    async def dispatch(
+        self,
+        *,
+        brief: BaseModel,
+        profile: Any,
+        output_model: Type[T],
+        run_id: str,
+        node_id: str,
+        cwd: str,
+    ) -> T:
+        """Dispatch a single Gemini CLI session and return its parsed output."""
+        stream_key = f"flow:{run_id}:dispatch:{node_id}"
+        process: Any = None
+
+        self._enforce_cwd_under_worktree_base(cwd)
+
+        # Handle transparent profile conversion
+        if isinstance(profile, ClaudeCodeDispatchProfile):
+            approval_mode = "auto_edit"
+            if profile.permission_mode == "acceptEdits":
+                approval_mode = "auto_edit"
+            elif profile.permission_mode == "bypassPermissions" or profile.permission_mode == "default":
+                approval_mode = "yolo"
+            elif profile.permission_mode == "plan":
+                approval_mode = "plan"
+            
+            profile = GeminiCodeDispatchProfile(
+                subagent=profile.subagent or "sdd-worker",
+                model="auto",
+                sandbox=True,
+                approval_mode=approval_mode,
+                timeout_seconds=profile.timeout_seconds,
+            )
+
+        await self._publish_event(
+            stream_key,
+            kind="dispatch.queued",
+            run_id=run_id,
+            node_id=node_id,
+            payload={"profile": profile.model_dump(mode="json")},
+        )
+
+        async with self._semaphore:
+            try:
+                prompt = self._build_gemini_prompt(profile, brief, output_model)
+                command = self._build_command(
+                    profile=profile,
+                    prompt=prompt,
+                )
+
+                await self._publish_event(
+                    stream_key,
+                    kind="dispatch.started",
+                    run_id=run_id,
+                    node_id=node_id,
+                    payload={
+                        "cwd": cwd,
+                        "subagent": profile.subagent,
+                        "model": profile.model,
+                    },
+                )
+
+                try:
+                    async with asyncio.timeout(profile.timeout_seconds):
+                        process = await self._create_process(command, cwd=cwd)
+                        stderr_task = asyncio.create_task(
+                            self._read_stream(process.stderr)
+                        )
+                        assistant_text = await self._stream_stdout_events(
+                            process.stdout,
+                            stream_key=stream_key,
+                            run_id=run_id,
+                            node_id=node_id,
+                        )
+                        return_code = await process.wait()
+                        stderr = await stderr_task
+                except FileNotFoundError as exc:
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "error_class": "FileNotFoundError",
+                            "error_message": (
+                                f"Gemini CLI executable {self.resolved_bin!r} "
+                                "was not found on PATH"
+                            ),
+                        },
+                    )
+                    raise DispatchExecutionError(
+                        f"Gemini CLI executable {self.resolved_bin!r} was not found"
+                    ) from exc
+                except TimeoutError as exc:
+                    if process is not None:
+                        process.kill()
+                        await process.wait()
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "error_class": "TimeoutError",
+                            "error_message": (
+                                f"dispatch exceeded "
+                                f"{profile.timeout_seconds}s wall-clock cap"
+                            ),
+                        },
+                    )
+                    raise DispatchExecutionError(
+                        f"Dispatch exceeded {profile.timeout_seconds}s "
+                        f"wall-clock cap"
+                    ) from exc
+
+                if return_code != 0:
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "exit_code": return_code,
+                            "stderr_tail": stderr[-4000:],
+                        },
+                    )
+                    raise DispatchExecutionError(
+                        "Gemini CLI dispatch failed with exit code "
+                        f"{return_code}: {stderr[-1000:]}"
+                    )
+
+                try:
+                    result = self._validate_output(
+                        assistant_text, output_model
+                    )
+                except DispatchOutputValidationError as exc:
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.output_invalid",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "raw_payload": exc.raw_payload[:8000],
+                            "error_message": str(exc),
+                        },
+                    )
+                    raise
+
+                await self._publish_event(
+                    stream_key,
+                    kind="dispatch.completed",
+                    run_id=run_id,
+                    node_id=node_id,
+                    payload={"output_model": output_model.__name__},
+                )
+                return result
+            finally:
+                pass
+
+    def _build_command(
+        self,
+        *,
+        profile: GeminiCodeDispatchProfile,
+        prompt: str,
+    ) -> List[str]:
+        """Build the ``gemini`` command line."""
+        cmd = [
+            self.resolved_bin,
+            "--skip-trust",
+            "--output-format",
+            "stream-json",
+            "--approval-mode",
+            profile.approval_mode,
+        ]
+        if profile.model and profile.model != "auto":
+            cmd.extend(["--model", profile.model])
+        if profile.sandbox:
+            cmd.append("--sandbox")
+
+        cmd.extend(["--prompt", prompt])
+        return cmd
+
+    def _build_gemini_prompt(
+        self,
+        profile: GeminiCodeDispatchProfile,
+        brief: BaseModel,
+        output_model: Type[BaseModel],
+    ) -> str:
+        body = load_subagent_definition(profile.subagent)
+        output_prompt = self._build_prompt(brief, output_model)
+        return (
+            f"You are the `{profile.subagent}` dev-loop subagent.\n\n"
+            f"Subagent instructions:\n{body}\n\n"
+            f"{output_prompt}"
+        )
+
+    async def _create_process(self, command: Sequence[str], cwd: str) -> Any:
+        """Spawn the Gemini CLI subprocess."""
+        return await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
+        )
+
+    async def _stream_stdout_events(
+        self,
+        stdout: Any,
+        *,
+        stream_key: str,
+        run_id: str,
+        node_id: str,
+    ) -> str:
+        if stdout is None:
+            return ""
+        assistant_chunks: List[str] = []
+        while True:
+            raw = await stdout.readline()
+            if not raw:
+                break
+            line = raw.decode("utf-8", errors="replace").strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                await self._publish_event(
+                    stream_key,
+                    kind="dispatch.message",
+                    run_id=run_id,
+                    node_id=node_id,
+                    payload={"raw_line": line},
+                )
+                continue
+
+            if isinstance(event, dict):
+                event_type = event.get("type")
+                if event_type == "message" and event.get("role") == "assistant":
+                    content = event.get("content", "")
+                    if content:
+                        assistant_chunks.append(content)
+
+                await self._publish_gemini_event(stream_key, event, run_id, node_id)
+
+        return "".join(assistant_chunks)
+
+    async def _publish_gemini_event(
+        self,
+        stream_key: str,
+        event: Dict[str, Any],
+        run_id: str,
+        node_id: str,
+    ) -> None:
+        await self._publish_event(
+            stream_key,
+            kind=self._gemini_event_kind(event),
+            run_id=run_id,
+            node_id=node_id,
+            payload={"gemini_event": event},
+        )
+
+    def _gemini_event_kind(self, event: Dict[str, Any]) -> str:
+        event_type = event.get("type")
+        if event_type == "tool_call":
+            return "dispatch.tool_use"
+        if event_type == "tool_response":
+            return "dispatch.tool_result"
+        return "dispatch.message"
+
+    async def _read_stream(self, stream: Any) -> str:
+        if stream is None:
+            return ""
+        data = await stream.read()
+        if isinstance(data, bytes):
+            return data.decode("utf-8", errors="replace")
+        return str(data or "")
+
+    def _validate_output(
+        self, concatenated: str, output_model: Type[T]
+    ) -> T:
+        """Best-effort JSON parse + Pydantic validate against ``output_model``.
+
+        Locates the last balanced JSON object in the concatenated assistant text,
+        and validates it. Raises :class:`DispatchOutputValidationError` (with raw payload) on
+        any failure.
+        """
+        if not concatenated.strip():
+            raise DispatchOutputValidationError(
+                "No assistant text found in dispatch result.",
+                raw_payload="",
+            )
+        json_text = self._extract_last_json_object(concatenated)
+        if json_text is None:
+            raise DispatchOutputValidationError(
+                "Could not locate a JSON object in the assistant output.",
+                raw_payload=concatenated,
+            )
+        try:
+            return output_model.model_validate_json(json_text)
+        except ValidationError as exc:
+            raise DispatchOutputValidationError(
+                f"Output failed {output_model.__name__} validation: {exc}",
+                raw_payload=json_text,
+            ) from exc
+
+    def _enforce_cwd_under_worktree_base(self, cwd: str) -> None:
+        base = os.path.abspath(conf.WORKTREE_BASE_PATH)
+        target = os.path.abspath(cwd)
+        try:
+            common = os.path.commonpath([base, target])
+        except ValueError:
+            common = ""
+        if common != base:
+            raise DispatchExecutionError(
+                f"cwd {cwd!r} is not under WORKTREE_BASE_PATH={base!r}"
+            )
+
+    @staticmethod
+    def _extract_last_json_object(text: str) -> Optional[str]:
+        """Return the last balanced ``{...}`` substring of ``text``."""
+        last_obj: Optional[str] = None
+        depth = 0
+        start = -1
+        in_string = False
+        escape = False
+        for idx, ch in enumerate(text):
+            if escape:
+                escape = False
+                continue
+            if ch == "\\" and in_string:
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                if depth == 0:
+                    start = idx
+                depth += 1
+            elif ch == "}":
+                if depth > 0:
+                    depth -= 1
+                    if depth == 0 and start != -1:
+                        last_obj = text[start : idx + 1]
+        return last_obj
+
+    def _build_prompt(
+        self, brief: BaseModel, output_model: Type[BaseModel]
+    ) -> str:
+        brief_json = brief.model_dump_json()
+        schema = output_model.model_json_schema()
+        properties = schema.get("properties", {}) or {}
+        required = schema.get("required", []) or []
+        field_lines: List[str] = []
+        for fname, fmeta in properties.items():
+            ftype = (
+                fmeta.get("type")
+                or fmeta.get("$ref", "").rsplit("/", 1)[-1]
+                or "any"
+            )
+            fdesc = (fmeta.get("description") or "").strip()
+            mandatory = " (required)" if fname in required else ""
+            line = f"  - {fname}: {ftype}{mandatory}"
+            if fdesc:
+                line += f" — {fdesc}"
+            field_lines.append(line)
+        fields_block = "\n".join(field_lines) or "  (no fields)"
+        required_block = ", ".join(required) if required else "(none)"
+        return (
+            f"Input brief:\n{brief_json}\n\n"
+            f"Respond with a single JSON object that matches the "
+            f"`{output_model.__name__}` schema. Use these EXACT field "
+            f"names — do not invent shorter aliases:\n"
+            f"{fields_block}\n\n"
+            f"Required fields (must be present and non-empty): "
+            f"{required_block}.\n\n"
+            f"Output rules:\n"
+            f"  1. Emit ONE JSON object — no surrounding prose.\n"
+            f"  2. No markdown fences around the JSON.\n"
+            f"  3. All required fields above must appear under their "
+            f"exact names."
+        )
+
+    async def _ensure_redis(self) -> Any:
+        if self._redis is not None:
+            return self._redis
+        import redis.asyncio as aioredis
+
+        self._redis = aioredis.from_url(self._redis_url)
+        return self._redis
+
+    async def _publish_event(
+        self,
+        stream_key: str,
+        *,
+        kind: str,
+        run_id: str,
+        node_id: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        event = DispatchEvent(
+            kind=kind,  # type: ignore[arg-type]
+            ts=time.time(),
+            run_id=run_id,
+            node_id=node_id,
+            payload=payload,
+        )
+        try:
+            redis_client = await self._ensure_redis()
+        except Exception as exc:  # pragma: no cover - dev-mode fallback
+            self.logger.warning(
+                "Redis unavailable (%s); dropping event %s for %s",
+                exc,
+                kind,
+                stream_key,
+            )
+            return
+        maxlen = max(1, self.stream_ttl_seconds // 60)
+        fields = {"event": event.model_dump_json()}
+        try:
+            await redis_client.xadd(
+                stream_key, fields, maxlen=maxlen, approximate=True
+            )
+        except Exception as exc:  # pragma: no cover - best-effort publish
+            self.logger.warning(
+                "Failed to XADD %s to %s: %s", kind, stream_key, exc
+            )
+
+
 __all__ = [
     "ClaudeCodeDispatcher",
+    "CodexCodeDispatcher",
+    "GeminiCodeDispatcher",
+    "DevLoopCodeDispatcher",
     "DispatchExecutionError",
     "DispatchOutputValidationError",
 ]

@@ -1,6 +1,7 @@
 """
 PythonREPLTool migrated to use AbstractTool framework with matplotlib fixes.
 """
+
 from typing import Optional, Dict, Any, Union
 import ast
 import sys
@@ -10,7 +11,7 @@ import contextlib
 import base64
 import logging
 
-logging.getLogger(name='matplotlib').setLevel(logging.INFO)
+logging.getLogger(name="matplotlib").setLevel(logging.INFO)
 
 from pathlib import Path
 from contextlib import redirect_stdout
@@ -18,9 +19,11 @@ from io import StringIO, BytesIO
 import pandas as pd
 import numpy as np
 import matplotlib
+
 # Force matplotlib to use non-interactive backend
-matplotlib.use('Agg')
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
 # Import these for proper cleanup handling
 from matplotlib import _pylab_helpers
 
@@ -28,12 +31,14 @@ from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 from navconfig import BASE_DIR
 from parrot._imports import lazy_import
+from parrot.security.redaction import redact_text
 from .abstract import AbstractTool
 
 
 def brace_escape(text: str) -> str:
     """Escape curly braces in text for format strings."""
-    return text.replace('{', '{{').replace('}', '}}')
+    return text.replace("{", "{{").replace("}", "}}")
+
 
 def sanitize_input(query: str) -> str:
     """
@@ -61,21 +66,20 @@ def sanitize_input(query: str) -> str:
     query = query.strip()
 
     # Handle common formatting issues
-    lines = query.split('\n')
+    lines = query.split("\n")
     # Remove empty lines at start and end
     while lines and not lines[0].strip():
         lines.pop(0)
     while lines and not lines[-1].strip():
         lines.pop()
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 class PythonREPLArgs(BaseModel):
     """Arguments schema for PythonREPLTool."""
-    code: str = Field(
-        description="Python code to execute in the REPL environment"
-    )
+
+    code: str = Field(description="Python code to execute in the REPL environment")
     debug: bool = False
 
 
@@ -99,21 +103,96 @@ class PythonREPLTool(AbstractTool):
     _bootstrapped = False
 
     # Libraries blocked from import via python_repl.
-    BLOCKED_IMPORTS: set = set()
+    BLOCKED_IMPORTS: set = {
+        "builtins",
+        "ctypes",
+        "ftplib",
+        "glob",
+        "http",
+        "importlib",
+        "inspect",
+        "os",
+        "pathlib",
+        "pickle",
+        "requests",
+        "shutil",
+        "socket",
+        "ssl",
+        "subprocess",
+        "sys",
+        "tempfile",
+        "urllib",
+    }
+    BLOCKED_NAMES: set = {
+        "__builtins__",
+        "__debug__",
+        "__import__",
+        "breakpoint",
+        "compile",
+        "delattr",
+        "dir",
+        "eval",
+        "exec",
+        "getattr",
+        "globals",
+        "hasattr",
+        "input",
+        "locals",
+        "open",
+        "setattr",
+        "vars",
+    }
+    BLOCKED_ATTRIBUTES: set = {
+        "__class__",
+        "__dict__",
+        "__globals__",
+        "__mro__",
+        "__subclasses__",
+        "absolute",
+        "chmod",
+        "chown",
+        "connect",
+        "cwd",
+        "environ",
+        "expanduser",
+        "glob",
+        "home",
+        "iterdir",
+        "mkdir",
+        "modules",
+        "open",
+        "popen",
+        "read_bytes",
+        "read_text",
+        "remove",
+        "rename",
+        "replace",
+        "request",
+        "resolve",
+        "rglob",
+        "rmdir",
+        "socket",
+        "system",
+        "unlink",
+        "urlopen",
+        "walk",
+        "write_bytes",
+        "write_text",
+    }
 
     def __init__(
         self,
         locals_dict: Optional[Dict] = None,
         globals_dict: Optional[Dict] = None,
         report_dir: Optional[Path] = None,
-        plt_style: str = 'seaborn-v0_8-whitegrid',
-        palette: str = 'Set2',
+        plt_style: str = "seaborn-v0_8-whitegrid",
+        palette: str = "Set2",
         setup_code: Optional[str] = None,
         sanitize_input_enabled: bool = True,
         auto_save_plots: bool = True,
         return_plot_as_base64: bool = False,
         debug: bool = False,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize the Python REPL tool.
@@ -132,14 +211,11 @@ class PythonREPLTool(AbstractTool):
         """
         # Check Python version
         if sys.version_info < (3, 9):
-            raise ValueError(
-                "This tool requires Python 3.9 or higher "
-                f"(you have Python version: {sys.version})"
-            )
+            raise ValueError("This tool requires Python 3.9 or higher " f"(you have Python version: {sys.version})")
 
         # Set default output directory for reports
         if not report_dir:
-            report_dir = BASE_DIR.joinpath('static', 'reports')
+            report_dir = BASE_DIR.joinpath("static", "reports")
 
         # Initialize parent class
         super().__init__(output_dir=report_dir, **kwargs)
@@ -176,7 +252,7 @@ class PythonREPLTool(AbstractTool):
         original_backend = matplotlib.get_backend()
         with contextlib.suppress(Exception):
             # Force non-interactive backend
-            matplotlib.use('Agg', force=True)
+            matplotlib.use("Agg", force=True)
 
         # Configure matplotlib to not try to show plots
         plt.ioff()  # Turn off interactive mode
@@ -185,7 +261,7 @@ class PythonREPLTool(AbstractTool):
         self._safe_close_all_plots()
 
         # Clear any existing figures
-        plt.close('all')
+        plt.close("all")
 
         self.logger.info(f"Matplotlib backend set to: {matplotlib.get_backend()}")
 
@@ -201,7 +277,7 @@ class PythonREPLTool(AbstractTool):
                     self.logger.debug(f"Error closing figure {fignum}: {e}")
 
             # Force garbage collection of any remaining figures
-            plt.close('all')
+            plt.close("all")
 
         except Exception as e:
             self.logger.debug(f"Error in safe_close_all_plots: {e}")
@@ -214,7 +290,7 @@ class PythonREPLTool(AbstractTool):
                 self._safe_close_all_plots()
 
                 # Clear the figure manager registry safely
-                if hasattr(_pylab_helpers, 'Gcf'):
+                if hasattr(_pylab_helpers, "Gcf"):
                     try:
                         _pylab_helpers.Gcf.figs.clear()
                     except Exception as e:
@@ -258,35 +334,25 @@ class PythonREPLTool(AbstractTool):
         optional_libs: Dict[str, Any] = {}
 
         try:
-            optional_libs['altair'] = lazy_import("altair", extra="images")
+            optional_libs["altair"] = lazy_import("altair", extra="images")
         except ImportError as exc:
             self.logger.debug(str(exc))
 
         try:
-            optional_libs['px'] = lazy_import(
-                "plotly.express", package_name="plotly", extra="images"
-            )
-            optional_libs['go'] = lazy_import(
-                "plotly.graph_objects", package_name="plotly", extra="images"
-            )
-            optional_libs['pio'] = lazy_import(
-                "plotly.io", package_name="plotly", extra="images"
-            )
+            optional_libs["px"] = lazy_import("plotly.express", package_name="plotly", extra="images")
+            optional_libs["go"] = lazy_import("plotly.graph_objects", package_name="plotly", extra="images")
+            optional_libs["pio"] = lazy_import("plotly.io", package_name="plotly", extra="images")
         except ImportError as exc:
             self.logger.debug(str(exc))
 
         try:
-            optional_libs['folium'] = lazy_import("folium", extra="agents")
+            optional_libs["folium"] = lazy_import("folium", extra="agents")
         except ImportError as exc:
             self.logger.debug(str(exc))
-
 
         # Helper functions for plot handling
         def save_current_plot(
-            filename: Optional[str] = None,
-            format: str = 'png',
-            dpi: int = 300,
-            bbox_inches: str = 'tight'
+            filename: Optional[str] = None, format: str = "png", dpi: int = 300, bbox_inches: str = "tight"
         ) -> Dict[str, Any]:
             """Save the current matplotlib plot to a file."""
             if not filename:
@@ -303,13 +369,13 @@ class PythonREPLTool(AbstractTool):
                     "file_path": str(file_path),
                     "file_url": file_url,
                     "format": format,
-                    "dpi": dpi
+                    "dpi": dpi,
                 }
 
                 # Optionally add base64 representation
                 if self.return_plot_as_base64:
-                    with open(file_path, 'rb') as f:
-                        encoded_string = base64.b64encode(f.read()).decode('utf-8')
+                    with open(file_path, "rb") as f:
+                        encoded_string = base64.b64encode(f.read()).decode("utf-8")
                         result["base64"] = f"data:image/{format};base64,{encoded_string}"
 
                 return result
@@ -318,13 +384,13 @@ class PythonREPLTool(AbstractTool):
                 self.logger.error(f"Error saving plot: {e}")
                 return {"error": str(e)}
 
-        def get_plot_as_base64(format: str = 'png', dpi: int = 300) -> str:
+        def get_plot_as_base64(format: str = "png", dpi: int = 300) -> str:
             """Get the current matplotlib plot as a base64 string."""
             try:
                 buffer = BytesIO()
-                plt.savefig(buffer, format=format, dpi=dpi, bbox_inches='tight')
+                plt.savefig(buffer, format=format, dpi=dpi, bbox_inches="tight")
                 buffer.seek(0)
-                encoded_string = base64.b64encode(buffer.read()).decode('utf-8')
+                encoded_string = base64.b64encode(buffer.read()).decode("utf-8")
                 buffer.close()
                 return f"data:image/{format};base64,{encoded_string}"
             except Exception as e:
@@ -341,34 +407,32 @@ class PythonREPLTool(AbstractTool):
                 return f"Error clearing plots: {str(e)}"
 
         # Update locals with essential libraries and tools
-        self.locals.update({
-            # Core data science libraries (always available — in [project.dependencies])
-            'pd': pd,
-            'np': np,
-            'plt': plt,
-            'matplotlib': matplotlib,
-            'numexpr': ne,
-            'sns': sns,
-
-            # JSON utilities
-            'json_encoder': json_encoder,
-            'json_decoder': json_decoder,
-            'extended_json': {
-                'dumps': json_encoder,
-                'loads': json_decoder,
-            },
-
-            # Directory and results management
-            'report_directory': self.output_dir,
-            'execution_results': {},
-
-            # Plot utilities
-            'save_current_plot': save_current_plot,
-            'get_plot_as_base64': get_plot_as_base64,
-            'clear_plots': clear_plots,
-            'execute_safely': lambda code: self.execute_code_safely(code),
-
-        })
+        self.locals.update(
+            {
+                # Core data science libraries (always available — in [project.dependencies])
+                "pd": pd,
+                "np": np,
+                "plt": plt,
+                "matplotlib": matplotlib,
+                "numexpr": ne,
+                "sns": sns,
+                # JSON utilities
+                "json_encoder": json_encoder,
+                "json_decoder": json_decoder,
+                "extended_json": {
+                    "dumps": json_encoder,
+                    "loads": json_decoder,
+                },
+                # Directory and results management
+                "report_directory": self.output_dir,
+                "execution_results": {},
+                # Plot utilities
+                "save_current_plot": save_current_plot,
+                "get_plot_as_base64": get_plot_as_base64,
+                "clear_plots": clear_plots,
+                "execute_safely": lambda code: self.execute_code_safely(code),
+            }
+        )
 
         # Merge in any optional plotting libs that imported successfully.
         self.locals.update(optional_libs)
@@ -376,9 +440,7 @@ class PythonREPLTool(AbstractTool):
         # Mirror locals into globals so user code can see everything
         self.globals.update(self.locals)
 
-        self.logger.info(
-            f"Python REPL environment setup complete. Output dir: {self.output_dir}"
-        )
+        self.logger.info(f"Python REPL environment setup complete. Output dir: {self.output_dir}")
 
     def _get_default_setup_code(self) -> str:
         """Get the default setup code."""
@@ -423,7 +485,7 @@ print("Use 'execution_results' dict to store intermediate results.")
 
         self.logger.info("Running REPL bootstrap code...")
         try:
-            result = self._execute_code(self.setup_code)
+            result = self._execute_code(self.setup_code, enforce_security=False)
             if result.strip():
                 self.logger.info(f"Bootstrap output: {result}")
         except Exception as e:
@@ -431,13 +493,36 @@ print("Use 'execution_results' dict to store intermediate results.")
 
         try:
             plt.style.use(self.plt_style)
-            if 'sns' in self.locals:
-                self.locals['sns'].set_palette(self.palette)
+            if "sns" in self.locals:
+                self.locals["sns"].set_palette(self.palette)
 
         except Exception as e:
             self.logger.error("Error setting plot style", exc_info=e)
 
         PythonREPLTool._bootstrapped = True
+
+    def _check_ast_security(self, tree: ast.AST) -> Optional[str]:
+        """Return a policy error when user code tries to access unsafe APIs."""
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    root = alias.name.split(".")[0]
+                    if root in self.BLOCKED_IMPORTS:
+                        return f"BlockedOperationError: import '{alias.name}' is blocked " "in python_repl."
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                root = module.split(".")[0]
+                if root in self.BLOCKED_IMPORTS:
+                    return f"BlockedOperationError: import from '{module}' is blocked " "in python_repl."
+            elif isinstance(node, ast.Name) and node.id in self.BLOCKED_NAMES:
+                return f"BlockedOperationError: use of '{node.id}' is blocked " "in python_repl."
+            elif isinstance(node, ast.Attribute) and node.attr in self.BLOCKED_ATTRIBUTES:
+                return f"BlockedOperationError: access to attribute '{node.attr}' " "is blocked in python_repl."
+        return None
+
+    def _redact_execution_output(self, output: str) -> str:
+        """Redact secret-like values before tool output reaches logs or LLMs."""
+        return redact_text(output)
 
     def _auto_save_plots_if_enabled(self) -> Optional[Dict[str, Any]]:
         """Automatically save plots if auto_save_plots is enabled and there are open figures."""
@@ -450,10 +535,10 @@ print("Use 'execution_results' dict to store intermediate results.")
 
         try:
             # Save the current plot
-            if (save_func := self.locals.get('save_current_plot')):
+            if save_func := self.locals.get("save_current_plot"):
                 result = save_func()
                 # Clear the plot after saving to prevent memory issues
-                plt.close('all')
+                plt.close("all")
                 return result
         except Exception as e:
             self.logger.error(f"Error auto-saving plot: {e}")
@@ -481,11 +566,11 @@ print("Use 'execution_results' dict to store intermediate results.")
                 if isinstance(value, pd.DataFrame):
                     serializable[str_key] = {
                         "_type": "pandas.DataFrame",
-                        "data": value.to_dict(orient='records'),
+                        "data": value.to_dict(orient="records"),
                         "columns": list(value.columns),
                         "index": list(value.index),
                         "shape": value.shape,
-                        "dtypes": {col: str(dtype) for col, dtype in value.dtypes.items()}
+                        "dtypes": {col: str(dtype) for col, dtype in value.dtypes.items()},
                     }
                 elif isinstance(value, pd.Series):
                     serializable[str_key] = {
@@ -493,28 +578,28 @@ print("Use 'execution_results' dict to store intermediate results.")
                         "data": value.to_dict(),
                         "name": value.name,
                         "dtype": str(value.dtype),
-                        "shape": value.shape
+                        "shape": value.shape,
                     }
                 elif isinstance(value, np.ndarray):
                     serializable[str_key] = {
                         "_type": "numpy.ndarray",
                         "data": value.tolist(),
                         "shape": value.shape,
-                        "dtype": str(value.dtype)
+                        "dtype": str(value.dtype),
                     }
-                elif hasattr(value, '__dict__') and not callable(value):
+                elif hasattr(value, "__dict__") and not callable(value):
                     # For custom objects, try to serialize their __dict__
                     serializable[str_key] = {
                         "_type": f"{value.__class__.__module__}.{value.__class__.__name__}",
                         "data": str(value),  # fallback to string representation
-                        "attributes": {k: str(v) for k, v in value.__dict__.items() if not k.startswith('_')}
+                        "attributes": {k: str(v) for k, v in value.__dict__.items() if not k.startswith("_")},
                     }
                 elif callable(value):
                     # For functions or callable objects
                     serializable[str_key] = {
                         "_type": "callable",
-                        "name": getattr(value, '__name__', str(value)),
-                        "data": str(value)
+                        "name": getattr(value, "__name__", str(value)),
+                        "data": str(value),
                     }
                 else:
                     # Try direct serialization for basic types
@@ -529,12 +614,17 @@ print("Use 'execution_results' dict to store intermediate results.")
                     "_type": "string_representation",
                     "data": str(value),
                     "original_type": str(type(value)),
-                    "serialization_error": str(e)
+                    "serialization_error": str(e),
                 }
 
         return serializable
 
-    def _execute_code(self, query: str, debug: bool = False) -> str:
+    def _execute_code(
+        self,
+        query: str,
+        debug: bool = False,
+        enforce_security: bool = True,
+    ) -> str:
         """Execute Python code and return the result."""
         try:
             if self.sanitize_input_enabled:
@@ -544,7 +634,7 @@ print("Use 'execution_results' dict to store intermediate results.")
             pre_exec_keys = set(self.locals.keys())
 
             if debug:
-                print(f"DEBUG: Executing code:\n{repr(query)}\n" + "="*50)
+                print(f"DEBUG: Executing code:\n{repr(query)}\n" + "=" * 50)
 
             if not query.strip():
                 return ""
@@ -558,24 +648,10 @@ print("Use 'execution_results' dict to store intermediate results.")
                     print(f"DEBUG: Query lines: {query.split(chr(10))}")
                 return f"SyntaxError: {str(e)}"
 
-            # --- blocked-imports gate (AST-level) ---
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        root = alias.name.split(".")[0]
-                        if root in self.BLOCKED_IMPORTS:
-                            return (
-                                f"BlockedImportError: '{alias.name}' is blocked. "
-                                f"Use your assigned tools instead."
-                            )
-                elif isinstance(node, ast.ImportFrom):
-                    if node.module:
-                        root = node.module.split(".")[0]
-                        if root in self.BLOCKED_IMPORTS:
-                            return (
-                                f"BlockedImportError: '{node.module}' is blocked. "
-                                f"Use your assigned tools instead."
-                            )
+            if enforce_security:
+                security_error = self._check_ast_security(tree)
+                if security_error:
+                    return security_error
 
             # If empty, return
             if not tree.body:
@@ -620,14 +696,15 @@ print("Use 'execution_results' dict to store intermediate results.")
 
                         # Auto-save plots if enabled
                         plot_info = self._auto_save_plots_if_enabled()
-                        if plot_info and not plot_info.get('error'):
+                        if plot_info and not plot_info.get("error"):
                             plot_msg = f"\n[Plot saved: {plot_info.get('filename', 'unknown')}]"
                             output += plot_msg
 
                         if ret is None:
-                            return output
+                            return self._redact_execution_output(output)
                         else:
-                            return output + str(ret) if output else str(ret)
+                            result = output + str(ret) if output else str(ret)
+                            return self._redact_execution_output(result)
 
                 try:
                     # Try to evaluate as expression first
@@ -635,15 +712,16 @@ print("Use 'execution_results' dict to store intermediate results.")
 
                     # Auto-save plots if enabled
                     plot_info = self._auto_save_plots_if_enabled()
-                    if plot_info and not plot_info.get('error'):
+                    if plot_info and not plot_info.get("error"):
                         plot_msg = f"\n[Plot saved: {plot_info.get('filename', 'unknown')}]"
                         io_buffer.write(plot_msg)
 
                     if ret is None:
-                        return io_buffer.getvalue()
+                        return self._redact_execution_output(io_buffer.getvalue())
                     else:
                         output = io_buffer.getvalue()
-                        return output + str(ret) if output else str(ret)
+                        result = output + str(ret) if output else str(ret)
+                        return self._redact_execution_output(result)
                 except Exception:
                     # Fall back to execution
                     try:
@@ -651,11 +729,11 @@ print("Use 'execution_results' dict to store intermediate results.")
 
                         # Auto-save plots if enabled
                         plot_info = self._auto_save_plots_if_enabled()
-                        if plot_info and not plot_info.get('error'):
+                        if plot_info and not plot_info.get("error"):
                             plot_msg = f"\n[Plot saved: {plot_info.get('filename', 'unknown')}]"
                             io_buffer.write(plot_msg)
 
-                        return io_buffer.getvalue()
+                        return self._redact_execution_output(io_buffer.getvalue())
                     except Exception as e:
                         return f"ExecutionError: {type(e).__name__}: {str(e)}"
 
@@ -673,16 +751,14 @@ print("Use 'execution_results' dict to store intermediate results.")
                             f"🆕 DataFrame Created: '{var_name}' | Shape: {val.shape} | Columns: {list(val.columns)}"
                         )
                     elif not var_name.startswith("_"):
-                        context_report.append(
-                            f"🆕 Variable Created: '{var_name}' | Type: {type(val).__name__}"
-                        )
+                        context_report.append(f"🆕 Variable Created: '{var_name}' | Type: {type(val).__name__}")
                     else:
                         context_report.append(
                             f"🆕 Variable Created: '{var_name}' | Type: {type(val).__name__} (private)"
                         )
 
-                return output + "\n".join(context_report)
-            return output
+                return self._redact_execution_output(output + "\n".join(context_report))
+            return self._redact_execution_output(output)
 
         except Exception as e:
             return f"{type(e).__name__}: {str(e)}"
@@ -704,12 +780,7 @@ print("Use 'execution_results' dict to store intermediate results.")
 
             # Execute the code in a thread to avoid blocking
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(
-                None,
-                self._execute_code,
-                code,
-                debug
-            )
+            return await loop.run_in_executor(None, self._execute_code, code, debug)
 
         except Exception as e:
             self.logger.error(f"Error executing Python code: {e}")
@@ -718,7 +789,7 @@ print("Use 'execution_results' dict to store intermediate results.")
                 "code_executed": code,
                 "debug_mode": debug,
                 "execution_successful": False,
-                "error_details": str(e)
+                "error_details": str(e),
             }
 
     def execute_sync(self, code: str, debug: bool = False) -> str:
@@ -745,7 +816,7 @@ print("Use 'execution_results' dict to store intermediate results.")
             "output_directory": str(self.output_dir),
             "locals_count": len(self.locals),
             "globals_count": len(self.globals),
-            "execution_results_keys": list(self.locals.get('execution_results', {}).keys()),
+            "execution_results_keys": list(self.locals.get("execution_results", {}).keys()),
             "open_figures": len(plt.get_fignums()),
             "bootstrapped": self._bootstrapped,
             "plot_style": self.plt_style,
@@ -753,7 +824,7 @@ print("Use 'execution_results' dict to store intermediate results.")
             "auto_save_plots": self.auto_save_plots,
             "return_plot_as_base64": self.return_plot_as_base64,
         }
-        if (sns := self.locals.get('sns')) is not None:
+        if (sns := self.locals.get("sns")) is not None:
             info["seaborn_version"] = sns.__version__
         return info
 
@@ -762,11 +833,11 @@ print("Use 'execution_results' dict to store intermediate results.")
         self.logger.info("Resetting Python REPL environment...")
 
         # Clear all plots first
-        plt.close('all')
+        plt.close("all")
 
         # Clear execution results
-        if 'execution_results' in self.locals:
-            self.locals['execution_results'].clear()
+        if "execution_results" in self.locals:
+            self.locals["execution_results"].clear()
 
         # Re-setup matplotlib
         self._setup_charts()
@@ -797,14 +868,14 @@ print("Use 'execution_results' dict to store intermediate results.")
         file_path = self.validate_output_path(file_path)
 
         # Get execution results
-        execution_results = self.locals.get('execution_results', {})
+        execution_results = self.locals.get("execution_results", {})
 
         # Serialize execution results safely
         serializable_results = self._serialize_execution_results(execution_results)
 
         # Save to file
         try:
-            with open(file_path, 'w', encoding='utf-8') as f:
+            with open(file_path, "w", encoding="utf-8") as f:
                 f.write(json_encoder(serializable_results))
 
             file_url = self.to_static_url(file_path)
@@ -815,13 +886,11 @@ print("Use 'execution_results' dict to store intermediate results.")
                 "file_url": file_url,
                 "results_count": len(execution_results),
                 "serializable_count": len(serializable_results),
-                "saved_at": self.generate_filename("", "", include_timestamp=True)
+                "saved_at": self.generate_filename("", "", include_timestamp=True),
             }
 
         except Exception as e:
-            raise ValueError(
-                f"Error saving execution results: {e}"
-            ) from e
+            raise ValueError(f"Error saving execution results: {e}") from e
 
     def load_execution_results(self, file_path: Union[str, Path]) -> Dict[str, Any]:
         """
@@ -839,26 +908,24 @@ print("Use 'execution_results' dict to store intermediate results.")
             raise ValueError(f"File not found: {file_path}")
 
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 serialized_results = json_decoder(f.read())
 
             # Deserialize the results
             results = self._deserialize_execution_results(serialized_results)
 
             # Update execution results
-            self.locals['execution_results'].update(results)
+            self.locals["execution_results"].update(results)
 
             return {
                 "file_path": str(file_path),
                 "results_loaded": len(results),
-                "total_results": len(self.locals['execution_results']),
-                "loaded_at": self.generate_filename("", "", include_timestamp=True)
+                "total_results": len(self.locals["execution_results"]),
+                "loaded_at": self.generate_filename("", "", include_timestamp=True),
             }
 
         except Exception as e:
-            raise ValueError(
-                f"Error loading execution results: {e}"
-            ) from e
+            raise ValueError(f"Error loading execution results: {e}") from e
 
     def _deserialize_execution_results(self, serialized_results: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -927,11 +994,10 @@ print("Use 'execution_results' dict to store intermediate results.")
 
         def safe_excepthook(exc_type, exc_value, exc_traceback):
             """Custom exception hook that prevents crashes from matplotlib issues."""
-            if (exc_type == RuntimeError and
-                'main thread is not in main loop' in str(exc_value)):
+            if exc_type == RuntimeError and "main thread is not in main loop" in str(exc_value):
                 self.logger.warning("Caught matplotlib threading issue, continuing...")
                 return
-            elif (exc_type == RuntimeError and 'Calling Tcl from different apartment' in str(exc_value)):
+            elif exc_type == RuntimeError and "Calling Tcl from different apartment" in str(exc_value):
                 self.logger.warning("Caught matplotlib Tcl issue, continuing...")
                 return
             else:

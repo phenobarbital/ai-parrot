@@ -34,7 +34,6 @@ from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.models import RepoSpec, WorkBrief
 
-
 # ---------------------------------------------------------------------------
 # Edge predicates
 # ---------------------------------------------------------------------------
@@ -107,9 +106,7 @@ class FlowEventPublisher:
             "ts": time.time(),
             "run_id": run_id,
             "node_id": node_id,
-            "payload": {
-                k: v for k, v in info.items() if k not in ("flow", "context")
-            },
+            "payload": {k: v for k, v in info.items() if k not in ("flow", "context")},
         }
         try:
             redis_client = await self._ensure_redis()
@@ -127,9 +124,7 @@ class FlowEventPublisher:
         if self._redis is None:
             import redis.asyncio as aioredis  # noqa: PLC0415 - lazy
 
-            self._redis = aioredis.from_url(
-                self._redis_url, decode_responses=True
-            )
+            self._redis = aioredis.from_url(self._redis_url, decode_responses=True)
         return self._redis
 
     async def close(self) -> None:
@@ -170,6 +165,8 @@ def build_dev_loop_flow(
     name: str = "dev-loop",
     publish_flow_events: bool = True,
     lifecycle_events: bool = True,
+    development_dispatcher: Optional[Any] = None,
+    development_profile: Optional[Any] = None,
     git_toolkit: Optional[Any] = None,
     repos: Optional[list[RepoSpec]] = None,
 ) -> AgentsFlow:
@@ -205,6 +202,10 @@ def build_dev_loop_flow(
             so typed FEAT-176 events (FlowStarted/NodeCompleted/…) reach
             the global lifecycle registry — and through it the OTel /
             logging / usage subscribers.
+        development_dispatcher: Optional dispatcher used only by
+            ``DevelopmentNode``. Defaults to ``dispatcher``.
+        development_profile: Optional dispatch profile passed only to
+            ``DevelopmentNode``.
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -218,6 +219,8 @@ def build_dev_loop_flow(
         dispatcher=dispatcher,
         jira_toolkit=jira_toolkit,
         redis_url=redis_url,
+        development_dispatcher=development_dispatcher,
+        development_profile=development_profile,
         git_toolkit=git_toolkit,
         log_toolkits=log_toolkits,
         repos=repos,
@@ -255,6 +258,7 @@ def build_dev_loop_flow(
         from parrot.bots.flows.flow.telemetry import (  # noqa: PLC0415
             FlowLifecycleAdapter,
         )
+
         lifecycle_adapter = FlowLifecycleAdapter()
         flow.add_node_event_listener(lifecycle_adapter)
     flow._lifecycle_adapter = lifecycle_adapter  # type: ignore[attr-defined]

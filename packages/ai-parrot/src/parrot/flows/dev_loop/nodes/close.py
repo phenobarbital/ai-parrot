@@ -14,19 +14,17 @@ Jira-side errors are logged and surfaced as a degraded status dict.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
+from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.models import QAReport, ResearchOutput
-from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
-
-
-# Transition label per run mode.
-_TRANSITION_BY_MODE = {
-    "initial": "Ready to Deploy",
-    "revision": "In Review – revised",
-}
+from parrot.flows.dev_loop.nodes.base import (
+    DevLoopNode,
+    register_dev_loop_node,
+    transition_issue_with_candidates,
+)
 
 
 @register_dev_loop_node("dev_loop.close")
@@ -72,13 +70,13 @@ class DevLoopCloseNode(DevLoopNode):
             )
             return {"status": "closed_without_ticket", "mode": mode}
 
-        transition = _TRANSITION_BY_MODE.get(mode, _TRANSITION_BY_MODE["initial"])
+        candidates = self._transition_candidates(mode)
         body = self._build_summary(mode, shared)
 
         try:
             await self._jira.jira_add_comment(issue=issue_key, body=body)
-            await self._jira.jira_transition_issue(
-                issue=issue_key, transition=transition
+            await transition_issue_with_candidates(
+                self._jira, issue_key, candidates, logger=self.logger
             )
         except Exception as exc:  # noqa: BLE001 - terminal node, never raises
             self.logger.exception("DevLoopClose Jira call failed: %s", exc)
@@ -90,6 +88,22 @@ class DevLoopCloseNode(DevLoopNode):
             }
 
         return {"status": "closed", "issue_key": issue_key, "mode": mode}
+
+    # ------------------------------------------------------------------
+    # Internal — transition resolution
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _transition_candidates(mode: str) -> List[str]:
+        """Ordered transition-label candidates for the run *mode*.
+
+        ``revision`` runs aim for an "in review again" label; everything else
+        (the initial success path) aims for a "ready/done" label. Both fall
+        back through workflow-agnostic synonyms (see ``conf``).
+        """
+        if mode == "revision":
+            return list(conf.DEV_LOOP_JIRA_TRANSITIONS_REVISION)
+        return list(conf.DEV_LOOP_JIRA_TRANSITIONS_READY)
 
     # ------------------------------------------------------------------
     # Internal — summary construction

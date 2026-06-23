@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from PIL import Image
 from parrot.clients.google import GoogleGenAIClient
-from parrot.models import AIMessage, CompletionUsage
+from parrot.models import AIMessage, CompletionUsage, ToolCall
 
 
 @pytest.mark.asyncio
@@ -229,9 +229,7 @@ def test_safe_extract_text_prefers_parts_over_flattened_response_text():
     response = _FakeGeminiResponse(
         parts=[_FakeGeminiPart(text="Here are the available models.")],
         text=(
-            "The user wants to list models.\n"
-            "I will call the model-listing tool.\n"
-            "Here are the available models."
+            "The user wants to list models.\n" "I will call the model-listing tool.\n" "Here are the available models."
         ),
     )
 
@@ -305,6 +303,32 @@ def test_truncate_result_within_limit():
     assert result[0]["id"] == 1
 
 
+def test_tool_result_redacts_environment_key_view():
+    client = GoogleGenAIClient(api_key="fake_key")
+    leaked = "KeysView(environ({'JIRA_API_TOKEN': 'super-secret-value', " "'NORMAL_SETTING': 'visible'}))"
+
+    output = client._process_tool_result_for_api(leaked)
+
+    assert "super-secret-value" not in output["result"]
+    assert "[REDACTED]" in output["result"]
+    assert "NORMAL_SETTING" in output["result"]
+
+
+def test_simple_summary_withholds_sensitive_tool_string_result():
+    client = GoogleGenAIClient(api_key="fake_key")
+    tool_call = ToolCall(
+        id="call_1",
+        name="python_repl",
+        arguments={"code": "import os"},
+        result="KeysView(environ({'JIRA_API_TOKEN': 'super-secret-value'}))",
+    )
+
+    summary = client._create_simple_summary([tool_call])
+
+    assert "super-secret-value" not in summary
+    assert "withheld for safety" in summary
+
+
 # ── FEAT-193 TASK-1303: capability helper + configurable whitelist tests ─────
 
 from parrot.models.google import GoogleModel
@@ -331,12 +355,7 @@ class TestSupportsCombinedToolsAndSchema:
         ],
     )
     def test_whitelisted_returns_true(self, model):
-        assert (
-            GoogleGenAIClient._supports_combined_tools_and_schema(
-                model, self.DEFAULT_PREFIXES
-            )
-            is True
-        )
+        assert GoogleGenAIClient._supports_combined_tools_and_schema(model, self.DEFAULT_PREFIXES) is True
 
     @pytest.mark.parametrize(
         "model",
@@ -348,21 +367,11 @@ class TestSupportsCombinedToolsAndSchema:
         ],
     )
     def test_unwhitelisted_returns_false(self, model):
-        assert (
-            GoogleGenAIClient._supports_combined_tools_and_schema(
-                model, self.DEFAULT_PREFIXES
-            )
-            is False
-        )
+        assert GoogleGenAIClient._supports_combined_tools_and_schema(model, self.DEFAULT_PREFIXES) is False
 
     @pytest.mark.parametrize("model", ["", None])
     def test_falsy_input_returns_false(self, model):
-        assert (
-            GoogleGenAIClient._supports_combined_tools_and_schema(
-                model, self.DEFAULT_PREFIXES
-            )
-            is False
-        )
+        assert GoogleGenAIClient._supports_combined_tools_and_schema(model, self.DEFAULT_PREFIXES) is False
 
     def test_accepts_googlemodel_enum(self):
         """Helper normalises GoogleModel enum members via _as_model_str."""
@@ -375,12 +384,7 @@ class TestSupportsCombinedToolsAndSchema:
 
     def test_empty_prefixes_disables_combined_mode(self):
         """Passing an empty prefix tuple is the documented kill switch."""
-        assert (
-            GoogleGenAIClient._supports_combined_tools_and_schema(
-                "gemini-3.5-flash", ()
-            )
-            is False
-        )
+        assert GoogleGenAIClient._supports_combined_tools_and_schema("gemini-3.5-flash", ()) is False
 
 
 class TestCombinedCallPrefixesResolution:
@@ -388,22 +392,15 @@ class TestCombinedCallPrefixesResolution:
 
     def test_default_when_kwarg_omitted(self):
         client = GoogleGenAIClient(api_key="fake")
-        assert (
-            client._combined_call_prefixes
-            == GoogleGenAIClient._default_combined_call_prefixes
-        )
+        assert client._combined_call_prefixes == GoogleGenAIClient._default_combined_call_prefixes
 
     def test_explicit_kwarg_overrides_default(self):
-        client = GoogleGenAIClient(
-            api_key="fake", combined_call_prefixes=("foo", "bar")
-        )
+        client = GoogleGenAIClient(api_key="fake", combined_call_prefixes=("foo", "bar"))
         assert client._combined_call_prefixes == ("foo", "bar")
 
     def test_kwarg_coerced_to_tuple(self):
         """List / generator inputs are coerced to tuple."""
-        client = GoogleGenAIClient(
-            api_key="fake", combined_call_prefixes=["foo", "bar"]
-        )
+        client = GoogleGenAIClient(api_key="fake", combined_call_prefixes=["foo", "bar"])
         assert client._combined_call_prefixes == ("foo", "bar")
         assert isinstance(client._combined_call_prefixes, tuple)
 
@@ -472,9 +469,7 @@ def _build_mocked_client(combined_call_prefixes=None):
     (ask() disables tools when none are registered).
     """
     if combined_call_prefixes is not None:
-        client = GoogleGenAIClient(
-            api_key="fake", combined_call_prefixes=combined_call_prefixes
-        )
+        client = GoogleGenAIClient(api_key="fake", combined_call_prefixes=combined_call_prefixes)
     else:
         client = GoogleGenAIClient(api_key="fake")
 
@@ -696,17 +691,14 @@ class TestAskCombinedModeGate:
 
         # Schema was applied to the chat config (combined mode).
         config = (
-            m["chat.send_message"].call_args.kwargs.get("config")
-            or m["chat.send_message"].call_args.args[1]
+            m["chat.send_message"].call_args.kwargs.get("config") or m["chat.send_message"].call_args.args[1]
             if m["chat.send_message"].call_args.args
             else None
         )
         if config is None:
             # config may be positional arg in some versions; fall back
             all_kwargs = m["chat.send_message"].call_args
-            config = all_kwargs.kwargs.get("config") or (
-                all_kwargs.args[1] if len(all_kwargs.args) > 1 else None
-            )
+            config = all_kwargs.kwargs.get("config") or (all_kwargs.args[1] if len(all_kwargs.args) > 1 else None)
         assert getattr(config, "response_mime_type", None) == "application/json"
         assert getattr(config, "response_schema", None) is not None
 
@@ -716,9 +708,7 @@ class TestAskCombinedModeGate:
         weather_schema = _make_weather_schema()
         client, m = _build_mocked_client()
 
-        m["chat.send_message"].return_value = _make_fake_response(
-            "It is sunny in Madrid at 25.5 degrees Celsius."
-        )
+        m["chat.send_message"].return_value = _make_fake_response("It is sunny in Madrid at 25.5 degrees Celsius.")
         reformat_json = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
         m["models.generate_content"].return_value = _make_fake_response(reformat_json)
 
@@ -748,9 +738,7 @@ class TestAskCombinedModeGate:
 
         # Schema IS on the reformat config.
         reformat_config = m["models.generate_content"].call_args.kwargs.get("config")
-        assert (
-            getattr(reformat_config, "response_mime_type", None) == "application/json"
-        )
+        assert getattr(reformat_config, "response_mime_type", None) == "application/json"
 
     @pytest.mark.asyncio
     async def test_combined_mode_no_structured_output(self):
@@ -809,9 +797,7 @@ class TestAskCombinedModeGate:
         weather_schema = _make_weather_schema()
         client, m = _build_mocked_client(combined_call_prefixes=())
 
-        m["chat.send_message"].return_value = _make_fake_response(
-            "It is sunny in Madrid at 25.5 degrees."
-        )
+        m["chat.send_message"].return_value = _make_fake_response("It is sunny in Madrid at 25.5 degrees.")
         reformat_json = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
         m["models.generate_content"].return_value = _make_fake_response(reformat_json)
 
@@ -871,9 +857,7 @@ class TestAskCombinedModeGate:
         client, m = _build_mocked_client()
 
         # The model returns text that fails JSON parsing.
-        m["chat.send_message"].return_value = _make_fake_response(
-            "Not valid JSON at all"
-        )
+        m["chat.send_message"].return_value = _make_fake_response("Not valid JSON at all")
         reformat_json = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
         m["models.generate_content"].return_value = _make_fake_response(reformat_json)
 
@@ -1119,9 +1103,11 @@ class TestCleanGoogleSchemaArrayItems:
 @pytest.mark.asyncio
 async def test_generate_image_config_developer_api():
     """In Developer API mode (vertexai=False), output_mime_type and person_generation must be omitted from ImageConfig."""
-    with patch("parrot.clients.google.client.genai.Client") as mock_genai_cls, \
-         patch("parrot.clients.google.generation.types.ImageConfig") as mock_image_config_cls, \
-         patch("parrot.clients.google.generation.types.GenerateContentConfig") as mock_generate_content_config_cls:
+    with (
+        patch("parrot.clients.google.client.genai.Client") as mock_genai_cls,
+        patch("parrot.clients.google.generation.types.ImageConfig") as mock_image_config_cls,
+        patch("parrot.clients.google.generation.types.GenerateContentConfig") as mock_generate_content_config_cls,
+    ):
 
         mock_client_instance = MagicMock()
         mock_genai_cls.return_value = mock_client_instance
@@ -1137,10 +1123,7 @@ async def test_generate_image_config_developer_api():
         client.get_client = AsyncMock(return_value=mock_client_instance)
 
         await client.generate_image(
-            prompt="A cute kitten",
-            output_mime_type="image/jpeg",
-            person_generation="dont_allow",
-            stateless=True
+            prompt="A cute kitten", output_mime_type="image/jpeg", person_generation="dont_allow", stateless=True
         )
 
         # Verify that ImageConfig was called WITHOUT output_mime_type and person_generation
@@ -1153,9 +1136,11 @@ async def test_generate_image_config_developer_api():
 @pytest.mark.asyncio
 async def test_generate_image_config_vertexai():
     """In Vertex AI mode (vertexai=True), output_mime_type and person_generation must be included in ImageConfig."""
-    with patch("parrot.clients.google.client.genai.Client") as mock_genai_cls, \
-         patch("parrot.clients.google.generation.types.ImageConfig") as mock_image_config_cls, \
-         patch("parrot.clients.google.generation.types.GenerateContentConfig") as mock_generate_content_config_cls:
+    with (
+        patch("parrot.clients.google.client.genai.Client") as mock_genai_cls,
+        patch("parrot.clients.google.generation.types.ImageConfig") as mock_image_config_cls,
+        patch("parrot.clients.google.generation.types.GenerateContentConfig") as mock_generate_content_config_cls,
+    ):
 
         mock_client_instance = MagicMock()
         mock_genai_cls.return_value = mock_client_instance
@@ -1168,18 +1153,12 @@ async def test_generate_image_config_vertexai():
         mock_client_instance.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
         client = GoogleGenAIClient(
-            api_key="fake_key",
-            vertexai=True,
-            vertex_project="fake_project",
-            vertex_location="us-central1"
+            api_key="fake_key", vertexai=True, vertex_project="fake_project", vertex_location="us-central1"
         )
         client.get_client = AsyncMock(return_value=mock_client_instance)
 
         await client.generate_image(
-            prompt="A cute kitten",
-            output_mime_type="image/jpeg",
-            person_generation="dont_allow",
-            stateless=True
+            prompt="A cute kitten", output_mime_type="image/jpeg", person_generation="dont_allow", stateless=True
         )
 
         # Verify that ImageConfig was called WITH output_mime_type and person_generation
@@ -1192,9 +1171,11 @@ async def test_generate_image_config_vertexai():
 @pytest.mark.asyncio
 async def test_generate_images_config_developer_api():
     """In Developer API mode (vertexai=False), add_watermark, negative_prompt, and seed must be omitted from GenerateImagesConfig."""
-    with patch("parrot.clients.google.client.genai.Client") as mock_genai_cls, \
-         patch("parrot.clients.google.generation.types.GenerateImagesConfig") as mock_generate_images_config_cls, \
-         patch("parrot.clients.google.generation.AIMessageFactory") as mock_aimessage_factory_cls:
+    with (
+        patch("parrot.clients.google.client.genai.Client") as mock_genai_cls,
+        patch("parrot.clients.google.generation.types.GenerateImagesConfig") as mock_generate_images_config_cls,
+        patch("parrot.clients.google.generation.AIMessageFactory") as mock_aimessage_factory_cls,
+    ):
 
         mock_aimessage_factory_cls.from_imagen.return_value = AIMessage(
             input="A majestic eagle",
@@ -1223,7 +1204,7 @@ async def test_generate_images_config_developer_api():
             add_watermark=True,
             negative_prompt="blurry",
             seed=42,
-            safety_filter_level="BLOCK_ONLY_HIGH"
+            safety_filter_level="BLOCK_ONLY_HIGH",
         )
 
         # Verify GenerateImagesConfig was called WITHOUT add_watermark, negative_prompt, and seed
@@ -1239,9 +1220,11 @@ async def test_generate_images_config_developer_api():
 @pytest.mark.asyncio
 async def test_generate_images_config_vertexai():
     """In Vertex AI mode (vertexai=True), add_watermark, negative_prompt, and seed must be included in GenerateImagesConfig."""
-    with patch("parrot.clients.google.client.genai.Client") as mock_genai_cls, \
-         patch("parrot.clients.google.generation.types.GenerateImagesConfig") as mock_generate_images_config_cls, \
-         patch("parrot.clients.google.generation.AIMessageFactory") as mock_aimessage_factory_cls:
+    with (
+        patch("parrot.clients.google.client.genai.Client") as mock_genai_cls,
+        patch("parrot.clients.google.generation.types.GenerateImagesConfig") as mock_generate_images_config_cls,
+        patch("parrot.clients.google.generation.AIMessageFactory") as mock_aimessage_factory_cls,
+    ):
 
         mock_aimessage_factory_cls.from_imagen.return_value = AIMessage(
             input="A majestic eagle",
@@ -1263,10 +1246,7 @@ async def test_generate_images_config_vertexai():
         mock_client_instance.aio.models.generate_images = AsyncMock(return_value=mock_response)
 
         client = GoogleGenAIClient(
-            api_key="fake_key",
-            vertexai=True,
-            vertex_project="fake_project",
-            vertex_location="us-central1"
+            api_key="fake_key", vertexai=True, vertex_project="fake_project", vertex_location="us-central1"
         )
         client.get_client = AsyncMock(return_value=mock_client_instance)
 
@@ -1275,7 +1255,7 @@ async def test_generate_images_config_vertexai():
             add_watermark=True,
             negative_prompt="blurry",
             seed=42,
-            safety_filter_level="BLOCK_ONLY_HIGH"
+            safety_filter_level="BLOCK_ONLY_HIGH",
         )
 
         # Verify GenerateImagesConfig was called WITH add_watermark, negative_prompt, and seed

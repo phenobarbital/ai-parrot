@@ -1,4 +1,5 @@
 """Declarative dev-loop definition + factories + parity (FEAT-250 TASK-010)."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -10,7 +11,11 @@ from parrot.bots.flows.flow.cel_evaluator import CELPredicateEvaluator
 from parrot.flows.dev_loop.definition import build_dev_loop_definition
 from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.flow import build_dev_loop_flow
-from parrot.flows.dev_loop.models import QAReport, WorkBrief
+from parrot.flows.dev_loop.models import (
+    CodexCodeDispatchProfile,
+    QAReport,
+    WorkBrief,
+)
 from parrot.flows.dev_loop.nodes.bug_intake import BugIntakeNode
 from parrot.flows.dev_loop.nodes.close import DevLoopCloseNode
 from parrot.flows.dev_loop.nodes.deployment_handoff import DeploymentHandoffNode
@@ -19,7 +24,6 @@ from parrot.flows.dev_loop.nodes.failure_handler import FailureHandlerNode
 from parrot.flows.dev_loop.nodes.intent_classifier import IntentClassifierNode
 from parrot.flows.dev_loop.nodes.qa import QANode
 from parrot.flows.dev_loop.nodes.research import ResearchNode
-
 
 _DEV_LOOP_TYPES = [
     "dev_loop.intent_classifier",
@@ -65,8 +69,14 @@ def test_definition_is_valid_and_complete():
     defn = build_dev_loop_definition()
     ids = {n.id for n in defn.nodes}
     assert ids == {
-        "intent_classifier", "bug_intake", "research", "development",
-        "qa", "deployment_handoff", "failure_handler", "close",
+        "intent_classifier",
+        "bug_intake",
+        "research",
+        "development",
+        "qa",
+        "deployment_handoff",
+        "failure_handler",
+        "close",
     }
     # every node type is a registered dev_loop.* type
     assert all(n.type.startswith("dev_loop.") for n in defn.nodes)
@@ -86,9 +96,7 @@ def test_definition_revision_graph():
 
 
 def test_factories_cover_all_types_and_construct_nodes():
-    factories = build_dev_loop_node_factories(
-        dispatcher=MagicMock(), jira_toolkit=MagicMock(), redis_url="redis://x"
-    )
+    factories = build_dev_loop_node_factories(dispatcher=MagicMock(), jira_toolkit=MagicMock(), redis_url="redis://x")
     assert set(factories) == set(_DEV_LOOP_TYPES)
     defn = build_dev_loop_definition()
     by_id = {n.id: n for n in defn.nodes}
@@ -96,6 +104,27 @@ def test_factories_cover_all_types_and_construct_nodes():
     assert node.node_id == "research"
     assert "intent_classifier" in node.dependencies
     assert "development" in node.successors
+
+
+def test_development_factory_accepts_alternate_dispatcher():
+    default_dispatcher = MagicMock()
+    development_dispatcher = MagicMock()
+    development_profile = CodexCodeDispatchProfile()
+    factories = build_dev_loop_node_factories(
+        dispatcher=default_dispatcher,
+        development_dispatcher=development_dispatcher,
+        development_profile=development_profile,
+        jira_toolkit=MagicMock(),
+        redis_url="redis://x",
+    )
+    defn = build_dev_loop_definition()
+    by_id = {n.id: n for n in defn.nodes}
+
+    node = factories["dev_loop.development"](by_id["development"], {"research"}, {"qa"})
+
+    assert isinstance(node, DevelopmentNode)
+    assert node._dispatcher is development_dispatcher
+    assert node._dispatch_profile is development_profile
 
 
 # ── CEL parity with the legacy Python callables ────────────────────────
@@ -132,8 +161,11 @@ def _stub_executes(monkeypatch, *, intent_kind: str, qa_passed: bool):
 
     async def research_exec(self, ctx, deps=None, **kw):
         return ResearchOutput(
-            jira_issue_key="OPS-1", spec_path="x", feat_id="FEAT-1",
-            branch_name="feat-1-x", worktree_path="/tmp/feat-1-x",
+            jira_issue_key="OPS-1",
+            spec_path="x",
+            feat_id="FEAT-1",
+            branch_name="feat-1-x",
+            worktree_path="/tmp/feat-1-x",
         )
 
     async def dev_exec(self, ctx, deps=None, **kw):
@@ -185,8 +217,7 @@ async def test_routing_non_bug_skips_bug_intake(monkeypatch):
     flow = _flow()
     res = await flow.run_flow("go")
     ran = _ran(res)
-    assert {"intent_classifier", "research", "development", "qa",
-            "deployment_handoff", "close"}.issubset(ran)
+    assert {"intent_classifier", "research", "development", "qa", "deployment_handoff", "close"}.issubset(ran)
     assert "bug_intake" not in ran
     assert "failure_handler" not in ran
 
@@ -197,8 +228,9 @@ async def test_routing_bug_runs_bug_intake(monkeypatch):
     flow = _flow()
     res = await flow.run_flow("go")
     ran = _ran(res)
-    assert {"intent_classifier", "bug_intake", "research", "development",
-            "qa", "deployment_handoff", "close"}.issubset(ran)
+    assert {"intent_classifier", "bug_intake", "research", "development", "qa", "deployment_handoff", "close"}.issubset(
+        ran
+    )
     assert "failure_handler" not in ran
 
 

@@ -1,0 +1,296 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-252",
+  "detected_mode": "enrichment",
+  "summary_oneline": "Harden a shipped tactical credential-leak fix into the brainstorm's strategic contract: allowlist REPL gate, a single Gemini final-response chokepoint, and a policy-driven OutputScrubber on the AbstractTool seam",
+  "synthesis_summary": "A production credential leak (gemini-3 JiraSpecialist dumping os.environ via python_repl to Telegram + CloudWatch) has already received a TACTICAL fix, committed on dev in 0f76129b1 [F010]: python_repl gained an AST DENYLIST (BLOCKED_IMPORTS/NAMES/ATTRIBUTES + _check_ast_security) and output redaction [F002], and redact_text/redact_secrets from a new core module security/redaction.py [F005] were sprinkled across ~14 sites in the Gemini client [F003]. That fix closes the known vector but DIVERGES from the brainstorm's strategic design on all three workstreams: it is a denylist not an allowlist-first PythonCodeSanitizer (WS1) [F002]; redaction is scattered with no single _resolve_final_response chokepoint and default_api hunting/forced-synthesis-skip untouched (WS2) [F003]; and redaction.py is a flat-marker standalone module, not a policy-driven OutputScrubber hooked at the single AbstractTool.execute seam, and not built on the existing shell_tool security engine (WS3 + foundation) [F004, F005, F001]. FEAT-252 should consolidate the tactical fix into the brainstorm's design and decide, per workstream, how far to go.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/pythonrepl.py",
+      "symbol": "_check_ast_security / BLOCKED_IMPORTS / _redact_execution_output",
+      "lines": "106-143, 504-525",
+      "role": "WS1 \u2014 shipped DENYLIST gate + in-process output redaction (to evolve toward allowlist)",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/google/client.py",
+      "symbol": "_handle_multiturn_function_calls / _get_function_calls_from_response / AIMessageFactory.from_gemini (x6)",
+      "lines": "1580-1652, 2066-2107, 3146/3796/4323/4505/4802/4917",
+      "role": "WS2 \u2014 6 terminal response sites + scattered redaction; target for one _resolve_final_response chokepoint",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/google/client.py",
+      "symbol": "_parse_tool_code_blocks (default_api)",
+      "lines": "1958-1966",
+      "role": "WS2 \u2014 un-gated default_api/tool_code hunting",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+      "symbol": "AbstractTool.execute / ToolResult",
+      "lines": "47-73, 473-616",
+      "role": "WS3 \u2014 single result-normalization seam for in-bound scrub emplacement (a); NOT hooked",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/security/redaction.py",
+      "symbol": "redact_text / redact_secrets / looks_sensitive_key",
+      "lines": "8-70",
+      "role": "WS3 \u2014 shipped flat-marker scrubber to evolve into policy OutputScrubber",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/base.py",
+      "symbol": "_sanitize_tool_data / OutputMode.TELEGRAM/MSTEAMS",
+      "lines": "1282, 1318-1319",
+      "role": "WS3 \u2014 channel egress hop (emplacement b); JSON-safety only, no redaction",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/data.py",
+      "symbol": "forbidden-patterns (system-prompt prose)",
+      "lines": "296-300",
+      "role": "WS1/Q4 \u2014 prompt-layer forbidden IO list to promote into deterministic enforcement",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/shell_tool/security.py",
+      "symbol": "CommandSanitizer / SecurityPolicy / SecurityLevel / ValidationResult",
+      "lines": "whole file (~42.7KB)",
+      "role": "Foundation \u2014 reuse target; must relocate down into core (parrot_tools -> core dependency direction)",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/security/",
+      "symbol": "core security package",
+      "lines": "package",
+      "role": "Foundation \u2014 established home for relocated engine + new PythonCodeSanitizer/OutputScrubber",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/agent.py",
+      "symbol": "_inject_context_to_repl",
+      "lines": "404-422",
+      "role": "WS1 \u2014 in-process REPL shared-state coupling that keeps subprocess deferred",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+      "symbol": "set_repl_locals_getter / _repl_locals_getter",
+      "lines": "538, 604-610",
+      "role": "WS1 \u2014 data_analysis DataFrame state-sharing dependency",
+      "evidence": [
+        "F008"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "constraint": "Dependency direction is parrot_tools -> core; core cannot import shell_tool. Any shared engine MUST relocate into core.",
+      "implication": "Reusing CommandSanitizer/SecurityPolicy means moving them down into parrot.security and re-exporting to parrot_tools.",
+      "evidence": [
+        "F001",
+        "F009"
+      ]
+    },
+    {
+      "constraint": "Secrets stay in os.environ (Q1 closed): python-dotenv + K8S inject. Cannot swap os.environ for the REPL.",
+      "implication": "The env-access gate (WS1) and the in-bound scrubber (WS3) are LOAD-BEARING, not redundant.",
+      "evidence": [
+        "F002",
+        "F005"
+      ]
+    },
+    {
+      "constraint": "data_analysis REPL shares in-process namespace (globals injection + DataFrame getter).",
+      "implication": "Subprocess isolation breaks both paths without a state channel; stay in-process for FEAT-252.",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "constraint": "AbstractTool.execute() is the single seam where every tool's raw output becomes a ToolResult.",
+      "implication": "Hooking the scrubber once here covers all tools (including python_repl) \u2014 the brainstorm's emplacement (a).",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "constraint": "A tactical fix is already committed on dev (0f76129b1) with tests.",
+      "implication": "FEAT-252 is a consolidation/hardening of existing code, not a greenfield build; must not regress the shipped denylist or redaction.",
+      "evidence": [
+        "F002",
+        "F003",
+        "F005",
+        "F010"
+      ]
+    }
+  ],
+  "scope": {
+    "whats_new": [
+      "PythonExecutionPolicy + PythonCodeSanitizer (allowlist-first AST gate, general vs data_analysis profiles) \u2014 replaces/augments the shipped denylist [F002].",
+      "_resolve_final_response chokepoint in the Gemini client: one deterministic exit gate (provenance/echo + scrub) all 6 terminal sites funnel through [F003].",
+      "OutputScrubber (policy-driven, reason-tagged, audited, idempotent) hooked once at AbstractTool.execute() [F004], evolved from redaction.py [F005].",
+      "Relocation of shell_tool CommandSanitizer/SecurityPolicy/SecurityLevel into core parrot.security as the shared engine [F001, F009]."
+    ],
+    "what_changes": [
+      "pythonrepl.py: denylist -> allowlist-first gate (or hybrid); promote bots/data.py forbidden IO into deterministic denial [F002, F007].",
+      "google/client.py: remove the ~14 scattered redact_* calls; route all terminal text through _resolve_final_response; gate default_api/tool_code; decide empty-after-tools policy [F003].",
+      "security/redaction.py: evolve flat [REDACTED] into ***REDACTED:<reason>*** with audit log + allowlist-awareness, or keep lean (decision) [F005].",
+      "bots/base.py egress reuses the scrubber for TELEGRAM/MSTEAMS [F006].",
+      "system prompt: explicit closed tool manifest (no default_api) [F003]."
+    ],
+    "whats_untouched": [
+      "Moving secrets out of os.environ (Q1, deferred).",
+      "Subprocess/seccomp isolation of the REPL (deferred; in-process coupling [F008]).",
+      "Credential rotation / log purge (operational, out of code scope).",
+      "Per-tenant data-plane authorization (AuthorizingDataSource track)."
+    ],
+    "patterns_to_follow": [
+      "shell_tool SecurityPolicy.restrictive()/SecurityLevel + ValidationResult verdict shape for the Python gate [F001].",
+      "Single-seam interception at AbstractTool.execute() rather than per-call-site [F004]."
+    ],
+    "integration_risks": [
+      "Allowlist too tight breaks legitimate pandas/numpy analysis -> needs calibration over real agent usage [F002].",
+      "Refactoring 6 from_gemini exits into one chokepoint risks behavioral drift in ask_stream latency / streaming [F003].",
+      "Relocating shell_tool primitives can break parrot_tools imports if re-export is incomplete [F001]."
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "claim": "A tactical fix is already committed on dev (0f76129b1) touching all the brainstorm's files",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "high",
+      "reasoning": "git show --stat read directly"
+    },
+    {
+      "id": "C2",
+      "claim": "python_repl shipped as a DENYLIST (_check_ast_security + BLOCKED_*), not the allowlist-first PythonCodeSanitizer",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "block lists + walk logic read directly"
+    },
+    {
+      "id": "C3",
+      "claim": "No _resolve_final_response chokepoint exists; redaction scattered across ~14 sites and 6 from_gemini terminals",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "grep absent for the method; 6 terminal sites + redact sites enumerated"
+    },
+    {
+      "id": "C4",
+      "claim": "AbstractTool.execute() is the single result seam for in-bound scrub emplacement (a), and is not hooked",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "execute() normalization branches + return read; no scrub call present"
+    },
+    {
+      "id": "C5",
+      "claim": "security/redaction.py is a flat-marker standalone module, not the policy OutputScrubber, and not built on shell_tool engine",
+      "evidence": [
+        "F005",
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "full module read; no SecurityPolicy/audit/reason-tags"
+    },
+    {
+      "id": "C6",
+      "claim": "Shared engine must relocate into core because parrot_tools -> core dependency direction forbids upward import",
+      "evidence": [
+        "F001",
+        "F009"
+      ],
+      "confidence": "medium",
+      "reasoning": "dependency direction is the documented convention; not re-verified against an import graph"
+    },
+    {
+      "id": "C7",
+      "claim": "bots/data.py forbidden IO patterns are prompt-prose only, promotable to deterministic denial",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "prose located in a system-prompt string"
+    },
+    {
+      "id": "C8",
+      "claim": "In-process isolation is correct near-term because data_analysis shares REPL namespace state",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "globals injection + locals getter read directly"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "WS1 posture: keep the shipped denylist, or invest in the allowlist-first PythonCodeSanitizer + profiles the brainstorm argues for (anti-arbitrariness vs effort/calibration cost)?",
+      "blocks_claims": [
+        "C2"
+      ],
+      "user_answer": "Allowlist-first gate \u2014 build PythonCodeSanitizer/PythonExecutionPolicy (general vs data_analysis profiles), deny-by-default."
+    },
+    {
+      "id": "U2",
+      "question": "WS2 scope: adopt the single _resolve_final_response chokepoint (consolidate 6 from_gemini exits, remove the 14 scattered redact calls, gate default_api) and which empty-after-tools policy \u2014 revive forced synthesis (latency) or return a typed 'no answer'?",
+      "blocks_claims": [
+        "C3"
+      ],
+      "user_answer": "Single _resolve_final_response chokepoint: consolidate the 6 from_gemini exits, remove the 14 scattered redact calls, gate default_api, and return a typed 'no answer produced' on empty-after-tools (no forced-synthesis latency)."
+    },
+    {
+      "id": "U3",
+      "question": "WS3 depth: evolve redaction.py into the policy-driven OutputScrubber (reason tags + audit + allowlist-awareness) hooked at AbstractTool.execute(), or keep the lean module and only add the single seam?",
+      "blocks_claims": [
+        "C4",
+        "C5"
+      ],
+      "user_answer": "Evolve redaction.py into a policy-driven OutputScrubber (reason-tagged + audit-logged + allowlist-aware) hooked ONCE at AbstractTool.execute()."
+    },
+    {
+      "id": "U4",
+      "question": "Foundation: relocate shell_tool CommandSanitizer/SecurityPolicy into core and re-export, or accept code duplication in core (brainstorm allows duplication if extraction is awkward)?",
+      "blocks_claims": [
+        "C6"
+      ],
+      "user_answer": "Relocate CommandSanitizer/SecurityPolicy/SecurityLevel down into parrot.security and re-export to parrot_tools (single source of truth)."
+    }
+  ],
+  "overall_confidence": "medium",
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and the seams are verified (C1-C5, C7-C8), but FEAT-252 carries four genuine design decisions (U1-U4) about how far to harden each workstream beyond the shipped tactical fix. A spec is the right vehicle: it captures those decisions as acceptance criteria and pins the contract per workstream. The codebase contract is already verified, so /sdd-brainstorm would be redundant."
+  }
+}

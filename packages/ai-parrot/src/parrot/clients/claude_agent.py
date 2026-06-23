@@ -178,6 +178,17 @@ class ClaudeAgentRunOptions(BaseModel):
             "definitions from. Forwarded as ClaudeAgentOptions.setting_sources."
         ),
     )
+    strict_mcp_config: Optional[bool] = Field(
+        default=None,
+        description=(
+            "When True, only MCP servers explicitly passed via "
+            "ClaudeAgentOptions.mcp_servers are used — claude.ai account "
+            "connectors and filesystem .mcp.json are ignored. Essential for "
+            "headless/server dispatches so the spawned CLI does not attempt "
+            "interactive connector/OAuth setup. Forwarded as "
+            "ClaudeAgentOptions.strict_mcp_config."
+        ),
+    )
     extra_args: Optional[Dict[str, Optional[str]]] = Field(
         default=None,
         description=(
@@ -349,6 +360,8 @@ class ClaudeAgentClient(AbstractClient):
             kwargs["agents"] = merged.agents
         if merged.setting_sources is not None:
             kwargs["setting_sources"] = list(merged.setting_sources)
+        if merged.strict_mcp_config is not None:
+            kwargs["strict_mcp_config"] = merged.strict_mcp_config
         if merged.extra_args is not None:
             kwargs["extra_args"] = dict(merged.extra_args)
         if session_id is not None:

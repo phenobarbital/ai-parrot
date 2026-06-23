@@ -842,9 +842,17 @@ FLOW_MAX_CONCURRENT_RUNS: int = config.getint(
 FLOW_BOT_JIRA_ACCOUNT_ID: str = config.get(
     "FLOW_BOT_JIRA_ACCOUNT_ID", fallback=""
 )
-# Repo-relative path under which feature worktrees are created.
-WORKTREE_BASE_PATH: str = config.get(
-    "WORKTREE_BASE_PATH", fallback=".claude/worktrees"
+# Absolute path under which feature worktrees are created.
+# Defaults to BASE_DIR/.claude/worktrees so the location is deterministic
+# regardless of the process's launch directory (FEAT-253 G1).
+# A relative value from the environment is joined onto BASE_DIR;
+# an absolute value is honored verbatim (R1 backward-compat).
+_wt: str = config.get(
+    "WORKTREE_BASE_PATH", fallback=str(BASE_DIR / ".claude/worktrees")
+)
+WORKTREE_BASE_PATH: str = (
+    os.path.normpath(_wt) if os.path.isabs(_wt)
+    else os.path.normpath(str(BASE_DIR / _wt))
 )
 # Redis stream retention for both flow and dispatch streams (default 7 days).
 FLOW_STREAM_TTL_SECONDS: int = config.getint(
@@ -868,10 +876,17 @@ DEV_LOOP_PLAN_LLM: str = config.get(
 # must not import dev_loop). Each entry may be an "owner/name" slug or a JSON
 # object string; an empty list disables repo provisioning.
 DEV_LOOP_REPOS: list[str] = config.getlist("DEV_LOOP_REPOS", fallback=[]) or []
-# Base directory for dev-loop clones. Kept under WORKTREE_BASE_PATH so the
-# dispatcher's cwd-safety guard (_enforce_cwd_under_worktree_base) passes (R4).
-DEV_LOOP_REPO_BASE_PATH: str = config.get(
-    "DEV_LOOP_REPO_BASE_PATH", fallback=f"{WORKTREE_BASE_PATH}/repos"
+# Absolute path for dev-loop clones (FEAT-253 G1).
+# Defaults to BASE_DIR/.claude/worktrees/repos (under WORKTREE_BASE_PATH) so
+# the dispatcher's cwd-safety guard (_enforce_cwd_under_worktree_base) passes.
+# Same relative→join / absolute→verbatim rule as WORKTREE_BASE_PATH.
+_repos: str = config.get(
+    "DEV_LOOP_REPO_BASE_PATH",
+    fallback=str(BASE_DIR / ".claude/worktrees/repos"),
+)
+DEV_LOOP_REPO_BASE_PATH: str = (
+    os.path.normpath(_repos) if os.path.isabs(_repos)
+    else os.path.normpath(str(BASE_DIR / _repos))
 )
 # What kind of PR feedback triggers a revision-mode run (FEAT-250):
 #   "changes_requested" (default) — human, non-bot, change-requesting reviews,
@@ -884,6 +899,26 @@ DEV_LOOP_REVISION_TRIGGER: str = config.get(
 DEV_LOOP_CODEREVIEW_MODEL: str = config.get(
     "DEV_LOOP_CODEREVIEW_MODEL", fallback="claude-sonnet-4-6"
 )
+
+# Jira transition labels the dev-loop applies at each hand-off point. Every
+# Jira project ships its own workflow, so each setting is an *ordered list of
+# candidate labels* (most specific first); the dev-loop tries them against the
+# issue's live available-transitions and applies the first that resolves. This
+# keeps the flow working across projects with no config, while letting an
+# operator pin exact labels via env when the defaults don't cover their
+# workflow. Matching is alias/substring-tolerant (jira_transition_issue).
+DEV_LOOP_JIRA_TRANSITIONS_READY: list[str] = config.getlist(
+    "DEV_LOOP_JIRA_TRANSITIONS_READY",
+    fallback=["Ready to Deploy", "Resolve Issue", "Resolved", "Done", "Close Issue", "Closed"],
+) or ["Ready to Deploy", "Resolve Issue", "Resolved", "Done", "Close Issue", "Closed"]
+DEV_LOOP_JIRA_TRANSITIONS_BLOCKED: list[str] = config.getlist(
+    "DEV_LOOP_JIRA_TRANSITIONS_BLOCKED",
+    fallback=["Deployment Blocked", "Blocked", "On Hold", "Stop Progress"],
+) or ["Deployment Blocked", "Blocked", "On Hold", "Stop Progress"]
+DEV_LOOP_JIRA_TRANSITIONS_REVISION: list[str] = config.getlist(
+    "DEV_LOOP_JIRA_TRANSITIONS_REVISION",
+    fallback=["In Review – revised", "In Review", "Resolve Issue", "In Progress", "Reopen"],
+) or ["In Review – revised", "In Review", "Resolve Issue", "In Progress", "Reopen"]
 
 # ---------------------------------------------------------------------------
 # Remote Tool Executors (parrot.tools.executors)
