@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import Any, Iterator
+from typing import Any
 
 import aiohttp
 
@@ -31,8 +31,6 @@ from parrot_tools.interfaces.gigsmart.exceptions import (
     GigSmartValidationError,
 )
 
-logger = logging.getLogger(__name__)
-
 # ---------------------------------------------------------------------------
 # Error code → exception class mapping
 # ---------------------------------------------------------------------------
@@ -43,6 +41,7 @@ _ERROR_CODE_MAP: dict[str, type[GigSmartError]] = {
     "BAD_USER_INPUT": GigSmartValidationError,
     "NOT_FOUND": GigSmartNotFoundError,
     "CONFLICT": GigSmartConflictError,
+    "RATE_LIMITED": GigSmartRateLimitError,
 }
 
 # These status codes or error codes are retryable
@@ -83,6 +82,7 @@ def _extract_path(data: dict, path: str) -> dict:
 
     Raises:
         KeyError: If the path does not exist in the data.
+        TypeError: If a node along the path is None.
     """
     node = data
     for key in path.split("."):
@@ -117,6 +117,8 @@ class GigSmartClient:
         self._auth = GigSmartAuth(config)
         self._session: aiohttp.ClientSession | None = None
         self._semaphore = asyncio.Semaphore(config.max_concurrent_requests)
+        self._session_lock = asyncio.Lock()
+        self.logger = logging.getLogger(__name__)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -226,7 +228,7 @@ class GigSmartClient:
 
             try:
                 connection = _extract_path(data, extract_path)
-            except KeyError as exc:
+            except (KeyError, TypeError) as exc:
                 raise GigSmartError(
                     f"paginate: path '{extract_path}' not found in response data. "
                     f"Available keys: {list(data.keys())}"
@@ -250,8 +252,12 @@ class GigSmartClient:
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
         """Return the active session, opening one if necessary."""
-        if self._session is None or self._session.closed:
-            await self.start()
+        if self._session is not None and not self._session.closed:
+            return self._session
+        async with self._session_lock:
+            # Double-check after acquiring lock
+            if self._session is None or self._session.closed:
+                await self.start()
         return self._session  # type: ignore[return-value]
 
     async def _execute_with_retry(
@@ -286,7 +292,7 @@ class GigSmartClient:
                 log_msg = f"Rate limited; retrying in {wait}s (attempt {attempt + 1})"
                 if not self._config.log_pii:
                     log_msg = _scrub_pii(log_msg)
-                logger.warning(log_msg)
+                self.logger.warning(log_msg)
                 if attempt < self._MAX_RETRIES:
                     await asyncio.sleep(wait)
                 else:
@@ -294,7 +300,7 @@ class GigSmartClient:
             except GigSmartTransportError as exc:
                 last_exc = exc
                 backoff = self._BACKOFF_BASE * (2 ** attempt)
-                logger.warning(
+                self.logger.warning(
                     "Transient error on attempt %d/%d; retrying in %.1fs: %s",
                     attempt + 1,
                     self._MAX_RETRIES + 1,
@@ -379,7 +385,7 @@ class GigSmartClient:
                 log_payload = str(errors)
                 if not self._config.log_pii:
                     log_payload = _scrub_pii(log_payload)
-                logger.warning("GigSmart partial query errors: %s", log_payload)
+                self.logger.warning("GigSmart partial query errors: %s", log_payload)
 
         return data or {}
 
@@ -401,6 +407,9 @@ class GigSmartClient:
 
         exc_class = _ERROR_CODE_MAP.get(code, GigSmartGraphQLError)
 
-        if exc_class is GigSmartGraphQLError:
+        if exc_class is GigSmartRateLimitError:
+            raise GigSmartRateLimitError(message, retry_after=60)
+        elif exc_class is GigSmartGraphQLError:
             raise GigSmartGraphQLError(message, errors=errors)
-        raise exc_class(message)
+        else:
+            raise exc_class(message)

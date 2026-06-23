@@ -22,17 +22,13 @@ import asyncio
 import base64
 import hashlib
 import logging
-import os
 import secrets
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import datetime, timedelta, timezone
 
 import aiohttp
 
 from parrot_tools.interfaces.gigsmart.config import GigSmartConfig
 from parrot_tools.interfaces.gigsmart.exceptions import GigSmartAuthError, GigSmartError
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Scope classification
@@ -88,9 +84,6 @@ class _TokenCache:
     ) -> None:
         """Persist a fresh token response into the cache."""
         self.access_token = access_token
-        self.expires_at = datetime.now(timezone.utc).replace(microsecond=0)
-        # Compute absolute expiry
-        from datetime import timedelta
         self.expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
         self.scopes = frozenset(scopes)
         self.refresh_token = refresh_token
@@ -119,6 +112,8 @@ class GigSmartAuth:
         self._config = config
         self._cache = _TokenCache()
         self._lock = asyncio.Lock()
+        self._session: aiohttp.ClientSession | None = None
+        self.logger = logging.getLogger(__name__)
 
         # If a pre-configured refresh token is available, seed the cache
         # so the first call uses a token-refresh flow rather than re-auth.
@@ -289,7 +284,7 @@ class GigSmartAuth:
                 return
             except GigSmartAuthError:
                 # Fall through to re-auth if refresh fails
-                logger.warning("GigSmartAuth: refresh token failed; re-authenticating.")
+                self.logger.warning("GigSmartAuth: refresh token failed; re-authenticating.")
 
         # Fall back to client_credentials
         await self._do_client_credentials(scopes=scopes)
@@ -306,14 +301,19 @@ class GigSmartAuth:
         )
 
         response_json = await self._post_token(data, auth=auth)
+        access_token_val = response_json.get("access_token")
+        if not access_token_val:
+            raise GigSmartAuthError(
+                f"Token endpoint response missing 'access_token': {list(response_json.keys())}"
+            )
         self._cache.store(
-            access_token=response_json["access_token"],
+            access_token=access_token_val,
             expires_in=response_json.get("expires_in", 900),
             scopes=response_json.get("scope", "").split(),
             refresh_token=response_json.get("refresh_token"),
             grant_type="client_credentials",
         )
-        logger.debug("GigSmartAuth: acquired client_credentials token.")
+        self.logger.debug("GigSmartAuth: acquired client_credentials token.")
 
     async def _do_refresh(self) -> None:
         """Refresh the access token using the stored refresh_token."""
@@ -328,14 +328,19 @@ class GigSmartAuth:
             "client_secret": self._config.client_secret,
         }
         response_json = await self._post_token(data)
+        access_token_val = response_json.get("access_token")
+        if not access_token_val:
+            raise GigSmartAuthError(
+                f"Token endpoint response missing 'access_token': {list(response_json.keys())}"
+            )
         self._cache.store(
-            access_token=response_json["access_token"],
+            access_token=access_token_val,
             expires_in=response_json.get("expires_in", 3600),
             scopes=response_json.get("scope", "").split(),
             refresh_token=response_json.get("refresh_token", refresh_tok),
             grant_type="auth_code",
         )
-        logger.debug("GigSmartAuth: refreshed access token.")
+        self.logger.debug("GigSmartAuth: refreshed access token.")
 
     async def _do_code_exchange(
         self, code: str, redirect_uri: str, code_verifier: str
@@ -350,14 +355,19 @@ class GigSmartAuth:
             "code_verifier": code_verifier,
         }
         response_json = await self._post_token(data)
+        access_token_val = response_json.get("access_token")
+        if not access_token_val:
+            raise GigSmartAuthError(
+                f"Token endpoint response missing 'access_token': {list(response_json.keys())}"
+            )
         self._cache.store(
-            access_token=response_json["access_token"],
+            access_token=access_token_val,
             expires_in=response_json.get("expires_in", 3600),
             scopes=response_json.get("scope", "").split(),
             refresh_token=response_json.get("refresh_token"),
             grant_type="auth_code",
         )
-        logger.debug("GigSmartAuth: obtained auth_code token via code exchange.")
+        self.logger.debug("GigSmartAuth: obtained auth_code token via code exchange.")
 
     async def _post_token(
         self,
@@ -377,29 +387,43 @@ class GigSmartAuth:
             GigSmartAuthError: On HTTP 4xx responses from the token endpoint.
             GigSmartError: On network errors or unexpected response format.
         """
-        timeout = aiohttp.ClientTimeout(total=self._config.request_timeout)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            kwargs: dict = {
-                "url": self._config.token_url,
-                "data": data,
-            }
-            if auth:
-                kwargs["auth"] = auth
+        if self._session is None or self._session.closed:
+            timeout = aiohttp.ClientTimeout(total=self._config.request_timeout)
+            self._session = aiohttp.ClientSession(timeout=timeout)
 
-            try:
-                async with session.post(**kwargs) as resp:
-                    body = await resp.json(content_type=None)
-                    if resp.status == 401 or resp.status == 403:
-                        raise GigSmartAuthError(
-                            f"Token endpoint returned {resp.status}: "
-                            f"{body.get('error_description', body.get('error', 'unauthorised'))}",
-                            status_code=resp.status,
-                        )
-                    if resp.status >= 400:
-                        raise GigSmartError(
-                            f"Token endpoint error {resp.status}: {body}",
-                            status_code=resp.status,
-                        )
-                    return body
-            except aiohttp.ClientError as exc:
-                raise GigSmartError(f"Network error reaching token endpoint: {exc}") from exc
+        kwargs: dict = {
+            "url": self._config.token_url,
+            "data": data,
+        }
+        if auth:
+            kwargs["auth"] = auth
+
+        try:
+            async with self._session.post(**kwargs) as resp:
+                body = await resp.json(content_type=None)
+                if resp.status == 401 or resp.status == 403:
+                    raise GigSmartAuthError(
+                        f"Token endpoint returned {resp.status}: "
+                        f"{body.get('error_description', body.get('error', 'unauthorised'))}",
+                        status_code=resp.status,
+                    )
+                if resp.status >= 400:
+                    raise GigSmartError(
+                        f"Token endpoint error {resp.status}: {body}",
+                        status_code=resp.status,
+                    )
+                return body
+        except aiohttp.ClientError as exc:
+            raise GigSmartError(f"Network error reaching token endpoint: {exc}") from exc
+
+    async def close(self) -> None:
+        """Close the persistent token-fetch session."""
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def __aenter__(self) -> "GigSmartAuth":
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        await self.close()

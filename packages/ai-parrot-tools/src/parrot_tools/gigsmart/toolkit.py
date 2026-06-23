@@ -17,9 +17,8 @@ the optional ``WorkingMemoryToolkit`` composition.
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from parrot_tools.toolkit import AbstractToolkit
 from parrot_tools.decorators import tool_schema
@@ -33,19 +32,17 @@ from parrot_tools.interfaces.gigsmart.models.position import AddOrganizationPosi
 from parrot_tools.interfaces.gigsmart.models.timesheet import (
     ApproveEngagementTimesheetInput as _ApproveTSInput,
     RemoveEngagementTimesheetInput as _RemoveTSInput,
-    AddEngagementDisputeInput as _AddDisputeInput,
-    SetEngagementDisputeApprovalInput as _SetDisputeApprovalInput,
 )
 from parrot_tools.interfaces.gigsmart.queries.gigs import (
-    VIEWER_QUERY,
     LIST_GIGS,
     GET_GIG,
     POST_SHIFT,
     TRANSITION_GIG,
+    SEARCH_GIGS,
+    GET_GIG_SUMMARY,
 )
 from parrot_tools.interfaces.gigsmart.queries.locations import (
     LIST_LOCATIONS,
-    GET_LOCATION,
     ADD_ORGANIZATION_LOCATION,
     PLACE_AUTOCOMPLETE,
 )
@@ -57,7 +54,6 @@ from parrot_tools.interfaces.gigsmart.queries.positions import (
 from parrot_tools.interfaces.gigsmart.queries.engagements import (
     LIST_ENGAGEMENTS,
     GET_ENGAGEMENT,
-    ADD_ENGAGEMENT,
     TRANSITION_ENGAGEMENT,
     LIST_ENGAGEMENT_STATES,
 )
@@ -185,6 +181,21 @@ class GigSmartToolkit(AbstractToolkit):
                 )
         return result
 
+    # ------------------------------------------------------------------
+    # Scope enforcement helper
+    # ------------------------------------------------------------------
+
+    async def _require_write_scope(self, scope: str) -> None:
+        """Assert the current token grants *scope*; raises GigSmartAuthError if not.
+
+        Args:
+            scope: OAuth scope string required for the write operation.
+
+        Raises:
+            GigSmartAuthError: When the current grant type does not allow the scope.
+        """
+        await self._client._auth.ensure_scope(scope)
+
     # ==================================================================
     # Organizations
     # ==================================================================
@@ -210,7 +221,7 @@ class GigSmartToolkit(AbstractToolkit):
             List of organization dicts with id, name, and related metadata.
         """
         query = """
-        query ListOrganizations($first: Int, $after: String) {
+        query ListOrganizations($first: Int, $after: String, $filter: OrganizationFilter) {
           viewer {
             ... on OrganizationRequester {
               organization {
@@ -221,7 +232,10 @@ class GigSmartToolkit(AbstractToolkit):
           }
         }
         """
-        data = await self._client.execute(query, {"first": first, "after": after})
+        variables: dict = {"first": first, "after": after}
+        if filter_name:
+            variables["filter"] = {"name": filter_name}
+        data = await self._client.execute(query, variables)
         viewer = data.get("viewer", {})
         org = viewer.get("organization")
         if org:
@@ -328,6 +342,7 @@ class GigSmartToolkit(AbstractToolkit):
         Returns:
             The created OrganizationLocation dict with id, name, and state.
         """
+        await self._require_write_scope("write:locations")
         inp = _AddOrgLocInput(
             organization_id=organization_id,
             name=name,
@@ -412,6 +427,7 @@ class GigSmartToolkit(AbstractToolkit):
         Returns:
             The created OrganizationPosition dict.
         """
+        await self._require_write_scope("write:positions")
         inp = _AddOrgPosInput(
             organization_id=organization_id,
             name=name,
@@ -510,6 +526,7 @@ class GigSmartToolkit(AbstractToolkit):
         Returns:
             The created shift dict with id, name, dates, and currentState.
         """
+        await self._require_write_scope("write:gigs")
         inp = _PostShiftInput(
             organization_id=organization_id,
             organization_position_id=position_id,
@@ -541,6 +558,7 @@ class GigSmartToolkit(AbstractToolkit):
         Returns:
             The updated gig dict with id, name, and currentState.
         """
+        await self._require_write_scope("write:gigs")
         data = await self._client.execute(
             TRANSITION_GIG,
             {"input": {"gigId": gig_id, "action": action}},
@@ -623,6 +641,7 @@ class GigSmartToolkit(AbstractToolkit):
         Returns:
             Updated engagement dict with id and currentState.
         """
+        await self._require_write_scope("write:engagements")
         inp = _TransitionEngagementInput(
             engagement_id=engagement_id,
             action=action,
@@ -641,6 +660,9 @@ class GigSmartToolkit(AbstractToolkit):
 
         Returns a chronological list of all state transitions the engagement
         has gone through.
+
+        Note: Returns only the first page of results. For engagements with many
+        state transitions, not all states may be returned.
 
         Args:
             engagement_id: Engagement ID to inspect.
@@ -664,6 +686,9 @@ class GigSmartToolkit(AbstractToolkit):
 
         Timesheets record hours worked and payment details. An engagement may
         have multiple timesheet variants (ADMIN, FINAL, REQUESTER, WORKER, etc.).
+
+        Note: Returns only the first page of results. For engagements with many
+        timesheets, not all timesheets may be returned.
 
         Args:
             engagement_id: Engagement ID.
@@ -706,6 +731,7 @@ class GigSmartToolkit(AbstractToolkit):
         Returns:
             Updated timesheet dict with id and isApproved.
         """
+        await self._require_write_scope("write:engagements")
         inp = _ApproveTSInput(timesheet_id=timesheet_id, mutation_lock=mutation_lock)
         data = await self._client.execute(
             APPROVE_ENGAGEMENT_TIMESHEET,
@@ -728,6 +754,7 @@ class GigSmartToolkit(AbstractToolkit):
         Returns:
             Updated timesheet dict.
         """
+        await self._require_write_scope("write:engagements")
         inp = _RemoveTSInput(timesheet_id=timesheet_id)
         data = await self._client.execute(
             REMOVE_ENGAGEMENT_TIMESHEET,
@@ -755,6 +782,7 @@ class GigSmartToolkit(AbstractToolkit):
         Returns:
             The created message dict with id, body, and insertedAt.
         """
+        await self._require_write_scope("write:messages")
         data = await self._client.execute(
             ADD_USER_MESSAGE,
             {"input": {"engagementId": engagement_id, "body": body}},
@@ -787,32 +815,8 @@ class GigSmartToolkit(AbstractToolkit):
         Returns:
             List of matching gig dicts.
         """
-        gig_query = """
-        query SearchGigs($first: Int, $filter: GigFilter) {
-          gigs(first: $first, filter: $filter) {
-            edges {
-              node {
-                id
-                name
-                startsAt
-                endsAt
-                slotsAvailable
-                currentState {
-                  name
-                }
-                payRate
-              }
-              cursor
-            }
-            pageInfo {
-              hasNextPage
-              endCursor
-            }
-          }
-        }
-        """
         variables: dict = {"first": first, "filter": {"query": query}}
-        data = await self._client.execute(gig_query, variables)
+        data = await self._client.execute(SEARCH_GIGS, variables)
         edges = data.get("gigs", {}).get("edges", [])
         return [edge["node"] for edge in edges if "node" in edge]
 
@@ -829,33 +833,5 @@ class GigSmartToolkit(AbstractToolkit):
         Returns:
             Enriched gig dict with id, name, dates, state, and engagement summary.
         """
-        summary_query = """
-        query GetGigSummary($id: ID!) {
-          node(id: $id) {
-            ... on Gig {
-              id
-              name
-              startsAt
-              endsAt
-              slotsAvailable
-              currentState {
-                name
-              }
-              payRate
-              engagements {
-                totalCount
-                edges {
-                  node {
-                    id
-                    currentState {
-                      name
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        """
-        data = await self._client.execute(summary_query, {"id": gig_id})
+        data = await self._client.execute(GET_GIG_SUMMARY, {"id": gig_id})
         return data.get("node") or {}

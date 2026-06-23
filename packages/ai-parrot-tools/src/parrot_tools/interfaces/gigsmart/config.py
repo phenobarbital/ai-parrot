@@ -1,7 +1,7 @@
 """GigSmart configuration — credentials and API settings.
 
 Loads OAuth credentials and endpoint URLs from environment variables.
-The ``GigSmartConfig`` dataclass is the single source of truth for all
+The ``GigSmartConfig`` Pydantic model is the single source of truth for all
 client configuration; other modules receive it by dependency injection.
 
 Environment variables:
@@ -11,12 +11,15 @@ Environment variables:
     GIGSMART_ENDPOINT_URL:  Override the GraphQL endpoint URL
     GIGSMART_LOG_PII:       Set to ``"1"`` to enable PII in log output
     GIGSMART_REFRESH_TOKEN: Pre-configured OAuth refresh token (optional)
+    GIGSMART_REQUEST_TIMEOUT: Per-request timeout in seconds (default 30.0)
+    GIGSMART_MAX_CONCURRENT_REQUESTS: Max parallel requests, must be >= 1 (default 8)
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+
+from pydantic import BaseModel, Field
 
 from parrot_tools.interfaces.gigsmart.exceptions import GigSmartError
 
@@ -29,8 +32,7 @@ _DEFAULT_TOKEN_URL = "https://api.gigsmart.com/oauth/token"
 _DEFAULT_AUTHORIZE_URL = "https://api.gigsmart.com/oauth/authorize"
 
 
-@dataclass
-class GigSmartConfig:
+class GigSmartConfig(BaseModel):
     """Configuration for the GigSmart API client.
 
     All fields can be provided explicitly (useful for testing) or loaded
@@ -44,21 +46,23 @@ class GigSmartConfig:
         token_url: OAuth token endpoint URL.
         authorize_url: OAuth authorisation endpoint URL.
         request_timeout: Per-request timeout in seconds.
-        max_concurrent_requests: Maximum number of parallel HTTP requests.
+        max_concurrent_requests: Maximum number of parallel HTTP requests (>= 1).
         log_pii: When ``True``, PII (names, addresses) may appear in logs.
         refresh_token: Pre-configured OAuth refresh token, if available.
     """
 
-    client_id: str
-    client_secret: str
-    environment: str = "production"
-    endpoint_url: str = _DEFAULT_ENDPOINT_URL
-    token_url: str = _DEFAULT_TOKEN_URL
-    authorize_url: str = _DEFAULT_AUTHORIZE_URL
-    request_timeout: float = 30.0
-    max_concurrent_requests: int = 8
-    log_pii: bool = False
-    refresh_token: str | None = None
+    client_id: str = Field(description="OAuth 2.1 client identifier.")
+    client_secret: str = Field(description="OAuth 2.1 client secret.")
+    environment: str = Field(default="production", description="Target environment.")
+    endpoint_url: str = Field(default=_DEFAULT_ENDPOINT_URL, description="GraphQL API endpoint URL.")
+    token_url: str = Field(default=_DEFAULT_TOKEN_URL, description="OAuth token endpoint URL.")
+    authorize_url: str = Field(default=_DEFAULT_AUTHORIZE_URL, description="OAuth authorisation endpoint URL.")
+    request_timeout: float = Field(default=30.0, gt=0, description="Per-request timeout in seconds.")
+    max_concurrent_requests: int = Field(default=8, ge=1, description="Maximum number of parallel HTTP requests.")
+    log_pii: bool = Field(default=False, description="When True, PII may appear in logs.")
+    refresh_token: str | None = Field(default=None, description="Pre-configured OAuth refresh token.")
+
+    model_config = {"arbitrary_types_allowed": False}
 
     @classmethod
     def from_env(cls) -> "GigSmartConfig":
@@ -72,7 +76,9 @@ class GigSmartConfig:
 
         Raises:
             GigSmartError: If ``GIGSMART_CLIENT_ID`` or
-                ``GIGSMART_CLIENT_SECRET`` is missing from the environment.
+                ``GIGSMART_CLIENT_SECRET`` is missing from the environment,
+                or if ``GIGSMART_MAX_CONCURRENT_REQUESTS`` is set to less
+                than 1.
         """
         client_id = os.getenv("GIGSMART_CLIENT_ID")
         if not client_id:
@@ -96,6 +102,11 @@ class GigSmartConfig:
 
         max_concurrent_raw = os.getenv("GIGSMART_MAX_CONCURRENT_REQUESTS")
         max_concurrent = int(max_concurrent_raw) if max_concurrent_raw else 8
+
+        if max_concurrent < 1:
+            raise GigSmartError(
+                "GIGSMART_MAX_CONCURRENT_REQUESTS must be >= 1 (got 0 or negative)."
+            )
 
         return cls(
             client_id=client_id,

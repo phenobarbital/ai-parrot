@@ -7,7 +7,6 @@ before they are forwarded to the GraphQL client.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -20,8 +19,8 @@ class ListOrganizationsInput(BaseModel):
     """Input for list_organizations tool."""
 
     first: int = Field(default=25, ge=1, le=100, description="Maximum number of orgs to return.")
-    after: Optional[str] = Field(default=None, description="Pagination cursor.")
-    filter_name: Optional[str] = Field(default=None, description="Filter organizations by name substring.")
+    after: str | None = Field(default=None, description="Pagination cursor.")
+    filter_name: str | None = Field(default=None, description="Filter organizations by name substring.")
 
 
 class GetOrganizationInput(BaseModel):
@@ -39,7 +38,7 @@ class ListLocationsInput(BaseModel):
 
     organization_id: str = Field(description="Organization ID.")
     first: int = Field(default=25, ge=1, le=100, description="Maximum locations to return.")
-    after: Optional[str] = Field(default=None, description="Pagination cursor.")
+    after: str | None = Field(default=None, description="Pagination cursor.")
 
 
 class PlaceAutocompleteInput(BaseModel):
@@ -53,10 +52,10 @@ class AddOrganizationLocationInput(BaseModel):
 
     organization_id: str = Field(description="Target organization ID.")
     name: str = Field(min_length=1, max_length=120, description="Location name (1-120 chars).")
-    place_id: Optional[str] = Field(default=None, description="Geocoder place ID.")
-    address: Optional[str] = Field(default=None, description="Raw address string (if no place_id).")
-    arrival_instructions: Optional[str] = Field(default=None, description="Worker arrival notes.")
-    location_instructions: Optional[str] = Field(default=None, description="On-site instructions.")
+    place_id: str | None = Field(default=None, description="Geocoder place ID.")
+    address: str | None = Field(default=None, description="Raw address string (if no place_id).")
+    arrival_instructions: str | None = Field(default=None, description="Worker arrival notes.")
+    location_instructions: str | None = Field(default=None, description="On-site instructions.")
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +67,7 @@ class ListPositionsInput(BaseModel):
 
     organization_id: str = Field(description="Organization ID.")
     first: int = Field(default=25, ge=1, le=100, description="Maximum positions to return.")
-    after: Optional[str] = Field(default=None, description="Pagination cursor.")
+    after: str | None = Field(default=None, description="Pagination cursor.")
 
 
 class GetPositionInput(BaseModel):
@@ -82,10 +81,10 @@ class AddOrganizationPositionInput(BaseModel):
 
     organization_id: str = Field(description="Target organization ID.")
     name: str = Field(description="Position name.")
-    category_id: Optional[str] = Field(default=None, description="GigSmart gig category ID.")
-    description: Optional[str] = Field(default=None, description="Position description.")
-    pay_rate: Optional[str] = Field(default=None, description="Pay rate as ISO-4217 string (e.g. '20.00').")
-    pay_schedule: Optional[str] = Field(default=None, description="FIXED, HOURLY, or INFO_REQUIRED.")
+    category_id: str | None = Field(default=None, description="GigSmart gig category ID.")
+    description: str | None = Field(default=None, description="Position description.")
+    pay_rate: str | None = Field(default=None, description="Pay rate as ISO-4217 string (e.g. '20.00').")
+    pay_schedule: str | None = Field(default=None, description="FIXED, HOURLY, or INFO_REQUIRED.")
 
 
 # ---------------------------------------------------------------------------
@@ -97,8 +96,8 @@ class ListGigsInput(BaseModel):
 
     organization_id: str = Field(description="Organization ID.")
     first: int = Field(default=25, ge=1, le=100, description="Maximum gigs to return.")
-    after: Optional[str] = Field(default=None, description="Pagination cursor.")
-    state_filter: Optional[str] = Field(default=None, description="Filter by gig state (e.g. ACTIVE, UPCOMING).")
+    after: str | None = Field(default=None, description="Pagination cursor.")
+    state_filter: str | None = Field(default=None, description="Filter by gig state (e.g. ACTIVE, UPCOMING).")
 
 
 class GetGigInput(BaseModel):
@@ -116,8 +115,8 @@ class PostShiftInput(BaseModel):
     starts_at: datetime = Field(description="Shift start time (ISO-8601 with timezone).")
     ends_at: datetime = Field(description="Shift end time (ISO-8601 with timezone).")
     slots_available: int = Field(default=1, ge=1, description="Number of worker slots.")
-    pay_rate: Optional[str] = Field(default=None, description="Pay rate override (e.g. '22.50').")
-    description: Optional[str] = Field(default=None, max_length=5000, description="Shift description.")
+    pay_rate: str | None = Field(default=None, description="Pay rate override (e.g. '22.50').")
+    description: str | None = Field(default=None, max_length=5000, description="Shift description.")
 
 
 class TransitionGigInput(BaseModel):
@@ -136,8 +135,8 @@ class ListEngagementsInput(BaseModel):
 
     gig_id: str = Field(description="Gig ID.")
     first: int = Field(default=25, ge=1, le=100, description="Maximum engagements to return.")
-    after: Optional[str] = Field(default=None, description="Pagination cursor.")
-    state_filter: Optional[str] = Field(default=None, description="Filter by engagement state.")
+    after: str | None = Field(default=None, description="Pagination cursor.")
+    state_filter: str | None = Field(default=None, description="Filter by engagement state.")
 
 
 class GetEngagementInput(BaseModel):
@@ -151,7 +150,7 @@ class TransitionEngagementInput(BaseModel):
 
     engagement_id: str = Field(description="Engagement ID to transition.")
     action: str = Field(description="Action: HIRE, ACCEPT, START, END, CANCEL, OFFER, PAUSE, RESUME, etc.")
-    cancel_conflicting: Optional[bool] = Field(default=None, description="Cancel conflicting engagements.")
+    cancel_conflicting: bool | None = Field(default=None, description="Cancel conflicting engagements.")
 
 
 class ListEngagementStatesInput(BaseModel):
@@ -180,7 +179,7 @@ class ApproveTimesheetInput(BaseModel):
     """Input for approve_timesheet tool."""
 
     timesheet_id: str = Field(description="Timesheet ID to approve.")
-    mutation_lock: Optional[str] = Field(default=None, description="Optimistic concurrency lock token.")
+    mutation_lock: str | None = Field(default=None, description="Optimistic concurrency lock token.")
 
 
 class RemoveTimesheetDisputeInput(BaseModel):
@@ -208,8 +207,8 @@ class SearchGigsInput(BaseModel):
     """Input for search_gigs tool."""
 
     query: str = Field(description="Search query text.")
-    location: Optional[str] = Field(default=None, description="Location filter string.")
-    radius_miles: Optional[float] = Field(default=None, description="Search radius in miles.")
+    location: str | None = Field(default=None, description="Location filter string.")
+    radius_miles: float | None = Field(default=None, description="Search radius in miles.")
     first: int = Field(default=25, ge=1, le=100, description="Maximum results.")
 
 

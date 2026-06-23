@@ -92,3 +92,57 @@ mutation TransitionGig($input: TransitionGigInput!) {
   }
 }
 """
+
+SEARCH_GIGS = """
+query SearchGigs($first: Int, $filter: GigFilter) {
+  gigs(first: $first, filter: $filter) {
+    edges {
+      node {
+        id
+        name
+        startsAt
+        endsAt
+        slotsAvailable
+        currentState {
+          name
+        }
+        payRate
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+"""
+
+GET_GIG_SUMMARY = """
+query GetGigSummary($id: ID!) {
+  node(id: $id) {
+    ... on Gig {
+      id
+      name
+      startsAt
+      endsAt
+      slotsAvailable
+      currentState {
+        name
+      }
+      payRate
+      engagements {
+        totalCount
+        edges {
+          node {
+            id
+            currentState {
+              name
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
