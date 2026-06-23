@@ -34,6 +34,11 @@ from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
 
 _DEFAULT_LINT_COMMAND = "ruff check . && mypy --no-incremental"
 
+# Prefix of the synthetic finding emitted when the code-review gate could not
+# run (infra error). Used to detect a *skipped* (vs. genuinely passed) review
+# so the skip is surfaced loudly instead of masquerading as a clean review.
+_CODE_REVIEW_SKIP_PREFIX = "code-review could not run:"
+
 
 class _QABrief(BaseModel):
     """Internal brief shape passed to the ``sdd-qa`` subagent.
@@ -172,20 +177,39 @@ class QANode(DevLoopNode):
         cr_passed, cr_findings = await self._run_code_review(
             shared, research, brief
         )
-        report = report.model_copy(
-            update={
-                "passed": deterministic_passed and cr_passed,
-                "code_review_passed": cr_passed,
-                "code_review_findings": cr_findings,
-            }
+        cr_skipped = any(
+            f.startswith(_CODE_REVIEW_SKIP_PREFIX) for f in cr_findings
         )
+        update: Dict[str, Any] = {
+            "passed": deterministic_passed and cr_passed,
+            "code_review_passed": cr_passed,
+            "code_review_findings": cr_findings,
+        }
+        if cr_skipped:
+            # Degrade-to-pass (FEAT-250 G4) keeps the deterministic gate as the
+            # hard guarantee, but a skipped review must NOT read as green: here
+            # ``code_review_passed=True`` means "not reviewed", not "reviewed
+            # clean". Make that loud in the log AND in the report's notes.
+            self.logger.warning(
+                "Code-review gate did NOT run for %s — QA is passing on the "
+                "DETERMINISTIC gate only; code_review_passed=True means "
+                "'not reviewed', not 'reviewed clean'. Detail: %s",
+                research.jira_issue_key or research.feat_id,
+                "; ".join(cr_findings),
+            )
+            skip_note = "⚠ Code-review gate SKIPPED (infra) — change NOT reviewed."
+            existing_notes = report.notes or ""
+            sep = "\n\n" if existing_notes else ""
+            update["notes"] = f"{existing_notes}{sep}{skip_note}"
+        report = report.model_copy(update=update)
 
         self.logger.info(
             "QA report: passed=%s, deterministic=%s, code_review=%s, "
-            "lint_passed=%s, n_executable=%s, n_manual=%s",
+            "code_review_ran=%s, lint_passed=%s, n_executable=%s, n_manual=%s",
             report.passed,
             deterministic_passed,
             cr_passed,
+            not cr_skipped,
             report.lint_passed,
             len(executable),
             len(manual),

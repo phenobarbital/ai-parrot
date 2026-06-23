@@ -86,6 +86,7 @@ async def transition_issue_with_candidates(
         The toolkit's ``jira_transition_issue`` result on success, else
         ``None``.
     """
+    preferred = next((c for c in candidates if c), None)
     last_error: Optional[ValueError] = None
     tried: list[str] = []
     for label in candidates:
@@ -96,12 +97,12 @@ async def transition_issue_with_candidates(
             result = await jira.jira_transition_issue(
                 issue=issue, transition=label, **kwargs
             )
-            if label != (candidates[0] if candidates else label):
+            if label != preferred:
                 logger.info(
                     "Applied fallback transition %r for %s (preferred %r unavailable).",
                     label,
                     issue,
-                    candidates[0],
+                    preferred,
                 )
             return result
         except ValueError as exc:

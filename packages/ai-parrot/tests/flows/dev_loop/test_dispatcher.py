@@ -269,6 +269,42 @@ class TestCwdSafetyCheck:
                 cwd="/etc",
             )
 
+    def test_cwd_outside_waived_for_readonly_codereview_profile(self, dispatcher):
+        # A read-only (plan-mode, no Edit/Write) profile such as the
+        # sdd-codereview gate may run against a checkout outside the worktree
+        # base — the confinement only protects write-capable sessions.
+        readonly = ClaudeCodeDispatchProfile(
+            subagent="sdd-codereview",
+            permission_mode="plan",
+            allowed_tools=["Read", "Bash", "Grep", "Glob"],
+        )
+        # Must NOT raise.
+        dispatcher._enforce_cwd_under_worktree_base("/etc", readonly)
+
+    def test_cwd_outside_still_rejected_for_write_profile(self, dispatcher):
+        write = ClaudeCodeDispatchProfile(
+            subagent="sdd-worker",
+            permission_mode="acceptEdits",
+            allowed_tools=["Read", "Edit", "Write"],
+        )
+        with pytest.raises(DispatchExecutionError):
+            dispatcher._enforce_cwd_under_worktree_base("/etc", write)
+
+    def test_cwd_outside_rejected_when_plan_mode_but_edit_tool_present(
+        self, dispatcher
+    ):
+        # plan mode alone is not enough: an Edit tool makes it write-capable.
+        mixed = ClaudeCodeDispatchProfile(
+            permission_mode="plan", allowed_tools=["Read", "Edit"]
+        )
+        with pytest.raises(DispatchExecutionError):
+            dispatcher._enforce_cwd_under_worktree_base("/etc", mixed)
+
+    def test_no_profile_arg_preserves_strict_check(self, dispatcher):
+        # Backward-compat: called without a profile, the guard stays strict.
+        with pytest.raises(DispatchExecutionError):
+            dispatcher._enforce_cwd_under_worktree_base("/etc")
+
 
 # ---------------------------------------------------------------------------
 # Output validation
