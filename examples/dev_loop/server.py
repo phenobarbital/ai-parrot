@@ -445,8 +445,27 @@ async def _on_startup(app: web.Application) -> None:
             "Development node using Codex CLI (model=%s)",
             development_profile.model,
         )
+    elif development_agent == "gemini":
+        development_dispatcher = GeminiCodeDispatcher(
+            max_concurrent=conf.config.getint(
+                "GEMINI_CODE_MAX_CONCURRENT_DISPATCHES",
+                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+            ),
+            redis_url=redis_url,
+            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+        )
+        development_profile = GeminiCodeDispatchProfile(
+            model=conf.config.get("DEV_LOOP_GEMINI_MODEL", fallback="auto")
+        )
+        logger.info(
+            "Development node using Gemini CLI (model=%s)",
+            development_profile.model,
+        )
     elif development_agent not in {"claude", "claude-code"}:
-        raise RuntimeError("DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code' or 'codex', " f"got {development_agent!r}")
+        raise RuntimeError(
+            "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', or 'gemini', "
+            f"got {development_agent!r}"
+        )
 
     # FEAT-253: parse DEV_LOOP_REPOS -> list[RepoSpec] and wire git_toolkit.
     # When DEV_LOOP_REPOS is unset/empty, repos == [] and the flow falls
