@@ -36,6 +36,10 @@ from .command_sanitizer import (
     SecurityPolicy,
     CommandSanitizer,
 )
+from .redaction import (
+    OutputScrubber,
+    ScrubPolicy,
+)
 
 __all__ = [
     'PromptInjectionDetector',
@@ -52,7 +56,7 @@ __all__ = [
     'VAULT_CRED_COLLECTION',
     'encrypt_credential',
     'decrypt_credential',
-    # Command sanitizer engine (FEAT-252)
+    # Command sanitizer engine (FEAT-252 / TASK-1611)
     'SecurityLevel',
     'CommandVerdict',
     'ValidationResult',
@@ -60,4 +64,7 @@ __all__ = [
     'CommandSecurityError',
     'SecurityPolicy',
     'CommandSanitizer',
+    # Output scrubber (FEAT-252 / TASK-1612)
+    'OutputScrubber',
+    'ScrubPolicy',
 ]
