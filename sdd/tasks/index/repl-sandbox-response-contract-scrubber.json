@@ -14,7 +14,7 @@
       "feature_id": "FEAT-252",
       "feature": "repl-sandbox-response-contract-scrubber",
       "spec": "sdd/specs/repl-sandbox-response-contract-scrubber.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation — must land first; M1612 and M1614 both depend on it. Sequential per-spec worktree (spec Worktree Strategy) to avoid racing on parrot/security/__init__.py exports.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1611-relocate-security-engine-to-core.md"
+      "completed_at": "2026-06-23T13:48:59+00:00",
+      "file": "sdd/tasks/completed/TASK-1611-relocate-security-engine-to-core.md"
     },
     {
       "id": "TASK-1612",
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1611"],
+      "depends_on": [
+        "TASK-1611"
+      ],
       "parallel": false,
       "parallelism_notes": "MUST land before TASK-1613 (Risk R1: removing the scattered Gemini redact calls must not open a coverage gap). Touches redaction.py + abstract.py + bots/base.py + security/__init__.py.",
       "assigned_to": null,
@@ -53,7 +55,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1612"],
+      "depends_on": [
+        "TASK-1612"
+      ],
       "parallel": false,
       "parallelism_notes": "Primary containment. Hard-depends on TASK-1612 so removing the ~14 scattered redact_* calls never loses coverage. Isolated to google/client.py + its tests.",
       "assigned_to": null,
@@ -71,7 +75,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1611"],
+      "depends_on": [
+        "TASK-1611"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends only on TASK-1611; shares NO files with TASK-1612/1613 (new python_sanitizer.py + pythonrepl.py + bots/data.py). COULD run in a parallel worktree after 1611, but kept sequential per the spec's per-spec isolation decision (both 1612 and 1614 edit security/__init__.py).",
       "assigned_to": null,
@@ -89,7 +95,12 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1611", "TASK-1612", "TASK-1613", "TASK-1614"],
+      "depends_on": [
+        "TASK-1611",
+        "TASK-1612",
+        "TASK-1613",
+        "TASK-1614"
+      ],
       "parallel": false,
       "parallelism_notes": "Final cross-cutting assurance; depends on all four implementation tasks.",
       "assigned_to": null,
