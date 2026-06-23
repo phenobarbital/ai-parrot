@@ -73,7 +73,7 @@
       "feature_id": "FEAT-253",
       "feature": "gigsmart-interface-toolkit",
       "spec": "sdd/specs/gigsmart-interface-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -81,8 +81,8 @@
       "parallelism_notes": "Pure data models with no dependency on other FEAT-253 tasks. Can run in parallel with TASK-1616, TASK-1620.",
       "assigned_to": null,
       "started_at": "2026-06-23T15:41:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1619-gigsmart-models.md"
+      "completed_at": "2026-06-23T15:49:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1619-gigsmart-models.md"
     },
     {
       "id": "TASK-1620",
