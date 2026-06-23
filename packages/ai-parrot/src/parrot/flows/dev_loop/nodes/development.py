@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional, Union
 
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
-from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.dispatcher import DevLoopCodeDispatcher
 from parrot.flows.dev_loop.models import (
     ClaudeCodeDispatchProfile,
     DevelopmentOutput,
@@ -33,11 +33,13 @@ class DevelopmentNode(DevLoopNode):
     def __init__(
         self,
         *,
-        dispatcher: ClaudeCodeDispatcher,
+        dispatcher: DevLoopCodeDispatcher,
+        dispatch_profile: Optional[Any] = None,
         name: str = "development",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_dispatcher", dispatcher)
+        object.__setattr__(self, "_dispatch_profile", dispatch_profile)
 
     # ------------------------------------------------------------------
     # Execute
@@ -65,7 +67,7 @@ class DevelopmentNode(DevLoopNode):
         shared = self.shared_state(ctx)
         research: ResearchOutput = shared["research_output"]
 
-        profile = ClaudeCodeDispatchProfile(
+        profile = self._dispatch_profile or ClaudeCodeDispatchProfile(
             subagent="sdd-worker",
             permission_mode="acceptEdits",
             allowed_tools=[

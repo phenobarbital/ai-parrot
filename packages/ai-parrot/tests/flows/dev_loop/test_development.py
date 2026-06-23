@@ -8,6 +8,7 @@ import pytest
 
 from parrot.flows.dev_loop import (
     ClaudeCodeDispatchProfile,
+    CodexCodeDispatchProfile,
     DevelopmentOutput,
     DispatchOutputValidationError,
     ResearchOutput,
@@ -57,6 +58,23 @@ class TestDispatchArguments:
         assert profile.permission_mode == "acceptEdits"
         assert "Edit" in profile.allowed_tools
         assert "Write" in profile.allowed_tools
+
+    @pytest.mark.asyncio
+    async def test_injected_dispatch_profile_used(self, research_out, dev_out):
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(return_value=dev_out)
+        profile = CodexCodeDispatchProfile(model="gpt-5.5")
+        node = DevelopmentNode(
+            dispatcher=dispatcher,
+            dispatch_profile=profile,
+        )
+
+        await node.execute(
+            ctx={"run_id": "r1", "research_output": research_out},
+        )
+
+        kwargs = dispatcher.dispatch.await_args.kwargs
+        assert kwargs["profile"] is profile
 
 
 class TestPropagatesValidationError:

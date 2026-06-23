@@ -10,7 +10,11 @@ from parrot.bots.flows.flow.cel_evaluator import CELPredicateEvaluator
 from parrot.flows.dev_loop.definition import build_dev_loop_definition
 from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.flow import build_dev_loop_flow
-from parrot.flows.dev_loop.models import QAReport, WorkBrief
+from parrot.flows.dev_loop.models import (
+    CodexCodeDispatchProfile,
+    QAReport,
+    WorkBrief,
+)
 from parrot.flows.dev_loop.nodes.bug_intake import BugIntakeNode
 from parrot.flows.dev_loop.nodes.close import DevLoopCloseNode
 from parrot.flows.dev_loop.nodes.deployment_handoff import DeploymentHandoffNode
@@ -96,6 +100,29 @@ def test_factories_cover_all_types_and_construct_nodes():
     assert node.node_id == "research"
     assert "intent_classifier" in node.dependencies
     assert "development" in node.successors
+
+
+def test_development_factory_accepts_alternate_dispatcher():
+    default_dispatcher = MagicMock()
+    development_dispatcher = MagicMock()
+    development_profile = CodexCodeDispatchProfile()
+    factories = build_dev_loop_node_factories(
+        dispatcher=default_dispatcher,
+        development_dispatcher=development_dispatcher,
+        development_profile=development_profile,
+        jira_toolkit=MagicMock(),
+        redis_url="redis://x",
+    )
+    defn = build_dev_loop_definition()
+    by_id = {n.id: n for n in defn.nodes}
+
+    node = factories["dev_loop.development"](
+        by_id["development"], {"research"}, {"qa"}
+    )
+
+    assert isinstance(node, DevelopmentNode)
+    assert node._dispatcher is development_dispatcher
+    assert node._dispatch_profile is development_profile
 
 
 # ── CEL parity with the legacy Python callables ────────────────────────

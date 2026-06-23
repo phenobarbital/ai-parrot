@@ -385,6 +385,37 @@ class ClaudeCodeDispatchProfile(BaseModel):
     model: str = "claude-sonnet-4-6"
 
 
+class CodexCodeDispatchProfile(BaseModel):
+    """Declarative profile consumed by ``CodexCodeDispatcher.dispatch()``.
+
+    The v1 Codex integration is intentionally scoped to Development. The
+    profile still keeps ``subagent`` explicit so the dispatcher can load the
+    same SDD subagent prompt body used by the Claude Code path.
+    """
+
+    subagent: Literal["sdd-worker"] = "sdd-worker"
+    model: str = "gpt-5.5"
+    sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = (
+        "workspace-write"
+    )
+    approval_policy: Literal["untrusted", "on-request", "never"] = "never"
+    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+    ignore_user_config: bool = Field(
+        default=True,
+        description=(
+            "When True, pass --ignore-user-config so server-side dispatches do "
+            "not inherit an operator's interactive Codex settings."
+        ),
+    )
+    ignore_rules: bool = Field(
+        default=False,
+        description=(
+            "When True, pass --ignore-rules. Defaults to False so repository "
+            "AGENTS.md / rules still guide the coding agent."
+        ),
+    )
+
+
 class DispatchEvent(BaseModel):
     """Envelope for stream-json events published to Redis.
 

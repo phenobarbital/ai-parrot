@@ -44,6 +44,8 @@ def build_dev_loop_node_factories(
     dispatcher: Any,
     jira_toolkit: Any,
     redis_url: str,
+    development_dispatcher: Optional[Any] = None,
+    development_profile: Optional[Any] = None,
     git_toolkit: Optional[Any] = None,
     log_toolkits: Optional[Dict[str, Any]] = None,
     repos: Optional[List[RepoSpec]] = None,
@@ -51,9 +53,14 @@ def build_dev_loop_node_factories(
     """Return the ``{dev_loop.* type: factory}`` map binding live deps.
 
     Args:
-        dispatcher: Shared ``ClaudeCodeDispatcher`` (Research/Development/QA).
+        dispatcher: Shared dispatcher for Research/QA and the default
+            Development path.
         jira_toolkit: Service-account JiraToolkit.
         redis_url: Redis URL for the intake nodes' event streams.
+        development_dispatcher: Optional dispatcher used only by
+            ``DevelopmentNode``. Defaults to ``dispatcher``.
+        development_profile: Optional dispatch profile passed only to
+            ``DevelopmentNode``.
         git_toolkit: Optional ``GitToolkit`` for repo provisioning (FEAT-250).
         log_toolkits: Optional ``{source_kind: toolkit}`` map for ResearchNode.
         repos: Optional ``RepoSpec`` list cloned/pulled before Development.
@@ -64,6 +71,7 @@ def build_dev_loop_node_factories(
     """
     log_toolkits = log_toolkits or {}
     repos = repos or []
+    development_dispatcher = development_dispatcher or dispatcher
 
     def intent_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(
@@ -91,7 +99,13 @@ def build_dev_loop_node_factories(
 
     def development_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(
-            DevelopmentNode(dispatcher=dispatcher, name=nd.id), deps, succs
+            DevelopmentNode(
+                dispatcher=development_dispatcher,
+                dispatch_profile=development_profile,
+                name=nd.id,
+            ),
+            deps,
+            succs,
         )
 
     def qa_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:

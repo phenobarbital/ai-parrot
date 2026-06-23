@@ -21,6 +21,10 @@ Runtime requirements:
 * Redis on ``REDIS_URL`` (default ``redis://localhost:6379/0``)
 * ``ANTHROPIC_API_KEY`` (or any provider key the Claude Agent SDK accepts)
 * ``claude`` CLI on ``$PATH`` and authenticated
+* Optional Codex Development mode:
+  ``DEV_LOOP_DEVELOPMENT_AGENT=codex``, ``codex`` CLI on ``$PATH`` and
+  authenticated (or ``OPENAI_API_KEY`` available), and
+  ``DEV_LOOP_CODEX_MODEL`` (default ``gpt-5.5``)
 * Jira service account: ``JIRA_INSTANCE``, ``JIRA_USERNAME``,
   ``JIRA_API_TOKEN`` and (optionally) ``JIRA_PROJECT`` — the toolkit uses
   ``basic_auth``
@@ -53,6 +57,8 @@ from parrot import conf
 from parrot.flows.dev_loop import (
     BugBrief,
     ClaudeCodeDispatcher,
+    CodexCodeDispatcher,
+    CodexCodeDispatchProfile,
     DevLoopRunner,
     build_dev_loop_flow,
     flow_stream_ws,
@@ -386,11 +392,39 @@ async def _on_startup(app: web.Application) -> None:
         redis_url=redis_url,
         stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
     )
+    development_dispatcher: object = dispatcher
+    development_profile: object | None = None
+    development_agent = conf.config.get(
+        "DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code"
+    ).strip().lower()
+    if development_agent == "codex":
+        development_dispatcher = CodexCodeDispatcher(
+            max_concurrent=conf.config.getint(
+                "CODEX_CODE_MAX_CONCURRENT_DISPATCHES",
+                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+            ),
+            redis_url=redis_url,
+            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+        )
+        development_profile = CodexCodeDispatchProfile(
+            model=conf.config.get("DEV_LOOP_CODEX_MODEL", fallback="gpt-5.5")
+        )
+        logger.info(
+            "Development node using Codex CLI (model=%s)",
+            development_profile.model,
+        )
+    elif development_agent not in {"claude", "claude-code"}:
+        raise RuntimeError(
+            "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code' or 'codex', "
+            f"got {development_agent!r}"
+        )
     app["flow"] = build_dev_loop_flow(
         dispatcher=dispatcher,
         jira_toolkit=_build_jira_toolkit(),
         log_toolkits=_build_log_toolkits(),
         redis_url=redis_url,
+        development_dispatcher=development_dispatcher,
+        development_profile=development_profile,
         name="dev-loop-demo",
     )
     # Orchestrator-side run cap (FLOW_MAX_CONCURRENT_RUNS) — spec G5.

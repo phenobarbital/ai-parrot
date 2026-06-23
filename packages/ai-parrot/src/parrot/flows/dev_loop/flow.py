@@ -170,6 +170,8 @@ def build_dev_loop_flow(
     name: str = "dev-loop",
     publish_flow_events: bool = True,
     lifecycle_events: bool = True,
+    development_dispatcher: Optional[Any] = None,
+    development_profile: Optional[Any] = None,
     git_toolkit: Optional[Any] = None,
     repos: Optional[list[RepoSpec]] = None,
 ) -> AgentsFlow:
@@ -205,6 +207,10 @@ def build_dev_loop_flow(
             so typed FEAT-176 events (FlowStarted/NodeCompleted/…) reach
             the global lifecycle registry — and through it the OTel /
             logging / usage subscribers.
+        development_dispatcher: Optional dispatcher used only by
+            ``DevelopmentNode``. Defaults to ``dispatcher``.
+        development_profile: Optional dispatch profile passed only to
+            ``DevelopmentNode``.
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -218,6 +224,8 @@ def build_dev_loop_flow(
         dispatcher=dispatcher,
         jira_toolkit=jira_toolkit,
         redis_url=redis_url,
+        development_dispatcher=development_dispatcher,
+        development_profile=development_profile,
         git_toolkit=git_toolkit,
         log_toolkits=log_toolkits,
         repos=repos,
