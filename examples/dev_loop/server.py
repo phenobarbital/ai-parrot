@@ -1,4 +1,4 @@
-"""FEAT-129 / FEAT-250 — Dev-Loop Orchestration: real demo server.
+"""FEAT-129 / FEAT-250 / FEAT-253 — Dev-Loop Orchestration: real demo server.
 
 Hosts an aiohttp app that wires the **real** eight-node ``AgentsFlow``
 (IntentClassifier → [BugIntake →] Research → Development → QA →
@@ -32,10 +32,36 @@ Runtime requirements:
   log toolkits — set ``LOG_TOOLKITS`` (comma-separated) to limit.
 * ``gh`` CLI authenticated for the DeploymentHandoff PR step
 
+Repository targeting (FEAT-253):
+
+* Set ``DEV_LOOP_REPOS`` (comma-separated or repeated) to declare one or
+  more target repositories. Each entry is one of:
+
+  - An ``owner/name`` slug:        ``phenobarbital/ai-parrot``
+  - A full HTTPS clone URL:        ``https://github.com/phenobarbital/ai-parrot.git``
+  - A full SSH clone URL:          ``git@github.com:phenobarbital/ai-parrot.git``
+  - A JSON object string:
+    ``{"alias":"ai-parrot","url":"git@github.com:phenobarbital/ai-parrot.git","branch":"dev","private":true}``
+
+  The **primary** repo (first entry) is cloned/pulled into
+  ``BASE_DIR/.claude/worktrees/repos/<run_id>/<alias>`` before the
+  ``sdd-research`` dispatch; ``ResearchOutput.repo_path`` is set to that
+  clone path and the per-run worktree is branched from the clone.
+
+  When ``DEV_LOOP_REPOS`` is unset or empty the flow targets the local
+  checkout at ``BASE_DIR`` (no clone; the ``sdd-research`` dispatch runs
+  with ``cwd = WORKTREE_BASE_PATH`` and branches the worktree from
+  ``BASE_DIR``).
+
+  Private SSH repos require an SSH key/agent on the host. For ``gh``-based
+  auth set ``GITHUB_TOKEN``.
+
 Boot::
 
     docker run --rm -p 6379:6379 redis:7    # if you don't have one
     source .venv/bin/activate
+    # Optional: target a specific repo
+    # export DEV_LOOP_REPOS="git@github.com:phenobarbital/ai-parrot.git"
     python examples/dev_loop/server.py
     # http://localhost:8080
 """
@@ -62,7 +88,9 @@ from parrot.flows.dev_loop import (
     DevLoopRunner,
     build_dev_loop_flow,
     flow_stream_ws,
+    parse_repo_specs,
 )
+from parrot_tools.gittoolkit import GitToolkit
 from parrot_tools.jiratoolkit import JiraToolkit
 
 
@@ -83,6 +111,25 @@ def _build_jira_toolkit() -> JiraToolkit:
         username=conf.config.get("JIRA_USERNAME"),
         password=conf.config.get("JIRA_API_TOKEN"),
         default_project=conf.config.get("JIRA_PROJECT"),
+    )
+
+
+def _build_git_toolkit() -> GitToolkit:
+    """Build a GitToolkit for repo clone/pull operations (FEAT-253).
+
+    Reads credentials from the environment:
+
+    * ``GITHUB_TOKEN`` — personal access token (PAT) for private HTTPS
+      repos or ``gh``-style auth; can be left unset when using SSH keys.
+    * ``GIT_DEFAULT_BRANCH`` — default branch for clones (default: ``main``).
+
+    For private SSH repos (``git@github.com:...``) ensure an SSH key/agent
+    is configured on the host — ``GitToolkit`` passes the URL as-is to the
+    ``git`` CLI and relies on the host's SSH configuration.
+    """
+    return GitToolkit(
+        github_token=conf.config.get("GITHUB_TOKEN", fallback=None),
+        default_branch=conf.config.get("GIT_DEFAULT_BRANCH", fallback="main"),
     )
 
 
@@ -418,6 +465,20 @@ async def _on_startup(app: web.Application) -> None:
             "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code' or 'codex', "
             f"got {development_agent!r}"
         )
+
+    # FEAT-253: parse DEV_LOOP_REPOS -> list[RepoSpec] and wire git_toolkit.
+    # When DEV_LOOP_REPOS is unset/empty, repos == [] and the flow falls
+    # back to the local checkout at BASE_DIR (no clone, no network call).
+    repos = parse_repo_specs(conf.DEV_LOOP_REPOS)
+    if repos:
+        logger.info(
+            "DEV_LOOP_REPOS configured: %d repo(s) — primary alias=%r",
+            len(repos), repos[0].alias,
+        )
+    else:
+        logger.info(
+            "DEV_LOOP_REPOS not set; flow will target local checkout at BASE_DIR"
+        )
     app["flow"] = build_dev_loop_flow(
         dispatcher=dispatcher,
         jira_toolkit=_build_jira_toolkit(),
@@ -426,6 +487,8 @@ async def _on_startup(app: web.Application) -> None:
         development_dispatcher=development_dispatcher,
         development_profile=development_profile,
         name="dev-loop-demo",
+        git_toolkit=_build_git_toolkit(),
+        repos=repos,
     )
     # Orchestrator-side run cap (FLOW_MAX_CONCURRENT_RUNS) — spec G5.
     app["runner"] = DevLoopRunner(app["flow"])
