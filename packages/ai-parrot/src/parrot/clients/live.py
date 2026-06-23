@@ -1295,6 +1295,23 @@ class GeminiLiveClient(AbstractClient):
         async for response in self.ask(*args, **kwargs):
             yield response
 
+    async def invoke(self, *args, **kwargs):
+        """Not supported: GeminiLiveClient is a realtime voice client.
+
+        Defined only to satisfy AbstractClient's @abstractmethod contract so the
+        class can be instantiated. Use stream_voice() for the realtime flow.
+        """
+        raise NotImplementedError(
+            "GeminiLiveClient is realtime voice — use stream_voice(); "
+            "invoke() is not supported."
+        )
+
+    async def resume(self, *args, **kwargs):
+        """Not supported: GeminiLiveClient does not implement suspend/resume."""
+        raise NotImplementedError(
+            "GeminiLiveClient does not support suspend/resume."
+        )
+
 # =============================================================================
 # Factory function
 # =============================================================================
