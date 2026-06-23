@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-252
 **Date**: 2026-06-23
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD (next minor)
 
 > **Prior exploration**: `sdd/proposals/repl-sandbox-response-contract-scrubber.proposal.md`
