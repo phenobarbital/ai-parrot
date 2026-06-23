@@ -88,9 +88,9 @@ half-way:
 - **Pointing `DevelopmentNode` at the clone/`BASE_DIR` directly.** The agent
   always codes in the isolated `worktree_path`; we do **not** set Development's
   cwd to `repo_path`. (Rejected per user: "not overwrite the worktree_path".)
-- **Multi-repo Development in one run.** Like FEAT-250, v1 supports a single
-  **primary** base repository (the first `RepoSpec`). Additional repos may be
-  cloned but Development branches from the primary only.
+- **Multi-repo runs.** Like FEAT-250, v1 supports a single **primary** base
+  repository (the first `RepoSpec`). Secondary repos are **not** cloned in v1 —
+  the entire multi-repo capability is deferred to a follow-up feature (see §8).
 - **Relaxing the dispatcher cwd-safety guard.** All clones and worktrees stay
   under `BASE_DIR/.claude/worktrees`; the guard is unchanged.
 - The code-review QA gate, draft PR, and revision loop (already delivered in
@@ -493,9 +493,11 @@ def build_dev_loop_node_factories(*, dispatcher, jira_toolkit, redis_url,
   outer `BASE_DIR` repo? — *Resolved (2026-06-23)*: from the **clone** (the
   `sdd-research` dispatch runs with `cwd = repo_path`), which implies
   provisioning runs before that dispatch.
-- [x] Multi-repo runs (>1 `RepoSpec`): secondary repos are cloned but not used as
-  the Development base. Confirm whether secondary clones are needed at all in v1
-  or should be deferred entirely. — *Owner: Jesus Lara (decide at /sdd-task)*: secondary clones are not needed in v1, defer to follow-up
+- [x] Multi-repo runs (>1 `RepoSpec`): are secondary clones needed in v1? —
+  *Resolved with user (2026-06-23)*: **No.** v1 provisions only the **primary**
+  `RepoSpec` (the worktree's base repo); secondary clones are **not** performed
+  and the whole multi-repo capability is **deferred to a follow-up feature**.
+  TASK-003 clones the primary repo only.
 
 ---
 
