@@ -729,6 +729,28 @@ class VoiceChatHandler:
         self._current_config = config
         connection.bot = self.bot_factory()
 
+        # The bot factory builds the VoiceBot but does NOT run the async
+        # configure() flow, so conversation_memory is never set up — which
+        # means ask_stream() silently skips loading/saving turns and every
+        # turn starts with no memory of the previous one (Gemini Live Mode
+        # had no conversational continuity).  Configure memory here, best-
+        # effort: Redis for cross-turn persistence within the session, with
+        # the built-in in-memory fallback if Redis is unavailable.  Keyed by
+        # connection.session_id, so turns accumulate across the session and
+        # survive a GoAway reconnect.
+        try:
+            if getattr(connection.bot, "conversation_memory", None) is None:
+                if not getattr(connection.bot, "memory_type", None) or \
+                        connection.bot.memory_type == "memory":
+                    connection.bot.memory_type = "redis"
+                connection.bot.configure_conversation_memory()
+        except Exception:  # noqa: BLE001 - memory is best-effort, never block voice
+            self.logger.warning(
+                "VoiceChatHandler: could not configure conversation memory "
+                "for session %s; continuing without cross-turn memory.",
+                connection.session_id, exc_info=True,
+            )
+
         # Start voice task only for streaming mode
         connection.shutdown_event.clear()
         connection.session_active = True

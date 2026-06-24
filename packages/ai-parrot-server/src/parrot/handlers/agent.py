@@ -2493,11 +2493,18 @@ class AgentTalk(BaseView):
         try:
             pcm = speaker.collected_pcm()
             if not pcm:
+                self.logger.info(
+                    "voice_answer_audio: no PCM collected for session %s "
+                    "(nothing to replay)", session_id,
+                )
                 return
             ws_manager = self.request.app.get('user_socket_manager')
             if ws_manager is None:
+                self.logger.warning(
+                    "voice_answer_audio: no user_socket_manager — cannot push "
+                    "replay audio for session %s", session_id,
+                )
                 return
-            import base64
             import io
             import wave
 
@@ -2507,15 +2514,21 @@ class AgentTalk(BaseView):
                 wf.setsampwidth(2)
                 wf.setframerate(24000)
                 wf.writeframes(pcm)
-            audio_b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+            wav_bytes = buf.getvalue()
+            # A multi-MB WAV is far too large for a single WebSocket frame, so
+            # store it on the session and let the browser fetch it over HTTP
+            # (GET .../voice-answer). The WS only carries a tiny "ready" ping.
+            sessions = self.request.app.get('avatar_sessions') or {}
+            rec = sessions.get(session_id)
+            if isinstance(rec, dict):
+                rec['last_answer_wav'] = wav_bytes
+            self.logger.info(
+                "voice_answer_audio: stored %d-byte WAV for session %s; notifying",
+                len(wav_bytes), session_id,
+            )
             await ws_manager.notify_channel(
                 session_id,
-                {
-                    'type': 'voice_answer_audio',
-                    'session_id': session_id,
-                    'audio_base64': audio_b64,
-                    'audio_format': 'audio/wav',
-                },
+                {'type': 'voice_answer_audio', 'session_id': session_id},
             )
         except Exception:  # noqa: BLE001 - replay audio is best-effort
             self.logger.warning(
