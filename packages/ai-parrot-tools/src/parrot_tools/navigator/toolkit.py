@@ -159,7 +159,7 @@ class NavigatorToolkit(PostgresToolkit):
 
     _CONFIRM_STATUS = "confirm_execution"
 
-    async def _post_execute(self, tool_name: str, result: Any, **kwargs: Any) -> Any:
+    async def _post_execute(self, tool_name: str, result: Any, /, **kwargs: Any) -> Any:
         """Store pending confirmation state when a tool returns confirm_execution."""
         if isinstance(result, dict) and result.get("status") == self._CONFIRM_STATUS:
             self._pending_confirmations[tool_name] = dict(kwargs)

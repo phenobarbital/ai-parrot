@@ -351,7 +351,7 @@ class AbstractToolkit(ABC):
         """
         return kwargs
 
-    async def _pre_execute(self, tool_name: str, **kwargs) -> None:
+    async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:
         """Lifecycle hook called before every tool execution.
 
         Override in subclasses to perform per-call logic such as credential
@@ -366,7 +366,7 @@ class AbstractToolkit(ABC):
         """
         return None
 
-    async def _post_execute(self, tool_name: str, result: Any, **kwargs) -> Any:
+    async def _post_execute(self, tool_name: str, result: Any, /, **kwargs) -> Any:
         """Lifecycle hook called after every tool execution.
 
         Override in subclasses to implement observability, result shaping,

@@ -70,6 +70,7 @@ def mock_jira():
     j.jira_get_issue = AsyncMock(return_value={"status": "error"})
     j.jira_search_issues = AsyncMock(return_value={"status": "empty"})
     j.jira_transition_issue = AsyncMock(return_value={"ok": True})
+    j.jira_transition_to = AsyncMock(return_value={"ok": True})
     j.jira_add_comment = AsyncMock(return_value={"id": "c1"})
     j.jira_assign_issue = AsyncMock(return_value={"ok": True})
     return j
@@ -162,8 +163,8 @@ class TestEndToEndPaths:
         assert handoff_resp["status"] == "ready_to_deploy"
         assert handoff_resp["pr_url"] == "https://github.com/x/y/pull/1"
         assert result.responses["close"]["status"] == "closed"
-        # Jira moved to Ready to Deploy.
-        mock_jira.jira_transition_issue.assert_awaited()
+        # Jira moved to Ready to Deploy (via the workflow-path walker).
+        mock_jira.jira_transition_to.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_qa_failure_routes_to_failure_handler(

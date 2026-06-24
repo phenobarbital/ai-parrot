@@ -8,7 +8,14 @@ import aiohttp
 from parrot.mcp.config import MCPServerConfig
 from parrot.mcp.transports.base import MCPServerBase
 from parrot.mcp.oauth_server import OAuthRoutesMixin
-from parrot.mcp.client import MCPClientConfig, MCPConnectionError, MCPAuthHandler
+from parrot.mcp.client import (
+    MCPClientConfig,
+    MCPConnectionError,
+    MCPAuthHandler,
+    MCPRateLimitError,
+    parse_retry_after,
+    raise_for_jsonrpc_error,
+)
 
 class HttpMCPServer(OAuthRoutesMixin, MCPServerBase):
     """MCP server using HTTP transport."""
@@ -255,6 +262,16 @@ class HttpMCPSession:
                 }
             ) as response:
 
+                if response.status == 429:
+                    # Honour the standard HTTP Retry-After header (seconds or
+                    # an HTTP-date is uncommon here; we parse the numeric form).
+                    retry_after = parse_retry_after(response.headers.get("Retry-After"))
+                    raise MCPRateLimitError(
+                        "Rate limit exceeded (HTTP 429)"
+                        + (f"; retry after {retry_after:.1f}s" if retry_after is not None else ""),
+                        retry_after=retry_after,
+                    )
+
                 if response.status != 200:
                     raise MCPConnectionError(f"HTTP error: {response.status}")
 
@@ -262,8 +279,9 @@ class HttpMCPSession:
                 self.logger.debug("HTTP received: %s", json.dumps(response_data))
 
                 if "error" in response_data:
-                    error = response_data["error"]
-                    raise MCPConnectionError(f"Server error: {error}")
+                    # Raises MCPRateLimitError for -32429 (with retry_after) or a
+                    # generic MCPConnectionError otherwise.
+                    raise_for_jsonrpc_error(response_data["error"])
 
                 return response_data.get("result", {})
 

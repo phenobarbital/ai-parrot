@@ -8,14 +8,11 @@ import re
 import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict
-
 from parrot_pipelines.planogram.grid.models import DetectionGridConfig, GridType
 from parrot_pipelines.planogram.grid.horizontal_bands import HorizontalBands
 from parrot_pipelines.planogram.grid.detector import GridDetector
 from parrot_pipelines.planogram.grid.strategy import AbstractGridStrategy, NoGrid
-
 from PIL import Image
-
 from .abstract import AbstractPlanogramType
 from parrot.models.google import GoogleModel
 from parrot.models.detections import (
@@ -1563,7 +1560,14 @@ class ProductOnShelves(AbstractPlanogramType):
             is_promotional = (
                 is_explicit_ad or
                 (not is_regular_product and (
-                    p.product_type in ("promotional_graphic", "advertisement", "graphic", "logo", "banner", "backlit_graphic") or
+                    p.product_type in (
+                        "promotional_graphic",
+                        "advertisement",
+                        "graphic",
+                        "logo",
+                        "banner",
+                        "backlit_graphic"
+                    ) or
                     "logo" in model_lower or
                     " ad" in model_lower or
                     "advertisement" in model_lower or

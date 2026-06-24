@@ -3723,9 +3723,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                         if hasattr(part, "function_call") and part.function_call:
                                             collected_function_calls.append(part.function_call)
 
-                        if chunk.text:
-                            assistant_content_chunk += chunk.text
-                            all_assistant_text.append(chunk.text)
+                        chunk_text = self._safe_extract_text(chunk)
+                        if chunk_text:
+                            assistant_content_chunk += chunk_text
+                            all_assistant_text.append(chunk_text)
                             # FEAT-176: per-chunk event
                             if _lc_has_chunk_subs_google:
                                 await self.events.emit(
@@ -3734,13 +3735,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                         client_name="google",
                                         model=str(model) if model else "",
                                         chunk_index=_lc_chunk_idx_google,
-                                        chunk_size_bytes=len(chunk.text.encode("utf-8")),
+                                        chunk_size_bytes=len(chunk_text.encode("utf-8")),
                                         source_type="client",
                                         source_name="google",
                                     )
                                 )
                                 _lc_chunk_idx_google += 1
-                            yield chunk.text
+                            yield chunk_text
 
                     if max_tokens_reached and on_max_tokens == "retry" and retry_config.auto_retry_on_max_tokens:
                         if retry_count < retry_config.max_retries:
@@ -5000,11 +5001,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 pass  # We're not doing a multi-turn here for stateless
 
         final_output = None
+        _extracted_text = self._safe_extract_text(response)
         if output_config:
             try:
-                final_output = await self._parse_structured_output(response.text, output_config)
+                final_output = await self._parse_structured_output(_extracted_text, output_config)
             except Exception:
-                final_output = response.text
+                final_output = _extracted_text
 
         # FEAT-252 (TASK-1613): route through the single egress chokepoint
         _stateless_text = self._resolve_final_response(
@@ -5018,7 +5020,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            structured_output=final_output if final_output != response.text else None,
+            structured_output=final_output if final_output != _extracted_text else None,
             tool_calls=all_tool_calls,
             text_response=_stateless_text,
         )
@@ -5210,14 +5212,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     contents=[{"role": "user", "parts": [{"text": prompt}]}],
                     config=first_config,
                 )
-                # Extract raw text from first response
-                first_text = ""
-                if hasattr(first_response, "text") and first_response.text:
-                    first_text = first_response.text
-                elif hasattr(first_response, "candidates") and first_response.candidates:
-                    for part in first_response.candidates[0].content.parts:
-                        if hasattr(part, "text"):
-                            first_text += part.text
+                # Extract raw text from first response safely
+                first_text = self._safe_extract_text(first_response)
 
                 # --- Second call: structured output, no tools ---
                 second_prompt = (
@@ -5236,13 +5232,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     contents=[{"role": "user", "parts": [{"text": second_prompt}]}],
                     config=second_config,
                 )
-                raw_text = ""
-                if hasattr(second_response, "text") and second_response.text:
-                    raw_text = second_response.text
-                elif hasattr(second_response, "candidates") and second_response.candidates:
-                    for part in second_response.candidates[0].content.parts:
-                        if hasattr(part, "text"):
-                            raw_text += part.text
+                # Extract raw text from second response safely
+                raw_text = self._safe_extract_text(second_response)
 
                 final_response = second_response
 
@@ -5267,13 +5258,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     contents=[{"role": "user", "parts": [{"text": prompt}]}],
                     config=gen_config,
                 )
-                raw_text = ""
-                if hasattr(final_response, "text") and final_response.text:
-                    raw_text = final_response.text
-                elif hasattr(final_response, "candidates") and final_response.candidates:
-                    for part in final_response.candidates[0].content.parts:
-                        if hasattr(part, "text"):
-                            raw_text += part.text
+                # Extract raw text from final response safely
+                raw_text = self._safe_extract_text(final_response)
 
             # Parse output
             output: Any = raw_text

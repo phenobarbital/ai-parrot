@@ -116,6 +116,7 @@ async def test_run_revision_enters_at_development(monkeypatch, sample_revision_b
     jira = MagicMock()
     jira.jira_add_comment = AsyncMock(return_value={})
     jira.jira_transition_issue = AsyncMock(return_value={})
+    jira.jira_transition_to = AsyncMock(return_value={})
 
     # Fake the git push subprocess (success) — asyncio is global, so this is
     # immune to the dev_loop module re-import.

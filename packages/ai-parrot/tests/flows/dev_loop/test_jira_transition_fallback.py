@@ -97,3 +97,34 @@ async def test_empty_candidate_labels_skipped():
     )
     assert result is not None and result["applied"] == "Resolved"
     assert jira.calls == ["Resolved"]
+
+
+class _WalkerJira:
+    """Jira double exposing the workflow-path walker ``jira_transition_to``.
+
+    Mirrors the real toolkit's preference: the helper drives ``target_status``
+    (not a single ``transition`` label) so a multi-stage workflow can be walked.
+    """
+
+    def __init__(self, reachable):
+        self._reachable = {r.lower() for r in reachable}
+        self.calls = []
+
+    async def jira_transition_to(self, *, issue, target_status, **kwargs):
+        self.calls.append(target_status)
+        if target_status.lower() not in self._reachable:
+            raise ValueError(f"Invalid transition '{target_status}' for {issue}.")
+        return {"ok": True, "issue": issue, "applied": target_status, "kwargs": kwargs}
+
+
+@pytest.mark.asyncio
+async def test_prefers_workflow_path_walker_when_available():
+    # The toolkit exposes jira_transition_to; the helper must drive it with
+    # target_status (so the walker can cross a multi-hop custom workflow),
+    # not the legacy single-hop jira_transition_issue.
+    jira = _WalkerJira(reachable=["Resolved"])
+    result = await transition_issue_with_candidates(
+        jira, "TROC-8350", ["Ready to Deploy", "Resolved"], logger=_LOG
+    )
+    assert result is not None and result["applied"] == "Resolved"
+    assert jira.calls == ["Ready to Deploy", "Resolved"]

@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional, List, Callable, TYPE_CHECKING, Union
 import asyncio
 import base64
 import logging
+import time
 from enum import Enum
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field, model_validator
@@ -205,6 +206,15 @@ class MCPClientConfig:
     retry_count: int = 3
     startup_delay: float = 0.5
 
+    # Rate-limit backoff (for -32429 "Rate limit exceeded" responses).
+    # On a rate-limit error the client waits the server-suggested retryAfter
+    # (or an exponential fallback) and retries, up to rate_limit_max_retries.
+    # If the suggested wait exceeds rate_limit_max_wait it fails fast instead
+    # of blocking the agent for minutes/hours.
+    rate_limit_max_retries: int = 2
+    rate_limit_max_wait: float = 60.0
+    rate_limit_base_delay: float = 1.0
+
     # Process management
     kill_timeout: float = 5.0
 
@@ -395,3 +405,100 @@ class MCPAuthHandler:
 class MCPConnectionError(Exception):
     """MCP connection related errors."""
     pass
+
+
+# JSON-RPC error code servers use to signal rate limiting (mirrors HTTP 429).
+RATE_LIMIT_ERROR_CODE = -32429
+
+
+class MCPRateLimitError(MCPConnectionError):
+    """Raised when an MCP server rejects a request with a rate-limit error.
+
+    Subclasses :class:`MCPConnectionError` so existing ``except`` blocks keep
+    working, while callers that want backoff can catch this type specifically
+    and honour ``retry_after``.
+
+    Attributes:
+        retry_after: Suggested seconds to wait before retrying, already
+            normalized to a delay relative to *now* (absolute epoch hints are
+            converted). ``None`` when the server gave no usable hint.
+        code: The JSON-RPC error code (usually ``-32429``).
+        raw_error: The original JSON-RPC ``error`` object from the server.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retry_after: Optional[float] = None,
+        code: int = RATE_LIMIT_ERROR_CODE,
+        raw_error: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(message)
+        self.retry_after = retry_after
+        self.code = code
+        self.raw_error = raw_error
+
+
+def parse_retry_after(value: Any, *, now: Optional[float] = None) -> Optional[float]:
+    """Normalize a server-provided retry hint into seconds-from-now.
+
+    Servers are inconsistent about how they express ``retryAfter``. This
+    accepts the three common forms and always returns a non-negative delay in
+    seconds (or ``None`` when the value is missing/uninterpretable):
+
+      * plain delay in seconds (HTTP ``Retry-After`` style): ``5``, ``2.5``
+      * absolute epoch **seconds**: ``1782259200``
+      * absolute epoch **milliseconds**: ``1782259200009`` (e.g. Fireflies)
+
+    Args:
+        value: The raw ``retryAfter`` value from the error payload.
+        now: Override for the current epoch seconds (testing hook).
+
+    Returns:
+        Seconds to wait before retrying, clamped to ``>= 0``, or ``None``.
+    """
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if v < 0:
+        return None
+
+    now = now if now is not None else time.time()
+    if v >= 1e12:          # epoch milliseconds
+        return max(0.0, v / 1000.0 - now)
+    if v >= 1e9:           # epoch seconds (a >31-year delay is implausible)
+        return max(0.0, v - now)
+    return v               # plain delay in seconds
+
+
+def raise_for_jsonrpc_error(error: Dict[str, Any]) -> None:
+    """Translate a JSON-RPC ``error`` object into the right exception.
+
+    Rate-limit errors (code ``-32429`` or ``data.type == 'rate_limit_exceeded'``)
+    become :class:`MCPRateLimitError` carrying a normalized ``retry_after``;
+    everything else becomes a generic :class:`MCPConnectionError`.
+
+    Always raises — never returns normally.
+    """
+    code = error.get("code")
+    data = error.get("data") or {}
+    is_rate_limit = (
+        code == RATE_LIMIT_ERROR_CODE
+        or (isinstance(data, dict) and data.get("type") == "rate_limit_exceeded")
+    )
+    if is_rate_limit:
+        retry_after = parse_retry_after(data.get("retryAfter")) if isinstance(data, dict) else None
+        base_msg = error.get("message") or "Rate limit exceeded"
+        if retry_after is not None:
+            base_msg = f"{base_msg}; retry after {retry_after:.1f}s"
+        raise MCPRateLimitError(
+            base_msg,
+            retry_after=retry_after,
+            code=code if isinstance(code, int) else RATE_LIMIT_ERROR_CODE,
+            raw_error=error,
+        )
+    raise MCPConnectionError(f"Server error: {error}")

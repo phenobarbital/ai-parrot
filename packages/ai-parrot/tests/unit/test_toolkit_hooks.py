@@ -124,6 +124,38 @@ class TestLifecycleHooks:
         result = await tool._execute(value="ping")
         assert result == "ping"
 
+    @pytest.mark.asyncio
+    async def test_tool_param_named_tool_name_does_not_collide(self):
+        """A tool whose own parameter is literally ``tool_name`` must not
+        collide with the lifecycle hook's positional ``tool_name`` argument.
+
+        Regression for ``AbstractToolkit._pre_execute() got multiple values
+        for argument 'tool_name'`` — the hook's ``tool_name`` is now
+        positional-only (``/``) so a same-named tool param lands in
+        ``**kwargs`` instead of double-binding the positional.
+        """
+        seen: dict = {}
+
+        class CollidingToolkit(AbstractToolkit):
+            async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:
+                seen["pre"] = (tool_name, kwargs.get("tool_name", "MISSING"))
+
+            async def _post_execute(self, tool_name: str, result, /, **kwargs):
+                seen["post"] = (tool_name, kwargs.get("tool_name", "MISSING"))
+                return result
+
+            async def import_from_tool(self, tool_name: str) -> str:
+                """Import from a named tool (param collides with hook)."""
+                return f"imported from {tool_name}"
+
+        tk = CollidingToolkit()
+        tool = _find_tool(tk, "import_from_tool")
+        result = await tool._execute(tool_name="datasource")
+        assert result == "imported from datasource"
+        # Hook received the *tool name* positionally, the *param* via kwargs.
+        assert seen["pre"] == ("import_from_tool", "datasource")
+        assert seen["post"] == ("import_from_tool", "datasource")
+
 
 class TestPermissionContextForwarding:
     """Verify _permission_context is available inside _pre_execute when routed through ToolManager."""

@@ -1,6 +1,7 @@
 """WorkingMemoryToolkit: Intermediate result store for long-running analytical operations."""
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 import pandas as pd
@@ -84,6 +85,13 @@ class WorkingMemoryToolkit(AbstractToolkit):
         "substring."
     )
 
+    #: Frames with at least this many cells (rows × cols) have their CPU-bound
+    #: pandas work (deep copy, ``compact_summary``) offloaded to a worker thread
+    #: via :func:`asyncio.to_thread`, so the event loop stays responsive while
+    #: large DataFrames are processed. Small frames run inline to avoid paying
+    #: the thread-dispatch overhead. Default ≈ 50k rows × 20 cols.
+    DEFAULT_THREAD_OFFLOAD_CELLS: int = 1_000_000
+
     def __init__(
         self,
         session_id: Optional[str] = None,
@@ -91,6 +99,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
         max_cols: int = 30,
         tool_locals_registry: Optional[dict[str, dict]] = None,
         answer_memory: Optional[Any] = None,
+        thread_offload_cells: Optional[int] = None,
         **kwargs,
     ):
         """Initialise the WorkingMemoryToolkit.
@@ -105,6 +114,9 @@ class WorkingMemoryToolkit(AbstractToolkit):
             answer_memory: Optional AnswerMemory instance for the Q&A bridge.
                 Typically auto-injected by BasicAgent.configure() — explicit
                 wiring takes precedence over auto-injection.
+            thread_offload_cells: Cell-count (rows × cols) threshold at or above
+                which DataFrame copy/summary work is offloaded to a worker
+                thread. Defaults to :attr:`DEFAULT_THREAD_OFFLOAD_CELLS`.
         """
         super().__init__(**kwargs)
         self._catalog = WorkingMemoryCatalog(session_id=session_id)
@@ -113,6 +125,25 @@ class WorkingMemoryToolkit(AbstractToolkit):
         self._tool_locals: dict[str, dict] = tool_locals_registry or {}
         # AnswerMemory bridge — None means bridge tools are no-ops.
         self._answer_memory: Optional[Any] = answer_memory
+        self._thread_offload_cells: int = (
+            thread_offload_cells
+            if thread_offload_cells is not None
+            else self.DEFAULT_THREAD_OFFLOAD_CELLS
+        )
+
+    def _is_large_df(self, df: pd.DataFrame) -> bool:
+        """Return True when ``df`` is large enough that copying or summarising
+        it on the event loop would risk stalling concurrent requests."""
+        rows, cols = df.shape
+        return rows * cols >= self._thread_offload_cells
+
+    def _has_large_entry(self) -> bool:
+        """Return True when any stored DataFrame entry is large enough to
+        warrant offloading a multi-entry summary pass to a worker thread."""
+        return any(
+            isinstance(e, CatalogEntry) and self._is_large_df(e.df)
+            for e in self._catalog._store.values()
+        )
 
     def _summary(self, entry: CatalogEntry) -> dict:
         """Produce a compact summary for the LLM (DataFrame entries)."""
@@ -120,6 +151,27 @@ class WorkingMemoryToolkit(AbstractToolkit):
             max_rows=self._shape_limit.max_rows,
             max_cols=self._shape_limit.max_cols,
         )
+
+    async def _summary_async(
+        self,
+        entry: CatalogEntry,
+        *,
+        max_rows: Optional[int] = None,
+        max_cols: Optional[int] = None,
+    ) -> dict:
+        """Compute a DataFrame summary, offloading to a worker thread for large
+        frames so ``describe`` / ``memory_usage(deep=True)`` don't block the loop.
+
+        Small frames are summarised inline to avoid thread-dispatch overhead.
+        """
+        mr = max_rows if max_rows is not None else self._shape_limit.max_rows
+        mc = max_cols if max_cols is not None else self._shape_limit.max_cols
+        df = getattr(entry, "df", None)
+        if df is not None and self._is_large_df(df):
+            return await asyncio.to_thread(
+                entry.compact_summary, max_rows=mr, max_cols=mc
+            )
+        return entry.compact_summary(max_rows=mr, max_cols=mc)
 
     # ─── Public async methods (auto-discovered by AbstractToolkit) ───
 
@@ -135,7 +187,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
         entry = self._catalog.put(
             key, df, description=description, turn_id=turn_id,
         )
-        return {"status": "stored", "summary": self._summary(entry)}
+        return {"status": "stored", "summary": await self._summary_async(entry)}
 
     @tool_schema(StoreResultInput)
     async def store_result(
@@ -186,10 +238,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
     ) -> dict:
         """Get a compact summary of a stored DataFrame (shape, stats, preview). The LLM uses this to inspect intermediate results without loading raw data."""
         entry = self._catalog.get(key)
-        return entry.compact_summary(
-            max_rows=max_rows or self._shape_limit.max_rows,
-            max_cols=max_cols or self._shape_limit.max_cols,
-        )
+        return await self._summary_async(entry, max_rows=max_rows, max_cols=max_cols)
 
     @tool_schema(GetResultInput)
     async def get_result(
@@ -245,7 +294,24 @@ class WorkingMemoryToolkit(AbstractToolkit):
             except ValueError:
                 pass
 
-        matches = []
+        # Summarising matched frames is CPU-bound; offload the whole pass to a
+        # worker thread when any stored DataFrame is large.
+        if self._has_large_entry():
+            matches = await asyncio.to_thread(self._run_search, query_lower, type_filter)
+        else:
+            matches = self._run_search(query_lower, type_filter)
+
+        return {"count": len(matches), "matches": matches}
+
+    def _run_search(
+        self, query_lower: str, type_filter: Optional[EntryType]
+    ) -> list[dict]:
+        """Filter stored entries and build their compact summaries (sync).
+
+        Extracted so the CPU-bound summarisation can be offloaded to a worker
+        thread via :func:`asyncio.to_thread` for large catalogs.
+        """
+        matches: list[dict] = []
         for entry in self._catalog._store.values():
             # Type filter
             if type_filter is not None:
@@ -275,15 +341,24 @@ class WorkingMemoryToolkit(AbstractToolkit):
                 summary["entry_type"] = EntryType.DATAFRAME.value
                 matches.append(summary)
 
-        return {"count": len(matches), "matches": matches}
+        return matches
 
     @tool_schema(ListStoredInput)
     async def list_stored(self, turn_id: Optional[str] = None) -> dict:
         """List all entries in working memory with compact summaries (all types)."""
-        entries = self._catalog.list_entries(
-            turn_id=turn_id,
-            shape_limit=self._shape_limit,
-        )
+        # Summarising every stored frame is CPU-bound; offload to a worker
+        # thread when any stored DataFrame is large enough to stall the loop.
+        if self._has_large_entry():
+            entries = await asyncio.to_thread(
+                self._catalog.list_entries,
+                turn_id=turn_id,
+                shape_limit=self._shape_limit,
+            )
+        else:
+            entries = self._catalog.list_entries(
+                turn_id=turn_id,
+                shape_limit=self._shape_limit,
+            )
         return {
             "count": len(entries),
             "session_id": self._catalog.session_id,
@@ -320,7 +395,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
                 description=description,
                 turn_id=turn_id,
             )
-            return {"status": "computed_and_stored", "summary": self._summary(entry)}
+            return {"status": "computed_and_stored", "summary": await self._summary_async(entry)}
         except Exception as exc:
             error_msg = f"{type(exc).__name__}: {exc}"
             error_df = pd.DataFrame()
@@ -373,7 +448,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
                 description=f"Merged from: {', '.join(keys)}",
                 turn_id=turn_id,
             )
-            return {"status": "merged", "summary": self._summary(entry)}
+            return {"status": "merged", "summary": await self._summary_async(entry)}
         except Exception as exc:
             return {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
 
@@ -428,7 +503,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
                 description=f"Summarized from: {', '.join(keys)}",
                 turn_id=turn_id,
             )
-            return {"status": "summarized", "summary": self._summary(entry)}
+            return {"status": "summarized", "summary": await self._summary_async(entry)}
         except Exception as exc:
             self._catalog.drop(f"_tmp_merge_{store_as}")
             return {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
@@ -472,7 +547,13 @@ class WorkingMemoryToolkit(AbstractToolkit):
                 "error": f"'{variable_name}' is {type(obj).__name__}, not a DataFrame",
             }
 
-        df_copy = obj.copy(deep=True)
+        # Deep-copy decouples the entry from the source tool's namespace. For
+        # large frames this is CPU-bound, so offload it to a worker thread to
+        # keep the event loop responsive for concurrent requests.
+        if self._is_large_df(obj):
+            df_copy = await asyncio.to_thread(obj.copy, deep=True)
+        else:
+            df_copy = obj.copy(deep=True)
         entry = self._catalog.put(
             key=store_as,
             df=df_copy,
@@ -483,7 +564,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
             "status": "imported",
             "from_tool": tool_name,
             "from_variable": variable_name,
-            "summary": self._summary(entry),
+            "summary": await self._summary_async(entry),
         }
 
     @tool_schema(ListToolDataFramesInput)

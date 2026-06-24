@@ -56,6 +56,7 @@ def ctx() -> dict:
 def jira() -> MagicMock:
     j = MagicMock()
     j.jira_transition_issue = AsyncMock(return_value={"ok": True})
+    j.jira_transition_to = AsyncMock(return_value={"ok": True})
     j.jira_add_comment = AsyncMock(return_value={"id": "c1"})
     return j
 
@@ -119,7 +120,7 @@ class TestRetriesPrOnce:
         assert result["status"] == "ready_to_deploy"
         assert result["pr_url"] == "https://github.com/x/y/pull/1"
         assert len(calls) == 2
-        jira.jira_transition_issue.assert_awaited_once()
+        jira.jira_transition_to.assert_awaited_once()
         jira.jira_add_comment.assert_awaited_once()
 
 
@@ -161,7 +162,7 @@ class TestFinalPrFailure:
         assert result["status"] == "blocked"
         # First call -> Deployment Blocked transition (jira call inside
         # _mark_blocked); second jira_add_comment also called there.
-        jira.jira_transition_issue.assert_awaited_once()
+        jira.jira_transition_to.assert_awaited_once()
         jira.jira_add_comment.assert_awaited_once()
 
 

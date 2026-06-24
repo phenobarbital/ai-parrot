@@ -25,6 +25,11 @@ Runtime requirements:
   ``DEV_LOOP_DEVELOPMENT_AGENT=codex``, ``codex`` CLI on ``$PATH`` and
   authenticated (or ``OPENAI_API_KEY`` available), and
   ``DEV_LOOP_CODEX_MODEL`` (default ``gpt-5.5``)
+* Optional Nvidia/LLM Development mode:
+  ``DEV_LOOP_DEVELOPMENT_AGENT=nvidia`` and ``NVIDIA_API_KEY`` available.
+  ``DEV_LOOP_NVIDIA_CODE_MODEL`` defaults to
+  ``moonshotai/kimi-k2-instruct-0905``; set it to ``z-ai/glm-5.1`` and
+  ``DEV_LOOP_NVIDIA_ENABLE_THINKING=true`` for GLM reasoning mode.
 * Jira service account: ``JIRA_INSTANCE``, ``JIRA_USERNAME``,
   ``JIRA_API_TOKEN`` and (optionally) ``JIRA_PROJECT`` — the toolkit uses
   ``basic_auth``
@@ -88,6 +93,8 @@ from parrot.flows.dev_loop import (
     CodexCodeDispatchProfile,
     GeminiCodeDispatcher,
     GeminiCodeDispatchProfile,
+    LLMCodeDispatcher,
+    LLMCodeDispatchProfile,
     DevLoopRunner,
     build_dev_loop_flow,
     flow_stream_ws,
@@ -454,16 +461,43 @@ async def _on_startup(app: web.Application) -> None:
             redis_url=redis_url,
             stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
         )
-        development_profile = GeminiCodeDispatchProfile(
-            model=conf.config.get("DEV_LOOP_GEMINI_MODEL", fallback="auto")
-        )
+        development_profile = GeminiCodeDispatchProfile(model=conf.config.get("DEV_LOOP_GEMINI_MODEL", fallback="auto"))
         logger.info(
             "Development node using Gemini CLI (model=%s)",
             development_profile.model,
         )
+    elif development_agent in {"nvidia", "llm"}:
+        nvidia_model = conf.config.get(
+            "DEV_LOOP_NVIDIA_CODE_MODEL",
+            fallback="moonshotai/kimi-k2-instruct-0905",
+        )
+        development_dispatcher = LLMCodeDispatcher(
+            max_concurrent=conf.config.getint(
+                "LLM_CODE_MAX_CONCURRENT_DISPATCHES",
+                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+            ),
+            redis_url=redis_url,
+            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+        )
+        development_profile = LLMCodeDispatchProfile(
+            llm=f"nvidia:{nvidia_model}",
+            enable_thinking=conf.config.getboolean(
+                "DEV_LOOP_NVIDIA_ENABLE_THINKING",
+                fallback=False,
+            ),
+            clear_thinking=conf.config.getboolean(
+                "DEV_LOOP_NVIDIA_CLEAR_THINKING",
+                fallback=False,
+            ),
+        )
+        logger.info(
+            "Development node using Nvidia LLM code dispatcher (llm=%s)",
+            development_profile.llm,
+        )
     elif development_agent not in {"claude", "claude-code"}:
         raise RuntimeError(
-            "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', or 'gemini', "
+            "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', "
+            "'gemini', or 'nvidia', "
             f"got {development_agent!r}"
         )
 

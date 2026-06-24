@@ -7,7 +7,11 @@ from typing import Dict, Any, Optional
 
 from parrot.mcp.config import MCPServerConfig
 from parrot.mcp.transports.base import MCPServerBase
-from parrot.mcp.client import MCPClientConfig, MCPConnectionError
+from parrot.mcp.client import (
+    MCPClientConfig,
+    MCPConnectionError,
+    raise_for_jsonrpc_error,
+)
 
 class StdioMCPServer(MCPServerBase):
     """MCP server using stdio transport."""
@@ -108,6 +112,12 @@ class StdioMCPSession:
         self._stdout = None
         self._stderr = None
         self._initialized = False
+        # Serializes the JSON-RPC round-trip over the single stdio pipe.
+        # The stdout StreamReader cannot be read by two coroutines at once
+        # (asyncio raises "readuntil() called while another coroutine is
+        # already waiting for incoming data"), so concurrent tool calls that
+        # share one session must take turns on the request/response cycle.
+        self._io_lock = asyncio.Lock()
 
     async def connect(self):
         """Connect to MCP server via stdio."""
@@ -193,40 +203,47 @@ class StdioMCPSession:
         deadline = loop.time() + self.config.timeout
 
         try:
-            line = (json.dumps(request) + "\n").encode("utf-8")
-            self.logger.debug("Stdio sending: %s", line.decode().strip())
-            self._stdin.write(line)
-            await self._stdin.drain()
+            # Hold the lock across the whole write+read cycle so that
+            # concurrent tool calls on this shared session do not interleave
+            # writes on stdin or read the stdout stream simultaneously.
+            async with self._io_lock:
+                line = (json.dumps(request) + "\n").encode("utf-8")
+                self.logger.debug("Stdio sending: %s", line.decode().strip())
+                self._stdin.write(line)
+                await self._stdin.drain()
 
-            response = None
-            while True:
-                timeout = max(0.1, deadline - loop.time())
-                response_line = await asyncio.wait_for(self._stdout.readline(), timeout=timeout)
-                if not response_line:
-                    raise MCPConnectionError("Empty response - connection closed")
+                response = None
+                while True:
+                    timeout = max(0.1, deadline - loop.time())
+                    response_line = await asyncio.wait_for(self._stdout.readline(), timeout=timeout)
+                    if not response_line:
+                        raise MCPConnectionError("Empty response - connection closed")
 
-                response_str = response_line.decode("utf-8", errors="replace").strip()
-                if not response_str:
-                    continue
-                self.logger.debug("Stdio received: %s", response_str)
+                    response_str = response_line.decode("utf-8", errors="replace").strip()
+                    if not response_str:
+                        continue
+                    self.logger.debug("Stdio received: %s", response_str)
 
-                # Skip non-JSON garbage
-                try:
-                    candidate = json.loads(response_str)
-                except json.JSONDecodeError:
-                    self.logger.debug("Ignoring non-JSON stdout: %r", response_str)
-                    continue
+                    # Skip non-JSON garbage
+                    try:
+                        candidate = json.loads(response_str)
+                    except json.JSONDecodeError:
+                        self.logger.debug("Ignoring non-JSON stdout: %r", response_str)
+                        continue
 
-                # Only accept responses with our request id; ignore notifications/others
-                if candidate.get("id") != request_id:
-                    # could be a notification or another message; ignore
-                    continue
+                    # Only accept responses with our request id; ignore notifications/others
+                    if candidate.get("id") != request_id:
+                        # could be a notification or another message; ignore
+                        continue
 
-                response = candidate
-                break
+                    response = candidate
+                    break
 
             if "error" in response:
-                raise MCPConnectionError(f"Server error: {response['error']}")
+                # Raises MCPRateLimitError for -32429 (with retry_after) or a
+                # generic MCPConnectionError otherwise. Both are MCPConnectionError
+                # subclasses, so the handler below re-raises them unchanged.
+                raise_for_jsonrpc_error(response["error"])
 
             return response.get("result", {})
 
@@ -246,8 +263,9 @@ class StdioMCPSession:
         notification_line = json.dumps(notification) + "\n"
         self.logger.debug("Stdio notification: %s", notification_line.strip())
 
-        self._stdin.write(notification_line.encode('utf-8'))
-        await self._stdin.drain()
+        async with self._io_lock:
+            self._stdin.write(notification_line.encode('utf-8'))
+            await self._stdin.drain()
 
     def _get_next_id(self):
         self._request_id += 1

@@ -11,6 +11,7 @@ from parrot.flows.dev_loop import (
     CodexCodeDispatchProfile,
     DevelopmentOutput,
     DispatchOutputValidationError,
+    LLMCodeDispatchProfile,
     ResearchOutput,
 )
 from parrot.flows.dev_loop.nodes.development import DevelopmentNode
@@ -64,6 +65,23 @@ class TestDispatchArguments:
         dispatcher = MagicMock()
         dispatcher.dispatch = AsyncMock(return_value=dev_out)
         profile = CodexCodeDispatchProfile(model="gpt-5.5")
+        node = DevelopmentNode(
+            dispatcher=dispatcher,
+            dispatch_profile=profile,
+        )
+
+        await node.execute(
+            ctx={"run_id": "r1", "research_output": research_out},
+        )
+
+        kwargs = dispatcher.dispatch.await_args.kwargs
+        assert kwargs["profile"] is profile
+
+    @pytest.mark.asyncio
+    async def test_injected_llm_dispatch_profile_used(self, research_out, dev_out):
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(return_value=dev_out)
+        profile = LLMCodeDispatchProfile(llm="nvidia:z-ai/glm-5.1")
         node = DevelopmentNode(
             dispatcher=dispatcher,
             dispatch_profile=profile,

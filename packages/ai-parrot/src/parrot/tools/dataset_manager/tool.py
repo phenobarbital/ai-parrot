@@ -2637,7 +2637,7 @@ class DatasetManager(AbstractToolkit):
             if _tool_dataset_name(t) is None or _tool_dataset_name(t) in allowed_datasets
         ]
 
-    async def _pre_execute(self, tool_name: str, **kwargs) -> None:
+    async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:
         """PBAC Layer-2 per-call enforcement hook.
 
         Called by ``ToolkitTool._execute`` before invoking the bound method.
@@ -2702,7 +2702,7 @@ class DatasetManager(AbstractToolkit):
                 ),
             )
 
-    async def _post_execute(self, tool_name: str, result: Any, **kwargs) -> Any:
+    async def _post_execute(self, tool_name: str, result: Any, /, **kwargs) -> Any:
         """Reset the ContextVar token after tool execution.
 
         Resets ``_pctx_var`` to its value before ``_pre_execute`` ran.  This
@@ -3352,6 +3352,9 @@ class DatasetManager(AbstractToolkit):
                     warning = TableSource._size_warning(row_est)
                     if warning:
                         size_note += f" {warning}"
+                from .sources.table import dialect_hint
+                dhint = dialect_hint(entry.source.driver)
+                dhint_line = f"\n  - {dhint}" if dhint else ""
                 return {
                     "error": (
                         f"TableSource '{table_name}' requires an explicit 'sql' parameter. "
@@ -3359,11 +3362,12 @@ class DatasetManager(AbstractToolkit):
                     ),
                     "hint": (
                         f"Write a targeted SQL query. Examples:\n"
-                        f"  - Aggregation: sql=\"SELECT DATE_TRUNC('month', date_col) AS month, "
-                        f"COUNT(*) FROM {table_name} WHERE ... GROUP BY 1\"\n"
+                        f"  - Aggregation: sql=\"SELECT category, COUNT(*) AS n "
+                        f"FROM {table_name} WHERE ... GROUP BY category\"\n"
                         f"  - Filtered: sql=\"SELECT col1, col2 FROM {table_name} "
                         f"WHERE status = 'active' LIMIT 100\"\n"
                         f"  - Inspect schema first: call get_source_schema('{resolved}')"
+                        f"{dhint_line}"
                     ),
                 }
             # ── Auto-rewrite dataset alias → real table name ──────────
@@ -3443,6 +3447,9 @@ class DatasetManager(AbstractToolkit):
                 _has_limit = bool(re.search(r'\bLIMIT\s+\d+', _sql_upper))
                 if not _has_aggregation and not _has_limit:
                     table_name = entry.source.table
+                    from .sources.table import dialect_hint
+                    dhint = dialect_hint(entry.source.driver)
+                    dhint_text = f" {dhint}" if dhint else ""
                     return {
                         "error": (
                             f"Query on large table '{table_name}' "
@@ -3453,10 +3460,9 @@ class DatasetManager(AbstractToolkit):
                         "hint": (
                             f"Rewrite your SQL to push aggregation to the "
                             f"database. Use GROUP BY with AVG/SUM/COUNT. "
-                            f"Example: SELECT id, DATE_TRUNC('month', date_col) "
-                            f"AS month, AVG(metric) FROM {table_name} "
-                            f"WHERE ... GROUP BY id, month. "
-                            f"If you truly need row-level data, add LIMIT N."
+                            f"Example: SELECT category, AVG(metric) AS avg_metric "
+                            f"FROM {table_name} WHERE ... GROUP BY category. "
+                            f"If you truly need row-level data, add LIMIT N.{dhint_text}"
                         ),
                     }
 
@@ -3502,11 +3508,14 @@ class DatasetManager(AbstractToolkit):
                     col_hint = (
                         f" Call get_source_schema('{resolved}') to see available columns."
                     )
+                from .sources.table import dialect_hint
+                dhint = dialect_hint(entry.source.driver)
+                dhint_text = f" {dhint}" if dhint else ""
                 hint = (
                     f"Source type is '{source_type}' (table='{table_name}'). "
                     f"Your SQL query failed: {exc}. "
                     f"Do NOT fall back to SELECT * — fix the SQL instead. "
-                    f"The table MUST be referenced as '{table_name}' in your query.{col_hint}"
+                    f"The table MUST be referenced as '{table_name}' in your query.{col_hint}{dhint_text}"
                 )
             else:
                 hint = (

@@ -170,3 +170,64 @@ class TestGoogleInvoke:
         )
         result = await mock_google_client.invoke("test", structured_output=config)
         assert result.output is parsed
+
+    async def test_warn_free_safe_extract_text_with_function_call(self, mock_google_client):
+        """_safe_extract_text avoids accessing .text on responses with function calls."""
+        part = SimpleNamespace(function_call=SimpleNamespace(name="my_tool", args={}))
+        content = SimpleNamespace(parts=[part])
+        candidate = SimpleNamespace(content=content, finish_reason="STOP")
+        
+        class WarningProneResponse:
+            def __init__(self):
+                self.candidates = [candidate]
+            
+            @property
+            def text(self) -> str:
+                raise AssertionError("Accessed .text property on response with function call!")
+
+        resp = WarningProneResponse()
+        extracted = mock_google_client._safe_extract_text(resp)
+        assert extracted == ""  # No text part in response
+
+    async def test_warn_free_from_gemini_with_function_call(self):
+        """AIMessageFactory.from_gemini avoids accessing .text on responses with function calls."""
+        from parrot.models.responses import AIMessageFactory
+        
+        part = SimpleNamespace(function_call=SimpleNamespace(name="my_tool", args={}))
+        content = SimpleNamespace(parts=[part])
+        candidate = SimpleNamespace(content=content, finish_reason="STOP")
+        usage_metadata = SimpleNamespace(
+            prompt_token_count=10,
+            candidates_token_count=5,
+            total_token_count=15,
+        )
+        
+        class WarningProneResponse:
+            def __init__(self):
+                self.candidates = [candidate]
+                self.usage_metadata = usage_metadata
+            
+            @property
+            def text(self) -> str:
+                raise AssertionError("Accessed .text property on response with function call!")
+
+        resp = WarningProneResponse()
+        
+        # 1. When text_response is provided (even if empty)
+        msg1 = AIMessageFactory.from_gemini(
+            response=resp,
+            input_text="prompt",
+            model="gemini-2.5-flash",
+            text_response=""
+        )
+        assert msg1.output == ""
+
+        # 2. When text_response is NOT provided (fallback path)
+        msg2 = AIMessageFactory.from_gemini(
+            response=resp,
+            input_text="prompt",
+            model="gemini-2.5-flash",
+            text_response=None
+        )
+        assert msg2.output == ""
+

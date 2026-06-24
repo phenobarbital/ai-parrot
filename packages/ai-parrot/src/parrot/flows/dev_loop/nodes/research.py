@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from typing import Any, Dict, List, Optional, Union
 
 from navconfig import BASE_DIR
@@ -51,6 +52,32 @@ _MAX_DESCRIPTION_CHARS = 30_000
 # that the surrounding sections (criteria, reporter, user description)
 # always fit.
 _SUMMARIZED_EXCERPTS_CHARS = 8_000
+
+# Max number of cleaned log lines kept per source after noise filtering.
+# CloudWatch Insights returns up to 100 rows; the vast majority are health
+# probes and framework chatter, so a small tail of *meaningful* lines is
+# all a human triager (or the research subagent) actually needs.
+_MAX_CLEAN_LOG_LINES = 25
+
+# Health-check / probe / framework-chatter lines that carry no incident
+# signal. Dropped before excerpts ever reach the Jira ticket or the
+# research prompt. Matched case-insensitively against the @message text.
+_LOG_NOISE_RE = re.compile(
+    r"""
+      kube-probe                       # k8s liveness/readiness probes
+    | /healthz?\b                      # GET /health or /healthz endpoints
+    | "GET\s+/health                   # access-log health hits
+    | httplog\.go.*?/healthz           # apiserver healthz access logs
+    | Rendered\s                       # Rails view rendering
+    | Processing\s+by\s.*Controller\#  # Rails controller dispatch
+    | Started\s+GET\s+"/"              # Rails root probe
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+# CloudWatch system fields that are pure cursor/pagination noise — never
+# useful to a human and they dominate the byte count of a raw dump.
+_LOG_DROP_FIELDS = frozenset({"@ptr"})
 
 # FEAT-132: Jira issuetype per work-kind.
 # Keys are the three WorkKind literals; values are the Jira issuetype
@@ -388,13 +415,73 @@ class ResearchNode(DevLoopNode):
         with open(path, "r", encoding="utf-8") as fh:
             return fh.read()[-max_bytes:]
 
-    @staticmethod
-    def _tail_text(result: Any) -> List[str]:
+    @classmethod
+    def _tail_text(cls, result: Any) -> List[str]:
+        # CloudWatch Insights / structured log-event payloads arrive as
+        # ``{"results": [{"@timestamp": ..., "@message": ..., "@ptr": ...}]}``.
+        # Stringifying that dict dumps base64 ``@ptr`` cursors and every
+        # health-probe line straight into the Jira ticket, which is useless
+        # noise — so clean + filter at the source instead.
+        if isinstance(result, dict):
+            rows = result.get("results") or result.get("events")
+            if isinstance(rows, list) and rows:
+                cleaned = cls._clean_log_rows(rows)
+                if cleaned:
+                    return cleaned
         if isinstance(result, str):
             return [result[-4000:]]
         if isinstance(result, list):
+            # A bare list of structured rows (no enclosing envelope).
+            if result and isinstance(result[0], dict):
+                cleaned = cls._clean_log_rows(result)
+                if cleaned:
+                    return cleaned
             return [str(x)[-4000:] for x in result[-10:]]
         return [str(result)[-4000:]]
+
+    @classmethod
+    def _clean_log_rows(cls, rows: List[Any]) -> List[str]:
+        """Reduce structured log rows to a compact ``[ts] message`` digest.
+
+        Drops cursor fields (``@ptr``), filters health-probe / framework
+        chatter, and keeps only the last :data:`_MAX_CLEAN_LOG_LINES`
+        meaningful lines. If every row is noise, falls back to the tail of
+        the raw (``@ptr``-stripped) lines so an empty block is never emitted.
+
+        Args:
+            rows: Structured log records (dicts) or pre-formatted strings.
+
+        Returns:
+            A list of cleaned single-line strings (newest last). Returned as
+            a single-element list so the surrounding excerpt joiner keeps one
+            digest per source.
+        """
+        formatted: List[str] = []
+        for row in rows:
+            if isinstance(row, dict):
+                fields = {
+                    k: v for k, v in row.items() if k not in _LOG_DROP_FIELDS
+                }
+                message = str(
+                    fields.get("@message") or fields.get("message") or ""
+                ).strip()
+                if not message:
+                    # No message field — keep a compact repr of the rest.
+                    message = str(fields).strip()
+                timestamp = str(
+                    fields.get("@timestamp") or fields.get("timestamp") or ""
+                ).strip()
+                line = f"[{timestamp}] {message}" if timestamp else message
+            else:
+                line = str(row).strip()
+            if line:
+                formatted.append(line)
+
+        meaningful = [ln for ln in formatted if not _LOG_NOISE_RE.search(ln)]
+        kept = (meaningful or formatted)[-_MAX_CLEAN_LOG_LINES:]
+        if not kept:
+            return []
+        return ["\n".join(kept)]
 
     async def _build_description(
         self, brief: BugBrief, excerpts: List[str]

@@ -158,7 +158,7 @@ class GigSmartToolkit(AbstractToolkit):
     # Post-execute WorkingMemory spilling
     # ------------------------------------------------------------------
 
-    async def _post_execute(self, tool_name: str, result: Any, **kwargs: Any) -> Any:
+    async def _post_execute(self, tool_name: str, result: Any, /, **kwargs: Any) -> Any:
         """Spill large list results to WorkingMemory when configured."""
         if self._wm is not None and isinstance(result, list) and len(result) > 10:
             try:
