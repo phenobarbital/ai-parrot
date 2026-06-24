@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-257 — Gemini STT-only mode (voice WS)
 **Spec**: `sdd/specs/livekit-gemini-voice-input.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1631
@@ -75,4 +75,14 @@ async def test_voice_ws_stt_only_session(...): ...
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+Implemented 2026-06-24. Both integration tests pass (2 passed).
+
+**File created:**
+- `packages/ai-parrot-server/tests/handlers/test_voice_ws_stt_only_integration.py`
+
+**Tests:**
+1. `test_voice_ws_stt_only_session`: Drives a complete `_handle_start_session` → `_run_voice_session` pipeline with `stt_only=True`. The mock `ask_stream` yields a user transcription frame and a model audio frame, then signals shutdown. Asserts `transcription` (is_user=True) is present and `response_chunk` is absent.
+2. `test_voice_ws_full_duplex_session`: Same pipeline without `stt_only`. Asserts `response_chunk` IS emitted for the model audio frame (regression guard for default full-duplex path).
+
+**Mocking approach:** Same pattern as TASK-1631 unit tests — worktree path injection via `sys.path` / `parrot.__path__` extension, google.genai stub, mock `bot.ask_stream` as an async generator that sets `shutdown_event` after yielding responses to exit the voice loop cleanly.
