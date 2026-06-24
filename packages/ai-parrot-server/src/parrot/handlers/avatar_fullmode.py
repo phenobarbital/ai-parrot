@@ -37,7 +37,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from aiohttp import web
+from aiohttp import web, ClientResponseError
+
+from .avatar import avatar_upstream_error_response
 from navigator.views import BaseView
 from navigator_auth.decorators import is_authenticated, user_session
 
@@ -147,6 +149,17 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
         handle.session_id = session_id
         handle.tenant_id = tenant_id
         await client.start_session(handle)
+    except ClientResponseError as exc:
+        # Upstream LiveAvatar rejected the start (e.g. no credits). Close the
+        # client and return a clean, machine-readable status the frontend can
+        # act on instead of leaking a bare 500.
+        await client.aclose()
+        _logger.warning(
+            "AvatarFullmode: LiveAvatar start failed for session %s: %s",
+            session_id,
+            getattr(exc, "message", exc),
+        )
+        return avatar_upstream_error_response(exc)
     except Exception:
         # On any failure, do not leak the client/session.
         await client.aclose()
