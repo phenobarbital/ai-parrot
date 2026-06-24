@@ -107,8 +107,54 @@ class IMAPHookConfig(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class TransitionActionType(str, Enum):
+    """Supported action types for Jira transition handlers."""
+
+    NOTIFY_CHANNEL = "notify_channel"
+    TRIGGER_AGENT = "trigger_agent"
+    CALL_HANDLER = "call_handler"
+    LOG = "log"
+
+
+class TransitionAction(BaseModel):
+    """A single transition-to-action mapping.
+
+    Matches when the ticket's from_status and to_status match the
+    configured patterns. Use ``"*"`` as a wildcard for either field.
+    """
+
+    from_status: str = Field(
+        default="*",
+        description="Source status to match (case-insensitive), or '*' for any",
+    )
+    to_status: str = Field(
+        ...,
+        description="Target status to match (case-insensitive), or '*' for any",
+    )
+    action_type: TransitionActionType
+    action_config: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Action-specific configuration",
+    )
+    project_key: Optional[str] = Field(
+        default=None,
+        description="Restrict to a specific Jira project (None = all projects)",
+    )
+    enabled: bool = True
+
+    @model_validator(mode="after")
+    def validate_not_both_wildcards(self) -> "TransitionAction":
+        """Reject configurations where both statuses are wildcards."""
+        if self.from_status == "*" and self.to_status == "*":
+            raise ValueError(
+                "At least one of from_status or to_status must be non-wildcard"
+            )
+        return self
+
+
 class JiraWebhookConfig(BaseModel):
     """Configuration for Jira webhook receiver."""
+
     name: str = "jira_webhook"
     enabled: bool = True
     url: str = "/api/v1/hooks/jira"
@@ -116,6 +162,10 @@ class JiraWebhookConfig(BaseModel):
     target_type: str = "agent"
     target_id: str = ""
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    transition_actions: List[TransitionAction] = Field(
+        default_factory=list,
+        description="Registry of transition-to-action mappings for jira.transitioned events",
+    )
 
 
 class GitHubWebhookConfig(BaseModel):
