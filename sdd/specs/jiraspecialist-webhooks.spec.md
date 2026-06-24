@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-258
 **Date**: 2026-06-24
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.next
 **Proposal**: `sdd/proposals/jiraspecialist-webhooks.proposal.md`
 
