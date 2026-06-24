@@ -344,4 +344,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-06-24.
+
+Created `packages/ai-parrot/tests/test_jira_transition_dispatch.py` with 31
+tests covering: dispatch matching (exact, wildcard from, wildcard to,
+case-insensitive, disabled skip, project key filter), `_action_notify_channel`
+(success, skip when no wrapper, skip when no channel_id, skip when wrapper
+has no bot attribute), `_action_trigger_agent` (logs intent, formats template,
+default task), `_action_log_transition` (info default, custom level warning/debug),
+`handle_hook_event` routing (transitioned dispatched, unknown returns None,
+existing events unchanged), and integration tests (no actions configured,
+multiple actions all fire, notify+log combined).
+
+The test file pre-stubs `parrot.utils.types` and `parrot.utils.parsers.toml`
+Cython extensions via sys.modules injection to allow collection in a source-tree
+test environment without compiled binaries. All 31 tests pass; lint clean.
