@@ -116,4 +116,15 @@ async def test_aclose_idempotent(...): ...
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+Implemented `RoomAudioPublisher` in `liveavatar/room_audio_publisher.py`.
+
+- `start()` classmethod: creates `rtc.Room`, connects with `agent_token`,
+  creates `AudioSource(24000, 1)` + `LocalAudioTrack`, calls `publish_track`.
+- `capture_pcm()`: computes `samples_per_channel = len(pcm) // 2`, wraps in
+  `rtc.AudioFrame`, calls `source.capture_frame`. Caches `AudioFrame` class on
+  instance to avoid repeated lazy imports in the hot path.
+- `flush()`: sets/clears `_flushing` flag to drop in-flight frames on barge-in.
+- `aclose()`: idempotent; calls `room.disconnect()`; swallows all exceptions.
+- `livekit~=1.1` added to the `liveavatar` extra in `pyproject.toml`.
+- 8/8 unit tests pass; ruff clean.
