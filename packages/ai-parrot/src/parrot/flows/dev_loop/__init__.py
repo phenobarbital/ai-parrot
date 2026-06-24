@@ -15,6 +15,7 @@ from parrot.flows.dev_loop.dispatcher import (
     CodexCodeDispatcher,
     GeminiCodeDispatcher,
     LLMCodeDispatcher,
+    GrokCodeDispatcher,
     DevLoopCodeDispatcher,
     DispatchExecutionError,
     DispatchOutputValidationError,
@@ -29,6 +30,7 @@ from parrot.flows.dev_loop.streaming import (
 from parrot.flows.dev_loop.webhook import (
     cleanup_worktree,
     register_pull_request_webhook,
+    sweep_finished_worktrees,
 )
 from parrot.flows.dev_loop.models import (
     AcceptanceCriterion,
@@ -37,6 +39,7 @@ from parrot.flows.dev_loop.models import (
     CodexCodeDispatchProfile,
     GeminiCodeDispatchProfile,
     LLMCodeDispatchProfile,
+    GrokCodeDispatchProfile,
     CriterionResult,
     DevelopmentOutput,
     DispatchEvent,
@@ -60,6 +63,8 @@ __all__ = [
     "GeminiCodeDispatchProfile",
     "LLMCodeDispatcher",
     "LLMCodeDispatchProfile",
+    "GrokCodeDispatcher",
+    "GrokCodeDispatchProfile",
     "CriterionResult",
     "DevelopmentOutput",
     "DevLoopRunner",
@@ -82,4 +87,5 @@ __all__ = [
     "flow_stream_ws",
     "parse_repo_specs",
     "register_pull_request_webhook",
+    "sweep_finished_worktrees",
 ]

@@ -61,6 +61,7 @@ from parrot.flows.dev_loop.models import (
     GeminiCodeDispatchProfile,
     DispatchEvent,
     LLMCodeDispatchProfile,
+    GrokCodeDispatchProfile,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -2561,11 +2562,80 @@ class LLMCodeDispatcher:
             self.logger.warning("Failed to XADD %s to %s: %s", kind, stream_key, exc)
 
 
+class GrokCodeDispatcher(LLMCodeDispatcher):
+    """Local coding-agent loop tailored for Grok client and Grok Build model.
+
+    Extends LLMCodeDispatcher to leverage the local OpenAI-compatible tool loop
+    while binding to the custom `GrokClient` via LLMFactory and xAI SDK.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_concurrent: int,
+        redis_url: str,
+        stream_ttl_seconds: int,
+    ) -> None:
+        super().__init__(
+            max_concurrent=max_concurrent,
+            redis_url=redis_url,
+            stream_ttl_seconds=stream_ttl_seconds,
+            client_factory=lambda model: LLMFactory.create(model),
+        )
+
+    async def _chat_completion(
+        self,
+        *,
+        client: Any,
+        model: str,
+        messages: List[Dict[str, Any]],
+        args: Dict[str, Any],
+    ) -> Any:
+        await client._ensure_client()
+        return await client.client.chat.completions.create(
+            model=model,
+            messages=messages,
+            **args,
+        )
+
+    async def dispatch(
+        self,
+        *,
+        brief: BaseModel,
+        profile: GrokCodeDispatchProfile,
+        output_model: Type[T],
+        run_id: str,
+        node_id: str,
+        cwd: str,
+    ) -> T:
+        llm_profile = LLMCodeDispatchProfile(
+            subagent=profile.subagent,
+            llm=f"grok:{profile.model}",
+            sandbox=profile.sandbox,
+            approval_policy=profile.approval_policy,
+            timeout_seconds=profile.timeout_seconds,
+            max_turns=profile.max_turns,
+            max_tokens=profile.max_tokens,
+            temperature=profile.temperature,
+            command_timeout_seconds=profile.command_timeout_seconds,
+            allowed_commands=profile.allowed_commands,
+        )
+        return await super().dispatch(
+            brief=brief,
+            profile=llm_profile,
+            output_model=output_model,
+            run_id=run_id,
+            node_id=node_id,
+            cwd=cwd,
+        )
+
+
 __all__ = [
     "ClaudeCodeDispatcher",
     "CodexCodeDispatcher",
     "GeminiCodeDispatcher",
     "LLMCodeDispatcher",
+    "GrokCodeDispatcher",
     "DevLoopCodeDispatcher",
     "DispatchExecutionError",
     "DispatchOutputValidationError",

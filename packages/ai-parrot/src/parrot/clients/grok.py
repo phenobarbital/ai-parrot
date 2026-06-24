@@ -43,6 +43,7 @@ from ..tools.manager import ToolFormat
 
 class GrokModel(str, Enum):
     """Grok model versions."""
+    GROK_BUILD_0_1 = "grok-build-0.1"
     GROK_4_FAST_REASONING = "grok-4-fast-reasoning"
     GROK_4 = "grok-4"
     GROK_4_1_FAST_NON_REASONING = "grok-4-1-fast-non-reasoning"

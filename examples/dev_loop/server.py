@@ -95,6 +95,8 @@ from parrot.flows.dev_loop import (
     GeminiCodeDispatchProfile,
     LLMCodeDispatcher,
     LLMCodeDispatchProfile,
+    GrokCodeDispatcher,
+    GrokCodeDispatchProfile,
     DevLoopRunner,
     build_dev_loop_flow,
     flow_stream_ws,
@@ -510,10 +512,26 @@ async def _on_startup(app: web.Application) -> None:
             "Development node using Nvidia LLM code dispatcher (llm=%s)",
             development_profile.llm,
         )
+    elif development_agent == "grok":
+        development_dispatcher = GrokCodeDispatcher(
+            max_concurrent=conf.config.getint(
+                "GROK_CODE_MAX_CONCURRENT_DISPATCHES",
+                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+            ),
+            redis_url=redis_url,
+            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+        )
+        development_profile = GrokCodeDispatchProfile(
+            model=conf.config.get("DEV_LOOP_GROK_MODEL", fallback="grok-build-0.1")
+        )
+        logger.info(
+            "Development node using Grok code dispatcher (model=%s)",
+            development_profile.model,
+        )
     elif development_agent not in {"claude", "claude-code"}:
         raise RuntimeError(
             "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', "
-            "'gemini', or 'nvidia', "
+            "'gemini', 'nvidia', or 'grok', "
             f"got {development_agent!r}"
         )
 
