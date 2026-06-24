@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-257
 **Date**: 2026-06-24
 **Author**: Juanfran
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 > **Backend-only spec.** This covers ONLY the ai-parrot side: a Speech-to-Text-only
