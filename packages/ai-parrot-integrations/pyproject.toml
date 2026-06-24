@@ -70,6 +70,7 @@ voice-moonshine = [
 # opt-in only. Install explicitly: ai-parrot-integrations[liveavatar].
 liveavatar = [
     "livekit-api>=1.0",
+    "livekit~=1.1",
 ]
 voice = [
     "ai-parrot-integrations[voice-local]",
