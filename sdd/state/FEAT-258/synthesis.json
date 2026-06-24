@@ -1,0 +1,91 @@
+{
+  "summary_oneline": "Add generic Jira status-transition detection and configurable action dispatch to JiraSpecialist",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/core/hooks/jira_webhook.py",
+      "symbol": "_classify_event",
+      "lines": "122-149",
+      "role": "Event classifier — currently hardcodes only closed/ready_for_test transitions; all others collapse to 'updated'",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/jira_specialist.py",
+      "symbol": "handle_hook_event",
+      "lines": "1096-1121",
+      "role": "Event router — only routes jira.created, jira.assigned, jira.ready_for_test; ignores everything else",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/core/hooks/jira_webhook.py",
+      "symbol": "_handle_post",
+      "lines": "49-109",
+      "role": "Webhook POST handler — builds event payload but does not include from_status/to_status fields",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/core/hooks/models.py",
+      "symbol": "JiraWebhookConfig",
+      "lines": "110-118",
+      "role": "Config model — may need transition_actions field",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/github_reviewer.py",
+      "symbol": "handle_hook_event",
+      "lines": "755-773",
+      "role": "Reference pattern — shows how GitHub events are filtered and dispatched to handler methods",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/core/hooks/base.py",
+      "symbol": "BaseHook",
+      "lines": "96-182",
+      "role": "Hook base class — no changes needed, interface is sufficient",
+      "evidence": ["F005"]
+    }
+  ],
+  "constraints": [
+    {
+      "constraint": "Existing 3 hardcoded handlers (created, assigned, ready_for_test) must continue working unchanged",
+      "evidence": ["F002"]
+    },
+    {
+      "constraint": "JiraWebhookHook._classify_event is a static method shared by all consumers — changes affect all JiraSpecialist instances",
+      "evidence": ["F001"]
+    },
+    {
+      "constraint": "Payload enrichment must be backward-compatible — existing payload keys must remain",
+      "evidence": ["F001"]
+    },
+    {
+      "constraint": "Follow GitHubReviewer pattern for consistency (webhook setup, hook event handling, action dispatch)",
+      "evidence": ["F004"]
+    }
+  ],
+  "scope": {
+    "whats_new": [
+      "jira.transitioned event type emitted for all status changes",
+      "TransitionAction registry on JiraSpecialist for configurable transition→handler mappings",
+      "from_status and to_status fields in webhook payload for all status-change events",
+      "Built-in transition handlers: notify_channel, trigger_agent, log_transition"
+    ],
+    "whats_changed": [
+      "_classify_event: emit 'transitioned' for status changes instead of falling through to 'updated'",
+      "_handle_post: enrich payload with from_status/to_status extracted from changelog",
+      "handle_hook_event: add jira.transitioned routing to transition dispatch",
+      "JiraWebhookConfig: optional transition_actions configuration"
+    ],
+    "non_goals": [
+      "Changing how jira.created, jira.assigned, jira.ready_for_test work today",
+      "Jira-side webhook subscription management (manual setup like today)",
+      "Two-way sync (writing transitions back to Jira from the agent)"
+    ]
+  },
+  "unknowns": [],
+  "recommended_next_command": {
+    "command": "/sdd-spec FEAT-258",
+    "rationale": "All code locations are identified with high confidence, the pattern (GitHubReviewer) is well-established, and no architectural fork exists."
+  }
+}
