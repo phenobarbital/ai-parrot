@@ -25,8 +25,16 @@ def make_toolkit():
     from parrot.tools.jiratoolkit import JiraToolkit
 
     def _build(env=None, **kwargs):
+        import os
+        # Hermetic: drop any real JIRA_WORKFLOW_PATH* vars the host shell or
+        # navconfig (env/.env) injected, so the test owns the full config.
+        clean = {
+            k: v for k, v in os.environ.items()
+            if not k.startswith("JIRA_WORKFLOW_PATH")
+        }
+        clean.update(env or {})
         with patch("parrot.tools.jiratoolkit.JIRA") as mock_jira, \
-                patch.dict("os.environ", env or {}, clear=False):
+                patch.dict("os.environ", clean, clear=True):
             mock_jira.return_value = MagicMock()
             return JiraToolkit(
                 server_url="https://test.atlassian.net",

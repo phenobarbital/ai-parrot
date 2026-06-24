@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from parrot import conf
 from parrot.flows.dev_loop.models import QAReport, ResearchOutput
 from parrot.flows.dev_loop.nodes.close import DevLoopCloseNode
 
@@ -49,8 +50,10 @@ async def test_close_node_transitions_jira_initial(research, jira):
     assert out["status"] == "closed"
     assert out["mode"] == "initial"
     jira.jira_add_comment.assert_awaited_once()
+    # The first configured "ready" candidate is applied (env-overridable, so
+    # assert against conf rather than a hard-coded default label).
     jira.jira_transition_to.assert_awaited_once_with(
-        issue="OPS-1", target_status="Ready to Deploy"
+        issue="OPS-1", target_status=conf.DEV_LOOP_JIRA_TRANSITIONS_READY[0]
     )
 
 
@@ -66,7 +69,7 @@ async def test_close_node_revision_transition(research, jira):
     assert out["status"] == "closed"
     assert out["mode"] == "revision"
     jira.jira_transition_to.assert_awaited_once_with(
-        issue="OPS-1", target_status="In Review – revised"
+        issue="OPS-1", target_status=conf.DEV_LOOP_JIRA_TRANSITIONS_REVISION[0]
     )
 
 
