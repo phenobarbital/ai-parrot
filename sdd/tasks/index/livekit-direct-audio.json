@@ -14,14 +14,14 @@
       "feature_id": "FEAT-256",
       "feature": "livekit-direct-audio",
       "spec": "sdd/specs/livekit-direct-audio.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation — adds the livekit realtime dep + the publisher all other tasks build on.",
+      "parallelism_notes": "Foundation \u2014 adds the livekit realtime dep + the publisher all other tasks build on.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-24T03:06:11+00:00",
       "file": "sdd/tasks/active/TASK-1627-room-audio-publisher.md",
       "completed_at": null
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-256",
       "feature": "livekit-direct-audio",
       "spec": "sdd/specs/livekit-direct-audio.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1627"],
+      "depends_on": [
+        "TASK-1627"
+      ],
       "parallel": false,
       "parallelism_notes": "Edits speaker.py; depends on the publisher interface from 1627.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-24T03:06:11+00:00",
       "file": "sdd/tasks/active/TASK-1628-mode-aware-speaker-sink.md",
       "completed_at": null
     },
@@ -50,14 +52,17 @@
       "feature_id": "FEAT-256",
       "feature": "livekit-direct-audio",
       "spec": "sdd/specs/livekit-direct-audio.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1627", "TASK-1628"],
+      "depends_on": [
+        "TASK-1627",
+        "TASK-1628"
+      ],
       "parallel": false,
       "parallelism_notes": "Wires the handler to the publisher + speaker; needs both.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-24T03:06:11+00:00",
       "file": "sdd/tasks/active/TASK-1629-start-session-mode-select-fallback.md",
       "completed_at": null
     },
@@ -68,14 +73,16 @@
       "feature_id": "FEAT-256",
       "feature": "livekit-direct-audio",
       "spec": "sdd/specs/livekit-direct-audio.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1629"],
+      "depends_on": [
+        "TASK-1629"
+      ],
       "parallel": false,
       "parallelism_notes": "End-to-end coverage after the implementation tasks land.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-24T03:06:11+00:00",
       "file": "sdd/tasks/active/TASK-1630-direct-audio-integration-tests.md",
       "completed_at": null
     }
