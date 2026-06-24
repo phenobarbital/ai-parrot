@@ -2411,12 +2411,18 @@ class AgentTalk(BaseView):
             return None
         provider = app.get('avatar_voice_provider')
         handle = record.get('handle') if isinstance(record, dict) else None
-        if provider is None or handle is None:
+        # FEAT-256 avatar-OFF sessions store a direct-audio RoomAudioPublisher
+        # under "publisher" (no LiveAvatar handle) — route the reply into the
+        # LiveKit room track instead of the LiveAvatar WS.
+        publisher = record.get('publisher') if isinstance(record, dict) else None
+        if provider is None or (handle is None and publisher is None):
             return None
         try:
             from parrot.integrations.liveavatar import AvatarTurnSpeaker
 
-            speaker = AvatarTurnSpeaker(handle, provider.synthesize_pcm)
+            speaker = AvatarTurnSpeaker(
+                handle, provider.synthesize_pcm, room_publisher=publisher
+            )
             await speaker.__aenter__()
             self.logger.info(
                 "AgentTalk: streaming reply to active avatar session %s",
@@ -2473,7 +2479,66 @@ class AgentTalk(BaseView):
             ) if not t.cancelled() and t.exception() else None
         )
 
-    def _detach_avatar_finish(self, speaker: Any, agent_name: str) -> None:
+    async def _push_voice_answer_audio(
+        self, session_id: Optional[str], speaker: Any
+    ) -> None:
+        """Push the turn's synthesized audio to the front for replay (play button).
+
+        Reuses the exact PCM the speaker already generated for the room/avatar
+        (no re-synthesis), WAV-wraps it (24 kHz mono 16-bit) and sends it on the
+        session's WS channel as ``voice_answer_audio``. Strictly best-effort.
+        """
+        if not session_id:
+            return
+        try:
+            pcm = speaker.collected_pcm()
+            if not pcm:
+                self.logger.info(
+                    "voice_answer_audio: no PCM collected for session %s "
+                    "(nothing to replay)", session_id,
+                )
+                return
+            ws_manager = self.request.app.get('user_socket_manager')
+            if ws_manager is None:
+                self.logger.warning(
+                    "voice_answer_audio: no user_socket_manager — cannot push "
+                    "replay audio for session %s", session_id,
+                )
+                return
+            import io
+            import wave
+
+            buf = io.BytesIO()
+            with wave.open(buf, 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(24000)
+                wf.writeframes(pcm)
+            wav_bytes = buf.getvalue()
+            # A multi-MB WAV is far too large for a single WebSocket frame, so
+            # store it on the session and let the browser fetch it over HTTP
+            # (GET .../voice-answer). The WS only carries a tiny "ready" ping.
+            sessions = self.request.app.get('avatar_sessions') or {}
+            rec = sessions.get(session_id)
+            if isinstance(rec, dict):
+                rec['last_answer_wav'] = wav_bytes
+            self.logger.info(
+                "voice_answer_audio: stored %d-byte WAV for session %s; notifying",
+                len(wav_bytes), session_id,
+            )
+            await ws_manager.notify_channel(
+                session_id,
+                {'type': 'voice_answer_audio', 'session_id': session_id},
+            )
+        except Exception:  # noqa: BLE001 - replay audio is best-effort
+            self.logger.warning(
+                "Could not push voice answer audio for session %s",
+                session_id, exc_info=True,
+            )
+
+    def _detach_avatar_finish(
+        self, speaker: Any, agent_name: str, session_id: Optional[str] = None
+    ) -> None:
         """Drain + close an avatar speaker in the background (FEAT-242).
 
         The text + metadata are already on the wire by the time the stream
@@ -2491,6 +2556,8 @@ class AgentTalk(BaseView):
         async def _run() -> None:
             try:
                 await speaker.finish()
+                # Reuse the audio we just synthesized → front replay (play button).
+                await self._push_voice_answer_audio(session_id, speaker)
             except Exception:  # noqa: BLE001 - avatar speech is best-effort
                 self.logger.warning(
                     "Avatar speak finish failed for agent '%s'",
@@ -2784,7 +2851,7 @@ class AgentTalk(BaseView):
             # what previously wedged the request). Hand off and clear the local
             # ref so the finally-block below does not also close it.
             if avatar_speaker is not None:
-                self._detach_avatar_finish(avatar_speaker, agent_name)
+                self._detach_avatar_finish(avatar_speaker, agent_name, session_id)
                 avatar_speaker = None
 
         except asyncio.CancelledError:

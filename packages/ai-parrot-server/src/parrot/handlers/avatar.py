@@ -188,6 +188,31 @@ async def _start_direct_audio_session(
     })
 
 
+async def _teardown_avatar_record(record: Any) -> None:
+    """Tear down a stored avatar-session record (publisher or LiveAvatar client).
+
+    Idempotent / best-effort. Used by ``/stop`` and by ``/start`` when replacing
+    an existing session for the same ``session_id`` (e.g. the user toggled the
+    avatar on↔off and restarted) so we never leak a stale LiveAvatar session or
+    route a new turn's speaker to a dead avatar WebSocket.
+    """
+    if not isinstance(record, dict):
+        return
+    publisher = record.get("publisher")
+    client = record.get("client")
+    handle = record.get("handle")
+    try:
+        if publisher is not None:
+            await publisher.aclose()
+        elif client is not None and handle is not None:
+            try:
+                await client.stop_session(handle)
+            finally:
+                await client.aclose()
+    except Exception:  # noqa: BLE001 - teardown is best-effort
+        _logger.warning("avatar session teardown failed", exc_info=True)
+
+
 async def _start_avatar_session(request: web.Request) -> web.Response:
     """POST /api/v1/agents/avatar/{agent_id}/start — start an avatar session.
 
@@ -261,6 +286,18 @@ async def _start_avatar_session(request: web.Request) -> web.Response:
     tokens = await asyncio.to_thread(room_manager.mint_room_tokens, session_id, agent_id)
 
     store = request.app.setdefault(AVATAR_SESSIONS_KEY, {})
+
+    # FEAT-257 fix: if a session already exists for this id (avatar on↔off
+    # switch reusing the same session_id), tear the old one down first — else a
+    # stale LiveAvatar handle/publisher lingers and the next turn's speaker is
+    # routed to a dead WS ("AvatarWebSocket: cannot send — WS not connected").
+    _existing = store.pop(session_id, None)
+    if _existing is not None:
+        _logger.info(
+            "AvatarSessionView: replacing existing session %s before re-start",
+            session_id,
+        )
+        await _teardown_avatar_record(_existing)
 
     # ── avatar-OFF path: start a direct-audio publisher ──────────────────
     if not avatar_flag:
@@ -422,25 +459,32 @@ async def _stop_avatar_session(request: web.Request) -> web.Response:
         )
         return web.Response(status=204)
 
-    publisher = record.get("publisher")
-    client = record.get("client")
-    handle = record.get("handle")
-
-    if publisher is not None:
-        # avatar-OFF path: disconnect the room publisher (FEAT-256).
-        # aclose is idempotent and never raises.
-        await publisher.aclose()
-    elif client is not None and handle is not None:
-        # avatar-ON path: stop LiveAvatar session + close client.
-        try:
-            await client.stop_session(handle)
-        finally:
-            # aclose cancels (and awaits) the keep-alive loop and closes the
-            # HTTP session even if stop_session raised.
-            await client.aclose()
+    await _teardown_avatar_record(record)
 
     _logger.info("AvatarSessionView: stopped session %s", session_id)
     return web.Response(status=204)
+
+
+async def _get_voice_answer(request: web.Request) -> web.Response:
+    """GET /api/v1/agents/avatar/{agent_id}/voice-answer?session_id=... (FEAT-257).
+
+    Returns the WAV of the last spoken reply (stored by the AgentTalk turn) so the
+    browser can offer a replay/play button. Served over HTTP because the audio is
+    far too large for a WebSocket frame.
+    """
+    session_id = request.query.get("session_id") or ""
+    if not session_id:
+        raise web.HTTPBadRequest(reason="'session_id' is required")
+    sessions = request.app.get(AVATAR_SESSIONS_KEY, {})
+    record = sessions.get(session_id)
+    wav = record.get("last_answer_wav") if isinstance(record, dict) else None
+    if not wav:
+        raise web.HTTPNotFound(reason="no voice answer available for this session")
+    return web.Response(
+        body=wav,
+        content_type="audio/wav",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @is_authenticated()
@@ -460,6 +504,12 @@ class AvatarSessionView(BaseView):
             return await _start_avatar_session(self.request)
         if action == "stop":
             return await _stop_avatar_session(self.request)
+        raise web.HTTPNotFound(reason=f"unknown avatar action '{action}'")
+
+    async def get(self) -> web.Response:
+        action = self.request.match_info.get("action", "")
+        if action == "voice-answer":
+            return await _get_voice_answer(self.request)
         raise web.HTTPNotFound(reason=f"unknown avatar action '{action}'")
 
 

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-24T00:00:00.000000",
-  "completed_at": null,
+  "completed_at": "2026-06-24T05:54:36+00:00",
   "tasks": [
     {
       "id": "TASK-1631",
@@ -14,16 +14,16 @@
       "feature_id": "FEAT-257",
       "feature": "livekit-gemini-voice-input",
       "spec": "sdd/specs/livekit-gemini-voice-input.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Core change: stt_only flag + config/run-loop in agent_voice.py + live.py.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-1631-gemini-stt-only-mode.md",
-      "completed_at": null
+      "started_at": "2026-06-24T04:42:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1631-gemini-stt-only-mode.md",
+      "completed_at": "2026-06-24T05:45:20+00:00"
     },
     {
       "id": "TASK-1632",
@@ -32,16 +32,18 @@
       "feature_id": "FEAT-257",
       "feature": "livekit-gemini-voice-input",
       "spec": "sdd/specs/livekit-gemini-voice-input.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1631"],
+      "depends_on": [
+        "TASK-1631"
+      ],
       "parallel": false,
       "parallelism_notes": "End-to-end coverage after the impl lands.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-1632-stt-only-integration-test.md",
-      "completed_at": null
+      "started_at": "2026-06-24T04:42:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1632-stt-only-integration-test.md",
+      "completed_at": "2026-06-24T05:54:36+00:00"
     }
   ]
 }

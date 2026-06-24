@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-257 — Gemini STT-only mode (voice WS)
 **Spec**: `sdd/specs/livekit-gemini-voice-input.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -55,13 +55,21 @@ multi-driver; FEAT-256 output.
 #   emits input_transcription (user)  live.py:806-814
 #   config knobs in the run/config path: response_modalities,
 #       enable_input_transcription, enable_output_transcription   # live.py:722
-# handlers/agent_voice.py — /ws/voice handler: parses start_session, runs the Gemini
-#   session, forwards transcription / response_chunk frames to the client.
+# NOTE: The /ws/voice handler that parses start_session and forwards transcription /
+#   response_chunk frames is at:
+#   packages/ai-parrot-integrations/src/parrot/voice/handler.py (VoiceChatHandler)
+#   NOT agent_voice.py (which is a REST handler for audio attachments).
+#   The task file listing "agent_voice.py" is a stale reference — the correct file
+#   is handler.py in the integrations package.
+# VoiceChatHandler._handle_start_session: parses message dict, merges config, creates bot
+# VoiceChatHandler._send_voice_response: forwards response_chunk / transcription frames
+# WebSocketConnection: dataclass with session_id, bot, streaming_mode, etc.
 ```
 
 ### Does NOT Exist
 - ~~an `stt_only` flag / STT-only mode~~ — add it (this task).
 - ~~a separate STT-only client class~~ — reuse `GeminiLiveClient` with a flag; do NOT fork.
+- ~~stt_only on WebSocketConnection~~ — add it (this task).
 
 ---
 
@@ -101,4 +109,14 @@ async def test_default_still_full_duplex(...): ...
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+Implemented 2026-06-24. All 8 unit tests pass.
+
+**Files modified:**
+- `packages/ai-parrot/src/parrot/clients/live.py`: Added `stt_only: bool = False` parameter to `_build_live_config()` and `stream_voice()`. When `stt_only=True`, `response_modalities` is set to `[]` (suppresses model output), `output_audio_transcription` is set to `None`, and model_turn processing in the run loop is gated out. Input transcription (`input_audio_transcription`) is always enabled.
+- `packages/ai-parrot-integrations/src/parrot/voice/handler.py`: Added `stt_only: bool = False` field to `WebSocketConnection`. `_handle_start_session()` parses `stt_only` from the incoming message and sets it on the connection. `session_started` message includes the flag. `_run_voice_session()` passes `stt_only=connection.stt_only` to `bot.ask_stream()`. `_send_voice_response()` skips all model-response forwarding (response_chunk, response_complete, ready_to_speak, avatar tee) when `stt_only=True`; user transcription frames are always forwarded.
+
+**Tests created:**
+- `packages/ai-parrot-server/tests/handlers/test_agent_voice_stt_only.py`: 8 unit tests covering transcription emission, model response suppression, default full-duplex behavior, start_session parsing, and live config construction.
+
+**Note on stale codebase contract**: The task listed `agent_voice.py` as the WS voice handler. The actual WS voice handler is `packages/ai-parrot-integrations/src/parrot/voice/handler.py` (VoiceChatHandler). The contract in this file was updated to reflect the correct location before implementation.

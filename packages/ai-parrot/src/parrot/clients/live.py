@@ -632,8 +632,18 @@ class GeminiLiveClient(AbstractClient):
         self,
         system_prompt: Optional[str] = None,
         response_modalities: Optional[List[str]] = None,
+        stt_only: bool = False,
     ) -> types.LiveConnectConfig:
-        """Build the LiveConnectConfig for a session."""
+        """Build the LiveConnectConfig for a session.
+
+        Args:
+            system_prompt: Optional system instructions for the model.
+            response_modalities: Override the response modalities list.
+            stt_only: When True, configure for Speech-to-Text-only mode:
+                input transcription is enabled but no model response is
+                generated (response_modalities set to empty list so Gemini
+                transcribes without answering).  Default False = full-duplex.
+        """
         # Speech configuration
         speech_config = types.SpeechConfig(
             language_code=self.language,
@@ -643,8 +653,18 @@ class GeminiLiveClient(AbstractClient):
                 )
             )
         )
-        # Native Audio only supports AUDIO modality
-        modalities = response_modalities or ["AUDIO"]
+
+        if stt_only:
+            # STT-only: suppress model response by requesting no output modalities.
+            # Gemini will still transcribe input audio via input_audio_transcription.
+            # We explicitly pass an empty list — the caller never overrides this in
+            # STT-only mode, so response_modalities kwarg is ignored.
+            modalities: List[str] = []
+            self.logger.info("GeminiLiveClient: STT-only mode — model response suppressed")
+        else:
+            # Full-duplex (default): Native Audio requires AUDIO modality.
+            modalities = response_modalities or ["AUDIO"]
+
         live_config = types.LiveConnectConfig(
             response_modalities=modalities,
             speech_config=speech_config,
@@ -662,9 +682,12 @@ class GeminiLiveClient(AbstractClient):
                     silence_duration_ms=500,
                 )
             ),
-            # Enable transcriptions using proper config objects
+            # Enable input transcription regardless of mode.
+            # In STT-only mode this is the only output; in full-duplex it runs
+            # alongside the model response.
             input_audio_transcription=types.AudioTranscriptionConfig(),
-            output_audio_transcription=types.AudioTranscriptionConfig(),
+            # Output transcription only makes sense in full-duplex.
+            output_audio_transcription=None if stt_only else types.AudioTranscriptionConfig(),
             media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW,
         )
 
@@ -672,7 +695,7 @@ class GeminiLiveClient(AbstractClient):
         if system_prompt:
             live_config.system_instruction = system_prompt
 
-        # Tools (if enabled)
+        # Tools (if enabled) — not useful in STT-only mode but harmless to register.
         if self.enable_tools:
             adapter = self._get_tool_adapter()
             if declarations := adapter.get_function_declarations():
@@ -680,8 +703,6 @@ class GeminiLiveClient(AbstractClient):
                 self.logger.debug(
                     f"Registered {len(declarations)} tools for Live session"
                 )
-        # print('LIVE CONFIG ')
-        # print(live_config)
         return live_config
 
     async def stream_voice(
@@ -690,6 +711,7 @@ class GeminiLiveClient(AbstractClient):
         system_prompt: Optional[str] = None,
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        stt_only: bool = False,
         **kwargs
     ) -> AsyncIterator[LiveVoiceResponse]:
         """
@@ -706,10 +728,15 @@ class GeminiLiveClient(AbstractClient):
             system_prompt: Optional system instructions
             session_id: Session identifier for tracking
             user_id: User identifier
+            stt_only: When True, run in STT-only mode: Gemini transcribes input
+                but does NOT generate a model response (no response_chunk, no audio
+                output).  Only ``user_transcription`` frames are emitted.
+                Default False = full-duplex (unchanged behavior).
             **kwargs: Additional configuration
 
         Yields:
-            LiveVoiceResponse objects with audio, text, and usage metadata
+            LiveVoiceResponse objects with audio, text, and usage metadata.
+            In STT-only mode, only transcription metadata frames are yielded.
         """
         await self._ensure_client()
 
@@ -718,6 +745,7 @@ class GeminiLiveClient(AbstractClient):
 
         live_config = self._build_live_config(
             system_prompt=system_prompt,
+            stt_only=stt_only,
             **{k: v for k, v in kwargs.items() if k in (
                 'response_modalities', 'enable_input_transcription', 'enable_output_transcription'
             )}
@@ -765,8 +793,15 @@ class GeminiLiveClient(AbstractClient):
                                 )
                                 continue
 
-                            # Process model turn
-                            if hasattr(server_content, 'model_turn') and server_content.model_turn:
+                            # Process model turn.
+                            # In STT-only mode the config requests no response
+                            # modalities so Gemini should not produce a model turn;
+                            # guard here as a defense-in-depth safety net.
+                            if (
+                                not stt_only
+                                and hasattr(server_content, 'model_turn')
+                                and server_content.model_turn
+                            ):
                                 for part in server_content.model_turn.parts:
                                     # Text
                                     if hasattr(part, 'text') and part.text:
@@ -783,14 +818,8 @@ class GeminiLiveClient(AbstractClient):
                                     if hasattr(part, 'inline_data') and part.inline_data:
                                         audio_chunk = part.inline_data.data
                                         accumulated_audio += audio_chunk
-                                        chunk_size = len(audio_chunk)
                                         duration = self._estimate_audio_duration(audio_chunk)
                                         usage.output_audio_duration_ms += duration
-                                        
-                                        # self.logger.debug(
-                                        #     f"Received audio chunk: {chunk_size} bytes ({duration:.1f}ms) "
-                                        #     f"for turn {turn_id}"
-                                        # )
 
                                         yield LiveVoiceResponse(
                                             text="",
@@ -800,6 +829,10 @@ class GeminiLiveClient(AbstractClient):
                                             turn_id=turn_id,
                                             user_id=user_id,
                                         )
+                            elif stt_only and hasattr(server_content, 'model_turn') and server_content.model_turn:
+                                self.logger.debug(
+                                    "STT-only: model_turn received but suppressed (double-brain guard)"
+                                )
 
                             # Handle input transcription (user's speech)
                             # It's in server_content, not at response level!

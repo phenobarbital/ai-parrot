@@ -152,6 +152,10 @@ class WebSocketConnection:
     # Configuration
     config: Optional[BotConfig] = None
 
+    # STT-only mode (FEAT-257): when True, Gemini transcribes input but does not
+    # generate a model response.  response_chunk / model audio frames are suppressed.
+    stt_only: bool = False
+
     # Ping tracking
     last_ping: Optional[datetime] = None
     ping_count: int = 0
@@ -708,12 +712,44 @@ class VoiceChatHandler:
             streaming_mode = "streaming"
         connection.streaming_mode = streaming_mode
 
+        # STT-only mode (FEAT-257): parse from start_session payload.
+        # Default False → full-duplex (existing behavior unchanged).
+        stt_only_raw = message.get("stt_only", False)
+        connection.stt_only = bool(stt_only_raw)
+        if connection.stt_only:
+            self.logger.info(
+                "VoiceChatHandler: STT-only mode enabled for session %s",
+                connection.session_id,
+            )
+
         # Clear audio buffer for buffered mode
         connection.audio_buffer = b""
 
         # Store config for factory
         self._current_config = config
         connection.bot = self.bot_factory()
+
+        # The bot factory builds the VoiceBot but does NOT run the async
+        # configure() flow, so conversation_memory is never set up — which
+        # means ask_stream() silently skips loading/saving turns and every
+        # turn starts with no memory of the previous one (Gemini Live Mode
+        # had no conversational continuity).  Configure memory here, best-
+        # effort: Redis for cross-turn persistence within the session, with
+        # the built-in in-memory fallback if Redis is unavailable.  Keyed by
+        # connection.session_id, so turns accumulate across the session and
+        # survive a GoAway reconnect.
+        try:
+            if getattr(connection.bot, "conversation_memory", None) is None:
+                if not getattr(connection.bot, "memory_type", None) or \
+                        connection.bot.memory_type == "memory":
+                    connection.bot.memory_type = "redis"
+                connection.bot.configure_conversation_memory()
+        except Exception:  # noqa: BLE001 - memory is best-effort, never block voice
+            self.logger.warning(
+                "VoiceChatHandler: could not configure conversation memory "
+                "for session %s; continuing without cross-turn memory.",
+                connection.session_id, exc_info=True,
+            )
 
         # Start voice task only for streaming mode
         connection.shutdown_event.clear()
@@ -790,6 +826,7 @@ class VoiceChatHandler:
             "session_id": connection.session_id,
             "user_id": connection.user_id,
             "streaming_mode": streaming_mode,
+            "stt_only": connection.stt_only,
             "config": {
                 "voice_name": config.voice_name,
                 "language": config.language,
@@ -1248,6 +1285,7 @@ class VoiceChatHandler:
                     audio_input=audio_from_queue(),
                     session_id=connection.session_id,
                     user_id=connection.user_id,
+                    stt_only=connection.stt_only,
                 ):
                     await self._send_voice_response(connection, response)
 
@@ -1273,31 +1311,39 @@ class VoiceChatHandler:
         connection: WebSocketConnection,
         response: Any
     ) -> None:
-        """Send voice response to client."""
-        # Send response_chunk for audio OR text (not just audio)
-        # FILTER: Skip internal thought processes that leak into output
-        # Generic pattern: 
-        # 1. Bold/Header followed by a Gerund (Verb-ing) -> **Clarifying...**
-        # 2. Bold/Header followed by "Show [Capital]" -> **Show Product Image**
-        is_thought = response.text and re.match(
-            r'^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])',
-            response.text
-        )
-        
-        # Determine strict text to send (suppress if thought)
-        text_to_send = response.text
-        if is_thought:
-            text_to_send = ""
-        
-        if (response.audio_data or text_to_send) and not response.is_complete:
-            await self._send_message(connection.ws, {
-                "type": "response_chunk",
-                "text": text_to_send or "",
-                "audio_base64": base64.b64encode(response.audio_data).decode() if response.audio_data else "",
-                "audio_format": "audio/pcm;rate=24000" if response.audio_data else "",
-                "is_interrupted": response.is_interrupted,
-            })
+        """Send voice response to client.
 
+        In STT-only mode (connection.stt_only=True) only ``transcription``
+        frames (is_user=True) are forwarded; ``response_chunk`` and model
+        audio frames are suppressed (double-brain guard).
+        """
+        # STT-only: skip all model response frames — only transcription is allowed.
+        if not connection.stt_only:
+            # Send response_chunk for audio OR text (not just audio)
+            # FILTER: Skip internal thought processes that leak into output
+            # Generic pattern:
+            # 1. Bold/Header followed by a Gerund (Verb-ing) -> **Clarifying...**
+            # 2. Bold/Header followed by "Show [Capital]" -> **Show Product Image**
+            is_thought = response.text and re.match(
+                r'^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])',
+                response.text
+            )
+
+            # Determine strict text to send (suppress if thought)
+            text_to_send = response.text
+            if is_thought:
+                text_to_send = ""
+
+            if (response.audio_data or text_to_send) and not response.is_complete:
+                await self._send_message(connection.ws, {
+                    "type": "response_chunk",
+                    "text": text_to_send or "",
+                    "audio_base64": base64.b64encode(response.audio_data).decode() if response.audio_data else "",
+                    "audio_format": "audio/pcm;rate=24000" if response.audio_data else "",
+                    "is_interrupted": response.is_interrupted,
+                })
+
+        # User transcription is always forwarded (both modes).
         if response.metadata.get("user_transcription"):
             await self._send_message(connection.ws, {
                 "type": "transcription",
@@ -1305,16 +1351,25 @@ class VoiceChatHandler:
                 "is_user": True,
             })
 
-        # Prevent Echo: Do not send assistant transcription as it duplicates response_chunk text
-        # assistant_text = response.metadata.get("assistant_transcription")
-        # if not assistant_text and response.turn_metadata:
-        #     assistant_text = response.turn_metadata.output_transcription
-        # if assistant_text:
-        #     await self._send_message(connection.ws, {
-        #         "type": "transcription",
-        #         "text": assistant_text,
-        #         "is_user": False,
-        #     })
+        # Everything below this point is model-response output — skip in STT-only.
+        if connection.stt_only:
+            return
+
+        # Forward the assistant's SPOKEN transcription (output_transcription) as
+        # the display text. In audio mode Gemini's model_turn TEXT modality is
+        # generated separately from the audio — it diverges from what's actually
+        # spoken (and leaks "thinking" headers), so the transcription is the
+        # source of truth for the bubble. The front shows this and ignores the
+        # response_chunk text (audio only).
+        assistant_text = response.metadata.get("assistant_transcription")
+        if not assistant_text and response.turn_metadata:
+            assistant_text = response.turn_metadata.output_transcription
+        if assistant_text:
+            await self._send_message(connection.ws, {
+                "type": "transcription",
+                "text": assistant_text,
+                "is_user": False,
+            })
 
         if response.metadata.get("display_data"):
             await self._send_message(connection.ws, {

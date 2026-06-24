@@ -94,7 +94,7 @@ class AvatarTurnSpeaker:
 
     def __init__(
         self,
-        handle: AvatarSessionHandle,
+        handle: Optional[AvatarSessionHandle],
         synthesize_pcm_fn: Callable[[str], Awaitable[bytes]],
         *,
         ws_session: Optional[aiohttp.ClientSession] = None,
@@ -105,6 +105,9 @@ class AvatarTurnSpeaker:
         self._ws_session = ws_session
         self._room_publisher = room_publisher
         self._ws: Optional[AvatarWebSocket] = None
+        # Accumulate the synthesized PCM so the caller can offer a replay
+        # (play button) of the exact audio we already generated for the room.
+        self._pcm_chunks: list[bytes] = []
         self._flattener = SpeakableFlattener()
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=_MAX_QUEUED_SENTENCES)
         self._consumer: Optional[asyncio.Task] = None
@@ -129,7 +132,10 @@ class AvatarTurnSpeaker:
         # avatar-OFF path: no WS needed — the room_publisher is already running.
         self._consumer = asyncio.create_task(
             self._consume(),
-            name=f"avatar-speaker-{self._handle.liveavatar_session_id}",
+            name=(
+                "avatar-speaker-"
+                + (self._handle.liveavatar_session_id if self._handle else "room")
+            ),
         )
         return self
 
@@ -158,6 +164,15 @@ class AvatarTurnSpeaker:
             return
         for sentence in self._flattener.feed(chunk):
             self._enqueue(sentence)
+
+    def collected_pcm(self) -> bytes:
+        """Return all PCM synthesized this turn (for a replay/play button).
+
+        Concatenation of every sentence's PCM (24 kHz mono 16-bit) — the exact
+        audio sent to the room/avatar. Empty until the turn has been spoken
+        (call after ``finish()``).
+        """
+        return b"".join(self._pcm_chunks)
 
     async def finish(self) -> None:
         """Flush the remaining buffer, wait for playback, and flush the avatar.
@@ -292,6 +307,8 @@ class AvatarTurnSpeaker:
         try:
             pcm = await self._synthesize_pcm_fn(sentence)
             if pcm:
+                # Keep a copy for replay (same audio we send to the room/avatar).
+                self._pcm_chunks.append(pcm)
                 if self._room_publisher is not None:
                     # avatar-OFF: push PCM directly into the LiveKit room track.
                     await self._room_publisher.capture_pcm(pcm)
