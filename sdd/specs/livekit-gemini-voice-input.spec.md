@@ -4,7 +4,7 @@ type: feature
 base_branch: dev
 ---
 
-# Feature Specification: LiveKit Gemini Voice Input (host PTT → Gemini STT → agent)
+# Feature Specification: Gemini STT-only mode (voice WS)
 
 **Feature ID**: FEAT-257
 **Date**: 2026-06-24
@@ -12,108 +12,92 @@ base_branch: dev
 **Status**: draft
 **Target version**: next
 
+> **Backend-only spec.** This covers ONLY the ai-parrot side: a Speech-to-Text-only
+> mode on the existing Gemini voice WebSocket. The frontend wiring that consumes it
+> (re-enable PTT in livekit, open the STT session, route the transcription to
+> `/agents/chat`) is handled **directly in `navigator-frontend-next`** and is NOT
+> part of this spec.
 > Source brainstorm: `sdd/proposals/livekit-gemini-voice-input.brainstorm.md`.
-> Builds on FEAT-256 (livekit-direct-audio, merged to dev).
 
 ---
 
 ## 1. Motivation & Business Requirements
 
 ### Problem Statement
-After FEAT-256 the `livekit` transport has voice **output** (the ai-parrot agent
-speaks into the shared LiveKit room via Supertonic; avatar optional) but its
-**input is text-only** — Push-to-Talk is disabled. You cannot *talk* to the bot in
-livekit. ws-pcm lets you talk but is a private 1:1 stream (no multi-viewer, no
-in-room avatar). We want **voice input for the host** in the **shared room**: the
-host pushes to talk, their speech is transcribed, the **ai-parrot agent** answers,
-and the answer is **spoken into the room** so viewers also hear it.
+The Gemini voice path (`/ws/voice`, `agent_voice.py` / `GeminiLiveClient`) runs
+Gemini Live **full-duplex** — Gemini transcribes the user AND generates a spoken
+response. For the new livekit voice-input flow, we need Gemini **only to
+transcribe** the user's speech; the **ai-parrot agent** (`/agents/chat`) produces
+the answer and the answer is spoken into the LiveKit room (FEAT-256). If Gemini
+also answered, we'd have a "double brain".
+
+We need a reusable **STT-only mode**: feed mic PCM, emit `input_transcription`,
+**suppress Gemini's own model response** (no audio, no text answer).
 
 ### Goals
-- Host PTT in `livekit` → **Gemini STT only** → text turn to `/agents/chat` (the
-  real agent: tools/RAG) → response audio via Supertonic to the room (FEAT-256).
-- Re-enable PTT in livekit for the host; barge-in on the in-room audio.
-- Reuse the existing ws-pcm mic capture + the Gemini transcription path.
+- Add an `stt_only` switch to the Gemini voice session.
+- In STT-only mode: keep emitting `input_transcription` (user speech); Gemini does
+  **NOT** generate a model response (no spoken/text answer, no `response_chunk`).
+- Default behavior (no flag) unchanged → full-duplex (ws-pcm keeps working).
 
 ### Non-Goals (explicitly out of scope)
-- **Gemini as the conversational brain** — Gemini is STT only; the agent answers.
-  (Gemini-as-brain is ws-pcm, which is 1:1 and cannot broadcast.)
-- **Multi-driver** (several participants talking + turn arbitration) — phase 2.
-- No changes to ws-pcm or fullmode. No new STT engine; no LiveKit Agents worker.
+- **All frontend work** — PTT re-enable, opening the STT session in livekit, and
+  routing the transcription to `/agents/chat` are done directly in the frontend
+  repo, not here.
+- Gemini as the conversational brain (the ai-parrot agent answers).
+- Multi-driver / turn arbitration (phase 2).
+- Any change to FEAT-256 output, fullmode, or the default ws-pcm full-duplex flow.
 
 ---
 
 ## 2. Architectural Design
 
 ### Overview
-In `livekit` mode, on PTT the frontend opens the **existing** Gemini voice
-WebSocket (`/ws/voice`, `agent_voice.py` / `GeminiLiveClient`) in a new **STT-only**
-mode (transcribe input, suppress Gemini's spoken response) and streams mic PCM
-(reusing the ws-pcm `_startMicWsPcm` + pcm-worklet). On the **final**
-`input_transcription`, the frontend routes the text to `/agents/chat` (the existing
-livekit `handleSend` branch) → the agent answers → Supertonic publishes the answer
-into the room (FEAT-256 `RoomAudioPublisher`). The LiveKit room carries audio
-**out**; the Gemini WS carries STT **in**.
+Extend the Gemini voice session start to accept `stt_only: bool` (default `False`).
+When `True`, configure Gemini Live to transcribe input but not respond: request
+input transcription only, and do not emit/forward any model response. The handler
+keeps streaming mic PCM in and emitting `transcription` (is_user) frames out; it
+stops emitting `response_chunk` / model audio.
 
 ### Component Diagram
 ```
-Host mic ─PTT→ pcm-worklet ──PCM16─→ /ws/voice (Gemini, STT-ONLY)
-                                          │ input_transcription (final)
-                                          ▼
-                       handleSend(text) → /agents/chat  (ai-parrot agent: tools/RAG)
-                                          │ response
-                                          ▼
-                       Supertonic → RoomAudioPublisher → LiveKit room  (viewers hear)
+client mic PCM ─→ /ws/voice (start_session {stt_only:true})
+                      │  GeminiLiveClient (input_audio_transcription ON,
+                      │                     model response SUPPRESSED)
+                      ▼
+                  transcription (is_user)  ──→ client   (NO response_chunk)
 ```
 
 ### Integration Points
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `handlers/agent_voice.py` / `clients/live.py` | modifies | add STT-only mode (transcribe, suppress spoken response) |
-| `clients/live.py` `GeminiLiveClient` | uses | `input_audio_transcription` + `input_transcription` event |
-| FEAT-256 `RoomAudioPublisher` | uses | output path for the agent answer |
-| Front `voice-session.svelte.ts` | modifies | livekit: open Gemini STT WS on PTT; on final transcription → `handleSend` |
-| Front `AgentVoiceChat.svelte` | modifies | re-enable PTT for livekit (`canPushToTalk`); barge-in |
+| `handlers/agent_voice.py` | modifies | accept `stt_only` in start_session; skip forwarding model responses when set |
+| `clients/live.py` `GeminiLiveClient` | modifies | config + run-loop honor STT-only (transcribe input, no model output) |
 
 ### New Public Interfaces
 ```python
-# Backend: an STT-only switch on the voice session (exact knob TBD — see Open Q).
-# Conceptually: start_session(..., stt_only=True) → emits input_transcription,
-#   does NOT generate a model audio/text response.
+# start_session payload gains an optional flag (default False):
+#   { ..., "stt_only": bool }
+# In STT-only: emits transcription(is_user=True); never emits response_chunk / model audio.
 ```
 
 ---
 
 ## 3. Module Breakdown
 
-### Module 1 (BACKEND, ai-parrot): Gemini STT-only mode
+### Module 1: Gemini STT-only mode
 - **Path**: `packages/ai-parrot-server/src/parrot/handlers/agent_voice.py` +
   `packages/ai-parrot/src/parrot/clients/live.py`
-- **Responsibility**: accept an `stt_only` flag on the voice session; configure
-  Gemini Live to transcribe input (`input_audio_transcription`) but NOT produce a
-  spoken/text response (no "double brain"); keep emitting `input_transcription`.
-- **Depends on**: existing GeminiLiveClient.
+- **Responsibility**: thread an `stt_only` flag from the start_session message into
+  the Gemini Live config + run loop. When set: enable input transcription, suppress
+  the model response (no audio modality / discard model output), keep emitting the
+  user `transcription` frames. When unset: behavior is exactly as today (full-duplex).
+- **Depends on**: existing `GeminiLiveClient`.
 
-### Module 2 (FRONTEND, navigator-frontend-next): livekit STT session on PTT
-- **Path**: `src/lib/components/agents/voice/voice-session.svelte.ts`
-- **Responsibility**: in `livekit` mode, on PTT open the Gemini STT WS in STT-only
-  mode and stream mic PCM (reuse `_startMicWsPcm`/pcm-worklet + the
-  `transcription`/`pendingUserId` accumulation). On final transcription, invoke the
-  existing livekit text-turn path (`handleSend` → `streamChatWithAgent`).
-- **Depends on**: Module 1.
-
-### Module 3 (FRONTEND): re-enable PTT + barge-in
-- **Path**: `src/lib/components/agents/voice/AgentVoiceChat.svelte`
-- **Responsibility**: `canPushToTalk` allows livekit (host); flush the in-room
-  audio on PTT start (barge-in).
-- **Depends on**: Module 2.
-
-### Module 4: Tests
-- **Path**: ai-parrot unit tests (M1) + front unit tests (M2/M3).
-- **Responsibility**: STT-only suppresses the response; final transcription routes
-  to the agent turn; PTT enabled in livekit; barge-in flushes.
-
-> Cross-repo: M1 lands in **ai-parrot** (its own worktree/PR); M2–M3 land in
-> **navigator-frontend-next**. Decompose backend vs front tasks per repo.
+### Module 2: Tests
+- **Path**: ai-parrot unit tests for the voice path.
+- **Responsibility**: STT-only emits user transcription and NO model response;
+  default mode still full-duplex.
 
 ---
 
@@ -122,93 +106,78 @@ Host mic ─PTT→ pcm-worklet ──PCM16─→ /ws/voice (Gemini, STT-ONLY)
 ### Unit Tests
 | Test | Module | Description |
 |---|---|---|
-| `test_stt_only_no_model_response` | M1 | STT-only session emits input_transcription, NO model response |
-| `test_stt_only_still_transcribes` | M1 | input_transcription still flows in STT-only |
-| `livekit_ptt_opens_stt_session` | M2 | PTT in livekit opens the Gemini STT WS (mocked) |
-| `livekit_final_transcription_routes_to_agent` | M2 | final transcription → handleSend → streamChatWithAgent |
-| `ptt_enabled_in_livekit` | M3 | `canPushToTalk` true in livekit; barge-in flushes |
+| `test_stt_only_emits_user_transcription` | M1 | STT-only mode forwards `transcription(is_user=True)` |
+| `test_stt_only_suppresses_model_response` | M1 | STT-only mode emits NO `response_chunk` / model audio |
+| `test_default_still_full_duplex` | M1 | without `stt_only`, the existing ws-pcm full-duplex flow is unchanged |
 
 ### Integration Tests
 | Test | Description |
 |---|---|
-| `livekit_voice_input_end_to_end_mock` | PTT → STT (mock) → agent turn → answer published to room (FEAT-256 mock) |
+| `test_voice_ws_stt_only_session` | mocked Gemini: start_session `stt_only=true` → mic frames → only user transcription frames out |
 
 ---
 
 ## 5. Acceptance Criteria
 
-- [ ] In livekit, the host can PTT; speech is transcribed via Gemini **STT-only**
-      (Gemini does NOT answer).
-- [ ] The **ai-parrot agent** answers (`/agents/chat`) and the answer is **spoken
-      into the room** (FEAT-256) — viewers hear it.
-- [ ] PTT is enabled in livekit (host); barge-in interrupts the in-room audio.
-- [ ] ws-pcm and fullmode unchanged; no new STT engine / no LiveKit Agents worker.
-- [ ] Backend + front unit tests pass; integration test passes.
+- [ ] `start_session` accepts `stt_only` (default `False`; absent → today's behavior).
+- [ ] STT-only mode emits user `transcription` frames and **no** model response
+      (`response_chunk` / model audio).
+- [ ] Default (no flag) keeps the ws-pcm full-duplex flow byte-for-byte unchanged.
+- [ ] Unit + integration tests pass (`pytest packages/ -k voice -v`).
+- [ ] No change to FEAT-256, fullmode, or other transports.
 
 ---
 
 ## 6. Codebase Contract
 
-> Verified against ai-parrot `dev` (post FEAT-256) + navigator-frontend-next `dev`, 2026-06-24.
+> Verified against ai-parrot `dev` (post FEAT-256), 2026-06-24.
 
-### Verified (backend, ai-parrot)
+### Existing Signatures to Use
 ```python
 # clients/live.py — GeminiLiveClient
 #   input_audio_transcription=types.AudioTranscriptionConfig()   # live.py:666
-#   emits input_transcription (user speech)                       # live.py:806-814
+#   output_audio_transcription=types.AudioTranscriptionConfig()  # live.py:667
+#   emits input_transcription (user) live.py:806-814 ; output_transcription live.py:822-831
 #   config knobs: response_modalities, enable_input_transcription,
 #                 enable_output_transcription                      # live.py:722
-# handlers/agent_voice.py — the /ws/voice Gemini handler (ws-pcm transport today)
-```
-
-### Verified (frontend, navigator-frontend-next)
-```typescript
-// voice-session.svelte.ts
-//   _startMicWsPcm() + /pcm-worklet.js  → mic PCM16 16kHz capture (reuse)
-//   _handleVoiceMsg 'transcription' + pendingUserId accumulation (shipped)
-//   handleSend livekit branch → streamChatWithAgent(agentId, {query, session_id, stream})
-//   canPushToTalk = canTalk && mode !== "livekit"   ← relax to allow livekit (host)
-// FEAT-256: RoomAudioPublisher publishes the agent answer to the room (output path)
+# handlers/agent_voice.py — the /ws/voice handler: parses start_session, runs the
+#   Gemini session, forwards transcription / response_chunk frames to the client.
 ```
 
 ### Does NOT Exist (Anti-Hallucination)
-- ~~an `stt_only` mode on the Gemini voice path~~ — to be added (M1). Gemini runs
-  full-duplex in ws-pcm today; the config knobs (`response_modalities` etc.) exist.
-- ~~real-time mic STT inside the LiveKit room~~ — not present (voice-native deleted,
-  FEAT-249). This feature uses the Gemini WS for STT, not the room.
-- ~~Gemini as the conversational brain in livekit~~ — explicitly NOT this; the agent answers.
+- ~~an `stt_only` flag / STT-only mode~~ — to be added (M1). Gemini runs full-duplex today.
+- ~~a separate STT-only client class~~ — reuse `GeminiLiveClient` with a flag; do NOT fork it.
 
 ---
 
 ## 7. Implementation Notes & Constraints
 
 ### Patterns to Follow
-- Reuse, don't duplicate: ws-pcm mic capture, the transcription accumulation, and
-  the livekit text-turn (`handleSend`) all exist — wire them, don't rewrite.
-- Async throughout; idempotent teardown of the STT socket with the session.
+- Minimal, additive change: a flag + a branch in the config/run-loop. Do NOT
+  duplicate `GeminiLiveClient`.
+- Verify the exact Gemini Live setting that yields "transcribe input, no model
+  response" (see Open Q) — prefer config over discarding output after the fact, but
+  discarding/suppressing forwarding is an acceptable fallback.
+- Async throughout; keep logging.
 
 ### Known Risks / Gotchas
-- **Double brain**: Gemini MUST be STT-only — verify it does not also answer.
-- **Two connections** in livekit (room out + Gemini STT in) — manage both lifecycles.
-- **Cross-repo**: M1 (ai-parrot) and M2–M3 (front) ship separately; keep the
-  contract (the `stt_only` flag + the `/ws/voice` protocol) stable across both.
+- **Double brain**: the whole point — STT-only must NOT answer. Assert in tests.
+- Don't regress the default full-duplex path (ws-pcm depends on it).
 
 ### External Dependencies
 | Package | Version | Reason |
 |---|---|---|
-| `google-genai` (Gemini Live) | (existing) | STT — already used by ws-pcm |
+| `google-genai` (Gemini Live) | (existing) | already used; no new dep |
 
 ---
 
 ## 8. Open Questions
-- [ ] **STT-only config**: exact Gemini Live setting to transcribe input WITHOUT a spoken response (minimal `response_modalities`? disable output transcription/audio?). — *Owner: implementer (verify vs `google-genai`)*.
-- [ ] **Partial vs final**: route only the final `input_transcription` to `/agents/chat`; show partials as a "listening…" hint. *Default: send on final.* — *Owner: implementer*.
-- [ ] **Barge-in**: PTT flushes the in-room Supertonic audio mid-answer. *Default: yes.* — *Owner: implementer*.
-- [ ] **Multi-driver (phase 2)**: several participants + turn arbitration — separate feature. — *Owner: team lead*.
+- [ ] **Exact STT-only config**: the precise `google-genai` Live setting to transcribe input WITHOUT a model response (minimal `response_modalities`? omit output audio + ignore model turns?). — *Owner: implementer (verify vs `google-genai`)*.
+- [ ] Should STT-only still emit interim (partial) user transcriptions, or only finals? *Default: emit as today (partials + final); the frontend decides.* — *Owner: implementer*.
 
 ---
 
 ## Revision History
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-06-24 | Juanfran | Initial draft from the brainstorm. Gemini STT-only + ai-parrot agent brain + Supertonic-to-room output (reuse FEAT-256). Host-only; multi-driver deferred. Cross-repo (backend M1 + front M2–M3). |
+| 0.1 | 2026-06-24 | Juanfran | Initial draft — backend-only. STT-only mode on the Gemini voice WS (FEAT-257). Frontend consumer handled directly in navigator-frontend-next (out of scope here). |
