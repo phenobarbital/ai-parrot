@@ -152,6 +152,10 @@ class WebSocketConnection:
     # Configuration
     config: Optional[BotConfig] = None
 
+    # STT-only mode (FEAT-257): when True, Gemini transcribes input but does not
+    # generate a model response.  response_chunk / model audio frames are suppressed.
+    stt_only: bool = False
+
     # Ping tracking
     last_ping: Optional[datetime] = None
     ping_count: int = 0
@@ -708,6 +712,16 @@ class VoiceChatHandler:
             streaming_mode = "streaming"
         connection.streaming_mode = streaming_mode
 
+        # STT-only mode (FEAT-257): parse from start_session payload.
+        # Default False → full-duplex (existing behavior unchanged).
+        stt_only_raw = message.get("stt_only", False)
+        connection.stt_only = bool(stt_only_raw)
+        if connection.stt_only:
+            self.logger.info(
+                "VoiceChatHandler: STT-only mode enabled for session %s",
+                connection.session_id,
+            )
+
         # Clear audio buffer for buffered mode
         connection.audio_buffer = b""
 
@@ -790,6 +804,7 @@ class VoiceChatHandler:
             "session_id": connection.session_id,
             "user_id": connection.user_id,
             "streaming_mode": streaming_mode,
+            "stt_only": connection.stt_only,
             "config": {
                 "voice_name": config.voice_name,
                 "language": config.language,
@@ -1248,6 +1263,7 @@ class VoiceChatHandler:
                     audio_input=audio_from_queue(),
                     session_id=connection.session_id,
                     user_id=connection.user_id,
+                    stt_only=connection.stt_only,
                 ):
                     await self._send_voice_response(connection, response)
 
@@ -1273,37 +1289,49 @@ class VoiceChatHandler:
         connection: WebSocketConnection,
         response: Any
     ) -> None:
-        """Send voice response to client."""
-        # Send response_chunk for audio OR text (not just audio)
-        # FILTER: Skip internal thought processes that leak into output
-        # Generic pattern: 
-        # 1. Bold/Header followed by a Gerund (Verb-ing) -> **Clarifying...**
-        # 2. Bold/Header followed by "Show [Capital]" -> **Show Product Image**
-        is_thought = response.text and re.match(
-            r'^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])',
-            response.text
-        )
-        
-        # Determine strict text to send (suppress if thought)
-        text_to_send = response.text
-        if is_thought:
-            text_to_send = ""
-        
-        if (response.audio_data or text_to_send) and not response.is_complete:
-            await self._send_message(connection.ws, {
-                "type": "response_chunk",
-                "text": text_to_send or "",
-                "audio_base64": base64.b64encode(response.audio_data).decode() if response.audio_data else "",
-                "audio_format": "audio/pcm;rate=24000" if response.audio_data else "",
-                "is_interrupted": response.is_interrupted,
-            })
+        """Send voice response to client.
 
+        In STT-only mode (connection.stt_only=True) only ``transcription``
+        frames (is_user=True) are forwarded; ``response_chunk`` and model
+        audio frames are suppressed (double-brain guard).
+        """
+        # STT-only: skip all model response frames — only transcription is allowed.
+        if not connection.stt_only:
+            # Send response_chunk for audio OR text (not just audio)
+            # FILTER: Skip internal thought processes that leak into output
+            # Generic pattern:
+            # 1. Bold/Header followed by a Gerund (Verb-ing) -> **Clarifying...**
+            # 2. Bold/Header followed by "Show [Capital]" -> **Show Product Image**
+            is_thought = response.text and re.match(
+                r'^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])',
+                response.text
+            )
+
+            # Determine strict text to send (suppress if thought)
+            text_to_send = response.text
+            if is_thought:
+                text_to_send = ""
+
+            if (response.audio_data or text_to_send) and not response.is_complete:
+                await self._send_message(connection.ws, {
+                    "type": "response_chunk",
+                    "text": text_to_send or "",
+                    "audio_base64": base64.b64encode(response.audio_data).decode() if response.audio_data else "",
+                    "audio_format": "audio/pcm;rate=24000" if response.audio_data else "",
+                    "is_interrupted": response.is_interrupted,
+                })
+
+        # User transcription is always forwarded (both modes).
         if response.metadata.get("user_transcription"):
             await self._send_message(connection.ws, {
                 "type": "transcription",
                 "text": response.metadata["user_transcription"],
                 "is_user": True,
             })
+
+        # Everything below this point is model-response output — skip in STT-only.
+        if connection.stt_only:
+            return
 
         # Prevent Echo: Do not send assistant transcription as it duplicates response_chunk text
         # assistant_text = response.metadata.get("assistant_transcription")
