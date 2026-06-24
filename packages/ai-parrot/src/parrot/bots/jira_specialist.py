@@ -47,7 +47,7 @@ from parrot.models.google import GoogleModel
 from parrot.integrations.telegram import TelegramHumanTool, telegram_chat_scope
 from parrot.auth.credentials import OAuthCredentialResolver
 from parrot.auth.context import UserContext
-from parrot.core.hooks.models import HookEvent
+from parrot.core.hooks.models import HookEvent, TransitionAction, TransitionActionType
 from parrot.scheduler import schedule_weekly_report
 
 # ──────────────────────────────────────────────────────────────
@@ -210,6 +210,9 @@ class JiraSpecialist(Agent):
         # as prompt injection with p > 0.98. Raise the threshold so only
         # clearly malicious prompts (p ≥ 0.995) trip the detector.
         kwargs.setdefault("injection_probability_threshold", 0.995)
+        # Pop transition_actions before super() so the base class does not
+        # receive an unknown keyword argument.
+        _transition_actions = kwargs.pop("transition_actions", None) or []
         # Pop prompt_builder before super() so subclasses can supply their own
         # by passing it as a kwarg.  AbstractBot does not consume this key, so
         # we handle it here and set it via the property setter after init.
@@ -232,6 +235,8 @@ class JiraSpecialist(Agent):
         self._wrapper = None  # Set by TelegramAgentWrapper after init
         # Populated in post_configure() once self.app is attached.
         self.jira_toolkit: Optional[JiraToolkit] = None
+        # Transition-to-action registry for jira.transitioned events.
+        self._transition_actions: List[TransitionAction] = _transition_actions
 
     async def _get_redis(self) -> redis.Redis:
         """Lazy-init Redis connection."""
@@ -1113,12 +1118,277 @@ class JiraSpecialist(Agent):
             return await self.handle_jira_assignment(event.payload)
         if event.event_type == "jira.ready_for_test":
             return await self.handle_ready_for_test(event.payload)
+        if event.event_type == "jira.transitioned":
+            return await self._dispatch_transition(event.payload)
         self.logger.info(
             "JiraSpecialist: ignoring hook event %s (hook_id=%s)",
             event.event_type,
             event.hook_id,
         )
         return None
+
+    # ──────────────────────────────────────────────────────────
+    # Jira Webhook: Transition Dispatch & Built-in Action Handlers
+    # ──────────────────────────────────────────────────────────
+
+    async def _dispatch_transition(
+        self,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Match a transition event against the action registry and execute matches.
+
+        Always calls :meth:`_action_log_transition` first to ensure every
+        transition is observable, regardless of whether any registry actions
+        fire.  Then iterates :attr:`_transition_actions`, skipping disabled
+        entries and entries restricted to a different project, and dispatches
+        to the appropriate built-in handler.
+
+        Args:
+            payload: The ``HookEvent.payload`` dict produced by
+                :class:`~parrot.core.hooks.jira_webhook.JiraWebhookHook`.
+                Must include ``from_status``, ``to_status``, and
+                ``project_key``.
+
+        Returns:
+            A dict with ``status``, ``issue_key``, ``from_status``,
+            ``to_status``, ``actions_matched``, and ``results`` keys.
+        """
+        from_status = (payload.get("from_status") or "").strip().lower()
+        to_status = (payload.get("to_status") or "").strip().lower()
+        project_key = (payload.get("project_key") or "").strip().upper()
+        issue_key = payload.get("issue_key", "?")
+
+        # Always log the transition for observability.
+        self._action_log_transition(payload, {})
+
+        results: List[Dict[str, Any]] = []
+        for action in self._transition_actions:
+            if not action.enabled:
+                continue
+            if action.project_key and action.project_key.upper() != project_key:
+                continue
+            from_match = (
+                action.from_status == "*"
+                or action.from_status.lower() == from_status
+            )
+            to_match = (
+                action.to_status == "*"
+                or action.to_status.lower() == to_status
+            )
+            if from_match and to_match:
+                result = await self._invoke_transition_action(
+                    action, payload
+                )
+                results.append(result)
+
+        return {
+            "status": "ok",
+            "issue_key": issue_key,
+            "from_status": from_status,
+            "to_status": to_status,
+            "actions_matched": len(results),
+            "results": results,
+        }
+
+    async def _invoke_transition_action(
+        self,
+        action: TransitionAction,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Dispatch a single :class:`TransitionAction` to the correct handler.
+
+        Args:
+            action: The matched :class:`TransitionAction` entry.
+            payload: The event payload forwarded to the handler.
+
+        Returns:
+            The result dict returned by the handler.
+        """
+        if action.action_type == TransitionActionType.NOTIFY_CHANNEL:
+            return await self._action_notify_channel(payload, action.action_config)
+        if action.action_type == TransitionActionType.TRIGGER_AGENT:
+            return await self._action_trigger_agent(payload, action.action_config)
+        if action.action_type == TransitionActionType.LOG:
+            return self._action_log_transition(payload, action.action_config)
+        if action.action_type == TransitionActionType.CALL_HANDLER:
+            return await self._action_call_handler(payload, action.action_config)
+        self.logger.warning(
+            "Unknown transition action type: %s", action.action_type
+        )
+        return {"status": "skipped", "reason": f"unknown action_type={action.action_type}"}
+
+    async def _action_notify_channel(
+        self,
+        payload: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Send a formatted Telegram notification about a status transition.
+
+        Follows the same pattern as :meth:`handle_ready_for_test`: reads
+        issue fields from *payload*, formats a Telegram message, and sends
+        it via ``self._wrapper.bot.send_message``.
+
+        Args:
+            payload: Transition event payload with ``issue_key``, ``summary``,
+                ``from_status``, ``to_status``, and ``assignee``.
+            config: Action config dict; expected keys: ``channel_id`` (str),
+                ``template`` (optional str with ``{issue_key}``,
+                ``{summary}``, ``{from_status}``, ``{to_status}``,
+                ``{assignee}`` placeholders).
+
+        Returns:
+            A dict with ``status`` (``"ok"`` / ``"skipped"``), ``channel_id``.
+        """
+        channel_id = config.get("channel_id")
+        if not channel_id:
+            return {"status": "skipped", "reason": "no channel_id in action_config"}
+        if not self._wrapper or not getattr(self._wrapper, "bot", None):
+            return {"status": "skipped", "reason": "no Telegram wrapper attached"}
+
+        template = config.get("template") or (
+            "\U0001f504 *{issue_key}* transitioned: {from_status} → {to_status}\n"
+            "*{summary}*\nAssigned to: {assignee}"
+        )
+        assignee_name = (payload.get("assignee") or {}).get("display_name", "—")
+        text = template.format(
+            issue_key=payload.get("issue_key", "?"),
+            summary=payload.get("summary", ""),
+            from_status=payload.get("from_status", "?"),
+            to_status=payload.get("to_status", "?"),
+            assignee=assignee_name,
+        )
+        try:
+            await self._wrapper.bot.send_message(
+                chat_id=channel_id,
+                text=text,
+                parse_mode="Markdown",
+            )
+            return {"status": "ok", "channel_id": channel_id}
+        except Exception as exc:
+            self.logger.error(
+                "Failed to notify channel %s for transition %s: %s",
+                channel_id,
+                payload.get("issue_key"),
+                exc,
+                exc_info=True,
+            )
+            return {
+                "status": "error",
+                "channel_id": channel_id,
+                "error": str(exc),
+            }
+
+    async def _action_trigger_agent(
+        self,
+        payload: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Log the intent to invoke another agent for a transition event.
+
+        Full orchestrator integration is deferred until :class:`JiraSpecialist`
+        gains access to ``AutonomousOrchestrator``. This implementation logs
+        the trigger intent at ``INFO`` level and returns a structured result
+        so consumers can observe what *would* have been triggered.
+
+        Args:
+            payload: Transition event payload.
+            config: Action config dict; expected keys: ``agent_id`` (str),
+                ``task_template`` (optional str with the same placeholders
+                as :meth:`_action_notify_channel`).
+
+        Returns:
+            A dict with ``status="triggered"``, ``agent_id``, and ``task``.
+        """
+        agent_id = config.get("agent_id")
+        task_template = config.get("task_template", "")
+        if task_template:
+            try:
+                task = task_template.format(
+                    issue_key=payload.get("issue_key", "?"),
+                    summary=payload.get("summary", ""),
+                    from_status=payload.get("from_status", "?"),
+                    to_status=payload.get("to_status", "?"),
+                )
+            except KeyError:
+                task = task_template
+        else:
+            task = (
+                f"Transition: {payload.get('issue_key', '?')} "
+                f"{payload.get('from_status', '?')} → {payload.get('to_status', '?')}"
+            )
+        self.logger.info(
+            "Transition trigger_agent: agent_id=%s task=%s "
+            "(orchestrator integration pending)",
+            agent_id,
+            task,
+        )
+        return {"status": "triggered", "agent_id": agent_id, "task": task}
+
+    def _action_log_transition(
+        self,
+        payload: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Emit a structured log entry for a Jira status transition.
+
+        Args:
+            payload: Transition event payload with ``issue_key``,
+                ``from_status``, ``to_status``, and ``summary``.
+            config: Action config dict; optional key: ``level`` (str,
+                default ``"info"``). Any standard Python logging level
+                name is accepted (``debug``, ``info``, ``warning``,
+                ``error``, ``critical``).
+
+        Returns:
+            A dict with ``status="logged"`` and the effective ``level``.
+        """
+        level = config.get("level", "info")
+        log_fn = getattr(self.logger, level, self.logger.info)
+        log_fn(
+            "Jira transition: %s %s → %s (%s)",
+            payload.get("issue_key"),
+            payload.get("from_status"),
+            payload.get("to_status"),
+            payload.get("summary", ""),
+        )
+        return {"status": "logged", "level": level}
+
+    async def _action_call_handler(
+        self,
+        payload: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Invoke a named method on this instance for a transition event.
+
+        The method is resolved via ``getattr(self, method_name)`` and called
+        with ``(payload, config)``. This allows advanced deployments to wire
+        custom handlers without subclassing.
+
+        Args:
+            payload: Transition event payload.
+            config: Action config dict; required key: ``method_name`` (str).
+
+        Returns:
+            The result of the named method, or a ``status="skipped"`` dict
+            if the method does not exist.
+        """
+        method_name = config.get("method_name")
+        if not method_name:
+            return {"status": "skipped", "reason": "no method_name in action_config"}
+        handler = getattr(self, method_name, None)
+        if handler is None:
+            self.logger.warning(
+                "Transition call_handler: method '%s' not found on JiraSpecialist",
+                method_name,
+            )
+            return {
+                "status": "skipped",
+                "reason": f"method '{method_name}' not found",
+            }
+        result = handler(payload, config)
+        if asyncio.iscoroutine(result):
+            result = await result
+        return result
 
     def _resolve_developer_from_assignee(
         self,
