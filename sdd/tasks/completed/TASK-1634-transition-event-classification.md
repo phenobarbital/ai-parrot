@@ -285,4 +285,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-06-24.
+
+Modified `packages/ai-parrot/src/parrot/core/hooks/jira_webhook.py`:
+- `_classify_event`: changed `return "updated"` at the status-change branch to
+  `return "transitioned"` for all non-closed, non-ready_for_test status changes.
+  Backward compat preserved: `"closed"` and `"ready_for_test"` unchanged.
+- `_extract_status_change`: new `@staticmethod` returning `(from_status, to_status)`
+  tuple from changelog, following the `_extract_assignee_change` pattern.
+- `_handle_post`: enriches event_payload with `from_status` / `to_status` for
+  all status-change events.
+
+Extended `tests/core/hooks/test_jira_webhook_classify.py` with
+`TestClassifyEventTransitioned` (4 tests, 7 parametrize variants) and
+`TestExtractStatusChange` (5 tests). All 29 tests pass.
