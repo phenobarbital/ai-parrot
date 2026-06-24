@@ -325,4 +325,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-06-24.
+
+Modified `packages/ai-parrot/src/parrot/bots/jira_specialist.py`:
+- Added import: `TransitionAction, TransitionActionType` from models.
+- `__init__`: pops `transition_actions` kwarg and stores as
+  `self._transition_actions: List[TransitionAction]`.
+- `handle_hook_event`: added `jira.transitioned` branch that calls
+  `_dispatch_transition(event.payload)`.
+- `_dispatch_transition`: iterates `_transition_actions`, matches
+  `(from_status, to_status)` case-insensitively with wildcard support,
+  filters by `project_key`, skips disabled actions, always calls
+  `_action_log_transition` first.
+- `_invoke_transition_action`: dispatch router for action types.
+- `_action_notify_channel`: sends Telegram message, handles missing
+  wrapper with `status: skipped`.
+- `_action_trigger_agent`: logs trigger intent (orchestrator pending).
+- `_action_log_transition`: structured log at configurable level.
+- `_action_call_handler`: resolves method by name via getattr.
+3 pre-existing F401 lint warnings (math, pandas, schedule_weekly_report)
+already present before this task — not fixed (out of scope).
