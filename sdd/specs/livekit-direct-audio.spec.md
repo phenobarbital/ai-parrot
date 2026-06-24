@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-256
 **Date**: 2026-06-23
 **Author**: Juanfran
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 > Source brainstorm: `sdd/proposals/livekit-direct-audio.brainstorm.md`
