@@ -23,27 +23,41 @@ Design goals:
   desired behaviour.
 - **Graceful degradation.**  Any TTS or WS error is logged and skipped; the
   chat turn continues in text-only mode (spec §7).
+- **Mode-aware sink (FEAT-256).**  When a :class:`~room_audio_publisher.RoomAudioPublisher`
+  is injected (avatar-OFF path), the speaker routes PCM to the room audio source
+  instead of the LiveAvatar WebSocket.  Exactly one sink is active per session
+  (avatar-ON XOR avatar-OFF) — no double audio.
 
-Usage::
+Usage (avatar-ON)::
 
     async with AvatarTurnSpeaker(handle, synth_pcm_fn) as speaker:
         async for chunk in bot.ask_stream(...):
             if isinstance(chunk, str):
                 speaker.feed(chunk)        # cheap, non-blocking
         await speaker.finish()             # flush + flush WS buffer
+
+Usage (avatar-OFF / FEAT-256)::
+
+    async with AvatarTurnSpeaker(
+        handle, synth_pcm_fn, room_publisher=publisher
+    ) as speaker:
+        ...
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 from types import TracebackType
-from typing import Awaitable, Callable, Optional, Type
+from typing import TYPE_CHECKING, Awaitable, Callable, Optional, Type
 
 import aiohttp
 
 from parrot.integrations.liveavatar.avatar_ws import AvatarWebSocket
 from parrot.integrations.liveavatar.models import AvatarSessionHandle
 from parrot.integrations.liveavatar.speakable import SpeakableFlattener
+
+if TYPE_CHECKING:
+    from parrot.integrations.liveavatar.room_audio_publisher import RoomAudioPublisher
 
 # Sentinel pushed onto the queue to signal the consumer to drain and exit.
 _DONE = object()
@@ -56,13 +70,26 @@ _MAX_QUEUED_SENTENCES = 256
 class AvatarTurnSpeaker:
     """Speak one chat turn through an already-started LiveAvatar session.
 
+    Supports two audio sinks (FEAT-256):
+    - **avatar-ON** (default): PCM is pushed to the LiveAvatar ``agent.speak``
+      WebSocket via :class:`~avatar_ws.AvatarWebSocket`.
+    - **avatar-OFF**: PCM is pushed to a
+      :class:`~room_audio_publisher.RoomAudioPublisher` (direct LiveKit track).
+      Pass the publisher as ``room_publisher`` to activate this mode.
+
     Args:
         handle: The active :class:`AvatarSessionHandle` (from ``/start``), which
             carries the avatar media-server ``ws_url`` and ``session_token``.
+            Required for avatar-ON mode; ignored (but still required for the
+            constructor signature) in avatar-OFF mode.
         synthesize_pcm_fn: Async callable ``(text: str) -> bytes`` returning raw
             PCM at the rate the avatar expects (24 kHz mono 16-bit LE).  In
             production this is :meth:`AvatarVoiceProvider.synthesize_pcm`.
-        ws_session: Optional shared ``aiohttp.ClientSession`` for the WS.
+        ws_session: Optional shared ``aiohttp.ClientSession`` for the WS
+            (avatar-ON only; ignored when ``room_publisher`` is set).
+        room_publisher: Optional :class:`~room_audio_publisher.RoomAudioPublisher`
+            for the avatar-OFF path (FEAT-256).  When set the LiveAvatar WS is
+            never opened; PCM goes to the room audio track instead.
     """
 
     def __init__(
@@ -71,10 +98,12 @@ class AvatarTurnSpeaker:
         synthesize_pcm_fn: Callable[[str], Awaitable[bytes]],
         *,
         ws_session: Optional[aiohttp.ClientSession] = None,
+        room_publisher: Optional["RoomAudioPublisher"] = None,
     ) -> None:
         self._handle = handle
         self._synthesize_pcm_fn = synthesize_pcm_fn
         self._ws_session = ws_session
+        self._room_publisher = room_publisher
         self._ws: Optional[AvatarWebSocket] = None
         self._flattener = SpeakableFlattener()
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=_MAX_QUEUED_SENTENCES)
@@ -85,17 +114,19 @@ class AvatarTurnSpeaker:
     # ── Context manager ────────────────────────────────────────────────
 
     async def __aenter__(self) -> "AvatarTurnSpeaker":
-        # Open the WS (fast — does NOT await the connected gate here; the first
-        # send_audio_frame awaits it, so entering never blocks the text stream).
-        # assume_connected=True: this attaches to an already-started, already-
-        # connected session (created at /start), so the server will NOT re-emit
-        # the one-time ``session.state_updated == "connected"`` event to this
-        # late-attaching WS.  Waiting for it would always time out and latch the
-        # whole turn into failure — open the gate on handshake instead.
-        self._ws = AvatarWebSocket(
-            self._handle, session=self._ws_session, assume_connected=True
-        )
-        await self._ws.__aenter__()
+        if self._room_publisher is None:
+            # avatar-ON path: open the LiveAvatar WebSocket.
+            # assume_connected=True: this attaches to an already-started,
+            # already-connected session (created at /start), so the server will
+            # NOT re-emit the one-time ``session.state_updated == "connected"``
+            # event to this late-attaching WS.  Waiting for it would always
+            # time out and latch the whole turn into failure — open the gate on
+            # handshake instead.
+            self._ws = AvatarWebSocket(
+                self._handle, session=self._ws_session, assume_connected=True
+            )
+            await self._ws.__aenter__()
+        # avatar-OFF path: no WS needed — the room_publisher is already running.
         self._consumer = asyncio.create_task(
             self._consume(),
             name=f"avatar-speaker-{self._handle.liveavatar_session_id}",
@@ -145,13 +176,61 @@ class AvatarTurnSpeaker:
         if self._consumer is not None:
             await self._consumer
             self._consumer = None
-        # All audio sent — tell the avatar to flush its playback buffer.
-        if self._ws is not None:
+        # All audio sent — flush the active sink's playback buffer.
+        if self._room_publisher is not None:
+            # avatar-OFF: room audio source has no "flush playback" concept;
+            # the audio is already in-flight in the LiveKit track.  Call flush()
+            # to ensure any barge-in flag is cleared.
+            try:
+                await self._room_publisher.flush()
+            except Exception:  # noqa: BLE001 - graceful degradation
+                self.logger.warning(
+                    "AvatarTurnSpeaker: publisher flush failed", exc_info=True
+                )
+        elif self._ws is not None:
+            # avatar-ON: tell the avatar to flush its playback buffer.
             try:
                 await self._ws.finish_speaking()
             except Exception:  # noqa: BLE001 - graceful degradation
                 self.logger.warning(
                     "AvatarTurnSpeaker: finish_speaking failed", exc_info=True
+                )
+
+    async def interrupt(self) -> None:
+        """Cancel in-flight audio (barge-in / interrupt).
+
+        Cancels the background consumer and signals the active sink to flush
+        any buffered/in-flight audio:
+        - avatar-OFF: calls :meth:`~room_audio_publisher.RoomAudioPublisher.flush`.
+        - avatar-ON: calls :meth:`~avatar_ws.AvatarWebSocket.interrupt` (sends
+          ``agent.interrupt`` to the LiveAvatar media server).
+
+        Idempotent — safe to call when already closed.
+        """
+        if self._closed:
+            return
+        if self._consumer is not None and not self._consumer.done():
+            self._consumer.cancel()
+            try:
+                await self._consumer
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+            self._consumer = None
+        # Flush the active sink.
+        if self._room_publisher is not None:
+            try:
+                await self._room_publisher.flush()
+            except Exception:  # noqa: BLE001
+                self.logger.warning(
+                    "AvatarTurnSpeaker: publisher flush on interrupt failed",
+                    exc_info=True,
+                )
+        elif self._ws is not None:
+            try:
+                await self._ws.interrupt()
+            except Exception:  # noqa: BLE001
+                self.logger.warning(
+                    "AvatarTurnSpeaker: WS interrupt failed", exc_info=True
                 )
 
     async def aclose(self) -> None:
@@ -198,20 +277,27 @@ class AvatarTurnSpeaker:
             await self._speak(item)
 
     async def _speak(self, sentence: str) -> None:
-        """Synthesize one sentence to PCM and push it to the avatar WS.
+        """Synthesize one sentence to PCM and push it to the active sink.
 
-        On any TTS/WS failure the sentence is logged and skipped — the turn
-        continues (the text is already rendered in the UI).
+        Routes to the :class:`~room_audio_publisher.RoomAudioPublisher`
+        (avatar-OFF) or the LiveAvatar WebSocket (avatar-ON).  On any TTS/sink
+        failure the sentence is logged and skipped — the turn continues (the
+        text is already rendered in the UI).
 
         Args:
             sentence: The speakable sentence to synthesize and send.
         """
-        if self._ws is None:
+        if self._room_publisher is None and self._ws is None:
             return
         try:
             pcm = await self._synthesize_pcm_fn(sentence)
             if pcm:
-                await self._ws.send_audio_frame(pcm)
+                if self._room_publisher is not None:
+                    # avatar-OFF: push PCM directly into the LiveKit room track.
+                    await self._room_publisher.capture_pcm(pcm)
+                elif self._ws is not None:
+                    # avatar-ON: push PCM to the LiveAvatar WS (unchanged path).
+                    await self._ws.send_audio_frame(pcm)
         except Exception:  # noqa: BLE001 - graceful degradation per spec §7
             self.logger.warning(
                 "AvatarTurnSpeaker: failed speaking sentence %r — skipping",

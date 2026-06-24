@@ -82,4 +82,10 @@ async def test_autofallback_end_to_end_mock(...): ...
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+Created `packages/ai-parrot-server/tests/handlers/test_livekit_direct_audio_integration.py` with 2 integration tests.
+
+- `test_livekit_direct_audio_end_to_end_mock`: /start (avatar=false) → verifies publisher started (not LiveAvatar), room connected with `agent_token`, PCM captured (frame.data + samples_per_channel + sample_rate verified), /stop disconnects room + removes session from store.
+- `test_autofallback_end_to_end_mock`: /start (avatar=true) with LiveAvatar 402 → verifies 200 response (not 402), LiveAvatar client closed, publisher started, turn audio flows, /stop cleans up.
+
+Both tests use `_FakeRoomAudioPublisher` (inlined fake, same interface as the real class) injected via `sys.modules` — consistent with the project's test pattern for the lazy-import handler code. 2/2 tests pass; ruff clean.

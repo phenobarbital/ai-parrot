@@ -96,4 +96,12 @@ async def test_routes_to_liveavatar_when_avatar_on(...): ...
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+Extended `AvatarTurnSpeaker` in `speaker.py` with a `room_publisher` parameter.
+
+- `__init__`: added `room_publisher: Optional[RoomAudioPublisher] = None` (TYPE_CHECKING import to avoid circular deps).
+- `__aenter__`: skips `AvatarWebSocket` creation when `room_publisher` is set.
+- `_speak`: routes PCM to `publisher.capture_pcm()` (avatar-OFF) or `ws.send_audio_frame()` (avatar-ON). Exactly one path is taken.
+- `finish`: calls `publisher.flush()` (avatar-OFF) or `ws.finish_speaking()` (avatar-ON).
+- `interrupt()`: new method; cancels consumer + calls `publisher.flush()` or `ws.interrupt()` on the active sink.
+- Existing avatar-ON tests (8/8) and new sink tests (6/6) all pass; ruff clean.
