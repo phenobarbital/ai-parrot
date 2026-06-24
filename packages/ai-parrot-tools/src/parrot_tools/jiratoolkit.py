@@ -671,6 +671,14 @@ class JiraToolkit(AbstractToolkit):
         JIRA_OAUTH_CONSUMER_KEY, JIRA_OAUTH_KEY_CERT, JIRA_OAUTH_ACCESS_TOKEN,
         JIRA_OAUTH_ACCESS_TOKEN_SECRET, JIRA_DEFAULT_PROJECT
 
+    Custom-workflow keys (used by :meth:`jira_transition_to`):
+        JIRA_WORKFLOW_PATH — default ordered status chain for any project,
+            e.g. ``"Backlog > Open > To Do > In Progress > Resolved"`` (``>``,
+            ``->`` and ``→`` are all accepted separators).
+        JIRA_WORKFLOW_PATH_<PROJECT> — per-project override keyed by the issue
+            key prefix, e.g. ``JIRA_WORKFLOW_PATH_TROC``. Falls back to
+            JIRA_WORKFLOW_PATH when a project has no specific entry.
+
     Field presets for efficiency:
         count: key,assignee,reporter,status,priority,issuetype,project,created
         list: key,summary,assignee,status,priority,issuetype,project,created,updated

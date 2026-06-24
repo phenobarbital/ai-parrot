@@ -113,13 +113,29 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 
 def _build_jira_toolkit() -> JiraToolkit:
-    """Service-account JiraToolkit (flow-bot, basic_auth)."""
+    """Service-account JiraToolkit (flow-bot, basic_auth).
+
+    Declares the project's **workflow path** so ``jira_transition_to`` can
+    walk multi-stage custom workflows. Jira's API only exposes the
+    transitions available from an issue's *current* status, so a single hop
+    cannot cross a chain like ``Backlog → Open → To Do → In Progress →
+    Resolved`` — without a declared path the dev-loop's resolve/deploy
+    transition silently falls back to one direct hop and fails. The path is
+    read from ``JIRA_WORKFLOW_PATH_<PROJECT>`` (e.g. ``JIRA_WORKFLOW_PATH_NAV``)
+    and defaults to the NAV chain. Separators: ``>``, ``->`` or ``→``.
+    """
+    project = conf.config.get("JIRA_PROJECT") or "NAV"
+    workflow_path = conf.config.get(
+        f"JIRA_WORKFLOW_PATH_{project.upper()}",
+        fallback="Backlog > Open > To Do > In Progress > Resolved",
+    )
     return JiraToolkit(
         server_url=conf.config.get("JIRA_INSTANCE"),
         auth_type="basic_auth",
         username=conf.config.get("JIRA_USERNAME"),
         password=conf.config.get("JIRA_API_TOKEN"),
-        default_project=conf.config.get("JIRA_PROJECT"),
+        default_project=project,
+        workflow_paths={project: workflow_path},
     )
 
 
