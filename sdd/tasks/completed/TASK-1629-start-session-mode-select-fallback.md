@@ -103,4 +103,12 @@ async def test_start_avatar_on_unchanged(...): ...
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+Modified `handlers/avatar.py`:
+
+- Added `_is_no_credits_error(exc)` helper (reuses same 4033/credit detection as `avatar_upstream_error_response`).
+- Added `_start_direct_audio_session(tokens, session_id, store)` shared helper: imports `RoomAudioPublisher` lazily, calls `start()`, stores `{"publisher": publisher}` in the session store.
+- Updated `_start_avatar_session`: reads `avatar` bool (default True); avatar=False → calls `_start_direct_audio_session`; avatar=True + 402 no-credits → auto-fallback via `_start_direct_audio_session`; avatar=True + credits → unchanged LiveAvatar path.
+- Updated `_stop_avatar_session`: detects `publisher` key → calls `publisher.aclose()`; otherwise existing `client.stop_session + aclose()` path.
+- Updated `close_all_avatar_sessions`: handles both record types on shutdown.
+- 6/6 new tests pass + 8 existing avatar_viewers tests pass; ruff clean.

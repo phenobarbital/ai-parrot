@@ -52,7 +52,7 @@
       "feature_id": "FEAT-256",
       "feature": "livekit-direct-audio",
       "spec": "sdd/specs/livekit-direct-audio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Wires the handler to the publisher + speaker; needs both.",
       "assigned_to": null,
       "started_at": "2026-06-24T03:06:11+00:00",
-      "file": "sdd/tasks/active/TASK-1629-start-session-mode-select-fallback.md",
-      "completed_at": null
+      "file": "sdd/tasks/completed/TASK-1629-start-session-mode-select-fallback.md",
+      "completed_at": "2026-06-24T03:24:05+00:00"
     },
     {
       "id": "TASK-1630",
