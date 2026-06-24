@@ -22,6 +22,8 @@ from .models import (
     PostgresHookConfig,
     SchedulerHookConfig,
     SharePointHookConfig,
+    TransitionAction,
+    TransitionActionType,
     WhatsAppRedisHookConfig,
     create_crew_whatsapp_hook,
     create_multi_agent_whatsapp_hook,
@@ -103,6 +105,9 @@ __all__ = [
     "MessagingHookConfig",
     "WhatsAppRedisHookConfig",
     "MatrixHookConfig",
+    # Transition action models
+    "TransitionAction",
+    "TransitionActionType",
     # Factory helpers
     "create_simple_whatsapp_hook",
     "create_multi_agent_whatsapp_hook",

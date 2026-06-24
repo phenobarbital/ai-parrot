@@ -24,12 +24,10 @@ Workflow:
         → Optionally nudge the developer directly
 """
 import asyncio
-import math
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 import redis.asyncio as redis
 from pydantic import BaseModel, Field
-import pandas as pd
 from navconfig import config
 from parrot.bots import Agent
 from parrot.integrations.telegram.callbacks import (
@@ -48,7 +46,6 @@ from parrot.integrations.telegram import TelegramHumanTool, telegram_chat_scope
 from parrot.auth.credentials import OAuthCredentialResolver
 from parrot.auth.context import UserContext
 from parrot.core.hooks.models import HookEvent, TransitionAction, TransitionActionType
-from parrot.scheduler import schedule_weekly_report
 
 # ──────────────────────────────────────────────────────────────
 # Models
@@ -1101,16 +1098,20 @@ class JiraSpecialist(Agent):
     async def handle_hook_event(self, event: HookEvent) -> Optional[Dict[str, Any]]:
         """Route :class:`HookEvent` instances emitted by ``JiraWebhookHook``.
 
-        Currently handles ``jira.assigned`` events by forwarding to
-        :meth:`handle_jira_assignment`. Other event types fall back to
-        logging so they remain observable even without bespoke routing.
+        Dispatches each known event type to its dedicated handler:
+
+        * ``jira.created`` → :meth:`handle_jira_ticket_created`
+        * ``jira.assigned`` → :meth:`handle_jira_assignment`
+        * ``jira.ready_for_test`` → :meth:`handle_ready_for_test`
+        * ``jira.transitioned`` → :meth:`_dispatch_transition`
+        * All others → logged at ``INFO`` level, returns ``None``.
 
         Args:
             event: The hook event forwarded by ``HookManager``.
 
         Returns:
-            The per-developer result dict from :meth:`handle_jira_assignment`
-            when the event is a Jira assignment; otherwise ``None``.
+            The result dict returned by the matched handler, or ``None`` when
+            the event type is not recognised.
         """
         if event.event_type == "jira.created":
             return await self.handle_jira_ticket_created(event.payload)
@@ -1184,8 +1185,8 @@ class JiraSpecialist(Agent):
         return {
             "status": "ok",
             "issue_key": issue_key,
-            "from_status": from_status,
-            "to_status": to_status,
+            "from_status": payload.get("from_status"),
+            "to_status": payload.get("to_status"),
             "actions_matched": len(results),
             "results": results,
         }
@@ -1300,7 +1301,10 @@ class JiraSpecialist(Agent):
             A dict with ``status="triggered"``, ``agent_id``, and ``task``.
         """
         agent_id = config.get("agent_id")
+        if not agent_id:
+            return {"status": "skipped", "reason": "no agent_id in action_config"}
         task_template = config.get("task_template", "")
+        assignee_name = (payload.get("assignee") or {}).get("display_name", "—")
         if task_template:
             try:
                 task = task_template.format(
@@ -1308,6 +1312,7 @@ class JiraSpecialist(Agent):
                     summary=payload.get("summary", ""),
                     from_status=payload.get("from_status", "?"),
                     to_status=payload.get("to_status", "?"),
+                    assignee=assignee_name,
                 )
             except KeyError:
                 task = task_template

@@ -531,3 +531,91 @@ class TestIntegration:
             (r for r in result["results"] if r.get("status") == "skipped"), None
         )
         assert notify_result is not None  # notify skipped (no wrapper)
+
+
+# ---------------------------------------------------------------------------
+# TestActionCallHandler
+# ---------------------------------------------------------------------------
+
+
+class TestActionCallHandler:
+    """Tests for the _action_call_handler built-in handler."""
+
+    @pytest.mark.asyncio
+    async def test_missing_method_name_returns_skipped(self, status_change_payload):
+        """Returns status='skipped' when method_name is not in action_config."""
+        specialist = _make_specialist()
+        result = await specialist._action_call_handler(status_change_payload, {})
+        assert result["status"] == "skipped"
+        assert "method_name" in result.get("reason", "")
+
+    @pytest.mark.asyncio
+    async def test_method_not_found_returns_error(self, status_change_payload):
+        """Returns status='error' when the named method does not exist on the instance."""
+        specialist = _make_specialist()
+        result = await specialist._action_call_handler(
+            status_change_payload,
+            {"method_name": "nonexistent_handler_xyz"},
+        )
+        assert result["status"] == "skipped"
+        assert "nonexistent_handler_xyz" in result.get("reason", "")
+
+    @pytest.mark.asyncio
+    async def test_sync_handler_invoked(self, status_change_payload):
+        """Synchronous handler is called and its return value is returned."""
+        specialist = _make_specialist()
+        expected = {"status": "ok", "handled_by": "sync_handler"}
+        specialist.my_sync_handler = MagicMock(return_value=expected)
+        result = await specialist._action_call_handler(
+            status_change_payload,
+            {"method_name": "my_sync_handler"},
+        )
+        assert result == expected
+        specialist.my_sync_handler.assert_called_once_with(
+            status_change_payload, {"method_name": "my_sync_handler"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_async_handler_invoked(self, status_change_payload):
+        """Async (coroutine) handler is awaited and its return value is returned."""
+        specialist = _make_specialist()
+        expected = {"status": "ok", "handled_by": "async_handler"}
+        specialist.my_async_handler = AsyncMock(return_value=expected)
+        result = await specialist._action_call_handler(
+            status_change_payload,
+            {"method_name": "my_async_handler"},
+        )
+        assert result == expected
+        specialist.my_async_handler.assert_called_once_with(
+            status_change_payload, {"method_name": "my_async_handler"}
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestTransitionActionModel
+# ---------------------------------------------------------------------------
+
+
+class TestTransitionActionModel:
+    """Tests for TransitionAction Pydantic model validation."""
+
+    def test_both_wildcards_rejected(self):
+        """from_status='*' AND to_status='*' raises ValidationError."""
+        import pydantic
+
+        with pytest.raises(pydantic.ValidationError, match="non-wildcard"):
+            TransitionAction(
+                from_status="*",
+                to_status="*",
+                action_type=TransitionActionType.LOG,
+            )
+
+    def test_single_wildcard_ok(self):
+        """from_status='*' with a concrete to_status is valid."""
+        action = TransitionAction(
+            from_status="*",
+            to_status="Done",
+            action_type=TransitionActionType.LOG,
+        )
+        assert action.from_status == "*"
+        assert action.to_status == "Done"
