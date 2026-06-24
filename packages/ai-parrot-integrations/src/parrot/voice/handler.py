@@ -1355,16 +1355,21 @@ class VoiceChatHandler:
         if connection.stt_only:
             return
 
-        # Prevent Echo: Do not send assistant transcription as it duplicates response_chunk text
-        # assistant_text = response.metadata.get("assistant_transcription")
-        # if not assistant_text and response.turn_metadata:
-        #     assistant_text = response.turn_metadata.output_transcription
-        # if assistant_text:
-        #     await self._send_message(connection.ws, {
-        #         "type": "transcription",
-        #         "text": assistant_text,
-        #         "is_user": False,
-        #     })
+        # Forward the assistant's SPOKEN transcription (output_transcription) as
+        # the display text. In audio mode Gemini's model_turn TEXT modality is
+        # generated separately from the audio — it diverges from what's actually
+        # spoken (and leaks "thinking" headers), so the transcription is the
+        # source of truth for the bubble. The front shows this and ignores the
+        # response_chunk text (audio only).
+        assistant_text = response.metadata.get("assistant_transcription")
+        if not assistant_text and response.turn_metadata:
+            assistant_text = response.turn_metadata.output_transcription
+        if assistant_text:
+            await self._send_message(connection.ws, {
+                "type": "transcription",
+                "text": assistant_text,
+                "is_user": False,
+            })
 
         if response.metadata.get("display_data"):
             await self._send_message(connection.ws, {
