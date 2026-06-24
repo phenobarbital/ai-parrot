@@ -242,4 +242,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-06-24.
+
+Added `TransitionActionType` (str enum, 4 values) and `TransitionAction`
+(Pydantic model with `model_validator` rejecting both-wildcard configurations)
+to `packages/ai-parrot/src/parrot/core/hooks/models.py`. Added
+`transition_actions: List[TransitionAction]` field to `JiraWebhookConfig`
+with `default_factory=list` for backward compatibility. All acceptance
+criteria verified: enum values correct, both-wildcard validation raises
+`ValidationError`, single-wildcard passes, `JiraWebhookConfig()` still works
+without transition_actions, linting clean.

@@ -14,7 +14,7 @@
       "feature_id": "FEAT-258",
       "feature": "jiraspecialist-webhooks",
       "spec": "sdd/specs/jiraspecialist-webhooks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches models.py only; could run parallel with TASK-1634 but sequential is simpler in one worktree",
       "assigned_to": null,
       "started_at": "2026-06-24T16:56:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1633-transition-action-model.md"
+      "completed_at": "2026-06-24T16:58:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1633-transition-action-model.md"
     },
     {
       "id": "TASK-1634",
