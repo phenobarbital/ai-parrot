@@ -25,11 +25,11 @@ def __getattr__(name: str):
             import importlib
             mod = importlib.import_module(module_path)
             return getattr(mod, cls_name)
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 f"{name!r} requires the ai-parrot-server package with the scheduler extra. "
                 f"Install it with: pip install ai-parrot-server[scheduler]"
-            ) from None
+            ) from e
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

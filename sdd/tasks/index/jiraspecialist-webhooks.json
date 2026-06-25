@@ -1,0 +1,90 @@
+{
+  "feature": "jiraspecialist-webhooks",
+  "feature_id": "FEAT-258",
+  "spec": "sdd/specs/jiraspecialist-webhooks.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-24T12:00:00Z",
+  "completed_at": "2026-06-24T17:50:12+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1633",
+      "slug": "transition-action-model",
+      "title": "TransitionAction Model & Config",
+      "feature_id": "FEAT-258",
+      "feature": "jiraspecialist-webhooks",
+      "spec": "sdd/specs/jiraspecialist-webhooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Touches models.py only; could run parallel with TASK-1634 but sequential is simpler in one worktree",
+      "assigned_to": null,
+      "started_at": "2026-06-24T16:56:37+00:00",
+      "completed_at": "2026-06-24T16:58:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1633-transition-action-model.md"
+    },
+    {
+      "id": "TASK-1634",
+      "slug": "transition-event-classification",
+      "title": "Transition Event Classification & Payload Enrichment",
+      "feature_id": "FEAT-258",
+      "feature": "jiraspecialist-webhooks",
+      "spec": "sdd/specs/jiraspecialist-webhooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Touches jira_webhook.py only; could run parallel with TASK-1633 but sequential is simpler",
+      "assigned_to": null,
+      "started_at": "2026-06-24T16:56:37+00:00",
+      "completed_at": "2026-06-24T16:59:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1634-transition-event-classification.md"
+    },
+    {
+      "id": "TASK-1635",
+      "slug": "transition-dispatch-handlers",
+      "title": "Transition Dispatch & Built-in Action Handlers",
+      "feature_id": "FEAT-258",
+      "feature": "jiraspecialist-webhooks",
+      "spec": "sdd/specs/jiraspecialist-webhooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1633",
+        "TASK-1634"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on models from TASK-1633 and classification from TASK-1634",
+      "assigned_to": null,
+      "started_at": "2026-06-24T16:56:37+00:00",
+      "completed_at": "2026-06-24T17:01:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1635-transition-dispatch-handlers.md"
+    },
+    {
+      "id": "TASK-1636",
+      "slug": "transition-dispatch-tests",
+      "title": "Transition Dispatch Tests",
+      "feature_id": "FEAT-258",
+      "feature": "jiraspecialist-webhooks",
+      "spec": "sdd/specs/jiraspecialist-webhooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1633",
+        "TASK-1634",
+        "TASK-1635"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests all prior tasks; must run last",
+      "assigned_to": null,
+      "started_at": "2026-06-24T16:56:37+00:00",
+      "completed_at": "2026-06-24T17:07:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1636-transition-dispatch-tests.md"
+    }
+  ]
+}

@@ -91,6 +91,12 @@ class JiraWebhookHook(BaseHook):
                 "timestamp": payload.get("timestamp"),
             }
 
+            # Enrich with status transition details for all status-change events
+            from_status, to_status = self._extract_status_change(payload)
+            if from_status is not None or to_status is not None:
+                event_payload["from_status"] = from_status
+                event_payload["to_status"] = to_status
+
             if event_type == "assigned":
                 prev, curr = self._extract_assignee_change(payload)
                 event_payload["previous_assignee"] = prev
@@ -144,9 +150,33 @@ class JiraWebhookHook(BaseHook):
                         return "closed"
                     if to_status in ("ready for test", "ready for testing"):
                         return "ready_for_test"
-                    return "updated"
+                    return "transitioned"
             return "updated"
         return None
+
+    @staticmethod
+    def _extract_status_change(
+        payload: Dict[str, Any],
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Extract (from_status, to_status) from a Jira changelog payload.
+
+        Returns ``(None, None)`` if no status change is found in the changelog.
+
+        Args:
+            payload: Raw Jira webhook payload containing a ``changelog`` key.
+
+        Returns:
+            A tuple of ``(from_status, to_status)`` strings, or ``(None, None)``
+            when no status field change is present.
+        """
+        items = (payload.get("changelog") or {}).get("items") or []
+        for item in items:
+            if item.get("field") == "status":
+                return (
+                    (item.get("fromString") or "").strip() or None,
+                    (item.get("toString") or "").strip() or None,
+                )
+        return None, None
 
     @staticmethod
     def _extract_assignee_change(

@@ -4,6 +4,7 @@ PythonREPLTool migrated to use AbstractTool framework with matplotlib fixes.
 
 from typing import Optional, Dict, Any, Union
 import ast
+import re
 import sys
 import asyncio
 import threading
@@ -192,6 +193,7 @@ class PythonREPLTool(AbstractTool):
         auto_save_plots: bool = True,
         return_plot_as_base64: bool = False,
         debug: bool = False,
+        policy=None,  # FEAT-252 (TASK-1614): PythonExecutionPolicy | None
         **kwargs,
     ):
         """
@@ -207,6 +209,8 @@ class PythonREPLTool(AbstractTool):
             sanitize_input_enabled: Whether to sanitize input
             auto_save_plots: Whether to automatically save plots to files
             return_plot_as_base64: Whether to return plots as base64 strings
+            policy: ``PythonExecutionPolicy`` for the allowlist-first AST gate.
+                Defaults to ``general_profile()``.
             **kwargs: Additional arguments for AbstractTool
         """
         # Check Python version
@@ -219,6 +223,11 @@ class PythonREPLTool(AbstractTool):
 
         # Initialize parent class
         super().__init__(output_dir=report_dir, **kwargs)
+
+        # FEAT-252 (TASK-1614): allowlist-first AST gate
+        from parrot.security.python_sanitizer import PythonCodeSanitizer, general_profile
+        _policy = policy if policy is not None else general_profile()
+        self._code_sanitizer = PythonCodeSanitizer(_policy)
 
         # Configuration
         self.sanitize_input_enabled = sanitize_input_enabled
@@ -649,6 +658,13 @@ print("Use 'execution_results' dict to store intermediate results.")
                 return f"SyntaxError: {str(e)}"
 
             if enforce_security:
+                # FEAT-252 (TASK-1614): allowlist-first AST gate (runs before the denylist)
+                _allowlist_result = self._code_sanitizer.validate(query)
+                if _allowlist_result.is_denied:
+                    _reasons = "; ".join(_allowlist_result.reasons[:3])
+                    return f"SecurityError: code denied by allowlist gate — {_reasons}"
+
+                # Existing denylist as defence-in-depth layer (keep, do NOT remove)
                 security_error = self._check_ast_security(tree)
                 if security_error:
                     return security_error
@@ -723,7 +739,12 @@ print("Use 'execution_results' dict to store intermediate results.")
                         result = output + str(ret) if output else str(ret)
                         return self._redact_execution_output(result)
                 except Exception:
-                    # Fall back to execution
+                    # Fall back to execution. This is the common path when the
+                    # last statement is an assignment (``result = df.groupby(...)``):
+                    # ``eval`` raises a SyntaxError above, so we ``exec`` it here.
+                    # Assignments produce no stdout, so append a preview of any
+                    # newly-created variables — otherwise the LLM only ever sees
+                    # "executed successfully (no output)" and cannot read the data.
                     try:
                         exec(module_end_str, ns, ns)
 
@@ -733,7 +754,16 @@ print("Use 'execution_results' dict to store intermediate results.")
                             plot_msg = f"\n[Plot saved: {plot_info.get('filename', 'unknown')}]"
                             io_buffer.write(plot_msg)
 
-                        return self._redact_execution_output(io_buffer.getvalue())
+                        output = io_buffer.getvalue() or ""
+                        new_vars = set(self.locals.keys()) - pre_exec_keys
+                        if new_vars:
+                            report = "\n".join(
+                                self._describe_new_var(name, self.locals[name]) for name in new_vars
+                            )
+                            if output and not output.endswith("\n"):
+                                output += "\n"
+                            output += report
+                        return self._redact_execution_output(output)
                     except Exception as e:
                         return f"ExecutionError: {type(e).__name__}: {str(e)}"
 
@@ -746,24 +776,102 @@ print("Use 'execution_results' dict to store intermediate results.")
                 # generate new report context:
                 for var_name in new_vars:
                     val = self.locals[var_name]
-                    if "pandas" in str(type(val)) and hasattr(val, "shape"):
-                        context_report.append(
-                            f"🆕 DataFrame Created: '{var_name}' | Shape: {val.shape} | Columns: {list(val.columns)}"
-                        )
-                    elif not var_name.startswith("_"):
-                        context_report.append(f"🆕 Variable Created: '{var_name}' | Type: {type(val).__name__}")
-                    else:
-                        context_report.append(
-                            f"🆕 Variable Created: '{var_name}' | Type: {type(val).__name__} (private)"
-                        )
+                    context_report.append(self._describe_new_var(var_name, val))
 
-                return self._redact_execution_output(output + "\n".join(context_report))
+                report = "\n".join(context_report)
+                if output and not output.endswith("\n"):
+                    output += "\n"
+                return self._redact_execution_output(output + report)
             return self._redact_execution_output(output)
 
         except Exception as e:
             return f"{type(e).__name__}: {str(e)}"
 
-    async def _execute(self, code: str, debug: bool = False, **kwargs) -> Dict[str, Any]:
+    # Max rows / characters used when previewing a newly-created object so the
+    # LLM can read the actual data without overflowing the context window.
+    _NEW_VAR_PREVIEW_ROWS: int = 20
+    _NEW_VAR_PREVIEW_CHARS: int = 4000
+
+    def _describe_new_var(self, var_name: str, val: Any) -> str:
+        """Describe a variable created during execution, including a data preview.
+
+        The LLM frequently writes assignment-only snippets (``result = df.groupby(...)``)
+        with no trailing expression or ``print``. Without a preview it only sees the
+        shape/columns and never the values, so it cannot synthesise an answer and may
+        hallucinate a tool failure. This helper appends a bounded ``head()`` preview for
+        pandas DataFrame/Series and a ``repr`` preview for small collections/scalars.
+
+        Args:
+            var_name: Name the variable was bound to in the REPL namespace.
+            val: The value the variable now holds.
+
+        Returns:
+            A human/LLM-readable, length-bounded description of the new variable.
+        """
+        try:
+            # pandas DataFrame
+            if isinstance(val, pd.DataFrame):
+                header = (
+                    f"🆕 DataFrame Created: '{var_name}' | Shape: {val.shape} "
+                    f"| Columns: {list(val.columns)}"
+                )
+                if val.empty:
+                    return f"{header}\n(empty DataFrame)"
+                preview = val.head(self._NEW_VAR_PREVIEW_ROWS).to_string()
+                if len(val) > self._NEW_VAR_PREVIEW_ROWS:
+                    preview += f"\n... ({len(val)} rows total, showing first {self._NEW_VAR_PREVIEW_ROWS})"
+                return self._bound_preview(f"{header}\n{preview}")
+
+            # pandas Series
+            if isinstance(val, pd.Series):
+                header = (
+                    f"🆕 Series Created: '{var_name}' | Length: {len(val)} "
+                    f"| Name: {val.name} | dtype: {val.dtype}"
+                )
+                if val.empty:
+                    return f"{header}\n(empty Series)"
+                preview = val.head(self._NEW_VAR_PREVIEW_ROWS).to_string()
+                if len(val) > self._NEW_VAR_PREVIEW_ROWS:
+                    preview += f"\n... ({len(val)} values total, showing first {self._NEW_VAR_PREVIEW_ROWS})"
+                return self._bound_preview(f"{header}\n{preview}")
+
+            # Small collections / scalars worth showing inline
+            if isinstance(val, (dict, list, tuple, set, int, float, str, bool)):
+                return self._bound_preview(
+                    f"🆕 Variable Created: '{var_name}' | Type: {type(val).__name__}\n{val!r}"
+                )
+
+            # Anything else: keep the lightweight type-only report.
+            private = " (private)" if var_name.startswith("_") else ""
+            return f"🆕 Variable Created: '{var_name}' | Type: {type(val).__name__}{private}"
+        except Exception as exc:  # pragma: no cover - defensive, never break execution
+            return f"🆕 Variable Created: '{var_name}' | Type: {type(val).__name__} (preview unavailable: {exc})"
+
+    def _bound_preview(self, text: str) -> str:
+        """Truncate a preview string to ``_NEW_VAR_PREVIEW_CHARS`` characters."""
+        if len(text) > self._NEW_VAR_PREVIEW_CHARS:
+            return text[: self._NEW_VAR_PREVIEW_CHARS] + "\n...[truncated]"
+        return text
+
+    #: Matches an internally-trapped error string returned by ``_execute_code``
+    #: (e.g. ``"KeyError: 'col'"``, ``"SecurityError: ..."``,
+    #: ``"ExecutionError: ..."``). Used to report an honest error status instead
+    #: of wrapping the error as a successful result.
+    _ERROR_OUTPUT_RE = re.compile(r"^[A-Z][A-Za-z0-9_]*(Error|Exception): ")
+
+    def _is_error_output(self, output: Any) -> bool:
+        """Return True when REPL output is an internally-trapped error string.
+
+        ``_execute_code`` catches exceptions and the AST/security gates and
+        returns them as plain text so the LLM can read and self-correct. This
+        detects those error-shaped results so the tool reports ``status=error``
+        rather than a misleading "executed successfully".
+        """
+        if not isinstance(output, str):
+            return False
+        return bool(self._ERROR_OUTPUT_RE.match(output.lstrip()))
+
+    async def _execute(self, code: str, debug: bool = False, **kwargs) -> Any:
         """
         Execute Python code asynchronously (AbstractTool interface).
 
@@ -773,24 +881,32 @@ print("Use 'execution_results' dict to store intermediate results.")
             **kwargs: Additional arguments
 
         Returns:
-            Dictionary with execution results
+            The execution output string on success, or a ``{status, result,
+            error}`` dict when the code raised or was blocked — so the framework
+            records an error instead of reporting a failed run as a success.
+            The error text is preserved in ``result`` so the LLM still sees it.
         """
         try:
             self.logger.info(f"Executing Python code: {code[:100]}...")
 
             # Execute the code in a thread to avoid blocking
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, self._execute_code, code, debug)
-
+            output = await loop.run_in_executor(None, self._execute_code, code, debug)
         except Exception as e:
             self.logger.error(f"Error executing Python code: {e}")
-            return {
-                "output": f"ToolError: {type(e).__name__}: {str(e)}",
-                "code_executed": code,
-                "debug_mode": debug,
-                "execution_successful": False,
-                "error_details": str(e),
-            }
+            msg = f"ToolError: {type(e).__name__}: {str(e)}"
+            return {"status": "error", "result": msg, "error": str(e)}
+
+        # _execute_code traps errors and returns them as text for the LLM. Don't
+        # let that masquerade as success — report an error status (the text is
+        # kept in `result` so the model can still read and fix it).
+        if self._is_error_output(output):
+            self.logger.warning(
+                "Tool %s code execution returned an error: %s",
+                self.name, str(output)[:200],
+            )
+            return {"status": "done_with_errors", "result": output, "error": output}
+        return output
 
     def execute_sync(self, code: str, debug: bool = False) -> str:
         """

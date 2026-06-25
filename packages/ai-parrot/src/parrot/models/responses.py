@@ -879,12 +879,49 @@ class AIMessageFactory:
     ) -> AIMessage:
         """Create AIMessage from Gemini/Vertex AI response."""
         # Handle both direct text responses and response objects
-        if text_response:
+        if text_response is not None:
             content = text_response
-        elif hasattr(response, 'text'):
-            content = response.text
         else:
-            content = str(response)
+            # Pre-check for function calls and thoughts to avoid library warnings when accessing .text
+            has_non_text_parts = False
+            try:
+                if (
+                    hasattr(response, "candidates")
+                    and response.candidates
+                    and len(response.candidates) > 0
+                    and hasattr(response.candidates[0], "content")
+                    and response.candidates[0].content
+                    and hasattr(response.candidates[0].content, "parts")
+                    and response.candidates[0].content.parts
+                ):
+                    for part in response.candidates[0].content.parts:
+                        if (hasattr(part, "function_call") and part.function_call) or (hasattr(part, "thought") and part.thought is True):
+                            has_non_text_parts = True
+                            break
+            except Exception:
+                pass
+
+            if not has_non_text_parts:
+                if hasattr(response, 'text'):
+                    try:
+                        content = response.text
+                    except Exception:
+                        content = str(response)
+                else:
+                    content = str(response)
+            else:
+                # Manual extraction from parts to avoid warnings
+                try:
+                    text_parts = []
+                    for part in response.candidates[0].content.parts:
+                        if getattr(part, "thought", False) is True:
+                            continue
+                        if hasattr(part, "text") and part.text:
+                            if clean_text := part.text.strip():
+                                text_parts.append(clean_text)
+                    content = "".join(text_parts).strip()
+                except Exception:
+                    content = ""
 
         # Extract usage information
         usage_dict = {}

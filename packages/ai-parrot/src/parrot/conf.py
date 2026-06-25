@@ -913,8 +913,8 @@ DEV_LOOP_JIRA_TRANSITIONS_READY: list[str] = config.getlist(
 ) or ["Ready to Deploy", "Resolve Issue", "Resolved", "Done", "Close Issue", "Closed"]
 DEV_LOOP_JIRA_TRANSITIONS_BLOCKED: list[str] = config.getlist(
     "DEV_LOOP_JIRA_TRANSITIONS_BLOCKED",
-    fallback=["Deployment Blocked", "Blocked", "On Hold", "Stop Progress"],
-) or ["Deployment Blocked", "Blocked", "On Hold", "Stop Progress"]
+    fallback=["Deployment Blocked", "Blocked", "Blocked for Requirements", "On Hold", "Stop Progress"],
+) or ["Deployment Blocked", "Blocked", "Blocked for Requirements", "On Hold", "Stop Progress"]
 DEV_LOOP_JIRA_TRANSITIONS_REVISION: list[str] = config.getlist(
     "DEV_LOOP_JIRA_TRANSITIONS_REVISION",
     fallback=["In Review – revised", "In Review", "Resolve Issue", "In Progress", "Reopen"],

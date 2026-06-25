@@ -348,3 +348,69 @@ class TestPlanSummaryFallback:
         ]
         # The comment is still posted; the stub body starts with "Plan for run-".
         assert any("Plan for run-r4" in b for b in bodies)
+
+
+class TestCloudWatchExcerptCleaning:
+    """Clean + filter structured log payloads at the source.
+
+    Raw CloudWatch Insights results were being ``str()``-dumped into the
+    Jira ticket (and the research prompt), leaking base64 ``@ptr`` cursors
+    and health-probe noise. ``_tail_text`` now reduces them to a compact
+    ``[ts] message`` digest with the noise filtered out.
+    """
+
+    def _payload(self) -> dict:
+        return {
+            "log_group": "fluent-bit-cloudwatch",
+            "results": [
+                {
+                    "@timestamp": "2026-06-23 23:35:55.427",
+                    "@message": "INFO Rendered layouts/application.html.erb",
+                    "@ptr": "Cp0BCl4KIjI5ODA1MTE4MDM5OD_base64_cursor_noise",
+                },
+                {
+                    "@timestamp": "2026-06-23 23:35:55.342",
+                    "@message": '1.2.3.4 - - "GET /health HTTP/1.1" 200 2 "kube-probe/1.33"',
+                    "@ptr": "Cp0B_more_noise",
+                },
+                {
+                    "@timestamp": "2026-06-23 23:35:55.406",
+                    "@message": 'httplog.go:129 "HTTP" verb="GET" URI="/healthz" resp=200',
+                    "@ptr": "Cp0B_noise",
+                },
+                {
+                    "@timestamp": "2026-06-23 23:35:55.267",
+                    "@message": 'E0623 cert-manager/challenges: propagation check failed err="404"',
+                    "@ptr": "Cp0B_noise",
+                },
+            ],
+            "count": 4,
+        }
+
+    def test_drops_ptr_cursors_and_probe_noise_keeps_errors(self):
+        out = ResearchNode._tail_text(self._payload())
+        assert len(out) == 1
+        digest = out[0]
+        # @ptr base64 cursors never reach the ticket.
+        assert "Cp0B" not in digest and "base64" not in digest
+        # Health-probe / framework chatter is filtered out.
+        assert "kube-probe" not in digest
+        assert "/healthz" not in digest
+        assert "Rendered" not in digest
+        # The real ERROR line survives, formatted as "[ts] message".
+        assert "cert-manager" in digest
+        assert digest.startswith("[2026-06-23 23:35:55.267]")
+
+    def test_all_noise_falls_back_to_ptr_stripped_tail(self):
+        payload = {
+            "results": [
+                {"@timestamp": "t1", "@message": "kube-probe ping", "@ptr": "X"},
+            ]
+        }
+        out = ResearchNode._tail_text(payload)
+        # Never emit an empty block; @ptr is still stripped on the fallback.
+        assert out and "X" not in out[0]
+        assert "kube-probe ping" in out[0]
+
+    def test_non_dict_results_unchanged(self):
+        assert ResearchNode._tail_text("plain log text") == ["plain log text"]

@@ -64,9 +64,11 @@ async def transition_issue_with_candidates(
     transition names — a single hard-coded label (e.g. ``"Ready to Deploy"``)
     only exists in one of them. Callers therefore pass an *ordered* list of
     synonym labels (most specific first). Each is handed to
-    ``jira_transition_issue``, whose alias/substring matcher resolves it against
-    the issue's live available-transitions; the first label that resolves is
-    applied and its result returned.
+    ``jira_transition_to``, which walks the project's declared workflow path
+    (``JIRA_WORKFLOW_PATH`` / ``JIRA_WORKFLOW_PATH_<PROJECT>``) hop-by-hop when
+    the target status is several transitions away, and otherwise falls back to
+    a single direct transition. The first label that resolves is applied and
+    its result returned.
 
     A non-matching label raises ``ValueError`` inside the toolkit (it lists the
     available transitions) — that is treated as "try the next candidate", not a
@@ -94,9 +96,15 @@ async def transition_issue_with_candidates(
             continue
         tried.append(label)
         try:
-            result = await jira.jira_transition_issue(
-                issue=issue, transition=label, **kwargs
-            )
+            transition_to = getattr(jira, "jira_transition_to", None)
+            if transition_to is not None:
+                result = await transition_to(
+                    issue=issue, target_status=label, **kwargs
+                )
+            else:  # pragma: no cover - older toolkit without the walker
+                result = await jira.jira_transition_issue(
+                    issue=issue, transition=label, **kwargs
+                )
             if label != preferred:
                 logger.info(
                     "Applied fallback transition %r for %s (preferred %r unavailable).",

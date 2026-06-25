@@ -124,6 +124,9 @@ class BasicAgent(Chatbot, NotificationMixin):
         # Auto-inject answer_memory into any registered WorkingMemoryToolkit.
         # Lazy import avoids circular dependencies and keeps working_memory optional.
         self._inject_answer_memory_into_toolkits()
+        # Bridge REPL/pandas tool namespaces into WorkingMemoryToolkit so the
+        # LLM can `import_from_tool` DataFrames the agent loaded (e.g. datasets).
+        self._wire_tool_namespaces_into_working_memory()
 
     def _inject_answer_memory_into_toolkits(self) -> None:
         """Auto-inject self.answer_memory into any registered WorkingMemoryToolkit.
@@ -160,6 +163,64 @@ class BasicAgent(Chatbot, NotificationMixin):
                     "Auto-injected answer_memory into WorkingMemoryToolkit '%s'",
                     getattr(tool, "name", tool),
                 )
+
+    def _wire_tool_namespaces_into_working_memory(self) -> None:
+        """Bridge REPL-family tool namespaces into any WorkingMemoryToolkit.
+
+        ``WorkingMemoryToolkit.import_from_tool`` / ``list_tool_dataframes``
+        resolve DataFrames through a ``tool_locals_registry`` mapping
+        ``{tool_name: namespace_dict}``. PandasAgent (and any agent that
+        explicitly wires arbitrary Python execution) keeps its live DataFrames
+        in a :class:`PythonPandasTool` / :class:`PythonREPLTool` ``.locals``
+        dict. Without this bridge the catalog is isolated and the LLM gets
+        ``"not registered. Available: []"`` when it tries to import data.
+
+        Wiring stores a **live reference** to each tool's ``.locals`` (assigned
+        once at tool construction and mutated in place afterward), so DataFrames
+        the agent loads later — including lazily-fetched datasets — become
+        importable without re-wiring. Keyed by ``type(tool).__name__`` so the
+        LLM passes the same name it sees from ``list_tool_dataframes``.
+        Note: ``PythonREPLTool`` is no longer a default tool — agents add it
+        explicitly — so we match whatever REPL-family tool is actually present.
+        Explicitly-wired registry keys are never overwritten.
+        """
+        tool_manager = getattr(self, "tool_manager", None)
+        if tool_manager is None:
+            return
+        try:
+            from parrot.tools.working_memory import WorkingMemoryToolkit
+            from parrot.tools.pythonrepl import PythonREPLTool
+        except ImportError:
+            return
+        if hasattr(tool_manager, "get_tools"):
+            tools = tool_manager.get_tools()
+            tool_iter = list(tools.values()) if isinstance(tools, dict) else list(tools)
+        elif hasattr(tool_manager, "all_tools"):
+            tool_iter = list(tool_manager.all_tools())
+        else:
+            tool_iter = list(getattr(tool_manager, "_tools", {}).values())
+
+        wm_toolkits = [t for t in tool_iter if isinstance(t, WorkingMemoryToolkit)]
+        if not wm_toolkits:
+            return
+        repl_tools = [
+            t for t in tool_iter
+            if isinstance(t, PythonREPLTool) and isinstance(
+                getattr(t, "locals", None), dict
+            )
+        ]
+        if not repl_tools:
+            return
+        for wm in wm_toolkits:
+            for tool in repl_tools:
+                key = type(tool).__name__
+                # Respect explicit wiring; only fill in missing namespaces.
+                if key not in wm._tool_locals:
+                    wm._tool_locals[key] = tool.locals
+                    self.logger.debug(
+                        "Wired %s namespace into WorkingMemoryToolkit '%s'",
+                        key, getattr(wm, "name", wm),
+                    )
 
     async def handle_files(self, attachments: Dict[str, Any]) -> List[str]:
         """

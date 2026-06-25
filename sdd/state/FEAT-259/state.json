@@ -1,0 +1,54 @@
+{
+  "feature_id": "FEAT-259",
+  "feature": "microsoft-copilot-agent-sdk",
+  "phase": "proposal_drafted",
+  "mode": "investigation",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 3,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary": "Expose ai-parrot agents as Copilot Studio agents via Microsoft Agent SDK"
+  },
+  "phases": {
+    "source": {
+      "status": "complete"
+    },
+    "plan": {
+      "status": "complete",
+      "approved_by_user": false,
+      "note": "auto-approved (--no-gate implicit for inline source)"
+    },
+    "research": {
+      "status": "complete",
+      "findings_count": 4,
+      "external_urls_fetched": 3
+    },
+    "synthesis": {
+      "status": "complete",
+      "overall_confidence": "high",
+      "claims_high": 6,
+      "claims_medium": 2,
+      "claims_low": 1,
+      "unknowns_total": 3,
+      "unknowns_resolved": 0
+    },
+    "qa": {
+      "status": "pending",
+      "questions_total": 3,
+      "questions_answered": 0
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/microsoft-copilot-agent-sdk.proposal.md",
+      "commit_sha": null
+    }
+  },
+  "started_at": "2026-06-25T00:00:00Z",
+  "updated_at": "2026-06-25T00:00:00Z"
+}

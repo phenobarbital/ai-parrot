@@ -40,7 +40,7 @@ import os
 import uuid
 from typing import Any, Dict, List, Optional
 
-from aiohttp import web
+from aiohttp import web, ClientResponseError
 from navconfig.logging import logging
 from navigator.views import BaseView
 from navigator_auth.decorators import is_authenticated, user_session
@@ -127,19 +127,113 @@ async def _resolve_avatar_id(
     return os.environ.get("LIVEAVATAR_AVATAR_ID", "").strip()
 
 
+def _is_no_credits_error(exc: ClientResponseError) -> bool:
+    """Return True when the LiveAvatar error maps to the no-credits case.
+
+    Reuses the same detection logic as :func:`avatar_upstream_error_response`
+    so the auto-fallback trigger is consistent with the error mapping.
+
+    Args:
+        exc: The upstream :class:`aiohttp.ClientResponseError`.
+
+    Returns:
+        ``True`` if the error indicates no avatar credits (code 4033 or
+        "credit" in the message).
+    """
+    message = str(getattr(exc, "message", "") or "")
+    return "4033" in message or "credit" in message.lower()
+
+
+async def _start_direct_audio_session(
+    tokens: Any,
+    session_id: str,
+    store: Dict[str, Any],
+) -> web.Response:
+    """Start an avatar-OFF session using a direct LiveKit audio publisher.
+
+    Shared by the ``avatar=false`` path and the 402 auto-fallback path.
+    Creates a :class:`~parrot.integrations.liveavatar.room_audio_publisher.RoomAudioPublisher`,
+    stores it in ``store``, and returns the standard viewer-credentials response.
+
+    Args:
+        tokens: :class:`~parrot.integrations.liveavatar.models.LiveKitRoomTokens`
+            from :func:`~parrot.integrations.liveavatar.room_manager.LiveKitRoomManager.mint_room_tokens`.
+        session_id: The shared session ID.
+        store: The ``app[AVATAR_SESSIONS_KEY]`` dict (mutated in-place).
+
+    Returns:
+        200 JSON response with ``livekit_url``, ``client_token``, ``session_id``.
+    """
+    try:
+        from parrot.integrations.liveavatar.room_audio_publisher import RoomAudioPublisher
+    except ImportError as exc:
+        _logger.warning("RoomAudioPublisher unavailable: %s", exc)
+        raise web.HTTPServiceUnavailable(
+            reason="livekit realtime SDK not installed (liveavatar extra)"
+        ) from exc
+
+    publisher = await RoomAudioPublisher.start(tokens)
+    # Store under "publisher" key (avatar-OFF record).  /stop and shutdown
+    # detect this key and call publisher.aclose() instead of client teardown.
+    store[session_id] = {"publisher": publisher}
+
+    _logger.info(
+        "AvatarSessionView: started direct-audio session %s (avatar-OFF)",
+        session_id,
+    )
+    return web.json_response({
+        "livekit_url": tokens.livekit_url,
+        "client_token": tokens.client_token,
+        "session_id": session_id,
+    })
+
+
+async def _teardown_avatar_record(record: Any) -> None:
+    """Tear down a stored avatar-session record (publisher or LiveAvatar client).
+
+    Idempotent / best-effort. Used by ``/stop`` and by ``/start`` when replacing
+    an existing session for the same ``session_id`` (e.g. the user toggled the
+    avatar on↔off and restarted) so we never leak a stale LiveAvatar session or
+    route a new turn's speaker to a dead avatar WebSocket.
+    """
+    if not isinstance(record, dict):
+        return
+    publisher = record.get("publisher")
+    client = record.get("client")
+    handle = record.get("handle")
+    try:
+        if publisher is not None:
+            await publisher.aclose()
+        elif client is not None and handle is not None:
+            try:
+                await client.stop_session(handle)
+            finally:
+                await client.aclose()
+    except Exception:  # noqa: BLE001 - teardown is best-effort
+        _logger.warning("avatar session teardown failed", exc_info=True)
+
+
 async def _start_avatar_session(request: web.Request) -> web.Response:
     """POST /api/v1/agents/avatar/{agent_id}/start — start an avatar session.
 
-    Reads LiveAvatar / LiveKit credentials from env, mints room tokens, creates
-    and starts a LiveAvatar LITE session (with ``livekit_config``), keeps the
-    client alive in ``app['avatar_sessions']``, and returns viewer credentials.
+    Reads LiveAvatar / LiveKit credentials from env, mints room tokens, and
+    selects the audio mode based on the ``avatar`` flag in the request body:
+
+    - ``avatar=true`` (default, back-compat): creates and starts a LiveAvatar
+      LITE session (with ``livekit_config``), keeps the client alive in
+      ``app['avatar_sessions']``.
+    - ``avatar=false``: skips LiveAvatar entirely; starts a
+      :class:`~parrot.integrations.liveavatar.room_audio_publisher.RoomAudioPublisher`
+      (direct LiveKit audio track) and stores it in ``app['avatar_sessions']``.
+    - **Auto-fallback**: if ``avatar=true`` but LiveAvatar returns a no-credits
+      error (402 / code 4033), silently falls back to the publisher path and
+      returns a **200** (not 402) so the session starts normally.
 
     Request body (JSON):
         session_id (str): AgentChat session ID (shared with the browser).
         tenant_id  (str, optional): Tenant identifier for opt-in gating.
         avatar_id  (str, optional): Override the avatar for this session.
-            When absent, the agent's stored ``BotConfig.config['avatar_id']``
-            is used, falling back to the global ``LIVEAVATAR_AVATAR_ID`` env.
+        avatar     (bool, optional): Enable avatar (default True).
 
     Response (JSON):
         livekit_url  (str): LiveKit WebSocket URL for the browser.
@@ -178,6 +272,43 @@ async def _start_avatar_session(request: web.Request) -> web.Response:
     if not is_avatar_enabled(tenant_id=tenant_id, agent_name=agent_id):
         raise web.HTTPForbidden(reason="Avatar mode is not enabled for this tenant")
 
+    # NEW (FEAT-256): read the avatar flag (default True for back-compat).
+    avatar_raw = body.get("avatar", True)
+    if isinstance(avatar_raw, str):
+        avatar_flag: bool = avatar_raw.lower() not in ("false", "0", "no")
+    else:
+        avatar_flag = bool(avatar_raw)
+
+    room_manager = LiveKitRoomManager()  # reads LIVEKIT_* from env
+
+    # Mint viewer + agent tokens.  JWT signing is sync CPU work — keep it off
+    # the event loop.
+    tokens = await asyncio.to_thread(room_manager.mint_room_tokens, session_id, agent_id)
+
+    store = request.app.setdefault(AVATAR_SESSIONS_KEY, {})
+
+    # FEAT-257 fix: if a session already exists for this id (avatar on↔off
+    # switch reusing the same session_id), tear the old one down first — else a
+    # stale LiveAvatar handle/publisher lingers and the next turn's speaker is
+    # routed to a dead WS ("AvatarWebSocket: cannot send — WS not connected").
+    _existing = store.pop(session_id, None)
+    if _existing is not None:
+        _logger.info(
+            "AvatarSessionView: replacing existing session %s before re-start",
+            session_id,
+        )
+        await _teardown_avatar_record(_existing)
+
+    # ── avatar-OFF path: start a direct-audio publisher ──────────────────
+    if not avatar_flag:
+        _logger.info(
+            "AvatarSessionView: avatar=false for session %s — using direct audio",
+            session_id,
+        )
+        return await _start_direct_audio_session(tokens, session_id, store)
+
+    # ── avatar-ON path: LiveAvatar LITE (with optional 402 auto-fallback) ─
+
     # api_key stays a global secret; avatar_id is resolved per-agent
     # (body > BotConfig > env). is_sandbox remains a global env switch.
     api_key = os.environ.get("LIVEAVATAR_API_KEY", "")
@@ -197,11 +328,6 @@ async def _start_avatar_session(request: web.Request) -> web.Response:
         max_session_duration=_env_max_session_duration(),
     )
 
-    room_manager = LiveKitRoomManager()  # reads LIVEKIT_* from env
-
-    # Mint viewer + agent tokens.  JWT signing is sync CPU work — keep it off
-    # the event loop.
-    tokens = await asyncio.to_thread(room_manager.mint_room_tokens, session_id, agent_id)
     # Field names match LiveAvatar's LiveKitConfigSchema (snake_case).  The
     # avatar joins our room as a publisher, so it receives the publish-capable
     # ``agent_token`` (the subscribe-only client_token stays with the browser).
@@ -224,6 +350,28 @@ async def _start_avatar_session(request: web.Request) -> web.Response:
         handle.session_id = session_id
         handle.tenant_id = tenant_id
         await client.start_session(handle)
+    except ClientResponseError as exc:
+        # Close the client before any further action.
+        try:
+            await client.aclose()
+        finally:
+            pass
+        if _is_no_credits_error(exc):
+            # AUTO-FALLBACK (FEAT-256): LiveAvatar has no credits but the
+            # session should still start using the direct-audio publisher.
+            _logger.warning(
+                "AvatarSessionView: LiveAvatar no credits for session %s — "
+                "auto-fallback to direct audio",
+                session_id,
+            )
+            return await _start_direct_audio_session(tokens, session_id, store)
+        # Other upstream errors: return the clean error response.
+        _logger.warning(
+            "AvatarSessionView: LiveAvatar start failed for session %s: %s",
+            session_id,
+            getattr(exc, "message", exc),
+        )
+        return avatar_upstream_error_response(exc)
     except Exception:
         # On any failure, do not leak the client/session.
         try:
@@ -233,7 +381,6 @@ async def _start_avatar_session(request: web.Request) -> web.Response:
         raise
 
     # Register the live session so /stop (and shutdown cleanup) can reach it.
-    store = request.app.setdefault(AVATAR_SESSIONS_KEY, {})
     store[session_id] = {"client": client, "handle": handle}
 
     _logger.info(
@@ -250,6 +397,36 @@ async def _start_avatar_session(request: web.Request) -> web.Response:
         "client_token": tokens.client_token,
         "session_id": session_id,
     })
+
+
+def avatar_upstream_error_response(exc: ClientResponseError) -> web.Response:
+    """Translate a LiveAvatar upstream error into a clean JSON response.
+
+    Without this, the upstream ``ClientResponseError`` propagates and aiohttp
+    returns a bare ``500`` whose body does NOT carry the reason — the frontend
+    cannot tell "no credits" from a real server bug.  Map the two cases the
+    frontend acts on:
+
+      * "No credits" (LiveAvatar code ``4033`` / ``403``) -> ``402`` so the UI
+        can show an actionable "avatar has no credits" message.
+      * Any other upstream failure -> ``502`` (provider error).
+    """
+    message = str(getattr(exc, "message", "") or "")
+    if "4033" in message or "credit" in message.lower():
+        return web.json_response(
+            {
+                "error": "avatar_no_credits",
+                "message": "No credits available for the avatar session.",
+            },
+            status=402,
+        )
+    return web.json_response(
+        {
+            "error": "avatar_upstream_error",
+            "message": message or "The avatar provider returned an error.",
+        },
+        status=502,
+    )
 
 
 async def _stop_avatar_session(request: web.Request) -> web.Response:
@@ -282,17 +459,32 @@ async def _stop_avatar_session(request: web.Request) -> web.Response:
         )
         return web.Response(status=204)
 
-    client = record["client"]
-    handle = record["handle"]
-    try:
-        await client.stop_session(handle)
-    finally:
-        # aclose cancels (and awaits) the keep-alive loop and closes the HTTP
-        # session even if stop_session raised.
-        await client.aclose()
+    await _teardown_avatar_record(record)
 
     _logger.info("AvatarSessionView: stopped session %s", session_id)
     return web.Response(status=204)
+
+
+async def _get_voice_answer(request: web.Request) -> web.Response:
+    """GET /api/v1/agents/avatar/{agent_id}/voice-answer?session_id=... (FEAT-257).
+
+    Returns the WAV of the last spoken reply (stored by the AgentTalk turn) so the
+    browser can offer a replay/play button. Served over HTTP because the audio is
+    far too large for a WebSocket frame.
+    """
+    session_id = request.query.get("session_id") or ""
+    if not session_id:
+        raise web.HTTPBadRequest(reason="'session_id' is required")
+    sessions = request.app.get(AVATAR_SESSIONS_KEY, {})
+    record = sessions.get(session_id)
+    wav = record.get("last_answer_wav") if isinstance(record, dict) else None
+    if not wav:
+        raise web.HTTPNotFound(reason="no voice answer available for this session")
+    return web.Response(
+        body=wav,
+        content_type="audio/wav",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @is_authenticated()
@@ -314,24 +506,46 @@ class AvatarSessionView(BaseView):
             return await _stop_avatar_session(self.request)
         raise web.HTTPNotFound(reason=f"unknown avatar action '{action}'")
 
+    async def get(self) -> web.Response:
+        action = self.request.match_info.get("action", "")
+        if action == "voice-answer":
+            return await _get_voice_answer(self.request)
+        raise web.HTTPNotFound(reason=f"unknown avatar action '{action}'")
+
 
 async def close_all_avatar_sessions(app: web.Application) -> None:
     """Best-effort teardown of any lingering avatar sessions on shutdown.
 
     Registered as an ``on_cleanup`` callback by the bot manager.  Iterates the
-    session store, stops each LiveAvatar session and closes its client.
+    session store, stops each LiveAvatar session or direct-audio publisher
+    (FEAT-256 avatar-OFF path) and closes its client.
     """
     store: Dict[str, Any] = app.get(AVATAR_SESSIONS_KEY, {})
     for session_id, record in list(store.items()):
+        publisher = record.get("publisher")
         client = record.get("client")
         handle = record.get("handle")
-        try:
-            if client is not None and handle is not None:
+        if publisher is not None:
+            # avatar-OFF: disconnect the room publisher.
+            try:
+                await publisher.aclose()
+            except Exception:  # noqa: BLE001
+                _logger.warning(
+                    "Failed closing publisher for session %s on shutdown",
+                    session_id,
+                    exc_info=True,
+                )
+        elif client is not None and handle is not None:
+            # avatar-ON: stop LiveAvatar session + close client.
+            try:
                 await client.stop_session(handle)
-        except Exception:  # noqa: BLE001
-            _logger.warning("Failed stopping avatar session %s on shutdown", session_id, exc_info=True)
-        finally:
-            if client is not None:
+            except Exception:  # noqa: BLE001
+                _logger.warning(
+                    "Failed stopping avatar session %s on shutdown",
+                    session_id,
+                    exc_info=True,
+                )
+            finally:
                 try:
                     await client.aclose()
                 except Exception:  # noqa: BLE001

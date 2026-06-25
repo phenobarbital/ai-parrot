@@ -13,6 +13,7 @@ from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.flow import build_dev_loop_flow
 from parrot.flows.dev_loop.models import (
     CodexCodeDispatchProfile,
+    LLMCodeDispatchProfile,
     QAReport,
     WorkBrief,
 )
@@ -110,6 +111,27 @@ def test_development_factory_accepts_alternate_dispatcher():
     default_dispatcher = MagicMock()
     development_dispatcher = MagicMock()
     development_profile = CodexCodeDispatchProfile()
+    factories = build_dev_loop_node_factories(
+        dispatcher=default_dispatcher,
+        development_dispatcher=development_dispatcher,
+        development_profile=development_profile,
+        jira_toolkit=MagicMock(),
+        redis_url="redis://x",
+    )
+    defn = build_dev_loop_definition()
+    by_id = {n.id: n for n in defn.nodes}
+
+    node = factories["dev_loop.development"](by_id["development"], {"research"}, {"qa"})
+
+    assert isinstance(node, DevelopmentNode)
+    assert node._dispatcher is development_dispatcher
+    assert node._dispatch_profile is development_profile
+
+
+def test_development_factory_accepts_llm_dispatch_profile():
+    default_dispatcher = MagicMock()
+    development_dispatcher = MagicMock()
+    development_profile = LLMCodeDispatchProfile(llm="nvidia:z-ai/glm-5.1")
     factories = build_dev_loop_node_factories(
         dispatcher=default_dispatcher,
         development_dispatcher=development_dispatcher,

@@ -25,6 +25,11 @@ Runtime requirements:
   ``DEV_LOOP_DEVELOPMENT_AGENT=codex``, ``codex`` CLI on ``$PATH`` and
   authenticated (or ``OPENAI_API_KEY`` available), and
   ``DEV_LOOP_CODEX_MODEL`` (default ``gpt-5.5``)
+* Optional Nvidia/LLM Development mode:
+  ``DEV_LOOP_DEVELOPMENT_AGENT=nvidia`` and ``NVIDIA_API_KEY`` available.
+  ``DEV_LOOP_NVIDIA_CODE_MODEL`` defaults to
+  ``moonshotai/kimi-k2-instruct-0905``; set it to ``z-ai/glm-5.1`` and
+  ``DEV_LOOP_NVIDIA_ENABLE_THINKING=true`` for GLM reasoning mode.
 * Jira service account: ``JIRA_INSTANCE``, ``JIRA_USERNAME``,
   ``JIRA_API_TOKEN`` and (optionally) ``JIRA_PROJECT`` — the toolkit uses
   ``basic_auth``
@@ -88,6 +93,10 @@ from parrot.flows.dev_loop import (
     CodexCodeDispatchProfile,
     GeminiCodeDispatcher,
     GeminiCodeDispatchProfile,
+    LLMCodeDispatcher,
+    LLMCodeDispatchProfile,
+    GrokCodeDispatcher,
+    GrokCodeDispatchProfile,
     DevLoopRunner,
     build_dev_loop_flow,
     flow_stream_ws,
@@ -106,13 +115,29 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 
 def _build_jira_toolkit() -> JiraToolkit:
-    """Service-account JiraToolkit (flow-bot, basic_auth)."""
+    """Service-account JiraToolkit (flow-bot, basic_auth).
+
+    Declares the project's **workflow path** so ``jira_transition_to`` can
+    walk multi-stage custom workflows. Jira's API only exposes the
+    transitions available from an issue's *current* status, so a single hop
+    cannot cross a chain like ``Backlog → Open → To Do → In Progress →
+    Resolved`` — without a declared path the dev-loop's resolve/deploy
+    transition silently falls back to one direct hop and fails. The path is
+    read from ``JIRA_WORKFLOW_PATH_<PROJECT>`` (e.g. ``JIRA_WORKFLOW_PATH_NAV``)
+    and defaults to the NAV chain. Separators: ``>``, ``->`` or ``→``.
+    """
+    project = conf.config.get("JIRA_PROJECT") or "NAV"
+    workflow_path = conf.config.get(
+        f"JIRA_WORKFLOW_PATH_{project.upper()}",
+        fallback="Backlog > Open > To Do > In Progress > Resolved",
+    )
     return JiraToolkit(
         server_url=conf.config.get("JIRA_INSTANCE"),
         auth_type="basic_auth",
         username=conf.config.get("JIRA_USERNAME"),
         password=conf.config.get("JIRA_API_TOKEN"),
-        default_project=conf.config.get("JIRA_PROJECT"),
+        default_project=project,
+        workflow_paths={project: workflow_path},
     )
 
 
@@ -454,16 +479,59 @@ async def _on_startup(app: web.Application) -> None:
             redis_url=redis_url,
             stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
         )
-        development_profile = GeminiCodeDispatchProfile(
-            model=conf.config.get("DEV_LOOP_GEMINI_MODEL", fallback="auto")
-        )
+        development_profile = GeminiCodeDispatchProfile(model=conf.config.get("DEV_LOOP_GEMINI_MODEL", fallback="auto"))
         logger.info(
             "Development node using Gemini CLI (model=%s)",
             development_profile.model,
         )
+    elif development_agent in {"nvidia", "llm"}:
+        nvidia_model = conf.config.get(
+            "DEV_LOOP_NVIDIA_CODE_MODEL",
+            fallback="moonshotai/kimi-k2-instruct-0905",
+        )
+        development_dispatcher = LLMCodeDispatcher(
+            max_concurrent=conf.config.getint(
+                "LLM_CODE_MAX_CONCURRENT_DISPATCHES",
+                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+            ),
+            redis_url=redis_url,
+            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+        )
+        development_profile = LLMCodeDispatchProfile(
+            llm=f"nvidia:{nvidia_model}",
+            enable_thinking=conf.config.getboolean(
+                "DEV_LOOP_NVIDIA_ENABLE_THINKING",
+                fallback=False,
+            ),
+            clear_thinking=conf.config.getboolean(
+                "DEV_LOOP_NVIDIA_CLEAR_THINKING",
+                fallback=False,
+            ),
+        )
+        logger.info(
+            "Development node using Nvidia LLM code dispatcher (llm=%s)",
+            development_profile.llm,
+        )
+    elif development_agent == "grok":
+        development_dispatcher = GrokCodeDispatcher(
+            max_concurrent=conf.config.getint(
+                "GROK_CODE_MAX_CONCURRENT_DISPATCHES",
+                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+            ),
+            redis_url=redis_url,
+            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+        )
+        development_profile = GrokCodeDispatchProfile(
+            model=conf.config.get("DEV_LOOP_GROK_MODEL", fallback="grok-build-0.1")
+        )
+        logger.info(
+            "Development node using Grok code dispatcher (model=%s)",
+            development_profile.model,
+        )
     elif development_agent not in {"claude", "claude-code"}:
         raise RuntimeError(
-            "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', or 'gemini', "
+            "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', "
+            "'gemini', 'nvidia', or 'grok', "
             f"got {development_agent!r}"
         )
 

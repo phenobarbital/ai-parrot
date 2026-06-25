@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from parrot import conf
 from parrot.flows.dev_loop.models import QAReport, ResearchOutput
 from parrot.flows.dev_loop.nodes.close import DevLoopCloseNode
 
@@ -25,6 +26,9 @@ def jira() -> MagicMock:
     j = MagicMock()
     j.jira_add_comment = AsyncMock(return_value={"id": "c1"})
     j.jira_transition_issue = AsyncMock(return_value={"ok": True})
+    # FEAT: helper now prefers the workflow-path walker; it falls back to a
+    # single direct hop internally when no path is declared.
+    j.jira_transition_to = AsyncMock(return_value={"ok": True})
     return j
 
 
@@ -46,8 +50,10 @@ async def test_close_node_transitions_jira_initial(research, jira):
     assert out["status"] == "closed"
     assert out["mode"] == "initial"
     jira.jira_add_comment.assert_awaited_once()
-    jira.jira_transition_issue.assert_awaited_once_with(
-        issue="OPS-1", transition="Ready to Deploy"
+    # The first configured "ready" candidate is applied (env-overridable, so
+    # assert against conf rather than a hard-coded default label).
+    jira.jira_transition_to.assert_awaited_once_with(
+        issue="OPS-1", target_status=conf.DEV_LOOP_JIRA_TRANSITIONS_READY[0]
     )
 
 
@@ -62,8 +68,8 @@ async def test_close_node_revision_transition(research, jira):
     out = await node.execute(ctx, deps=None)
     assert out["status"] == "closed"
     assert out["mode"] == "revision"
-    jira.jira_transition_issue.assert_awaited_once_with(
-        issue="OPS-1", transition="In Review – revised"
+    jira.jira_transition_to.assert_awaited_once_with(
+        issue="OPS-1", target_status=conf.DEV_LOOP_JIRA_TRANSITIONS_REVISION[0]
     )
 
 

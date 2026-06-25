@@ -88,7 +88,7 @@ class Office365Toolkit(AbstractToolkit):
 
     # ------------------------------------------------------------------ pre
 
-    async def _pre_execute(self, tool_name: str, **kwargs: Any) -> None:
+    async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
         """Resolve the per-user token before the tool runs.
 
         Mirrors the pattern at ``parrot_tools.jiratoolkit.JiraToolkit._pre_execute``.

@@ -146,3 +146,117 @@ class TestExtractAssigneeChange:
 
     def test_returns_none_pair_when_nothing_present(self):
         assert JiraWebhookHook._extract_assignee_change({}) == (None, None)
+
+
+class TestClassifyEventTransitioned:
+    """Tests for the 'transitioned' classification (all non-special status changes)."""
+
+    @pytest.mark.parametrize("to_status", [
+        "In Progress", "Code Review", "QA", "Done",
+        "Blocked", "In Review", "Deployed",
+    ])
+    def test_status_change_is_transitioned(self, to_status):
+        payload = {
+            "webhookEvent": "jira:issue_updated",
+            "issue": {"key": "NAV-1"},
+            "changelog": {
+                "items": [
+                    {"field": "status", "fromString": "Open", "toString": to_status}
+                ]
+            },
+        }
+        assert JiraWebhookHook._classify_event(payload) == "transitioned"
+
+    def test_closed_still_classified_as_closed(self):
+        payload = {
+            "webhookEvent": "jira:issue_updated",
+            "issue": {"key": "NAV-1"},
+            "changelog": {
+                "items": [{"field": "status", "toString": "Closed"}]
+            },
+        }
+        assert JiraWebhookHook._classify_event(payload) == "closed"
+
+    def test_ready_for_test_still_classified(self):
+        payload = {
+            "webhookEvent": "jira:issue_updated",
+            "issue": {"key": "NAV-1"},
+            "changelog": {
+                "items": [{"field": "status", "toString": "Ready For Test"}]
+            },
+        }
+        assert JiraWebhookHook._classify_event(payload) == "ready_for_test"
+
+    def test_assignee_change_takes_precedence_over_transitioned(self):
+        """When both assignee and status change, assignee classification wins."""
+        payload = {
+            "webhookEvent": "jira:issue_updated",
+            "issue": {"key": "NAV-1"},
+            "changelog": {
+                "items": [
+                    {
+                        "field": "status",
+                        "toString": "In Progress",
+                    },
+                    {
+                        "field": "assignee",
+                        "from": None,
+                        "to": "abc",
+                        "toString": "Jane",
+                    },
+                ]
+            },
+        }
+        assert JiraWebhookHook._classify_event(payload) == "assigned"
+
+
+class TestExtractStatusChange:
+    """Tests for the _extract_status_change static method."""
+
+    def test_extracts_from_to(self):
+        payload = {
+            "changelog": {
+                "items": [
+                    {"field": "status", "fromString": "Open", "toString": "In Progress"}
+                ]
+            }
+        }
+        from_s, to_s = JiraWebhookHook._extract_status_change(payload)
+        assert from_s == "Open"
+        assert to_s == "In Progress"
+
+    def test_returns_none_when_no_status(self):
+        payload = {
+            "changelog": {
+                "items": [{"field": "priority", "toString": "High"}]
+            }
+        }
+        assert JiraWebhookHook._extract_status_change(payload) == (None, None)
+
+    def test_returns_none_when_no_changelog(self):
+        assert JiraWebhookHook._extract_status_change({}) == (None, None)
+
+    def test_strips_whitespace(self):
+        payload = {
+            "changelog": {
+                "items": [
+                    {"field": "status", "fromString": "  Open  ", "toString": "  Done  "}
+                ]
+            }
+        }
+        from_s, to_s = JiraWebhookHook._extract_status_change(payload)
+        assert from_s == "Open"
+        assert to_s == "Done"
+
+    def test_returns_none_for_empty_strings(self):
+        """Empty fromString/toString should become None, not empty string."""
+        payload = {
+            "changelog": {
+                "items": [
+                    {"field": "status", "fromString": "", "toString": "In Progress"}
+                ]
+            }
+        }
+        from_s, to_s = JiraWebhookHook._extract_status_change(payload)
+        assert from_s is None
+        assert to_s == "In Progress"

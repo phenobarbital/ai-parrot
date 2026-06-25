@@ -65,7 +65,7 @@ class ComputerInteractionToolkit(AbstractToolkit):
 
     # ── Lifecycle hook ────────────────────────────────────────────────────────
 
-    async def _pre_execute(self, tool_name: str, **kwargs: Any) -> None:
+    async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
         """Lazily start the browser on the first tool call.
 
         Args:

@@ -22,6 +22,23 @@ from ..core.events.lifecycle.events import (
 if TYPE_CHECKING:
     from .executors.abstract import AbstractToolExecutor
 
+# FEAT-252 (TASK-1612) — lazy import to avoid circular deps at module level
+def _get_output_scrubber():
+    """Lazy import of OutputScrubber (avoids circular import at import-time)."""
+    from ..security.redaction import OutputScrubber, ScrubPolicy  # noqa: PLC0415
+    return OutputScrubber, ScrubPolicy
+
+_DEFAULT_SCRUBBER = None  # initialised on first use (module-level singleton)
+
+
+def _default_scrubber():
+    """Return the module-level singleton OutputScrubber with default policy."""
+    global _DEFAULT_SCRUBBER  # noqa: PLW0603
+    if _DEFAULT_SCRUBBER is None:
+        OutputScrubber, ScrubPolicy = _get_output_scrubber()
+        _DEFAULT_SCRUBBER = OutputScrubber(ScrubPolicy())
+    return _DEFAULT_SCRUBBER
+
 
 logging.getLogger(name='matplotlib').setLevel(logging.INFO)
 logging.getLogger(name='h5py').setLevel(logging.INFO)
@@ -602,6 +619,37 @@ class AbstractTool(EventEmitterMixin, ABC):
                     }
                 )
 
+            # ── FEAT-252 (TASK-1612): single-seam OutputScrubber hook ─────────
+            # Scrub tool_result.result (and error/metadata) ONCE before return
+            # so every tool — including python_repl — inherits secret redaction.
+            # This is the ONLY place scrubbing happens on the way out; all
+            # downstream callers receive a pre-scrubbed ToolResult.
+            try:
+                _scrubber = _default_scrubber()
+                if tool_result.result is not None:
+                    tool_result = tool_result.model_copy(
+                        update={"result": _scrubber.scrub(
+                            tool_result.result, tool_name=_tool_name
+                        )}
+                    )
+                if tool_result.error is not None:
+                    tool_result = tool_result.model_copy(
+                        update={"error": _scrubber.scrub(
+                            tool_result.error, tool_name=_tool_name
+                        )}
+                    )
+                if tool_result.metadata:
+                    tool_result = tool_result.model_copy(
+                        update={"metadata": _scrubber.scrub(
+                            tool_result.metadata, tool_name=_tool_name
+                        )}
+                    )
+            except Exception as _scrub_exc:  # never let scrub errors break tool execution
+                self.logger.warning(
+                    "OutputScrubber error in tool %s (non-fatal): %s",
+                    _tool_name, _scrub_exc,
+                )
+
             # ── FEAT-176: emit AfterToolCallEvent on success ──────────────────
             _lc_dur = (time.perf_counter() - _lc_t0) * 1000
             await self.events.emit(AfterToolCallEvent(
@@ -639,6 +687,12 @@ class AbstractTool(EventEmitterMixin, ABC):
             error_msg = f"Error in {self.name}: {str(e)}"
             self.logger.error("%s", error_msg)
             self.logger.debug("%s", traceback.format_exc())
+
+            try:
+                _scrubber = _default_scrubber()
+                error_msg = _scrubber.scrub(error_msg, tool_name=_tool_name)
+            except Exception:
+                pass
 
             return ToolResult(
                 status="error",

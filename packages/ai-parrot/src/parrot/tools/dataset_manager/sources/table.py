@@ -52,6 +52,41 @@ def _normalize_driver(driver: str) -> str:
     return _DRIVER_ALIASES.get(driver.lower(), driver.lower())
 
 
+# Per-dialect SQL guidance surfaced to the LLM so it writes backend-correct
+# queries instead of defaulting to one dialect's syntax (the date/interval
+# functions are the most common cross-dialect failure). Keyed by *canonical*
+# driver name as returned by ``_normalize_driver``.
+_SQL_DIALECT_HINTS: Dict[str, str] = {
+    'bigquery': (
+        "SQL dialect: BigQuery GoogleSQL (standard SQL). "
+        "Date math uses DATE_SUB/DATE_ADD/TIMESTAMP_SUB with a bare unit, e.g. "
+        "DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) — do NOT write "
+        "\"CURRENT_DATE - INTERVAL '30 days'\" (that is PostgreSQL). "
+        "CURRENT_DATE() / CURRENT_TIMESTAMP() require parentheses. "
+        "Truncate with DATE_TRUNC(date_col, MONTH) (column first, bare unit)."
+    ),
+    'pg': (
+        "SQL dialect: PostgreSQL. Date math uses INTERVAL string literals, e.g. "
+        "CURRENT_DATE - INTERVAL '30 days'. Truncate with "
+        "DATE_TRUNC('month', date_col) (unit first, as a string)."
+    ),
+    'mysql': (
+        "SQL dialect: MySQL/MariaDB. Date math uses DATE_SUB/DATE_ADD with a "
+        "bare unit, e.g. DATE_SUB(CURRENT_DATE, INTERVAL 30 DAY). Format/truncate "
+        "dates with DATE_FORMAT(date_col, '%Y-%m-01'); there is no DATE_TRUNC."
+    ),
+}
+
+
+def dialect_hint(driver: str) -> str:
+    """Return concise SQL-dialect guidance for ``driver`` (empty if unknown).
+
+    The driver is normalized first, so aliases like ``bq``/``postgres``/
+    ``mariadb`` resolve to their canonical dialect hint.
+    """
+    return _SQL_DIALECT_HINTS.get(_normalize_driver(driver), '')
+
+
 def _resolve_credentials(driver: str) -> Tuple[Optional[Dict], Optional[str]]:
     """Resolve default credentials for a driver from navconfig.
 
@@ -789,6 +824,9 @@ class TableSource(DataSource):
         warning = self._size_warning(self._row_count_estimate)
         if warning:
             desc += f" {warning}"
+        hint = dialect_hint(self.driver)
+        if hint:
+            desc += f" {hint}"
         return desc
 
     @property

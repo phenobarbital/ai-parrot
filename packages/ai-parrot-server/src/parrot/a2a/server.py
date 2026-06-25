@@ -175,14 +175,24 @@ class A2AServer:
 
         return self._agent_card
 
+    #: Framework-internal tools that every BasicAgent auto-registers (e.g.
+    #: BasicAgent._get_default_tools appends ToJsonTool). They are plumbing, not
+    #: user-facing capabilities, so they must NOT be advertised as A2A skills:
+    #: they clutter the AgentCard and, because their auto-generated `inputSchema`
+    #: is a non-spec AgentSkill field, can trip strict consumers like Microsoft
+    #: Copilot Studio's "update agent via card" validator.
+    _INTERNAL_TOOL_NAMES = frozenset({"to_json"})
+
     def _build_skills_from_tools(self) -> List[AgentSkill]:
-        """Convert agent's tools to A2A skills."""
+        """Convert agent's tools to A2A skills (excluding internal plumbing)."""
         skills = []
 
         # Get tools from tool_manager if available
         if hasattr(self.agent, 'tool_manager'):
             tools = self.agent.tool_manager.list_tools()
             for tool_name in tools:
+                if tool_name in self._INTERNAL_TOOL_NAMES:
+                    continue
                 if tool := self.agent.tool_manager.get_tool(tool_name):
                     if skill := self._tool_to_skill(tool):
                         skills.append(skill)
@@ -190,6 +200,8 @@ class A2AServer:
         # Also check direct tools attribute
         elif hasattr(self.agent, 'tools') and self.agent.tools:
             for tool in self.agent.tools:
+                if getattr(tool, 'name', None) in self._INTERNAL_TOOL_NAMES:
+                    continue
                 if skill := self._tool_to_skill(tool):
                     skills.append(skill)
 

@@ -201,6 +201,7 @@ def mock_jira():
     j = MagicMock()
     j.jira_create_issue = AsyncMock(return_value={"key": "OPS-1"})
     j.jira_transition_issue = AsyncMock(return_value={"ok": True})
+    j.jira_transition_to = AsyncMock(return_value={"ok": True})
     j.jira_add_comment = AsyncMock(return_value={"id": "c1"})
     j.jira_assign_issue = AsyncMock(return_value={"ok": True})
     return j

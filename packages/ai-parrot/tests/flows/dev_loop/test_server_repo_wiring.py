@@ -152,3 +152,63 @@ async def test_server_local_fallback_no_repos(monkeypatch) -> None:
     assert "git_toolkit" in captured, (
         "git_toolkit should still be passed even when repos=[]"
     )
+
+
+@pytest.mark.asyncio
+async def test_server_grok_agent_startup(monkeypatch) -> None:
+    """With DEV_LOOP_DEVELOPMENT_AGENT=grok, _on_startup builds GrokCodeDispatcher."""
+    captured: dict[str, Any] = {}
+
+    def fake_build_flow(**kwargs: Any) -> MagicMock:
+        captured.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(conf, "DEV_LOOP_REPOS", [])
+
+    class _MockConfig:
+        def get(self, name: str, fallback: Any = None) -> Any:
+            if name == "DEV_LOOP_DEVELOPMENT_AGENT":
+                return "grok"
+            if name == "DEV_LOOP_GROK_MODEL":
+                return "grok-build-0.1"
+            return fallback
+
+        def getint(self, name: str, fallback: Any = None) -> Any:
+            return fallback
+
+    monkeypatch.setattr(conf, "config", _MockConfig())
+
+    server_mod = _load_server_module()
+
+    monkeypatch.setattr(server_mod, "build_dev_loop_flow", fake_build_flow)
+    monkeypatch.setattr(server_mod, "_build_log_toolkits", lambda: {})
+    monkeypatch.setattr(server_mod, "_build_jira_toolkit", lambda: MagicMock())
+    monkeypatch.setattr(
+        server_mod.aioredis,
+        "from_url",
+        lambda url, **kw: _make_fake_redis(),
+    )
+    monkeypatch.setattr(
+        server_mod,
+        "ClaudeCodeDispatcher",
+        MagicMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(
+        server_mod,
+        "GrokCodeDispatcher",
+        MagicMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(
+        server_mod,
+        "DevLoopRunner",
+        MagicMock(return_value=MagicMock(max_concurrent_runs=1)),
+    )
+
+    app = _FakeApp()
+    app["redis_url"] = "redis://localhost:6379/0"
+    await server_mod._on_startup(app)
+
+    assert "development_dispatcher" in captured
+    assert "development_profile" in captured
+    assert captured["development_profile"].model == "grok-build-0.1"
+

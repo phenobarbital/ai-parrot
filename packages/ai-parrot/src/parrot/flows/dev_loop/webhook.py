@@ -14,11 +14,12 @@ external to the flow itself (spec G8). Two paths trigger it:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
 from collections import OrderedDict
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from parrot import conf
 from parrot.flows.dev_loop.models import RevisionBrief
@@ -109,6 +110,178 @@ async def cleanup_worktree(branch: str) -> None:
         await proc.communicate()
     except Exception as exc:  # noqa: BLE001 - best effort
         logger.warning("worktree prune raised: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Reconcile sweep (webhook-less fallback cleanup)
+# ---------------------------------------------------------------------------
+#
+# The webhook above only fires when a public endpoint receives GitHub's
+# ``pull_request.closed`` event. Local / endpoint-less runs therefore never
+# clean up, so dev-loop worktrees pile up. ``sweep_finished_worktrees`` is the
+# pollable equivalent: it lists the live dev-loop worktrees and removes only
+# those whose PR is already merged or closed (and, opt-in, abandoned ones with
+# no PR). Worktrees with an *open* PR are always kept, because the revision
+# loop (``revision_handoff``) reuses the same worktree/branch to push
+# reviewer-requested changes onto the existing PR.
+
+
+async def _list_dev_loop_worktrees(
+    cwd: Optional[str] = None,
+) -> List[Tuple[str, str]]:
+    """Return ``(path, branch)`` for every live dev-loop worktree.
+
+    Parses ``git worktree list --porcelain`` and keeps only entries whose
+    branch matches the ``feat-<id>[-<slug>]`` convention. Returns an empty
+    list if git fails (best effort — the caller logs and continues).
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git", "worktree", "list", "--porcelain",
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+    except Exception as exc:  # noqa: BLE001 - best effort
+        logger.warning("`git worktree list` raised: %s", exc)
+        return []
+    if proc.returncode != 0:
+        logger.warning(
+            "`git worktree list` exited %s: %s",
+            proc.returncode, stderr.decode(errors="replace").strip(),
+        )
+        return []
+
+    entries: List[Tuple[str, str]] = []
+    cur_path: Optional[str] = None
+    for raw in stdout.decode(errors="replace").splitlines():
+        line = raw.strip()
+        if line.startswith("worktree "):
+            cur_path = line[len("worktree "):]
+        elif line.startswith("branch ") and cur_path is not None:
+            ref = line[len("branch "):]
+            branch = ref.rsplit("/", 1)[-1]  # refs/heads/feat-1 -> feat-1
+            if _is_dev_loop_branch(branch):
+                entries.append((cur_path, branch))
+        elif not line:
+            cur_path = None
+    return entries
+
+
+async def _gh_pr_state(branch: str, cwd: Optional[str] = None) -> Optional[str]:
+    """Return the PR state for *branch* via the ``gh`` CLI.
+
+    One of ``"merged"``, ``"closed"``, ``"open"``, or ``None`` when no PR
+    exists or ``gh`` is unavailable/unauthenticated (treated as "unknown" —
+    the caller keeps the worktree unless orphan removal is requested).
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "gh", "pr", "list",
+            "--head", branch,
+            "--state", "all",
+            "--json", "state,mergedAt",
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+    except FileNotFoundError:
+        logger.warning("`gh` CLI not found — cannot resolve PR state for %s.", branch)
+        return None
+    except Exception as exc:  # noqa: BLE001 - best effort
+        logger.warning("`gh pr list` for %s raised: %s", branch, exc)
+        return None
+    if proc.returncode != 0:
+        logger.info(
+            "`gh pr list` for %s exited %s: %s",
+            branch, proc.returncode, stderr.decode(errors="replace").strip(),
+        )
+        return None
+    try:
+        prs = json.loads(stdout.decode(errors="replace") or "[]")
+    except json.JSONDecodeError:
+        return None
+    if not prs:
+        return None
+    # Prefer the most decisive state: merged > open > closed.
+    states = {(pr.get("state") or "").lower() for pr in prs}
+    if any(pr.get("mergedAt") for pr in prs) or "merged" in states:
+        return "merged"
+    if "open" in states:
+        return "open"
+    if "closed" in states:
+        return "closed"
+    return None
+
+
+async def sweep_finished_worktrees(
+    *,
+    pr_state_fn: Optional[Callable[[str], Awaitable[Optional[str]]]] = None,
+    remove_orphans: bool = False,
+    dry_run: bool = False,
+    cwd: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Remove dev-loop worktrees whose PR is merged/closed. Best effort.
+
+    The webhook-less fallback for worktree cleanup. Lists every live dev-loop
+    worktree and decides per branch:
+
+    * PR **merged** or **closed** → remove the worktree.
+    * PR **open** → keep (a reviewer revision may still reuse it).
+    * **No PR** (orphan) → kept by default; removed only when
+      ``remove_orphans=True`` (e.g. a run that failed before opening a PR).
+
+    Args:
+        pr_state_fn: Async ``branch -> state`` resolver returning one of
+            ``"merged"``/``"closed"``/``"open"``/``None``. Defaults to the
+            ``gh`` CLI (:func:`_gh_pr_state`). Injectable for tests.
+        remove_orphans: Also remove worktrees with no PR.
+        dry_run: Report what would be removed without touching anything.
+        cwd: Working directory for the git/gh subprocesses (defaults to the
+            current process dir; pass the repo root when calling out-of-tree).
+
+    Returns:
+        A report dict ``{"removed": [...], "kept": [{"branch", "reason"}],
+        "errors": [...], "dry_run": bool}``.
+    """
+    resolve = pr_state_fn or (lambda b: _gh_pr_state(b, cwd=cwd))
+    report: Dict[str, Any] = {
+        "removed": [], "kept": [], "errors": [], "dry_run": dry_run,
+    }
+
+    worktrees = await _list_dev_loop_worktrees(cwd=cwd)
+    for _path, branch in worktrees:
+        try:
+            state = await resolve(branch)
+        except Exception as exc:  # noqa: BLE001 - best effort, per-branch
+            report["errors"].append({"branch": branch, "error": str(exc)})
+            continue
+
+        if state in ("merged", "closed"):
+            reason = f"pr_{state}"
+        elif state == "open":
+            report["kept"].append({"branch": branch, "reason": "pr_open"})
+            continue
+        else:  # no PR / unknown
+            if not remove_orphans:
+                report["kept"].append({"branch": branch, "reason": "no_pr"})
+                continue
+            reason = "orphan_no_pr"
+
+        if dry_run:
+            report["removed"].append({"branch": branch, "reason": reason, "dry_run": True})
+            continue
+        await cleanup_worktree(branch)
+        report["removed"].append({"branch": branch, "reason": reason})
+
+    logger.info(
+        "sweep_finished_worktrees: removed=%d kept=%d errors=%d (dry_run=%s)",
+        len(report["removed"]), len(report["kept"]),
+        len(report["errors"]), dry_run,
+    )
+    return report
 
 
 # ---------------------------------------------------------------------------
@@ -254,4 +427,5 @@ __all__ = [
     "RevisionWebhookHandler",
     "cleanup_worktree",
     "register_pull_request_webhook",
+    "sweep_finished_worktrees",
 ]

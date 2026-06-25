@@ -521,6 +521,31 @@ class DatasetManager(AbstractToolkit):
     tool_prefix: str = "dataset"
     exclude_tools = ("setup", "add_dataset", "list_available")
 
+    #: Universal decision rules for any agent driving a DatasetManager. Injected
+    #: into the system prompt via ``get_usage_rules()`` so the LLM commits to one
+    #: data path instead of probing the REPL, fetch_dataset and other tools in
+    #: turn (a common cause of wasted iterations). Override per-agent by passing
+    #: ``usage_rules=`` to the constructor.
+    DEFAULT_USAGE_RULES: str = (
+        "## How to work with datasets (read before calling any data tool)\n"
+        "\n"
+        "1. **Loaded DataFrames are ready now.** Datasets shown as *loaded* already "
+        "exist in the `python_repl_pandas` environment under their name and `dfN` "
+        "alias — use them directly (e.g. `df1.groupby(...)`). Never re-fetch a "
+        "loaded dataset.\n"
+        "2. **Aggregate tables in SQL, not pandas.** For a count / sum / ranking / "
+        "filter over an *unloaded* table, call `fetch_dataset` with a SQL query that "
+        "does the work in the database (`GROUP BY` / `WHERE` / `LIMIT`). Do NOT pull "
+        "a whole table into the REPL to aggregate it there.\n"
+        "3. **Pick one source and commit.** Read each dataset's description and "
+        "`usage_guidance` first, choose the one dataset that fits the question, and "
+        "use it. Do not probe several datasets hoping one returns data.\n"
+        "4. **Empty datasets hold no data.** A dataset listed with 0 rows must be "
+        "populated with `fetch_dataset` before you query it.\n"
+        "5. **Inspect, don't guess.** If unsure of columns or grain, call "
+        "`get_metadata(name=...)` instead of running trial-and-error code.\n"
+    )
+
     def __init__(
         self,
         df_prefix: str = "df",
@@ -529,9 +554,12 @@ class DatasetManager(AbstractToolkit):
         auto_detect_types: bool = True,
         policy_guard: Optional["DatasetPolicyGuard"] = None,
         dataplane_guard: Optional["DataPlanePolicyGuard"] = None,
+        usage_rules: Optional[str] = None,
         **kwargs
     ):
         super().__init__(**kwargs)
+        # None → fall back to DEFAULT_USAGE_RULES; "" disables the block entirely.
+        self._usage_rules: Optional[str] = usage_rules
         self._datasets: Dict[str, DatasetEntry] = {}
         self._query_loader: Optional[Any] = None
         self._on_change_callback: Optional[Callable[[], None]] = None
@@ -2637,7 +2665,7 @@ class DatasetManager(AbstractToolkit):
             if _tool_dataset_name(t) is None or _tool_dataset_name(t) in allowed_datasets
         ]
 
-    async def _pre_execute(self, tool_name: str, **kwargs) -> None:
+    async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:
         """PBAC Layer-2 per-call enforcement hook.
 
         Called by ``ToolkitTool._execute`` before invoking the bound method.
@@ -2702,7 +2730,7 @@ class DatasetManager(AbstractToolkit):
                 ),
             )
 
-    async def _post_execute(self, tool_name: str, result: Any, **kwargs) -> Any:
+    async def _post_execute(self, tool_name: str, result: Any, /, **kwargs) -> Any:
         """Reset the ContextVar token after tool execution.
 
         Resets ``_pctx_var`` to its value before ``_pre_execute`` ran.  This
@@ -3352,6 +3380,9 @@ class DatasetManager(AbstractToolkit):
                     warning = TableSource._size_warning(row_est)
                     if warning:
                         size_note += f" {warning}"
+                from .sources.table import dialect_hint
+                dhint = dialect_hint(entry.source.driver)
+                dhint_line = f"\n  - {dhint}" if dhint else ""
                 return {
                     "error": (
                         f"TableSource '{table_name}' requires an explicit 'sql' parameter. "
@@ -3359,11 +3390,12 @@ class DatasetManager(AbstractToolkit):
                     ),
                     "hint": (
                         f"Write a targeted SQL query. Examples:\n"
-                        f"  - Aggregation: sql=\"SELECT DATE_TRUNC('month', date_col) AS month, "
-                        f"COUNT(*) FROM {table_name} WHERE ... GROUP BY 1\"\n"
+                        f"  - Aggregation: sql=\"SELECT category, COUNT(*) AS n "
+                        f"FROM {table_name} WHERE ... GROUP BY category\"\n"
                         f"  - Filtered: sql=\"SELECT col1, col2 FROM {table_name} "
                         f"WHERE status = 'active' LIMIT 100\"\n"
                         f"  - Inspect schema first: call get_source_schema('{resolved}')"
+                        f"{dhint_line}"
                     ),
                 }
             # ── Auto-rewrite dataset alias → real table name ──────────
@@ -3443,6 +3475,9 @@ class DatasetManager(AbstractToolkit):
                 _has_limit = bool(re.search(r'\bLIMIT\s+\d+', _sql_upper))
                 if not _has_aggregation and not _has_limit:
                     table_name = entry.source.table
+                    from .sources.table import dialect_hint
+                    dhint = dialect_hint(entry.source.driver)
+                    dhint_text = f" {dhint}" if dhint else ""
                     return {
                         "error": (
                             f"Query on large table '{table_name}' "
@@ -3453,10 +3488,9 @@ class DatasetManager(AbstractToolkit):
                         "hint": (
                             f"Rewrite your SQL to push aggregation to the "
                             f"database. Use GROUP BY with AVG/SUM/COUNT. "
-                            f"Example: SELECT id, DATE_TRUNC('month', date_col) "
-                            f"AS month, AVG(metric) FROM {table_name} "
-                            f"WHERE ... GROUP BY id, month. "
-                            f"If you truly need row-level data, add LIMIT N."
+                            f"Example: SELECT category, AVG(metric) AS avg_metric "
+                            f"FROM {table_name} WHERE ... GROUP BY category. "
+                            f"If you truly need row-level data, add LIMIT N.{dhint_text}"
                         ),
                     }
 
@@ -3502,11 +3536,14 @@ class DatasetManager(AbstractToolkit):
                     col_hint = (
                         f" Call get_source_schema('{resolved}') to see available columns."
                     )
+                from .sources.table import dialect_hint
+                dhint = dialect_hint(entry.source.driver)
+                dhint_text = f" {dhint}" if dhint else ""
                 hint = (
                     f"Source type is '{source_type}' (table='{table_name}'). "
                     f"Your SQL query failed: {exc}. "
                     f"Do NOT fall back to SELECT * — fix the SQL instead. "
-                    f"The table MUST be referenced as '{table_name}' in your query.{col_hint}"
+                    f"The table MUST be referenced as '{table_name}' in your query.{col_hint}{dhint_text}"
                 )
             else:
                 hint = (
@@ -4017,6 +4054,22 @@ class DatasetManager(AbstractToolkit):
         if not self.df_guide and self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
         return self.df_guide
+
+    def get_usage_rules(self) -> str:
+        """Return the decision rules an agent should inject into its system prompt.
+
+        These are tool-level (not agent-specific): any agent driving a
+        DatasetManager benefits from the same guidance on when to use loaded
+        DataFrames vs ``fetch_dataset`` vs ``get_metadata``. Returns the
+        per-instance override when one was passed to the constructor, otherwise
+        :attr:`DEFAULT_USAGE_RULES`. An explicit empty string disables the block.
+
+        Returns:
+            The usage-rules markdown block, or ``""`` when disabled.
+        """
+        if self._usage_rules is None:
+            return self.DEFAULT_USAGE_RULES
+        return self._usage_rules
 
     # ─────────────────────────────────────────────────────────────
     # Data Loading & Caching

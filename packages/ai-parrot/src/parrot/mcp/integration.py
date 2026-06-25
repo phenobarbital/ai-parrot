@@ -18,7 +18,8 @@ from .oauth import (
 )
 from .client import (
     MCPClientConfig as MCPServerConfig,
-    MCPConnectionError
+    MCPConnectionError,
+    MCPRateLimitError,
 )
 from .transports.stdio import StdioMCPSession
 from .transports.unix import UnixMCPSession
@@ -394,11 +395,46 @@ class MCPClient:
         arguments: Dict[str, Any],
         headers: Optional[Dict[str, str]] = None
     ):
-        """Call an MCP tool."""
+        """Call an MCP tool.
+
+        Rate-limit responses (``-32429``) are retried with the server-suggested
+        ``retryAfter`` delay (or an exponential fallback), up to
+        ``rate_limit_max_retries``. A suggested wait longer than
+        ``rate_limit_max_wait`` fails fast instead of blocking the agent loop —
+        the error is surfaced so the caller can move on rather than hammering a
+        throttled server.
+        """
         if not self._connected:
             raise MCPConnectionError("Not connected to MCP server")
 
-        return await self._session.call_tool(tool_name, arguments)
+        max_retries = getattr(self.config, "rate_limit_max_retries", 2)
+        max_wait = getattr(self.config, "rate_limit_max_wait", 60.0)
+        base_delay = getattr(self.config, "rate_limit_base_delay", 1.0)
+
+        attempt = 0
+        while True:
+            try:
+                return await self._session.call_tool(tool_name, arguments)
+            except MCPRateLimitError as exc:
+                delay = (
+                    exc.retry_after
+                    if exc.retry_after is not None
+                    else base_delay * (2 ** attempt)
+                )
+                if attempt >= max_retries or delay > max_wait:
+                    self.logger.warning(
+                        "Rate limit on tool '%s'; not retrying "
+                        "(attempt %d/%d, suggested wait %.1fs, cap %.1fs): %s",
+                        tool_name, attempt + 1, max_retries + 1,
+                        delay, max_wait, exc,
+                    )
+                    raise
+                self.logger.info(
+                    "Rate limited on tool '%s'; backing off %.1fs before retry %d/%d",
+                    tool_name, delay, attempt + 1, max_retries,
+                )
+                await asyncio.sleep(delay)
+                attempt += 1
 
     async def get_available_tools(self) -> List[Dict[str, Any]]:
         """Get raw available tools from server."""

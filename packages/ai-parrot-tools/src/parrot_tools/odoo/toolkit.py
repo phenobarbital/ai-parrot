@@ -265,7 +265,7 @@ class OdooToolkit(AbstractToolkit):
                 await self._transport.authenticate()
             return self._transport
 
-    async def _pre_execute(self, tool_name: str, **kwargs: Any) -> None:
+    async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
         """Authenticate lazily before the first tool call."""
         if self.config.url and self.config.database and self.config.username:
             await self._ensure_transport()

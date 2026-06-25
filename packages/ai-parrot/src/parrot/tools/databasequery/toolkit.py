@@ -177,7 +177,7 @@ class DatabaseQueryToolkit(AbstractToolkit):
 
     # ── Lifecycle hook ───────────────────────────────────────────────────────
 
-    async def _post_execute(self, tool_name: str, result: Any, **kwargs: Any) -> Any:
+    async def _post_execute(self, tool_name: str, result: Any, /, **kwargs: Any) -> Any:
         """Serialize Pydantic BaseModel results to dicts for the LLM.
 
         Called automatically after every tool execution by ``AbstractToolkit``.

@@ -189,7 +189,7 @@ class ReminderToolkit(AbstractToolkit):
         self._sm = scheduler_manager
         self._pctx: "PermissionContext | None" = None
 
-    async def _pre_execute(self, tool_name: str, **kwargs: Any) -> None:
+    async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
         """Stash the per-call :class:`~parrot.auth.permission.PermissionContext`.
 
         Called by the framework before each tool invocation.  The context is

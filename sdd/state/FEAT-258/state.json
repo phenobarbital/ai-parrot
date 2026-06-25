@@ -1,0 +1,36 @@
+{
+  "feat_id": "FEAT-258",
+  "phase": "research_complete",
+  "started_at": "2026-06-24T12:00:00Z",
+  "updated_at": "2026-06-24T12:00:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary": "JiraSpecialist webhook transition detection"
+  },
+  "consumed": {
+    "files_read": 8,
+    "grep_calls": 12,
+    "git_calls": 0,
+    "depth_reached": 1
+  },
+  "truncated": false,
+  "phases": {
+    "source": { "status": "complete" },
+    "plan": { "status": "complete", "approved_by_user": false },
+    "research": { "status": "complete", "files_read": 8, "grep_calls": 12 },
+    "synthesis": { "status": "pending" },
+    "review_gate": { "status": "pending" },
+    "qa": { "status": "pending" },
+    "output": { "status": "pending" }
+  }
+}

@@ -26,7 +26,7 @@ Notes:
 - Each method returns JSON-serializable dicts/lists (using Issue.raw where possible).
 """
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Union, Literal, TypedDict
+from typing import Any, Dict, List, Optional, Sequence, Union, Literal, TypedDict
 import os
 import re
 import logging
@@ -366,6 +366,21 @@ class TransitionIssueInput(BaseModel):
     resolution: Optional[Dict[str, Any]] = Field(default=None, description="Resolution dict, e.g., {'id': '3'}")
 
 
+class TransitionToInput(BaseModel):
+    """Input for walking an issue to a target status across a custom workflow."""
+    issue: str = Field(description="Issue key or id (e.g., 'NAV-8350')")
+    target_status: str = Field(
+        description=(
+            "Final status the issue should end in (e.g., 'Resolved', 'Done'). "
+            "Unlike a single transition, this walks every intermediate step of "
+            "the project's workflow to reach it."
+        )
+    )
+    fields: Optional[Dict[str, Any]] = Field(default=None, description="Extra fields to set on the FINAL transition")
+    assignee: Optional[Dict[str, Any]] = Field(default=None, description="Assignee dict applied on the FINAL transition")
+    resolution: Optional[Dict[str, Any]] = Field(default=None, description="Resolution dict applied on the FINAL transition")
+
+
 class AddAttachmentInput(BaseModel):
     """Input for adding an attachment to an issue."""
     issue: str = Field(description="Issue key or id")
@@ -656,6 +671,14 @@ class JiraToolkit(AbstractToolkit):
         JIRA_OAUTH_CONSUMER_KEY, JIRA_OAUTH_KEY_CERT, JIRA_OAUTH_ACCESS_TOKEN,
         JIRA_OAUTH_ACCESS_TOKEN_SECRET, JIRA_DEFAULT_PROJECT
 
+    Custom-workflow keys (used by :meth:`jira_transition_to`):
+        JIRA_WORKFLOW_PATH — default ordered status chain for any project,
+            e.g. ``"Backlog > Open > To Do > In Progress > Resolved"`` (``>``,
+            ``->`` and ``→`` are all accepted separators).
+        JIRA_WORKFLOW_PATH_<PROJECT> — per-project override keyed by the issue
+            key prefix, e.g. ``JIRA_WORKFLOW_PATH_TROC``. Falls back to
+            JIRA_WORKFLOW_PATH when a project has no specific entry.
+
     Field presets for efficiency:
         count: key,assignee,reporter,status,priority,issuetype,project,created
         list: key,summary,assignee,status,priority,issuetype,project,created,updated
@@ -685,6 +708,11 @@ class JiraToolkit(AbstractToolkit):
     input_class = JiraInput
     _tool_manager: Optional[ToolManager] = None
 
+    # Sentinel key for the project-agnostic default workflow path.
+    _DEFAULT_WORKFLOW_KEY = "_DEFAULT"
+    # Separators accepted in a declared workflow path string.
+    _WORKFLOW_SEPARATORS = re.compile(r"\s*(?:->|→|>)\s*")
+
     def __init__(
         self,
         server_url: Optional[str] = None,
@@ -698,6 +726,7 @@ class JiraToolkit(AbstractToolkit):
         oauth_access_token_secret: Optional[str] = None,
         default_project: Optional[str] = None,
         credential_resolver: Any = None,
+        workflow_paths: Optional[Dict[str, Union[str, List[str]]]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -761,6 +790,38 @@ class JiraToolkit(AbstractToolkit):
         self.default_components = _parse_csv(_cfg("JIRA_DEFAULT_COMPONENTS", "") or "")
         self.default_due_date_offset = _cfg("JIRA_DEFAULT_DUE_DATE_OFFSET")
         self.default_estimate = _cfg("JIRA_DEFAULT_ESTIMATE")
+
+        # Declared workflow paths — the ordered status chain for a project's
+        # custom Jira workflow. Jira's API only exposes the transitions
+        # available from an issue's *current* status, so multi-stage workflows
+        # (e.g. Backlog → Open → To Do → In Progress → Resolved) cannot be
+        # walked without knowing the path up-front. Sources, lowest→highest
+        # precedence:
+        #   1. ``JIRA_WORKFLOW_PATH`` — default path for any project.
+        #   2. ``JIRA_WORKFLOW_PATH_<PROJECT>`` env vars — per-project override.
+        #   3. ``workflow_paths`` constructor arg — programmatic override.
+        # Each value is a separator-delimited status list ('>', '->', or '→').
+        # Keyed by upper-cased project (the ``_DEFAULT`` sentinel for the
+        # fallback). Consumed by :meth:`jira_transition_to`.
+        self.workflow_paths: Dict[str, List[str]] = {}
+        _default_path = _cfg("JIRA_WORKFLOW_PATH")
+        if _default_path:
+            self.workflow_paths[self._DEFAULT_WORKFLOW_KEY] = (
+                self._parse_workflow_path(_default_path)
+            )
+        # Per-project env vars: scan os.environ for JIRA_WORKFLOW_PATH_<PROJECT>.
+        _prefix = "JIRA_WORKFLOW_PATH_"
+        for _env_key, _env_val in os.environ.items():
+            if _env_key.startswith(_prefix) and _env_val:
+                _project = _env_key[len(_prefix):].upper()
+                self.workflow_paths[_project] = self._parse_workflow_path(_env_val)
+        # Programmatic override wins.
+        for _project, _value in (workflow_paths or {}).items():
+            _key = self._DEFAULT_WORKFLOW_KEY if not _project else str(_project).upper()
+            self.workflow_paths[_key] = (
+                list(_value) if isinstance(_value, (list, tuple))
+                else self._parse_workflow_path(str(_value))
+            )
 
         # OAuth 2.0 (3LO) per-user mode: defer client creation to _pre_execute.
         self.credential_resolver = credential_resolver
@@ -863,7 +924,7 @@ class JiraToolkit(AbstractToolkit):
         }
         return JIRA(options=options, timeout=self.request_timeout)
 
-    async def _pre_execute(self, tool_name: str, **kwargs) -> None:
+    async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:
         """Resolve per-user Jira credentials for ``oauth2_3lo`` mode.
 
         For legacy ``basic_auth`` / ``token_auth`` / ``oauth`` modes this is a
@@ -1385,6 +1446,151 @@ class JiraToolkit(AbstractToolkit):
         await asyncio.to_thread(_run)
         # Return the latest state of the issue
         return await self.jira_get_issue(issue)
+
+    # ------------------------------------------------------------------
+    # Workflow-path walking (multi-hop transitions)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _parse_workflow_path(cls, value: str) -> List[str]:
+        """Split a declared workflow-path string into ordered status names.
+
+        Accepts ``>``, ``->`` or ``→`` as separators, e.g.
+        ``"Backlog > Open > To Do > In Progress > Resolved"``.
+        """
+        return [s.strip() for s in cls._WORKFLOW_SEPARATORS.split(value) if s.strip()]
+
+    @staticmethod
+    def _project_of(issue: str) -> Optional[str]:
+        """Derive the upper-cased project key from an issue key (``NAV-8350`` → ``NAV``)."""
+        key = str(issue).strip()
+        if "-" in key:
+            prefix = key.rsplit("-", 1)[0]
+            return prefix.upper() or None
+        return None
+
+    def _workflow_path_for(self, issue: str) -> Optional[List[str]]:
+        """Return the declared workflow path for *issue*'s project, or the default."""
+        project = self._project_of(issue)
+        if project and project in self.workflow_paths:
+            return self.workflow_paths[project]
+        return self.workflow_paths.get(self._DEFAULT_WORKFLOW_KEY)
+
+    @staticmethod
+    def _path_steps(
+        path: Sequence[str], current: str, target: str
+    ) -> Optional[List[str]]:
+        """Ordered intermediate statuses to walk from *current* to *target*.
+
+        Both endpoints must appear on *path* (case-insensitive). Returns the
+        statuses to transition *into*, in order, ending at *target* — walking
+        forward or backward as needed. Returns ``None`` when either endpoint is
+        not on the path (caller falls back to a direct single hop); an empty
+        list means current already equals target.
+        """
+        lowered = [p.lower().strip() for p in path]
+        cur = current.lower().strip()
+        tgt = target.lower().strip()
+        try:
+            ci = lowered.index(cur)
+            ti = lowered.index(tgt)
+        except ValueError:
+            return None
+        if ci == ti:
+            return []
+        if ci < ti:
+            return list(path[ci + 1:ti + 1])
+        return list(reversed(path[ti:ci]))
+
+    async def _current_status(self, issue: str) -> Optional[str]:
+        """Return the issue's current status name, or ``None`` if unavailable."""
+        env = await self.jira_get_issue(issue)
+        if env.get("status") != "ok":
+            return None
+        fields = (env.get("data") or {}).get("fields") or {}
+        status = fields.get("status") or {}
+        name = status.get("name") if isinstance(status, dict) else None
+        return name
+
+    @requires_permission('jira.write')
+    @tool_schema(TransitionToInput)
+    async def jira_transition_to(
+        self,
+        issue: str,
+        target_status: str,
+        fields: Optional[Dict[str, Any]] = None,
+        assignee: Optional[Dict[str, Any]] = None,
+        resolution: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Move an issue to *target_status*, walking every intermediate step.
+
+        Jira only exposes the transitions available from an issue's *current*
+        status, so a single transition cannot cross a multi-stage workflow
+        (e.g. ``Backlog → Open → To Do → In Progress → Resolved``). This tool
+        consults the project's declared workflow path (configured via
+        ``JIRA_WORKFLOW_PATH`` / ``JIRA_WORKFLOW_PATH_<PROJECT>`` or the
+        ``workflow_paths`` constructor arg) and applies each hop in turn until
+        the issue reaches *target_status*. ``fields``/``assignee``/``resolution``
+        are applied only on the FINAL hop.
+
+        When no workflow path is declared (or the endpoints are not on it), it
+        falls back to a single direct transition — identical to
+        :meth:`jira_transition_issue`.
+
+        Requires jira.write permission.
+        """
+        current = await self._current_status(issue)
+        if current is None:
+            # Cannot read state — defer to the single-hop path for its error.
+            return await self.jira_transition_issue(
+                issue, target_status, fields=fields,
+                assignee=assignee, resolution=resolution,
+            )
+
+        final_kwargs = {"fields": fields, "assignee": assignee, "resolution": resolution}
+
+        if current.lower().strip() == str(target_status).lower().strip():
+            self.logger.info(
+                "Issue %s already in status %r; no transition needed.",
+                issue, current,
+            )
+            return await self.jira_get_issue(issue)
+
+        path = self._workflow_path_for(issue)
+        steps = self._path_steps(path, current, target_status) if path else None
+
+        if not steps:
+            # No declared path (or endpoints off-path) → single direct hop.
+            if path is not None and steps is None:
+                self.logger.debug(
+                    "Workflow path for %s does not contain both %r and %r; "
+                    "attempting a direct transition.",
+                    issue, current, target_status,
+                )
+            return await self.jira_transition_issue(
+                issue, target_status, **final_kwargs,
+            )
+
+        self.logger.info(
+            "Walking %s from %r to %r via %s.",
+            issue, current, target_status, " → ".join(steps),
+        )
+        result: Dict[str, Any] = {}
+        for idx, status in enumerate(steps):
+            is_final = idx == len(steps) - 1
+            step_kwargs = final_kwargs if is_final else {}
+            try:
+                result = await self.jira_transition_issue(
+                    issue, status, **step_kwargs,
+                )
+            except ValueError as exc:
+                raise ValueError(
+                    f"Workflow walk for {issue} stalled at hop {idx + 1}/"
+                    f"{len(steps)} (→ {status!r}). The declared path "
+                    f"{path} does not match the live workflow. Underlying "
+                    f"error: {exc}"
+                ) from exc
+        return result
 
     @requires_permission('jira.write')
     @tool_schema(AddAttachmentInput)
