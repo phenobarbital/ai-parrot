@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-25T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-25T03:19:43+00:00",
   "tasks": [
     {
       "id": "TASK-1637",
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-259",
       "feature": "microsoft-copilot-agent-sdk",
       "spec": "sdd/specs/microsoft-copilot-agent-sdk.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -107,8 +107,8 @@
       "parallelism_notes": "Tests all components — must run after all implementation tasks",
       "assigned_to": null,
       "started_at": "2026-06-25T03:10:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1641-msagentsdk-tests.md"
+      "completed_at": "2026-06-25T03:19:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1641-msagentsdk-tests.md"
     }
   ]
 }
