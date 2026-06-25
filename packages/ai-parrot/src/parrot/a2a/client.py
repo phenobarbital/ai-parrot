@@ -161,6 +161,7 @@ class A2AClient:
             url=data.get("url") or self.base_url,
             skills=skills,
             protocol_version=data.get("protocolVersion", "0.3"),
+            preferred_transport=data.get("preferredTransport", "JSONRPC"),
         )
 
     def get_skills(self) -> List[AgentSkill]:

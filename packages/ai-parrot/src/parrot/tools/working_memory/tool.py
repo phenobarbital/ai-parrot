@@ -76,6 +76,14 @@ class WorkingMemoryToolkit(AbstractToolkit):
 
     name: str = "working_memory"
     tool_prefix: str = "wm"
+    #: ``store(key, df)`` is a programmatic API that takes a raw ``pd.DataFrame``
+    #: positional argument. The LLM cannot serialize a DataFrame nor reference
+    #: one through ``StoreInput`` (which only carries ``key``/``description``/
+    #: ``turn_id``), so exposing it as the ``wm_store`` tool yields a fatal
+    #: "missing required argument 'df'" bind error. The LLM-facing paths to put
+    #: a frame into working memory are ``import_from_tool`` and
+    #: ``compute_and_store``; ``store`` stays callable from Python only.
+    exclude_tools: tuple[str, ...] = ("store",)
     description: str = (
         "Intermediate result store for long-running analytical and conversational "
         "operations. Store and retrieve DataFrames, text, JSON, messages, bytes, "
@@ -108,9 +116,13 @@ class WorkingMemoryToolkit(AbstractToolkit):
             session_id: Optional session identifier for the working memory catalog.
             max_rows: Max rows in summary previews returned to the LLM.
             max_cols: Max columns in summary previews returned to the LLM.
-            tool_locals_registry: Dict mapping tool names to their locals() dicts,
-                e.g. {"PythonPandasTool": pandas_tool._locals,
-                       "PythonREPLTool": repl_tool._locals}.
+            tool_locals_registry: Dict mapping tool names to their REPL namespace
+                dicts, e.g. {"PythonPandasTool": pandas_tool.locals,
+                             "PythonREPLTool": repl_tool.locals}.
+                The attribute is ``.locals`` (the live REPL namespace), not
+                ``._locals``. ``BasicAgent.configure()`` auto-wires this from
+                any registered REPL-family tool; explicit wiring takes
+                precedence and is never overwritten.
             answer_memory: Optional AnswerMemory instance for the Q&A bridge.
                 Typically auto-injected by BasicAgent.configure() — explicit
                 wiring takes precedence over auto-injection.
@@ -385,6 +397,24 @@ class WorkingMemoryToolkit(AbstractToolkit):
         if spec.right_source:
             parent_keys.append(spec.right_source)
 
+        # Pull any referenced source that lives in a bridged tool namespace
+        # (PythonPandasTool/REPL) but was never explicitly imported. This stops
+        # the LLM from failing on "not found in catalog. Available: []" the
+        # moment it references a pandas DataFrame directly.
+        missing = await self._stage_missing_sources(parent_keys)
+        if missing:
+            tool_dfs = {
+                tname: [k for k, v in ns.items() if isinstance(v, pd.DataFrame)]
+                for tname, ns in self._tool_locals.items()
+            }
+            catalog_keys = list(self._catalog._store.keys())
+            error_msg = (
+                f"Source(s) {missing} not found in working memory or any tool. "
+                f"Catalog: {catalog_keys}. Tool DataFrames: {tool_dfs}"
+            )
+            self.logger.warning("[WorkingMemory] %s", error_msg)
+            return {"status": "error", "key": spec.store_as, "error": error_msg}
+
         try:
             result_df = self._executor.execute(spec, self._catalog._store)
             entry = self._catalog.put(
@@ -566,6 +596,52 @@ class WorkingMemoryToolkit(AbstractToolkit):
             "from_variable": variable_name,
             "summary": await self._summary_async(entry),
         }
+
+    async def _stage_missing_sources(self, keys: list[str]) -> list[str]:
+        """Auto-import operation sources that live in a bridged tool namespace.
+
+        ``compute_and_store`` reads its sources from the working-memory catalog,
+        but the LLM routinely references a DataFrame that only exists in the
+        PythonPandasTool/PythonREPL namespace (e.g. ``kiosks_locations`` /
+        ``df10``) without first calling ``import_from_tool``. Rather than fail
+        with ``"not found in catalog. Available: []"`` and burn an iteration,
+        pull any such DataFrame from the bridged tool locals into the catalog.
+
+        Args:
+            keys: Source keys the pending operation needs.
+
+        Returns:
+            The subset of *keys* that could not be located anywhere.
+        """
+        still_missing: list[str] = []
+        for key in keys:
+            if not key or key in self._catalog._store:
+                continue
+            located = None
+            located_tool = None
+            for tname, ns in self._tool_locals.items():
+                obj = ns.get(key)
+                if isinstance(obj, pd.DataFrame):
+                    located, located_tool = obj, tname
+                    break
+            if located is None:
+                still_missing.append(key)
+                continue
+            df_copy = (
+                await asyncio.to_thread(located.copy, deep=True)
+                if self._is_large_df(located)
+                else located.copy(deep=True)
+            )
+            self._catalog.put(
+                key=key,
+                df=df_copy,
+                description=f"Auto-imported from {located_tool}.{key}",
+            )
+            self.logger.info(
+                "[WorkingMemory] Auto-imported '%s' from %s (shape=%s) for compute_and_store",
+                key, located_tool, df_copy.shape,
+            )
+        return still_missing
 
     @tool_schema(ListToolDataFramesInput)
     async def list_tool_dataframes(self, tool_name: Optional[str] = None) -> dict:

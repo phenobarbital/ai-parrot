@@ -71,6 +71,10 @@ voice-moonshine = [
 #   pip install ai-parrot-integrations[msagentsdk]
 msagentsdk = [
     "microsoft-agents-hosting-aiohttp~=0.9.0",
+    # MSAL-based connection manager: required for Azure AD auth mode. The
+    # CloudAdapter needs a concrete `Connections` provider to obtain outbound
+    # channel tokens and to validate inbound JWTs (see MSAgentSDKWrapper).
+    "microsoft-agents-authentication-msal~=0.9.0",
 ]
 # LiveAvatar (FEAT-242) is intentionally NOT part of the `all` bundle: it pulls
 # the livekit-api transport and incurs LiveAvatar/LiveKit minutes, so it is

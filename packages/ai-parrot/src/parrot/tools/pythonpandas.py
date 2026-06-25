@@ -194,6 +194,11 @@ class PythonPandasTool(PythonREPLTool):
 
         # ── Share PythonREPLTool infrastructure (read-only / thread-safe) ──
         clone.sanitize_input_enabled = self.sanitize_input_enabled
+        # The code sanitizer is a stateless validator; share it so the clone's
+        # _execute_code AST gate works. Without this, every sanitized run raised
+        # AttributeError: 'PythonPandasTool' object has no attribute
+        # '_code_sanitizer' (the clone skips PythonREPLTool.__init__).
+        clone._code_sanitizer = self._code_sanitizer
         clone.plt_style = self.plt_style
         clone.palette = self.palette
         clone.setup_code = self.setup_code

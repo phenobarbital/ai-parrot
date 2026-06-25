@@ -77,12 +77,16 @@ class TestEndToEndMessageFlow:
                 "microsoft_agents.hosting.aiohttp": MagicMock(
                     CloudAdapter=mock_adapter_cls
                 ),
+                "microsoft_agents.hosting.core": MagicMock(),
             },
         ):
             from parrot.integrations.msagentsdk.wrapper import MSAgentSDKWrapper
 
             wrapper = MSAgentSDKWrapper(mock_bot, cfg, app)
+            # Anonymous request: no Authorization header, no configured client_id.
+            wrapper._auth_config.CLIENT_ID = None
             fake_request = MagicMock()
+            fake_request.headers.get.return_value = None
             response = await wrapper.handle_request(fake_request)
 
         mock_adapter.process.assert_awaited_once_with(

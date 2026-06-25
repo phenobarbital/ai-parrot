@@ -61,6 +61,7 @@ def mock_stream_chunk(text):
     chunk.candidates = [MagicMock()]  # Candidate for finish_reason check
     # Ensure no function call in chunk for basic test
     chunk_part = MagicMock()
+    chunk_part.text = text
     chunk_part.function_call = None
     chunk_part.executable_code = None
     chunk.candidates[0].content.parts = [chunk_part]
@@ -96,10 +97,15 @@ async def test_google_ask_stream():
         await client._ensure_client(model="gemini-2.5-flash")
 
         chunks = []
+        final_msg = None
         async for chunk in client.ask_stream("Hi"):
-            chunks.append(chunk)
+            if isinstance(chunk, str):
+                chunks.append(chunk)
+            else:
+                final_msg = chunk
 
-        assert "".join(chunks) == "Hello world"
+        assert "".join(chunks) == "Helloworld"
+        assert final_msg is not None
 
 
 @pytest.mark.asyncio

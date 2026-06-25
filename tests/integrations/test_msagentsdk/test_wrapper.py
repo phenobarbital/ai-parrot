@@ -53,6 +53,9 @@ def _make_wrapper(mock_bot, mock_config, mock_app):
             "microsoft_agents.hosting.aiohttp": MagicMock(
                 CloudAdapter=mock_adapter_cls
             ),
+            # Anonymous mode now builds an _AnonymousConnectionManager, which
+            # imports AnonymousTokenProvider / AgentAuthConfiguration from core.
+            "microsoft_agents.hosting.core": MagicMock(),
         },
     ):
         from parrot.integrations.msagentsdk.wrapper import MSAgentSDKWrapper
@@ -103,18 +106,150 @@ class TestMSAgentSDKWrapperHandleRequest:
                 "microsoft_agents.hosting.aiohttp": MagicMock(
                     CloudAdapter=mock_adapter_cls
                 ),
+                "microsoft_agents.hosting.core": MagicMock(),
             },
         ):
             from parrot.integrations.msagentsdk.wrapper import MSAgentSDKWrapper
 
             wrapper = MSAgentSDKWrapper(mock_bot, mock_config, mock_app)
+            # Anonymous request: no Authorization header, no configured client_id.
+            wrapper._auth_config.CLIENT_ID = None
             fake_request = MagicMock()
+            fake_request.headers.get.return_value = None
             result = await wrapper.handle_request(fake_request)
 
         mock_adapter_instance.process.assert_called_once_with(
             fake_request, wrapper.m365_agent
         )
         assert isinstance(result, web.Response)
+
+    @pytest.mark.asyncio
+    async def test_anonymous_ignores_bearer_token(self, mock_app, mock_config):
+        """In anonymous mode a present Authorization header is NOT validated.
+
+        Regression: Web Chat sends a bearer token even to anonymous bots; the
+        wrapper must attach anonymous claims instead of failing audience checks.
+        """
+        mock_bot = AsyncMock()
+        mock_adapter_cls = MagicMock()
+        mock_adapter_instance = AsyncMock()
+        mock_adapter_instance.process = AsyncMock(
+            return_value=web.Response(text="ok")
+        )
+        mock_adapter_cls.return_value = mock_adapter_instance
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "microsoft_agents": MagicMock(),
+                "microsoft_agents.hosting": MagicMock(),
+                "microsoft_agents.hosting.aiohttp": MagicMock(
+                    CloudAdapter=mock_adapter_cls
+                ),
+                "microsoft_agents.hosting.core": MagicMock(),
+            },
+        ):
+            from parrot.integrations.msagentsdk.wrapper import MSAgentSDKWrapper
+
+            wrapper = MSAgentSDKWrapper(mock_bot, mock_config, mock_app)
+            fake_request = MagicMock()
+            # A bearer token IS present, but anonymous mode must ignore it.
+            fake_request.headers.get.return_value = "Bearer some.jwt.token"
+            result = await wrapper.handle_request(fake_request)
+
+        wrapper._token_validator.validate_token.assert_not_called()
+        wrapper._token_validator.get_anonymous_claims.assert_called_once()
+        mock_adapter_instance.process.assert_awaited_once_with(
+            fake_request, wrapper.m365_agent
+        )
+        assert isinstance(result, web.Response)
+
+
+class TestMSAgentSDKWrapperAzureAuth:
+    """Outbound auth config built for Azure AD (non-anonymous) modes."""
+
+    def _build(self, config):
+        """Build a wrapper in non-anonymous mode, capturing AgentAuthConfiguration."""
+        captured = {}
+
+        def _agent_auth_configuration(**kwargs):
+            captured.update(kwargs)
+            return MagicMock(CLIENT_ID=kwargs.get("client_id"))
+
+        core_mock = MagicMock(AgentAuthConfiguration=_agent_auth_configuration)
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "microsoft_agents": MagicMock(),
+                "microsoft_agents.hosting": MagicMock(),
+                "microsoft_agents.hosting.aiohttp": MagicMock(
+                    CloudAdapter=MagicMock()
+                ),
+                "microsoft_agents.hosting.core": core_mock,
+                "microsoft_agents.authentication": MagicMock(),
+                "microsoft_agents.authentication.msal": MagicMock(
+                    MsalConnectionManager=MagicMock()
+                ),
+            },
+        ):
+            from parrot.integrations.msagentsdk.wrapper import MSAgentSDKWrapper
+
+            MSAgentSDKWrapper(AsyncMock(), config, web.Application())
+        return captured
+
+    def test_multitenant_uses_botframework_authority(self):
+        """A multi-tenant app pins the botframework.com outbound authority."""
+        from parrot.integrations.msagentsdk.models import MSAgentSDKConfig
+
+        cfg = MSAgentSDKConfig(
+            name="MTBot",
+            chatbot_id="agent",
+            client_id="cid",
+            client_secret="secret",
+            tenant_id="tid",
+            app_type="MultiTenant",
+        )
+        captured = self._build(cfg)
+        # tenant_id kept (for inbound issuer validation), authority overridden.
+        assert captured["tenant_id"] == "tid"
+        assert captured["authority"] == (
+            "https://login.microsoftonline.com/botframework.com"
+        )
+
+    def test_singletenant_keeps_tenant_authority(self):
+        """A single-tenant app does not override the authority (derived from tenant)."""
+        from parrot.integrations.msagentsdk.models import MSAgentSDKConfig
+
+        cfg = MSAgentSDKConfig(
+            name="STBot",
+            chatbot_id="agent",
+            client_id="cid",
+            client_secret="secret",
+            tenant_id="tid",
+            app_type="SingleTenant",
+        )
+        captured = self._build(cfg)
+        assert captured["tenant_id"] == "tid"
+        assert captured["authority"] is None
+
+    def test_explicit_authority_wins(self):
+        """An explicit authority override is honoured even for multi-tenant."""
+        from parrot.integrations.msagentsdk.models import MSAgentSDKConfig
+
+        cfg = MSAgentSDKConfig(
+            name="OverrideBot",
+            chatbot_id="agent",
+            client_id="cid",
+            client_secret="secret",
+            tenant_id="tid",
+            app_type="MultiTenant",
+            authority="https://login.microsoftonline.us/botframework.com",
+        )
+        captured = self._build(cfg)
+        assert captured["authority"] == (
+            "https://login.microsoftonline.us/botframework.com"
+        )
 
 
 class TestMSAgentSDKWrapperStop:
