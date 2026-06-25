@@ -128,6 +128,13 @@ class MSAgentSDKWrapper:
             JwtTokenValidator,
         )
 
+        # Apply runtime SDK patches now that the SDK is importable. Notably,
+        # this makes the Copilot Studio (pva-studio) reply path tolerate the
+        # runtime's empty/non-JSON 200 acknowledgement instead of crashing.
+        from ._patches import patch_mcs_connector_empty_response
+
+        patch_mcs_connector_empty_response()
+
         if config.anonymous_auth:
             # Anonymous mode: inbound requests get anonymous claims, and
             # outbound replies use an empty (anonymous) token. Local dev only.
@@ -203,6 +210,27 @@ class MSAgentSDKWrapper:
             ", ".join(self.routes),
             config.anonymous_auth,
         )
+
+        # Surface which INBOUND auth methods are accepted, so a 401 is easy to
+        # diagnose. In production both schemes coexist on the same route: a Bot
+        # Framework JWT (Azure Bot Service channels) OR an API key (Copilot
+        # Studio's direct connector). The API-key path is silently unavailable
+        # until ``api_key`` is configured — the most common cause of a 401.
+        if not config.anonymous_auth:
+            methods = ["Bot Framework JWT"]
+            if self._api_key:
+                methods.append(f"API key (header '{self._api_key_header}')")
+            self.logger.info(
+                "Inbound auth accepted: %s", " | ".join(methods)
+            )
+            if not self._api_key:
+                self.logger.warning(
+                    "API-key inbound auth is DISABLED (no api_key configured). "
+                    "Channels that send neither a Bot Framework JWT nor an API "
+                    "key (e.g. Copilot Studio's direct connector) will get 401. "
+                    "Set %s_API_KEY to enable it.",
+                    config.name.upper(),
+                )
 
         # Surface the effective outbound-auth config (masked) — useful when an
         # inbound turn succeeds but the *reply* is rejected by the channel
@@ -309,8 +337,24 @@ class MSAgentSDKWrapper:
                 claims={}, is_authenticated=True, authentication_type="apikey"
             )
         else:
+            # No Bot Framework JWT was sent. If API-key auth were configured we
+            # would have taken the elif branch, so reaching here means the key
+            # is unset — tell the operator exactly how to enable that path.
+            self.logger.warning(
+                "Rejected unauthenticated request to %s: no Authorization "
+                "header and API-key auth is not configured (set %s_API_KEY).",
+                request.path,
+                self.config.name.upper(),
+            )
             return web.json_response(
-                {"error": "Authorization header not found"}, status=401
+                {
+                    "error": (
+                        "No valid authentication. Provide a Bot Framework JWT "
+                        "(Authorization: Bearer <token>) or an API key. API-key "
+                        "auth is not configured on this bot."
+                    )
+                },
+                status=401,
             )
 
         return await self.adapter.process(request, self.m365_agent)
