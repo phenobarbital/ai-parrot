@@ -52,7 +52,7 @@
       "feature_id": "FEAT-259",
       "feature": "microsoft-copilot-agent-sdk",
       "spec": "sdd/specs/microsoft-copilot-agent-sdk.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Depends on config model and bridge agent",
       "assigned_to": null,
       "started_at": "2026-06-25T03:10:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1639-msagentsdk-wrapper.md"
+      "completed_at": "2026-06-25T03:14:30+00:00",
+      "file": "sdd/tasks/completed/TASK-1639-msagentsdk-wrapper.md"
     },
     {
       "id": "TASK-1640",
