@@ -34,6 +34,64 @@ from parrot.models.compliance import (
 # ``shelf.section_padding`` is not explicitly set.
 _DEFAULT_SECTION_PADDING: float = 0.05
 
+# Minimum bbox dimension (as fraction of the image) for the endcap ROI to be
+# considered usable.  Below this, ``compute_roi`` triggers the anchor / full-
+# image rescue path — otherwise crops downstream are zero-area and every
+# section LLM call returns no detections.
+_MIN_ROI_FRACTION: float = 0.05
+
+# Fact-tag overlap discard heuristic.  When a product detection overlaps an
+# already-detected fact-tag by more than this fraction of the product's area,
+# the detection is candidate for discard.  See ``_is_fact_tag_misdetection``.
+_FACT_TAG_OVERLAP_THRESHOLD: float = 0.30
+
+# A detection is considered occluded (kept) rather than a misdetected fact-tag
+# (discarded) when its height is at least this multiple of the overlapping
+# fact-tag's height AND the fact-tag sits in the detection's lower half.
+_PRODUCT_HEIGHT_VS_TAG_RATIO: float = 1.5
+
+
+def _is_fact_tag_misdetection(
+    det_px: Tuple[int, int, int, int],
+    ft: Tuple[int, int, int, int],
+    overlap_ratio: float,
+) -> bool:
+    """Decide whether a detection overlapping a fact-tag is itself a fact-tag.
+
+    Two failure modes produce the same overlap signal and must be distinguished:
+
+    * **(A) Real fact-tag misdetected as product** — the detection has roughly
+      the same height as the fact-tag and sits at the same vertical position.
+      → Discard.
+    * **(B) Tall product occluded at its lower edge by the fact-tag hanging in
+      front of the shelf** — the detection is significantly taller than the
+      tag and the tag is concentrated in its lower half.
+      → Keep (normal occlusion).
+
+    Args:
+        det_px: Detection bbox in pixel coordinates ``(x1, y1, x2, y2)``.
+        ft: Fact-tag bbox in pixel coordinates ``(x1, y1, x2, y2)``.
+        overlap_ratio: ``intersection_area / detection_area`` already
+            computed by the caller.
+
+    Returns:
+        ``True`` if the detection looks like a misdetected fact-tag and should
+        be discarded.  ``False`` if it looks like normal bottom-edge occlusion
+        and should be kept.
+    """
+    if overlap_ratio <= _FACT_TAG_OVERLAP_THRESHOLD:
+        return False
+    det_h = max(1, det_px[3] - det_px[1])
+    ft_h = max(1, ft[3] - ft[1])
+    ft_center_y = (ft[1] + ft[3]) / 2.0
+    det_center_y = (det_px[1] + det_px[3]) / 2.0
+    ft_in_lower_half = ft_center_y > det_center_y
+    product_is_taller = det_h > ft_h * _PRODUCT_HEIGHT_VS_TAG_RATIO
+    # Normal occlusion → not a misdetect.
+    if ft_in_lower_half and product_is_taller:
+        return False
+    return True
+
 
 # ---------------------------------------------------------------------------
 # Permissive Pydantic models for LLM structured output.
@@ -231,8 +289,55 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             self.logger.error("Could not locate the promotional endcap boundary.")
             return None, None, None, None, []
 
-        # Expand bbox downward if the LLM only detected the upper panel
+        # Validate bbox dimensions; recover from degenerate (zero-area)
+        # detections.  Without this rescue, a degenerate endcap_roi cascades
+        # into zero-width shelf crops and every product detection returns
+        # empty — observed in production with score = 12.5% on a fully
+        # compliant photo.
+        bbox_width = endcap_det.bbox.x2 - endcap_det.bbox.x1
         bbox_height = endcap_det.bbox.y2 - endcap_det.bbox.y1
+        if bbox_width < _MIN_ROI_FRACTION or bbox_height < _MIN_ROI_FRACTION:
+            anchor = next(
+                (
+                    d for d in dets
+                    if _norm_label(d) in (
+                        "poster_panel", "promotional_graphic",
+                        "backlit_panel", "poster", "ad", "advertisement",
+                    )
+                    and (d.bbox.x2 - d.bbox.x1) >= _MIN_ROI_FRACTION
+                ),
+                None,
+            )
+            if anchor is not None:
+                a_h = anchor.bbox.y2 - anchor.bbox.y1
+                rescued_bbox = BoundingBox(
+                    x1=max(0.0, anchor.bbox.x1 - 0.02),
+                    y1=max(0.0, anchor.bbox.y1),
+                    x2=min(1.0, anchor.bbox.x2 + 0.02),
+                    y2=min(1.0, anchor.bbox.y2 + max(a_h * 3.0, 0.6)),
+                )
+                self.logger.warning(
+                    "endcap_roi degenerate (w=%.3f h=%.3f); anchored on '%s' "
+                    "→ bbox=(%.2f,%.2f,%.2f,%.2f)",
+                    bbox_width, bbox_height, anchor.label,
+                    rescued_bbox.x1, rescued_bbox.y1,
+                    rescued_bbox.x2, rescued_bbox.y2,
+                )
+            else:
+                rescued_bbox = BoundingBox(x1=0.0, y1=0.0, x2=1.0, y2=1.0)
+                self.logger.warning(
+                    "endcap_roi degenerate (w=%.3f h=%.3f) and no anchor "
+                    "available; falling back to full-image ROI.",
+                    bbox_width, bbox_height,
+                )
+            endcap_det = Detection(
+                label=endcap_det.label,
+                confidence=endcap_det.confidence,
+                bbox=rescued_bbox,
+            )
+            bbox_height = endcap_det.bbox.y2 - endcap_det.bbox.y1
+
+        # Expand bbox downward if the LLM only detected the upper panel
         if bbox_height < 0.5:
             expanded_bbox = BoundingBox(
                 x1=endcap_det.bbox.x1,
@@ -1287,16 +1392,32 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     det_area = max(
                         1, (det_px[2] - det_px[0]) * (det_px[3] - det_px[1])
                     )
-                    if inter / det_area > 0.3:
+                    overlap_ratio = inter / det_area
+                    if overlap_ratio <= _FACT_TAG_OVERLAP_THRESHOLD:
+                        continue
+                    if _is_fact_tag_misdetection(det_px, ft, overlap_ratio):
                         self.logger.debug(
-                            "Section '%s': discarding '%s' — overlaps "
-                            "fact tag (%.0f%% of detection area).",
+                            "Section '%s': discarding '%s' — overlaps fact "
+                            "tag (%.0f%% of detection area; det_h=%dpx "
+                            "ft_h=%dpx).",
                             section.id,
                             det.label,
-                            inter / det_area * 100,
+                            overlap_ratio * 100,
+                            det_px[3] - det_px[1],
+                            ft[3] - ft[1],
                         )
                         is_fact_tag = True
                         break
+                    self.logger.debug(
+                        "Section '%s': keeping '%s' despite %.0f%% fact-tag "
+                        "overlap (product %dpx tall vs tag %dpx; tag "
+                        "occludes bottom edge).",
+                        section.id,
+                        det.label,
+                        overlap_ratio * 100,
+                        det_px[3] - det_px[1],
+                        ft[3] - ft[1],
+                    )
                 if is_fact_tag:
                     continue
 
@@ -1551,15 +1672,30 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     iy2 = min(det_px[3], ft[3])
                     inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
                     det_area = max(1, (det_px[2] - det_px[0]) * (det_px[3] - det_px[1]))
-                    if inter / det_area > 0.3:
+                    overlap_ratio = inter / det_area
+                    if overlap_ratio <= _FACT_TAG_OVERLAP_THRESHOLD:
+                        continue
+                    if _is_fact_tag_misdetection(det_px, ft, overlap_ratio):
                         self.logger.debug(
                             "Combined: discarding '%s' — overlaps fact tag "
-                            "(%.0f%% of detection area).",
+                            "(%.0f%% of detection area; det_h=%dpx "
+                            "ft_h=%dpx).",
                             det.label,
-                            inter / det_area * 100,
+                            overlap_ratio * 100,
+                            det_px[3] - det_px[1],
+                            ft[3] - ft[1],
                         )
                         is_fact_tag = True
                         break
+                    self.logger.debug(
+                        "Combined: keeping '%s' despite %.0f%% fact-tag "
+                        "overlap (product %dpx tall vs tag %dpx; tag "
+                        "occludes bottom edge).",
+                        det.label,
+                        overlap_ratio * 100,
+                        det_px[3] - det_px[1],
+                        ft[3] - ft[1],
+                    )
                 if is_fact_tag:
                     continue
 
