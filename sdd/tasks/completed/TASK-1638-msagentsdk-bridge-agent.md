@@ -263,4 +263,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-06-25.
+
+Created:
+- `packages/ai-parrot-integrations/src/parrot/integrations/msagentsdk/agent.py` — `ParrotM365Agent` class with lazy `microsoft_agents.*` imports.
+
+Key implementation decisions:
+- `on_turn()` dispatches on `ActivityTypes.message` and `ActivityTypes.conversation_update`; all other types logged at DEBUG and ignored.
+- `_handle_message()` returns early on empty/whitespace text without calling `ask()`.
+- Uses `activity.from_property` (not `from_`) for sender identity — per Codebase Contract.
+- `str(response.content)` ensures the reply is always a string regardless of LLM output type.
+- All `microsoft_agents.*` imports are inside methods (lazy).
+
+All acceptance criteria met. Lint passes.

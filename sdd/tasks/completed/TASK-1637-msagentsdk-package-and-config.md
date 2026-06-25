@@ -212,4 +212,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-06-25.
+
+Created:
+- `packages/ai-parrot-integrations/src/parrot/integrations/msagentsdk/__init__.py` — lazy exports using PEP 562 `__getattr__` pattern (matching WhatsApp/Slack init pattern)
+- `packages/ai-parrot-integrations/src/parrot/integrations/msagentsdk/models.py` — `MSAgentSDKConfig` dataclass following `WhatsAppAgentConfig` pattern with `__post_init__` env var fallback and `from_dict()` classmethod
+
+Modified:
+- `packages/ai-parrot-integrations/pyproject.toml` — added `msagentsdk = ["microsoft-agents-hosting-aiohttp~=0.9.0"]` extras group
+
+All acceptance criteria met. Lint passes (`ruff check`). No breaking changes to existing integrations.

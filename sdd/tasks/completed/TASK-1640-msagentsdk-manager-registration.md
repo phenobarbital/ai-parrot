@@ -259,4 +259,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-06-25.
+
+Modified:
+- `packages/ai-parrot-integrations/src/parrot/integrations/models.py`:
+  - Added `from .msagentsdk.models import MSAgentSDKConfig` import at module level.
+  - Added `MSAgentSDKConfig` to the `agents` Union type hint.
+  - Added `elif kind == 'msagentsdk':` dispatch in `from_dict()`.
+  - Added `elif isinstance(agent_config, MSAgentSDKConfig):` validation block in `validate()` that checks `client_id`/`client_secret` when `anonymous_auth` is false.
+
+- `packages/ai-parrot-integrations/src/parrot/integrations/manager.py`:
+  - Added `MSAgentSDKConfig` to the models import.
+  - Added `from .msagentsdk.wrapper import MSAgentSDKWrapper` to `TYPE_CHECKING` block.
+  - Added `self.msagentsdk_bots: Dict[str, 'MSAgentSDKWrapper'] = {}` to `__init__`.
+  - Added `elif isinstance(agent_config, MSAgentSDKConfig): await self._start_msagentsdk_bot(...)` dispatch in `startup()`.
+  - Added `_start_msagentsdk_bot()` method (follows `_start_whatsapp_bot` pattern exactly).
+  - Added SDK bot cleanup loop in `shutdown()`.
+  - Added `self.msagentsdk_bots.clear()` at shutdown end.
+
+All acceptance criteria met. Lint passes. Existing integrations unaffected.

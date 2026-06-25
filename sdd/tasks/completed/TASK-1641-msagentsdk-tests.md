@@ -178,4 +178,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-06-25.
+
+Created:
+- `tests/integrations/__init__.py` — package init
+- `tests/integrations/test_msagentsdk/__init__.py` — test package init
+- `tests/integrations/test_msagentsdk/conftest.py` — shared fixtures
+- `tests/integrations/test_msagentsdk/test_models.py` — 9 tests for `MSAgentSDKConfig`
+- `tests/integrations/test_msagentsdk/test_agent.py` — 13 tests for `ParrotM365Agent`
+- `tests/integrations/test_msagentsdk/test_wrapper.py` — 7 tests for `MSAgentSDKWrapper`
+- `tests/integrations/test_msagentsdk/test_manager_registration.py` — 9 tests for manager dispatch
+- `tests/integrations/test_msagentsdk/test_integration.py` — 4 end-to-end tests
+
+Result: 42/42 tests pass.
+
+All tests use mocked `microsoft_agents.*` SDK so they run without the optional dependency installed.
+Test command: `PYTHONPATH=".claude/worktrees/feat-259-microsoft-copilot-agent-sdk/packages/ai-parrot-integrations/src:$PYTHONPATH" pytest tests/integrations/test_msagentsdk/ -v`

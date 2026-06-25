@@ -233,4 +233,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-06-25.
+
+Created:
+- `packages/ai-parrot-integrations/src/parrot/integrations/msagentsdk/wrapper.py` — `MSAgentSDKWrapper` class.
+
+Key implementation decisions:
+- `CloudAdapter` is imported lazily inside `__init__` so the class can be imported without the SDK.
+- For `anonymous_auth=True`: `CloudAdapter()` is called with no arguments (no JWT validation).
+- For `anonymous_auth=False`: tries `AgentAuthConfiguration` first (from `microsoft_agents.hosting.core`); falls back to keyword args if that class isn't available (SDK version variance).
+- Route registered as `/api/msagentsdk/{safe_id}/messages` where `safe_id = name.replace(" ", "_").lower()`.
+- Auth middleware exclusion pattern matches WhatsApp/MS Teams wrappers.
+- `stop()` is a no-op but present for lifecycle symmetry.
+
+All acceptance criteria met. Lint passes.

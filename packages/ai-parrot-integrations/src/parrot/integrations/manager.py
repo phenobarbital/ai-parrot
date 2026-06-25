@@ -28,6 +28,7 @@ from .models import (
     MSTeamsAgentConfig,
     WhatsAppAgentConfig,
     SlackAgentConfig,
+    MSAgentSDKConfig,
 )
 if TYPE_CHECKING:
     from aiogram import Bot, Dispatcher
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from .msteams.wrapper import MSTeamsAgentWrapper
     from .whatsapp.wrapper import WhatsAppAgentWrapper
     from .slack.wrapper import SlackAgentWrapper
+    from .msagentsdk.wrapper import MSAgentSDKWrapper
     from parrot.manager import BotManager
     from parrot.bots.abstract import AbstractBot
 
@@ -45,11 +47,12 @@ ENV_DIR = BASE_DIR.joinpath('env')
 class IntegrationBotManager:
     """
     Manages bot integrations for exposed agents.
-    
+
     Supports:
     - Telegram
     - MS Teams
     - WhatsApp
+    - MS Agent SDK
     """
 
     def __init__(self, bot_manager: 'BotManager'):
@@ -61,6 +64,7 @@ class IntegrationBotManager:
         self.msteams_bots: Dict[str, 'MSTeamsAgentWrapper'] = {}
         self.whatsapp_bots: Dict[str, 'WhatsAppAgentWrapper'] = {}
         self.slack_bots: Dict[str, 'SlackAgentWrapper'] = {}
+        self.msagentsdk_bots: Dict[str, 'MSAgentSDKWrapper'] = {}
 
         # Matrix crew transport (FEAT-044)
         self.matrix_crew: Optional[object] = None  # MatrixCrewTransport
@@ -151,6 +155,8 @@ class IntegrationBotManager:
                     await self._start_whatsapp_bot(name, agent_config)
                 elif isinstance(agent_config, SlackAgentConfig):
                     await self._start_slack_bot(name, agent_config)
+                elif isinstance(agent_config, MSAgentSDKConfig):
+                    await self._start_msagentsdk_bot(name, agent_config)
             except Exception as e:
                 self.logger.error("Failed to start bot %s: %s", name, e, exc_info=True)
 
@@ -325,6 +331,34 @@ class IntegrationBotManager:
         self.logger.info("Started WhatsApp bot '%s'", name)
 
 
+    async def _start_msagentsdk_bot(self, name: str, config: MSAgentSDKConfig) -> None:
+        """Start a Microsoft 365 Agents SDK bot.
+
+        Resolves the parrot agent from BotManager, creates an
+        ``MSAgentSDKWrapper`` (which registers the HTTP route on the
+        aiohttp app), and stores the wrapper in ``msagentsdk_bots``.
+
+        Args:
+            name: Agent name as declared in the YAML config.
+            config: ``MSAgentSDKConfig`` for this bot.
+        """
+        agent = await self._get_agent(
+            config.chatbot_id,
+            config.system_prompt_override,
+        )
+        if not agent:
+            return
+
+        from .msagentsdk.wrapper import MSAgentSDKWrapper
+
+        wrapper = MSAgentSDKWrapper(
+            agent=agent,
+            config=config,
+            app=self.bot_manager.get_app(),
+        )
+        self.msagentsdk_bots[name] = wrapper
+        self.logger.info("Started MS Agent SDK bot '%s'", name)
+
     async def _start_slack_bot(self, name: str, config: SlackAgentConfig):
         # Suppress the verbose DEBUG/INFO output from the slack_sdk internals
         # (heartbeats, raw WebSocket frames, HTTP request dumps, etc.)
@@ -440,6 +474,14 @@ class IntegrationBotManager:
             except Exception as e:
                 self.logger.error("Error closing bot session for '%s': %s", name, e)
 
+        # Stop MS Agent SDK bots
+        for name, wrapper in self.msagentsdk_bots.items():
+            try:
+                self.logger.debug("Stopping MS Agent SDK bot '%s'", name)
+                await wrapper.stop()
+            except Exception as e:
+                self.logger.error("Error stopping MS Agent SDK bot '%s': %s", name, e)
+
         # Stop Slack bots (including Socket Mode handlers)
         for name, wrapper in self.slack_bots.items():
             try:
@@ -483,6 +525,7 @@ class IntegrationBotManager:
         self.msteams_bots.clear()
         self.whatsapp_bots.clear()
         self.slack_bots.clear()
+        self.msagentsdk_bots.clear()
         self._polling_tasks.clear()
 
         self.logger.info("Integration Manager shutdown complete")
