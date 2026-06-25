@@ -600,6 +600,26 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
         active_dfs = self._dataset_manager.get_active_dataframes()
 
+        # Diagnostic: surface exactly what is being synced into the REPL so an
+        # empty/wrong-grain loaded frame (e.g. df10 with 0 rows) is visible in
+        # the logs instead of silently misleading the LLM.
+        if self.logger.isEnabledFor(logging.DEBUG):
+            _alias = self._dataset_manager._get_alias_map()
+            _summary = ", ".join(
+                f"{name}(alias={_alias.get(name, '?')}, shape={df.shape})"
+                for name, df in active_dfs.items()
+            ) or "<none loaded>"
+            self.logger.debug("Syncing %d active DataFrame(s) to REPL: %s", len(active_dfs), _summary)
+            # Warn on loaded-but-empty frames — the prime suspect for the LLM
+            # running pandas that returns nothing.
+            for name, df in active_dfs.items():
+                if df.empty:
+                    self.logger.warning(
+                        "Loaded dataset '%s' (alias=%s) is EMPTY (shape=%s) — "
+                        "the LLM will get no data from it via the pandas tool.",
+                        name, _alias.get(name, "?"), df.shape,
+                    )
+
         # Update agent's dataframes reference
         self.dataframes = active_dfs
 
@@ -838,14 +858,29 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         alias_map = self._get_dataframe_alias_map()
         df_info_parts = []
 
+        # Tool-level usage rules (owned by DatasetManager, shared by every agent
+        # that drives one) go first so the LLM reads the decision rules before
+        # the dataset listing.
+        if self._dataset_manager:
+            rules = self._dataset_manager.get_usage_rules()
+            if rules and rules.strip():
+                df_info_parts.extend([rules.strip(), ""])
+
+        # A dataset can be marked loaded=True yet hold zero rows (a query that
+        # returned nothing, or an eager empty df). Advertising such a frame under
+        # "Loaded DataFrames" misleads the LLM into running pandas that silently
+        # returns nothing, so partition empties out and surface them separately.
+        loaded_nonempty = {n: df for n, df in self.dataframes.items() if not df.empty}
+        loaded_empty = {n: df for n, df in self.dataframes.items() if df.empty}
+
         # ── Loaded DataFrames ─────────────────────────────────────────
-        if self.dataframes:
+        if loaded_nonempty:
             df_info_parts.extend([
-                f"**Loaded DataFrames:** {len(self.dataframes)}",
+                f"**Loaded DataFrames:** {len(loaded_nonempty)}",
                 "",
             ])
 
-            for df_name, df in self.dataframes.items():
+            for df_name, df in loaded_nonempty.items():
                 alias = alias_map.get(df_name, "")
                 display_name = f"**{df_name}** (alias: `{alias}`)" if alias else f"**{df_name}**"
                 desc = ""
@@ -881,7 +916,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     df_info_parts.append("  Columns:")
                     df_info_parts.extend(columns_info)
 
-            first_name = list(self.dataframes.keys())[0]
+            first_name = next(iter(loaded_nonempty))
             first_alias = alias_map.get(first_name, "df1")
             df_info_parts.extend([
                 "  ```python",
@@ -927,6 +962,26 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         df_info_parts.append(f"- `{name}`{desc}{col_hint}{size_hint}")
                     else:
                         df_info_parts.append(f"- `{name}`{desc}{size_hint}")
+
+        # ── Loaded-but-empty datasets ─────────────────────────────────
+        if loaded_empty:
+            df_info_parts.extend([
+                "",
+                f"**⚠️ Empty datasets (registered but currently hold 0 rows — do NOT query directly):** {len(loaded_empty)}",
+                "Running pandas on these returns nothing. Call `fetch_dataset(name=...)` to "
+                "(re)populate them, or `get_metadata(name=...)` to inspect why they are empty.",
+            ])
+            for df_name, df in loaded_empty.items():
+                alias = alias_map.get(df_name, "")
+                display_name = f"**{df_name}** (alias: `{alias}`)" if alias else f"**{df_name}**"
+                desc = ""
+                if self._dataset_manager and df_name in self._dataset_manager._datasets:
+                    entry = self._dataset_manager._datasets[df_name]
+                    if entry.description:
+                        desc = f" — {entry.description}"
+                df_info_parts.append(
+                    f"- {display_name}: 0 rows × {df.shape[1]} columns{desc}"
+                )
 
         if not self.dataframes and not (self._dataset_manager and any(
             not e.loaded for e in self._dataset_manager._datasets.values()

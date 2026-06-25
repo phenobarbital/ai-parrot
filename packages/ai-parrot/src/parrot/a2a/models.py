@@ -53,10 +53,15 @@ class Part:
         return cls(data=data)
 
     def to_dict(self) -> Dict[str, Any]:
-        result = {}
+        # A2A Part is a discriminated union: every part carries a `kind`
+        # ("text" | "file" | "data"). Strict parsers (e.g. Copilot's a2a-dotnet
+        # PartConverter) route on it, so it must be present.
+        result: Dict[str, Any] = {}
         if self.text is not None:
+            result["kind"] = "text"
             result["text"] = self.text
-        if self.file_uri or self.file_bytes:
+        elif self.file_uri or self.file_bytes:
+            result["kind"] = "file"
             file_part = {}
             if self.file_uri:
                 file_part["fileWithUri"] = self.file_uri
@@ -65,7 +70,8 @@ class Part:
             if self.file_media_type:
                 file_part["mediaType"] = self.file_media_type
             result["file"] = file_part
-        if self.data is not None:
+        elif self.data is not None:
+            result["kind"] = "data"
             result["data"] = {"data": self.data}
         if self.metadata:
             result["metadata"] = self.metadata
@@ -139,6 +145,9 @@ class Message:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            # A2A discriminator for the Message/Task/event union. Strict clients
+            # (e.g. Microsoft Copilot Studio's a2a-dotnet parser) route on it.
+            "kind": "message",
             "messageId": self.message_id,
             "role": self.role.value,
             "parts": [p.to_dict() for p in self.parts],
@@ -206,6 +215,10 @@ class Artifact:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            # NOTE: `kind` is NOT part of the A2A Artifact schema (Artifact is not
+            # in the discriminated event union). Emitted defensively; strict
+            # parsers ignore unknown fields. Drop if it ever causes trouble.
+            "kind": "artifact",
             "artifactId": self.artifact_id,
             "name": self.name,
             "description": self.description,
@@ -253,6 +266,9 @@ class Task:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            # A2A discriminator — Copilot's parser deserializes a `message/send`
+            # result by routing on `kind` ("task" vs "message").
+            "kind": "task",
             "id": self.id,
             "contextId": self.context_id,
             "status": self.status.to_dict(),
@@ -273,14 +289,20 @@ class AgentSkill:
     examples: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "id": self.id,
             "name": self.name,
             "description": self.description,
             "tags": self.tags,
-            "inputSchema": self.input_schema,
             "examples": self.examples,
         }
+        # `inputSchema` is not part of the A2A AgentSkill schema; emit it only
+        # when populated so strict consumers (e.g. Microsoft Copilot Studio's
+        # System.Text.Json parser) don't choke on a stray `null`. A2ARemoteSkill
+        # still reads it back via `from_dict` when present.
+        if self.input_schema is not None:
+            data["inputSchema"] = self.input_schema
+        return data
 
 
 @dataclass
@@ -317,24 +339,50 @@ class AgentCard:
     capabilities: AgentCapabilities = field(default_factory=AgentCapabilities)
     default_input_modes: List[str] = field(default_factory=lambda: ["text/plain", "application/json"])
     default_output_modes: List[str] = field(default_factory=lambda: ["text/plain", "application/json"])
-    protocol_version: str = "0.3"
+    # A2A protocol version. Use the fully-qualified "0.3.0" (the a2a-dotnet v0.3
+    # `AgentCard.ProtocolVersion` default that Microsoft Copilot Studio
+    # validates), not the abbreviated "0.3".
+    protocol_version: str = "0.3.0"
+    # Transport the agent prefers at `url`. REQUIRED by the A2A spec and by
+    # Microsoft Copilot Studio's parser (a2a-dotnet marks it `[JsonRequired]`,
+    # so a card without it is rejected). Core ones: JSONRPC, GRPC, HTTP+JSON.
+    preferred_transport: str = "JSONRPC"
     icon_url: Optional[str] = None
     tags: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "protocolVersion": self.protocol_version,
             "name": self.name,
             "description": self.description,
             "version": self.version,
+            # Flat `url` + `preferredTransport` ARE the A2A v0.3 card shape that
+            # Microsoft Copilot Studio's a2a-dotnet parser deserializes. Both are
+            # `[JsonRequired]` in `A2A.V0_3/Models/AgentCard.cs`; `url` must point
+            # at the JSON-RPC message endpoint (where `message/send` is POSTed),
+            # not at the card itself.
             "url": self.url,
+            "preferredTransport": self.preferred_transport,
             "capabilities": self.capabilities.to_dict(),
             "defaultInputModes": self.default_input_modes,
             "defaultOutputModes": self.default_output_modes,
             "skills": [s.to_dict() for s in self.skills],
-            "iconUrl": self.icon_url,
             "tags": self.tags,
         }
+        # NOTE: we deliberately do NOT emit `supportedInterfaces`. Verified
+        # against the a2a-dotnet source (the library Copilot Studio uses): the
+        # v0.3 `AgentCard` model has NO `supportedInterfaces` field — the correct,
+        # OPTIONAL field is `additionalInterfaces` (`{url, transport}`), and the
+        # required flat `url`+`preferredTransport` already fully describe the
+        # JSON-RPC endpoint, so the extra array is redundant. (`supportedInterfaces`
+        # exists only in the unreleased a2aproject v1 `main` model, which Copilot
+        # does not use; the official Microsoft A2A sample card omits it entirely.)
+        # The v0.3 deserializer does NOT set `JsonUnmappedMemberHandling.Disallow`,
+        # so unknown fields are ignored rather than rejected.
+        # Omit `iconUrl` when unset rather than emitting `null` (strict parsers).
+        if self.icon_url is not None:
+            data["iconUrl"] = self.icon_url
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "AgentCard":
@@ -368,7 +416,8 @@ class AgentCard:
             capabilities=capabilities,
             default_input_modes=data.get("defaultInputModes", ["text/plain", "application/json"]),
             default_output_modes=data.get("defaultOutputModes", ["text/plain", "application/json"]),
-            protocol_version=data.get("protocolVersion", "0.3"),
+            protocol_version=data.get("protocolVersion", "0.3.0"),
+            preferred_transport=data.get("preferredTransport", "JSONRPC"),
             icon_url=data.get("iconUrl"),
             tags=data.get("tags", []),
         )

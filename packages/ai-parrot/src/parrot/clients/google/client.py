@@ -2127,7 +2127,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         self.logger.info(f"Total function calls found: {len(gated_calls)}")
         return gated_calls
 
-    def _safe_extract_text(self, response) -> str:
+    def _safe_extract_text(self, response, is_stream_chunk: bool = False) -> str:
         """
         Enhanced text extraction that handles reasoning models and mixed content warnings.
 
@@ -2278,8 +2278,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         except Exception as e:
             self.logger.error(f"Deep inspection failed: {e}")
 
-        # Method 4: Final fallback - return empty string with clear logging
-        self.logger.warning("Could not extract any text from response using any method")
+        # Method 4: Final fallback - return empty string with clear logging.
+        # A function-call-only turn legitimately has no text (the model is
+        # invoking a tool, not answering), so log it at debug to avoid alarming
+        # WARNING noise on every tool-calling step.
+        if has_function_call:
+            self.logger.debug("No text in response (function-call-only turn — expected)")
+        elif is_stream_chunk:
+            self.logger.debug("No text in stream chunk")
+        else:
+            self.logger.warning("Could not extract any text from response using any method")
         return ""
 
     # ==========================================================================
@@ -3723,7 +3731,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                         if hasattr(part, "function_call") and part.function_call:
                                             collected_function_calls.append(part.function_call)
 
-                        chunk_text = self._safe_extract_text(chunk)
+                        chunk_text = self._safe_extract_text(chunk, is_stream_chunk=True)
                         if chunk_text:
                             assistant_content_chunk += chunk_text
                             all_assistant_text.append(chunk_text)

@@ -521,6 +521,31 @@ class DatasetManager(AbstractToolkit):
     tool_prefix: str = "dataset"
     exclude_tools = ("setup", "add_dataset", "list_available")
 
+    #: Universal decision rules for any agent driving a DatasetManager. Injected
+    #: into the system prompt via ``get_usage_rules()`` so the LLM commits to one
+    #: data path instead of probing the REPL, fetch_dataset and other tools in
+    #: turn (a common cause of wasted iterations). Override per-agent by passing
+    #: ``usage_rules=`` to the constructor.
+    DEFAULT_USAGE_RULES: str = (
+        "## How to work with datasets (read before calling any data tool)\n"
+        "\n"
+        "1. **Loaded DataFrames are ready now.** Datasets shown as *loaded* already "
+        "exist in the `python_repl_pandas` environment under their name and `dfN` "
+        "alias — use them directly (e.g. `df1.groupby(...)`). Never re-fetch a "
+        "loaded dataset.\n"
+        "2. **Aggregate tables in SQL, not pandas.** For a count / sum / ranking / "
+        "filter over an *unloaded* table, call `fetch_dataset` with a SQL query that "
+        "does the work in the database (`GROUP BY` / `WHERE` / `LIMIT`). Do NOT pull "
+        "a whole table into the REPL to aggregate it there.\n"
+        "3. **Pick one source and commit.** Read each dataset's description and "
+        "`usage_guidance` first, choose the one dataset that fits the question, and "
+        "use it. Do not probe several datasets hoping one returns data.\n"
+        "4. **Empty datasets hold no data.** A dataset listed with 0 rows must be "
+        "populated with `fetch_dataset` before you query it.\n"
+        "5. **Inspect, don't guess.** If unsure of columns or grain, call "
+        "`get_metadata(name=...)` instead of running trial-and-error code.\n"
+    )
+
     def __init__(
         self,
         df_prefix: str = "df",
@@ -529,9 +554,12 @@ class DatasetManager(AbstractToolkit):
         auto_detect_types: bool = True,
         policy_guard: Optional["DatasetPolicyGuard"] = None,
         dataplane_guard: Optional["DataPlanePolicyGuard"] = None,
+        usage_rules: Optional[str] = None,
         **kwargs
     ):
         super().__init__(**kwargs)
+        # None → fall back to DEFAULT_USAGE_RULES; "" disables the block entirely.
+        self._usage_rules: Optional[str] = usage_rules
         self._datasets: Dict[str, DatasetEntry] = {}
         self._query_loader: Optional[Any] = None
         self._on_change_callback: Optional[Callable[[], None]] = None
@@ -4026,6 +4054,22 @@ class DatasetManager(AbstractToolkit):
         if not self.df_guide and self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
         return self.df_guide
+
+    def get_usage_rules(self) -> str:
+        """Return the decision rules an agent should inject into its system prompt.
+
+        These are tool-level (not agent-specific): any agent driving a
+        DatasetManager benefits from the same guidance on when to use loaded
+        DataFrames vs ``fetch_dataset`` vs ``get_metadata``. Returns the
+        per-instance override when one was passed to the constructor, otherwise
+        :attr:`DEFAULT_USAGE_RULES`. An explicit empty string disables the block.
+
+        Returns:
+            The usage-rules markdown block, or ``""`` when disabled.
+        """
+        if self._usage_rules is None:
+            return self.DEFAULT_USAGE_RULES
+        return self._usage_rules
 
     # ─────────────────────────────────────────────────────────────
     # Data Loading & Caching

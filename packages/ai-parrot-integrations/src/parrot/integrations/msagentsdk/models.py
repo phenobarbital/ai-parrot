@@ -26,9 +26,33 @@ class MSAgentSDKConfig:
             multi-tenant.
         anonymous_auth: If True, skip JWT validation. Use only for local
             development; never in production.
+        api_key: Shared secret for API-Key inbound auth. When set, the wrapper
+            accepts a request carrying this value in ``api_key_header`` (in
+            addition to Bot Framework JWTs). Needed for Copilot Studio's
+            "Microsoft 365 Agents SDK" connection, which does NOT accept the
+            "None" auth option — it requires API Key or OAuth 2.0. The bot still
+            needs its Azure AD credentials to authenticate the OUTBOUND reply.
+        api_key_header: Header name that carries ``api_key`` (default
+            ``"x-api-key"``). Must match the header configured in Copilot's
+            "API Key" connection auth.
+        app_type: Azure AD application type — ``"SingleTenant"`` (default) or
+            ``"MultiTenant"``. This drives the OUTBOUND token authority: a
+            multi-tenant Bot Framework app must mint its reply token against the
+            ``botframework.com`` authority (not the bot's home tenant), or the
+            Bot Connector rejects the reply with HTTP 401 (Teams especially).
+        authority: Explicit OAuth authority override. When unset it is derived
+            from ``app_type``/``tenant_id``. Set this only for sovereign clouds
+            or non-standard setups.
         kind: Integration type discriminator — always ``"msagentsdk"``.
         welcome_message: Message sent when a new member joins the conversation.
         system_prompt_override: Override the agent's default system prompt.
+        endpoint: Custom messaging route path to register for this bot. When
+            unset the wrapper derives the per-bot path
+            ``/api/msagentsdk/{safe_id}/messages``. Set this to the Bot
+            Framework standard ``"/api/messages"`` when the channel (Copilot
+            Studio, Teams, the Bot Framework Emulator) is hard-wired to that
+            endpoint. The per-bot path is always ALSO registered, so the bot
+            stays reachable by its canonical URL regardless of this override.
     """
 
     name: str
@@ -37,9 +61,14 @@ class MSAgentSDKConfig:
     client_secret: Optional[str] = None
     tenant_id: Optional[str] = None
     anonymous_auth: bool = False
+    api_key: Optional[str] = None
+    api_key_header: str = "x-api-key"
+    app_type: str = "SingleTenant"
+    authority: Optional[str] = None
     kind: str = "msagentsdk"
     welcome_message: Optional[str] = None
     system_prompt_override: Optional[str] = None
+    endpoint: Optional[str] = None
 
     def __post_init__(self) -> None:
         """
@@ -57,6 +86,21 @@ class MSAgentSDKConfig:
             self.client_secret = config.get(f"{prefix}_MICROSOFT_APP_PASSWORD")
         if not self.tenant_id:
             self.tenant_id = config.get(f"{prefix}_MICROSOFT_TENANT_ID")
+        # App type / authority overrides (default to SingleTenant when unset).
+        env_app_type = config.get(f"{prefix}_MICROSOFT_APP_TYPE")
+        if env_app_type:
+            self.app_type = env_app_type
+        if not self.authority:
+            self.authority = config.get(f"{prefix}_MICROSOFT_AUTHORITY")
+        # API-Key inbound auth (e.g. Copilot Studio connection).
+        if not self.api_key:
+            self.api_key = config.get(f"{prefix}_API_KEY")
+        env_api_key_header = config.get(f"{prefix}_API_KEY_HEADER")
+        if env_api_key_header:
+            self.api_key_header = env_api_key_header
+        # Custom messaging endpoint override (e.g. "/api/messages").
+        if not self.endpoint:
+            self.endpoint = config.get(f"{prefix}_ENDPOINT")
 
     @classmethod
     def from_dict(cls, name: str, data: Dict[str, Any]) -> "MSAgentSDKConfig":
@@ -76,6 +120,11 @@ class MSAgentSDKConfig:
             client_secret=data.get("client_secret"),
             tenant_id=data.get("tenant_id"),
             anonymous_auth=data.get("anonymous_auth", False),
+            api_key=data.get("api_key"),
+            api_key_header=data.get("api_key_header", "x-api-key"),
+            app_type=data.get("app_type", "SingleTenant"),
+            authority=data.get("authority"),
             welcome_message=data.get("welcome_message"),
             system_prompt_override=data.get("system_prompt_override"),
+            endpoint=data.get("endpoint"),
         )
