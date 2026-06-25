@@ -47,11 +47,12 @@ ENV_DIR = BASE_DIR.joinpath('env')
 class IntegrationBotManager:
     """
     Manages bot integrations for exposed agents.
-    
+
     Supports:
     - Telegram
     - MS Teams
     - WhatsApp
+    - MS Agent SDK
     """
 
     def __init__(self, bot_manager: 'BotManager'):
@@ -343,7 +344,7 @@ class IntegrationBotManager:
         """
         agent = await self._get_agent(
             config.chatbot_id,
-            config.system_prompt_override if hasattr(config, "system_prompt_override") else None,
+            config.system_prompt_override,
         )
         if not agent:
             return

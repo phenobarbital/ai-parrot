@@ -66,9 +66,9 @@ class ParrotM365Agent:
         activity = context.activity
         activity_type = activity.type
 
-        if activity_type == ActivityTypes.message:
+        if activity_type in (ActivityTypes.message, "message"):
             await self._handle_message(context)
-        elif activity_type == ActivityTypes.conversation_update:
+        elif activity_type in (ActivityTypes.conversation_update, "conversationUpdate"):
             await self._handle_conversation_update(context)
         else:
             self.logger.debug("Ignoring activity type: %s", activity_type)
@@ -100,12 +100,18 @@ class ParrotM365Agent:
             "Message from user=%s session=%s", user_id, session_id
         )
 
-        response = await self.parrot_agent.ask(
-            question=text.strip(),
-            session_id=session_id,
-            user_id=user_id,
-        )
-        await context.send_activity(str(response.content))
+        try:
+            response = await self.parrot_agent.ask(
+                question=text.strip(),
+                session_id=session_id,
+                user_id=user_id,
+            )
+            await context.send_activity(str(response.content))
+        except Exception as exc:
+            self.logger.error(
+                "Error processing message from user=%s: %s", user_id, exc, exc_info=True
+            )
+            await context.send_activity("Sorry, I encountered an error. Please try again.")
 
     async def _handle_conversation_update(self, context) -> None:
         """Send a welcome message when new members join a conversation.

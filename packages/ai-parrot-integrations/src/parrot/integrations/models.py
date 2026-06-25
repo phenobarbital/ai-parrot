@@ -7,7 +7,10 @@ from .telegram.models import TelegramAgentConfig
 from .msteams.models import MSTeamsAgentConfig
 from .whatsapp.models import WhatsAppAgentConfig
 from .slack.models import SlackAgentConfig
-from .msagentsdk.models import MSAgentSDKConfig
+try:
+    from .msagentsdk.models import MSAgentSDKConfig
+except ImportError:
+    MSAgentSDKConfig = None  # type: ignore[assignment,misc]
 
 
 @dataclass

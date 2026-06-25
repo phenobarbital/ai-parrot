@@ -194,3 +194,20 @@ class TestMSAgentSDKManagerBotDict:
         )
         await manager._start_msagentsdk_bot("TestBot", cfg)
         assert "TestBot" not in manager.msagentsdk_bots
+
+
+@pytest.mark.asyncio
+async def test_shutdown_calls_stop_on_all_wrappers():
+    """shutdown() calls stop() on each msagentsdk wrapper."""
+    from unittest.mock import AsyncMock, MagicMock
+    from parrot.integrations.manager import IntegrationBotManager
+
+    bot_manager = MagicMock()
+    manager = IntegrationBotManager(bot_manager)
+
+    mock_wrapper = AsyncMock()
+    mock_wrapper.stop = AsyncMock()
+    manager.msagentsdk_bots["TestBot"] = mock_wrapper
+
+    await manager.shutdown()
+    mock_wrapper.stop.assert_awaited_once()

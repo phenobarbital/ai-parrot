@@ -9,14 +9,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 
 @pytest.fixture
-def mock_bot():
-    """Mock AbstractBot with a working ask() coroutine."""
-    bot = AsyncMock()
-    bot.ask = AsyncMock(return_value=MagicMock(content="Hello back!"))
-    return bot
-
-
-@pytest.fixture
 def agent(mock_bot):
     """ParrotM365Agent wrapping the mock bot."""
     from parrot.integrations.msagentsdk.agent import ParrotM365Agent
@@ -78,7 +70,7 @@ class TestParrotM365AgentOnTurn:
             session_id="conv-456",
             user_id="user-123",
         )
-        mock_context.send_activity.assert_called_once_with("Hello back!")
+        mock_context.send_activity.assert_called_once_with("Test response")
 
     @pytest.mark.asyncio
     async def test_empty_text_ignored(self, agent, mock_context, mock_bot):

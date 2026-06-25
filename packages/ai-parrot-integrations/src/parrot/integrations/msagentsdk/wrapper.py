@@ -7,6 +7,7 @@ aiohttp application, and bridges incoming HTTP requests to
 """
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from aiohttp import web
@@ -92,16 +93,17 @@ class MSAgentSDKWrapper:
             except ImportError:
                 # Older SDK versions may not have AgentAuthConfiguration;
                 # fall back to keyword arguments.
+                self.logger.warning(
+                    "AgentAuthConfiguration not available — tenant_id will not be enforced. "
+                    "Upgrade microsoft-agents-hosting-aiohttp to >=0.9.0"
+                )
                 self.adapter = CloudAdapter(
                     app_id=config.client_id,
                     app_password=config.client_secret,
                 )
-                self.logger.debug(
-                    "CloudAdapter created with keyword args (AgentAuthConfiguration not found)"
-                )
 
         # Register per-bot HTTP route
-        safe_id = config.name.replace(" ", "_").lower()
+        safe_id = re.sub(r"[^a-z0-9_]", "_", config.name.lower())
         self.route = f"/api/msagentsdk/{safe_id}/messages"
         self.app.router.add_post(self.route, self.handle_request)
 
