@@ -65,6 +65,9 @@ voice-supertonic = [
 voice-moonshine = [
     "useful-moonshine-onnx",
 ]
+msagentsdk = [
+    "microsoft-agents-hosting-aiohttp~=0.9.0",
+]
 # LiveAvatar (FEAT-242) is intentionally NOT part of the `all` bundle: it pulls
 # the livekit-api transport and incurs LiveAvatar/LiveKit minutes, so it is
 # opt-in only. Install explicitly: ai-parrot-integrations[liveavatar].
