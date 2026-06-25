@@ -185,6 +185,36 @@ effective outbound auth, e.g. `Outbound auth: client_id=… authority=…`.
 > Channel reach: once registered, the same Azure Bot can be surfaced in Teams,
 > Web Chat, etc. via the Azure Bot **Channels** blade — no code changes needed.
 
+### 5b. Copilot Studio "Microsoft 365 Agents SDK" connection (API Key)
+
+Copilot Studio's *"Conexión a un agente del SDK de agentes de Microsoft 365"*
+dialog offers three auth schemes for how Copilot calls your agent: **None**,
+**API Key**, **OAuth 2.0**. In practice **"None" is rejected** — testing fails
+with `Authentication is not configured for this bot` /
+`AuthenticationNotConfigured`. Use **API Key** (simplest):
+
+1. In the connection dialog choose **API Key**, Type **Header**, header name
+   `x-api-key` (or your choice), and a secret **value**.
+2. Run the server with that same secret and your Azure credentials (the bot
+   still needs them to authenticate the **reply** to the connector):
+   ```bash
+   export MSCOPILOTAGENT_MICROSOFT_APP_ID=...        # + _APP_PASSWORD / _TENANT_ID / _APP_TYPE
+   export MSCOPILOTAGENT_API_KEY="<same secret>"
+   export MSCOPILOTAGENT_API_KEY_HEADER="x-api-key"  # optional, this is the default
+   python examples/msagent/server.py --production --host 0.0.0.0 --port 3978 --debug
+   ```
+3. Save & **publish** the Copilot agent, then test.
+
+How it works: the wrapper accepts the request when the `x-api-key` header
+matches (in addition to Bot Framework JWTs, so Teams/Web Chat keep working on
+the same route). On an API-key match it attaches an **authenticated** identity so
+the outbound reply is signed with the bot's real Azure AD token (not the
+anonymous empty token). A wrong/missing key returns `401`.
+
+> If the channel can only POST to the Bot Framework standard path, set
+> `MSCOPILOTAGENT_ENDPOINT=/api/messages` — the wrapper registers it **in
+> addition** to the per-bot `/api/msagentsdk/{safe_id}/messages` route.
+
 ---
 
 ## 6. Production: run inside the BotManager (recommended)
@@ -261,6 +291,7 @@ Checklist (most common first):
 | Symptom | Likely cause |
 |---|---|
 | `ModuleNotFoundError: microsoft_agents` | Install the extra: `uv pip install "ai-parrot-integrations[msagentsdk]"` |
+| Copilot Studio: `AuthenticationNotConfigured` ("Authentication is not configured for this bot") even with **None** selected | Copilot's M365 Agents SDK connection does not accept "None". Configure **API Key** (or OAuth 2.0) on the connection and set `MSCOPILOTAGENT_API_KEY` on the server — see section 5b. |
 | Teams reply `401 "Authorization has been denied"` (inbound OK, Web Chat OK) | Multi-tenant app minting the reply token against your tenant. Set `MSCOPILOTAGENT_MICROSOFT_APP_TYPE=MultiTenant` (keep `TENANT_ID`) and restart — see the dedicated section above. |
 | `{"error": "Authorization header not found"}` from `curl` in `--production` | Expected: production mode requires a valid Azure AD JWT, which `curl` doesn't send. You **cannot** curl-test production (a hand-minted token has the wrong audience/issuer and is rejected too). Test from Copilot Studio's **Test** pane or Teams; for local `curl`/Emulator testing use the default anonymous mode. |
 | `JWT validation failed: …` + `401` in `--production` | A token *was* sent but rejected — App ID / tenant in the env don't match the Azure Bot registration Copilot Studio uses. |

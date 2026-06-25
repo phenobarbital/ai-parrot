@@ -85,6 +85,34 @@ class TestMSAgentSDKWrapperRouteRegistration:
         wrapper, _ = _make_wrapper(mock_bot, mock_config, mock_app)
         assert wrapper.route == "/api/msagentsdk/testbot/messages"
 
+    def test_custom_endpoint_registered_alongside_per_bot_route(
+        self, mock_app, mock_config
+    ):
+        """A custom endpoint is registered as well as the per-bot route."""
+        mock_config.endpoint = "/api/messages"
+        mock_bot = AsyncMock()
+        wrapper, _ = _make_wrapper(mock_bot, mock_config, mock_app)
+        routes = [r.resource.canonical for r in mock_app.router.routes()]
+        assert "/api/messages" in routes
+        assert "/api/msagentsdk/testbot/messages" in routes
+        # The custom endpoint is the primary (channel-facing) route.
+        assert wrapper.route == "/api/messages"
+        assert wrapper.routes == [
+            "/api/messages",
+            "/api/msagentsdk/testbot/messages",
+        ]
+
+    def test_custom_endpoint_equal_to_default_registers_once(
+        self, mock_app, mock_config
+    ):
+        """An endpoint equal to the per-bot path is not registered twice."""
+        mock_config.endpoint = "/api/msagentsdk/testbot/messages"
+        mock_bot = AsyncMock()
+        wrapper, _ = _make_wrapper(mock_bot, mock_config, mock_app)
+        assert wrapper.routes == ["/api/msagentsdk/testbot/messages"]
+        paths = [r.resource.canonical for r in mock_app.router.routes()]
+        assert paths.count("/api/msagentsdk/testbot/messages") == 1
+
 
 class TestMSAgentSDKWrapperHandleRequest:
     @pytest.mark.asyncio
@@ -250,6 +278,80 @@ class TestMSAgentSDKWrapperAzureAuth:
         assert captured["authority"] == (
             "https://login.microsoftonline.us/botframework.com"
         )
+
+
+class TestMSAgentSDKWrapperApiKey:
+    """API-Key inbound auth (e.g. Copilot Studio connection)."""
+
+    def _build_apikey_wrapper(self):
+        """Build a non-anonymous wrapper with api_key set; return (wrapper, adapter)."""
+        from parrot.integrations.msagentsdk.models import MSAgentSDKConfig
+
+        cfg = MSAgentSDKConfig(
+            name="ApiKeyBot",
+            chatbot_id="agent",
+            client_id="cid",
+            client_secret="secret",
+            tenant_id="tid",
+            api_key="s3cr3t",
+            api_key_header="x-api-key",
+        )
+        adapter = AsyncMock()
+        adapter.process = AsyncMock(return_value=web.Response(text="ok"))
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "microsoft_agents": MagicMock(),
+                "microsoft_agents.hosting": MagicMock(),
+                "microsoft_agents.hosting.aiohttp": MagicMock(
+                    CloudAdapter=MagicMock(return_value=adapter)
+                ),
+                "microsoft_agents.hosting.core": MagicMock(),
+                "microsoft_agents.authentication": MagicMock(),
+                "microsoft_agents.authentication.msal": MagicMock(
+                    MsalConnectionManager=MagicMock()
+                ),
+            },
+        ):
+            from parrot.integrations.msagentsdk.wrapper import MSAgentSDKWrapper
+
+            wrapper = MSAgentSDKWrapper(AsyncMock(), cfg, web.Application())
+        return wrapper, adapter
+
+    @pytest.mark.asyncio
+    async def test_valid_api_key_accepted(self):
+        """A request with the correct API key is accepted and delegated."""
+        wrapper, adapter = self._build_apikey_wrapper()
+        request = MagicMock()
+        request.headers.get.side_effect = lambda k, *a: {
+            "x-api-key": "s3cr3t"
+        }.get(k)
+        result = await wrapper.handle_request(request)
+        adapter.process.assert_awaited_once()
+        assert isinstance(result, web.Response)
+
+    @pytest.mark.asyncio
+    async def test_wrong_api_key_rejected(self):
+        """A wrong API key (and no JWT) is rejected with 401."""
+        wrapper, adapter = self._build_apikey_wrapper()
+        request = MagicMock()
+        request.headers.get.side_effect = lambda k, *a: {
+            "x-api-key": "WRONG"
+        }.get(k)
+        result = await wrapper.handle_request(request)
+        adapter.process.assert_not_awaited()
+        assert result.status == 401
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_rejected(self):
+        """No JWT and no API key header → 401."""
+        wrapper, adapter = self._build_apikey_wrapper()
+        request = MagicMock()
+        request.headers.get.side_effect = lambda k, *a: None
+        result = await wrapper.handle_request(request)
+        adapter.process.assert_not_awaited()
+        assert result.status == 401
 
 
 class TestMSAgentSDKWrapperStop:

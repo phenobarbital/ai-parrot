@@ -8,6 +8,33 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
+def _activity_module():
+    """Mocked ``microsoft_agents.activity`` whose ``Activity`` records kwargs.
+
+    Lets assertions inspect the ``text`` of the Activity the bridge sends,
+    while keeping the suite runnable without the real SDK installed.
+    """
+    class _Activity:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    at = MagicMock()
+    at.message = "message"
+    at.conversation_update = "conversationUpdate"
+    mod = MagicMock(
+        Activity=_Activity,
+        ActivityTypes=at,
+        TextFormatTypes=MagicMock(plain="plain"),
+    )
+    return mod
+
+
+def _sent_text(mock_context):
+    """Return the ``text`` of the last Activity passed to ``send_activity``."""
+    arg = mock_context.send_activity.call_args.args[0]
+    return getattr(arg, "text", arg)
+
+
 @pytest.fixture
 def agent(mock_bot):
     """ParrotM365Agent wrapping the mock bot."""
@@ -55,13 +82,10 @@ class TestParrotM365AgentOnTurn:
             "parrot.integrations.msagentsdk.agent.ParrotM365Agent.on_turn",
             wraps=agent.on_turn,
         ):
-            # Mock the lazy import of ActivityTypes
-            mock_at = MagicMock()
-            mock_at.message = "message"
-            mock_at.conversation_update = "conversationUpdate"
+            # Mock the lazy import of the activity module
             with patch.dict(
                 "sys.modules",
-                {"microsoft_agents.activity": MagicMock(ActivityTypes=mock_at)},
+                {"microsoft_agents.activity": _activity_module()},
             ):
                 await agent.on_turn(mock_context)
 
@@ -70,7 +94,8 @@ class TestParrotM365AgentOnTurn:
             session_id="conv-456",
             user_id="user-123",
         )
-        mock_context.send_activity.assert_called_once_with("Test response")
+        mock_context.send_activity.assert_called_once()
+        assert _sent_text(mock_context) == "Test response"
 
     @pytest.mark.asyncio
     async def test_empty_text_ignored(self, agent, mock_context, mock_bot):
@@ -120,15 +145,13 @@ class TestParrotM365AgentOnTurn:
         mock_context.activity.type = "conversationUpdate"
         new_member = MagicMock(id="new-user")
         mock_context.activity.members_added = [new_member]
-        mock_at = MagicMock()
-        mock_at.message = "message"
-        mock_at.conversation_update = "conversationUpdate"
         with patch.dict(
             "sys.modules",
-            {"microsoft_agents.activity": MagicMock(ActivityTypes=mock_at)},
+            {"microsoft_agents.activity": _activity_module()},
         ):
             await agent.on_turn(mock_context)
-        mock_context.send_activity.assert_called_once_with(agent.welcome_message)
+        mock_context.send_activity.assert_called_once()
+        assert _sent_text(mock_context) == agent.welcome_message
 
     @pytest.mark.asyncio
     async def test_bot_is_not_welcomed(self, agent, mock_context):
@@ -199,4 +222,5 @@ class TestParrotM365AgentHandleMessage:
         """Response content is always sent as a string."""
         mock_bot.ask.return_value = MagicMock(content=42)
         await agent._handle_message(mock_context)
-        mock_context.send_activity.assert_called_once_with("42")
+        mock_context.send_activity.assert_called_once()
+        assert _sent_text(mock_context) == "42"

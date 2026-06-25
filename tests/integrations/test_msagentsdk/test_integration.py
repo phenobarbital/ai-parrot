@@ -10,6 +10,28 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from aiohttp import web
 
 
+def _activity_module():
+    """Mocked ``microsoft_agents.activity`` whose ``Activity`` records kwargs."""
+    class _Activity:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    at = MagicMock()
+    at.message = "message"
+    at.conversation_update = "conversationUpdate"
+    return MagicMock(
+        Activity=_Activity,
+        ActivityTypes=at,
+        TextFormatTypes=MagicMock(plain="plain"),
+    )
+
+
+def _sent_text(ctx):
+    """Return the ``text`` of the last Activity passed to ``send_activity``."""
+    arg = ctx.send_activity.call_args.args[0]
+    return getattr(arg, "text", arg)
+
+
 class TestEndToEndMessageFlow:
     """Full pipeline: Activity arrives at wrapper, agent replies."""
 
@@ -34,15 +56,12 @@ class TestEndToEndMessageFlow:
         ctx.activity.text = "What is the meaning of life?"
         ctx.send_activity = AsyncMock()
 
-        # Simulate on_turn with a mocked ActivityTypes
-        mock_at = MagicMock()
-        mock_at.message = "message"
-        mock_at.conversation_update = "conversationUpdate"
+        # Simulate on_turn with a mocked activity module
         ctx.activity.type = "message"
 
         with patch.dict(
             "sys.modules",
-            {"microsoft_agents.activity": MagicMock(ActivityTypes=mock_at)},
+            {"microsoft_agents.activity": _activity_module()},
         ):
             await bridge.on_turn(ctx)
 
@@ -51,7 +70,8 @@ class TestEndToEndMessageFlow:
             session_id="conv-001",
             user_id="user-001",
         )
-        ctx.send_activity.assert_awaited_once_with("42 is the answer")
+        ctx.send_activity.assert_awaited_once()
+        assert _sent_text(ctx) == "42 is the answer"
 
     @pytest.mark.asyncio
     async def test_wrapper_process_called(self):
@@ -112,17 +132,14 @@ class TestEndToEndMessageFlow:
         ctx.activity.members_added = [new_member]
         ctx.send_activity = AsyncMock()
 
-        mock_at = MagicMock()
-        mock_at.message = "message"
-        mock_at.conversation_update = "conversationUpdate"
-
         with patch.dict(
             "sys.modules",
-            {"microsoft_agents.activity": MagicMock(ActivityTypes=mock_at)},
+            {"microsoft_agents.activity": _activity_module()},
         ):
             await bridge.on_turn(ctx)
 
-        ctx.send_activity.assert_awaited_once_with("Welcome aboard!")
+        ctx.send_activity.assert_awaited_once()
+        assert _sent_text(ctx) == "Welcome aboard!"
 
     @pytest.mark.asyncio
     async def test_unknown_activity_type_ignored(self):

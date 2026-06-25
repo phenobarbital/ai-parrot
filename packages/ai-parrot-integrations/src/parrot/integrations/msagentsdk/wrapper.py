@@ -8,6 +8,7 @@ aiohttp application, and bridges incoming HTTP requests to
 from __future__ import annotations
 
 import re
+import secrets
 from typing import TYPE_CHECKING
 
 from aiohttp import web
@@ -61,9 +62,10 @@ class MSAgentSDKWrapper:
     """ai-parrot integration wrapper for the Microsoft 365 Agents SDK.
 
     Registers a per-bot HTTP route at
-    ``/api/msagentsdk/{safe_id}/messages`` on the aiohttp application,
-    creates a ``CloudAdapter`` (with optional Azure AD auth), and delegates
-    all POST requests to ``CloudAdapter.process()``.
+    ``/api/msagentsdk/{safe_id}/messages`` on the aiohttp application (plus an
+    optional custom ``config.endpoint`` such as ``/api/messages``), creates a
+    ``CloudAdapter`` (with optional Azure AD auth), and delegates all POST
+    requests to ``CloudAdapter.process()``.
 
     All ``microsoft_agents.*`` imports are lazy (inside ``__init__``) so
     the class can be instantiated even if the optional SDK is not installed
@@ -73,7 +75,9 @@ class MSAgentSDKWrapper:
         agent: The ai-parrot bot instance.
         config: Configuration for this integration.
         app: The aiohttp application instance.
-        route: The registered HTTP route path.
+        route: The primary HTTP route path operators configure in the channel
+            (the custom ``endpoint`` when set, else the per-bot default).
+        routes: All HTTP route paths registered for this bot.
         m365_agent: The bridge agent wrapping ``agent``.
         adapter: The ``CloudAdapter`` instance.
         logger: Logger scoped to this wrapper.
@@ -96,6 +100,8 @@ class MSAgentSDKWrapper:
         self.config = config
         self.app = app
         self._anonymous = config.anonymous_auth
+        self._api_key = config.api_key
+        self._api_key_header = config.api_key_header
         self.logger = logging.getLogger(
             f"MSAgentSDKWrapper.{config.name}"
         )
@@ -171,18 +177,30 @@ class MSAgentSDKWrapper:
         # multiple msagentsdk bots can coexist on one aiohttp app.
         self._token_validator = JwtTokenValidator(self._auth_config)
 
-        # Register per-bot HTTP route
+        # Register HTTP route(s). The per-bot path is always registered so the
+        # bot is addressable by its canonical URL. A custom ``endpoint`` (e.g.
+        # the Bot Framework standard ``/api/messages`` that Copilot Studio,
+        # Teams and the Emulator POST to by default) is registered as an extra
+        # route pointing at the same handler — this is what fixes the 404 when
+        # the channel cannot be pointed at the per-bot URL.
         safe_id = re.sub(r"[^a-z0-9_]", "_", config.name.lower())
-        self.route = f"/api/msagentsdk/{safe_id}/messages"
-        self.app.router.add_post(self.route, self.handle_request)
+        default_route = f"/api/msagentsdk/{safe_id}/messages"
+        # ``self.route`` is the address operators configure in the channel —
+        # the custom endpoint when set, otherwise the per-bot default.
+        self.route = config.endpoint or default_route
 
-        # Exclude from auth middleware (pattern from WhatsApp/MS Teams wrappers)
-        if auth := self.app.get("auth"):
-            auth.add_exclude_list(self.route)
+        # De-duplicated, order-preserving list of paths to register.
+        self.routes = list(dict.fromkeys([self.route, default_route]))
+        auth = self.app.get("auth")
+        for path in self.routes:
+            self.app.router.add_post(path, self.handle_request)
+            # Exclude from auth middleware (pattern from WhatsApp/MS Teams wrappers)
+            if auth:
+                auth.add_exclude_list(path)
 
         self.logger.info(
-            "Registered MS Agent SDK route: %s (anonymous_auth=%s)",
-            self.route,
+            "Registered MS Agent SDK route(s): %s (anonymous_auth=%s)",
+            ", ".join(self.routes),
             config.anonymous_auth,
         )
 
@@ -260,20 +278,40 @@ class MSAgentSDKWrapper:
             )
             return await self.adapter.process(request, self.m365_agent)
 
-        # Production: a valid Azure AD / Bot Framework JWT is required.
+        # Production inbound auth. Two schemes are accepted on the same route:
+        #   1. Bot Framework JWT (Teams / Web Chat / Telegram via Azure Bot).
+        #   2. API Key (Copilot Studio's "Microsoft 365 Agents SDK" connection,
+        #      which does not accept "None"). Either is sufficient.
         auth_header = request.headers.get("Authorization")
-        if not auth_header:
+        if auth_header:
+            try:
+                token = auth_header.split(" ")[1]
+                request["claims_identity"] = (
+                    await self._token_validator.validate_token(token)
+                )
+            except ValueError as exc:
+                self.logger.warning("JWT validation failed: %s", exc)
+                return web.json_response({"error": str(exc)}, status=401)
+        elif self._api_key:
+            provided = request.headers.get(self._api_key_header)
+            if not provided or not secrets.compare_digest(provided, self._api_key):
+                self.logger.warning(
+                    "API-Key validation failed (header=%s)", self._api_key_header
+                )
+                return web.json_response({"error": "Invalid API key"}, status=401)
+            # Authenticated (non-anonymous) identity with no version claim →
+            # the adapter resolves the outbound scope/audience to the Bot
+            # Connector and mints a REAL token via the MSAL connection manager
+            # (not the anonymous empty-token path).
+            from microsoft_agents.hosting.core import ClaimsIdentity
+
+            request["claims_identity"] = ClaimsIdentity(
+                claims={}, is_authenticated=True, authentication_type="apikey"
+            )
+        else:
             return web.json_response(
                 {"error": "Authorization header not found"}, status=401
             )
-        try:
-            token = auth_header.split(" ")[1]
-            request["claims_identity"] = (
-                await self._token_validator.validate_token(token)
-            )
-        except ValueError as exc:
-            self.logger.warning("JWT validation failed: %s", exc)
-            return web.json_response({"error": str(exc)}, status=401)
 
         return await self.adapter.process(request, self.m365_agent)
 

@@ -106,12 +106,12 @@ class ParrotM365Agent:
                 session_id=session_id,
                 user_id=user_id,
             )
-            await context.send_activity(str(response.content))
+            await self._send_text(context, str(response.content))
         except Exception as exc:
             self.logger.error(
                 "Error processing message from user=%s: %s", user_id, exc, exc_info=True
             )
-            await context.send_activity("Sorry, I encountered an error. Please try again.")
+            await self._send_text(context, "Sorry, I encountered an error. Please try again.")
 
     async def _handle_conversation_update(self, context) -> None:
         """Send a welcome message when new members join a conversation.
@@ -131,4 +131,31 @@ class ParrotM365Agent:
         )
         for member in activity.members_added:
             if member.id != bot_id:
-                await context.send_activity(self.welcome_message)
+                await self._send_text(context, self.welcome_message)
+
+    @staticmethod
+    async def _send_text(context, text: str) -> None:
+        """Send a reply as plain text to avoid channel markdown parsing.
+
+        The Bot Framework defaults an outbound ``message`` Activity's
+        ``textFormat`` to ``markdown``. Channels such as Telegram then try
+        to render the text as MarkdownV2, where characters like ``-``,
+        ``.``, ``!`` and ``(`` are reserved and must be escaped — an
+        unescaped one makes the channel reject the message with a 400
+        ("can't parse entities"). Sending as ``plain`` tells the channel to
+        deliver the text verbatim, so agent replies are never mangled or
+        rejected because of incidental markdown characters.
+
+        Args:
+            context: ``TurnContext`` used to emit the reply.
+            text: The message body to send verbatim.
+        """
+        from microsoft_agents.activity import Activity, ActivityTypes, TextFormatTypes
+
+        await context.send_activity(
+            Activity(
+                type=ActivityTypes.message,
+                text=text,
+                text_format=TextFormatTypes.plain,
+            )
+        )
