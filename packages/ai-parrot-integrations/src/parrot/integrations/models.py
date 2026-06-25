@@ -7,6 +7,7 @@ from .telegram.models import TelegramAgentConfig
 from .msteams.models import MSTeamsAgentConfig
 from .whatsapp.models import WhatsAppAgentConfig
 from .slack.models import SlackAgentConfig
+from .msagentsdk.models import MSAgentSDKConfig
 
 
 @dataclass
@@ -29,7 +30,7 @@ class IntegrationBotConfig:
             client_id: "xxx"
             client_secret: "yyy"
     """
-    agents: Dict[str, Union[TelegramAgentConfig, MSTeamsAgentConfig, WhatsAppAgentConfig, SlackAgentConfig]] = field(default_factory=dict)
+    agents: Dict[str, Union[TelegramAgentConfig, MSTeamsAgentConfig, WhatsAppAgentConfig, SlackAgentConfig, MSAgentSDKConfig]] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'IntegrationBotConfig':
@@ -51,6 +52,8 @@ class IntegrationBotConfig:
                 agents[name] = WhatsAppAgentConfig.from_dict(name, agent_data)
             elif kind == 'slack':
                 agents[name] = SlackAgentConfig.from_dict(name, agent_data)
+            elif kind == 'msagentsdk':
+                agents[name] = MSAgentSDKConfig.from_dict(name, agent_data)
         return cls(agents=agents)
 
     def validate(self) -> List[str]:
@@ -90,4 +93,14 @@ class IntegrationBotConfig:
                     errors.append(
                         f"Agent '{name}': missing bot_token"
                     )
+            elif isinstance(agent_config, MSAgentSDKConfig):
+                if not agent_config.anonymous_auth:
+                    if not agent_config.client_id:
+                        errors.append(
+                            f"Agent '{name}': missing client_id (required when anonymous_auth is false)"
+                        )
+                    if not agent_config.client_secret:
+                        errors.append(
+                            f"Agent '{name}': missing client_secret (required when anonymous_auth is false)"
+                        )
         return errors
