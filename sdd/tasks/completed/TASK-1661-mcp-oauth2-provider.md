@@ -196,10 +196,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-26
+**Notes**: Created MCPOAuth2Provider subclassing OAuth2Provider ABC with
+provider_id="mcp:{server_name}" pattern, manager returning None, toolkit_factory
+returning None. Created register_mcp_oauth2_provider() factory function. All 15
+tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None.

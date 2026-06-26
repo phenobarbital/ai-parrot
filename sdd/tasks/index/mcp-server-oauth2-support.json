@@ -52,7 +52,7 @@
       "feature_id": "FEAT-262",
       "feature": "mcp-server-oauth2-support",
       "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Needs config model and storage adapter from prior tasks",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1661-mcp-oauth2-provider.md"
+      "completed_at": "2026-06-26T16:22:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1661-mcp-oauth2-provider.md"
     },
     {
       "id": "TASK-1662",
