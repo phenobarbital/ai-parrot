@@ -200,7 +200,7 @@
       "feature_id": "FEAT-260",
       "feature": "llmwiki-pageindex-graphindex",
       "spec": "sdd/specs/llmwiki-pageindex-graphindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -218,8 +218,8 @@
       "parallelism_notes": "Final task — integration tests require all modules to be complete",
       "assigned_to": null,
       "started_at": "2026-06-26T00:58:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1636-wiki-integration-tests.md"
+      "completed_at": "2026-06-26T01:17:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1636-wiki-integration-tests.md"
     }
   ]
 }
