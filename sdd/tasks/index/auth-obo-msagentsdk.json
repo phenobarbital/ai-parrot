@@ -1,0 +1,171 @@
+{
+  "feature": "auth-obo-msagentsdk",
+  "feature_id": "FEAT-261",
+  "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-26T00:00:00+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1650",
+      "slug": "msagentsdk-config-extension",
+      "title": "Config Extension — oauth_connections and obo_scopes fields",
+      "feature_id": "FEAT-261",
+      "feature": "auth-obo-msagentsdk",
+      "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1650-msagentsdk-config-extension.md",
+      "started_at": "2026-06-26T13:42:11+00:00",
+      "completed_at": null
+    },
+    {
+      "id": "TASK-1655",
+      "slug": "auditledger",
+      "title": "AuditLedger — credential invocation audit log",
+      "feature_id": "FEAT-261",
+      "feature": "auth-obo-msagentsdk",
+      "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1655-auditledger.md",
+      "started_at": "2026-06-26T13:42:11+00:00",
+      "completed_at": null
+    },
+    {
+      "id": "TASK-1651",
+      "slug": "msagentsdk-identity-extraction",
+      "title": "Identity Extraction — aad_object_id from Activity",
+      "feature_id": "FEAT-261",
+      "feature": "auth-obo-msagentsdk",
+      "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1650"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1651-msagentsdk-identity-extraction.md",
+      "started_at": "2026-06-26T13:42:11+00:00",
+      "completed_at": null
+    },
+    {
+      "id": "TASK-1652",
+      "slug": "msagentsdk-invoke-routing",
+      "title": "Invoke Routing — signin/verifyState and signin/tokenExchange",
+      "feature_id": "FEAT-261",
+      "feature": "auth-obo-msagentsdk",
+      "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1651"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1652-msagentsdk-invoke-routing.md",
+      "started_at": "2026-06-26T13:42:11+00:00",
+      "completed_at": null
+    },
+    {
+      "id": "TASK-1653",
+      "slug": "msagentsdk-credential-context-bridge",
+      "title": "Credential Context Bridge — PermissionContext + RequestContext in _handle_message",
+      "feature_id": "FEAT-261",
+      "feature": "auth-obo-msagentsdk",
+      "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1652"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1653-msagentsdk-credential-context-bridge.md",
+      "started_at": "2026-06-26T13:42:11+00:00",
+      "completed_at": null
+    },
+    {
+      "id": "TASK-1654",
+      "slug": "bftokenservice-resolver",
+      "title": "BFTokenServiceResolver — CredentialResolver for BF Token Service",
+      "feature_id": "FEAT-261",
+      "feature": "auth-obo-msagentsdk",
+      "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1655"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1654-bftokenservice-resolver.md",
+      "started_at": "2026-06-26T13:42:11+00:00",
+      "completed_at": null
+    },
+    {
+      "id": "TASK-1656",
+      "slug": "signin-card-emission",
+      "title": "Sign-in Card Emission — OAuthCard on CredentialRequired",
+      "feature_id": "FEAT-261",
+      "feature": "auth-obo-msagentsdk",
+      "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1653",
+        "TASK-1654"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1656-signin-card-emission.md",
+      "started_at": "2026-06-26T13:42:11+00:00",
+      "completed_at": null
+    },
+    {
+      "id": "TASK-1657",
+      "slug": "wrapper-auth-wiring",
+      "title": "Wrapper Auth Wiring — BFTokenServiceResolver + AuditLedger in wrapper",
+      "feature_id": "FEAT-261",
+      "feature": "auth-obo-msagentsdk",
+      "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1654",
+        "TASK-1656"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1657-wrapper-auth-wiring.md",
+      "started_at": "2026-06-26T13:42:11+00:00",
+      "completed_at": null
+    },
+    {
+      "id": "TASK-1658",
+      "slug": "msagentsdk-auth-tests",
+      "title": "Tests — FEAT-261 unit and integration tests",
+      "feature_id": "FEAT-261",
+      "feature": "auth-obo-msagentsdk",
+      "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1657"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1658-msagentsdk-auth-tests.md",
+      "started_at": "2026-06-26T13:42:11+00:00",
+      "completed_at": null
+    }
+  ]
+}
