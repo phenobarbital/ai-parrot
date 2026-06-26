@@ -3,7 +3,7 @@ import json
 import logging
 import ssl
 import webbrowser
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from aiohttp import web
 import aiohttp
 
@@ -210,11 +210,12 @@ class HttpMCPSession:
         """
         from parrot.mcp.oauth2_config import MCPOAuth2GrantType
         from parrot.mcp.oauth2_storage import VaultMCPTokenStorage
-        from parrot.mcp.oauth2_state import register_pending_callback
+        from parrot.mcp.oauth2_state import register_pending_callback, deregister_pending_callback
         from mcp.shared.auth import OAuthClientMetadata
 
         oauth2 = self.config.oauth2
-        user_id = getattr(oauth2, "user_id", None) or "default"
+        # user_id is on MCPClientConfig (not MCPOAuth2Config) for per-user token scoping.
+        user_id = getattr(self.config, "user_id", None) or "default"
         storage = VaultMCPTokenStorage(
             user_id=user_id,
             server_name=self.config.name,
@@ -243,21 +244,36 @@ class HttpMCPSession:
             oauth_state = secrets.token_urlsafe(24)
             callback_event, callback_result = register_pending_callback(oauth_state)
 
-            redirect_uri = (
-                f"http://127.0.0.1:8000{oauth2.redirect_path}"
+            # Resolve base URL: explicit field → env var → local default.
+            import os
+            _base = (
+                oauth2.redirect_base_url
+                or os.environ.get("NAVIGATOR_BASE_URL", "")
+                or "http://127.0.0.1:8000"
             )
+            redirect_uri = f"{_base.rstrip('/')}{oauth2.redirect_path}"
 
             async def redirect_handler(url: str) -> None:
                 """Open the authorization URL in the user's browser."""
                 self.logger.info("OAuth2: opening browser for authorization: %s", url)
                 webbrowser.open(url)
 
-            async def callback_handler() -> tuple[str, str | None]:
+            async def callback_handler() -> "Tuple[str, Optional[str]]":
                 """Wait for the Navigator callback to receive the auth code."""
                 self.logger.debug(
                     "OAuth2: waiting for callback (state=%s)", oauth_state
                 )
-                await asyncio.wait_for(callback_event.wait(), timeout=300.0)
+                try:
+                    await asyncio.wait_for(callback_event.wait(), timeout=300.0)
+                except asyncio.TimeoutError:
+                    # Clean up abandoned state to prevent memory leak in long-running servers.
+                    deregister_pending_callback(oauth_state)
+                    self.logger.warning(
+                        "OAuth2 callback timed out after 300s (state=%s). "
+                        "The user may not have completed the browser flow.",
+                        oauth_state,
+                    )
+                    raise
                 code = callback_result.get("code", "")
                 state = callback_result.get("state")
                 return code, state

@@ -169,7 +169,8 @@ class MCPClientConfig:
     auth_credential: Optional[AuthCredential] = None
     auth_type: Optional[AuthScheme] = None  # "oauth", "bearer", "basic", "api_key", "none"
     auth_config: Dict[str, Any] = field(default_factory=dict)
-    # A token supplier hook the HTTP client will call to add headers (set by OAuthManager)
+    # A token supplier hook the HTTP client will call to add headers.
+    # Used by NetSuiteM2MAuth and similar M2M token providers.
     token_supplier: Optional[Callable[[], Optional[str]]] = None
 
     # Transport type
@@ -229,6 +230,10 @@ class MCPClientConfig:
     oauth2: Optional[MCPOAuth2Config] = field(default=None)
     # Preset name for the OAuth2 configuration (resolved in from_yaml_config)
     auth_preset: Optional[str] = field(default=None)
+    # User identifier used to scope OAuth2 token storage per user + per server.
+    # Maps to VaultTokenStore key: mcp_oauth_{server}_{user_id}.
+    # When None, token storage falls back to "default" (shared, non-user-scoped).
+    user_id: Optional[str] = field(default=None)
 
     async def get_headers(self, context: Optional['ReadonlyContext'] = None) -> Dict[str, str]:
         """Get merged static, auth, and dynamic headers.
@@ -398,13 +403,21 @@ class MCPAuthHandler:
         )
 
     async def _get_oauth_headers(self) -> Dict[str, str]:
-        """Get OAuth headers (simplified - assumes token is already available)."""
+        """Get OAuth headers from a pre-acquired access token.
+
+        This method handles the ``auth_type="oauth"`` path on MCPAuthHandler,
+        which expects an already-acquired ``access_token`` in ``auth_config``.
+        For fully managed OAuth2 flows (PKCE, client credentials, token refresh)
+        set ``MCPClientConfig.oauth2`` instead — the MCP SDK handles the flow
+        at the transport layer and this method is not called.
+        """
         if access_token := self.auth_config.get("access_token"):
             return {"Authorization": f"Bearer {access_token}"}
 
-        # TODO: manage OAuth flow to get token if not present
         raise ValueError(
-            "OAuth authentication requires 'access_token' in auth_config"
+            "OAuth authentication via auth_config requires a pre-acquired "
+            "'access_token'. For managed OAuth2 flows (PKCE, client credentials) "
+            "use MCPClientConfig.oauth2 with an MCPOAuth2Config instead."
         )
 
     async def _get_basic_headers(self) -> Dict[str, str]:

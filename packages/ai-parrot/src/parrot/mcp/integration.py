@@ -16,7 +16,9 @@ from .oauth import (
     VaultTokenStore,     # noqa: F401 — public re-export for backward compat
 )
 from .oauth2_config import MCPOAuth2Config, get_mcp_oauth2_preset
-from parrot.auth.oauth2.mcp_provider import register_mcp_oauth2_provider
+# NOTE: register_mcp_oauth2_provider is imported locally inside factory functions
+# (create_oauth_mcp_server, create_netsuite_mcp_server) to avoid a circular
+# import: integration → mcp_provider → oauth2_config → mcp.__init__ → integration.
 from .client import (
     MCPClientConfig as MCPServerConfig,
     MCPConnectionError,
@@ -783,7 +785,8 @@ def create_oauth_mcp_server(
         oauth2=oauth2,
         **kwargs,
     )
-    # Register the provider so it can be discovered
+    # Register the provider so it can be discovered (local import avoids circular dep)
+    from parrot.auth.oauth2.mcp_provider import register_mcp_oauth2_provider  # noqa: PLC0415
     register_mcp_oauth2_provider(server_name=name, config=oauth2)
     return cfg
 
@@ -871,7 +874,8 @@ def create_netsuite_mcp_server(
         auth_type="oauth2",
         oauth2=oauth2,
     )
-    # Register the provider so it can be discovered
+    # Register the provider so it can be discovered (local import avoids circular dep)
+    from parrot.auth.oauth2.mcp_provider import register_mcp_oauth2_provider  # noqa: PLC0415
     register_mcp_oauth2_provider(server_name=name, config=oauth2)
     return cfg
 

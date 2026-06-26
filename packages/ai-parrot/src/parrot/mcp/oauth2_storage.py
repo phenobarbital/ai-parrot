@@ -18,14 +18,15 @@ from typing import Optional
 
 from parrot.mcp.oauth import VaultTokenStore
 
-# MCP SDK protocol and models
-from mcp.client.auth.oauth2 import TokenStorage  # noqa: F401 — re-exported for typing
+# MCP SDK protocol and models.
+# VaultMCPTokenStorage explicitly inherits from TokenStorage so that mypy /
+# pyright can verify structural compliance and any future protocol extension
+# is caught at class-definition time rather than silently at runtime.
+from mcp.client.auth.oauth2 import TokenStorage
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
-logger = logging.getLogger(__name__)
 
-
-class VaultMCPTokenStorage:
+class VaultMCPTokenStorage(TokenStorage):
     """MCP SDK ``TokenStorage`` adapter backed by AI-Parrot's Vault.
 
     Bridges the MCP SDK ``TokenStorage`` protocol to

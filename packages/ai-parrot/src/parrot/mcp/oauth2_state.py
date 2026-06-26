@@ -85,3 +85,16 @@ def is_pending(state: str) -> bool:
         ``True`` if the state is registered, ``False`` otherwise.
     """
     return state in _pending_mcp_callbacks
+
+
+def deregister_pending_callback(state: str) -> None:
+    """Remove a pending callback entry without signalling it.
+
+    Call this when the transport times out waiting for the callback, to prevent
+    the abandoned state entry from accumulating in ``_pending_mcp_callbacks``
+    indefinitely.
+
+    Args:
+        state: OAuth2 state parameter to remove.
+    """
+    _pending_mcp_callbacks.pop(state, None)

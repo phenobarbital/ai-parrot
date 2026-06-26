@@ -80,6 +80,15 @@ class MCPOAuth2Config(BaseModel):
         default="/api/auth/oauth2/mcp/callback",
         description="Path for the OAuth2 callback route.",
     )
+    redirect_base_url: str = Field(
+        default="",
+        description=(
+            "Base URL (scheme + host + port) for the OAuth2 redirect URI, "
+            "e.g. 'https://myapp.example.com'. When empty, the NAVIGATOR_BASE_URL "
+            "environment variable is used, falling back to 'http://127.0.0.1:8000'. "
+            "Set this explicitly in non-local deployments."
+        ),
+    )
     extra_token_params: Optional[Dict[str, str]] = Field(
         default=None,
         description="Additional parameters to send with token requests.",
@@ -147,6 +156,11 @@ _PRESETS: list[MCPOAuth2Preset] = [
         ),
         required_params=["account_id", "client_id"],
     ),
+    # NOTE: The Fireflies MCP server currently uses API-key authentication
+    # (Authorization: Bearer <api_key>), not a full OAuth2 authorization-code
+    # flow.  Use ``add_fireflies_mcp_server()`` with your API key directly.
+    # This preset is provided for future use when Fireflies ships OAuth2
+    # endpoints; do NOT use it with the current Fireflies MCP integration.
     MCPOAuth2Preset(
         name="fireflies",
         display_name="Fireflies.ai",
