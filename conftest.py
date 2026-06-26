@@ -39,6 +39,9 @@ _EXTRA_PATHS = [
     # SuspendedExecutionStore) — prepend worktree src so they shadow the
     # main-repo editable install.
     os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-server", "src"),
+    # ai-parrot-integrations: FEAT-261 adds auth.py — prepend worktree src
+    # so the new module is discoverable by tests.
+    os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-integrations", "src"),
 ]
 for _p in reversed(_EXTRA_PATHS):
     if _p not in sys.path:
@@ -56,7 +59,10 @@ try:
     import parrot as _parrot_pkg
     _wt_parrot_src = os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot", "src", "parrot")
     _wt_server_src = os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-server", "src", "parrot")
-    for _wt_dir in [_wt_server_src, _wt_parrot_src]:
+    _wt_integrations_src = os.path.join(
+        _WORKTREE_ROOT, "packages", "ai-parrot-integrations", "src", "parrot"
+    )
+    for _wt_dir in [_wt_integrations_src, _wt_server_src, _wt_parrot_src]:
         if _wt_dir not in _parrot_pkg.__path__:
             _parrot_pkg.__path__.insert(0, _wt_dir)
 except Exception:

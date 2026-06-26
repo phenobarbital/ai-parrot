@@ -1,8 +1,9 @@
 """
 Data models for Microsoft 365 Agents SDK bot configuration.
 """
-from dataclasses import dataclass
-from typing import Dict, Any, Optional
+import json
+from dataclasses import dataclass, field
+from typing import Dict, Any, List, Optional
 from navconfig import config
 
 
@@ -53,6 +54,14 @@ class MSAgentSDKConfig:
             Studio, Teams, the Bot Framework Emulator) is hard-wired to that
             endpoint. The per-bot path is always ALSO registered, so the bot
             stays reachable by its canonical URL regardless of this override.
+        oauth_connections: Maps tool name to Azure Bot OAuth connection name
+            for per-user token acquisition via the Bot Framework Token Service.
+            Example: ``{"o365": "graph_sso", "jira": "jira_oauth"}``.
+            When empty, user-token acquisition is disabled (backward compatible).
+        obo_scopes: Maps tool name to a list of OBO target scopes for
+            Microsoft-cluster APIs that require on-behalf-of token exchange.
+            Example: ``{"o365": ["https://graph.microsoft.com/.default"]}``.
+            Only relevant when ``oauth_connections`` is non-empty.
     """
 
     name: str
@@ -69,6 +78,8 @@ class MSAgentSDKConfig:
     welcome_message: Optional[str] = None
     system_prompt_override: Optional[str] = None
     endpoint: Optional[str] = None
+    oauth_connections: Dict[str, str] = field(default_factory=dict)
+    obo_scopes: Dict[str, List[str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """
@@ -101,6 +112,22 @@ class MSAgentSDKConfig:
         # Custom messaging endpoint override (e.g. "/api/messages").
         if not self.endpoint:
             self.endpoint = config.get(f"{prefix}_ENDPOINT")
+        # Per-user OAuth connections (JSON-encoded env var fallback).
+        if not self.oauth_connections:
+            raw = config.get(f"{prefix}_OAUTH_CONNECTIONS")
+            if raw:
+                try:
+                    self.oauth_connections = json.loads(raw)
+                except (ValueError, TypeError):
+                    pass
+        # OBO scopes for Microsoft-cluster APIs (JSON-encoded env var fallback).
+        if not self.obo_scopes:
+            raw = config.get(f"{prefix}_OBO_SCOPES")
+            if raw:
+                try:
+                    self.obo_scopes = json.loads(raw)
+                except (ValueError, TypeError):
+                    pass
 
     @classmethod
     def from_dict(cls, name: str, data: Dict[str, Any]) -> "MSAgentSDKConfig":
@@ -127,4 +154,6 @@ class MSAgentSDKConfig:
             welcome_message=data.get("welcome_message"),
             system_prompt_override=data.get("system_prompt_override"),
             endpoint=data.get("endpoint"),
+            oauth_connections=data.get("oauth_connections", {}),
+            obo_scopes=data.get("obo_scopes", {}),
         )

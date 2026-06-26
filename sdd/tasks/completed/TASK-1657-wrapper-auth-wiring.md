@@ -138,4 +138,9 @@ def test_wrapper_no_resolver_when_empty():
 
 ### Completion Note
 
-(Agent fills this in when done)
+Modified `wrapper.py` to create `AuditLedger()` and `BFTokenServiceResolver(
+oauth_connections=..., obo_scopes=..., audit_ledger=...)` when
+`config.oauth_connections` is non-empty. Both are passed to `ParrotM365Agent`
+via the new `resolver` and `audit_ledger` params. When `oauth_connections` is
+empty, `resolver=None` and `audit_ledger=None` — fully backward compatible.
+Logs the configured connection names at INFO when wired.

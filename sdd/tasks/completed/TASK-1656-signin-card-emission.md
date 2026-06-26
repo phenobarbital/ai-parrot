@@ -152,4 +152,10 @@ def test_no_service_fallback():
 
 ### Completion Note
 
-(Agent fills this in when done)
+Added `CredentialRequired` catch block in `_handle_message()` using lazy import
+(`from .auth import CredentialRequired`). On `CredentialRequired`, calls
+`_emit_oauth_card(context, exc.connection_name, exc.tool)`. Added
+`_emit_oauth_card()` that sends an `ActivityTypes.message` with an OAuthCard
+attachment (contentType `application/vnd.microsoft.card.oauth`, content with
+`text` and `connectionName`). No raw token in the card. Other exceptions use
+the existing error path unchanged.

@@ -134,4 +134,11 @@ def test_config_oauth_connections_empty():
 
 ### Completion Note
 
-(Agent fills this in when done)
+Implemented as specified. Added `oauth_connections: Dict[str, str]` and
+`obo_scopes: Dict[str, List[str]]` to `MSAgentSDKConfig` with
+`field(default_factory=dict)` defaults. Updated `__post_init__()` with
+JSON env var fallback for `{PREFIX}_OAUTH_CONNECTIONS` and
+`{PREFIX}_OBO_SCOPES`. Updated `from_dict()` to pass both new fields.
+Changed `from dataclasses import dataclass` to
+`from dataclasses import dataclass, field` and added `List` to typing imports.
+All existing fields unchanged. Backward compatible.
