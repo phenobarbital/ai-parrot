@@ -26,6 +26,7 @@ from aiohttp import web
 
 from parrot.conf import WEB_OAUTH_ALLOWED_ORIGINS
 from parrot.auth.oauth2.service import IntegrationsService
+from parrot.mcp.oauth2_state import resolve_pending_callback, is_pending
 
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -219,5 +220,132 @@ def setup_oauth2_routes(
 
         if callback_path not in exclude_list:
             exclude_list.append(callback_path)
+    except ImportError:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# MCP OAuth2 callback route
+# ---------------------------------------------------------------------------
+
+_MCP_CALLBACK_PATH = "/api/auth/oauth2/mcp/callback"
+
+
+async def handle_mcp_oauth2_callback(request: web.Request) -> web.Response:
+    """Handle OAuth2 callback for MCP server authorization code flows.
+
+    This route is called by the authorization server after the user grants
+    access.  It dispatches the authorization code to the waiting transport
+    coroutine via the shared ``_pending_mcp_callbacks`` dict in
+    :mod:`parrot.mcp.oauth2_state`.
+
+    Route: ``GET /api/auth/oauth2/mcp/callback``
+
+    Query parameters:
+        code: Authorization code from the authorization server.
+        state: OAuth2 state parameter identifying the pending flow.
+        error: Error code from the authorization server (optional).
+        error_description: Human-readable error description (optional).
+
+    Returns:
+        HTML response with success or error message.
+    """
+    state = request.query.get("state")
+    code = request.query.get("code")
+    error = request.query.get("error")
+    error_description = request.query.get("error_description", "")
+
+    # Handle authorization server errors
+    if error:
+        error_msg = error_description or error
+        logger.warning("MCP OAuth2 callback error: %s — %s", error, error_description)
+        return web.Response(
+            status=400,
+            content_type="text/html",
+            text=f"<html><body><h3>OAuth2 error: {html.escape(error_msg)}</h3></body></html>",
+        )
+
+    # Validate state
+    if not state or not is_pending(state):
+        logger.warning("MCP OAuth2 callback: invalid or expired state=%r", state)
+        return web.Response(
+            status=400,
+            content_type="text/html",
+            text=(
+                "<html><body>"
+                "<h3>Invalid or expired OAuth2 state.</h3>"
+                "<p>Please try connecting again.</p>"
+                "</body></html>"
+            ),
+        )
+
+    # Validate code
+    if not code:
+        logger.warning("MCP OAuth2 callback: missing authorization code for state=%r", state)
+        return web.Response(
+            status=400,
+            content_type="text/html",
+            text=(
+                "<html><body>"
+                "<h3>Missing authorization code.</h3>"
+                "</body></html>"
+            ),
+        )
+
+    # Signal the waiting transport coroutine
+    resolved = resolve_pending_callback(state, code)
+    if not resolved:
+        # Race condition: state was consumed between is_pending and resolve
+        logger.warning(
+            "MCP OAuth2 callback: state=%r was consumed before resolution", state
+        )
+        return web.Response(
+            status=400,
+            content_type="text/html",
+            text=(
+                "<html><body>"
+                "<h3>Invalid or expired OAuth2 state.</h3>"
+                "<p>Please try connecting again.</p>"
+                "</body></html>"
+            ),
+        )
+
+    logger.info("MCP OAuth2 callback: resolved code exchange for state=%r", state)
+    return web.Response(
+        content_type="text/html",
+        text=(
+            "<html><body>"
+            "<h3>Authentication complete. You can close this window.</h3>"
+            "</body></html>"
+        ),
+    )
+
+
+def setup_mcp_oauth2_callback(app: web.Application) -> None:
+    """Register the MCP OAuth2 callback route on *app*.
+
+    Idempotent — calling twice is a no-op.  The route is registered at
+    ``/api/auth/oauth2/mcp/callback`` and excluded from auth middleware.
+
+    Args:
+        app: The aiohttp web application.
+    """
+    path = _MCP_CALLBACK_PATH
+
+    # Idempotency check — check resources (not routes, since add_get adds HEAD too)
+    for resource in app.router.resources():
+        info = resource.get_info()
+        if info.get("path") == path:
+            return
+
+    app.router.add_get(path, handle_mcp_oauth2_callback)
+    logger.debug("Registered MCP OAuth2 callback route at %s", path)
+
+    # Exclude from auth middleware
+    try:  # pragma: no cover
+        from navigator_auth.conf import exclude_list  # type: ignore
+
+        if path not in exclude_list:
+            exclude_list.append(path)
     except ImportError:
         pass
