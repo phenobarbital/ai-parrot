@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-26T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-06-26T16:15:24+00:00",
   "tasks": [
     {
       "id": "TASK-1650",
@@ -21,7 +21,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-1650-msagentsdk-config-extension.md",
       "started_at": "2026-06-26T13:42:11+00:00",
-      "completed_at": "2026-06-26T13:43:23+00:00"
+      "completed_at": "2026-06-26T16:15:05+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-1655",
@@ -37,7 +38,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-1655-auditledger.md",
       "started_at": "2026-06-26T13:42:11+00:00",
-      "completed_at": "2026-06-26T13:44:20+00:00"
+      "completed_at": "2026-06-26T16:15:05+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-1651",
@@ -55,7 +57,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-1651-msagentsdk-identity-extraction.md",
       "started_at": "2026-06-26T13:42:11+00:00",
-      "completed_at": "2026-06-26T13:46:16+00:00"
+      "completed_at": "2026-06-26T16:15:05+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-1652",
@@ -73,7 +76,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-1652-msagentsdk-invoke-routing.md",
       "started_at": "2026-06-26T13:42:11+00:00",
-      "completed_at": "2026-06-26T13:46:16+00:00"
+      "completed_at": "2026-06-26T16:15:05+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-1653",
@@ -91,7 +95,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-1653-msagentsdk-credential-context-bridge.md",
       "started_at": "2026-06-26T13:42:11+00:00",
-      "completed_at": "2026-06-26T13:46:16+00:00"
+      "completed_at": "2026-06-26T16:15:05+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-1654",
@@ -109,7 +114,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-1654-bftokenservice-resolver.md",
       "started_at": "2026-06-26T13:42:11+00:00",
-      "completed_at": "2026-06-26T13:48:12+00:00"
+      "completed_at": "2026-06-26T16:15:05+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-1656",
@@ -128,7 +134,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-1656-signin-card-emission.md",
       "started_at": "2026-06-26T13:42:11+00:00",
-      "completed_at": "2026-06-26T13:46:16+00:00"
+      "completed_at": "2026-06-26T16:15:05+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-1657",
@@ -147,7 +154,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-1657-wrapper-auth-wiring.md",
       "started_at": "2026-06-26T13:42:11+00:00",
-      "completed_at": "2026-06-26T13:49:07+00:00"
+      "completed_at": "2026-06-26T16:15:05+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-1658",
@@ -165,7 +173,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-1658-msagentsdk-auth-tests.md",
       "started_at": "2026-06-26T13:42:11+00:00",
-      "completed_at": "2026-06-26T13:53:51+00:00"
+      "completed_at": "2026-06-26T16:15:05+00:00",
+      "verification": "verified"
     }
   ]
 }
