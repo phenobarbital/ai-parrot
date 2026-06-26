@@ -226,4 +226,10 @@ def test_resolver_obo_exchange():
 
 ### Completion Note
 
-(Agent fills this in when done)
+Created `packages/ai-parrot-integrations/src/parrot/integrations/msagentsdk/auth.py`
+with `CredentialRequired(Exception)` and `BFTokenServiceResolver(CredentialResolver)`.
+`resolve()` looks up connection name, calls `_fetch_token()` (tries `UserTokenClient`
+from `turn_state`, falls back to `adapter.get_user_token`), raises `CredentialRequired`
+when no token, calls `_obo_exchange()` (best-effort no-op pending OQ#4), and records
+audit via `_record_audit()` (SHA-256 of first 8 token bytes). All `microsoft_agents.*`
+imports are lazy inside methods. `get_auth_url()` raises `NotImplementedError`.
