@@ -33,7 +33,7 @@
       "slug": "employee-ontology-smoke-test",
       "title": "Employee Ontology Integration Smoke Test",
       "spec": "sdd/specs/ontology-rag-kb.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -42,7 +42,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on Employee entity from TASK-1624.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-26T13:19:12+00:00",
       "file": "sdd/tasks/active/TASK-1625-employee-ontology-smoke-test.md",
       "completed_at": null
     },
