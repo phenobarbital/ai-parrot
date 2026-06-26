@@ -112,7 +112,7 @@
       "feature_id": "FEAT-260",
       "feature": "llmwiki-pageindex-graphindex",
       "spec": "sdd/specs/llmwiki-pageindex-graphindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Depends on source manager and bookkeeper; must be sequential",
       "assigned_to": null,
       "started_at": "2026-06-26T00:58:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1632-wiki-ingest-orchestrator.md"
+      "completed_at": "2026-06-26T01:08:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1632-wiki-ingest-orchestrator.md"
     },
     {
       "id": "TASK-1633",
