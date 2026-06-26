@@ -132,10 +132,8 @@ def test_reportkind_advisory_member():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-05
+**Notes**: Added `ADVISORY = "advisory"` to `ReportKind` enum in models.py. Added `test_reportkind_advisory_member` to existing test class. 21/21 tests pass, ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -18,7 +18,6 @@ from parrot.interfaces.file import FileManagerInterface
 from parrot.storage.security_reports import (
     ReportFilter,
     ReportKind,
-    ReportRef,
     SecurityReportStore,
 )
 from parrot_tools.security.parsers import get_report_parser

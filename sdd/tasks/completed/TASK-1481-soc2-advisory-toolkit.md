@@ -183,10 +183,8 @@ class TestSOC2AdvisoryToolkit:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-05
+**Notes**: Created soc2_advisory.py with SOC2AdvisoryToolkit(AbstractToolkit, tool_prefix="soc2"). Three tools: map_report_to_soc2, soc2_gap_analysis, daily_soc2_advisory. All return structured dicts, never raise. store.get() exists at store.py:63. 12/12 tests pass, ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

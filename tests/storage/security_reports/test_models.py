@@ -26,6 +26,11 @@ class TestReportKind:
         assert isinstance(ReportKind.SCAN, str)
         assert ReportKind.SCAN == "scan"
 
+    def test_reportkind_advisory_member(self):
+        """FEAT-226: ADVISORY enum value added for SOC2 advisory outputs."""
+        assert ReportKind.ADVISORY.value == "advisory"
+        assert ReportKind("advisory") is ReportKind.ADVISORY
+
 
 class TestSeverityBreakdown:
     def test_defaults_zero(self):
