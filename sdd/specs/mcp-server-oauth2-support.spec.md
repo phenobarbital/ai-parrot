@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-262
 **Date**: 2026-06-26
 **Author**: Jesus / Claude
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.x
 
 ---
