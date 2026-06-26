@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-260
 **Date**: 2026-06-26
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Proposal**: `sdd/proposals/llmwiki-pageindex-graphindex.proposal.md`
 
