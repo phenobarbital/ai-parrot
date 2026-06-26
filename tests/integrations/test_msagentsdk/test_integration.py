@@ -6,7 +6,7 @@ bot -> response, using mocked SDK internals so no real Azure connection is
 required.
 """
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from aiohttp import web
 
 
@@ -50,7 +50,13 @@ class TestEndToEndMessageFlow:
         # Build a fake TurnContext
         ctx = AsyncMock()
         ctx.activity = MagicMock()
-        ctx.activity.from_property = MagicMock(id="user-001")
+        # Explicitly set aad_object_id/aadObjectId=None so the agent falls back
+        # to the channel-level id ("user-001"). Without this, MagicMock
+        # auto-creates truthy attributes and the agent uses those instead.
+        from_prop = MagicMock(id="user-001")
+        from_prop.aad_object_id = None
+        from_prop.aadObjectId = None
+        ctx.activity.from_property = from_prop
         ctx.activity.conversation = MagicMock(id="conv-001")
         ctx.activity.recipient = MagicMock(id="bot-001")
         ctx.activity.text = "What is the meaning of life?"
@@ -69,6 +75,7 @@ class TestEndToEndMessageFlow:
             question="What is the meaning of life?",
             session_id="conv-001",
             user_id="user-001",
+            ctx=ANY,
         )
         ctx.send_activity.assert_awaited_once()
         assert _sent_text(ctx) == "42 is the answer"

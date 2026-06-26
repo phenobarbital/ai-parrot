@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import deque
 from dataclasses import dataclass, asdict
-from typing import List, Optional
+from typing import Optional
 
 
 @dataclass
@@ -60,7 +61,7 @@ class AuditLedger:
                 named ``parrot.auth.audit``.
         """
         self.logger = logger or logging.getLogger(__name__)
-        self._entries: List[AuditEntry] = []
+        self._entries: deque[AuditEntry] = deque(maxlen=1000)
 
     def record(self, entry: AuditEntry) -> None:
         """Record a credential invocation entry.
@@ -85,10 +86,10 @@ class AuditLedger:
         override this method.
         """
 
-    def entries(self) -> List[AuditEntry]:
+    def entries(self) -> list[AuditEntry]:
         """Return a copy of all recorded entries (primarily for testing).
 
         Returns:
-            A shallow copy of the internal entries list.
+            A list of all recorded entries (converted from the internal deque).
         """
         return list(self._entries)

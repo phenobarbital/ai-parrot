@@ -25,13 +25,17 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from abc import ABC
+from contextvars import ContextVar
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from parrot.auth.credentials import CredentialResolver
 
 if TYPE_CHECKING:
-    from parrot.auth.audit import AuditLedger, AuditEntry
+    from parrot.auth.audit import AuditLedger
+
+# ContextVar that holds a (resolver, turn_context) tuple so tools running
+# inside _handle_message can reach the resolver without passing it explicitly.
+_resolver_var: ContextVar = ContextVar("msagentsdk_resolver", default=None)
 
 
 class CredentialRequired(Exception):
@@ -190,6 +194,23 @@ class BFTokenServiceResolver(CredentialResolver):
             "URL-based redirect is not supported."
         )
 
+    async def is_connected(self, channel: str, user_id: str) -> bool:
+        """Not supported — use resolve() with tool= and turn_context= kwargs.
+
+        Args:
+            channel: Integration channel identifier.
+            user_id: Canonical user identity.
+
+        Raises:
+            NotImplementedError: Always. :meth:`resolve` requires ``tool`` and
+                ``turn_context`` keyword arguments that this method signature
+                does not carry.
+        """
+        raise NotImplementedError(
+            "BFTokenServiceResolver.is_connected() requires 'tool' and "
+            "'turn_context' kwargs — call resolve() directly."
+        )
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -299,12 +320,18 @@ class BFTokenServiceResolver(CredentialResolver):
         # unresolved. The token service may handle OBO internally via the
         # Azure Bot OAuth connection configuration. Return original token
         # until the SDK API is verified.
-        self.logger.debug(
-            "OBO exchange requested for connection=%s scopes=%s "
-            "(returning original token — OBO via SDK not yet verified)",
-            connection_name,
-            scopes,
-        )
+        if self._obo_scopes:
+            self.logger.warning(
+                "OBO exchange is not yet implemented — returning original token for "
+                "connection=%s scopes=%s. Operator action required: OBO via SDK not verified.",
+                connection_name,
+                scopes,
+            )
+        else:
+            self.logger.debug(
+                "OBO exchange skipped (no scopes configured) for connection=%s",
+                connection_name,
+            )
         return token
 
     async def _record_audit(
@@ -334,10 +361,10 @@ class BFTokenServiceResolver(CredentialResolver):
         from parrot.auth.audit import AuditEntry
 
         raw = token.encode("utf-8") if isinstance(token, str) else bytes(token)
-        fingerprint = hashlib.sha256(raw[:8]).hexdigest()
+        fingerprint = hashlib.sha256(raw).hexdigest()
 
         entry = AuditEntry(
-            timestamp=datetime.datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
             user_id=user_id,
             channel=channel,
             tool=tool,

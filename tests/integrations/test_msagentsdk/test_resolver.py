@@ -144,12 +144,12 @@ class TestBFTokenServiceResolver:
 
     @pytest.mark.asyncio
     async def test_resolver_key_fingerprint_formula(self):
-        """key_fingerprint is SHA-256 of first 8 bytes."""
+        """key_fingerprint is SHA-256 of the full token (I1 fix: not first 8 bytes)."""
         from parrot.integrations.msagentsdk.auth import BFTokenServiceResolver
         from parrot.auth.audit import AuditLedger
 
         token = "fake-token-abc"
-        expected_fp = hashlib.sha256(token.encode("utf-8")[:8]).hexdigest()
+        expected_fp = hashlib.sha256(token.encode("utf-8")).hexdigest()
 
         ledger = AuditLedger()
         resolver = BFTokenServiceResolver(

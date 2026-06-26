@@ -10,6 +10,7 @@ from navconfig.logging import logging
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
     from parrot.auth.context import UserContext
+    from .auth import BFTokenServiceResolver
 
 
 class ParrotM365Agent:
@@ -41,7 +42,7 @@ class ParrotM365Agent:
         self,
         parrot_agent: AbstractBot,
         welcome_message: Optional[str] = None,
-        resolver: Optional[Any] = None,
+        resolver: Optional["BFTokenServiceResolver"] = None,
         audit_ledger: Optional[Any] = None,
     ) -> None:
         """Initialise the bridge.
@@ -201,6 +202,7 @@ class ParrotM365Agent:
         from parrot.auth.permission import UserSession, PermissionContext
         from parrot.auth.context import _pctx_var
         from parrot.utils.helpers import RequestContext
+        from .auth import _resolver_var
 
         user_session = UserSession(
             user_id=user_id,
@@ -212,6 +214,9 @@ class ParrotM365Agent:
             channel="msagentsdk",
         )
         token = _pctx_var.set(pctx)
+        resolver_token = _resolver_var.set(
+            (self._resolver, context) if self._resolver else None
+        )
         request_ctx = RequestContext(user_id=user_id, session_id=session_id)
 
         try:
@@ -248,6 +253,7 @@ class ParrotM365Agent:
                     context, "Sorry, I encountered an error. Please try again."
                 )
         finally:
+            _resolver_var.reset(resolver_token)
             _pctx_var.reset(token)
 
     # ------------------------------------------------------------------

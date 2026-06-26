@@ -1,6 +1,7 @@
 """
 Data models for Microsoft 365 Agents SDK bot configuration.
 """
+import json
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional
 from navconfig import config
@@ -115,7 +116,6 @@ class MSAgentSDKConfig:
         if not self.oauth_connections:
             raw = config.get(f"{prefix}_OAUTH_CONNECTIONS")
             if raw:
-                import json
                 try:
                     self.oauth_connections = json.loads(raw)
                 except (ValueError, TypeError):
@@ -124,7 +124,6 @@ class MSAgentSDKConfig:
         if not self.obo_scopes:
             raw = config.get(f"{prefix}_OBO_SCOPES")
             if raw:
-                import json
                 try:
                     self.obo_scopes = json.loads(raw)
                 except (ValueError, TypeError):

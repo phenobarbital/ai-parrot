@@ -335,11 +335,14 @@ class MSAgentSDKWrapper:
         auth_header = request.headers.get("Authorization")
         if auth_header:
             try:
-                token = auth_header.split(" ")[1]
+                parts = auth_header.split(" ", 1)
+                if len(parts) != 2 or not parts[1].strip():
+                    raise ValueError(f"Malformed Authorization header: {auth_header!r}")
+                token = parts[1].strip()
                 request["claims_identity"] = (
                     await self._token_validator.validate_token(token)
                 )
-            except ValueError as exc:
+            except (ValueError, IndexError) as exc:
                 self.logger.warning("JWT validation failed: %s", exc)
                 return web.json_response({"error": str(exc)}, status=401)
         elif self._api_key:

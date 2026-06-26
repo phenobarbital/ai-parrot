@@ -155,6 +155,43 @@ class TestCredentialContextBridge:
             await agent._handle_message(ctx)
 
         # After the call, _pctx_var should be back to None (reset)
+        assert _pctx_var.get() is None, "_pctx_var must be reset after _handle_message"
+        _pctx_var.reset(token)
+
+    @pytest.mark.asyncio
+    async def test_pctx_var_reset_on_credential_required(self):
+        """_pctx_var is reset even when CredentialRequired is raised."""
+        from parrot.integrations.msagentsdk.agent import ParrotM365Agent
+        from parrot.auth.context import _pctx_var
+        from parrot.integrations.msagentsdk.auth import CredentialRequired
+
+        async def ask_raises(**kwargs):
+            raise CredentialRequired(tool="o365", connection_name="graph_sso")
+
+        mock_bot = AsyncMock()
+        mock_bot.ask = ask_raises
+        agent = ParrotM365Agent(parrot_agent=mock_bot)
+
+        activity = MockActivity(text="Show calendar", aad_id="user-1")
+        ctx = MockTurnContext(activity)
+
+        # Set _pctx_var to None before the call
+        token = _pctx_var.set(None)
+
+        import sys
+        from unittest.mock import patch, MagicMock as MM
+
+        mock_am = MM()
+        mock_am.ActivityTypes.message = "message"
+        mock_am.ActivityTypes.conversation_update = "conversationUpdate"
+        sent_act = MM()
+        mock_am.Activity = MM(return_value=sent_act)
+
+        with patch.dict(sys.modules, {"microsoft_agents.activity": mock_am}):
+            await agent._handle_message(ctx)
+
+        # _pctx_var must be reset even after CredentialRequired was raised
+        assert _pctx_var.get() is None, "_pctx_var must be reset after CredentialRequired"
         _pctx_var.reset(token)
 
 
