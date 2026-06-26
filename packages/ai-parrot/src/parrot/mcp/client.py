@@ -7,6 +7,8 @@ from enum import Enum
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field, model_validator
 
+from parrot.mcp.oauth2_config import MCPOAuth2Config, get_mcp_oauth2_preset
+
 if TYPE_CHECKING:
     from .context import ReadonlyContext
     from .filtering import ToolPredicate
@@ -221,6 +223,13 @@ class MCPClientConfig:
     # QUIC Configuration
     quic_config: Any = None
 
+    # OAuth2 configuration (FEAT-262)
+    # When set, the transport layer uses the MCP SDK OAuth2 flow instead of
+    # static auth_credential headers.
+    oauth2: Optional[MCPOAuth2Config] = field(default=None)
+    # Preset name for the OAuth2 configuration (resolved in from_yaml_config)
+    auth_preset: Optional[str] = field(default=None)
+
     async def get_headers(self, context: Optional['ReadonlyContext'] = None) -> Dict[str, str]:
         """Get merged static, auth, and dynamic headers.
 
@@ -241,8 +250,9 @@ class MCPClientConfig:
         """
         result = dict(self.headers)
 
-        # Add auth headers from auth_credential
-        if self.auth_credential:
+        # Add auth headers from auth_credential only when oauth2 is NOT configured.
+        # When oauth2 is set the MCP SDK handles authentication at the transport layer.
+        if self.auth_credential and not self.oauth2:
             auth_headers = self.auth_credential.get_auth_headers()
             result |= auth_headers
 
@@ -321,6 +331,28 @@ class MCPClientConfig:
         # Handle auth_credential if present as dict
         if 'auth_credential' in config_dict and isinstance(config_dict['auth_credential'], dict):
             config_dict['auth_credential'] = AuthCredential(**config_dict['auth_credential'])
+
+        # Handle OAuth2 preset and inline oauth2 config (FEAT-262)
+        auth_preset = config_dict.pop('auth_preset', None)
+        oauth2_dict = config_dict.pop('oauth2', None)
+
+        if auth_preset:
+            preset = get_mcp_oauth2_preset(auth_preset)
+            if not preset:
+                raise ValueError(
+                    f"Unknown MCP OAuth2 preset: '{auth_preset}' in {config_abs_path}"
+                )
+            base = preset.model_dump(
+                exclude_none=True,
+                exclude={'name', 'display_name', 'url_template', 'required_params'},
+            )
+            if oauth2_dict:
+                base.update(oauth2_dict)  # inline oauth2 dict overrides preset defaults
+            config_dict['oauth2'] = MCPOAuth2Config(**base)
+        elif oauth2_dict:
+            config_dict['oauth2'] = MCPOAuth2Config(**oauth2_dict)
+
+        config_dict['auth_preset'] = auth_preset
 
         # Filter to only known fields
         known_fields = {f.name for f in cls.__dataclass_fields__.values()}  # pylint: disable=no-member
