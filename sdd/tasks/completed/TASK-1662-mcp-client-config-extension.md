@@ -212,10 +212,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-26
+**Notes**: Added oauth2 (Optional[MCPOAuth2Config]) and auth_preset (Optional[str])
+fields to MCPClientConfig dataclass. Updated from_yaml_config() to parse both
+fields with preset resolution and override merging. Updated get_headers() to skip
+auth_credential when oauth2 is set. All 15 tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None.
