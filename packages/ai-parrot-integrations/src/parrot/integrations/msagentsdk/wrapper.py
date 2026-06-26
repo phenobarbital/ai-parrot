@@ -109,9 +109,31 @@ class MSAgentSDKWrapper:
         # Create bridge agent (ParrotM365Agent's lazy imports are inside on_turn)
         from .agent import ParrotM365Agent
 
+        # Wire per-user OAuth resolver and audit ledger when oauth_connections
+        # is configured. When empty, the bridge operates exactly as before
+        # (no user-token acquisition — backward compatible).
+        resolver = None
+        audit_ledger = None
+        if config.oauth_connections:
+            from .auth import BFTokenServiceResolver
+            from parrot.auth.audit import AuditLedger
+
+            audit_ledger = AuditLedger()
+            resolver = BFTokenServiceResolver(
+                oauth_connections=config.oauth_connections,
+                obo_scopes=config.obo_scopes,
+                audit_ledger=audit_ledger,
+            )
+            self.logger.info(
+                "BFTokenServiceResolver wired for connections: %s",
+                list(config.oauth_connections.keys()),
+            )
+
         self.m365_agent = ParrotM365Agent(
             parrot_agent=agent,
             welcome_message=config.welcome_message,
+            resolver=resolver,
+            audit_ledger=audit_ledger,
         )
 
         # Create CloudAdapter with auth configuration (lazy SDK import).
