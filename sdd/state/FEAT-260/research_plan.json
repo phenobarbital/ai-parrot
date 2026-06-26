@@ -1,0 +1,24 @@
+{
+  "feat_id": "FEAT-260",
+  "mode": "enrichment",
+  "summary_oneline": "Verify the credential/HITL/audit/A2A anchors the brainstorm asserts, before spec.",
+  "budget_profile": "default",
+  "queries": [
+    {"id": "Q001", "type": "grep", "intent": "Confirm CredentialResolver exists + location", "params": {"pattern": "class CredentialResolver|CredentialResolver", "scope": "parrot/"}, "priority": "high"},
+    {"id": "Q002", "type": "grep", "intent": "Confirm SuspendedExecutionStore + SUSPEND/HITL resume machinery", "params": {"pattern": "SuspendedExecutionStore|class.*Suspend|SUSPEND|HOT_THEN_SUSPEND", "scope": "parrot/"}, "priority": "high"},
+    {"id": "Q003", "type": "grep", "intent": "Confirm AuditLedger + key_fingerprint", "params": {"pattern": "AuditLedger|key_fingerprint", "scope": "parrot/"}, "priority": "high"},
+    {"id": "Q004", "type": "grep", "intent": "Confirm ToolManager", "params": {"pattern": "class ToolManager", "scope": "parrot/"}, "priority": "medium"},
+    {"id": "Q005", "type": "grep", "intent": "Confirm PermissionContext / PBAC", "params": {"pattern": "class PermissionContext|PermissionContext|PBAC", "scope": "parrot/"}, "priority": "medium"},
+    {"id": "Q006", "type": "grep", "intent": "Confirm AbstractTool scrubber seam", "params": {"pattern": "class AbstractTool|scrub", "scope": "parrot/tools/"}, "priority": "medium"},
+    {"id": "Q007", "type": "glob+read", "intent": "Map parrot/a2a package: AgentCard model, to_dict, get_agent_card, setup, JSON-RPC handler", "params": {"glob": "parrot/a2a/**", "read": ["parrot/a2a/models.py", "parrot/a2a/server.py"]}, "priority": "high"},
+    {"id": "Q008", "type": "grep", "intent": "Confirm AgentCard serialization shape: supportedInterfaces, preferredTransport, camelCase", "params": {"pattern": "supportedInterfaces|preferred_transport|preferredTransport|protocol_version|to_dict", "scope": "parrot/a2a/"}, "priority": "high"},
+    {"id": "Q009", "type": "grep", "intent": "Confirm user vault / CredentialStore abstraction + per-user token store", "params": {"pattern": "vault|CredentialStore|credential_store|UserCredential", "scope": "parrot/"}, "priority": "high"},
+    {"id": "Q010", "type": "grep", "intent": "Confirm Entra OBO / on_behalf_of / token_exchange helper", "params": {"pattern": "on_behalf_of|token_exchange|\\bobo\\b|on-behalf-of", "scope": "parrot/"}, "priority": "medium"},
+    {"id": "Q011", "type": "grep", "intent": "Confirm Atlassian OAuth2 3LO support (related_spec cross-repo jira oauth2)", "params": {"pattern": "3LO|oauth2|authorization_code|refresh_token", "scope": "parrot/tools/ parrot/integrations/"}, "priority": "medium"},
+    {"id": "Q012", "type": "grep", "intent": "Confirm Teams HITL canonical email identity reuse", "params": {"pattern": "canonical|email.*identity|TeamsHumanChannel|HumanChannel", "scope": "parrot/"}, "priority": "low"},
+    {"id": "Q013", "type": "read", "intent": "Read examples/a2a/server.py (brainstorm cites it as VERIFIED anchor source)", "params": {"read": ["examples/a2a/server.py"]}, "priority": "high"},
+    {"id": "Q014", "type": "read", "intent": "Check prior Copilot/MS integration proposals (microsoft-copilot-agent-sdk, FEAT-259 msagentsdk) for overlap/reuse", "params": {"read": ["sdd/proposals/microsoft-copilot-agent-sdk.proposal.md"]}, "priority": "medium"},
+    {"id": "Q015", "type": "git_log", "intent": "Recent activity on parrot/a2a and any A2A/copilot work", "params": {"paths": ["parrot/a2a/"], "window": "60 days"}, "priority": "medium"},
+    {"id": "Q016", "type": "grep", "intent": "Confirm fireflies / work-iq / jira toolkits exist as named in brainstorm", "params": {"pattern": "fireflies|work.?iq|workiq", "scope": "parrot/"}, "priority": "low"}
+  ]
+}

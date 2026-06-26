@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-260",
+  "started_at": "2026-06-26T00:36:52Z",
+  "updated_at": "2026-06-26T00:50:00Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/brainstorm-copilot-a2a-percredential.md",
+    "raw_path": "sdd/state/FEAT-260/source.md",
+    "fetched_at": "2026-06-26T00:36:52Z",
+    "summary_oneline": "Publish AI-Parrot as an A2A connected agent in M365 Copilot with parrot-owned per-user tool credential acquisition"
+  },
+  "mode": "enrichment",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "completed_at": "2026-06-26T00:36:52Z"
+    },
+    "plan": {
+      "status": "completed",
+      "queries_total": 16,
+      "approved_by_user": true,
+      "plan_path": "sdd/state/FEAT-260/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "queries_executed": 16,
+      "queries_skipped": 0,
+      "depth_reached": 2,
+      "files_read": 7,
+      "grep_calls": 11,
+      "git_calls": 2,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-260/synthesis.json",
+      "overall_confidence": "medium",
+      "claims_total": 11,
+      "claims_high_conf": 9,
+      "claims_medium_conf": 1,
+      "claims_low_conf": 1,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 4,
+      "questions_answered": 4,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/copilot-a2a-percredential.proposal.md",
+      "commit_sha": "facd6b9521a07848fdc3a3c5833d1a86cdb6326f",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "High-confidence localization + reuse story; new surface is a bounded bridge over verified primitives; OQ#1 identity gate resolved."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 7,
+    "grep_calls": 11,
+    "git_calls": 2,
+    "wall_seconds": 240
+  },
+  "resume_hint": {
+    "next_phase": "qa_complete",
+    "next_action": "Collect answers to the 4 unknowns, then render and commit the proposal."
+  }
+}
