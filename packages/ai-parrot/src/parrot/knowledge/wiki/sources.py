@@ -15,7 +15,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -270,8 +269,19 @@ class SourceCollectionManager:
         uid = uuid.uuid5(uuid.NAMESPACE_URL, source_uri)
         return f"src-{uid.hex[:12]}"
 
+    def find_by_uri(self, source_uri: str) -> Optional[str]:
+        """Look up an existing source ID by URI (public API).
+
+        Args:
+            source_uri: The URI to search for.
+
+        Returns:
+            The matching source_id, or ``None`` if not tracked.
+        """
+        return self._find_id_by_uri(source_uri)
+
     def _find_id_by_uri(self, source_uri: str) -> Optional[str]:
-        """Look up an existing source ID by URI.
+        """Look up an existing source ID by URI (internal implementation).
 
         Args:
             source_uri: The URI to search for.

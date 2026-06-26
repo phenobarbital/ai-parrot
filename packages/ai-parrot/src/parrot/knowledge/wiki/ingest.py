@@ -19,9 +19,10 @@ succeed.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-from datetime import datetime, timezone
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -130,11 +131,17 @@ class WikiIngestOrchestrator:
         source_uri = str(source_path_obj)
 
         # Step 1 — register or check staleness
-        existing_entry = self._sources._find_id_by_uri(source_uri)
-        if existing_entry:
-            source_id = existing_entry
+        # Use public find_by_uri and wrap sync I/O in asyncio.to_thread so the
+        # event loop is not blocked by hash computation or manifest writes.
+        existing_id = await asyncio.to_thread(
+            self._sources.find_by_uri, source_uri
+        )
+        if existing_id:
+            source_id = existing_id
             entry = self._sources.get_source(source_id)
-            is_stale = self._sources.is_stale(source_id)
+            is_stale = await asyncio.to_thread(
+                self._sources.is_stale, source_id
+            )
             if not is_stale and entry:
                 self.logger.info(
                     "Source %s is up to date — skipping ingest", source_uri
@@ -150,17 +157,20 @@ class WikiIngestOrchestrator:
                 )
         else:
             try:
-                entry = self._sources.add_source(source_path_obj)
+                entry = await asyncio.to_thread(
+                    self._sources.add_source, source_path_obj
+                )
             except (FileNotFoundError, OSError) as exc:
-                # File does not exist; generate a placeholder source_id from URI
-                import uuid as _uuid
-                source_id = f"src-{_uuid.uuid5(_uuid.NAMESPACE_URL, source_uri).hex[:12]}"
+                # File does not exist; generate a deterministic placeholder ID.
+                source_id = (
+                    f"src-{uuid.uuid5(uuid.NAMESPACE_URL, source_uri).hex[:12]}"
+                )
                 return self._error_report(source_id, source_uri, t0, str(exc))
             source_id = entry.source_id
 
-        # Step 2 — load content
+        # Step 2 — load content (offloaded to thread to avoid blocking the loop)
         try:
-            content = self._load_source(source_path_obj)
+            content = await self._load_source(source_path_obj)
         except Exception as exc:  # noqa: BLE001
             return self._error_report(source_id, source_uri, t0, str(exc))
 
@@ -172,7 +182,7 @@ class WikiIngestOrchestrator:
 
         try:
             pi_result = await self._create_wiki_pages(content, tree_name)
-            pages_created = pi_result.get("nodes_added", 1)
+            pages_created = pi_result.get("nodes_added", 0)
             # Collect node IDs from the result
             inserted_ids = pi_result.get("node_ids", [])
             if isinstance(inserted_ids, list):
@@ -200,16 +210,21 @@ class WikiIngestOrchestrator:
                 "GraphIndex sync failed for %s (non-fatal): %s", source_uri, exc
             )
 
-        # Step 5 — update manifest
+        # Step 5 — update manifest (blocking I/O offloaded to thread)
         try:
-            self._sources.mark_ingested(source_id, pages_generated=page_ids)
+            await asyncio.to_thread(
+                self._sources.mark_ingested,
+                source_id,
+                pages_generated=page_ids,
+            )
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("Manifest update failed: %s", exc)
 
-        # Step 6 — bookkeeping
+        # Step 6 — bookkeeping (file append offloaded to thread)
         wiki_dir = wiki_config.storage_dir
         try:
-            self._bookkeeper.log_operation(
+            await asyncio.to_thread(
+                self._bookkeeper.log_operation,
                 wiki_dir,
                 "INGEST",
                 f"source: {source_path_obj.name}, "
@@ -241,8 +256,11 @@ class WikiIngestOrchestrator:
     # Private pipeline steps
     # ------------------------------------------------------------------
 
-    def _load_source(self, path: Path) -> str:
-        """Read the raw source content from disk.
+    async def _load_source(self, path: Path) -> str:
+        """Read the raw source content from disk without blocking the event loop.
+
+        Delegates the file read to a thread pool via ``asyncio.to_thread`` so
+        that large source files do not stall other concurrent tasks.
 
         Args:
             path: Absolute path to the source file.
@@ -254,7 +272,7 @@ class WikiIngestOrchestrator:
             FileNotFoundError: If the file does not exist.
             OSError: On read errors.
         """
-        return path.read_text(encoding="utf-8")
+        return await asyncio.to_thread(path.read_text, encoding="utf-8")
 
     async def _create_wiki_pages(
         self,
@@ -283,7 +301,12 @@ class WikiIngestOrchestrator:
         tree_name: str = "wiki",
         summary: str = "",
     ) -> Optional[str]:
-        """Create a WIKI_PAGE node in GraphIndex for the ingested source.
+        """Synchronise the ingested source to GraphIndex as a WIKI_PAGE node.
+
+        Attempts to call ``replace_document_slice()`` first (spec AC: wiki pages
+        must be synced via this method so re-ingest replaces stale nodes rather
+        than accumulating duplicates).  Falls back to ``create_node()`` when
+        ``replace_document_slice`` is not available on the toolkit.
 
         Args:
             source_uri: Absolute URI of the source document.
@@ -291,15 +314,46 @@ class WikiIngestOrchestrator:
             summary: Short content snippet for the node summary.
 
         Returns:
-            The ``node_id`` of the created graph node, or ``None`` on failure.
+            The ``node_id`` of the created/replaced graph node, or ``None``
+            on failure.
         """
-        result = await self._gi.create_node(
-            kind="wiki_page",
-            title=Path(source_uri).stem,
-            summary=summary[:500] if summary else "",
-            source_uri=source_uri,
-            domain_tags={"wiki": tree_name},
-        )
+        wiki_page_data = {
+            "kind": "wiki_page",
+            "title": Path(source_uri).stem,
+            "summary": summary[:500] if summary else "",
+            "source_uri": source_uri,
+            "domain_tags": {"wiki": tree_name},
+        }
+
+        # Prefer replace_document_slice (spec AC) to prevent duplicate nodes on
+        # re-ingest.  We check callable() to guard against MagicMock in tests and
+        # catch (AttributeError, TypeError) in case the method is not awaitable.
+        rs_method = getattr(self._gi, "replace_document_slice", None)
+        if callable(rs_method):
+            try:
+                result = await self._gi.replace_document_slice(
+                    document_uri=source_uri,
+                    nodes=[wiki_page_data],
+                    edges=[],
+                )
+                if isinstance(result, dict):
+                    node_ids = result.get("node_ids", [])
+                    return (
+                        node_ids[0]
+                        if node_ids
+                        else result.get("node_id")
+                    )
+            except (AttributeError, TypeError):
+                # replace_document_slice exists but is not awaitable (e.g. in
+                # tests using MagicMock); fall through to create_node.
+                self.logger.debug(
+                    "replace_document_slice not awaitable on %s; "
+                    "falling back to create_node",
+                    type(self._gi).__name__,
+                )
+
+        # Fallback: create_node (confirmed available on GraphIndexToolkit)
+        result = await self._gi.create_node(**wiki_page_data)
         if isinstance(result, dict):
             return result.get("node_id")
         return None

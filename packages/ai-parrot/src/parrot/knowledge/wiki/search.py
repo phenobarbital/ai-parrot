@@ -19,7 +19,6 @@ Search modes:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Optional
 
@@ -119,24 +118,38 @@ class WikiCombinedSearch:
     ) -> list[dict[str, Any]]:
         """Discover pages related to a given wiki page via graph traversal.
 
-        Delegates to ``GraphIndexToolkit.get_neighborhood(node_id, depth)``.
+        Prefers ``GraphIndexToolkit.get_neighborhood(node_id, depth)`` when
+        available.  Falls back to ``search_hybrid(page_id)`` to approximate
+        neighbourhood retrieval when ``get_neighborhood`` is absent — this
+        guards against runtimes where the method has not been implemented yet.
 
         Args:
             page_id: GraphIndex node ID of the page to explore from.
             depth: Maximum traversal depth (hops) from the seed node.
 
         Returns:
-            A list of neighbour node dicts as returned by
-            ``GraphIndexToolkit.get_neighborhood()``.  Returns an empty
-            list on error.
+            A list of neighbour node dicts.  Returns an empty list on error.
         """
         try:
-            result = await self._gi.get_neighborhood(page_id, depth=depth)
-            neighbours = result.get("neighbours", result.get("nodes", []))
-            return neighbours if isinstance(neighbours, list) else []
+            gn_method = getattr(self._gi, "get_neighborhood", None)
+            if callable(gn_method):
+                result = await self._gi.get_neighborhood(page_id, depth=depth)
+                neighbours = result.get("neighbours", result.get("nodes", []))
+                return neighbours if isinstance(neighbours, list) else []
+
+            # Fallback: use search_hybrid with the page_id as a seed query.
+            # This approximates neighbourhood by retrieving semantically related
+            # nodes rather than hop-bounded graph neighbours.
+            self.logger.debug(
+                "get_neighborhood not available on %s; "
+                "falling back to search_hybrid for find_related",
+                type(self._gi).__name__,
+            )
+            raw = await self._gi.search_hybrid(page_id, top_k=depth * 5)
+            return raw if isinstance(raw, list) else []
         except Exception as exc:  # noqa: BLE001
             self.logger.warning(
-                "find_related: get_neighborhood(%s, depth=%d) failed: %s",
+                "find_related(%s, depth=%d) failed: %s",
                 page_id,
                 depth,
                 exc,

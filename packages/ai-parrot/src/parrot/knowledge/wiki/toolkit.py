@@ -16,10 +16,8 @@ dicts so that tool responses are directly usable as LLM context.
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
@@ -28,7 +26,6 @@ from parrot.knowledge.wiki.models import (
     WikiConfig,
     WikiLintReport,
     WikiPageCategory,
-    WikiSearchResult,
 )
 from parrot.knowledge.wiki.search import WikiCombinedSearch
 from parrot.knowledge.wiki.sources import SourceCollectionManager
@@ -179,7 +176,8 @@ class LLMWikiToolkit(AbstractToolkit):
             )
             filed_page_id = filed.get("page_id")
 
-        self._bookkeeper.log_operation(
+        await asyncio.to_thread(
+            self._bookkeeper.log_operation,
             self._config_for(wiki_name).storage_dir,
             "QUERY",
             f"question: {question[:100]!r}, mode: {mode}, filed: {file_answer}",
@@ -224,11 +222,11 @@ class LLMWikiToolkit(AbstractToolkit):
         orphan_sources = [
             s.source_id for s in all_sources if not s.pages_generated
         ]
-        stale_sources = [
-            s.source_id
-            for s in all_sources
-            if self._sources.is_stale(s.source_id)
-        ]
+        # is_stale does file I/O (stat + optional hash) — offload to thread pool
+        stale_sources: list[str] = []
+        for s in all_sources:
+            if await asyncio.to_thread(self._sources.is_stale, s.source_id):
+                stale_sources.append(s.source_id)
         uncovered_sources: list[str] = []  # future: scan source_dir for new files
 
         report = WikiLintReport(
@@ -238,7 +236,8 @@ class LLMWikiToolkit(AbstractToolkit):
             uncovered_sources=uncovered_sources,
         )
 
-        self._bookkeeper.log_operation(
+        await asyncio.to_thread(
+            self._bookkeeper.log_operation,
             self._config_for(wiki_name).storage_dir,
             "LINT",
             f"issues: {report.total_issues}, orphans: {len(orphan_sources)}, "
@@ -290,9 +289,12 @@ class LLMWikiToolkit(AbstractToolkit):
                 d.mkdir(parents=True, exist_ok=True)
                 created.append(str(d))
 
-        # Initialise empty index.md and log.md
-        self._bookkeeper.write_index(storage_dir, tree_name=wiki_name)
-        self._bookkeeper.log_operation(
+        # Initialise empty index.md and log.md (file writes offloaded to thread)
+        await asyncio.to_thread(
+            self._bookkeeper.write_index, storage_dir, tree_name=wiki_name
+        )
+        await asyncio.to_thread(
+            self._bookkeeper.log_operation,
             storage_dir,
             "CREATE",
             f"wiki_name: {wiki_name!r}, description: {description!r}",
@@ -480,7 +482,8 @@ class LLMWikiToolkit(AbstractToolkit):
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("create_page GraphIndex create_node failed: %s", exc)
 
-        self._bookkeeper.log_operation(
+        await asyncio.to_thread(
+            self._bookkeeper.log_operation,
             self._config_for(wiki_name).storage_dir,
             "CREATE_PAGE",
             f"title: {title!r}, category: {category}",
@@ -515,7 +518,8 @@ class LLMWikiToolkit(AbstractToolkit):
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("update_page failed: %s", exc)
 
-        self._bookkeeper.log_operation(
+        await asyncio.to_thread(
+            self._bookkeeper.log_operation,
             self._config_for(wiki_name).storage_dir,
             "UPDATE_PAGE",
             f"page_id: {page_id}, reason: {reason!r}",
@@ -536,7 +540,8 @@ class LLMWikiToolkit(AbstractToolkit):
         Returns:
             Dict with keys: page_id, status, message.
         """
-        self._bookkeeper.log_operation(
+        await asyncio.to_thread(
+            self._bookkeeper.log_operation,
             self._config_for(wiki_name).storage_dir,
             "DELETE_PAGE",
             f"page_id: {page_id}",
@@ -669,7 +674,7 @@ class LLMWikiToolkit(AbstractToolkit):
         storage_dir = self._config_for(wiki_name).storage_dir
         index_path = storage_dir / "index.md"
         if index_path.exists():
-            return index_path.read_text(encoding="utf-8")
+            return await asyncio.to_thread(index_path.read_text, encoding="utf-8")
         return ""
 
     async def get_log(self, wiki_name: str, last_n: int = 50) -> str:
@@ -683,7 +688,9 @@ class LLMWikiToolkit(AbstractToolkit):
             String containing up to ``last_n`` log lines.
         """
         storage_dir = self._config_for(wiki_name).storage_dir
-        return self._bookkeeper.read_log(storage_dir, last_n=last_n)
+        return await asyncio.to_thread(
+            self._bookkeeper.read_log, storage_dir, last_n=last_n
+        )
 
     async def rebuild_index(self, wiki_name: str) -> dict[str, Any]:
         """Regenerate index.md from the current wiki state.
@@ -696,14 +703,17 @@ class LLMWikiToolkit(AbstractToolkit):
         """
         storage_dir = self._config_for(wiki_name).storage_dir
         sources = self._sources.list_sources()
-        content = self._bookkeeper.rebuild_index(
+        content = await asyncio.to_thread(
+            self._bookkeeper.rebuild_index,
             storage_dir,
             tree_name=wiki_name,
             sources=sources,
         )
-        self._bookkeeper.log_operation(
-            storage_dir, "REBUILD_INDEX",
-            f"sources: {len(sources)}, index_length: {len(content)}"
+        await asyncio.to_thread(
+            self._bookkeeper.log_operation,
+            storage_dir,
+            "REBUILD_INDEX",
+            f"sources: {len(sources)}, index_length: {len(content)}",
         )
         return {
             "status": "ok",
@@ -716,17 +726,28 @@ class LLMWikiToolkit(AbstractToolkit):
     # ------------------------------------------------------------------
 
     def _config_for(self, wiki_name: str) -> WikiConfig:
-        """Return the effective config for a wiki name.
+        """Return the effective config for the requested wiki name.
 
-        Currently returns ``self._config`` (single-wiki-per-toolkit).
-        Multi-wiki support would dispatch based on wiki_name here.
+        Validates that ``wiki_name`` matches the toolkit's configured wiki.
+        Multi-wiki support would dispatch to different configs here; for now
+        a mismatch is an explicit programming error rather than a silent
+        data-routing bug.
 
         Args:
-            wiki_name: Wiki name (used for logging; config is fixed).
+            wiki_name: Wiki name to look up.
 
         Returns:
             The configured :class:`WikiConfig`.
+
+        Raises:
+            ValueError: When ``wiki_name`` does not match the configured wiki.
         """
+        if wiki_name != self._config.wiki_name:
+            raise ValueError(
+                f"Wiki '{wiki_name}' is not managed by this toolkit "
+                f"(configured for '{self._config.wiki_name}'). "
+                "Construct a separate LLMWikiToolkit for each wiki instance."
+            )
         return self._config
 
     def _synthesise_answer(
