@@ -189,10 +189,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-26
+**Notes**: Added handle_mcp_oauth2_callback() and setup_mcp_oauth2_callback()
+to parrot/auth/oauth2_routes.py. Uses oauth2_state.py for shared state coordination.
+Handles error params, missing state, missing code, replay prevention (pop from dict).
+All 10 tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Idempotency check uses app.router.resources() instead of
+app.router.routes() to avoid double-counting GET+HEAD route pairs.
