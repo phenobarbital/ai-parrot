@@ -279,4 +279,14 @@ from parrot.auth.audit import AuditLedger, AuditEntry
 
 ### Completion Note
 
-(Agent fills this in when done)
+Created 8 test files in `tests/integrations/test_msagentsdk/`:
+test_auth_config.py (7 tests — Module 1),
+test_audit_ledger.py (9 tests — Module 6),
+test_identity.py (6 tests — Module 2),
+test_invoke_routing.py (4 tests — Module 3),
+test_credential_bridge.py (5 tests — Module 4+7),
+test_resolver.py (10 tests — Module 5),
+test_wrapper_wiring.py (3 tests — Module 8),
+test_signin_integration.py (3 tests — integration).
+All 47 tests pass. Requires PYTHONPATH override to pick up worktree's
+editable packages (see test runner notes).
