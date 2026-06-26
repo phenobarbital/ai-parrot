@@ -14,14 +14,14 @@
       "feature_id": "FEAT-254",
       "feature": "botmanager-hot-registration-nav6239",
       "spec": "sdd/specs/botmanager-hot-registration-nav6239.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Must complete before TASK-1617 (Jira comment requires passing tests as evidence).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-26T12:00:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1616-hot-registration-regression-tests.md"
     },
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1616"],
+      "depends_on": [
+        "TASK-1616"
+      ],
       "parallel": false,
       "parallelism_notes": "Sequential after TASK-1616 — cannot post evidence before tests exist and pass.",
       "assigned_to": null,
