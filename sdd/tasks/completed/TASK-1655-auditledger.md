@@ -155,4 +155,8 @@ def test_key_fingerprint_computation():
 
 ### Completion Note
 
-(Agent fills this in when done)
+Created `packages/ai-parrot/src/parrot/auth/audit.py` with `AuditEntry`
+dataclass (timestamp, user_id, channel, tool, connection, key_fingerprint,
+action) and `AuditLedger` class. `record()` appends to `_entries` and logs
+structured JSON via `self.logger.info()`. `flush()` is async no-op.
+`entries()` returns a copy for testing. No external dependencies — pure stdlib.
