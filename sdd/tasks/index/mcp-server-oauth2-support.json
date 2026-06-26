@@ -136,7 +136,7 @@
       "feature_id": "FEAT-262",
       "feature": "mcp-server-oauth2-support",
       "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -151,8 +151,8 @@
       "parallelism_notes": "Final migration — depends on all prior tasks being complete",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1665-oauth-manager-removal.md"
+      "completed_at": "2026-06-26T16:37:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1665-oauth-manager-removal.md"
     },
     {
       "id": "TASK-1666",

@@ -207,10 +207,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-26
+**Notes**: Removed OAuthManager class from parrot/mcp/oauth.py (lines 282-463 replaced
+with a comment block). Cleaned up oauth.py imports that were only needed by OAuthManager
+(os, sys, dataclasses, asyncio, hashlib, secrets, urlencode, aiohttp.web). Refactored
+create_oauth_mcp_server() and create_netsuite_mcp_server() in integration.py to use
+MCPOAuth2Config. Updated add_oauth_mcp_server() to accept oauth2 param.
+Added auth_type: Optional[str] to MCPServerDescriptor in registry.py. All 18 tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None. Pre-existing lint issues (ToolPredicate, filter_tools
+unused imports; F402 config variable shadow) in integration.py were not fixed as they
+are out of scope for this task.
