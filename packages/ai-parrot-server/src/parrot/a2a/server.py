@@ -1,9 +1,29 @@
 # parrot/a2a/server.py
 """
 A2A Server - Wraps an AI-Parrot Agent as an A2A-compliant HTTP service.
+
+Identity contract (FEAT-260 / TASK-1643)
+-----------------------------------------
+Copilot Studio's low-code A2A connection delivers the authenticated end-user's
+identity inside the A2A message metadata.  The canonical claim path (in order
+of precedence) is:
+
+1. ``message.metadata["user_id"]``             — explicitly set by callers or
+                                                  parrot-internal routing.
+2. ``message.metadata["from"]["email"]``        — A2A-spec sender object
+                                                  (Copilot sets ``from`` dict).
+3. ``message.metadata["from"]["id"]``           — fallback when email is absent
+                                                  (OID / UPN from Entra token).
+4. ``message.metadata["sender"]``               — alternate flat form.
+5. ``message.metadata["x-ms-user-email"]``      — Microsoft-injected header
+                                                  mirror (some Copilot configs).
+
+If none of these are present the request is rejected — A2AServer never falls
+back to a service identity (OQ#1 is resolved: identity IS present in Copilot
+A2A messages; absence means an unexpected client).
 """
 from __future__ import annotations
-from typing import Dict, List, Optional, Any, TYPE_CHECKING, Union
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 import uuid
 import json
 import contextlib
@@ -20,7 +40,6 @@ from parrot.a2a.models import (
     Message,
     Part,
     Artifact,
-    Role,
 )
 
 if TYPE_CHECKING:
@@ -239,16 +258,91 @@ class A2AServer:
             return None
 
     # ─────────────────────────────────────────────────────────────
+    # Per-user identity extraction (FEAT-260 / TASK-1643)
+    # ─────────────────────────────────────────────────────────────
+
+    def _extract_identity(self, message: Message) -> Optional[str]:
+        """Extract the verifiable per-user identity from an inbound A2A message.
+
+        Copilot Studio's low-code A2A connection embeds the authenticated
+        end-user identity inside ``message.metadata``.  The claim path
+        (checked in precedence order) is documented in the module docstring
+        and in the spec §3 Module A1.
+
+        The caller is responsible for deciding what to do when ``None`` is
+        returned.  ``process_message`` treats ``None`` as an unauthenticated
+        request and fails closed (no service-identity fallback).
+
+        Args:
+            message: The inbound A2A :class:`~parrot.a2a.models.Message`.
+
+        Returns:
+            The canonical user identity (email) if found, ``None`` otherwise.
+        """
+        meta: Dict[str, Any] = message.metadata or {}
+
+        # 1. Explicit user_id (set by parrot-internal routing or direct callers)
+        if uid := meta.get("user_id"):
+            self.logger.debug("A2A identity: user_id from metadata.user_id=%s", uid)
+            return str(uid)
+
+        # 2. A2A-spec sender object — Copilot sets `from` with email / OID
+        from_obj = meta.get("from") or {}
+        if isinstance(from_obj, dict):
+            if email := from_obj.get("email"):
+                self.logger.debug(
+                    "A2A identity: user_id from metadata.from.email=%s", email
+                )
+                return str(email)
+            if oid := from_obj.get("id"):
+                self.logger.debug(
+                    "A2A identity: user_id from metadata.from.id=%s", oid
+                )
+                return str(oid)
+
+        # 3. Flat "sender" field
+        if sender := meta.get("sender"):
+            self.logger.debug(
+                "A2A identity: user_id from metadata.sender=%s", sender
+            )
+            return str(sender)
+
+        # 4. Microsoft-injected header mirror (some Copilot connector configs)
+        if ms_email := meta.get("x-ms-user-email"):
+            self.logger.debug(
+                "A2A identity: user_id from metadata.x-ms-user-email=%s", ms_email
+            )
+            return str(ms_email)
+
+        self.logger.warning(
+            "A2A identity: no verifiable identity found in message.metadata; "
+            "checked: user_id, from.email, from.id, sender, x-ms-user-email"
+        )
+        return None
+
+    # ─────────────────────────────────────────────────────────────
     # Core Message Processing (delegates to Agent)
     # ─────────────────────────────────────────────────────────────
 
     async def process_message(self, message: Message) -> Task:
-        """
-        Process an A2A message by delegating to the wrapped agent.
+        """Process an A2A message by delegating to the wrapped agent.
+
+        FEAT-260 / TASK-1643: extracts the per-user identity at the entry
+        point and threads ``user_id`` through the processing pipeline.  The
+        credential gate (TASK-1644) will use ``user_id`` to resolve per-user
+        credentials.  If identity is absent the request fails closed; there
+        is no service-identity fallback.
         """
         task = Task.create(context_id=message.context_id)
         task.history.append(message)
         self._tasks[task.id] = task
+
+        # TASK-1643: extract the per-user identity (fail-closed gate seam).
+        # user_id is threaded through to the credential gate (TASK-1644).
+        user_id: Optional[str] = self._extract_identity(message)
+        # NOTE: if user_id is None we do NOT raise here — TASK-1644 adds
+        # the actual gate/refusal so the credential path can be tested
+        # independently.  The identity seam is separate from the gate seam.
 
         try:
             task.working(f"Processing with {self.agent.name}...")
@@ -264,7 +358,8 @@ class A2AServer:
                 response = await self._invoke_tool(data["tool"], data.get("params", {}))
             else:
                 # Default: use agent's ask/chat method
-                response = await self._ask_agent(question, message)
+                # user_id is available here for TASK-1644 credential gate
+                response = await self._ask_agent(question, message, user_id=user_id)
 
             task.complete(response)
 
@@ -274,14 +369,34 @@ class A2AServer:
 
         return task
 
-    async def _ask_agent(self, question: str, message: Message) -> Any:
-        """Delegate question to agent's ask/chat method."""
+    async def _ask_agent(
+        self,
+        question: str,
+        message: Message,
+        *,
+        user_id: Optional[str] = None,
+    ) -> Any:
+        """Delegate question to agent's ask/chat method.
+
+        Args:
+            question: The text extracted from the A2A message.
+            message: The original A2A :class:`~parrot.a2a.models.Message`.
+            user_id: Canonical per-user identity (email) extracted by
+                :meth:`_extract_identity` (FEAT-260 / TASK-1643).
+                Forwarded so the credential gate (TASK-1644) can resolve
+                per-user credentials inside the agent's tool-execution loop.
+        """
         # Prepare kwargs for the agent
         kwargs = self._build_ask_kwargs(message)
 
         # Pass context_id as session_id if available
         if message.context_id:
             kwargs["session_id"] = message.context_id
+
+        # Thread user_id so the credential gate (TASK-1644) can act on it.
+        # AbstractBot.ask accepts **kwargs and may forward extra keys.
+        if user_id is not None:
+            kwargs["user_id"] = user_id
 
         # Use ask() method (most compatible)
         if hasattr(self.agent, 'ask'):
@@ -345,7 +460,9 @@ class A2AServer:
         try:
             data = await request.json()
             message = Message.from_dict(data.get("message", {}))
-            config = data.get("configuration", {})
+            # configuration is accepted but not yet used; reserved for future
+            # push-notification / streaming config per the A2A spec.
+            _config = data.get("configuration", {})  # noqa: F841
 
             task = await self.process_message(message)
 
