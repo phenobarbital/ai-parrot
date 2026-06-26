@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-260
 **Date**: 2026-06-26
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x (continuation of in-flight `wip: a2a server + ms agent sdk`)
 
 > **Source**: research-grounded proposal `sdd/proposals/copilot-a2a-percredential.proposal.md`
