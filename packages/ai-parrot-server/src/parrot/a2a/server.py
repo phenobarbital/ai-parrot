@@ -536,6 +536,38 @@ class A2AServer:
             await self._suspended_store.delete(interaction_id)
             self._a2a_nonce_map.pop(interaction_id, None)
 
+    def wire_jira_resolver(self, jira_oauth_manager: Any) -> None:
+        """Register the Jira OAuth credential resolver for the A2A bridge.
+
+        Convenience factory for the Jira vertical (FEAT-260 / TASK-1647).
+        Wraps *jira_oauth_manager* in an
+        :class:`~parrot.auth.credentials.OAuthCredentialResolver` and
+        registers it under ``provider="jira"``.
+
+        After calling this, any tool that declares
+        ``credential_provider = "jira"`` will be gated through the
+        per-user Jira 3LO flow: missing token → Atlassian consent link;
+        resolved token → tool runs + audit entry appended.
+
+        Example::
+
+            from parrot.auth.jira_oauth import JiraOAuthManager
+            manager = JiraOAuthManager(...)
+            await manager.configure()
+            a2a_server.wire_jira_resolver(manager)
+
+        Args:
+            jira_oauth_manager: A configured
+                :class:`~parrot.auth.jira_oauth.JiraOAuthManager` (or any
+                object implementing ``get_valid_token`` /
+                ``create_authorization_url``).
+        """
+        from parrot.auth.credentials import OAuthCredentialResolver
+
+        resolver = OAuthCredentialResolver(jira_oauth_manager)
+        self.register_credential_resolver("jira", resolver)
+        self.logger.info("A2AServer: jira resolver wired via %r", jira_oauth_manager)
+
     # ─────────────────────────────────────────────────────────────
     # Core Message Processing (delegates to Agent)
     # ─────────────────────────────────────────────────────────────
