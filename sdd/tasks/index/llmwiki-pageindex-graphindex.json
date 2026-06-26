@@ -72,7 +72,7 @@
       "feature_id": "FEAT-260",
       "feature": "llmwiki-pageindex-graphindex",
       "spec": "sdd/specs/llmwiki-pageindex-graphindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Could parallel with 1628, 1629, 1631 (different files), sequential per spec worktree strategy",
       "assigned_to": null,
       "started_at": "2026-06-26T00:58:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1630-wiki-bookkeeper.md"
+      "completed_at": "2026-06-26T01:04:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1630-wiki-bookkeeper.md"
     },
     {
       "id": "TASK-1631",
