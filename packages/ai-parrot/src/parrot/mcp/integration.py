@@ -10,12 +10,15 @@ from navconfig import BASE_DIR, config
 from .context import ReadonlyContext
 from ..tools.abstract import AbstractTool, ToolResult
 from .oauth import (
-    OAuthManager,
-    InMemoryTokenStore,
-    RedisTokenStore,
-    TokenStore,
-    VaultTokenStore,
+    InMemoryTokenStore,  # noqa: F401 — public re-export for backward compat
+    RedisTokenStore,     # noqa: F401 — public re-export for backward compat
+    TokenStore,          # noqa: F401 — public re-export for backward compat
+    VaultTokenStore,     # noqa: F401 — public re-export for backward compat
 )
+from .oauth2_config import MCPOAuth2Config, get_mcp_oauth2_preset
+# NOTE: register_mcp_oauth2_provider is imported locally inside factory functions
+# (create_oauth_mcp_server, create_netsuite_mcp_server) to avoid a circular
+# import: integration → mcp_provider → oauth2_config → mcp.__init__ → integration.
 from .client import (
     MCPClientConfig as MCPServerConfig,
     MCPConnectionError,
@@ -731,53 +734,60 @@ def create_oauth_mcp_server(
     name: str,
     url: str,
     user_id: str,
-    client_id: str,
-    auth_url: str,
-    token_url: str,
-    scopes: list[str],
-    client_secret: str | None = None,
-    redis=None,  # pass an aioredis client if you have it; else None -> in-memory
-    redirect_host: str = "127.0.0.1",
-    redirect_port: int = 8765,
-    redirect_path: str = "/mcp/oauth/callback",
-    extra_token_params: dict | None = None,
-    headers: dict | None = None,
+    oauth2: Optional[MCPOAuth2Config] = None,
+    # Legacy backward-compat params — used when oauth2 is None:
+    client_id: Optional[str] = None,
+    auth_url: Optional[str] = None,
+    token_url: Optional[str] = None,
+    scopes: Optional[list] = None,
+    client_secret: Optional[str] = None,
+    headers: Optional[dict] = None,
+    **kwargs,
 ) -> MCPServerConfig:
-    token_store = RedisTokenStore(redis) if redis else InMemoryTokenStore()
-    oauth = OAuthManager(
-        user_id=user_id,
-        server_name=name,
-        client_id=client_id,
-        client_secret=client_secret,
-        auth_url=auth_url,
-        token_url=token_url,
-        scopes=scopes,
-        redirect_host=redirect_host,
-        redirect_port=redirect_port,
-        redirect_path=redirect_path,
-        token_store=token_store,
-        extra_token_params=extra_token_params,
-    )
+    """Create an MCP server configuration with OAuth2 authorization code flow.
+
+    Accepts either a ready-built :class:`~parrot.mcp.oauth2_config.MCPOAuth2Config`
+    or individual legacy parameters for backward compatibility.
+
+    Args:
+        name: Server name / registry key.
+        url: MCP server base URL.
+        user_id: User identifier for token storage scoping.
+        oauth2: Pre-built OAuth2 configuration.  When ``None``, a config is
+            constructed from the legacy ``client_id`` / ``auth_url`` / etc. params.
+        client_id: OAuth2 client ID (used when ``oauth2`` is ``None``).
+        auth_url: Authorization endpoint (used when ``oauth2`` is ``None``).
+        token_url: Token endpoint (used when ``oauth2`` is ``None``).
+        scopes: OAuth2 scopes (used when ``oauth2`` is ``None``).
+        client_secret: OAuth2 client secret (used when ``oauth2`` is ``None``).
+        headers: Extra HTTP headers for every MCP request.
+        **kwargs: Additional :class:`~parrot.mcp.client.MCPClientConfig` fields.
+
+    Returns:
+        :class:`~parrot.mcp.client.MCPClientConfig` ready for use with
+        :class:`~parrot.mcp.transports.http.HttpMCPSession`.
+    """
+    if oauth2 is None:
+        oauth2 = MCPOAuth2Config(
+            client_id=client_id,
+            client_secret=client_secret,
+            auth_url=auth_url or "",
+            token_url=token_url or "",
+            scopes=scopes or [],
+        )
 
     cfg = MCPServerConfig(
         name=name,
         transport="http",
         url=url,
         headers=headers or {"Content-Type": "application/json"},
-        auth_type="oauth",
-        auth_config={
-            "auth_url": auth_url,
-            "token_url": token_url,
-            "scopes": scopes,
-            "client_id": client_id,
-            "client_secret": bool(client_secret),
-            "redirect_uri": oauth.redirect_uri,
-        },
-        token_supplier=oauth.token_supplier,  # this is called before each request
+        auth_type="oauth2",
+        oauth2=oauth2,
+        **kwargs,
     )
-
-    # Attach a small helper so the client can ensure token before using the server.
-    cfg._ensure_oauth_token = oauth.ensure_token  # attribute on purpose
+    # Register the provider so it can be discovered (local import avoids circular dep)
+    from parrot.auth.oauth2.mcp_provider import register_mcp_oauth2_provider  # noqa: PLC0415
+    register_mcp_oauth2_provider(server_name=name, config=oauth2)
     return cfg
 
 
@@ -805,32 +815,22 @@ def create_netsuite_mcp_server(
     client_id: str,
     user_id: str,
     name: str = "netsuite",
-    token_store: Optional[TokenStore] = None,
-    redirect_host: str = "127.0.0.1",
-    redirect_port: int = 8765,
-    redirect_path: str = "/mcp/oauth/callback",
     headers: Optional[Dict[str, Any]] = None,
 ) -> MCPServerConfig:
     """Create a NetSuite MCP server configuration using OAuth2 Authorization Code + PKCE.
 
     Constructs NetSuite-specific auth/token URLs from the given ``account_id``
-    and wires an :class:`~parrot.mcp.oauth.OAuthManager` for the full OAuth2
-    flow. Scope is fixed to ``["mcp"]`` as required by the NetSuite AI Connector.
+    and uses the NetSuite preset from :mod:`parrot.mcp.oauth2_config` for the
+    full OAuth2 flow.  Scope is fixed to ``["mcp"]`` as required by the
+    NetSuite AI Connector.
 
     Args:
         account_id: NetSuite account ID (e.g. ``"4984231"``).
         client_id: OAuth2 client ID from the NetSuite integration record.
         user_id: Caller's user identifier used to scope token storage.
-        name: Server name used as the registry key and token-store scope
-            (default ``"netsuite"``). Override when connecting two NetSuite
-            accounts simultaneously (e.g. ``"netsuite-sandbox"``).
-        token_store: Optional :class:`~parrot.mcp.oauth.TokenStore` instance.
-            Defaults to :class:`~parrot.mcp.oauth.InMemoryTokenStore` when
-            ``None``. Pass a :class:`~parrot.mcp.oauth.VaultTokenStore` for
-            persistent, encrypted token storage.
-        redirect_host: Local callback host (default ``"127.0.0.1"``).
-        redirect_port: Local callback port (default ``8765``).
-        redirect_path: Local callback path (default ``"/mcp/oauth/callback"``).
+        name: Server name used as the registry key (default ``"netsuite"``).
+            Override when connecting two NetSuite accounts simultaneously
+            (e.g. ``"netsuite-sandbox"``).
         headers: Extra HTTP headers to include with every MCP request.
 
     Returns:
@@ -848,38 +848,35 @@ def create_netsuite_mcp_server(
     auth_url = NETSUITE_AUTH_URL.format(account_id=account_id)
     token_url = NETSUITE_TOKEN_URL.format(account_id=account_id)
 
-    if token_store is None:
-        token_store = InMemoryTokenStore()
-
-    oauth = OAuthManager(
-        user_id=user_id,
-        server_name=name,
-        client_id=client_id,
-        auth_url=auth_url,
-        token_url=token_url,
-        scopes=NETSUITE_SCOPES,
-        redirect_host=redirect_host,
-        redirect_port=redirect_port,
-        redirect_path=redirect_path,
-        token_store=token_store,
-    )
+    # Build OAuth2 config from the NetSuite preset, overriding account-specific URLs
+    preset = get_mcp_oauth2_preset("netsuite")
+    if preset is not None:
+        oauth2 = MCPOAuth2Config(
+            client_id=client_id,
+            auth_url=auth_url,
+            token_url=token_url,
+            scopes=preset.scopes,
+            grant_type=preset.grant_type,
+        )
+    else:
+        oauth2 = MCPOAuth2Config(
+            client_id=client_id,
+            auth_url=auth_url,
+            token_url=token_url,
+            scopes=NETSUITE_SCOPES,
+        )
 
     cfg = MCPServerConfig(
         name=name,
         transport="http",
         url=url,
         headers=headers or {"Content-Type": "application/json"},
-        auth_type="oauth",
-        auth_config={
-            "auth_url": auth_url,
-            "token_url": token_url,
-            "scopes": NETSUITE_SCOPES,
-            "client_id": client_id,
-            "redirect_uri": oauth.redirect_uri,
-        },
-        token_supplier=oauth.token_supplier,
+        auth_type="oauth2",
+        oauth2=oauth2,
     )
-    cfg._ensure_oauth_token = oauth.ensure_token
+    # Register the provider so it can be discovered (local import avoids circular dep)
+    from parrot.auth.oauth2.mcp_provider import register_mcp_oauth2_provider  # noqa: PLC0415
+    register_mcp_oauth2_provider(server_name=name, config=oauth2)
     return cfg
 
 
@@ -1359,19 +1356,42 @@ class MCPEnabledMixin:
         self,
         name: str,
         url: str,
-        client_id: str,
-        auth_url: str,
-        token_url: str,
-        scopes: List[str],
         user_id: str,
+        oauth2: Optional[MCPOAuth2Config] = None,
+        # Legacy backward-compat params:
+        client_id: Optional[str] = None,
+        auth_url: Optional[str] = None,
+        token_url: Optional[str] = None,
+        scopes: Optional[List[str]] = None,
         client_secret: Optional[str] = None,
         **kwargs
     ) -> List[str]:
-        """Add an MCP server with OAuth2 support."""
+        """Add an MCP server with OAuth2 authorization code support.
+
+        Accepts either a ready-built :class:`~parrot.mcp.oauth2_config.MCPOAuth2Config`
+        (via the ``oauth2`` parameter) or individual parameters for backward
+        compatibility.
+
+        Args:
+            name: Server name / registry key.
+            url: MCP server base URL.
+            user_id: User identifier for token storage scoping.
+            oauth2: Pre-built OAuth2 configuration.
+            client_id: OAuth2 client ID (legacy).
+            auth_url: Authorization endpoint (legacy).
+            token_url: Token endpoint (legacy).
+            scopes: OAuth2 scopes (legacy).
+            client_secret: OAuth2 client secret (legacy).
+            **kwargs: Extra :class:`~parrot.mcp.client.MCPClientConfig` fields.
+
+        Returns:
+            List of registered MCP tool names.
+        """
         config = create_oauth_mcp_server(
             name=name,
             url=url,
             user_id=user_id,
+            oauth2=oauth2,
             client_id=client_id,
             client_secret=client_secret,
             auth_url=auth_url,
@@ -1379,7 +1399,6 @@ class MCPEnabledMixin:
             scopes=scopes,
             **kwargs
         )
-
         return await self.add_mcp_server(config)
 
     async def add_perplexity_mcp_server(

@@ -84,6 +84,13 @@ class MCPServerDescriptor(BaseModel):
     params: List[MCPServerParam] = Field(default_factory=list)
     category: str = Field(default="general", description="e.g. 'search', 'media'")
     activatable: bool = Field(default=True, description="Can be activated via POST endpoint")
+    auth_type: Optional[str] = Field(
+        default=None,
+        description=(
+            "Authentication mechanism used by this server.  Well-known values: "
+            "'api_key', 'oauth2', 'bearer', 'none'.  ``None`` means unspecified."
+        ),
+    )
 
 
 class UserMCPServerConfig(BaseModel):

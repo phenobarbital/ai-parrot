@@ -1,7 +1,9 @@
+import asyncio
 import json
 import logging
 import ssl
-from typing import Dict, Any, Optional
+import webbrowser
+from typing import Dict, Any, Optional, Tuple
 from aiohttp import web
 import aiohttp
 
@@ -193,12 +195,134 @@ class HttpMCPSession:
         self._auth_handler = None
         self._initialized = False
         self._base_headers = {}
+        # OAuth2 provider (set when config.oauth2 is configured)
+        self._oauth2_provider = None
+
+    async def _setup_oauth2(self) -> None:
+        """Set up MCP SDK OAuth2 provider when config.oauth2 is configured.
+
+        For authorization_code grant: creates OAuthClientProvider with PKCE,
+        registers a pending callback, and opens the browser for user auth.
+        For client_credentials grant: creates ClientCredentialsOAuthProvider.
+
+        The acquired access token is stored and injected into subsequent
+        aiohttp requests as a Bearer Authorization header.
+        """
+        from parrot.mcp.oauth2_config import MCPOAuth2GrantType
+        from parrot.mcp.oauth2_storage import VaultMCPTokenStorage
+        from parrot.mcp.oauth2_state import register_pending_callback, deregister_pending_callback
+        from mcp.shared.auth import OAuthClientMetadata
+
+        oauth2 = self.config.oauth2
+        # user_id is on MCPClientConfig (not MCPOAuth2Config) for per-user token scoping.
+        user_id = getattr(self.config, "user_id", None) or "default"
+        storage = VaultMCPTokenStorage(
+            user_id=user_id,
+            server_name=self.config.name,
+        )
+
+        if oauth2.grant_type == MCPOAuth2GrantType.CLIENT_CREDENTIALS:
+            # Machine-to-machine flow — no browser needed
+            from mcp.client.auth.extensions.client_credentials import (
+                ClientCredentialsOAuthProvider,
+            )
+            self._oauth2_provider = ClientCredentialsOAuthProvider(
+                server_url=self.config.url,
+                storage=storage,
+                client_id=oauth2.client_id or "",
+                client_secret=oauth2.client_secret or "",
+                scopes=" ".join(oauth2.scopes) if oauth2.scopes else None,
+            )
+            self.logger.debug(
+                "OAuth2 client credentials provider configured for %s", self.config.name
+            )
+        else:
+            # Authorization code + PKCE flow
+            import secrets
+            from mcp.client.auth.oauth2 import OAuthClientProvider
+
+            oauth_state = secrets.token_urlsafe(24)
+            callback_event, callback_result = register_pending_callback(oauth_state)
+
+            # Resolve base URL: explicit field → env var → local default.
+            import os
+            _base = (
+                oauth2.redirect_base_url
+                or os.environ.get("NAVIGATOR_BASE_URL", "")
+                or "http://127.0.0.1:8000"
+            )
+            redirect_uri = f"{_base.rstrip('/')}{oauth2.redirect_path}"
+
+            async def redirect_handler(url: str) -> None:
+                """Open the authorization URL in the user's browser."""
+                self.logger.info("OAuth2: opening browser for authorization: %s", url)
+                webbrowser.open(url)
+
+            async def callback_handler() -> "Tuple[str, Optional[str]]":
+                """Wait for the Navigator callback to receive the auth code."""
+                self.logger.debug(
+                    "OAuth2: waiting for callback (state=%s)", oauth_state
+                )
+                try:
+                    await asyncio.wait_for(callback_event.wait(), timeout=300.0)
+                except asyncio.TimeoutError:
+                    # Clean up abandoned state to prevent memory leak in long-running servers.
+                    deregister_pending_callback(oauth_state)
+                    self.logger.warning(
+                        "OAuth2 callback timed out after 300s (state=%s). "
+                        "The user may not have completed the browser flow.",
+                        oauth_state,
+                    )
+                    raise
+                code = callback_result.get("code", "")
+                state = callback_result.get("state")
+                return code, state
+
+            client_metadata = OAuthClientMetadata(
+                redirect_uris=[redirect_uri],
+                grant_types=["authorization_code"],
+                response_types=["code"],
+                scope=" ".join(oauth2.scopes) if oauth2.scopes else None,
+            )
+
+            self._oauth2_provider = OAuthClientProvider(
+                server_url=self.config.url,
+                client_metadata=client_metadata,
+                storage=storage,
+                redirect_handler=redirect_handler,
+                callback_handler=callback_handler,
+                timeout=300.0,
+            )
+            self.logger.debug(
+                "OAuth2 authorization code provider configured for %s", self.config.name
+            )
+
+    async def _get_oauth2_token(self) -> Optional[str]:
+        """Return the current OAuth2 access token, refreshing if needed.
+
+        Returns:
+            Bearer token string, or None if unavailable.
+        """
+        if self._oauth2_provider is None:
+            return None
+        try:
+            ctx = self._oauth2_provider.context
+            if ctx.is_token_valid():
+                if ctx.current_tokens:
+                    return ctx.current_tokens.access_token
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("OAuth2 token check failed: %s", exc)
+        return None
 
     async def connect(self):
         """Connect to MCP server via HTTP."""
         try:
-            # Setup authentication
-            if self.config.auth_type:
+            # Set up OAuth2 when configured (FEAT-262)
+            if self.config.oauth2:
+                await self._setup_oauth2()
+
+            # Setup legacy authentication (skipped when OAuth2 is active)
+            elif self.config.auth_type:
                 self._auth_handler = MCPAuthHandler(
                     self.config.auth_type,
                     self.config.auth_config
@@ -253,13 +377,24 @@ class HttpMCPSession:
         try:
             self.logger.debug("HTTP sending: %s", json.dumps(request))
 
+            # Build per-request headers, injecting OAuth2 token when available
+            req_headers: Dict[str, str] = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            if self._oauth2_provider is not None:
+                token = await self._get_oauth2_token()
+                if token:
+                    req_headers["Authorization"] = f"Bearer {token}"
+            elif self.config.token_supplier:
+                token = self.config.token_supplier()
+                if token:
+                    req_headers["Authorization"] = f"Bearer {token}"
+
             async with self._session.post(
                 self.config.url,
                 json=request,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json"
-                }
+                headers=req_headers,
             ) as response:
 
                 if response.status == 429:

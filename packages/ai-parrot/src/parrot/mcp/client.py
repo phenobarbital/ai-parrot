@@ -7,6 +7,8 @@ from enum import Enum
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field, model_validator
 
+from parrot.mcp.oauth2_config import MCPOAuth2Config, get_mcp_oauth2_preset
+
 if TYPE_CHECKING:
     from .context import ReadonlyContext
     from .filtering import ToolPredicate
@@ -167,7 +169,8 @@ class MCPClientConfig:
     auth_credential: Optional[AuthCredential] = None
     auth_type: Optional[AuthScheme] = None  # "oauth", "bearer", "basic", "api_key", "none"
     auth_config: Dict[str, Any] = field(default_factory=dict)
-    # A token supplier hook the HTTP client will call to add headers (set by OAuthManager)
+    # A token supplier hook the HTTP client will call to add headers.
+    # Used by NetSuiteM2MAuth and similar M2M token providers.
     token_supplier: Optional[Callable[[], Optional[str]]] = None
 
     # Transport type
@@ -221,6 +224,17 @@ class MCPClientConfig:
     # QUIC Configuration
     quic_config: Any = None
 
+    # OAuth2 configuration (FEAT-262)
+    # When set, the transport layer uses the MCP SDK OAuth2 flow instead of
+    # static auth_credential headers.
+    oauth2: Optional[MCPOAuth2Config] = field(default=None)
+    # Preset name for the OAuth2 configuration (resolved in from_yaml_config)
+    auth_preset: Optional[str] = field(default=None)
+    # User identifier used to scope OAuth2 token storage per user + per server.
+    # Maps to VaultTokenStore key: mcp_oauth_{server}_{user_id}.
+    # When None, token storage falls back to "default" (shared, non-user-scoped).
+    user_id: Optional[str] = field(default=None)
+
     async def get_headers(self, context: Optional['ReadonlyContext'] = None) -> Dict[str, str]:
         """Get merged static, auth, and dynamic headers.
 
@@ -241,8 +255,9 @@ class MCPClientConfig:
         """
         result = dict(self.headers)
 
-        # Add auth headers from auth_credential
-        if self.auth_credential:
+        # Add auth headers from auth_credential only when oauth2 is NOT configured.
+        # When oauth2 is set the MCP SDK handles authentication at the transport layer.
+        if self.auth_credential and not self.oauth2:
             auth_headers = self.auth_credential.get_auth_headers()
             result |= auth_headers
 
@@ -322,6 +337,28 @@ class MCPClientConfig:
         if 'auth_credential' in config_dict and isinstance(config_dict['auth_credential'], dict):
             config_dict['auth_credential'] = AuthCredential(**config_dict['auth_credential'])
 
+        # Handle OAuth2 preset and inline oauth2 config (FEAT-262)
+        auth_preset = config_dict.pop('auth_preset', None)
+        oauth2_dict = config_dict.pop('oauth2', None)
+
+        if auth_preset:
+            preset = get_mcp_oauth2_preset(auth_preset)
+            if not preset:
+                raise ValueError(
+                    f"Unknown MCP OAuth2 preset: '{auth_preset}' in {config_abs_path}"
+                )
+            base = preset.model_dump(
+                exclude_none=True,
+                exclude={'name', 'display_name', 'url_template', 'required_params'},
+            )
+            if oauth2_dict:
+                base.update(oauth2_dict)  # inline oauth2 dict overrides preset defaults
+            config_dict['oauth2'] = MCPOAuth2Config(**base)
+        elif oauth2_dict:
+            config_dict['oauth2'] = MCPOAuth2Config(**oauth2_dict)
+
+        config_dict['auth_preset'] = auth_preset
+
         # Filter to only known fields
         known_fields = {f.name for f in cls.__dataclass_fields__.values()}  # pylint: disable=no-member
         filtered = {k: v for k, v in config_dict.items() if k in known_fields}
@@ -366,13 +403,21 @@ class MCPAuthHandler:
         )
 
     async def _get_oauth_headers(self) -> Dict[str, str]:
-        """Get OAuth headers (simplified - assumes token is already available)."""
+        """Get OAuth headers from a pre-acquired access token.
+
+        This method handles the ``auth_type="oauth"`` path on MCPAuthHandler,
+        which expects an already-acquired ``access_token`` in ``auth_config``.
+        For fully managed OAuth2 flows (PKCE, client credentials, token refresh)
+        set ``MCPClientConfig.oauth2`` instead — the MCP SDK handles the flow
+        at the transport layer and this method is not called.
+        """
         if access_token := self.auth_config.get("access_token"):
             return {"Authorization": f"Bearer {access_token}"}
 
-        # TODO: manage OAuth flow to get token if not present
         raise ValueError(
-            "OAuth authentication requires 'access_token' in auth_config"
+            "OAuth authentication via auth_config requires a pre-acquired "
+            "'access_token'. For managed OAuth2 flows (PKCE, client credentials) "
+            "use MCPClientConfig.oauth2 with an MCPOAuth2Config instead."
         )
 
     async def _get_basic_headers(self) -> Dict[str, str]:
