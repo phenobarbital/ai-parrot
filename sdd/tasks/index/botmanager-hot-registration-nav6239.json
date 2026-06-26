@@ -33,7 +33,7 @@
       "feature_id": "FEAT-254",
       "feature": "botmanager-hot-registration-nav6239",
       "spec": "sdd/specs/botmanager-hot-registration-nav6239.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -42,7 +42,7 @@
       "parallel": false,
       "parallelism_notes": "Sequential after TASK-1616 — cannot post evidence before tests exist and pass.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-26T13:10:56+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1617-nav6239-jira-comment.md"
     }
