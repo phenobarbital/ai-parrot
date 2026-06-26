@@ -100,3 +100,12 @@ async def test_jira_no_secret_in_payload(): ...
 ## Agent Instructions
 Standard SDD flow. Requires TASK-1646 (v1 bridge) in `completed/`. Parallel-safe
 with TASK-1648/1649 (different provider files).
+
+### Completion Note
+Implemented the Jira vertical (FEAT-260 / TASK-1647):
+- Added `A2AServer.wire_jira_resolver(jira_oauth_manager)` to `server.py`: creates an
+  `OAuthCredentialResolver` backed by the given `JiraOAuthManager` and registers it
+  under `provider="jira"`.
+- 6/6 integration tests pass: missing-credential suspend, no-secret payload, resolved
+  credential runs tool, audit entry written, resolver registration, no-service-identity
+  fallback. Ruff clean.
