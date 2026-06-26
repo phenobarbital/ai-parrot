@@ -202,10 +202,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-26
+**Notes**: Created tests/mcp/test_oauth2_e2e.py with 20 end-to-end integration tests
+covering: YAML oauth2 config loading (6 tests), factory function integration (3 tests),
+VaultMCPTokenStorage round-trip with InMemoryTokenStore mock (4 tests), callback
+coordination state management (4 tests), transport OAuth2 setup (3 tests). Also created
+tests/mcp/conftest.py with shared fixtures (mock_oauth2_server, in_memory_token_store,
+basic_mcp_oauth2_config, client_credentials_mcp_oauth2_config). All 20 tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The mock_oauth2_server fixture exists in both conftest.py
+and test_oauth2_e2e.py (the latter for clarity and self-containment); both are clean.
+Full authorization code + PKCE browser flow is not tested as a true E2E (browser
+interaction not feasible in unit test context) — instead, the callback coordination
+logic is tested directly.

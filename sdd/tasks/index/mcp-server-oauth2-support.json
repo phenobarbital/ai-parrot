@@ -161,7 +161,7 @@
       "feature_id": "FEAT-262",
       "feature": "mcp-server-oauth2-support",
       "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -173,8 +173,8 @@
       "parallelism_notes": "End-to-end tests need all implementation tasks complete",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1666-mcp-oauth2-tests.md"
+      "completed_at": "2026-06-26T16:39:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1666-mcp-oauth2-tests.md"
     }
   ]
 }
