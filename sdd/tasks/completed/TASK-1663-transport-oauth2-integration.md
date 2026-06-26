@@ -203,10 +203,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-26
+**Notes**: Modified HttpMCPSession.connect() to call _setup_oauth2() when
+config.oauth2 is set. Created _setup_oauth2() and _get_oauth2_token() methods.
+Created parrot/mcp/oauth2_state.py for shared callback coordination. The
+OAuthClientProvider (httpx-based) handles OAuth flows; tokens are injected as
+Bearer headers into aiohttp requests. All 8 tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: MCP SDK OAuthClientProvider is httpx.Auth-based, not
+aiohttp-compatible. Integration approach: use OAuthClientProvider for the OAuth
+flow and extract the token to inject into aiohttp Bearer headers. The MCPClient
+in integration.py was not modified (connect() already passes config through to
+HttpMCPSession via transport selection logic).

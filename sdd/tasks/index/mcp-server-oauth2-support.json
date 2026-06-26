@@ -93,7 +93,7 @@
       "feature_id": "FEAT-262",
       "feature": "mcp-server-oauth2-support",
       "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -105,8 +105,8 @@
       "parallelism_notes": "Core integration — needs config, storage, and MCPClientConfig extension",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1663-transport-oauth2-integration.md"
+      "completed_at": "2026-06-26T16:27:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1663-transport-oauth2-integration.md"
     },
     {
       "id": "TASK-1664",
