@@ -53,14 +53,14 @@
       "slug": "nav8350-jira-comment",
       "title": "Update NAV-8350 with Triage Findings",
       "spec": "sdd/specs/ontology-rag-kb.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Jira comment only, no code changes.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-26T13:20:28+00:00",
       "file": "sdd/tasks/active/TASK-1626-nav8350-jira-comment.md",
       "completed_at": null
     }
