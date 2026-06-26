@@ -14,14 +14,14 @@
       "slug": "knowledge-yaml-employee-entity",
       "title": "Verify and Harden Employee Entity in knowledge.ontology.yaml",
       "spec": "sdd/specs/ontology-rag-kb.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No shared files with other tasks.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-26T13:10:14+00:00",
       "file": "sdd/tasks/active/TASK-1624-knowledge-yaml-employee-entity.md",
       "completed_at": null
     },
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1624"],
+      "depends_on": [
+        "TASK-1624"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on Employee entity from TASK-1624.",
       "assigned_to": null,
