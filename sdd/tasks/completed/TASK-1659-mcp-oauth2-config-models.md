@@ -193,10 +193,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-26
+**Notes**: Created `packages/ai-parrot/src/parrot/mcp/oauth2_config.py` with
+MCPOAuth2GrantType enum, MCPOAuth2Config Pydantic model, MCPOAuth2Preset Pydantic
+model, module-level _PRESETS list with NetSuite and Fireflies entries, and lookup
+functions. All 19 tests pass with --import-mode=importlib (required due to
+namespace conflict between tests/mcp/__init__.py and the MCP SDK mcp package).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Tests require --import-mode=importlib due to pre-existing
+namespace conflict with MCP SDK package. Fireflies preset added as noted in task context.

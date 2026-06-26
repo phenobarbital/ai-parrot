@@ -14,7 +14,7 @@
       "feature_id": "FEAT-262",
       "feature": "mcp-server-oauth2-support",
       "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all others depend on the config models",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1659-mcp-oauth2-config-models.md"
+      "completed_at": "2026-06-26T16:19:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1659-mcp-oauth2-config-models.md"
     },
     {
       "id": "TASK-1660",
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1659"],
+      "depends_on": [
+        "TASK-1659"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on MCPOAuth2Config from TASK-1659",
       "assigned_to": null,
@@ -53,7 +55,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1659", "TASK-1660"],
+      "depends_on": [
+        "TASK-1659",
+        "TASK-1660"
+      ],
       "parallel": false,
       "parallelism_notes": "Needs config model and storage adapter from prior tasks",
       "assigned_to": null,
@@ -71,7 +76,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1659"],
+      "depends_on": [
+        "TASK-1659"
+      ],
       "parallel": false,
       "parallelism_notes": "Only needs config models; could theoretically run parallel with TASK-1660/1661 but shares MCPClientConfig",
       "assigned_to": null,
@@ -89,7 +96,11 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1659", "TASK-1660", "TASK-1662"],
+      "depends_on": [
+        "TASK-1659",
+        "TASK-1660",
+        "TASK-1662"
+      ],
       "parallel": false,
       "parallelism_notes": "Core integration — needs config, storage, and MCPClientConfig extension",
       "assigned_to": null,
@@ -107,7 +118,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1660", "TASK-1663"],
+      "depends_on": [
+        "TASK-1660",
+        "TASK-1663"
+      ],
       "parallel": false,
       "parallelism_notes": "Must coordinate with transport callback mechanism from TASK-1663",
       "assigned_to": null,
@@ -125,7 +139,14 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1659", "TASK-1660", "TASK-1661", "TASK-1662", "TASK-1663", "TASK-1664"],
+      "depends_on": [
+        "TASK-1659",
+        "TASK-1660",
+        "TASK-1661",
+        "TASK-1662",
+        "TASK-1663",
+        "TASK-1664"
+      ],
       "parallel": false,
       "parallelism_notes": "Final migration — depends on all prior tasks being complete",
       "assigned_to": null,
@@ -143,7 +164,11 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1663", "TASK-1664", "TASK-1665"],
+      "depends_on": [
+        "TASK-1663",
+        "TASK-1664",
+        "TASK-1665"
+      ],
       "parallel": false,
       "parallelism_notes": "End-to-end tests need all implementation tasks complete",
       "assigned_to": null,
