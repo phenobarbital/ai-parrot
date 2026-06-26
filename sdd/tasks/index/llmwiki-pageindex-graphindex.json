@@ -134,7 +134,7 @@
       "feature_id": "FEAT-260",
       "feature": "llmwiki-pageindex-graphindex",
       "spec": "sdd/specs/llmwiki-pageindex-graphindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -149,8 +149,8 @@
       "parallelism_notes": "Composes all previous modules; must be last major implementation task",
       "assigned_to": null,
       "started_at": "2026-06-26T00:58:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1633-llmwiki-toolkit.md"
+      "completed_at": "2026-06-26T01:10:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1633-llmwiki-toolkit.md"
     },
     {
       "id": "TASK-1634",
