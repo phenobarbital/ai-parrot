@@ -1,0 +1,56 @@
+{
+  "feature_id": "FEAT-260",
+  "phase": "committed",
+  "started_at": "2026-06-26T00:00:00Z",
+  "updated_at": "2026-06-26T00:00:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 33,
+    "grep_calls": 16,
+    "git_calls": 0,
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "truncated": false
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "LLM Wiki with PageIndex + GraphIndex for persistent, compounding knowledge bases"
+  },
+  "phases": {
+    "source_resolved": {
+      "status": "complete",
+      "completed_at": "2026-06-26T00:00:00Z"
+    },
+    "plan": {
+      "status": "complete",
+      "approved_by_user": false,
+      "completed_at": "2026-06-26T00:00:00Z"
+    },
+    "research": {
+      "status": "complete",
+      "completed_at": "2026-06-26T00:00:00Z",
+      "files_read": 33,
+      "grep_calls": 16,
+      "git_calls": 0,
+      "findings_count": 11,
+      "refinement_rounds": 1,
+      "refinement_areas": ["pageindex-ingest", "graphindex-writes", "okf-schema-layer", "bot-integration"]
+    },
+    "synthesis": {
+      "status": "complete",
+      "completed_at": "2026-06-26T00:00:00Z",
+      "overall_confidence": "high"
+    },
+    "qa": {
+      "status": "skipped",
+      "reason": "no material unknowns — codebase provides all context"
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/llmwiki-pageindex-graphindex.proposal.md",
+      "commit_sha": "ea2a34539abe566147b0502dcb421dda96dfc96c"
+    }
+  }
+}
