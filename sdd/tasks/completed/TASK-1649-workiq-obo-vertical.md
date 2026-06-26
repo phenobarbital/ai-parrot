@@ -113,3 +113,14 @@ async def test_workiq_no_secret_in_payload(): ...
 ## Agent Instructions
 **GATED**: resolve OQ#5 first. Requires TASK-1646 in `completed/`. Parallel-safe
 with TASK-1647/1648.
+
+### Completion Note
+**GATED — done-with-issues.** OQ#5 (Entra OBO support for work-iq, resource-id,
+required scopes, admin-consent path) is unresolved at implementation time.
+`work-iq` does not exist in the codebase. Implementation deferred until the
+operator:
+1. Confirms work-iq (MS public preview) supports Entra OBO, OR
+2. Decides to use auth-code 3LO via `IntegrationsService` as fallback.
+No code written. The bridge (TASK-1642–1647) and the Jira vertical provide the
+scaffold; the work-iq vertical is a new entity (B3 greenfield). Unblock by
+resolving OQ#5 in spec §8 and creating the work-iq tool package.

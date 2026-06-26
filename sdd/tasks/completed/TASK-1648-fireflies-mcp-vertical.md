@@ -102,3 +102,14 @@ async def test_fireflies_no_secret_in_payload(): ...
 ## Agent Instructions
 **GATED**: resolve OQ#6 first. Requires TASK-1646 in `completed/`. Parallel-safe
 with TASK-1647/1649.
+
+### Completion Note
+**GATED — done-with-issues.** OQ#6 (static-key vs MCP-OAuth for the fireflies MCP
+server) is unresolved at implementation time. Implementation deferred until the
+operator confirms the credential surface:
+- If **static key**: adapt `mcp_persistence` / `vault_credential_name` pattern
+  (ref: telegram MCP precedent); wire a simple static `CredentialResolver`.
+- If **MCP-OAuth**: requires evaluating MCP-level OAuth support; potentially a new
+  `MCPOAuthCredentialResolver`.
+No code written. The bridge (TASK-1642–1647) is fully functional; only this
+provider-specific wiring is missing. Unblock by resolving OQ#6 in spec §8.
