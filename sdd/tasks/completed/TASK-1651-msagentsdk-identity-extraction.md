@@ -104,4 +104,9 @@ def test_identity_fallback_channel_id():
 
 ### Completion Note
 
-(Agent fills this in when done)
+Implemented `_extract_user_id(activity)` that checks `from_property.aad_object_id`
+then `from_property.aadObjectId` (camelCase fallback for SDK version differences),
+then `from_property.id`, then "anonymous". Added `_build_user_context(activity)`
+that returns `UserContext(channel="msagentsdk", user_id=..., display_name=...,
+session_id=...)` using lazy import. Updated `__init__` to accept `resolver` and
+`audit_ledger` optional params.

@@ -143,4 +143,9 @@ def test_invoke_unknown_ignored():
 
 ### Completion Note
 
-(Agent fills this in when done)
+Added `invoke` branch in `on_turn()` that reads `activity.name` and routes to
+`_handle_signin_verify()` or `_handle_signin_exchange()`. Unknown invoke names
+logged at DEBUG and ignored. Both handlers call `_send_invoke_response(context,
+200)`. Added `_send_invoke_response()` static method that tries
+`ActivityTypes.invoke_response` and falls back to the `"invokeResponse"` string
+for SDK version compatibility.

@@ -149,4 +149,8 @@ def test_message_passes_ctx_to_ask():
 
 ### Completion Note
 
-(Agent fills this in when done)
+Updated `_handle_message()` to use `_extract_user_id()` for canonical identity,
+build `UserSession(user_id=..., tenant_id="msagentsdk", roles=frozenset())`,
+wrap in `PermissionContext(session=..., channel="msagentsdk")`, set `_pctx_var`
+token before `ask()` and reset in `finally`. Passes `ctx=RequestContext(
+user_id=..., session_id=...)` to `ask()`. All imports are lazy inside the method.

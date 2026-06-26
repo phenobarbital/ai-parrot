@@ -46,16 +46,16 @@
       "feature_id": "FEAT-261",
       "feature": "auth-obo-msagentsdk",
       "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
         "TASK-1650"
       ],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-1651-msagentsdk-identity-extraction.md",
+      "file": "sdd/tasks/completed/TASK-1651-msagentsdk-identity-extraction.md",
       "started_at": "2026-06-26T13:42:11+00:00",
-      "completed_at": null
+      "completed_at": "2026-06-26T13:46:16+00:00"
     },
     {
       "id": "TASK-1652",
@@ -64,16 +64,16 @@
       "feature_id": "FEAT-261",
       "feature": "auth-obo-msagentsdk",
       "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-1651"
       ],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-1652-msagentsdk-invoke-routing.md",
+      "file": "sdd/tasks/completed/TASK-1652-msagentsdk-invoke-routing.md",
       "started_at": "2026-06-26T13:42:11+00:00",
-      "completed_at": null
+      "completed_at": "2026-06-26T13:46:16+00:00"
     },
     {
       "id": "TASK-1653",
@@ -82,16 +82,16 @@
       "feature_id": "FEAT-261",
       "feature": "auth-obo-msagentsdk",
       "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-1652"
       ],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-1653-msagentsdk-credential-context-bridge.md",
+      "file": "sdd/tasks/completed/TASK-1653-msagentsdk-credential-context-bridge.md",
       "started_at": "2026-06-26T13:42:11+00:00",
-      "completed_at": null
+      "completed_at": "2026-06-26T13:46:16+00:00"
     },
     {
       "id": "TASK-1654",
@@ -118,7 +118,7 @@
       "feature_id": "FEAT-261",
       "feature": "auth-obo-msagentsdk",
       "spec": "sdd/specs/auth-obo-msagentsdk.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,9 +126,9 @@
         "TASK-1654"
       ],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-1656-signin-card-emission.md",
+      "file": "sdd/tasks/completed/TASK-1656-signin-card-emission.md",
       "started_at": "2026-06-26T13:42:11+00:00",
-      "completed_at": null
+      "completed_at": "2026-06-26T13:46:16+00:00"
     },
     {
       "id": "TASK-1657",
