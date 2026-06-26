@@ -1,7 +1,7 @@
 {
   "feature_id": "FEAT-259",
   "feature": "microsoft-copilot-agent-sdk",
-  "phase": "synthesis_complete",
+  "phase": "committed",
   "mode": "enrichment",
   "budget": {
     "profile": "default",
@@ -47,7 +47,7 @@
     },
     "output": {
       "proposal_path": "sdd/proposals/auth-obo-msagentsdk.proposal.md",
-      "commit_sha": null
+      "commit_sha": "673afd9a5"
     }
   },
   "started_at": "2026-06-25T00:00:00Z",
