@@ -161,4 +161,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed by sdd-worker on 2026-06-26.
+
+Created two files:
+- `tests/knowledge/wiki/conftest.py` — shared fixtures: `wiki_config`, `sample_source`,
+  `sample_sources`, `mock_pi`, `mock_gi`, `mock_okf`, `wiki_toolkit`; all use
+  `tmp_path` for isolation; no real LLM calls.
+- `tests/knowledge/wiki/test_integration.py` — `TestEndToEnd` class with 4 async tests:
+  `test_end_to_end_ingest_query`, `test_ingest_reingest_cycle`,
+  `test_combined_search_ranking`, `test_lint_reports_issues`.
+
+All 4 integration tests pass.  Full suite: 158/158 tests pass.
+`pytest tests/knowledge/wiki/ -v` confirms all acceptance criteria met.

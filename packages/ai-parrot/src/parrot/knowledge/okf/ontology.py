@@ -56,6 +56,13 @@ class ConceptType(str, Enum):
     CONCEPT_NODE = "Concept"
     DOCUMENT_NODE = "Document"
 
+    # --- Wiki page types (FEAT-260) ---
+    WIKI_SUMMARY = "Wiki Summary"
+    WIKI_ENTITY = "Wiki Entity"
+    WIKI_COMPARISON = "Wiki Comparison"
+    WIKI_SYNTHESIS = "Wiki Synthesis"
+    WIKI_OVERVIEW = "Wiki Overview"
+
 
 class RelationType(str, Enum):
     """Typed edge vocabulary (OKF-superset).
@@ -85,6 +92,10 @@ class RelationType(str, Enum):
 
     # --- Odoo model inheritance (FEAT-240) ---
     EXTENDS = "extends"
+
+    # --- Wiki relation types (FEAT-260) ---
+    SUMMARIZES = "summarizes"
+    CONTRADICTS = "contradicts"
 
 
 class RelatesTo(BaseModel):

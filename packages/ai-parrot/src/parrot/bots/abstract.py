@@ -352,6 +352,7 @@ class AbstractBot(
         # PageIndexToolkit / GraphIndexToolkit is wired into the agent.
         self._pageindex_toolkit: Optional[Any] = None
         self._graphindex_toolkit: Optional[Any] = None
+        self._llmwiki_toolkit: Optional[Any] = None
         # Optional GraphIndexBuilder enabling document ingestion into the graph.
         self._graphindex_builder: Optional[Any] = kwargs.pop('graphindex_builder', None)
         # Initialize tools if provided

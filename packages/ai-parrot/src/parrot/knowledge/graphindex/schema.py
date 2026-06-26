@@ -40,6 +40,7 @@ class NodeKind(str, Enum):
         CONCEPT: Abstract concept extracted from content.
         RATIONALE: Design rationale from docstring or tagged comment.
         SKILL: Skill definition parsed from a SKILL.md file.
+        WIKI_PAGE: LLM-generated wiki page (FEAT-260 LLM Wiki).
     """
 
     DOCUMENT = "document"
@@ -48,6 +49,7 @@ class NodeKind(str, Enum):
     CONCEPT = "concept"
     RATIONALE = "rationale"
     SKILL = "skill"
+    WIKI_PAGE = "wiki_page"
 
 
 class EdgeKind(str, Enum):
