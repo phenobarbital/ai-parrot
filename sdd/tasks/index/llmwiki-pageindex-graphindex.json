@@ -159,7 +159,7 @@
       "feature_id": "FEAT-260",
       "feature": "llmwiki-pageindex-graphindex",
       "spec": "sdd/specs/llmwiki-pageindex-graphindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -169,8 +169,8 @@
       "parallelism_notes": "Modifies core files (abstract.py, tools.py); must follow toolkit creation",
       "assigned_to": null,
       "started_at": "2026-06-26T00:58:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1634-bot-integration-wiring.md"
+      "completed_at": "2026-06-26T01:12:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1634-bot-integration-wiring.md"
     },
     {
       "id": "TASK-1635",
