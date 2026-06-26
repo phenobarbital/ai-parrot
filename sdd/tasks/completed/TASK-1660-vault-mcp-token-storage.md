@@ -195,10 +195,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-26
+**Notes**: Created `packages/ai-parrot/src/parrot/mcp/oauth2_storage.py` with
+VaultMCPTokenStorage implementing all 4 methods of the MCP SDK TokenStorage
+protocol. Added field filtering to handle OAuthToken/OAuthClientInformationFull
+fields vs. extra fields stored by legacy code. All 17 tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Added field filtering (valid_fields check) to prevent
+Pydantic validation errors when vault contains extra fields like "expires_at"
+or "raw" that are not part of OAuthToken schema.
