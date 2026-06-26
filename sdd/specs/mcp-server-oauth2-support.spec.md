@@ -171,8 +171,11 @@ class MCPOAuth2Config(BaseModel):
 
     Can be fully specified inline or partially filled via a preset
     (auth_preset on MCPClientConfig) with per-field overrides.
+
+    When client_id is omitted, RFC 7591 dynamic client registration
+    is attempted via the MCP SDK's OAuthContext.
     """
-    client_id: str
+    client_id: Optional[str] = None
     client_secret: Optional[str] = None
     auth_url: Optional[str] = None
     token_url: Optional[str] = None
@@ -241,8 +244,11 @@ def list_mcp_oauth2_presets() -> list[MCPOAuth2Preset]:
 
 - **Path**: `parrot/mcp/oauth2_config.py` (new file)
 - **Responsibility**: Define `MCPOAuth2Config`, `MCPOAuth2Preset`, `MCPOAuth2GrantType`
-  Pydantic models and the presets registry (`_PRESETS` dict with built-in entries for
-  NetSuite, plus `get_mcp_oauth2_preset()` / `list_mcp_oauth2_presets()` functions).
+  Pydantic models and the presets registry. Presets are defined **in code** following
+  the same pattern as `MCPServerDescriptor` (a module-level `_PRESETS` list of
+  `MCPOAuth2Preset` instances, with lookup functions). Support RFC 7591 dynamic client
+  registration: when `client_id` is not provided, the flow auto-registers via the
+  MCP SDK's `OAuthContext` dynamic registration support.
 - **Depends on**: None (standalone models)
 
 ### Module 2: VaultMCPTokenStorage Adapter
@@ -292,10 +298,12 @@ def list_mcp_oauth2_presets() -> list[MCPOAuth2Preset]:
   renders the "Authentication complete" response.
 - **Depends on**: Module 2, Module 5
 
-### Module 7: OAuthManager Deprecation & Factory Migration
+### Module 7: OAuthManager Removal & Factory Migration
 
 - **Path**: `parrot/mcp/oauth.py` (modify), `parrot/mcp/integration.py` (modify)
-- **Responsibility**: Mark `OAuthManager` as deprecated (add deprecation warning).
+- **Responsibility**: **Fully remove** `OAuthManager` class from `parrot/mcp/oauth.py`
+  (no deprecation cycle). Keep `TokenStore`, `InMemoryTokenStore`, `RedisTokenStore`,
+  `VaultTokenStore`, and `NetSuiteM2MAuth` — only the `OAuthManager` class is deleted.
   Update `MCPEnabledMixin.add_oauth_mcp_server()`, `add_fireflies_mcp_server()`,
   and other factory methods to use the new `MCPOAuth2Config`-based approach.
   Update `MCPServerDescriptor` with `auth_type` field.
@@ -331,7 +339,7 @@ def list_mcp_oauth2_presets() -> list[MCPOAuth2Preset]:
 | `test_config_with_oauth2_field` | Module 4 | `MCPClientConfig` accepts `oauth2` as `MCPOAuth2Config` |
 | `test_config_with_preset` | Module 4 | `from_yaml_config` resolves `auth_preset` → fills `oauth2` |
 | `test_config_preset_with_overrides` | Module 4 | Preset defaults merged with inline `oauth2:` overrides |
-| `test_deprecated_oauth_manager_warning` | Module 7 | Importing `OAuthManager` emits deprecation warning |
+| `test_oauth_manager_removed` | Module 7 | `OAuthManager` no longer importable from `parrot.mcp.oauth` |
 
 ### Integration Tests
 
@@ -383,7 +391,11 @@ def vault_token_storage(mcp_oauth2_config):
 - [ ] MCP OAuth2 tokens visible via `IntegrationsService.list_for_user()`
 - [ ] Navigator callback route at `/api/auth/oauth2/mcp/callback` handles MCP callbacks
 - [ ] At least one built-in preset exists (NetSuite)
-- [ ] `OAuthManager` in `parrot/mcp/oauth.py` is deprecated with warning
+- [ ] `OAuthManager` class fully removed from `parrot/mcp/oauth.py`
+- [ ] `TokenStore`, `VaultTokenStore`, `InMemoryTokenStore`, `RedisTokenStore` kept intact
+- [ ] RFC 7591 dynamic client registration works when `client_id` is omitted
+- [ ] MCP OAuth2 presets defined in code (same pattern as `MCPServerDescriptor`)
+- [ ] MCP OAuth2 tokens visible in `IntegrationsService.list_for_user()`
 - [ ] Existing `add_fireflies_mcp_server()` and `add_perplexity_mcp_server()` keep working
 - [ ] All unit tests pass: `pytest tests/mcp/test_oauth2_*.py tests/auth/test_mcp_oauth2_provider.py -v`
 - [ ] All integration tests pass: `pytest tests/mcp/test_oauth2_integration.py -v`
@@ -593,7 +605,7 @@ class OAuthContext:
 - Async-first: all token operations (`get_tokens`, `set_tokens`) are async
 - Use `self.logger = logging.getLogger(__name__)` in all new classes
 - Follow the `from_yaml_config()` pattern in `MCPClientConfig` for YAML parsing
-- Deprecation: use `warnings.warn("...", DeprecationWarning, stacklevel=2)` for `OAuthManager`
+- `OAuthManager` is fully removed (not deprecated) — delete the class, update all imports
 
 ### Known Risks / Gotchas
 
@@ -630,14 +642,14 @@ All dependencies are already installed — no new packages required.
 
 ## 8. Open Questions
 
-- [ ] Should MCP OAuth2 presets be defined in code (like `MCPServerDescriptor`) or
-      in a YAML file that users can extend? — *Owner: Jesus*
-- [ ] Should we support RFC 7591 dynamic client registration (MCP SDK has it) or
-      require `client_id` to be pre-configured? — *Owner: Jesus*
-- [ ] Should the `OAuthManager` in `parrot/mcp/oauth.py` be fully removed or kept
-      as deprecated for one release cycle? — *Owner: Jesus*
-- [ ] Should MCP OAuth2 tokens appear in the `IntegrationsService.list_for_user()`
-      response alongside O365/Jira? — *Owner: Jesus*
+- [x] Should MCP OAuth2 presets be defined in code (like `MCPServerDescriptor`) or
+      in a YAML file that users can extend? — *Resolved*: In code, like `MCPServerDescriptor`
+- [x] Should we support RFC 7591 dynamic client registration (MCP SDK has it) or
+      require `client_id` to be pre-configured? — *Resolved*: Yes, support RFC 7591 dynamic registration
+- [x] Should the `OAuthManager` in `parrot/mcp/oauth.py` be fully removed or kept
+      as deprecated for one release cycle? — *Resolved*: Fully remove (no deprecation cycle)
+- [x] Should MCP OAuth2 tokens appear in the `IntegrationsService.list_for_user()`
+      response alongside O365/Jira? — *Resolved*: Yes
 
 ---
 

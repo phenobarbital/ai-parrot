@@ -503,11 +503,11 @@ from mcp.shared.auth import OAuthToken, OAuthClientMetadata, OAuthClientInformat
 
 ## Open Questions
 
-- [ ] Should MCP OAuth2 presets be defined in code (like `MCPServerDescriptor`) or
-      in a YAML file that users can extend? — *Owner: Jesus*
-- [ ] Should we support RFC 7591 dynamic client registration (MCP SDK has it) or
-      require `client_id` to be pre-configured? — *Owner: Jesus*
-- [ ] Should the `OAuthManager` in `parrot/mcp/oauth.py` be fully removed or kept
-      as deprecated for one release cycle? — *Owner: Jesus*
-- [ ] Should MCP OAuth2 tokens appear in the `IntegrationsService.list_for_user()`
-      response alongside O365/Jira? — *Owner: Jesus*
+- [x] Should MCP OAuth2 presets be defined in code (like `MCPServerDescriptor`) or
+      in a YAML file that users can extend? — *Owner: Jesus*: In code, like `MCPServerDescriptor`
+- [x] Should we support RFC 7591 dynamic client registration (MCP SDK has it) or
+      require `client_id` to be pre-configured? — *Owner: Jesus*: Yes, support it
+- [x] Should the `OAuthManager` in `parrot/mcp/oauth.py` be fully removed or kept
+      as deprecated for one release cycle? — *Owner: Jesus*: Fully remove
+- [x] Should MCP OAuth2 tokens appear in the `IntegrationsService.list_for_user()`
+      response alongside O365/Jira? — *Owner: Jesus*: Yes
