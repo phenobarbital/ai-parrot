@@ -115,4 +115,18 @@ class TestEmployeeOntologySmoke:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `packages/ai-parrot/tests/knowledge/test_employee_ontology_smoke.py` with
+5 smoke tests covering:
+
+- `test_knowledge_yaml_loads` — knowledge.ontology.yaml loads with name="knowledge"
+- `test_employee_entity_present` — Employee entity appears in the merged ontology
+- `test_employee_required_properties` — employee_id, name, email all present
+- `test_reports_to_relation` — reports_to is Employee→Employee on both ends
+- `test_merge_integrity` — all relation endpoints reference existing entities
+
+**Codebase Contract correction**: The task's test scaffold used
+`OntologyParser.load_default("base"/"knowledge")` (non-existent static method) and
+`OntologyMerger.merge([definitions])` (incorrect — merge() takes paths, not definitions).
+Corrected to `OntologyParser.load(path)` and `OntologyMerger().merge_definitions([...])`.
+
+All 5 tests pass. No ArangoDB or Redis required. `ruff check` clean.

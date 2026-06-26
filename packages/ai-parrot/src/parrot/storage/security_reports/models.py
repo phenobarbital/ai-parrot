@@ -30,6 +30,7 @@ class ReportKind(str, Enum):
     WEEKLY_SUMMARY = "weekly_summary"
     MONTHLY_SUMMARY = "monthly_summary"
     DRIFT_COMPARISON = "drift_comparison"
+    ADVISORY = "advisory"  # FEAT-226: SOC2-oriented advisory output
 
 
 class SeverityBreakdown(BaseModel):

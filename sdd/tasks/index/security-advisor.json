@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-05T13:19:39Z",
-  "completed_at": null,
+  "completed_at": "2026-06-05T16:58:21.752788+00:00",
   "tasks": [
     {
       "id": "TASK-1479",
@@ -14,63 +14,63 @@
       "feature_id": "FEAT-226",
       "feature": "security-advisor",
       "spec": "sdd/specs/security-advisor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Module 0 — additive enum in parrot/storage; shares no files with the parrot_tools engine/toolkit tasks. Could run in parallel with TASK-1480.",
+      "parallelism_notes": "Module 0 \u2014 additive enum in parrot/storage; shares no files with the parrot_tools engine/toolkit tasks. Could run in parallel with TASK-1480.",
       "assigned_to": null,
       "started_at": "2026-06-05T13:32:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1479-reportkind-advisory-enum.md"
+      "completed_at": "2026-06-05T13:35:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1479-reportkind-advisory-enum.md"
     },
     {
       "id": "TASK-1480",
       "slug": "security-advisory-engine",
-      "title": "SecurityAdvisoryEngine — day-over-day diff + SOC2 mapping",
+      "title": "SecurityAdvisoryEngine \u2014 day-over-day diff + SOC2 mapping",
       "feature_id": "FEAT-226",
       "feature": "security-advisor",
       "spec": "sdd/specs/security-advisor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Module 1 — new advisory_engine.py; reuses existing ComplianceMapper (no new catalog). Independent of TASK-1479 (different package). Foundation for TASK-1481/1482.",
+      "parallelism_notes": "Module 1 \u2014 new advisory_engine.py; reuses existing ComplianceMapper (no new catalog). Independent of TASK-1479 (different package). Foundation for TASK-1481/1482.",
       "assigned_to": null,
       "started_at": "2026-06-05T13:32:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1480-security-advisory-engine.md"
+      "completed_at": "2026-06-05T13:38:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1480-security-advisory-engine.md"
     },
     {
       "id": "TASK-1481",
       "slug": "soc2-advisory-toolkit",
-      "title": "SOC2AdvisoryToolkit — LLM-facing read-only advisory tools",
+      "title": "SOC2AdvisoryToolkit \u2014 LLM-facing read-only advisory tools",
       "feature_id": "FEAT-226",
       "feature": "security-advisor",
       "spec": "sdd/specs/security-advisor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-1480"
       ],
       "parallel": false,
-      "parallelism_notes": "Module 2 — imports SecurityAdvisoryEngine from TASK-1480; must follow it.",
+      "parallelism_notes": "Module 2 \u2014 imports SecurityAdvisoryEngine from TASK-1480; must follow it.",
       "assigned_to": null,
       "started_at": "2026-06-05T13:32:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1481-soc2-advisory-toolkit.md"
+      "completed_at": "2026-06-05T13:40:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1481-soc2-advisory-toolkit.md"
     },
     {
       "id": "TASK-1482",
       "slug": "security-advisor-agent",
-      "title": "SecurityAdvisor agent — read-only, scheduled daily SOC2 advisory",
+      "title": "SecurityAdvisor agent \u2014 read-only, scheduled daily SOC2 advisory",
       "feature_id": "FEAT-226",
       "feature": "security-advisor",
       "spec": "sdd/specs/security-advisor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -78,11 +78,11 @@
         "TASK-1481"
       ],
       "parallel": false,
-      "parallelism_notes": "Module 3 — mounts SOC2AdvisoryToolkit (TASK-1481) and persists ReportKind.ADVISORY (TASK-1479). New file under gitignored agents/ — needs git add -f.",
+      "parallelism_notes": "Module 3 \u2014 mounts SOC2AdvisoryToolkit (TASK-1481) and persists ReportKind.ADVISORY (TASK-1479). New file under gitignored agents/ \u2014 needs git add -f.",
       "assigned_to": null,
       "started_at": "2026-06-05T13:32:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1482-security-advisor-agent.md"
+      "completed_at": "2026-06-05T13:51:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1482-security-advisor-agent.md"
     },
     {
       "id": "TASK-1483",
@@ -91,7 +91,7 @@
       "feature_id": "FEAT-226",
       "feature": "security-advisor",
       "spec": "sdd/specs/security-advisor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -99,11 +99,11 @@
         "TASK-1481"
       ],
       "parallel": false,
-      "parallelism_notes": "Module 4 — exports the engine/toolkit symbols; must follow TASK-1480/1481. Last task: sets index completed_at.",
+      "parallelism_notes": "Module 4 \u2014 exports the engine/toolkit symbols; must follow TASK-1480/1481. Last task: sets index completed_at.",
       "assigned_to": null,
       "started_at": "2026-06-05T13:32:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1483-exports-and-docs.md"
+      "completed_at": "2026-06-05T13:56:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1483-exports-and-docs.md"
     }
   ]
 }

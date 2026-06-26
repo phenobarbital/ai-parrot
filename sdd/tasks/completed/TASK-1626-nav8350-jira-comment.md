@@ -42,4 +42,15 @@ None (Jira API call only)
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (sdd-worker / /sdd-start)
+**Date**: 2026-06-26
+**Notes**: Posted Jira comment via Atlassian REST API (Python stdlib, credentials from `env/.env`).
+HTTP 201 received. Comment ID: 59478.
+URL: https://trocglobal.atlassian.net/browse/NAV-8350?focusedCommentId=59478
+
+Comment confirms:
+1. Ontology RAG operational at `packages/ai-parrot/src/parrot/knowledge/ontology/` (FEAT-053/158)
+2. Employee entity in `knowledge.ontology.yaml` hardened by TASK-1624 (role, member_of, reports_to, employee_team_workload traversal)
+3. Recommendation to close NAV-8350.
+
+**Deviations from spec**: none.

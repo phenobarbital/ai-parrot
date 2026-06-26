@@ -45,8 +45,16 @@ from .models import (
     SeverityLevel,
 )
 from .prowler import ProwlerConfig, ProwlerExecutor, ProwlerParser
+from .advisory_engine import (
+    AdvisoryRecommendation,
+    AdvisoryReport,
+    FindingDelta,
+    SecurityAdvisoryEngine,
+    parse_findings,
+)
 from .reports import ComplianceMapper, ReportGenerator
 from .secrets_iac_toolkit import SecretsIaCToolkit
+from .soc2_advisory import SOC2AdvisoryToolkit
 from .trivy import TrivyConfig, TrivyExecutor, TrivyParser
 
 __all__ = [
@@ -85,4 +93,11 @@ __all__ = [
     "ComplianceReportToolkit",
     "ContainerSecurityToolkit",
     "SecretsIaCToolkit",
+    "SOC2AdvisoryToolkit",
+    # Advisory engine (FEAT-226)
+    "SecurityAdvisoryEngine",
+    "AdvisoryReport",
+    "FindingDelta",
+    "AdvisoryRecommendation",
+    "parse_findings",
 ]

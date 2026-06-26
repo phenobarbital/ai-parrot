@@ -131,10 +131,8 @@ def test_advisor_public_exports():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-05
+**Notes**: Modified parrot_tools/security/__init__.py to add imports and __all__ entries for SecurityAdvisoryEngine, AdvisoryReport, FindingDelta, AdvisoryRecommendation, SOC2AdvisoryToolkit. Created docs/security-advisor.md documenting the read-only advisor, SOC2-via-ComplianceMapper pipeline, daily advisory flow, materiality rules, data models, and configuration. Created test_advisor_exports.py with 6 smoke tests (all pass). ruff clean. index completed_at set.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

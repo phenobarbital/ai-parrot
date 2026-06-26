@@ -98,4 +98,37 @@ is a new entity not overriding a base entity.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Hardened `knowledge.ontology.yaml` against the base ontology (which already
+ships `Employee` + `reports_to`). Changes:
+
+- **`Employee` (extend: true)** — added `team` and `role` properties (base
+  already provides `employee_id`, `name`, `email`, `department`, `manager_id`,
+  `job_title`, `location`). `role` added to `vectorize` (unioned with base's
+  `job_title`). Used `extend: true` because re-declaring a base entity without
+  it raises `OntologyMergeError`.
+- **`Team` entity** — new vertex collection `teams` keyed on `team_id`
+  (`name`, `description`, `department`; vectorizes `description`).
+- **`member_of` relation** — `Employee → Team` (edge `member_of_team`),
+  discovered via the `Employee.team → Team.team_id` field match.
+- **`employee_team_workload` traversal pattern** — answers "what is my team
+  working on?" by resolving the requester's team via `member_of` and returning
+  teammates (`post_action: none`). Kept graph-only rather than a `tool_call`
+  to avoid referencing a non-existent toolkit/method (anti-hallucination).
+
+`reports_to` (Employee → Employee) was **not** re-declared — it is inherited
+from `base.ontology.yaml`, so the merged ontology already satisfies that
+criterion without redundant discovery rules.
+
+**Verification**: standalone parse via `OntologyParser.load` OK; merge of
+base + knowledge passes `_validate_integrity`; all 4 task acceptance criteria
+asserted programmatically. `pytest test_knowledge_yaml.py test_ontology_merger.py`
+= **57 passed, 1 failed**. The single failure (`test_tool_call_parameters`)
+is **pre-existing and unrelated** — it asserts `tree_ids` in the
+`authoritative_doc_for_topic` pattern's tool_call params, but that pattern
+(untouched by this task) uses `tree_names`. Belongs to the PageIndex/llmwiki
+feature, not FEAT-255.
+
+**Note**: the YAML edit was committed (content correct, on `dev`) as part of a
+concurrent session's `obo research` commit (`fbc9ae93d`) which swept the
+working-tree change via a broad `git add`. Content is present and validated;
+no rework needed.

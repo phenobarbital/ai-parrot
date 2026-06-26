@@ -200,10 +200,8 @@ async def test_daily_advisory_end_to_end(advisor, fake_store, mock_jira, mock_no
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-05
+**Notes**: Created agents/security_advisor.py with SecurityAdvisor(@register_agent("security_advisor"), Agent subclass). agent_tools() mounts SecurityReportToolkit, S3ReportReaderToolkit, SOC2AdvisoryToolkit, JiraToolkit — no scanner toolkits. run_daily_soc2_advisory() scheduled DAILY at 12:00 UTC: builds advisory via soc2_toolkit.daily_soc2_advisory, narrates via self.ask, persists ReportRef(report_kind=ADVISORY), creates Jira tickets for material recommendations, emails recipients. Created tests/test_security_advisor.py with 5 tests (registered, read_only, persists_advisory_ref, material_jira, sends_email). Key fix: importlib.util.spec_from_file_location bypasses agents/ namespace resolution. agents/__init__.py copied manually to worktree. agents/security_advisor.py force-added with git add -f. All 5 tests pass, ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: agents/ is gitignored; used git add -f per spec note.
