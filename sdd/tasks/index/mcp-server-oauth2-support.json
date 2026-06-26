@@ -14,16 +14,16 @@
       "feature_id": "FEAT-262",
       "feature": "mcp-server-oauth2-support",
       "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task — all others depend on the config models",
       "assigned_to": null,
-      "started_at": "2026-06-26T14:58:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1659-mcp-oauth2-config-models.md"
+      "started_at": null,
+      "completed_at": "2026-06-26T16:19:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1659-mcp-oauth2-config-models.md"
     },
     {
       "id": "TASK-1660",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-262",
       "feature": "mcp-server-oauth2-support",
       "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -41,9 +41,9 @@
       "parallel": false,
       "parallelism_notes": "Depends on MCPOAuth2Config from TASK-1659",
       "assigned_to": null,
-      "started_at": "2026-06-26T14:58:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1660-vault-mcp-token-storage.md"
+      "started_at": null,
+      "completed_at": "2026-06-26T16:20:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1660-vault-mcp-token-storage.md"
     },
     {
       "id": "TASK-1661",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-262",
       "feature": "mcp-server-oauth2-support",
       "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,9 +62,9 @@
       "parallel": false,
       "parallelism_notes": "Needs config model and storage adapter from prior tasks",
       "assigned_to": null,
-      "started_at": "2026-06-26T14:58:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1661-mcp-oauth2-provider.md"
+      "started_at": null,
+      "completed_at": "2026-06-26T16:22:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1661-mcp-oauth2-provider.md"
     },
     {
       "id": "TASK-1662",
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-262",
       "feature": "mcp-server-oauth2-support",
       "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,9 +82,9 @@
       "parallel": false,
       "parallelism_notes": "Only needs config models; could theoretically run parallel with TASK-1660/1661 but shares MCPClientConfig",
       "assigned_to": null,
-      "started_at": "2026-06-26T14:58:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1662-mcp-client-config-extension.md"
+      "started_at": null,
+      "completed_at": "2026-06-26T16:23:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1662-mcp-client-config-extension.md"
     },
     {
       "id": "TASK-1663",
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-262",
       "feature": "mcp-server-oauth2-support",
       "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -104,9 +104,9 @@
       "parallel": false,
       "parallelism_notes": "Core integration — needs config, storage, and MCPClientConfig extension",
       "assigned_to": null,
-      "started_at": "2026-06-26T14:58:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1663-transport-oauth2-integration.md"
+      "started_at": null,
+      "completed_at": "2026-06-26T16:27:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1663-transport-oauth2-integration.md"
     },
     {
       "id": "TASK-1664",
@@ -115,7 +115,7 @@
       "feature_id": "FEAT-262",
       "feature": "mcp-server-oauth2-support",
       "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -125,9 +125,9 @@
       "parallel": false,
       "parallelism_notes": "Must coordinate with transport callback mechanism from TASK-1663",
       "assigned_to": null,
-      "started_at": "2026-06-26T14:58:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1664-navigator-callback-route.md"
+      "started_at": null,
+      "completed_at": "2026-06-26T16:29:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1664-navigator-callback-route.md"
     },
     {
       "id": "TASK-1665",
@@ -136,7 +136,7 @@
       "feature_id": "FEAT-262",
       "feature": "mcp-server-oauth2-support",
       "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -150,9 +150,9 @@
       "parallel": false,
       "parallelism_notes": "Final migration — depends on all prior tasks being complete",
       "assigned_to": null,
-      "started_at": "2026-06-26T14:58:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1665-oauth-manager-removal.md"
+      "started_at": null,
+      "completed_at": "2026-06-26T16:37:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1665-oauth-manager-removal.md"
     },
     {
       "id": "TASK-1666",
@@ -161,7 +161,7 @@
       "feature_id": "FEAT-262",
       "feature": "mcp-server-oauth2-support",
       "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -172,9 +172,9 @@
       "parallel": false,
       "parallelism_notes": "End-to-end tests need all implementation tasks complete",
       "assigned_to": null,
-      "started_at": "2026-06-26T14:58:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1666-mcp-oauth2-tests.md"
+      "started_at": null,
+      "completed_at": "2026-06-26T16:39:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1666-mcp-oauth2-tests.md"
     }
   ]
 }
