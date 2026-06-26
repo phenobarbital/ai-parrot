@@ -4,10 +4,52 @@ version: "1.0"
 description: >
   Knowledge layer extending the base ontology with Document and Concept
   entities, covers_topic and is_a relations, and the authoritative_doc_for_topic
-  traversal pattern. Enables concept-level routing of topical queries to
-  authoritative documents via curated graph edges.
+  traversal pattern. Also hardens the base Employee entity with team/role
+  properties, adds the Team entity and member_of relation, and the
+  employee_team_workload traversal pattern so ontology-aware agents can answer
+  "what is my team working on?" queries. Enables concept-level routing of
+  topical queries to authoritative documents via curated graph edges.
 
 entities:
+  # Employee is defined in the base ontology (employee_id, name, email,
+  # job_title, department, location, manager_id). The knowledge layer extends
+  # it with team/role so member_of and team-workload traversals can resolve.
+  Employee:
+    extend: true
+    source: hr
+    properties:
+      - team:
+          type: string
+          description: Team identifier (for the member_of relation)
+      - role:
+          type: string
+          description: Functional role of the employee within their team
+    vectorize:
+      - role
+
+  Team:
+    collection: teams
+    source: hr
+    key_field: team_id
+    properties:
+      - team_id:
+          type: string
+          required: true
+          unique: true
+          description: Unique team identifier
+      - name:
+          type: string
+          required: true
+          description: Team name
+      - description:
+          type: string
+          description: Team purpose / charter
+      - department:
+          type: string
+          description: Parent department identifier (for organisational rollup)
+    vectorize:
+      - description
+
   Document:
     collection: documents
     source: confluence
@@ -87,6 +129,19 @@ entities:
       - synonyms
 
 relations:
+  # reports_to (Employee → Employee) is inherited from the base ontology.
+  member_of:
+    from: Employee
+    to: Team
+    edge_collection: member_of_team
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: team
+          target_field: team_id
+          match_type: exact
+          description: Team membership via the Employee.team field
+
   covers_topic:
     from: Document
     to: Concept
@@ -114,6 +169,26 @@ relations:
     edge_collection: concept_is_a
 
 traversal_patterns:
+  employee_team_workload:
+    description: >
+      Answer "what is my team working on?" by resolving the requesting
+      employee's team via member_of, then returning the teammates that share
+      that team. The agent uses the teammate list to summarise current work
+      from downstream tools.
+    trigger_intents:
+      - what is my team working on
+      - what's my team working on
+      - what is the team doing
+      - team workload
+      - qué está haciendo mi equipo
+      - en qué trabaja mi equipo
+    query_template: >
+      FOR team IN 1..1 OUTBOUND @user_id @@member_of_team
+        FOR teammate IN 1..1 INBOUND team._id @@member_of_team
+          FILTER teammate._id != @user_id
+          RETURN teammate
+    post_action: none
+
   authoritative_doc_for_topic:
     description: >
       Route topical queries through curated authority edges into PageIndex.

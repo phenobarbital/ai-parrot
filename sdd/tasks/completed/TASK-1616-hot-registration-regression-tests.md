@@ -365,10 +365,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (sdd-worker / /sdd-start)
+**Date**: 2026-06-26
+**Notes**: All three regression tests were already implemented in commit `a07bdc879`
+(`feat(NAV-6239): add hot-registration regression tests for BotManager`).
+Verified all 28 tests pass (`pytest packages/ai-parrot/tests/test_chatbot_handler.py -v`)
+and ruff reports zero linting errors. No new code needed — task is closed as verified.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — tests are structurally equivalent to the spec scaffold,
+organised in a `TestHotRegistrationRegression` class rather than top-level functions
+(stylistic improvement consistent with the rest of the test file).
