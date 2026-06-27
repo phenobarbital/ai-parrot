@@ -568,6 +568,92 @@ class A2AServer:
         self.register_credential_resolver("jira", resolver)
         self.logger.info("A2AServer: jira resolver wired via %r", jira_oauth_manager)
 
+    def wire_fireflies_resolver(
+        self,
+        resolver: Any,
+    ) -> None:
+        """Register the Fireflies MCP static-key credential resolver for the A2A bridge.
+
+        Convenience wiring method for the Fireflies vertical (FEAT-263 / TASK-1648).
+        Registers *resolver* (a
+        :class:`~parrot.integrations.mcp.fireflies_a2a.FirefliesCredentialResolver`)
+        under ``provider="fireflies"``.
+
+        After calling this, any tool that declares
+        ``credential_provider = "fireflies"`` will be gated through the
+        per-user Fireflies static-key flow: missing key → OOB capture link;
+        resolved key → tool runs + audit entry appended.
+
+        The resolver is passed in rather than constructed here so that the
+        caller controls vault / OOB-URL configuration at application startup.
+
+        Example::
+
+            from parrot.integrations.mcp.fireflies_a2a import FirefliesCredentialResolver
+            from parrot.services.vault_token_sync import VaultTokenSync
+
+            vault = VaultTokenSync(db_pool=app["authdb"], redis=app["redis"])
+            resolver = FirefliesCredentialResolver(
+                vault_token_sync=vault,
+                oob_capture_url="https://app.example.com/auth/fireflies/capture",
+            )
+            a2a_server.wire_fireflies_resolver(resolver)
+
+        Args:
+            resolver: A configured
+                :class:`~parrot.integrations.mcp.fireflies_a2a.FirefliesCredentialResolver`
+                (or any object implementing
+                :class:`~parrot.auth.credentials.CredentialResolver`).
+        """
+        self.register_credential_resolver("fireflies", resolver)
+        self.logger.info(
+            "A2AServer: fireflies static-key resolver wired via %r", resolver
+        )
+
+    def wire_workiq_resolver(
+        self,
+        resolver: Any,
+    ) -> None:
+        """Register the Work IQ Entra OBO credential resolver for the A2A bridge.
+
+        Convenience wiring method for the Work IQ vertical (FEAT-263 / TASK-1649).
+        Registers *resolver* (a
+        :class:`~parrot.auth.oauth2.workiq_provider.WorkIQOBOCredentialResolver`)
+        under ``provider="workiq"``.
+
+        After calling this, any tool that declares
+        ``credential_provider = "workiq"`` will be gated through the per-user
+        Entra OBO flow: no cached work-iq token → Entra sign-in link; OBO
+        exchange succeeds → tool runs + audit entry appended.
+
+        Prerequisite: the user must have completed the o365/Entra sign-in so
+        that an Entra access token exists in vault (``o365:access_token``).
+        One Entra sign-in covers both o365 and work-iq.
+
+        Example::
+
+            from parrot.auth.oauth2.workiq_provider import WorkIQOAuth2Provider
+            from parrot.interfaces.o365 import O365Interface
+
+            o365 = O365Interface(credentials={...})
+            provider = WorkIQOAuth2Provider(
+                o365_interface=o365,
+                o365_oauth_manager=o365_manager,
+                vault_token_sync=vault,
+            )
+            a2a_server.wire_workiq_resolver(provider.credential_resolver())
+
+        Args:
+            resolver: A configured
+                :class:`~parrot.auth.oauth2.workiq_provider.WorkIQOBOCredentialResolver`
+                (or any object implementing
+                :class:`~parrot.auth.credentials.CredentialResolver`).
+        """
+        self.register_credential_resolver("workiq", resolver)
+        self.logger.info(
+            "A2AServer: workiq OBO resolver wired via %r", resolver
+        )
+
     # ─────────────────────────────────────────────────────────────
     # Core Message Processing (delegates to Agent)
     # ─────────────────────────────────────────────────────────────
