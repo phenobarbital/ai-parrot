@@ -104,12 +104,21 @@ async def test_fireflies_no_secret_in_payload(): ...
 with TASK-1647/1649.
 
 ### Completion Note
-**GATED — done-with-issues.** OQ#6 (static-key vs MCP-OAuth for the fireflies MCP
-server) is unresolved at implementation time. Implementation deferred until the
-operator confirms the credential surface:
-- If **static key**: adapt `mcp_persistence` / `vault_credential_name` pattern
-  (ref: telegram MCP precedent); wire a simple static `CredentialResolver`.
-- If **MCP-OAuth**: requires evaluating MCP-level OAuth support; potentially a new
-  `MCPOAuthCredentialResolver`.
-No code written. The bridge (TASK-1642–1647) is fully functional; only this
-provider-specific wiring is missing. Unblock by resolving OQ#6 in spec §8.
+**DONE.** OQ#6 resolved: Fireflies.ai accepts exclusively a static API key (no OAuth).
+
+Implementation (2026-06-27):
+- Created `packages/ai-parrot-integrations/src/parrot/integrations/mcp/fireflies_a2a.py`
+  with `FirefliesCredentialResolver` — per-user static-key resolver backed by
+  `VaultTokenSync` (vault key: `fireflies:api_key`). OOB capture URL surfaced on
+  first use. `store_key()` method for the capture endpoint to persist the key.
+- Modified `packages/ai-parrot-server/src/parrot/a2a/server.py`: added
+  `wire_fireflies_resolver(resolver)` convenience method (registers under
+  `provider="fireflies"`). Also added `wire_workiq_resolver(resolver)` (TASK-1649).
+- Created `packages/ai-parrot-server/tests/integration/test_a2a_fireflies_vertical.py`:
+  8 tests covering missing-key → INPUT_REQUIRED, no-secret-in-payload, resolved-key →
+  COMPLETED, audit-entry, store_key, get_auth_url, wire resolver, no-service-identity
+  fallback. All 8 pass.
+- Updated `conftest.py` to extend `parrot.integrations.__path__` with the worktree's
+  `ai-parrot-integrations/src` directory (new pattern needed for the new `mcp/` sub-package).
+
+Spec §8 updated with OQ#6 resolution.
