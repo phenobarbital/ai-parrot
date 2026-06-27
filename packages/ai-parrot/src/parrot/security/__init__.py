@@ -46,6 +46,13 @@ from .python_sanitizer import (
     general_profile,
     data_analysis_profile,
 )
+from .audit_ledger import (
+    AuditLedgerEntry,
+    AbstractKMSSigner,
+    LocalHMACSigner,
+    AuditLedger,
+    derive_key_fingerprint,
+)
 
 __all__ = [
     'PromptInjectionDetector',
@@ -78,4 +85,10 @@ __all__ = [
     'PythonCodeSanitizer',
     'general_profile',
     'data_analysis_profile',
+    # AuditLedger (FEAT-260 / TASK-1642)
+    'AuditLedgerEntry',
+    'AbstractKMSSigner',
+    'LocalHMACSigner',
+    'AuditLedger',
+    'derive_key_fingerprint',
 ]

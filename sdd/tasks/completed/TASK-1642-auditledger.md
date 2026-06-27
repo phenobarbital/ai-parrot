@@ -126,3 +126,12 @@ class TestAuditLedger:
 Standard SDD flow: read the spec §2/§3/§6, verify the contract, set index status
 to in-progress, implement, run tests, move to `completed/` + update the per-spec
 index on completion.
+
+### Completion Note
+Implemented `AuditLedgerEntry` (Pydantic v2) and `AuditLedger` in
+`packages/ai-parrot/src/parrot/security/audit_ledger.py`. The signer
+abstraction (`AbstractKMSSigner`) allows swapping in a managed KMS;
+`LocalHMACSigner` (HMAC-SHA256) is the local-dev/test fallback. The
+`derive_key_fingerprint` function hashes credential material with SHA-256.
+Exported from `parrot.security.__init__`. Append-only: no update/delete API.
+18/18 unit tests pass. Ruff clean.

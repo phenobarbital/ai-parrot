@@ -137,3 +137,20 @@ async def test_no_service_identity_fallback(): ...
 ## Agent Instructions
 Standard SDD flow. TASK-1643 (identity) and TASK-1642 (AuditLedger) must be in
 `completed/` first. Re-verify `server.py` line numbers (in-flight WIP file).
+
+### Completion Note
+Implemented credential gate in `A2AServer` (FEAT-260 / TASK-1644):
+- `__init__` extended with `credential_resolvers`, `suspended_store`, `audit_ledger` params.
+- `register_credential_resolver(provider, resolver)` — register at runtime.
+- `_try_invoke_with_gate(tool_name, params, *, user_id, channel, task)` — core gate:
+  checks `tool.credential_provider`, resolves credential, suspends or executes.
+- `_on_missing_credential(...)` — persists `SuspendedExecution`, appends `?a2a_state=<uuid>`
+  to consent URL, sets `INPUT_REQUIRED` task state with `consent_required` artifact.
+  NEVER contains a raw credential in any artifact.
+- `resume_from_oauth_callback(interaction_id, user_input)` — loads suspended execution,
+  calls `agent.resume()`, cleans up store (for TASK-1645).
+- `_find_tool / _execute_tool` helpers extracted for DRY usage.
+- Helpers: `_find_tool`, `_execute_tool`, `_invoke_skill`, `_invoke_tool` (legacy path).
+- `process_message` routes tool invocations through `_try_invoke_with_gate`.
+- Security invariant: missing identity with gated tool → `FAILED` (never service-identity).
+- 8/8 unit tests pass. Ruff clean.

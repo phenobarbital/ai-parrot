@@ -10,6 +10,15 @@ a single callback route via :func:`setup_oauth2_routes`. The handler:
 - For the web channel, persists the credential via
   :class:`parrot.auth.oauth2.service.IntegrationsService` and
   renders the existing ``web_oauth_success.html`` postMessage page.
+- For the **A2A channel** (FEAT-260 / TASK-1645): when
+  ``state_payload["a2a_interaction_id"]`` is present, calls the registered
+  A2A resume hook — typically
+  :meth:`~parrot.a2a.server.A2AServer.resume_from_oauth_callback` — to
+  reload the suspended execution and call ``agent.resume()``.  The hook is
+  stored on the aiohttp app under ``app["a2a_oauth_resume_hook"]`` via
+  :func:`register_a2a_resume_hook`.  The package boundary (core ai-parrot
+  vs. satellite ai-parrot-server) is respected: no direct import of
+  :class:`~parrot.a2a.server.A2AServer` in this module.
 
 The Jira-specific callback at ``/api/auth/jira/callback`` remains unchanged
 (decision: parallel infrastructure, no Jira refactor in this branch).
@@ -20,13 +29,52 @@ import html
 import logging
 import string
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Coroutine, Dict, Optional
 
 from aiohttp import web
 
 from parrot.conf import WEB_OAUTH_ALLOWED_ORIGINS
 from parrot.auth.oauth2.service import IntegrationsService
 from parrot.mcp.oauth2_state import resolve_pending_callback, is_pending
+
+
+# ─────────────────────────────────────────────────────────────
+# A2A Resume Hook (FEAT-260 / TASK-1645)
+# ─────────────────────────────────────────────────────────────
+
+#: Key under which the A2A resume hook is stored on the aiohttp app.
+_A2A_RESUME_HOOK_KEY = "a2a_oauth_resume_hook"
+
+
+def register_a2a_resume_hook(
+    app: web.Application,
+    hook: Callable[[str], Coroutine[Any, Any, None]],
+) -> None:
+    """Register an async callable to resume suspended A2A tasks after OAuth.
+
+    The ``hook`` is called after a successful OAuth callback when
+    ``state_payload`` contains an ``a2a_interaction_id`` field.  It is
+    called with the ``interaction_id`` as its only argument.
+
+    Typically wired as::
+
+        a2a_server = A2AServer(agent, ...)
+        register_a2a_resume_hook(
+            app,
+            a2a_server.resume_from_oauth_callback,
+        )
+
+    The indirection keeps the ``ai-parrot`` core package free of any import
+    from the ``ai-parrot-server`` satellite.
+
+    Args:
+        app: The aiohttp :class:`~aiohttp.web.Application`.
+        hook: Async callable ``(interaction_id: str) -> None``.
+    """
+    app[_A2A_RESUME_HOOK_KEY] = hook
+    logger.info(
+        "oauth2_routes: A2A resume hook registered (%s)", hook.__qualname__
+    )
 
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -177,6 +225,37 @@ def make_oauth2_callback(provider_id: str):
                 "An unexpected error occurred while exchanging the authorization code.",
                 status=500,
             )
+
+        # ── FEAT-260 / TASK-1645: A2A resume fan-out ─────────────────────────
+        # If the state_payload carries an `a2a_interaction_id` it means this
+        # callback is the tail of an A2A-initiated OAuth flow.  The credential
+        # is already persisted by `manager.handle_callback`; we only need to
+        # trigger the A2A resume so the suspended agent execution can continue.
+        # The hook is registered by the satellite ai-parrot-server; if it is
+        # absent (web-only deployments) this block is a no-op.
+        a2a_interaction_id: Optional[str] = state_payload.get("a2a_interaction_id")
+        if a2a_interaction_id:
+            hook = request.app.get(_A2A_RESUME_HOOK_KEY)
+            if hook is not None:
+                try:
+                    await hook(a2a_interaction_id)
+                    logger.info(
+                        "oauth2_routes: A2A resume triggered for interaction_id=%s",
+                        a2a_interaction_id,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "oauth2_routes: A2A resume hook failed for interaction_id=%s; "
+                        "credential persisted but task may require re-prompt",
+                        a2a_interaction_id,
+                    )
+            else:
+                logger.warning(
+                    "oauth2_routes: a2a_interaction_id=%s found in state but no "
+                    "A2A resume hook registered; task will not be resumed automatically",
+                    a2a_interaction_id,
+                )
+        # ── end A2A fan-out ───────────────────────────────────────────────────
 
         channel = state_payload.get("channel", "web")
         if channel == "web":

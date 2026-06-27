@@ -102,3 +102,23 @@ async def test_fireflies_no_secret_in_payload(): ...
 ## Agent Instructions
 **GATED**: resolve OQ#6 first. Requires TASK-1646 in `completed/`. Parallel-safe
 with TASK-1647/1649.
+
+### Completion Note
+**DONE.** OQ#6 resolved: Fireflies.ai accepts exclusively a static API key (no OAuth).
+
+Implementation (2026-06-27):
+- Created `packages/ai-parrot-integrations/src/parrot/integrations/mcp/fireflies_a2a.py`
+  with `FirefliesCredentialResolver` — per-user static-key resolver backed by
+  `VaultTokenSync` (vault key: `fireflies:api_key`). OOB capture URL surfaced on
+  first use. `store_key()` method for the capture endpoint to persist the key.
+- Modified `packages/ai-parrot-server/src/parrot/a2a/server.py`: added
+  `wire_fireflies_resolver(resolver)` convenience method (registers under
+  `provider="fireflies"`). Also added `wire_workiq_resolver(resolver)` (TASK-1649).
+- Created `packages/ai-parrot-server/tests/integration/test_a2a_fireflies_vertical.py`:
+  8 tests covering missing-key → INPUT_REQUIRED, no-secret-in-payload, resolved-key →
+  COMPLETED, audit-entry, store_key, get_auth_url, wire resolver, no-service-identity
+  fallback. All 8 pass.
+- Updated `conftest.py` to extend `parrot.integrations.__path__` with the worktree's
+  `ai-parrot-integrations/src` directory (new pattern needed for the new `mcp/` sub-package).
+
+Spec §8 updated with OQ#6 resolution.

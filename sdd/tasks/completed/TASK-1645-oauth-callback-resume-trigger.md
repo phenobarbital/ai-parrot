@@ -126,3 +126,16 @@ async def test_web_callback_unchanged(): ...
 ## Agent Instructions
 Standard SDD flow. TASK-1644 must be in `completed/`. Re-verify line numbers in
 both `oauth2_routes.py` and `server.py` (WIP file) before editing.
+
+### Completion Note
+Implemented the A2A OAuth resume trigger (FEAT-260 / TASK-1645):
+- `register_a2a_resume_hook(app, hook)` added to `oauth2_routes.py` — stores
+  an async callable under `app["a2a_oauth_resume_hook"]`. Package boundary intact:
+  no import of `A2AServer` (satellite) from core `ai-parrot`.
+- `make_oauth2_callback` extended with A2A fan-out: after successful token exchange,
+  if `state_payload["a2a_interaction_id"]` is present, the hook is called. Exceptions
+  in the hook are logged but do not crash the callback (credential already persisted).
+- `A2AServer.resume_from_oauth_callback` (already wired in TASK-1644) serves as the
+  hook implementation. It loads the `SuspendedExecution`, calls `agent.resume()`,
+  and deletes the suspended entry. Fallback to `agent.ask()` when agent lacks `resume`.
+- 9/9 unit tests pass. Ruff clean.

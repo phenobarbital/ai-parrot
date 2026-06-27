@@ -113,3 +113,29 @@ async def test_workiq_no_secret_in_payload(): ...
 ## Agent Instructions
 **GATED**: resolve OQ#5 first. Requires TASK-1646 in `completed/`. Parallel-safe
 with TASK-1647/1648.
+
+### Completion Note
+**DONE.** OQ#5 resolved: Work IQ IS an MCP server; OBO auth SUPPORTED (delegated
+only; app-only NOT supported).  Scope: ``api://workiq.svc.cloud.microsoft/WorkIQAgent.Ask``.
+
+Implementation (2026-06-27):
+- Created `packages/ai-parrot/src/parrot/tools/workiq_tool.py` with `WorkIQTool`:
+  MCP credential adapter declaring `credential_provider = "workiq"`. The bridge
+  resolves the OBO token before invocation; the tool stubs the MCP call (operators
+  replace with real MCP client at deployment).
+- Created `packages/ai-parrot/src/parrot/auth/oauth2/workiq_provider.py` with:
+  - `WorkIQOBOCredentialResolver`: resolves Work IQ OBO token from vault; falls
+    back to OBO exchange via `O365Interface.acquire_token_on_behalf_of`; caches
+    result. Returns None → Entra sign-in via `get_auth_url`.
+  - `WorkIQOAuth2Provider`: OAuth2Provider subclass for registry.
+  - One Entra sign-in covers both o365 and work-iq (OBO reuses Entra token).
+- Modified `packages/ai-parrot-server/src/parrot/a2a/server.py`: added
+  `wire_workiq_resolver(resolver)` convenience method (registers under
+  `provider="workiq"`).
+- Created `packages/ai-parrot-server/tests/integration/test_a2a_workiq_vertical.py`:
+  12 tests covering: import, no-Entra-token → INPUT_REQUIRED, no-secret-in-payload,
+  OBO-exchange success → COMPLETED, one-Entra-sign-in covers both, OBO failure →
+  INPUT_REQUIRED, cached-OBO-token → no-new-OBO, audit-entry, wire-resolver,
+  no-service-identity fallback, provider metadata, toolkit_factory raises. All 12 pass.
+
+Spec §8 updated with OQ#5 resolution.

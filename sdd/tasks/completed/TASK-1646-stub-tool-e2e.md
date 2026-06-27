@@ -116,3 +116,12 @@ async def test_no_service_identity_fallback(): ...
 ## Agent Instructions
 Standard SDD flow. All of TASK-1642/1644/1645 must be in `completed/`. This task
 closes out the v1 (Group A) acceptance criteria from spec §5.
+
+### Completion Note
+Implemented the v1 e2e bridge proof (FEAT-260 / TASK-1646):
+- `StubCredentialedTool` in `parrot/tools/stub_credentialed_tool.py`: extends `AbstractTool`,
+  declares `credential_provider = "stub"`, implements `_execute(message, metadata) -> str`
+  (echo pattern). Importable as `from parrot.tools.stub_credentialed_tool import StubCredentialedTool`.
+- 9/9 integration tests pass covering: full happy-path (suspend → callback → resume →
+  second call → COMPLETED + audit entry), TTL-expiry graceful path, no-service-identity
+  negative tests, stub tool import and execution. Ruff clean.
