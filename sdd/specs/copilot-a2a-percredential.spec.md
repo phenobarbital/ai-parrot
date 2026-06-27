@@ -449,11 +449,24 @@ class VaultTokenSync:                                                           
 - [x] **v1 reference vertical** — *Resolved*: **bridge-only, tool-agnostic**
   (stub credentialed tool, Module A5); jira/fireflies/work-iq are gated Group B.
 
+### Resolved (2026-06-27 — TASK-1648 / TASK-1649 unblocked)
+- [x] **OQ#6 — fireflies MCP auth (static-key vs MCP-OAuth)** — *Resolved*:
+  Fireflies.ai accepts **exclusively a static API key** from the user.  No OAuth
+  flow whatsoever.  Implementation: static API key → stored per-user in vault
+  under ``fireflies:api_key`` via ``VaultTokenSync``; OOB capture link surfaced
+  on first use (same pattern as telegram ``vault_credential_name``).
+  See TASK-1648 and ``fireflies_a2a.py``.
+- [x] **OQ#5 — work-iq OBO support + resource id + scopes** — *Resolved*:
+  Work IQ **IS an MCP server** (``github.com/microsoft/work-iq``); OBO is
+  **SUPPORTED** (delegated only; app-only NOT supported).  Required permission:
+  ``WorkIQAgent.Ask`` (delegated, requires admin consent).  OAuth scope:
+  ``api://workiq.svc.cloud.microsoft/WorkIQAgent.Ask``.  M365 permissions,
+  sensitivity labels, and compliance policies are applied automatically by
+  Work IQ.  Implementation: Entra OBO exchange via
+  ``O365Interface.acquire_token_on_behalf_of``; one Entra sign-in covers both
+  o365 and work-iq.  See TASK-1649 and ``workiq_provider.py``.
+
 ### Unresolved (defer to gated tasks / implementation)
-- [ ] **OQ#6 — fireflies MCP auth (static-key vs MCP-OAuth)** — *Owner: tbd*.
-  Blocks B2; bias static-key (reuse telegram `mcp_persistence`) for v1 of that vertical.
-- [ ] **OQ#5 — work-iq OBO support + resource id + scopes** — *Owner: tbd*.
-  Blocks B3; verify empirically, else fall back to delegated 3LO provider.
 - [ ] **OQ#9 — AgentCard autopopulate** — *Owner: tbd*. Code fix done; confirm
   via served-card dump + access-log (no code change expected).
 - [ ] **OQ#2 — Copilot `input-required` + resume support** — *Owner: tbd*.
@@ -481,3 +494,4 @@ class VaultTokenSync:                                                           
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-06-26 | Jesus | Initial draft from research-grounded proposal FEAT-260. Bridge-only v1 + greenfield AuditLedger; OQ#1 resolved; brainstorm §11 (supportedInterfaces) superseded. |
+| 0.2 | 2026-06-27 | Claude | Resolve OQ#6 (Fireflies = static API key, no OAuth) and OQ#5 (work-iq = MCP server, OBO supported, scope api://workiq.svc.cloud.microsoft/WorkIQAgent.Ask). TASK-1648 + TASK-1649 unblocked. |
