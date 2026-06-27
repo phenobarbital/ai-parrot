@@ -1,6 +1,6 @@
 # TASK-1647: jira tool vertical over the A2A credential bridge (Group B)
 
-**Feature**: FEAT-260 — AI-Parrot ⇄ M365 Copilot via A2A (per-user credentials)
+**Feature**: FEAT-263 — AI-Parrot ⇄ M365 Copilot via A2A (per-user credentials)
 **Spec**: `sdd/specs/copilot-a2a-percredential.spec.md`
 **Status**: pending
 **Priority**: medium

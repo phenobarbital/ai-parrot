@@ -1,5 +1,5 @@
 {
-  "feat_id": "FEAT-260",
+  "feat_id": "FEAT-263",
   "mode": "enrichment",
   "summary_oneline": "Verify the credential/HITL/audit/A2A anchors the brainstorm asserts, before spec.",
   "budget_profile": "default",

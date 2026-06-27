@@ -1,6 +1,6 @@
 # TASK-1644: Credential gate + suspend-on-missing-credential in the A2A path
 
-**Feature**: FEAT-260 — AI-Parrot ⇄ M365 Copilot via A2A (per-user credentials)
+**Feature**: FEAT-263 — AI-Parrot ⇄ M365 Copilot via A2A (per-user credentials)
 **Spec**: `sdd/specs/copilot-a2a-percredential.spec.md`
 **Status**: pending
 **Priority**: high

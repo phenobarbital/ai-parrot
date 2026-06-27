@@ -6,14 +6,14 @@ base_branch: dev
 
 # Feature Specification: AI-Parrot ⇄ M365 Copilot via A2A, with parrot-owned per-user tool credentials
 
-**Feature ID**: FEAT-260
+**Feature ID**: FEAT-263
 **Date**: 2026-06-26
 **Author**: Jesus
 **Status**: approved
 **Target version**: 0.x (continuation of in-flight `wip: a2a server + ms agent sdk`)
 
 > **Source**: research-grounded proposal `sdd/proposals/copilot-a2a-percredential.proposal.md`
-> (enrichment mode, overall confidence medium). Full audit at `sdd/state/FEAT-260/`.
+> (enrichment mode, overall confidence medium). Full audit at `sdd/state/FEAT-263/`.
 
 ---
 
@@ -480,4 +480,4 @@ class VaultTokenSync:                                                           
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-06-26 | Jesus | Initial draft from research-grounded proposal FEAT-260. Bridge-only v1 + greenfield AuditLedger; OQ#1 resolved; brainstorm §11 (supportedInterfaces) superseded. |
+| 0.1 | 2026-06-26 | Jesus | Initial draft from research-grounded proposal FEAT-263. Bridge-only v1 + greenfield AuditLedger; OQ#1 resolved; brainstorm §11 (supportedInterfaces) superseded. |

@@ -1,5 +1,5 @@
 {
-  "feat_id": "FEAT-260",
+  "feat_id": "FEAT-263",
   "detected_mode": "enrichment",
   "overall_confidence": "medium",
   "summary_oneline": "Publish AI-Parrot as an A2A connected agent in M365 Copilot with parrot-owned per-user tool credentials — most credential machinery already exists; new work is the A2A↔credential bridge.",

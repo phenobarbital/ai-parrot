@@ -1,5 +1,5 @@
 ---
-id: FEAT-260
+id: FEAT-263
 title: Publish AI-Parrot as an A2A connected agent in M365 Copilot with parrot-owned per-user tool credentials
 slug: copilot-a2a-percredential
 type: feature
@@ -13,17 +13,17 @@ source:
   summary_oneline: Expose an AI-Parrot agent to M365 Copilot over A2A with parrot-owned per-user credential acquisition
 overall_confidence: medium
 base_branch: dev
-research_state: sdd/state/FEAT-260/
+research_state: sdd/state/FEAT-263/
 created: 2026-06-26
 updated: 2026-06-26
 ---
 
-# FEAT-260 — AI-Parrot ⇄ M365 Copilot via A2A, with parrot-owned per-user tool credentials
+# FEAT-263 — AI-Parrot ⇄ M365 Copilot via A2A, with parrot-owned per-user tool credentials
 
 > **Mode**: enrichment
 > **Confidence**: medium
 > **Source**: `file: sdd/proposals/brainstorm-copilot-a2a-percredential.md`
-> **Audit**: [`sdd/state/FEAT-260/`](../state/FEAT-260/)
+> **Audit**: [`sdd/state/FEAT-263/`](../state/FEAT-263/)
 
 ---
 
@@ -33,7 +33,7 @@ Continuation of in-progress work integrating one AI-Parrot agent (bundling
 `work-iq`, `fireflies.ai`, and `jira` tools) into the Microsoft 365 Copilot
 surface via the Agent-to-Agent (A2A) protocol. The base artifact is the
 brainstorm `sdd/proposals/brainstorm-copilot-a2a-percredential.md` (full source
-preserved at `sdd/state/FEAT-260/source-original.md`).
+preserved at `sdd/state/FEAT-263/source-original.md`).
 
 > "We have great advances of integrating one ai-parrot Agent into Microsoft
 > Copilot using Agent-to-Agent protocol… The hard part is **not** the
@@ -75,7 +75,7 @@ verified primitives.
 
 ## 2. Codebase Findings
 
-> Grounded in `sdd/state/FEAT-260/findings/`. Every entry cites the finding ID(s)
+> Grounded in `sdd/state/FEAT-263/findings/`. Every entry cites the finding ID(s)
 > that justify it. No fabricated paths or symbols.
 
 ### 2.1 Localization
@@ -257,7 +257,7 @@ Distribution: **9** high, **1** medium, **1** low.
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-260`** — *Rationale*: localization and the reuse story are
+**`/sdd-spec FEAT-263`** — *Rationale*: localization and the reuse story are
 high-confidence (C1–C9); the new surface is a tightly-bounded **bridge over
 verified primitives** rather than an architectural fork. The OQ#1 identity gate
 is resolved, removing the spike-first blocker. The spec must encode two items as
@@ -266,9 +266,9 @@ two external verifications (work-iq OBO, fireflies MCP auth) as gated sub-tasks.
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-260`** — not recommended; no architectural fork
+- **`/sdd-brainstorm FEAT-263`** — not recommended; no architectural fork
   remains now that identity (OQ#1) is resolved.
-- **`/sdd-task FEAT-260`** — premature; this is multi-component (bridge +
+- **`/sdd-task FEAT-263`** — premature; this is multi-component (bridge +
   work-iq + fireflies + AuditLedger), not a single localized fix.
 - **Manual review** — not needed; research is complete (not truncated).
 
@@ -278,11 +278,11 @@ two external verifications (work-iq OBO, fireflies MCP auth) as gated sub-tasks.
 
 | Artifact | Path |
 |----------|------|
-| State checkpoints | `sdd/state/FEAT-260/state.json` |
-| Source (raw) | `sdd/state/FEAT-260/source.md` (+ `source-original.md`) |
-| Research plan | `sdd/state/FEAT-260/research_plan.json` |
-| Findings (digests) | `sdd/state/FEAT-260/findings/F001-*.md` … `F011-*.md` |
-| Synthesis (JSON) | `sdd/state/FEAT-260/synthesis.json` |
+| State checkpoints | `sdd/state/FEAT-263/state.json` |
+| Source (raw) | `sdd/state/FEAT-263/source.md` (+ `source-original.md`) |
+| Research plan | `sdd/state/FEAT-263/research_plan.json` |
+| Findings (digests) | `sdd/state/FEAT-263/findings/F001-*.md` … `F011-*.md` |
+| Synthesis (JSON) | `sdd/state/FEAT-263/synthesis.json` |
 
 **Budget consumed**:
 - Files read: 7 / 40

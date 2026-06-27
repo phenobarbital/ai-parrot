@@ -1,6 +1,6 @@
 # TASK-1645: OAuth-callback resume trigger (nonce → resume suspended A2A task)
 
-**Feature**: FEAT-260 — AI-Parrot ⇄ M365 Copilot via A2A (per-user credentials)
+**Feature**: FEAT-263 — AI-Parrot ⇄ M365 Copilot via A2A (per-user credentials)
 **Spec**: `sdd/specs/copilot-a2a-percredential.spec.md`
 **Status**: pending
 **Priority**: high

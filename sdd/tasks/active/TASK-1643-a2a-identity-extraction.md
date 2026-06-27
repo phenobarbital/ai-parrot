@@ -1,6 +1,6 @@
 # TASK-1643: A2A per-user identity extraction in process_message
 
-**Feature**: FEAT-260 — AI-Parrot ⇄ M365 Copilot via A2A (per-user credentials)
+**Feature**: FEAT-263 — AI-Parrot ⇄ M365 Copilot via A2A (per-user credentials)
 **Spec**: `sdd/specs/copilot-a2a-percredential.spec.md`
 **Status**: pending
 **Priority**: high
