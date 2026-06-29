@@ -284,11 +284,11 @@ async def proactive_resume(
         channel_id=conv_ref.channel_id,
     )
 
-    _ask_extra: dict = {}
-    if broker is not None:
-        _ask_extra["_broker"] = broker
-        _ask_extra["_cred_channel"] = "msagentsdk"
-        _ask_extra["_cred_user_id"] = user_id
+    # FEAT-264 Issue 6: broker is registered on tool_manager at init time;
+    # no need to thread _broker/_cred_channel/_cred_user_id through ask() kwargs.
+    # The ContextVar seam (AbstractTool.execute) resolves credentials using the
+    # broker stored on tool_manager.  The ``broker`` parameter is kept for
+    # backward compatibility but is no longer forwarded to ask().
 
     async def _callback(turn_context: Any) -> None:
         try:
@@ -296,7 +296,6 @@ async def proactive_resume(
                 question=question,
                 session_id=session_id,
                 user_id=user_id,
-                **_ask_extra,
             )
             reply_text = str(response.content) if response else "(no response)"
             await turn_context.send_activity(

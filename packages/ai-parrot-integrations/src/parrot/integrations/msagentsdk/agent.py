@@ -107,6 +107,13 @@ class ParrotM365Agent:
             f"ParrotM365Agent.{type(parrot_agent).__name__}"
         )
 
+        # FEAT-264 Issue 6: register the broker on the agent's tool_manager once
+        # so the ContextVar seam (AbstractTool.execute) can resolve credentials
+        # transparently — no need to thread _broker/_cred_channel/_cred_user_id
+        # through ask() kwargs on every call.
+        if broker is not None and hasattr(parrot_agent, "tool_manager"):
+            parrot_agent.tool_manager.set_broker(broker)
+
     async def on_turn(self, context) -> None:
         """Handle an incoming Activity from the Microsoft 365 Agents SDK.
 
@@ -272,21 +279,16 @@ class ParrotM365Agent:
         token = _pctx_var.set(pctx)
         request_ctx = RequestContext(user_id=user_id, session_id=session_id)
 
-        # Build extra kwargs for the broker seam (TASK-1669):
-        # AbstractTool.execute() pops _broker/_cred_channel/_cred_user_id from kwargs.
-        _ask_extra: dict = {}
-        if self._broker is not None:
-            _ask_extra["_broker"] = self._broker
-            _ask_extra["_cred_channel"] = "msagentsdk"
-            _ask_extra["_cred_user_id"] = user_id
-
+        # FEAT-264 Issue 6: broker is registered on tool_manager.__init__ so no
+        # need to thread _broker/_cred_channel/_cred_user_id through ask() kwargs.
+        # The ContextVar seam (AbstractTool.execute) resolves credentials using
+        # tool_manager.broker which was set in __init__.
         try:
             response = await self.parrot_agent.ask(
                 question=text.strip(),
                 session_id=session_id,
                 user_id=user_id,
                 ctx=request_ctx,
-                **_ask_extra,
             )
             await self._send_text(context, str(response.content))
         except Exception as exc:  # noqa: BLE001
