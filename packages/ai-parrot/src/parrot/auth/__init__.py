@@ -47,7 +47,15 @@ from .credentials import (
     OAuthCredentialResolver,
     StaticCredentialResolver,
     StaticCredentials,
+    # FEAT-264 additions
+    AuthKind,
+    ProviderCredentialConfig,
+    ResolvedCredential,
+    NeedsAuth,
+    CredentialRequired,
 )
+# FEAT-264: surface-agnostic CredentialBroker + factory
+from .broker import CredentialBroker, CredentialResolverFactory
 # Grants (bounded approval windows — FEAT-211)
 from .grants import (
     Grant,
@@ -93,11 +101,19 @@ __all__ = [
     # Exceptions
     "AuthorizationRequired",
     "AgentAccessDenied",
-    # Credential resolvers
+    # Credential resolvers (pre-FEAT-264)
     "CredentialResolver",
     "OAuthCredentialResolver",
     "StaticCredentialResolver",
     "StaticCredentials",
+    # FEAT-264: broker models + signals
+    "AuthKind",
+    "ProviderCredentialConfig",
+    "ResolvedCredential",
+    "NeedsAuth",
+    "CredentialRequired",
+    "CredentialBroker",
+    "CredentialResolverFactory",
     # Grants (bounded approval windows)
     "Grant",
     "GrantConfig",

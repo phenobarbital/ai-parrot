@@ -13,15 +13,116 @@ Two concrete resolvers are provided:
 - :class:`StaticCredentialResolver`: always returns the same
   :class:`StaticCredentials` — used for the existing ``basic_auth`` and
   ``token_auth`` modes so legacy toolkits keep working unchanged.
+
+FEAT-264 additions
+------------------
+- :class:`ProviderCredentialConfig` — declarative per-provider credential config
+  (AgentDefinition / manifest).
+- :class:`ResolvedCredential` — credential material resolved from vault (secret
+  never logged; only the ``key_fingerprint`` is recorded in the audit ledger).
+- :class:`NeedsAuth` — surface-neutral miss signal returned by the broker.
+- :class:`CredentialRequired` — exception raised by the tool-loop seam when the
+  broker returns ``NeedsAuth``; surfaces catch it to render their UX.
 """
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Dict, Literal, Optional, TYPE_CHECKING
+
+from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:  # pragma: no cover - import only for type checkers
     from .jira_oauth import JiraOAuthManager
+
+
+# ---------------------------------------------------------------------------
+# FEAT-264: declarative config + broker signal models
+# ---------------------------------------------------------------------------
+
+AuthKind = Literal["obo", "oauth2", "static_key", "mcp"]
+
+
+class ProviderCredentialConfig(BaseModel):
+    """Declarative per-provider credential config (AgentDefinition / manifest).
+
+    Attributes:
+        provider: Provider identifier (e.g. ``"workiq"``, ``"fireflies"``).
+        auth: Auth kind — selects the resolver strategy in
+            :class:`~parrot.auth.broker.CredentialResolverFactory`.
+        options: Extra options forwarded to the strategy constructor
+            (e.g. ``scope``, ``vault_key``, ``capture_url``).
+    """
+
+    provider: str = Field(..., description="Provider identifier, e.g. 'workiq'")
+    auth: AuthKind = Field(..., description="Auth kind: obo|oauth2|static_key|mcp")
+    options: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Strategy-specific options (scope, vault_key, capture_url, ...)",
+    )
+
+
+class ResolvedCredential(BaseModel):
+    """Credential material returned by the broker on a successful resolution.
+
+    Attributes:
+        provider: Provider identifier.
+        secret: Raw credential (token, API key, …).  **NEVER** log this field;
+            only :attr:`key_fingerprint` should appear in audit records.
+        key_fingerprint: SHA-256 hex digest of ``secret`` (for audit).
+    """
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    provider: str
+    secret: Any = Field(..., description="Raw credential — NEVER logged")
+    key_fingerprint: str = Field(..., description="SHA-256 of secret (audit only)")
+
+
+class NeedsAuth(BaseModel):
+    """Surface-neutral miss signal from the broker.
+
+    Attributes:
+        provider: Provider identifier.
+        auth_url: Consent / OOB capture URL the user must visit.
+            **NEVER** a secret.
+        auth_kind: Drives surface rendering (card type).
+    """
+
+    provider: str
+    auth_url: str = Field(..., description="Consent URL — NEVER a secret")
+    auth_kind: AuthKind = Field(..., description="Drives surface card rendering")
+
+
+class CredentialRequired(Exception):
+    """Raised by the tool-loop seam when the broker returns :class:`NeedsAuth`.
+
+    This is the canonical, surface-neutral exception.  Each surface catches it
+    and renders the appropriate UX:
+
+    * A2A: suspend + TEXT consent link.
+    * MSAgentSDK: Adaptive Card (static key) or OAuthCard (OAuth/OBO).
+    * CLI: plain URL printed to stdout.
+
+    Args:
+        provider: Provider identifier.
+        auth_url: Consent / OOB capture URL (NEVER a secret).
+        auth_kind: Auth kind for surface rendering.
+    """
+
+    def __init__(self, provider: str, auth_url: str, auth_kind: str) -> None:
+        super().__init__(
+            f"Credential required for provider={provider!r} — "
+            f"visit {auth_url} to authorize (auth_kind={auth_kind!r})"
+        )
+        self.provider = provider
+        self.auth_url = auth_url
+        self.auth_kind = auth_kind
+
+
+# ---------------------------------------------------------------------------
+# Existing resolvers (pre-FEAT-264, kept backward-compatible)
+# ---------------------------------------------------------------------------
 
 
 class CredentialResolver(ABC):
