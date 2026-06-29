@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-264
 **Date**: 2026-06-29
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x (continuation of the in-flight Copilot / MS Agent SDK + A2A per-user credential work; supersedes parts of FEAT-261 / FEAT-263)
 
 > **Source**: brainstorm `sdd/proposals/unified-credential-broker.brainstorm.md`
