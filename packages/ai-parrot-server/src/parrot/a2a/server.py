@@ -735,11 +735,20 @@ class A2AServer:
                 return True  # task is now suspended
 
             # ResolvedCredential — broker already wrote the audit entry.
+            # Inject the secret into the per-call ContextVar so tool
+            # implementations can retrieve it via current_credential()
+            # (FEAT-264 / Issue 1 fix).
+            from parrot.tools.abstract import _CREDENTIAL_VAR as _CRED_VAR
+
             self.logger.info(
                 "A2AServer: credential resolved for provider=%s user=%s tool=%s",
                 provider, user_id, tool_name,
             )
-            tool_result = await self._execute_tool(tool, params)
+            _token = _CRED_VAR.set(result.secret)
+            try:
+                tool_result = await self._execute_tool(tool, params)
+            finally:
+                _CRED_VAR.reset(_token)
             task.complete(tool_result)
             return False
 
