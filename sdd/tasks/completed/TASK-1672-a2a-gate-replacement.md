@@ -91,4 +91,4 @@ class A2AServer:                                                 # :50
 Standard SDD flow. Run the FEAT-263 vertical tests as regression before marking done.
 
 ## Completion Note
-*(Agent fills this in when done)*
+Implemented. `wire_jira_resolver`, `wire_fireflies_resolver`, `wire_workiq_resolver` removed from A2AServer. `__init__` now accepts `broker: Optional[CredentialBroker]` (preferred) and `identity_mapper: Optional[CanonicalIdentityMapper]`; `credential_resolvers=` dict builds a broker shim for backward compat. `_try_invoke_with_gate` routes through `broker.resolve(provider, channel, user_id, tool_name=tool_name)`, handles `NeedsAuth` by calling `_on_missing_credential(…, auth_url=result.auth_url)`. Broker handles audit internally. `_extract_identity` feeds metadata through mapper when set. All 3 vertical integration test files (jira, fireflies, workiq) updated to use `CredentialBroker` directly. 35 integration tests pass; ruff clean.
