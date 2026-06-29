@@ -23,7 +23,6 @@ module can be imported without the SDK installed.
 """
 from __future__ import annotations
 
-import hashlib
 import logging
 from contextvars import ContextVar
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
@@ -31,7 +30,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from parrot.auth.credentials import CredentialResolver
 
 if TYPE_CHECKING:
-    from parrot.auth.audit import AuditLedger
+    from parrot.security.audit_ledger import AuditLedger
 
 # ContextVar that holds a (resolver, turn_context) tuple so tools running
 # inside _handle_message can reach the resolver without passing it explicitly.
@@ -343,33 +342,24 @@ class BFTokenServiceResolver(CredentialResolver):
         token: str,
         action: str,
     ) -> None:
-        """Record a credential invocation to the audit ledger.
+        """Record a credential invocation to the canonical audit ledger.
 
-        Computes ``key_fingerprint`` as the SHA-256 hex digest of the first 8
-        bytes of the token (raw UTF-8). The raw token is never stored.
+        Delegates to :meth:`parrot.security.audit_ledger.AuditLedger.append`
+        which computes the ``key_fingerprint`` internally (SHA-256 of the
+        credential material).  The raw token is never stored.
 
         Args:
             channel: Integration channel.
             user_id: Canonical user identity.
             tool: Tool name.
-            connection: OAuth connection name.
-            token: The resolved token (used only to compute the fingerprint).
-            action: ``"resolve"`` or ``"obo_exchange"``.
+            connection: OAuth connection name (used as ``provider`` label).
+            token: The resolved token (used only to derive the fingerprint).
+            action: ``"resolve"`` or ``"obo_exchange"`` (appended to tool label).
         """
-        import datetime
-
-        from parrot.auth.audit import AuditEntry
-
-        raw = token.encode("utf-8") if isinstance(token, str) else bytes(token)
-        fingerprint = hashlib.sha256(raw).hexdigest()
-
-        entry = AuditEntry(
-            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        await self._ledger.append(
             user_id=user_id,
             channel=channel,
-            tool=tool,
-            connection=connection,
-            key_fingerprint=fingerprint,
-            action=action,
+            tool=f"{tool}:{action}",
+            provider=connection,
+            credential_material=token,
         )
-        self._ledger.record(entry)
