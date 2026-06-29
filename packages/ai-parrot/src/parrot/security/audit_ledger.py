@@ -261,7 +261,7 @@ class AzureKeyVaultSigner(AbstractKMSSigner):
         """
         import asyncio
 
-        result = await asyncio.get_event_loop().run_in_executor(
+        result = await asyncio.get_running_loop().run_in_executor(
             None, lambda: self._client.sign(self._algorithm, hashlib.sha256(data).digest())
         )
         return result.signature.hex()
@@ -279,7 +279,7 @@ class AzureKeyVaultSigner(AbstractKMSSigner):
         import asyncio
 
         sig_bytes = bytes.fromhex(signature)
-        result = await asyncio.get_event_loop().run_in_executor(
+        result = await asyncio.get_running_loop().run_in_executor(
             None,
             lambda: self._client.verify(
                 self._algorithm, hashlib.sha256(data).digest(), sig_bytes
