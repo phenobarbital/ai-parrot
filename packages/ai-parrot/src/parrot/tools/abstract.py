@@ -3,6 +3,7 @@ Abstract Tool base class for all function-calling tools.in ai-parrot framework.
 """
 from typing import TYPE_CHECKING, ClassVar, Dict, Any, Union, Optional, Type
 from abc import ABC, abstractmethod
+from contextvars import ContextVar
 from pathlib import Path
 from datetime import datetime
 import time
@@ -21,6 +22,30 @@ from ..core.events.lifecycle.events import (
 
 if TYPE_CHECKING:
     from .executors.abstract import AbstractToolExecutor
+    from ..auth.broker import CredentialBroker
+
+# FEAT-264: per-call credential ContextVar.
+# Set by AbstractTool.execute() when the tool declares credential_provider;
+# read by tool implementations via current_credential().
+# NEVER log or include in LLM-visible kwargs.
+_CREDENTIAL_VAR: ContextVar[Optional[Any]] = ContextVar(
+    "_parrot_credential", default=None
+)
+
+
+def current_credential() -> Optional[Any]:
+    """Return the per-call credential injected by the broker, or ``None``.
+
+    Tools that declare ``credential_provider`` can call this inside
+    ``_execute()`` to obtain the resolved per-user credential material.
+    The value is set by the tool-loop seam (FEAT-264) just before
+    ``_execute()`` is called and reset in the ``finally`` block.
+
+    Returns:
+        The resolved credential (token, API-key dict, …) or ``None`` if
+        not in a credentialed execution context.
+    """
+    return _CREDENTIAL_VAR.get()
 
 # FEAT-252 (TASK-1612) — lazy import to avoid circular deps at module level
 def _get_output_scrubber():
@@ -115,6 +140,11 @@ class AbstractTool(EventEmitterMixin, ABC):
     args_schema: Type[BaseModel] = AbstractToolArgsSchema
     return_direct: bool = False
     routing_meta: Dict = None  # Set per-instance in __init__ to avoid mutable default
+    # FEAT-264: optional credential provider ID.  When set, the tool-loop
+    # seam resolves a per-user credential via CredentialBroker before calling
+    # _execute() and makes it available via current_credential().
+    # Tools without this attribute (default None) are unaffected.
+    credential_provider: Optional[str] = None
 
     def __init__(
         self,
@@ -506,6 +536,11 @@ class AbstractTool(EventEmitterMixin, ABC):
         pctx = kwargs.pop('_permission_context', None)
         resolver = kwargs.pop('_resolver', None)
 
+        # FEAT-264: credential broker kwargs (never enter LLM-visible args_schema)
+        _broker: Optional["CredentialBroker"] = kwargs.pop('_broker', None)
+        _cred_channel: str = kwargs.pop('_cred_channel', 'unknown')
+        _cred_user_id: Optional[str] = kwargs.pop('_cred_user_id', None)
+
         if pctx is not None and resolver is not None:
             required = getattr(self, '_required_permissions', set())
             allowed = await resolver.can_execute(pctx, self.name, required)
@@ -568,27 +603,65 @@ class AbstractTool(EventEmitterMixin, ABC):
             else:
                 resolved_kwargs = dict(kwargs)
 
-            # ── Remote execution dispatch (executor=) ─────────────────────
-            # When an executor is configured we package the call as an
-            # envelope and hand it off; permission checks, lifecycle
-            # events and result normalisation continue to run here so
-            # remote and local tools look identical to the agent loop.
-            if self.executor is not None and not args:
-                from .executors.abstract import build_envelope_from_tool
+            # ── FEAT-264: credential seam ─────────────────────────────────────
+            # Gate is active only when the tool declares credential_provider
+            # AND a broker is available.  Tools without credential_provider
+            # (the vast majority) are unaffected — this branch is never entered.
+            _cred_token = _CREDENTIAL_VAR.set(None)  # establish reset point
+            try:
+                if self.credential_provider and _broker is not None:
+                    from ..auth.credentials import NeedsAuth, CredentialRequired
+                    from ..auth.broker import CredentialBroker  # noqa: F401
 
-                envelope = build_envelope_from_tool(
-                    self,
-                    arguments=resolved_kwargs,
-                    permission_context=pctx,
-                    trace_context=tool_tc,
-                    timeout_seconds=self.remote_timeout_seconds,
-                    webhook_callback_url=self.webhook_callback_url,
-                )
-                raw_result = await self.executor.execute(envelope)
-            elif hasattr(validated_args, 'model_dump'):
-                raw_result = await self._execute(*args, **resolved_kwargs)
-            else:
-                raw_result = await self._execute(*args, **kwargs)
+                    if not _cred_user_id:
+                        raise ValueError(
+                            f"Tool {self.name!r} requires credential_provider="
+                            f"{self.credential_provider!r} but no user identity was "
+                            "provided by the caller (fail closed — no service identity)."
+                        )
+
+                    resolution = await _broker.resolve(
+                        self.credential_provider,
+                        _cred_channel,
+                        _cred_user_id,
+                        tool_name=self.name,
+                    )
+
+                    if isinstance(resolution, NeedsAuth):
+                        raise CredentialRequired(
+                            resolution.provider,
+                            resolution.auth_url,
+                            resolution.auth_kind,
+                        )
+
+                    # Hit — inject credential onto per-call ContextVar
+                    _CREDENTIAL_VAR.set(resolution.secret)
+
+                # ── Remote execution dispatch (executor=) ─────────────────────
+                # When an executor is configured we package the call as an
+                # envelope and hand it off; permission checks, lifecycle
+                # events and result normalisation continue to run here so
+                # remote and local tools look identical to the agent loop.
+                if self.executor is not None and not args:
+                    from .executors.abstract import build_envelope_from_tool
+
+                    envelope = build_envelope_from_tool(
+                        self,
+                        arguments=resolved_kwargs,
+                        permission_context=pctx,
+                        trace_context=tool_tc,
+                        timeout_seconds=self.remote_timeout_seconds,
+                        webhook_callback_url=self.webhook_callback_url,
+                    )
+                    raw_result = await self.executor.execute(envelope)
+                elif hasattr(validated_args, 'model_dump'):
+                    raw_result = await self._execute(*args, **resolved_kwargs)
+                else:
+                    raw_result = await self._execute(*args, **kwargs)
+            finally:
+                # Always reset the ContextVar so the credential never leaks
+                # to other concurrent tasks sharing the same context.
+                _CREDENTIAL_VAR.reset(_cred_token)
 
             # Normalise to ToolResult
             if isinstance(raw_result, ToolResult):
@@ -670,6 +743,13 @@ class AbstractTool(EventEmitterMixin, ABC):
             # circular import with ``parrot.auth``.
             from ..auth.exceptions import AuthorizationRequired
             if isinstance(e, AuthorizationRequired):
+                raise
+
+            # FEAT-264: Let CredentialRequired bubble up to the surface so it
+            # can render the appropriate UX (A2A suspend+link, Adaptive Card,
+            # CLI URL).  Imported lazily to match the pattern above.
+            from ..auth.credentials import CredentialRequired as _CR
+            if isinstance(e, _CR):
                 raise
 
             # ── FEAT-176: emit ToolCallFailedEvent before returning error ─────

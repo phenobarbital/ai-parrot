@@ -139,7 +139,7 @@ if not any(isinstance(f, _ParrotToolsRedirector) for f in sys.meta_path):
 # Core base classes (always available)
 # Imports are intentionally after the meta_path finder setup above.
 # ---------------------------------------------------------------------------
-from .abstract import AbstractTool, ToolResult  # noqa: E402
+from .abstract import AbstractTool, ToolResult, current_credential  # noqa: E402
 from .toolkit import AbstractToolkit, ToolkitTool  # noqa: E402
 from .decorators import tool_schema, tool  # noqa: E402
 from .registry import ToolkitRegistry, get_supported_toolkits  # noqa: E402
