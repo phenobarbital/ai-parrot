@@ -235,6 +235,12 @@ class MCPClientConfig:
     # When None, token storage falls back to "default" (shared, non-user-scoped).
     user_id: Optional[str] = field(default=None)
 
+    # FEAT-264: When True, read the per-call CredentialBroker-resolved token from
+    # the ``current_credential()`` ContextVar and inject it as
+    # ``Authorization: Bearer <token>`` at call time (not connect time).
+    # Set this on MCP servers whose provider has auth="mcp" in the broker config.
+    inject_broker_credential: bool = False
+
     async def get_headers(self, context: Optional['ReadonlyContext'] = None) -> Dict[str, str]:
         """Get merged static, auth, and dynamic headers.
 
@@ -268,6 +274,21 @@ class MCPClientConfig:
             if asyncio.iscoroutine(dynamic):
                 dynamic = await dynamic
             result.update(dynamic)
+
+        # FEAT-264: Inject the CredentialBroker-resolved per-user bearer token
+        # when inject_broker_credential=True.  The token lives in the per-call
+        # ContextVar set by the tool-loop seam (AbstractTool.execute) so this
+        # path is only active during a credentialed tool invocation.
+        if self.inject_broker_credential:
+            try:
+                from parrot.tools.abstract import current_credential
+                cred = current_credential()
+                if cred is not None:
+                    # Never overwrite an existing Authorization header that was
+                    # set by a higher-priority source (auth_credential, header_provider).
+                    result.setdefault("Authorization", f"Bearer {cred}")
+            except ImportError:
+                pass  # parrot.tools.abstract not importable in edge environments
 
         return result
 

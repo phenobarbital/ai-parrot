@@ -23,7 +23,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 if TYPE_CHECKING:
-    from ..mcp.integration import MCPClient, MCPToolProxy
+    from ..mcp.integration import MCPClient
     from ..mcp.client import MCPClientConfig as MCPServerConfig
     from ..mcp.context import ReadonlyContext
 
@@ -141,6 +141,15 @@ class MCPToolManagerMixin:
                         server_name=config.name,
                         require_confirmation=getattr(config, 'require_confirmation', False),
                     )
+
+                    # FEAT-264: When the MCP server is configured with
+                    # inject_broker_credential=True, tag each proxy tool with the
+                    # server name as its credential_provider so the tool-loop seam
+                    # (AbstractTool.execute) resolves per-user credentials via the
+                    # broker before calling _execute().  The broker-resolved token
+                    # then flows to MCPClientConfig.get_headers() via the ContextVar.
+                    if getattr(config, 'inject_broker_credential', False):
+                        proxy_tool.credential_provider = config.name
 
                     # Register in self (ToolManager)
                     self.register_tool(proxy_tool)
