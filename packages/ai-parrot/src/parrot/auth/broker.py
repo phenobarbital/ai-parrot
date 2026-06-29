@@ -26,7 +26,7 @@ Design principles
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from .credentials import (
     CredentialResolver,
@@ -41,10 +41,21 @@ if TYPE_CHECKING:  # pragma: no cover
 
 __all__ = [
     "CredentialBroker",
+    "CredentialBrokerConfigError",
     "CredentialResolverFactory",
 ]
 
 logger = logging.getLogger(__name__)
+
+
+class CredentialBrokerConfigError(Exception):
+    """Raised by :meth:`CredentialBroker.from_config` in strict mode when a
+    resolver cannot be built for a declared provider.
+
+    Inherits from ``Exception`` directly so callers can catch it without
+    depending on any domain-specific base class.
+    """
+
 
 
 # ---------------------------------------------------------------------------
@@ -308,27 +319,43 @@ class CredentialBroker:
         audit_ledger: Optional["AuditLedger"] = None,
         identity_mapper: Optional["CanonicalIdentityMapper"] = None,
     ) -> None:
-        self._resolvers: Dict[str, CredentialResolver] = {}
+        # Stores (resolver, auth_kind) tuples so NeedsAuth.auth_kind is read
+        # from the registry rather than sniffed from the class name.
+        self._resolvers: Dict[str, Tuple[CredentialResolver, str]] = {}
         self._audit_ledger = audit_ledger
         self._identity_mapper = identity_mapper
         self.logger = logging.getLogger(__name__)
 
-    def register(self, provider: str, resolver: CredentialResolver) -> None:
+    def register(
+        self,
+        provider: str,
+        resolver: CredentialResolver,
+        auth_kind: str = "oauth2",
+    ) -> None:
         """Register a resolver for *provider*.
 
         Args:
             provider: Provider identifier (e.g. ``"workiq"``).
             resolver: :class:`CredentialResolver` for this provider.
+            auth_kind: The authentication kind for this provider
+                (``"obo"``, ``"oauth2"``, ``"static_key"``, ``"mcp"``).
+                Stored alongside the resolver and returned in
+                :class:`~parrot.auth.credentials.NeedsAuth` on a miss.
+                Defaults to ``"oauth2"`` for backward compatibility with
+                callers that do not supply an explicit kind.
         """
-        self._resolvers[provider] = resolver
+        self._resolvers[provider] = (resolver, auth_kind)
         self.logger.info(
-            "CredentialBroker: registered resolver for provider=%s", provider
+            "CredentialBroker: registered resolver for provider=%s auth_kind=%s",
+            provider,
+            auth_kind,
         )
 
     @classmethod
     def from_config(
         cls,
         configs: List[ProviderCredentialConfig],
+        strict: bool = True,
         **deps: Any,
     ) -> "CredentialBroker":
         """Build a broker from a list of declarative provider configs.
@@ -338,12 +365,20 @@ class CredentialBroker:
 
         Args:
             configs: Declarative provider credential configurations.
+            strict: When ``True`` (default), a resolver build failure raises
+                :class:`CredentialBrokerConfigError` immediately.  When
+                ``False``, the failing provider is skipped with a warning
+                and the broker is returned with the remaining providers.
             **deps: Runtime dependencies forwarded to
                 :class:`CredentialResolverFactory`
                 (e.g. ``vault``, ``o365_interface``, ``audit_ledger``).
 
         Returns:
             A fully-configured :class:`CredentialBroker`.
+
+        Raises:
+            CredentialBrokerConfigError: If ``strict=True`` and a resolver
+                build fails for any provider.
         """
         audit_ledger = deps.pop("audit_ledger", None)
         identity_mapper = deps.pop("identity_mapper", None)
@@ -352,8 +387,12 @@ class CredentialBroker:
         for cfg in configs:
             try:
                 resolver = factory.build(cfg)
-                broker.register(cfg.provider, resolver)
+                broker.register(cfg.provider, resolver, auth_kind=str(cfg.auth))
             except Exception as exc:
+                if strict:
+                    raise CredentialBrokerConfigError(
+                        f"Failed to build resolver for provider {cfg.provider!r}: {exc}"
+                    ) from exc
                 logger.warning(
                     "CredentialBroker.from_config: could not build resolver for "
                     "provider=%s auth=%s: %s",
@@ -390,11 +429,12 @@ class CredentialBroker:
             ValueError: If *user_id* is empty / None (fail closed).
         """
         # Canonical identity normalization.
+        # NOTE: surfaces (A2AServer, ParrotM365Agent) already call
+        # identity_mapper.to_canonical() on the raw surface dict before
+        # invoking the broker, so ``user_id`` is already canonical here.
+        # A second call would crash because to_canonical() expects a
+        # Dict[str, Any], not a str.  We use user_id as-is.
         canonical_id = user_id
-        if self._identity_mapper is not None and user_id:
-            mapped = self._identity_mapper.to_canonical(user_id)
-            if mapped is not None:
-                canonical_id = mapped
 
         if not canonical_id:
             raise ValueError(
@@ -402,13 +442,14 @@ class CredentialBroker:
                 "failing closed (no service-identity fallback)."
             )
 
-        resolver = self._resolvers.get(provider)
-        if resolver is None:
+        entry = self._resolvers.get(provider)
+        if entry is None:
             raise KeyError(
                 f"CredentialBroker: no resolver registered for provider={provider!r}. "
                 "Failing closed."
             )
 
+        resolver, auth_kind = entry
         secret = await resolver.resolve(channel, canonical_id)
 
         if secret is None:
@@ -422,7 +463,7 @@ class CredentialBroker:
             return NeedsAuth(
                 provider=provider,
                 auth_url=auth_url,
-                auth_kind=self._infer_auth_kind(resolver),
+                auth_kind=auth_kind,
             )
 
         # Hit — build fingerprint (SHA-256 of secret material, never logged)
@@ -462,18 +503,3 @@ class CredentialBroker:
         )
         return credential
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _infer_auth_kind(resolver: CredentialResolver) -> str:
-        """Infer the auth kind from the resolver class name for NeedsAuth."""
-        name = type(resolver).__name__.lower()
-        if "obo" in name:
-            return "obo"
-        if "oauth" in name:
-            return "oauth2"
-        if "static" in name or "fireflies" in name or "mcp" in name:
-            return "static_key"
-        return "oauth2"
