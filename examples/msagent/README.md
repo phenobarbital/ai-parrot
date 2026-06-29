@@ -286,6 +286,115 @@ Checklist (most common first):
 
 ---
 
+## 7. Per-user auth with the Unified Credential Broker (FEAT-264)
+
+`server.py` shows how to expose an agent with **two credentialed tools** —
+Fireflies.ai (static API key) and Work IQ (Entra OBO) — on **both** the
+MSAgentSDK chat surface and an optional A2A sub-agent surface, via a single
+declarative `CredentialBroker` config.  No `wire_*()` calls.
+
+### Architecture
+
+```
+aiohttp app
+├── MSAgentSDKWrapper          POST /api/msagentsdk/.../messages
+│     broker ──▶ fireflies (static_key → Adaptive Card + OOB capture)
+│               ──▶ workiq   (obo       → OAuthCard + proactive resume)
+├── A2AServer (optional)       POST /a2a/rpc
+│     same broker config
+└── Fireflies capture page     GET/POST /auth/fireflies/capture
+```
+
+### Declarative config (no wire_*)
+
+```python
+from parrot.auth.credentials import ProviderCredentialConfig
+from parrot.auth.broker import CredentialBroker
+
+broker = CredentialBroker.from_config(
+    configs=[
+        ProviderCredentialConfig(
+            provider="fireflies",
+            auth="static_key",
+            options={"capture_url": "https://your-app/auth/fireflies/capture"},
+        ),
+        ProviderCredentialConfig(
+            provider="workiq",
+            auth="obo",
+            options={},
+        ),
+    ],
+    vault=vault,
+    audit_ledger=audit_ledger,
+)
+
+wrapper = MSAgentSDKWrapper(agent=parrot_agent, config=config, app=app, broker=broker)
+```
+
+### Per-user auth UX
+
+| Provider | First use (no credential) | After consent |
+|---|---|---|
+| **Fireflies** (static key) | Adaptive Card with "Authorise Fireflies" link | Bot resumes proactively |
+| **Work IQ** (OBO) | OAuthCard — Bot Framework token service sign-in | Bot resumes proactively |
+
+#### Static-key flow (Fireflies)
+
+1. User asks a Fireflies question → no key stored → bot emits an **Adaptive Card**
+   with a link to `GET /auth/fireflies/capture?nonce=<nonce>`.
+2. User visits the capture page, pastes their API key, and submits.
+3. `POST /auth/fireflies/capture` stores the key and calls
+   `m365_agent.resume_by_nonce(nonce)`.
+4. The bot **proactively** re-runs the original question and delivers the answer —
+   the user never retypes.
+
+#### OBO flow (Work IQ)
+
+1. User asks a Work IQ question → no Entra token → bot emits an **OAuthCard**.
+2. The Bot Framework Token Service handles the OAuth dance in-channel.
+3. `signin/verifyState` or `signin/tokenExchange` invoke arrives.
+4. The agent looks up the suspended turn by user ID and **proactively resumes**.
+
+### Proactive resume stores
+
+The `server.py` demo uses in-memory stores for suspend/resume state.  In
+production, wire real Redis-backed stores:
+
+```python
+import redis.asyncio as aioredis
+from parrot.human.suspended_store import SuspendedExecutionStore
+from parrot.integrations.msagentsdk.resume import MsaConversationRefStore
+
+redis_client = aioredis.from_url("redis://localhost:6379/1")
+wrapper.m365_agent._suspended_store = SuspendedExecutionStore(redis_client)
+wrapper.m365_agent._conv_ref_store  = MsaConversationRefStore(redis_client)
+wrapper.m365_agent._adapter         = wrapper.adapter
+wrapper.m365_agent._agent_app_id    = config.client_id
+```
+
+### A2A sub-agent surface
+
+The same `CredentialBroker` is passed to `A2AServer` — no extra config needed:
+
+```python
+from parrot.a2a.server import A2AServer
+
+a2a_server = A2AServer(agent=parrot_agent, broker=broker)
+app.router.add_post("/a2a/rpc", a2a_server.handle)
+```
+
+A Copilot Studio orchestrator can call this agent as a sub-agent (A2A
+protocol); user credentials resolve the same way as in the chat surface.
+
+### Note on MCP stubs
+
+Both tools (`workiq_ask`, `fireflies_search`) return demo responses in the
+example.  Replace `_execute` bodies with real MCP calls once you have:
+- **Work IQ**: a valid Entra OBO token in the resolved credential.
+- **Fireflies**: a real API key and a running Fireflies MCP server endpoint.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
