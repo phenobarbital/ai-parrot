@@ -64,8 +64,12 @@ the FEAT-263 verticals only function through `A2AServer`, not through the
   in tool args/schema, model context, or the conversational transcript. The existing
   `OutputScrubber` stays the sole outbound redaction seam.
 - **Config is declared on the AgentDefinition** (each agent carries its own
-  credentialed-provider config; broker built at `configure()`), with a YAML
-  bots-manifest form analogous to `env/integrations_bots.yaml`.
+  credentialed-provider config; broker built at `configure()`), with an **in-package**
+  YAML bots-manifest loader analogous to `env/integrations_bots.yaml`.
+- **Credentials are reusable across surfaces** — vault keyed by a canonical user identity
+  (Entra OID/email), so consent given on A2A is honored in chat and vice-versa.
+- **Missing credential must request AND auto-resume** — the surface prompts (card/sign-in)
+  and the operation resumes automatically on consent completion; the user does not re-type.
 - **Replace** the `A2AServer` embedded registry/gate with broker calls (the broker is
   the backend), preserving the A2A suspend/resume happy path and FEAT-263 acceptance.
 - **Canonical OBO** = `O365Interface.acquire_token_on_behalf_of` + `VaultTokenSync`
@@ -280,9 +284,12 @@ second without rework.
 4. **Missing** → the broker returns `NeedsAuth(auth_url, auth_kind)`; the seam raises
    `CredentialRequired(provider, auth_url, auth_kind)`. The active **surface** catches it
    and renders the right prompt (A2A suspend+link / Adaptive Card / OAuthCard / CLI URL).
-5. After OOB consent, the surface's existing resume trigger (A2A
-   `resume_from_oauth_callback`, or a fresh user turn on MSAgentSDK) re-runs the tool;
-   the credential now resolves and the result returns.
+5. On a miss the operation is **suspended** (state keyed by nonce; on chat, a Bot
+   Framework `ConversationReference` is stored too). After consent the surface's resume
+   trigger fires — A2A `resume_from_oauth_callback`; on MSAgentSDK the
+   `signin/verifyState`/`signin/tokenExchange` invoke (OAuth/OBO) or the `store_key`
+   capture route (static key) — which re-runs the tool and **proactively delivers** the
+   result. The user never re-types.
 6. MCP-backed tools resolve the same way; the broker supplies the token to
    `MCPClientConfig.header_provider`/`token_supplier` so the MCP call carries the
    per-user bearer.
@@ -317,7 +324,14 @@ second without rework.
 - `credential-required-signal`: surface-neutral `CredentialRequired(provider, auth_url,
   auth_kind)` + per-surface renderers (A2A suspend, MSAgentSDK Adaptive/OAuth card, CLI).
 - `agent-credential-config`: declarative `credentials:` block on the AgentDefinition (+
-  YAML manifest form).
+  in-package YAML manifest loader).
+- `canonical-identity-mapping`: normalize A2A (`from.email`/`oid`) and MSAgentSDK
+  (`aad_object_id`) to one canonical key (Entra OID/email) so vault-stored credentials
+  are **reusable across surfaces**; `channel` is audit context, not a storage scope.
+- `chat-path-suspend-resume`: store a Bot Framework `ConversationReference` + suspended
+  tool call keyed by nonce; `signin/verifyState`/`signin/tokenExchange` (OAuth/OBO) and
+  the `store_key` capture route (static key) trigger an auto-resume that re-runs the tool
+  and proactively delivers the result — parity with A2A `resume_from_oauth_callback`.
 
 ### Modified Capabilities
 - `copilot-a2a-percredential` (FEAT-263): `A2AServer` gate replaced by broker calls;
@@ -336,7 +350,10 @@ second without rework.
 | `parrot/tools/manager.py` | modifies | broker handle + propagate via `exec_kwargs`; carry broker on `clone()` |
 | `parrot/bots/abstract.py` | modifies | new `credentials` config field; build broker in `configure()` (`:1241`) |
 | `parrot/a2a/server.py` | modifies (replace) | drop `_credential_resolvers`/`_try_invoke_with_gate`/`wire_*`; call broker; keep suspend/resume rendering |
-| `parrot/integrations/msagentsdk/{agent,auth,wrapper}.py` | modifies | consume broker; render `CredentialRequired` as Adaptive/OAuth card; retire dead `_resolver_var`/stub OBO |
+| `parrot/integrations/msagentsdk/{agent,auth,wrapper}.py` | modifies | consume broker; render `CredentialRequired` as Adaptive/OAuth card; retire dead `_resolver_var`/stub OBO; store `ConversationReference` + suspend; make `signin/verifyState`/`signin/tokenExchange` the resume triggers; proactive result delivery |
+| in-package manifest loader (new) | creates | parse a `credentials:` YAML manifest inside `packages/ai-parrot`; feed the broker alongside per-agent config |
+| canonical-identity mapping (new) | creates | normalize A2A `from.email`/`oid` + MSAgentSDK `aad_object_id` → one vault key (cross-surface reuse) |
+| OOB capture + `store_key` route (example app) | creates | mounted on the same aiohttp `web.Application`; static-key capture triggers chat-path resume |
 | `parrot/auth/oauth2/workiq_provider.py` | depends on | becomes the `obo` strategy |
 | `parrot/integrations/mcp/fireflies_a2a.py` | depends on | becomes the `static_key` strategy |
 | `parrot/security/audit_ledger.py` | depends on | canonical ledger |
@@ -504,8 +521,8 @@ from parrot.mcp.client import MCPClientConfig                                   
 - [x] Static-key UX on chat — *Owner: Jesus*: **Adaptive Card** with OOB capture link; OAuthCard reserved for OAuth/OBO.
 - [x] Canonical OBO — *Owner: Jesus*: `O365Interface.acquire_token_on_behalf_of` + `VaultTokenSync` (the working FEAT-263 strategy).
 - [x] Canonical audit ledger — *Owner: Jesus*: KMS/HMAC-signed `parrot.security.audit_ledger`; migrate/retire `parrot.auth.audit`.
-- [ ] Manifest loader location — *Owner: tbd*: `env/integrations_bots.yaml` is parsed outside `packages/ai-parrot`. Do we add an in-package loader, or keep manifest parsing in Navigator and feed the broker via the AgentDefinition only? (Per-agent config is sufficient for v1; manifest can follow.)
-- [ ] `channel` string convention — *Owner: tbd*: A2A uses `"a2a:copilot"`, MSAgentSDK uses `"msagentsdk"`. Standardize the `channel` key the broker/vault use so a credential captured on one surface is reusable on another (or intentionally scope per surface?).
-- [ ] OOB capture endpoint ownership — *Owner: tbd*: who hosts the Fireflies capture page + `store_key` route in the example (the aiohttp app the wrapper runs on), and how the nonce/`a2a_state` correlates back on the MSAgentSDK surface (no A2A `resume_from_oauth_callback` there).
-- [ ] KMS backend selection — *Owner: tbd*: production signer for `AuditLedger` (LocalHMACSigner is dev-only); pick the KMS primitive before the audit AC is finalized.
-- [ ] `resume` on the chat path — *Owner: tbd*: A2A has `resume_from_oauth_callback`; MSAgentSDK relies on the next user turn re-resolving. Confirm "re-prompt on next turn" is acceptable v1 behavior for OBO/static-key on chat.
+- [x] Manifest loader location — *Owner: Jesus*: build an **in-package loader** in `packages/ai-parrot` that parses the credentials manifest (YAML), so broker config can come from the AgentDefinition **or** an in-package manifest — not only the external Navigator layer.
+- [x] `channel` string convention — *Owner: Jesus*: **credentials are reusable across surfaces.** Key the vault by a **canonical user identity** (Entra OID / email), channel-agnostic, so a credential captured on A2A is recognized in chat and vice-versa. `channel` is passed for context/audit but does NOT scope storage. Requires a canonical-identity mapping that normalizes A2A `from.email`/`oid` and MSAgentSDK `aad_object_id` to the same key.
+- [x] OOB capture endpoint ownership — *Owner: Jesus*: the **same aiohttp `web.Application`** that hosts the whole app (the bot/server) also mounts the Fireflies capture page + `store_key` route. On completion the capture route triggers the resume (see below).
+- [x] KMS backend selection — *Owner: Jesus* (accepted suggestion): keep `AbstractKMSSigner` **pluggable**; ship `LocalHMACSigner` as the dev default (HMAC-SHA256, secret from navconfig); add an **Azure Key Vault** signer as the first production backend (aligns with the Entra/o365 stack), with AWS/GCP KMS as future strategies.
+- [x] `resume` on the chat path — *Owner: Jesus*: **request the credential AND auto-resume the operation** (do NOT rely on the user re-typing). The chat surface gains a real suspend/resume: store a Bot Framework `ConversationReference` + the suspended tool call keyed by nonce; the existing `signin/verifyState` / `signin/tokenExchange` invoke handlers (OAuth/OBO) and the `store_key` capture route (static key) become the **resume triggers** that re-run the suspended tool and proactively deliver the result.
