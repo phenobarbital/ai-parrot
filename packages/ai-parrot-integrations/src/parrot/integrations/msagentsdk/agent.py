@@ -10,6 +10,8 @@ from navconfig.logging import logging
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
     from parrot.auth.context import UserContext
+    from parrot.auth.broker import CredentialBroker
+    from parrot.auth.identity import CanonicalIdentityMapper
     from .auth import BFTokenServiceResolver
 
 
@@ -44,6 +46,8 @@ class ParrotM365Agent:
         welcome_message: Optional[str] = None,
         resolver: Optional["BFTokenServiceResolver"] = None,
         audit_ledger: Optional[Any] = None,
+        broker: Optional["CredentialBroker"] = None,
+        identity_mapper: Optional["CanonicalIdentityMapper"] = None,
     ) -> None:
         """Initialise the bridge.
 
@@ -58,11 +62,20 @@ class ParrotM365Agent:
             audit_ledger: Optional :class:`AuditLedger` for recording
                 per-invocation credential usage. When ``None``, audit logging
                 is disabled.
+            broker: Optional :class:`~parrot.auth.broker.CredentialBroker`
+                (FEAT-264).  When supplied, tool credential resolution flows
+                through the broker during ``ask()``.  Takes precedence over
+                the legacy ``resolver`` path.
+            identity_mapper: Optional
+                :class:`~parrot.auth.identity.CanonicalIdentityMapper` for
+                cross-surface identity normalisation (FEAT-264 / TASK-1671).
         """
         self.parrot_agent = parrot_agent
         self.welcome_message = welcome_message or "Hello! I'm ready to help."
         self._resolver = resolver
         self._audit_ledger = audit_ledger
+        self._broker: Optional["CredentialBroker"] = broker
+        self._identity_mapper: Optional["CanonicalIdentityMapper"] = identity_mapper
         self.logger = logging.getLogger(
             f"ParrotM365Agent.{type(parrot_agent).__name__}"
         )
@@ -189,7 +202,24 @@ class ParrotM365Agent:
             self.logger.debug("Received empty message — skipping ask()")
             return
 
-        user_id: str = self._extract_user_id(activity)
+        raw_user_id: str = self._extract_user_id(activity)
+
+        # FEAT-264 / TASK-1671 — canonical identity normalisation via mapper.
+        if self._identity_mapper is not None:
+            from_prop = getattr(activity, "from_property", None)
+            raw_dict: dict = {}
+            if from_prop is not None:
+                raw_dict = {
+                    "aad_object_id": getattr(from_prop, "aad_object_id", None)
+                        or getattr(from_prop, "aadObjectId", None),
+                    "from_id": getattr(from_prop, "id", None),
+                    "from_email": getattr(from_prop, "email", None),
+                }
+            canonical = self._identity_mapper.to_canonical(raw_dict)
+            user_id: str = canonical if canonical is not None else raw_user_id
+        else:
+            user_id = raw_user_id
+
         session_id: Optional[str] = (
             activity.conversation.id if getattr(activity, "conversation", None) else None
         )
@@ -198,11 +228,10 @@ class ParrotM365Agent:
             "Message from user=%s session=%s", user_id, session_id
         )
 
-        # Build permission context and set ContextVar for downstream tools
+        # Build permission context and set ContextVar for downstream tools.
         from parrot.auth.permission import UserSession, PermissionContext
         from parrot.auth.context import _pctx_var
         from parrot.utils.helpers import RequestContext
-        from .auth import _resolver_var
 
         user_session = UserSession(
             user_id=user_id,
@@ -214,10 +243,15 @@ class ParrotM365Agent:
             channel="msagentsdk",
         )
         token = _pctx_var.set(pctx)
-        resolver_token = _resolver_var.set(
-            (self._resolver, context) if self._resolver else None
-        )
         request_ctx = RequestContext(user_id=user_id, session_id=session_id)
+
+        # Build extra kwargs for the broker seam (TASK-1669):
+        # AbstractTool.execute() pops _broker/_cred_channel/_cred_user_id from kwargs.
+        _ask_extra: dict = {}
+        if self._broker is not None:
+            _ask_extra["_broker"] = self._broker
+            _ask_extra["_cred_channel"] = "msagentsdk"
+            _ask_extra["_cred_user_id"] = user_id
 
         try:
             response = await self.parrot_agent.ask(
@@ -225,23 +259,28 @@ class ParrotM365Agent:
                 session_id=session_id,
                 user_id=user_id,
                 ctx=request_ctx,
+                **_ask_extra,
             )
             await self._send_text(context, str(response.content))
         except Exception as exc:  # noqa: BLE001
-            # Check for CredentialRequired (lazy import — avoids hard dependency
-            # on auth module when OAuth is not configured)
-            try:
-                from .auth import CredentialRequired
-            except ImportError:
-                CredentialRequired = None  # type: ignore[assignment,misc]
+            # Canonical CredentialRequired (FEAT-264 / TASK-1667).
+            # Raised by AbstractTool.execute() seam when broker returns NeedsAuth.
+            from parrot.auth.credentials import CredentialRequired
 
-            if CredentialRequired is not None and isinstance(exc, CredentialRequired):
+            if isinstance(exc, CredentialRequired):
+                auth_kind = getattr(exc, "auth_kind", "oauth2")
+                provider = getattr(exc, "provider", "")
+                auth_url = getattr(exc, "auth_url", "")
                 self.logger.info(
-                    "CredentialRequired for tool=%s connection=%s — emitting OAuthCard",
-                    exc.tool,
-                    exc.connection_name,
+                    "CredentialRequired provider=%s auth_kind=%s — rendering card",
+                    provider,
+                    auth_kind,
                 )
-                await self._emit_oauth_card(context, exc.connection_name, exc.tool)
+                if auth_kind == "static_key":
+                    await self._emit_adaptive_card(context, auth_url, provider)
+                else:
+                    # oauth2 / obo → native OAuthCard (connection name = provider_id)
+                    await self._emit_oauth_card(context, provider, provider)
             else:
                 self.logger.error(
                     "Error processing message from user=%s: %s",
@@ -253,7 +292,6 @@ class ParrotM365Agent:
                     context, "Sorry, I encountered an error. Please try again."
                 )
         finally:
-            _resolver_var.reset(resolver_token)
             _pctx_var.reset(token)
 
     # ------------------------------------------------------------------
@@ -370,6 +408,69 @@ class ParrotM365Agent:
         await context.send_activity(reply)
         self.logger.info(
             "OAuthCard emitted for tool=%s connection=%s", tool, connection_name
+        )
+
+    async def _emit_adaptive_card(
+        self,
+        context,
+        capture_url: str,
+        provider: str,
+    ) -> None:
+        """Emit an Adaptive Card with a static-key OOB capture link.
+
+        Used when the broker signals ``auth_kind="static_key"`` (e.g. Fireflies
+        API key).  The card contains a clickable link to the OOB capture page
+        and a plain-text fallback for channels that cannot render Adaptive Cards.
+
+        The ``capture_url`` is the consent / capture URL — it may contain an
+        ``a2a_state`` nonce or similar correlation parameter. It is NEVER a
+        secret; it is a public URL the user must visit.
+
+        Args:
+            context: ``TurnContext`` to send the reply through.
+            capture_url: OOB capture URL from
+                :class:`~parrot.auth.credentials.NeedsAuth` or
+                :class:`~parrot.auth.credentials.CredentialRequired`.
+            provider: Provider identifier (e.g. ``"fireflies"``); used in
+                card text only.
+        """
+        from microsoft_agents.activity import Activity, ActivityTypes
+
+        # Adaptive Card body with a link action so Teams/Copilot Studio can
+        # render it interactively. Fallback text for plain-text channels.
+        adaptive_card = {
+            "type": "AdaptiveCard",
+            "version": "1.4",
+            "body": [
+                {
+                    "type": "TextBlock",
+                    "text": (
+                        f"To use **{provider}**, please authorise access by "
+                        f"visiting the link below."
+                    ),
+                    "wrap": True,
+                },
+            ],
+            "actions": [
+                {
+                    "type": "Action.OpenUrl",
+                    "title": f"Authorise {provider}",
+                    "url": capture_url,
+                }
+            ],
+        }
+        adaptive_card_attachment = {
+            "contentType": "application/vnd.microsoft.card.adaptive",
+            "content": adaptive_card,
+        }
+        reply = Activity(
+            type=ActivityTypes.message,
+            text=f"To authorise {provider!r}, visit: {capture_url}",
+            attachments=[adaptive_card_attachment],
+        )
+        await context.send_activity(reply)
+        self.logger.info(
+            "Adaptive Card emitted for provider=%s capture_url=<redacted>", provider
         )
 
     # ------------------------------------------------------------------
