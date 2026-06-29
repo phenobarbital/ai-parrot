@@ -3,6 +3,7 @@ Bridge between ai-parrot AbstractBot and the Microsoft 365 Agents SDK protocol.
 """
 from __future__ import annotations
 
+import uuid
 from typing import TYPE_CHECKING, Any, Optional
 
 from navconfig.logging import logging
@@ -12,7 +13,9 @@ if TYPE_CHECKING:
     from parrot.auth.context import UserContext
     from parrot.auth.broker import CredentialBroker
     from parrot.auth.identity import CanonicalIdentityMapper
+    from parrot.human.suspended_store import SuspendedExecutionStore
     from .auth import BFTokenServiceResolver
+    from .resume import MsaConversationRefStore
 
 
 class ParrotM365Agent:
@@ -48,6 +51,10 @@ class ParrotM365Agent:
         audit_ledger: Optional[Any] = None,
         broker: Optional["CredentialBroker"] = None,
         identity_mapper: Optional["CanonicalIdentityMapper"] = None,
+        suspended_store: Optional["SuspendedExecutionStore"] = None,
+        conv_ref_store: Optional["MsaConversationRefStore"] = None,
+        adapter: Optional[Any] = None,
+        agent_app_id: Optional[str] = None,
     ) -> None:
         """Initialise the bridge.
 
@@ -69,6 +76,22 @@ class ParrotM365Agent:
             identity_mapper: Optional
                 :class:`~parrot.auth.identity.CanonicalIdentityMapper` for
                 cross-surface identity normalisation (FEAT-264 / TASK-1671).
+            suspended_store: Optional
+                :class:`~parrot.human.suspended_store.SuspendedExecutionStore`
+                for persisting the original question while the user completes
+                credential consent (FEAT-264 / TASK-1674).  When ``None``,
+                suspend/resume is disabled (card is emitted but no proactive
+                reply is sent after consent).
+            conv_ref_store: Optional
+                :class:`~.resume.MsaConversationRefStore` for persisting the
+                Bot Framework conversation reference so proactive replies can
+                be routed back to the correct conversation (FEAT-264 /
+                TASK-1674).  When ``None``, proactive resume is disabled.
+            adapter: Optional ``CloudAdapter`` instance used for proactive
+                resume (FEAT-264 / TASK-1674).  Must be supplied alongside
+                ``agent_app_id`` and the stores for resume to function.
+            agent_app_id: Microsoft App ID (``client_id``) required by
+                ``adapter.continue_conversation()`` for proactive delivery.
         """
         self.parrot_agent = parrot_agent
         self.welcome_message = welcome_message or "Hello! I'm ready to help."
@@ -76,6 +99,10 @@ class ParrotM365Agent:
         self._audit_ledger = audit_ledger
         self._broker: Optional["CredentialBroker"] = broker
         self._identity_mapper: Optional["CanonicalIdentityMapper"] = identity_mapper
+        self._suspended_store: Optional["SuspendedExecutionStore"] = suspended_store
+        self._conv_ref_store: Optional["MsaConversationRefStore"] = conv_ref_store
+        self._adapter: Optional[Any] = adapter
+        self._agent_app_id: Optional[str] = agent_app_id
         self.logger = logging.getLogger(
             f"ParrotM365Agent.{type(parrot_agent).__name__}"
         )
@@ -270,11 +297,35 @@ class ParrotM365Agent:
             if isinstance(exc, CredentialRequired):
                 auth_kind = getattr(exc, "auth_kind", "oauth2")
                 provider = getattr(exc, "provider", "")
-                auth_url = getattr(exc, "auth_url", "")
+                auth_url = getattr(exc, "auth_url", "") or ""
+
+                # FEAT-264 / TASK-1674 — suspend the interaction so we can
+                # proactively deliver the result after consent, without the
+                # user having to retype the original question.
+                nonce: Optional[str] = None
+                if (
+                    self._suspended_store is not None
+                    and self._conv_ref_store is not None
+                ):
+                    nonce = uuid.uuid4().hex
+                    await self._suspend_interaction(
+                        nonce=nonce,
+                        question=text.strip(),
+                        session_id=session_id or "",
+                        user_id=user_id,
+                        context=context,
+                    )
+                    # For static_key: embed the nonce so the capture route
+                    # (TASK-1677) can call resume_by_nonce(nonce).
+                    if auth_kind == "static_key" and auth_url:
+                        sep = "&" if "?" in auth_url else "?"
+                        auth_url = f"{auth_url}{sep}nonce={nonce}"
+
                 self.logger.info(
-                    "CredentialRequired provider=%s auth_kind=%s — rendering card",
+                    "CredentialRequired provider=%s auth_kind=%s nonce=%s — rendering card",
                     provider,
                     auth_kind,
+                    nonce,
                 )
                 if auth_kind == "static_key":
                     await self._emit_adaptive_card(context, auth_url, provider)
@@ -303,8 +354,12 @@ class ParrotM365Agent:
 
         The Bot Framework Token Service sends this activity after the user
         completes the OAuth sign-in. The token is already stored in the token
-        service at this point; we just need to acknowledge the invoke with a
-        200 response.
+        service at this point; we acknowledge with a 200 response and then
+        proactively deliver the deferred reply.
+
+        FEAT-264 / TASK-1674: after acknowledging the invoke, looks up the
+        conversation reference by user_id and calls :func:`.resume.proactive_resume`
+        to re-run the original question without user re-typing.
 
         Args:
             context: ``TurnContext`` carrying the ``invoke`` Activity.
@@ -316,19 +371,26 @@ class ParrotM365Agent:
             if isinstance(value, dict)
             else getattr(value, "state", None)
         )
+        user_id = self._extract_user_id(activity)
         self.logger.info(
             "signin/verifyState received: user=%s state_present=%s",
-            self._extract_user_id(activity),
+            user_id,
             bool(state),
         )
         await self._send_invoke_response(context, status_code=200)
+        # Proactive resume — look up by user_id (no nonce in signin invoke).
+        await self._try_resume_by_user(user_id)
 
     async def _handle_signin_exchange(self, context) -> None:
         """Handle a ``signin/tokenExchange`` invoke activity.
 
         The Bot Framework Token Service sends this activity to complete a Teams
         SSO token exchange. The service performs the exchange server-side; we
-        acknowledge with a 200 response.
+        acknowledge with a 200 response and then proactively deliver the
+        deferred reply.
+
+        FEAT-264 / TASK-1674: after acknowledging the invoke, looks up the
+        conversation reference by user_id and calls :func:`.resume.proactive_resume`.
 
         Args:
             context: ``TurnContext`` carrying the ``invoke`` Activity.
@@ -340,12 +402,210 @@ class ParrotM365Agent:
             if isinstance(value, dict)
             else getattr(value, "connection_name", None)
         )
+        user_id = self._extract_user_id(activity)
         self.logger.info(
             "signin/tokenExchange received: user=%s connection=%s",
-            self._extract_user_id(activity),
+            user_id,
             connection_name,
         )
         await self._send_invoke_response(context, status_code=200)
+        # Proactive resume — look up by user_id (no nonce in signin invoke).
+        await self._try_resume_by_user(user_id)
+
+    # ------------------------------------------------------------------
+    # Suspend / resume (FEAT-264 / TASK-1674)
+    # ------------------------------------------------------------------
+
+    async def _suspend_interaction(
+        self,
+        *,
+        nonce: str,
+        question: str,
+        session_id: str,
+        user_id: str,
+        context: Any,
+    ) -> None:
+        """Persist a suspended execution record and a conversation reference.
+
+        Called when :class:`~parrot.auth.credentials.CredentialRequired` is
+        raised and both stores are configured.  The original question is stored
+        in :attr:`~parrot.human.suspended_store.SuspendedExecution.messages` so
+        the resume helper can replay it without user re-typing.
+
+        Args:
+            nonce: Unique interaction ID (``uuid4().hex``).
+            question: The original user question to replay.
+            session_id: Bot Framework conversation ID.
+            user_id: Canonical user identity.
+            context: SDK ``TurnContext`` (for ``service_url`` and
+                ``channel_id``).
+        """
+        from parrot.human.suspended_store import SuspendedExecution
+        from .resume import MsaConversationReference
+
+        suspension = SuspendedExecution(
+            interaction_id=nonce,
+            session_id=session_id,
+            user_id=user_id,
+            agent_name=type(self.parrot_agent).__name__,
+            tool_call_id=nonce,
+            # Store the original question so the resume can replay it.
+            messages=[{"role": "user", "content": question}],
+        )
+        await self._suspended_store.save(suspension, ttl=3_600)  # type: ignore[union-attr]
+
+        activity = getattr(context, "activity", None)
+        conv_ref = MsaConversationReference(
+            nonce=nonce,
+            conversation_id=session_id,
+            service_url=getattr(activity, "service_url", "") or "",
+            user_id=user_id,
+            channel_id=getattr(activity, "channel_id", "msteams") or "msteams",
+        )
+        await self._conv_ref_store.save(conv_ref, ttl=3_600)  # type: ignore[union-attr]
+        self.logger.info(
+            "Suspended nonce=%s user=%s session=%s",
+            nonce,
+            user_id,
+            session_id,
+        )
+
+    async def _try_resume_by_user(self, user_id: str) -> None:
+        """Attempt proactive resume for a user after OAuth/OBO sign-in.
+
+        Looks up the conversation reference and suspended execution by
+        ``user_id``, then calls :func:`.resume.proactive_resume`.  If the
+        stores are not configured or no suspended record exists, this is a
+        no-op.
+
+        Args:
+            user_id: Canonical user identity from the signin invoke.
+        """
+        if (
+            self._conv_ref_store is None
+            or self._suspended_store is None
+            or self._adapter is None
+            or self._agent_app_id is None
+        ):
+            return
+
+        conv_ref = await self._conv_ref_store.load_by_user(user_id)
+        if conv_ref is None:
+            self.logger.debug(
+                "_try_resume_by_user: no suspended conv ref for user=%s", user_id
+            )
+            return
+
+        suspension = await self._suspended_store.load(conv_ref.nonce)
+        if suspension is None:
+            self.logger.warning(
+                "_try_resume_by_user: conv ref found but no suspension for nonce=%s",
+                conv_ref.nonce,
+            )
+            return
+
+        question = (
+            suspension.messages[0].get("content", "")
+            if suspension.messages
+            else ""
+        )
+        self.logger.info(
+            "Proactive resume: nonce=%s user=%s question=%r",
+            conv_ref.nonce,
+            user_id,
+            question[:40],
+        )
+
+        # Clean up before resuming to prevent duplicate deliveries.
+        await self._conv_ref_store.delete(conv_ref)
+        await self._suspended_store.delete(conv_ref.nonce)
+
+        from .resume import proactive_resume
+
+        await proactive_resume(
+            adapter=self._adapter,
+            agent_app_id=self._agent_app_id,
+            conv_ref=conv_ref,
+            parrot_agent=self.parrot_agent,
+            question=question,
+            session_id=suspension.session_id,
+            user_id=user_id,
+            broker=self._broker,
+        )
+
+    async def resume_by_nonce(self, nonce: str) -> bool:
+        """Attempt proactive resume for a static-key capture callback.
+
+        Called by the OOB capture route (TASK-1677) after the user has
+        submitted their API key.  Looks up the conversation reference and
+        suspended execution by nonce, then calls
+        :func:`.resume.proactive_resume`.
+
+        Args:
+            nonce: The nonce embedded in the capture URL
+                (``?nonce=<nonce>``).
+
+        Returns:
+            ``True`` if a suspended interaction was found and resume was
+            attempted, ``False`` if no record was found (already completed
+            or expired).
+        """
+        if (
+            self._conv_ref_store is None
+            or self._suspended_store is None
+            or self._adapter is None
+            or self._agent_app_id is None
+        ):
+            self.logger.debug(
+                "resume_by_nonce: stores/adapter not configured — skipping"
+            )
+            return False
+
+        conv_ref = await self._conv_ref_store.load_by_nonce(nonce)
+        if conv_ref is None:
+            self.logger.debug(
+                "resume_by_nonce: no conv ref for nonce=%s", nonce
+            )
+            return False
+
+        suspension = await self._suspended_store.load(nonce)
+        if suspension is None:
+            self.logger.warning(
+                "resume_by_nonce: conv ref found but no suspension for nonce=%s",
+                nonce,
+            )
+            return False
+
+        question = (
+            suspension.messages[0].get("content", "")
+            if suspension.messages
+            else ""
+        )
+        user_id = conv_ref.user_id
+        self.logger.info(
+            "Proactive resume by nonce: nonce=%s user=%s question=%r",
+            nonce,
+            user_id,
+            question[:40],
+        )
+
+        # Clean up before resuming.
+        await self._conv_ref_store.delete(conv_ref)
+        await self._suspended_store.delete(nonce)
+
+        from .resume import proactive_resume
+
+        await proactive_resume(
+            adapter=self._adapter,
+            agent_app_id=self._agent_app_id,
+            conv_ref=conv_ref,
+            parrot_agent=self.parrot_agent,
+            question=question,
+            session_id=suspension.session_id,
+            user_id=user_id,
+            broker=self._broker,
+        )
+        return True
 
     @staticmethod
     async def _send_invoke_response(context, status_code: int = 200) -> None:
