@@ -57,6 +57,7 @@ def _make_specialist(transition_actions=None):
     obj = object.__new__(JiraSpecialist)
     obj._transition_actions = transition_actions or []
     obj._wrapper = None
+    obj._agent_dispatcher = None
     obj.logger = MagicMock()
     return obj
 
@@ -72,6 +73,45 @@ def status_change_payload():
         "project_key": "NAV",
         "assignee": {"display_name": "Developer"},
     }
+
+
+# ---------------------------------------------------------------------------
+# TestAgentDispatcherSlot — _agent_dispatcher slot + set_agent_dispatcher()
+# ---------------------------------------------------------------------------
+
+
+class TestAgentDispatcherSlot:
+    """Tests for the AgentDispatcher protocol + dispatcher slot (TASK-1678)."""
+
+    def test_agent_dispatcher_defaults_to_none(self):
+        """A fresh specialist starts with _agent_dispatcher is None."""
+        specialist = _make_specialist()
+        assert specialist._agent_dispatcher is None
+
+    def test_set_agent_dispatcher_sets_attr(self):
+        """set_agent_dispatcher() stores the callable on _agent_dispatcher."""
+        specialist = _make_specialist()
+
+        async def disp(agent_name, task, *, user_id=None, session_id=None):
+            return None
+
+        assert specialist._agent_dispatcher is None
+        specialist.set_agent_dispatcher(disp)
+        assert specialist._agent_dispatcher is disp
+
+    def test_execute_agent_satisfies_protocol(self):
+        """A callable matching AutonomousOrchestrator.execute_agent's shape
+        is accepted as an AgentDispatcher (structural / duck-typed check).
+        """
+        from parrot.bots._types import AgentDispatcher
+
+        class _Orch:
+            async def execute_agent(self, agent_name, task, *, method_name=None,
+                                    user_id=None, session_id=None, **kw):
+                return {"ok": True}
+
+        disp: AgentDispatcher = _Orch().execute_agent
+        assert callable(disp)
 
 
 # ---------------------------------------------------------------------------

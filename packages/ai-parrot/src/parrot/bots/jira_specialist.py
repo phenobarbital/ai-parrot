@@ -30,6 +30,7 @@ import redis.asyncio as redis
 from pydantic import BaseModel, Field
 from navconfig import config
 from parrot.bots import Agent
+from parrot.bots._types import AgentDispatcher
 from parrot.integrations.telegram.callbacks import (
     telegram_callback,
     CallbackContext,
@@ -234,6 +235,11 @@ class JiraSpecialist(Agent):
         self.jira_toolkit: Optional[JiraToolkit] = None
         # Transition-to-action registry for jira.transitioned events.
         self._transition_actions: List[TransitionAction] = _transition_actions
+        # Injectable async dispatcher used by the TRIGGER_AGENT transition
+        # action to invoke another agent (e.g. AutonomousOrchestrator.execute_agent
+        # from ai-parrot-server). Wired via set_agent_dispatcher(); without it,
+        # TRIGGER_AGENT degrades to log-only.
+        self._agent_dispatcher: Optional[AgentDispatcher] = None
 
     async def _get_redis(self) -> redis.Redis:
         """Lazy-init Redis connection."""
@@ -250,6 +256,23 @@ class JiraSpecialist(Agent):
         to the wrapper for proactive messaging.
         """
         self._wrapper = wrapper
+
+    def set_agent_dispatcher(self, dispatcher: AgentDispatcher) -> None:
+        """Wire an async dispatcher so TRIGGER_AGENT actions can invoke
+        other agents. Without this, TRIGGER_AGENT degrades to log-only.
+
+        Typically called at application startup once both the concrete
+        Jira agent and an orchestrator exist, e.g.::
+
+            jira_agent.set_agent_dispatcher(orchestrator.execute_agent)
+
+        Args:
+            dispatcher: An async callable matching the :class:`AgentDispatcher`
+                protocol shape (``agent_name``, ``task``, keyword-only
+                ``user_id``/``session_id``). ``AutonomousOrchestrator.execute_agent``
+                (``ai-parrot-server``) satisfies this shape.
+        """
+        self._agent_dispatcher = dispatcher
 
     async def load_developers(self) -> List[Developer]:
         """
