@@ -164,6 +164,29 @@ class O365OAuthManager(AbstractOAuth2Manager):
                 )
             return await response.json()
 
+    async def refresh_access_token(self, refresh_token: str) -> Dict[str, Any]:
+        """Public, stateless Entra refresh: exchange a refresh_token for a new token dict.
+
+        Reused by the device-code resolver (FEAT-266) so it can silently
+        refresh an expired Entra token via the same code path the 3LO flow
+        already uses, without depending on the private :meth:`_refresh_request`
+        hook. Does NOT persist the new token — the caller is responsible for
+        persisting to its own canonical store (e.g. ``VaultTokenSync``).
+
+        Args:
+            refresh_token: The Entra refresh token to exchange.
+
+        Returns:
+            The raw JSON token response (``access_token``, ``refresh_token``,
+            ``expires_in``, ``scope``, …).
+
+        Raises:
+            PermissionError: When Microsoft rejects the refresh token
+                (HTTP 400/401 — dead/revoked refresh token).
+            aiohttp.ClientError: On any other non-200 response.
+        """
+        return await self._refresh_request(refresh_token)
+
     async def _discover_identity(self, access_token: str) -> Dict[str, Any]:
         session = await self._get_session()
         async with session.get(
