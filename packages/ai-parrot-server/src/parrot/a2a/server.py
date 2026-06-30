@@ -90,7 +90,10 @@ class A2AServer:
         capabilities: Optional[AgentCapabilities] = None,
         extra_skills: Optional[List[AgentSkill]] = None,
         tags: Optional[List[str]] = None,
-        # FEAT-260 / TASK-1644 — credential gate
+        # FEAT-264 — broker (preferred, surface-agnostic credential gate)
+        broker: Optional[Any] = None,
+        identity_mapper: Optional[Any] = None,
+        # FEAT-260 / TASK-1644 — deprecated; pass a CredentialBroker via broker= instead
         credential_resolvers: Optional[Dict[str, Any]] = None,
         suspended_store: Optional[Any] = None,
         audit_ledger: Optional[Any] = None,
@@ -104,11 +107,18 @@ class A2AServer:
             capabilities: Override auto-detected capabilities
             extra_skills: Additional skills beyond auto-discovered tools
             tags: Tags for the AgentCard
-            credential_resolvers: Optional mapping of provider_id →
-                :class:`~parrot.auth.credentials.CredentialResolver`.
-                When present, tools that declare ``credential_provider``
-                are gated: missing credentials suspend the task and return
-                a consent link (FEAT-260 / TASK-1644).
+            broker: Optional :class:`~parrot.auth.broker.CredentialBroker`
+                (FEAT-264).  When supplied, per-user credentials are resolved
+                through the broker; missing credentials suspend the task and
+                return a consent link.  Takes precedence over
+                ``credential_resolvers``.
+            identity_mapper: Optional
+                :class:`~parrot.auth.identity.CanonicalIdentityMapper` for
+                cross-surface identity normalisation (FEAT-264 / TASK-1671).
+            credential_resolvers: Deprecated.  Pass a
+                :class:`~parrot.auth.broker.CredentialBroker` via ``broker=``
+                instead.  If supplied a broker is built from these resolvers
+                for backward compatibility (FEAT-260 / TASK-1644).
             suspended_store: Optional
                 :class:`~parrot.human.suspended_store.SuspendedExecutionStore`
                 for persisting suspended A2A executions (TASK-1644/1645).
@@ -129,16 +139,32 @@ class A2AServer:
         self._url: Optional[str] = None
         self._agent_card: Optional[AgentCard] = None
 
-        # FEAT-260 / TASK-1644 — credential gate components
-        # provider_id → CredentialResolver
-        self._credential_resolvers: Dict[str, Any] = credential_resolvers or {}
         # SuspendedExecutionStore for A2A suspend/resume
         self._suspended_store: Optional[Any] = suspended_store
-        # AuditLedger for credentialed invocations
+        # AuditLedger — kept for backward-compat callers; broker uses its own ref.
         self._audit_ledger: Optional[Any] = audit_ledger
         # Nonce → interaction_id map (for OAuth callback resume, TASK-1645)
         # The nonce is embedded in the consent URL; the callback correlates it.
         self._a2a_nonce_map: Dict[str, str] = {}
+
+        # FEAT-264 — credential broker (authoritative gate).
+        # credential_resolvers= is a backward-compat shim: build a broker from the dict.
+        # provider_id → resolver dict is preserved for register_credential_resolver() compat.
+        self._credential_resolvers: Dict[str, Any] = {}
+        if broker is not None:
+            self._broker: Optional[Any] = broker
+        elif credential_resolvers:
+            from parrot.auth.broker import CredentialBroker as _CB
+            _b = _CB(audit_ledger=audit_ledger)
+            for _prov, _res in credential_resolvers.items():
+                _b.register(_prov, _res)
+                self._credential_resolvers[_prov] = _res
+            self._broker = _b
+        else:
+            self._broker = None
+
+        # CanonicalIdentityMapper for cross-surface identity normalisation (TASK-1671).
+        self._identity_mapper: Optional[Any] = identity_mapper
 
         self.logger = logging.getLogger(f"A2A.{agent.name}")
 
@@ -306,6 +332,16 @@ class A2AServer:
         """
         meta: Dict[str, Any] = message.metadata or {}
 
+        # FEAT-264 / TASK-1671 — canonical identity mapper (cross-surface normalisation).
+        # Try the mapper first; it handles OID / email precedence across A2A and MSAgentSDK.
+        if self._identity_mapper is not None and meta:
+            canonical = self._identity_mapper.to_canonical(meta)
+            if canonical is not None:
+                self.logger.debug(
+                    "A2A identity: canonical via IdentityMapper=%s", canonical
+                )
+                return canonical
+
         # 1. Explicit user_id (set by parrot-internal routing or direct callers)
         if uid := meta.get("user_id"):
             self.logger.debug("A2A identity: user_id from metadata.user_id=%s", uid)
@@ -366,6 +402,15 @@ class A2AServer:
                 implementation for this provider.
         """
         self._credential_resolvers[provider] = resolver
+        # Keep broker in sync.
+        if self._broker is not None:
+            self._broker.register(provider, resolver)
+        else:
+            # Build broker lazily so existing resolvers are gated.
+            from parrot.auth.broker import CredentialBroker as _CB
+            self._broker = _CB(audit_ledger=self._audit_ledger)
+            for _p, _r in self._credential_resolvers.items():
+                self._broker.register(_p, _r)
         self.logger.info(
             "A2AServer: registered credential resolver for provider=%s", provider
         )
@@ -377,11 +422,13 @@ class A2AServer:
         channel: str,
         user_id: str,
         task: "Task",
+        *,
+        auth_url: Optional[str] = None,
     ) -> "Task":
         """Suspend the A2A task and return a TEXT consent link.
 
-        Called when ``CredentialResolver.resolve()`` returns ``None`` for the
-        current ``(channel, user_id)`` pair.  Persists a
+        Called when the credential gate (broker or legacy resolver dict) signals
+        that the user has not yet authorised for *provider*.  Persists a
         :class:`~parrot.human.suspended_store.SuspendedExecution` in Redis
         (if a ``suspended_store`` is configured) and sets the task state to
         ``INPUT_REQUIRED`` with a TEXT artifact containing the consent link.
@@ -396,21 +443,25 @@ class A2AServer:
             channel: A2A channel string (e.g. ``"a2a:copilot"``).
             user_id: Canonical per-user identity (email).
             task: The in-flight :class:`~parrot.a2a.models.Task`.
+            auth_url: Consent URL to present.  When the broker path is used
+                this is taken from :class:`~parrot.auth.credentials.NeedsAuth`.
+                When ``None``, it is fetched from the legacy resolver dict.
 
         Returns:
             The task with ``INPUT_REQUIRED`` status and a consent-link artifact.
             NEVER contains a raw token or secret.
         """
-        resolver = self._credential_resolvers.get(provider)
-        if resolver is None:
-            self.logger.error(
-                "A2AServer: no resolver for provider=%s; failing task", provider
-            )
-            task.fail(f"No credential resolver registered for provider={provider!r}.")
-            return task
-
-        # Get the auth URL from the resolver (never a secret — only the URL)
-        auth_url: str = await resolver.get_auth_url(channel, user_id)
+        if auth_url is None:
+            # Legacy path: obtain auth URL from the old-style resolver dict.
+            resolver = self._credential_resolvers.get(provider)
+            if resolver is None:
+                self.logger.error(
+                    "A2AServer: no resolver for provider=%s; failing task", provider
+                )
+                task.fail(f"No credential resolver registered for provider={provider!r}.")
+                return task
+            # Get the auth URL from the resolver (never a secret — only the URL)
+            auth_url = await resolver.get_auth_url(channel, user_id)
 
         # Generate the correlation nonce (interaction_id)
         interaction_id = str(uuid.uuid4())
@@ -536,123 +587,6 @@ class A2AServer:
             await self._suspended_store.delete(interaction_id)
             self._a2a_nonce_map.pop(interaction_id, None)
 
-    def wire_jira_resolver(self, jira_oauth_manager: Any) -> None:
-        """Register the Jira OAuth credential resolver for the A2A bridge.
-
-        Convenience factory for the Jira vertical (FEAT-260 / TASK-1647).
-        Wraps *jira_oauth_manager* in an
-        :class:`~parrot.auth.credentials.OAuthCredentialResolver` and
-        registers it under ``provider="jira"``.
-
-        After calling this, any tool that declares
-        ``credential_provider = "jira"`` will be gated through the
-        per-user Jira 3LO flow: missing token → Atlassian consent link;
-        resolved token → tool runs + audit entry appended.
-
-        Example::
-
-            from parrot.auth.jira_oauth import JiraOAuthManager
-            manager = JiraOAuthManager(...)
-            await manager.configure()
-            a2a_server.wire_jira_resolver(manager)
-
-        Args:
-            jira_oauth_manager: A configured
-                :class:`~parrot.auth.jira_oauth.JiraOAuthManager` (or any
-                object implementing ``get_valid_token`` /
-                ``create_authorization_url``).
-        """
-        from parrot.auth.credentials import OAuthCredentialResolver
-
-        resolver = OAuthCredentialResolver(jira_oauth_manager)
-        self.register_credential_resolver("jira", resolver)
-        self.logger.info("A2AServer: jira resolver wired via %r", jira_oauth_manager)
-
-    def wire_fireflies_resolver(
-        self,
-        resolver: Any,
-    ) -> None:
-        """Register the Fireflies MCP static-key credential resolver for the A2A bridge.
-
-        Convenience wiring method for the Fireflies vertical (FEAT-263 / TASK-1648).
-        Registers *resolver* (a
-        :class:`~parrot.integrations.mcp.fireflies_a2a.FirefliesCredentialResolver`)
-        under ``provider="fireflies"``.
-
-        After calling this, any tool that declares
-        ``credential_provider = "fireflies"`` will be gated through the
-        per-user Fireflies static-key flow: missing key → OOB capture link;
-        resolved key → tool runs + audit entry appended.
-
-        The resolver is passed in rather than constructed here so that the
-        caller controls vault / OOB-URL configuration at application startup.
-
-        Example::
-
-            from parrot.integrations.mcp.fireflies_a2a import FirefliesCredentialResolver
-            from parrot.services.vault_token_sync import VaultTokenSync
-
-            vault = VaultTokenSync(db_pool=app["authdb"], redis=app["redis"])
-            resolver = FirefliesCredentialResolver(
-                vault_token_sync=vault,
-                oob_capture_url="https://app.example.com/auth/fireflies/capture",
-            )
-            a2a_server.wire_fireflies_resolver(resolver)
-
-        Args:
-            resolver: A configured
-                :class:`~parrot.integrations.mcp.fireflies_a2a.FirefliesCredentialResolver`
-                (or any object implementing
-                :class:`~parrot.auth.credentials.CredentialResolver`).
-        """
-        self.register_credential_resolver("fireflies", resolver)
-        self.logger.info(
-            "A2AServer: fireflies static-key resolver wired via %r", resolver
-        )
-
-    def wire_workiq_resolver(
-        self,
-        resolver: Any,
-    ) -> None:
-        """Register the Work IQ Entra OBO credential resolver for the A2A bridge.
-
-        Convenience wiring method for the Work IQ vertical (FEAT-263 / TASK-1649).
-        Registers *resolver* (a
-        :class:`~parrot.auth.oauth2.workiq_provider.WorkIQOBOCredentialResolver`)
-        under ``provider="workiq"``.
-
-        After calling this, any tool that declares
-        ``credential_provider = "workiq"`` will be gated through the per-user
-        Entra OBO flow: no cached work-iq token → Entra sign-in link; OBO
-        exchange succeeds → tool runs + audit entry appended.
-
-        Prerequisite: the user must have completed the o365/Entra sign-in so
-        that an Entra access token exists in vault (``o365:access_token``).
-        One Entra sign-in covers both o365 and work-iq.
-
-        Example::
-
-            from parrot.auth.oauth2.workiq_provider import WorkIQOAuth2Provider
-            from parrot.interfaces.o365 import O365Interface
-
-            o365 = O365Interface(credentials={...})
-            provider = WorkIQOAuth2Provider(
-                o365_interface=o365,
-                o365_oauth_manager=o365_manager,
-                vault_token_sync=vault,
-            )
-            a2a_server.wire_workiq_resolver(provider.credential_resolver())
-
-        Args:
-            resolver: A configured
-                :class:`~parrot.auth.oauth2.workiq_provider.WorkIQOBOCredentialResolver`
-                (or any object implementing
-                :class:`~parrot.auth.credentials.CredentialResolver`).
-        """
-        self.register_credential_resolver("workiq", resolver)
-        self.logger.info(
-            "A2AServer: workiq OBO resolver wired via %r", resolver
-        )
 
     # ─────────────────────────────────────────────────────────────
     # Core Message Processing (delegates to Agent)
@@ -753,23 +687,12 @@ class A2AServer:
             task.fail(f"Tool/skill '{tool_name}' not found")
             return False
 
-        # TASK-1644: check if this tool declares a credential requirement.
+        # FEAT-264: check if this tool declares a credential requirement.
         provider: Optional[str] = getattr(tool, "credential_provider", None)
 
-        if provider and self._credential_resolvers:
-            # Gate is active for this tool.
-            resolver = self._credential_resolvers.get(provider)
-            if resolver is None:
-                self.logger.warning(
-                    "A2AServer: tool %s requires provider=%s but no resolver registered; "
-                    "failing closed (no service-identity fallback)",
-                    tool_name, provider,
-                )
-                task.fail(
-                    f"No credential resolver for provider={provider!r}. "
-                    "Cannot run a per-user tool without a resolver."
-                )
-                return False
+        if provider and self._broker is not None:
+            # FEAT-264 broker path — surface-agnostic gating.
+            from parrot.auth.credentials import NeedsAuth
 
             if user_id is None:
                 # Fail closed — no identity, no service-identity fallback.
@@ -784,40 +707,55 @@ class A2AServer:
                 )
                 return False
 
-            credential = await resolver.resolve(channel, user_id)
+            try:
+                result = await self._broker.resolve(
+                    provider, channel, user_id, tool_name=tool_name
+                )
+            except KeyError:
+                self.logger.warning(
+                    "A2AServer: tool %s requires provider=%s but no resolver registered; "
+                    "failing closed (no service-identity fallback)",
+                    tool_name, provider,
+                )
+                task.fail(
+                    f"No credential resolver for provider={provider!r}. "
+                    "Cannot run a per-user tool without a resolver."
+                )
+                return False
 
-            if credential is None:
-                # TASK-1644 invariant: missing credential → suspend, never fallback.
+            if isinstance(result, NeedsAuth):
+                # FEAT-264 invariant: missing credential → suspend, never fallback.
                 self.logger.info(
                     "A2AServer: credential missing for %s/%s; suspending", provider, user_id
                 )
-                await self._on_missing_credential(tool_name, provider, channel, user_id, task)
+                await self._on_missing_credential(
+                    tool_name, provider, channel, user_id, task,
+                    auth_url=result.auth_url,
+                )
                 return True  # task is now suspended
 
-            # Credential resolved — run the tool and audit.
+            # ResolvedCredential — broker already wrote the audit entry.
+            # Inject the secret into the per-call ContextVar so tool
+            # implementations can retrieve it via current_credential()
+            # (FEAT-264 / Issue 1 fix).
+            from parrot.tools.abstract import _CREDENTIAL_VAR as _CRED_VAR
+
             self.logger.info(
                 "A2AServer: credential resolved for provider=%s user=%s tool=%s",
                 provider, user_id, tool_name,
             )
-            result = await self._execute_tool(tool, params)
-
-            # Audit the credentialed invocation.
-            if self._audit_ledger is not None:
-                await self._audit_ledger.append(
-                    user_id=user_id,
-                    channel=channel,
-                    tool=tool_name,
-                    provider=provider,
-                    credential_material=credential,
-                )
-
-            task.complete(result)
+            _token = _CRED_VAR.set(result.secret)
+            try:
+                tool_result = await self._execute_tool(tool, params)
+            finally:
+                _CRED_VAR.reset(_token)
+            task.complete(tool_result)
             return False
 
         else:
-            # No credential gate — legacy path.
-            result = await self._execute_tool(tool, params)
-            task.complete(result)
+            # No credential gate — passthrough (no broker or tool has no provider).
+            tool_result = await self._execute_tool(tool, params)
+            task.complete(tool_result)
             return False
 
     async def _ask_agent(

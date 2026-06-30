@@ -19,13 +19,14 @@ and swaps the vault for the in-memory fake.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from parrot.a2a.models import Message, TaskState
 from parrot.a2a.server import A2AServer
+from parrot.auth.broker import CredentialBroker
 from parrot.integrations.mcp.fireflies_a2a import FirefliesCredentialResolver
 from parrot.security.audit_ledger import AuditLedger, LocalHMACSigner
 
@@ -118,8 +119,10 @@ def _make_fireflies_server(
         oob_capture_url=OOB_CAPTURE_URL,
     )
 
-    server = A2AServer(agent, suspended_store=store, audit_ledger=ledger)
-    server.wire_fireflies_resolver(resolver)
+    broker = CredentialBroker(audit_ledger=ledger)
+    broker.register("fireflies", resolver)
+
+    server = A2AServer(agent, suspended_store=store, audit_ledger=ledger, broker=broker)
     return server, resolver
 
 
@@ -262,25 +265,28 @@ class TestFirefliesVertical:
         assert url == OOB_CAPTURE_URL
 
     @pytest.mark.asyncio
-    async def test_fireflies_wire_resolver_registers_provider(self):
-        """wire_fireflies_resolver() registers resolver under 'fireflies'."""
-        agent = MagicMock()
-        agent.name = "TestAgent"
-        agent.tool_manager = None
-        agent.tools = []
-
-        server = A2AServer(agent)
-        assert "fireflies" not in server._credential_resolvers
-
+    async def test_fireflies_broker_registers_provider(self):
+        """CredentialBroker correctly holds the registered fireflies resolver."""
         vault = FakeVaultTokenSync()
         resolver = FirefliesCredentialResolver(
             vault_token_sync=vault,
             oob_capture_url=OOB_CAPTURE_URL,
         )
-        server.wire_fireflies_resolver(resolver)
 
-        assert "fireflies" in server._credential_resolvers
-        assert server._credential_resolvers["fireflies"] is resolver
+        broker = CredentialBroker()
+        broker.register("fireflies", resolver)
+
+        # Broker internal dict has the resolver.
+        assert "fireflies" in broker._resolvers
+        assert broker._resolvers["fireflies"] is resolver
+
+        # A2AServer built with the broker uses it for gating.
+        agent = MagicMock()
+        agent.name = "TestAgent"
+        agent.tool_manager = None
+        agent.tools = []
+        server = A2AServer(agent, broker=broker)
+        assert server._broker is broker
 
     @pytest.mark.asyncio
     async def test_fireflies_no_service_identity_fallback(self):

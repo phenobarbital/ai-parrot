@@ -30,6 +30,7 @@ import pytest
 
 from parrot.a2a.models import Message, TaskState
 from parrot.a2a.server import A2AServer
+from parrot.auth.broker import CredentialBroker
 from parrot.auth.oauth2.workiq_provider import (
     WorkIQOAuth2Provider,
     WorkIQOBOCredentialResolver,
@@ -160,8 +161,10 @@ def _make_workiq_server(
     )
     resolver = provider.credential_resolver()
 
-    server = A2AServer(agent, suspended_store=store, audit_ledger=ledger)
-    server.wire_workiq_resolver(resolver)
+    broker = CredentialBroker(audit_ledger=ledger)
+    broker.register("workiq", resolver)
+
+    server = A2AServer(agent, suspended_store=store, audit_ledger=ledger, broker=broker)
     return server, resolver
 
 
@@ -346,16 +349,8 @@ class TestWorkIQVertical:
         assert FAKE_WORKIQ_TOKEN not in entry.model_dump_json()
 
     @pytest.mark.asyncio
-    async def test_workiq_wire_resolver_registers_provider(self):
-        """wire_workiq_resolver() registers resolver under 'workiq'."""
-        agent = MagicMock()
-        agent.name = "TestAgent"
-        agent.tool_manager = None
-        agent.tools = []
-
-        server = A2AServer(agent)
-        assert "workiq" not in server._credential_resolvers
-
+    async def test_workiq_broker_registers_provider(self):
+        """CredentialBroker correctly holds the registered workiq resolver."""
         vault = FakeVaultTokenSync()
         o365 = FakeO365Interface()
         resolver = WorkIQOBOCredentialResolver(
@@ -363,10 +358,21 @@ class TestWorkIQVertical:
             o365_oauth_manager=FakeO365OAuthManager(),
             vault_token_sync=vault,
         )
-        server.wire_workiq_resolver(resolver)
 
-        assert "workiq" in server._credential_resolvers
-        assert server._credential_resolvers["workiq"] is resolver
+        broker = CredentialBroker()
+        broker.register("workiq", resolver)
+
+        # Broker internal dict has the resolver.
+        assert "workiq" in broker._resolvers
+        assert broker._resolvers["workiq"] is resolver
+
+        # A2AServer built with the broker uses it for gating.
+        agent = MagicMock()
+        agent.name = "TestAgent"
+        agent.tool_manager = None
+        agent.tools = []
+        server = A2AServer(agent, broker=broker)
+        assert server._broker is broker
 
     @pytest.mark.asyncio
     async def test_workiq_no_service_identity_fallback(self):

@@ -6,14 +6,14 @@ subclass that acquires per-user tokens from the Bot Framework Token Service
 
 1. Maps a tool name to an Azure Bot OAuth connection name (from config).
 2. Fetches the current per-user token from the SDK token client.
-3. Optionally performs an on-behalf-of (OBO) exchange for Microsoft-cluster
-   APIs that need specific scopes.
-4. Records a ``key_fingerprint`` (SHA-256 of the first 8 token bytes) to an
-   :class:`~parrot.auth.audit.AuditLedger` for compliance.
+3. Records a ``key_fingerprint`` (SHA-256 of the credential material) to an
+   :class:`~parrot.security.audit_ledger.AuditLedger` for compliance.
 
 When the token service has no token for the user (sign-in not yet completed),
-:meth:`BFTokenServiceResolver.resolve` raises :class:`CredentialRequired` so
-the caller can emit a native OAuthCard sign-in activity.
+:meth:`BFTokenServiceResolver.resolve` returns ``None`` so the broker
+(:class:`~parrot.auth.broker.CredentialBroker`) can convert the miss to a
+:class:`~parrot.auth.credentials.NeedsAuth` signal and raise the canonical
+:class:`~parrot.auth.credentials.CredentialRequired` (FEAT-264).
 
 Raw tokens are never returned in a way that exposes them to the model context
 or the conversational transcript.
@@ -23,46 +23,13 @@ module can be imported without the SDK installed.
 """
 from __future__ import annotations
 
-import hashlib
 import logging
-from contextvars import ContextVar
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from parrot.auth.credentials import CredentialResolver
 
 if TYPE_CHECKING:
-    from parrot.auth.audit import AuditLedger
-
-# ContextVar that holds a (resolver, turn_context) tuple so tools running
-# inside _handle_message can reach the resolver without passing it explicitly.
-_resolver_var: ContextVar = ContextVar("msagentsdk_resolver", default=None)
-
-
-class CredentialRequired(Exception):
-    """Raised when per-user credentials are needed but not yet authorized.
-
-    The caller should surface an OAuth sign-in card when this exception is
-    caught, rather than returning an error to the user.
-
-    Attributes:
-        tool: Name of the tool that requires credentials.
-        connection_name: Azure Bot OAuth connection name to use for sign-in.
-    """
-
-    def __init__(self, tool: str, connection_name: str) -> None:
-        """Initialise the exception.
-
-        Args:
-            tool: Name of the tool requesting credentials (e.g. ``"o365"``).
-            connection_name: Azure Bot OAuth connection name (e.g.
-                ``"graph_sso"``).
-        """
-        self.tool = tool
-        self.connection_name = connection_name
-        super().__init__(
-            f"User authorization required for tool '{tool}' "
-            f"(connection: '{connection_name}')"
-        )
+    from parrot.security.audit_ledger import AuditLedger
 
 
 class BFTokenServiceResolver(CredentialResolver):
@@ -133,13 +100,12 @@ class BFTokenServiceResolver(CredentialResolver):
                   Agents SDK. Required to access the token service client.
 
         Returns:
-            The resolved token string, or ``None`` if no connection is
-            configured for the requested tool.
-
-        Raises:
-            :exc:`CredentialRequired`: When the token service has no token for
-                the user (sign-in not yet completed). The caller should emit
-                an OAuthCard sign-in activity.
+            The resolved token string, or ``None`` if the token is missing
+            or no connection is configured for the requested tool.
+            The caller (broker) converts ``None`` to a
+            :class:`~parrot.auth.credentials.NeedsAuth` signal and raises
+            the canonical :class:`~parrot.auth.credentials.CredentialRequired`
+            (FEAT-264).
         """
         tool: str = kwargs.get("tool", "")
         turn_context = kwargs.get("turn_context")
@@ -153,17 +119,8 @@ class BFTokenServiceResolver(CredentialResolver):
 
         token = await self._fetch_token(turn_context, user_id, connection_name)
         if token is None:
-            raise CredentialRequired(tool=tool, connection_name=connection_name)
-
-        # Optional OBO exchange for Microsoft-cluster scopes
-        target_token = token
-        if tool in self._obo_scopes and self._obo_scopes[tool]:
-            target_token = await self._obo_exchange(
-                turn_context,
-                token,
-                self._obo_scopes[tool],
-                connection_name,
-            )
+            # Return None — broker converts to NeedsAuth (FEAT-264).
+            return None
 
         # Record audit entry with key fingerprint (never the raw token)
         if self._ledger is not None:
@@ -172,11 +129,11 @@ class BFTokenServiceResolver(CredentialResolver):
                 user_id=user_id,
                 tool=tool,
                 connection=connection_name,
-                token=target_token,
+                token=token,
                 action="resolve",
             )
 
-        return target_token
+        return token
 
     async def get_auth_url(self, channel: str, user_id: str) -> str:
         """Not supported — the BF Token Service uses OAuthCard sign-in.
@@ -289,51 +246,6 @@ class BFTokenServiceResolver(CredentialResolver):
             )
             return None
 
-    async def _obo_exchange(
-        self,
-        turn_context: Any,
-        token: str,
-        scopes: List[str],
-        connection_name: str,
-    ) -> str:
-        """Perform an on-behalf-of token exchange (best-effort).
-
-        The OBO exchange allows one Entra sign-in to serve multiple tools with
-        different scopes (e.g. ``o365`` and ``work-iq`` both using
-        ``graph_sso`` but targeting different Graph scopes).
-
-        In the MS Agents SDK for Python (v0.9), the OBO exchange is typically
-        handled transparently by the token service when the Azure Bot OAuth
-        connection is configured with the correct OBO policy. If the exchange
-        fails, the original token is returned (graceful degradation).
-
-        Args:
-            turn_context: The current SDK ``TurnContext``.
-            token: The initial user token to exchange.
-            scopes: Target OBO scopes.
-            connection_name: OAuth connection name (for logging).
-
-        Returns:
-            The OBO-exchanged token, or the original token on failure.
-        """
-        # OQ#4 from spec: the exact Python SDK API for OBO exchange is
-        # unresolved. The token service may handle OBO internally via the
-        # Azure Bot OAuth connection configuration. Return original token
-        # until the SDK API is verified.
-        if self._obo_scopes:
-            self.logger.warning(
-                "OBO exchange is not yet implemented — returning original token for "
-                "connection=%s scopes=%s. Operator action required: OBO via SDK not verified.",
-                connection_name,
-                scopes,
-            )
-        else:
-            self.logger.debug(
-                "OBO exchange skipped (no scopes configured) for connection=%s",
-                connection_name,
-            )
-        return token
-
     async def _record_audit(
         self,
         channel: str,
@@ -343,33 +255,24 @@ class BFTokenServiceResolver(CredentialResolver):
         token: str,
         action: str,
     ) -> None:
-        """Record a credential invocation to the audit ledger.
+        """Record a credential invocation to the canonical audit ledger.
 
-        Computes ``key_fingerprint`` as the SHA-256 hex digest of the first 8
-        bytes of the token (raw UTF-8). The raw token is never stored.
+        Delegates to :meth:`parrot.security.audit_ledger.AuditLedger.append`
+        which computes the ``key_fingerprint`` internally (SHA-256 of the
+        credential material).  The raw token is never stored.
 
         Args:
             channel: Integration channel.
             user_id: Canonical user identity.
             tool: Tool name.
-            connection: OAuth connection name.
-            token: The resolved token (used only to compute the fingerprint).
-            action: ``"resolve"`` or ``"obo_exchange"``.
+            connection: OAuth connection name (used as ``provider`` label).
+            token: The resolved token (used only to derive the fingerprint).
+            action: ``"resolve"`` or ``"obo_exchange"`` (appended to tool label).
         """
-        import datetime
-
-        from parrot.auth.audit import AuditEntry
-
-        raw = token.encode("utf-8") if isinstance(token, str) else bytes(token)
-        fingerprint = hashlib.sha256(raw).hexdigest()
-
-        entry = AuditEntry(
-            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        await self._ledger.append(
             user_id=user_id,
             channel=channel,
-            tool=tool,
-            connection=connection,
-            key_fingerprint=fingerprint,
-            action=action,
+            tool=f"{tool}:{action}",
+            provider=connection,
+            credential_material=token,
         )
-        self._ledger.record(entry)

@@ -21,6 +21,7 @@ import pytest
 
 from parrot.a2a.models import Message, TaskState
 from parrot.a2a.server import A2AServer
+from parrot.auth.broker import CredentialBroker
 from parrot.auth.credentials import OAuthCredentialResolver
 from parrot.security.audit_ledger import AuditLedger, LocalHMACSigner
 
@@ -86,8 +87,11 @@ def _make_jira_server(
     agent.tool_manager = None
     agent.tools = [FakeJiraTool()]
 
-    server = A2AServer(agent, suspended_store=store, audit_ledger=ledger)
-    server.wire_jira_resolver(jira_manager)
+    resolver = OAuthCredentialResolver(jira_manager)
+    broker = CredentialBroker(audit_ledger=ledger)
+    broker.register("jira", resolver)
+
+    server = A2AServer(agent, suspended_store=store, audit_ledger=ledger, broker=broker)
     return server
 
 
@@ -189,21 +193,24 @@ class TestJiraVertical:
         assert "atlassian-secret-tok" not in entry.model_dump_json()
 
     @pytest.mark.asyncio
-    async def test_jira_wire_resolver_registers_provider(self):
-        """wire_jira_resolver() registers OAuthCredentialResolver under 'jira'."""
+    async def test_jira_broker_registers_provider(self):
+        """CredentialBroker correctly holds the registered jira resolver."""
         manager = FakeJiraOAuthManager()
+        resolver = OAuthCredentialResolver(manager)
+
+        broker = CredentialBroker()
+        broker.register("jira", resolver)
+
+        assert "jira" in broker._resolvers
+        assert isinstance(broker._resolvers["jira"], OAuthCredentialResolver)
+
+        # A2AServer built with the broker uses it for gating.
         agent = MagicMock()
         agent.name = "TestAgent"
         agent.tool_manager = None
         agent.tools = []
-
-        server = A2AServer(agent)
-        assert "jira" not in server._credential_resolvers
-
-        server.wire_jira_resolver(manager)
-        assert "jira" in server._credential_resolvers
-        resolver = server._credential_resolvers["jira"]
-        assert isinstance(resolver, OAuthCredentialResolver)
+        server = A2AServer(agent, broker=broker)
+        assert server._broker is broker
 
     @pytest.mark.asyncio
     async def test_jira_no_service_identity_fallback(self):

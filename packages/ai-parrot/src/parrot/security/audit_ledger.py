@@ -35,6 +35,7 @@ __all__ = [
     "AuditLedgerEntry",
     "AbstractKMSSigner",
     "LocalHMACSigner",
+    "AzureKeyVaultSigner",
     "AuditLedger",
     "derive_key_fingerprint",
 ]
@@ -193,6 +194,98 @@ def _random_secret() -> bytes:
     """Generate a cryptographically random 32-byte HMAC secret."""
     import secrets as _secrets
     return _secrets.token_bytes(32)
+
+
+class AzureKeyVaultSigner(AbstractKMSSigner):
+    """Azure Key Vault backed KMS signer for production environments.
+
+    Uses the ``azure-keyvault-keys`` SDK to sign and verify entry bytes
+    with an asymmetric key stored in Azure Key Vault (RSA-PSS / EC).
+
+    .. note::
+        This class requires the ``azure-keyvault-keys`` and
+        ``azure-identity`` packages.  Import is guarded — if the packages
+        are not installed a clear :class:`ImportError` is raised at
+        instantiation time (not at module import time), so environments
+        that use only :class:`LocalHMACSigner` are unaffected.
+
+    Args:
+        vault_url: Azure Key Vault URL (e.g. ``"https://myvault.vault.azure.net/"``).
+        key_name: Name of the key in the vault.
+        key_version: Optional key version.  Defaults to the latest version.
+        credential: An ``azure.identity`` credential object.  When ``None``,
+            :class:`azure.identity.DefaultAzureCredential` is used.
+        algorithm: Signing algorithm.  Defaults to ``"RS256"``.
+    """
+
+    def __init__(
+        self,
+        vault_url: str,
+        key_name: str,
+        key_version: Optional[str] = None,
+        credential: Optional[Any] = None,
+        algorithm: str = "RS256",
+    ) -> None:
+        try:
+            from azure.keyvault.keys.crypto import CryptographyClient, SignatureAlgorithm  # type: ignore[import]
+            from azure.keyvault.keys import KeyClient  # type: ignore[import]
+        except ImportError as exc:
+            raise ImportError(
+                "AzureKeyVaultSigner requires 'azure-keyvault-keys' and "
+                "'azure-identity'. Install with: uv add azure-keyvault-keys azure-identity"
+            ) from exc
+
+        if credential is None:
+            try:
+                from azure.identity import DefaultAzureCredential  # type: ignore[import]
+                credential = DefaultAzureCredential()
+            except ImportError as exc:
+                raise ImportError(
+                    "AzureKeyVaultSigner: 'azure-identity' is required when "
+                    "credential=None. Install with: uv add azure-identity"
+                ) from exc
+
+        key_client = KeyClient(vault_url=vault_url, credential=credential)
+        key = key_client.get_key(key_name, version=key_version)
+        self._client = CryptographyClient(key, credential=credential)
+        self._algorithm = getattr(SignatureAlgorithm, algorithm, SignatureAlgorithm.rs256)
+
+    async def sign(self, data: bytes) -> str:
+        """Sign *data* using the Azure Key Vault key.
+
+        Args:
+            data: Canonical bytes to sign.
+
+        Returns:
+            Hex-encoded signature string.
+        """
+        import asyncio
+
+        result = await asyncio.get_running_loop().run_in_executor(
+            None, lambda: self._client.sign(self._algorithm, hashlib.sha256(data).digest())
+        )
+        return result.signature.hex()
+
+    async def verify(self, data: bytes, signature: str) -> bool:
+        """Verify *signature* against *data* using the Azure Key Vault key.
+
+        Args:
+            data: Canonical bytes that were signed.
+            signature: Hex-encoded signature to verify.
+
+        Returns:
+            ``True`` if the signature is valid, ``False`` otherwise.
+        """
+        import asyncio
+
+        sig_bytes = bytes.fromhex(signature)
+        result = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: self._client.verify(
+                self._algorithm, hashlib.sha256(data).digest(), sig_bytes
+            ),
+        )
+        return result.is_valid
 
 
 # ---------------------------------------------------------------------------

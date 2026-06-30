@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import re
 import secrets
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from aiohttp import web
 from navconfig.logging import logging
 
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
+    from parrot.auth.broker import CredentialBroker
+    from parrot.auth.identity import CanonicalIdentityMapper
     from .models import MSAgentSDKConfig
 
 
@@ -88,6 +90,8 @@ class MSAgentSDKWrapper:
         agent: AbstractBot,
         config: MSAgentSDKConfig,
         app: web.Application,
+        broker: Optional["CredentialBroker"] = None,
+        identity_mapper: Optional["CanonicalIdentityMapper"] = None,
     ) -> None:
         """Initialise the wrapper, create adapter, and register HTTP route.
 
@@ -95,6 +99,12 @@ class MSAgentSDKWrapper:
             agent: Any ``AbstractBot`` subclass.
             config: ``MSAgentSDKConfig`` carrying auth credentials and options.
             app: The running aiohttp ``web.Application``.
+            broker: Optional :class:`~parrot.auth.broker.CredentialBroker`
+                (FEAT-264).  When supplied, per-user credential resolution
+                flows through the broker during tool invocations.
+            identity_mapper: Optional
+                :class:`~parrot.auth.identity.CanonicalIdentityMapper` for
+                cross-surface identity normalisation (FEAT-264 / TASK-1671).
         """
         self.agent = agent
         self.config = config
@@ -134,6 +144,8 @@ class MSAgentSDKWrapper:
             welcome_message=config.welcome_message,
             resolver=resolver,
             audit_ledger=audit_ledger,
+            broker=broker,
+            identity_mapper=identity_mapper,
         )
 
         # Create CloudAdapter with auth configuration (lazy SDK import).

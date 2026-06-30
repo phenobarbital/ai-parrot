@@ -1,18 +1,33 @@
-"""Credential invocation audit ledger.
+"""DEPRECATED: Use ``parrot.security.audit_ledger`` instead.
 
-Records per-invocation credential usage for compliance. Each credentialed
-tool invocation produces an :class:`AuditEntry` that captures a
-``key_fingerprint`` (SHA-256 of the first 8 bytes of the token) rather than
-the raw token itself.
+This module is superseded by the canonical
+:class:`parrot.security.audit_ledger.AuditLedger` (FEAT-264 / TASK-1675),
+which provides KMS-signed entries and a unified single-ledger design.
 
-The :class:`AuditLedger` ships a log-based backend that writes structured JSON
-lines via the standard :mod:`logging` module. It is designed to be extended to
-a persistent store (database, event stream) without changing the calling code.
+Migration
+---------
+Old (deprecated)::
+
+    from parrot.auth.audit import AuditLedger, AuditEntry
+    ledger = AuditLedger()
+    ledger.record(AuditEntry(timestamp=..., user_id=..., ...))
+
+New (canonical)::
+
+    from parrot.security.audit_ledger import AuditLedger
+    ledger = AuditLedger()
+    await ledger.append(user_id=..., channel=..., tool=...,
+                        provider=..., credential_material=token)
+
+This file is kept for backward-compatibility; both ``AuditLedger`` and
+``AuditEntry`` will emit :class:`DeprecationWarning` on use in a future
+release and will be removed in the version after that.
 """
 from __future__ import annotations
 
 import json
 import logging
+import warnings
 from collections import deque
 from dataclasses import dataclass, asdict
 from typing import Optional
@@ -21,6 +36,10 @@ from typing import Optional
 @dataclass
 class AuditEntry:
     """Single credential invocation record.
+
+    .. deprecated::
+        Use :class:`parrot.security.audit_ledger.AuditLedgerEntry` instead.
+        This class will be removed in a future release.
 
     Attributes:
         timestamp: ISO-8601 UTC timestamp of the invocation.
@@ -44,10 +63,14 @@ class AuditEntry:
 
 
 class AuditLedger:
-    """Records per-invocation credential usage for compliance.
+    """DEPRECATED log-based audit ledger.
 
-    Initially log-based (structured JSON lines). Can be extended to persist
-    to a database or external audit service by overriding :meth:`record`.
+    .. deprecated::
+        Use :class:`parrot.security.audit_ledger.AuditLedger` instead.
+        This class will be removed in a future release.
+
+    Records per-invocation credential usage for compliance.
+    Initially log-based (structured JSON lines).
 
     Attributes:
         logger: Logger instance used for structured JSON output.
@@ -60,11 +83,20 @@ class AuditLedger:
             logger: Logger to write audit records to. Defaults to a logger
                 named ``parrot.auth.audit``.
         """
+        warnings.warn(
+            "parrot.auth.audit.AuditLedger is deprecated. "
+            "Use parrot.security.audit_ledger.AuditLedger instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger = logger or logging.getLogger(__name__)
         self._entries: deque[AuditEntry] = deque(maxlen=1000)
 
     def record(self, entry: AuditEntry) -> None:
         """Record a credential invocation entry.
+
+        .. deprecated::
+            Prefer :meth:`parrot.security.audit_ledger.AuditLedger.append`.
 
         Appends the entry to the in-memory list and emits it as a structured
         JSON INFO log line prefixed with ``AUDIT``.
@@ -79,12 +111,7 @@ class AuditLedger:
         )
 
     async def flush(self) -> None:
-        """Flush any buffered entries to the backing store.
-
-        For the log-based implementation this is a no-op — entries are
-        written synchronously in :meth:`record`. Persistent backends should
-        override this method.
-        """
+        """Flush any buffered entries to the backing store (no-op)."""
 
     def entries(self) -> list[AuditEntry]:
         """Return a copy of all recorded entries (primarily for testing).
