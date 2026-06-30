@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-265
 **Date**: 2026-07-01
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: (next minor)
 
 > Follow-up to **FEAT (jiraspecialist-webhooks)** — see
