@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-266
 **Date**: 2026-07-01
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x
 
 > Input: `sdd/proposals/o365-auth-homologation.brainstorm.md` (Recommended Option A).
@@ -72,6 +72,9 @@ canonical keys and fixes the contract.
 - **`post_auth_o365` bridge** (making the 3LO browser flow also write `o365:*`) — a separate
   follow-up feature; tracked in §8.
 - Modifying `O365OAuthManager.get_valid_token()`'s own internal refresh/store (left untouched).
+- **Telegram surface** — device-code is explicitly NOT used in Telegram. The CLI is the only
+  surface. Consequently the resolver must NOT reuse `VaultTokenSync`'s Telegram-specific
+  session-uuid scheme (`telegram-persistent:` prefix) — see §7 / §8.
 
 ---
 
@@ -385,10 +388,14 @@ class AbstractTool(...): credential_provider: Optional[str] = None     # line 12
 - **Three token stores.** Canonical = `VaultTokenSync` `o365:*`. Do NOT also write the MSAL Redis
   cache or `vault_utils` as a second source of truth. `interactive_login` will populate its own
   internal MSAL cache as a side effect — that is engine-internal and not read by the resolver.
-- **`VaultTokenSync` Telegram assumptions.** `_synth_session_uuid` uses a `telegram-persistent:`
-  prefix and `_coerce_user_id` tries `int()` with a non-numeric fallback. Verify a canonical
-  email/OID `user_id` round-trips correctly in a non-Telegram CLI context before relying on it
-  (§8). If it does not, generalize the session-uuid scheme rather than work around it.
+- **`VaultTokenSync` Telegram assumptions (decided: not Telegram).** `_synth_session_uuid` hardcodes
+  a `telegram-persistent:` prefix and `_coerce_user_id` tries `int()` with a non-numeric fallback.
+  Since device-code is CLI-only and explicitly NOT a Telegram surface, the resolver must persist
+  under a **CLI-appropriate, non-Telegram session-uuid scheme** (e.g. a `cli-persistent:`/canonical
+  scheme) so tokens are not filed under a Telegram-namespaced key. Prefer generalizing the
+  session-uuid derivation in `VaultTokenSync` over a per-resolver workaround; if generalization is
+  too broad for this feature, the resolver must at minimum supply its own deterministic non-Telegram
+  session key. Verify a canonical email/OID `user_id` round-trips correctly.
 - **Inline blocking poll** holds the coroutine up to ~15 min — acceptable for interactive CLI;
   rely on `expires_in` + clean Ctrl-C for non-interactive. Document that device-code is not for
   unattended CI.
@@ -419,7 +426,8 @@ class AbstractTool(...): credential_provider: Optional[str] = None     # line 12
 - [x] CLI entry point — *Resolved in brainstorm*: no new command; resolver fires inline from the existing agent/tool run path via the broker seam.
 - [x] Canonical token store — *Resolved in brainstorm*: `VaultTokenSync` prefix `o365` with the fixed field contract; user_id = canonical identity.
 - [ ] Exact CLI run path / entry where the `permission_context(channel="cli", user_id=<canonical>)` is constructed and the o365 `device_code` config is attached to the agent — *Owner: implementer*: confirm during implementation (seam verified at `manager.py:1305-1316`).
-- [ ] `VaultTokenSync._coerce_user_id` / `_synth_session_uuid` (`telegram-persistent:` prefix) behavior for a canonical email/OID `user_id` in a non-Telegram CLI context — *Owner: implementer*.
+- [x] Telegram surface — *Resolved by user (2026-07-01)*: device-code is NOT used in Telegram; CLI is the only surface. The resolver must therefore avoid `VaultTokenSync`'s `telegram-persistent:` session-uuid scheme and use a CLI/canonical session key instead.
+- [ ] `VaultTokenSync._coerce_user_id` / `_synth_session_uuid` — implement a non-Telegram (CLI/canonical) session-uuid scheme so a canonical email/OID `user_id` round-trips and tokens are not filed under a Telegram-namespaced key — *Owner: implementer*.
 - [ ] **Follow-up feature (out of scope):** add a `post_auth_o365` bridge so the 3LO browser flow also writes canonical `o365:*` keys (so 3LO-authenticated users can use WorkIQ OBO) — *Owner: triage*.
 
 ---
