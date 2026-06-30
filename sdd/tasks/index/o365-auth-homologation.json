@@ -14,7 +14,7 @@
       "feature_id": "FEAT-266",
       "feature": "o365-auth-homologation",
       "spec": "sdd/specs/o365-auth-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only credentials.py — disjoint from TASK-1682 (o365_oauth.py) and TASK-1686 (gen1 files). Foundational for TASK-1683/1684.",
       "assigned_to": null,
       "started_at": "2026-06-30T23:34:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1681-extend-broker-signal-models.md"
+      "completed_at": "2026-06-30T23:37:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1681-extend-broker-signal-models.md"
     },
     {
       "id": "TASK-1682",
