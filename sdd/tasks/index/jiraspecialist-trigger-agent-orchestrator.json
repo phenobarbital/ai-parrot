@@ -32,7 +32,7 @@
       "feature_id": "FEAT-265",
       "feature": "jiraspecialist-trigger-agent-orchestrator",
       "spec": "sdd/specs/jiraspecialist-trigger-agent-orchestrator.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Modifies jira_specialist.py + the test file; depends on the slot/setter from TASK-1678. Shares jira_specialist.py with TASK-1678 so cannot run before it.",
       "assigned_to": null,
       "started_at": "2026-06-30T23:22:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1679-real-dispatch-in-action-trigger-agent.md"
+      "completed_at": "2026-06-30T23:29:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1679-real-dispatch-in-action-trigger-agent.md"
     },
     {
       "id": "TASK-1680",

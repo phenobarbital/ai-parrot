@@ -188,9 +188,22 @@ async def test_transition_triggers_agent_end_to_end(specialist, ...):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-01
+**Notes**: Rewrote `_action_trigger_agent` to branch on `self._agent_dispatcher`:
+dispatch (await once, `status="dispatched"` with truncated `result`), skip
+(`status="skipped"`, `WARNING` log, no dispatcher set), and error (caught
+`Exception`, `exc_info=True`, `status="error"`) — mirroring
+`_action_notify_channel`'s try/except shape. `agent_id` resolution and
+`task_template` rendering (incl. `KeyError` → raw-template fallback) are
+unchanged. Updated `test_logs_trigger_intent` to assert `"skipped"` (the old
+`"triggered"` synthetic status is fully removed — grep-clean). Added
+`_RecordingDispatcher` fixture-class plus
+`test_dispatches_to_wired_dispatcher`, `test_skips_when_no_dispatcher`,
+`test_dispatcher_error_is_caught`, `test_task_template_rendered_before_dispatch`,
+`test_no_agent_id_skips`, and the end-to-end
+`test_transition_triggers_agent_end_to_end` (drives `handle_hook_event` →
+`_dispatch_transition` → `_action_trigger_agent` → dispatcher, asserts one
+recorded call). All 46 tests in `test_jira_transition_dispatch.py` pass;
+`ruff check` clean; grep-verified no `parrot.autonomous` import in core.
+**Deviations from spec**: none
