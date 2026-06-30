@@ -71,7 +71,7 @@
       "feature_id": "FEAT-266",
       "feature": "o365-auth-homologation",
       "spec": "sdd/specs/o365-auth-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Imports the resolver from TASK-1683; modifies broker.py.",
       "assigned_to": null,
       "started_at": "2026-06-30T23:34:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1684-broker-factory-device-code-branch.md"
+      "completed_at": "2026-06-30T23:45:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1684-broker-factory-device-code-branch.md"
     },
     {
       "id": "TASK-1685",
