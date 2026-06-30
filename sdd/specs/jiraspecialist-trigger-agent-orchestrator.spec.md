@@ -145,8 +145,11 @@ Jira  ──POST──▶ JiraWebhookHook ──HookEvent──▶ handle_hook_e
 
 ### Data Models
 
+The `AgentDispatcher` protocol lives in a **shared** module,
+`parrot/bots/_types.py` (resolved §8), so other agents can reuse it:
+
 ```python
-# parrot/bots/jira_specialist.py (or a small core typing module)
+# parrot/bots/_types.py  (NEW shared module)
 from typing import Any, Optional, Protocol
 
 class AgentDispatcher(Protocol):
@@ -183,10 +186,11 @@ class JiraSpecialist(Agent):
 
 ### Module 1: `AgentDispatcher` protocol + dispatcher slot
 
-- **Path**: `packages/ai-parrot/src/parrot/bots/jira_specialist.py`
-  (protocol may live here or in a tiny `parrot/bots/_types.py` if reuse
-  is anticipated — default: keep local to avoid over-engineering).
-- **Responsibility**: Define the `AgentDispatcher` Protocol; add
+- **Path (protocol)**: `packages/ai-parrot/src/parrot/bots/_types.py`
+  (NEW shared module — resolved §8; reusable by other agents).
+- **Path (slot)**: `packages/ai-parrot/src/parrot/bots/jira_specialist.py`
+- **Responsibility**: Define the `AgentDispatcher` Protocol in the shared
+  module; import it into `jira_specialist.py`; add
   `self._agent_dispatcher: Optional[AgentDispatcher] = None` in
   `__init__`; add `set_agent_dispatcher()`.
 - **Depends on**: nothing new.
@@ -201,12 +205,15 @@ class JiraSpecialist(Agent):
 
 ### Module 3: Startup wiring
 
-- **Path**: wherever the concrete Jira agent (subclass in `agents/`,
-  e.g. `Jirachi`) and the `AutonomousOrchestrator` are both available at
-  boot. NOTE: `agents/` is gitignored in this repo — the wiring may need
-  to live in a tracked bootstrap/handler module instead. Confirm the
-  exact location during /sdd-task (see §8).
-- **Responsibility**: `agent.set_agent_dispatcher(orchestrator.execute_agent)`.
+- **Path**: the deployment project's **`app.py`** (resolved §8). Dispatch
+  is never driven from this pure repo — deployment runs a separate project
+  with `ai-parrot` installed, whose `app.py` is the startup entrypoint
+  where both the `AutonomousOrchestrator` and the concrete Jira agent are
+  constructed. This means the wiring is **documented here but applied in
+  the consuming project**, not committed to this repo. Provide a copy-paste
+  snippet + a short doc note rather than an in-repo code change.
+- **Responsibility**: after both objects exist, call
+  `agent.set_agent_dispatcher(orchestrator.execute_agent)`.
 - **Depends on**: Module 1.
 
 ### Module 4: Tests
@@ -279,8 +286,11 @@ class _RecordingDispatcher:
 - [ ] **No import of `AutonomousOrchestrator` (or any
       `parrot.autonomous.*` / `ai-parrot-server` symbol) is added to the
       `ai-parrot` core package.** (`grep` proof in the PR.)
-- [ ] App startup wires `set_agent_dispatcher(orchestrator.execute_agent)`
-      for the concrete Jira agent.
+- [ ] `AgentDispatcher` protocol is defined in the shared module
+      `parrot/bots/_types.py` and imported by `jira_specialist.py`.
+- [ ] Startup wiring is documented for the consuming project's `app.py`
+      (`set_agent_dispatcher(orchestrator.execute_agent)`) — shipped as a
+      doc snippet, not committed into this repo's `agents/`.
 - [ ] New + existing unit tests pass:
       `pytest packages/ai-parrot/tests/test_jira_transition_dispatch.py -v`
 - [ ] No breaking change to `handle_hook_event` / `_dispatch_transition`
@@ -300,6 +310,10 @@ class _RecordingDispatcher:
 # core agent (the file being modified)
 from parrot.bots.jira_specialist import JiraSpecialist
 # verified: packages/ai-parrot/src/parrot/bots/jira_specialist.py:154
+
+# NEW shared protocol module (to be created by this feature)
+from parrot.bots._types import AgentDispatcher
+# NEW: packages/ai-parrot/src/parrot/bots/_types.py (does not exist yet)
 
 # transition models (already imported in jira_specialist.py)
 from parrot.core.hooks.models import TransitionAction, TransitionActionType
@@ -390,21 +404,22 @@ class HookableAgent:                                            # line 9
 - **Layering**: the single most important constraint — keep the import
   graph core-clean. Wiring happens at the app/server edge, where both
   objects already exist.
-- **`agents/` is gitignored** (see project memory): the concrete Jira
-  subclass that would naturally host the wiring may not be a tracked
-  file. Put the `set_agent_dispatcher` call in a tracked bootstrap path
-  (handler/app factory) instead. Resolve exact location in /sdd-task.
+- **`agents/` is gitignored** (see project memory) and is NOT the
+  dispatch host. Deployment uses a separate project with `ai-parrot`
+  installed; the wiring lives in that project's **`app.py`** (resolved
+  §8). So this repo ships the `set_agent_dispatcher` API + a doc snippet,
+  not an in-repo wiring commit. Do not add the call to any file under
+  `agents/`.
 - **Return-status change**: today the stub returns `status="triggered"`.
   Existing test `test_logs_trigger_intent` asserts that value. This spec
-  changes semantics (`dispatched`/`skipped`/`error`). The existing test
-  MUST be updated, not left asserting the old synthetic status — call
-  this out so it isn't treated as a regression. See §8.
-- **Fire-and-forward vs await**: dispatching with `await` blocks the
-  webhook response until the downstream agent returns. For long-running
-  agents this could exceed Jira's webhook timeout. Decide whether to
-  `await` inline or schedule via `asyncio.create_task` (fire-and-forget).
-  See §8 — leaning toward awaited-but-bounded for v1 simplicity, with a
-  note to revisit if downstream agents are slow.
+  changes semantics to `dispatched`/`skipped`/`error` (resolved §8). The
+  existing test MUST be updated, not left asserting the old synthetic
+  status — call this out so it isn't treated as a regression.
+- **Fire-and-forward vs await** (resolved §8): v1 `await`s the dispatcher
+  inline so the action return dict carries the real result/error. This
+  ties webhook latency to the downstream agent's runtime — **verify after
+  rollout** that slow agents don't push the response past Jira's webhook
+  timeout; if they do, move to `asyncio.create_task` in a follow-up.
 
 ### External Dependencies
 
@@ -416,21 +431,28 @@ class HookableAgent:                                            # line 9
 
 ## 8. Open Questions
 
-- [ ] **Dispatch concurrency model**: `await` the dispatcher inline
-      (simple, but ties webhook latency to downstream agent runtime) vs.
-      `asyncio.create_task` fire-and-forget (returns 200 immediately, but
-      loses the result/error in the action return dict)? — *Owner: Jesus*
-      *(Lean: await inline for v1; revisit if agents are slow.)*
-- [ ] **Where does the startup wiring live**, given `agents/` is
-      gitignored? Candidate: the app/handler factory that constructs the
-      orchestrator. — *Owner: Jesus* (resolve in /sdd-task)
-- [ ] **Return-status vocabulary**: confirm `dispatched` / `skipped` /
-      `error` (replacing the synthetic `triggered`). Any external
-      consumer relying on `"triggered"`? — *Owner: Jesus*
-- [ ] **Protocol location**: keep `AgentDispatcher` local to
-      `jira_specialist.py`, or promote to a shared `parrot/bots/_types.py`
-      for reuse by other agents that may later need dispatch? —
-      *Owner: Jesus* (default: keep local)
+- [x] **Dispatch concurrency model** — *Resolved*: `await` the dispatcher
+      **inline** for v1 (simple; the action return dict carries the real
+      result/error). Accept that webhook latency is tied to the downstream
+      agent's runtime; **verify after rollout** whether slow agents push
+      the response past Jira's webhook timeout and, if so, revisit
+      `asyncio.create_task` fire-and-forget in a follow-up.
+- [x] **Where does the startup wiring live** — *Resolved*: in **`app.py`**.
+      Dispatch is never driven from the pure repo; deployment uses a
+      separate project with `ai-parrot` installed, and its `app.py` is the
+      standard startup entrypoint where both the orchestrator and the
+      concrete Jira agent exist. `agents/` is gitignored precisely because
+      it is not the dispatch host (see project memory), so the wiring does
+      NOT belong there.
+- [x] **Return-status vocabulary** — *Resolved*: adopt
+      `dispatched` / `skipped` / `error`, replacing the synthetic
+      `triggered`. No external consumer relies on `"triggered"`; the only
+      caller is `_invoke_transition_action`, and the existing test that
+      asserts `"triggered"` will be updated (see §7 Known Risks).
+- [x] **Protocol location** — *Resolved*: **promote** `AgentDispatcher`
+      to a shared module **`parrot/bots/_types.py`** so other agents that
+      later need dispatch can reuse it (not local to
+      `jira_specialist.py`).
 
 ---
 
@@ -449,3 +471,4 @@ class HookableAgent:                                            # line 9
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-01 | Jesus Lara | Initial draft (follow-up to jiraspecialist-webhooks) |
+| 0.2 | 2026-07-01 | Jesus Lara | Resolved all 4 open questions: shared `_types.py` protocol, wiring in consuming `app.py`, await-inline v1, `dispatched/skipped/error` status vocab |
