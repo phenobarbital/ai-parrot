@@ -118,7 +118,7 @@ class TestBFTokenServiceResolver:
     async def test_resolver_returns_token_and_records_audit(self):
         """resolve() records audit entry when ledger is provided."""
         from parrot.integrations.msagentsdk.auth import BFTokenServiceResolver
-        from parrot.auth.audit import AuditLedger
+        from parrot.security.audit_ledger import AuditLedger
 
         ledger = AuditLedger()
         resolver = BFTokenServiceResolver(
@@ -146,7 +146,7 @@ class TestBFTokenServiceResolver:
     async def test_resolver_key_fingerprint_formula(self):
         """key_fingerprint is SHA-256 of the full token (I1 fix: not first 8 bytes)."""
         from parrot.integrations.msagentsdk.auth import BFTokenServiceResolver
-        from parrot.auth.audit import AuditLedger
+        from parrot.security.audit_ledger import AuditLedger
 
         token = "fake-token-abc"
         expected_fp = hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -197,7 +197,7 @@ class TestBFTokenServiceResolver:
     async def test_resolver_obo_exchange_passthrough(self):
         """OBO exchange returns original token (best-effort no-op for now)."""
         from parrot.integrations.msagentsdk.auth import BFTokenServiceResolver
-        from parrot.auth.audit import AuditLedger
+        from parrot.security.audit_ledger import AuditLedger
 
         ledger = AuditLedger()
         resolver = BFTokenServiceResolver(
@@ -212,3 +212,5 @@ class TestBFTokenServiceResolver:
         )
         # OBO is a pass-through for now; token is preserved
         assert result == "entra-token-xyz"
+        # When OBO scopes are configured, the audit action reflects the exchange
+        assert ledger.entries()[0].action == "obo_exchange"
