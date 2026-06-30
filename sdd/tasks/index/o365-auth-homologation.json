@@ -50,7 +50,7 @@
       "feature_id": "FEAT-266",
       "feature": "o365-auth-homologation",
       "spec": "sdd/specs/o365-auth-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,8 +61,8 @@
       "parallelism_notes": "Depends on the model (1681) and refresh primitive (1682); also modifies VaultTokenSync (shared infra, additive). Core deliverable.",
       "assigned_to": null,
       "started_at": "2026-06-30T23:34:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1683-o365-devicecode-resolver.md"
+      "completed_at": "2026-06-30T23:43:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1683-o365-devicecode-resolver.md"
     },
     {
       "id": "TASK-1684",
