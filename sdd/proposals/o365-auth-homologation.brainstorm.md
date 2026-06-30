@@ -399,6 +399,53 @@ from parrot.tools.abstract import current_credential          # parrot/tools/abs
 
 ---
 
+## Token-Store Standard (resolved 2026-07-01)
+
+Investigation found **three unsynchronized Entra token stores** in the codebase:
+
+1. **MSAL `SerializableTokenCache` in Redis** — internal to
+   `O365Client.interactive_login()` (the device-code engine); per-app, not
+   per-canonical-user. Engine-internal only.
+2. **`O365OAuthManager` via `vault_utils`** (`oauth2_base.py`) — the OAuth2 3LO
+   path. Persists a JSON token-set blob under `o365:{channel}:{user_id}` + a Redis
+   cache; full transparent refresh with distributed lock in `get_valid_token()`
+   (`oauth2_base.py:461`).
+3. **`VaultTokenSync` flat `{provider}:{field}` keys** (`o365:access_token`, …) —
+   what `WorkIQOBOCredentialResolver` **reads** (`workiq_provider.py:140`).
+
+**Critical gap found:** grep for writers of the flat `o365:*` keys returns **none**
+in the O365 path — the 3LO flow (#2) writes to `vault_utils`, never to
+`VaultTokenSync`. There is a `telegram/post_auth_jira.py` bridge for Jira but **no
+`post_auth_o365` equivalent**. So WorkIQ OBO's source token (`o365:access_token`) is
+currently unwritten by any live path. This feature's device-code resolver becomes the
+**first writer** of the canonical keys and **fixes the contract**.
+
+**Standard (decided):**
+- **Canonical per-user Entra store = `VaultTokenSync`, prefix `o365`**, fixed field
+  contract: `access_token`, `refresh_token`, `expires_at` (epoch int), `scope`,
+  `id_token` (optional), `tenant_id`. `user_id` = canonical identity
+  (`CanonicalIdentityMapper`). This is exactly what WorkIQ OBO consumes → device-code
+  ⇄ OBO interoperate for free.
+- **Refresh = a stateless public primitive on `O365OAuthManager`** (promote
+  `_refresh_request`, `o365_oauth.py:140`, to e.g. `async def
+  refresh_access_token(refresh_token) -> dict`); the device-code resolver calls it and
+  re-persists to `VaultTokenSync`. One Entra refresh code path, one store. The 3LO
+  `get_valid_token()` keeps its own internal refresh untouched.
+- **CLI surface = inline blocking poll**: `resolve()` does NOT raise
+  `CredentialRequired` on the happy path — it blocks, prints `verification_uri` +
+  `user_code` via `device_flow_callback`, persists, and returns the token.
+  `CredentialRequired` (with the extended `user_code`/`verification_uri`/`expires_in`
+  fields) is reserved for failure/timeout and for the future chat surface. Entry
+  point: a CLI bootstrap reads the Entra principal from env (`O365_PRINCIPAL`),
+  normalizes it, and threads `_cred_channel="cli"` + `_cred_user_id=<canonical>` +
+  `_broker` into the agent run.
+
+**Follow-up (out of scope here):** add a `post_auth_o365` bridge so the 3LO flow ALSO
+writes the canonical `o365:*` keys — completing the homologation so a user who
+authenticated via 3LO (browser) can also use WorkIQ OBO. Tracked as an open question.
+
+---
+
 ## Parallelism Assessment
 
 - **Internal parallelism**: Two largely independent strands —
@@ -425,6 +472,8 @@ from parrot.tools.abstract import current_credential          # parrot/tools/abs
 - [x] Refresh behavior — *Owner: Jesus*: silent refresh reusing the O365 engine; re-prompt only on refresh failure.
 - [x] Expiry/cancel behavior — *Owner: Jesus*: respect Microsoft `expires_in`; clean Ctrl-C, no partial vault write.
 - [x] CLI entry point — *Owner: Jesus*: no new command; resolver fires inline from the existing agent/tool run path via the broker seam.
-- [ ] Exact `VaultTokenSync` persistence contract for a single O365 token set keyed by canonical identity (`store_tokens`/`read_tokens` argument shape) — *Owner: spec*: confirm during `/sdd-spec`.
-- [ ] Where exactly the CLI surface prints `verification_uri`+`user_code` (which run path / handler catches `CredentialRequired` in CLI mode) — *Owner: spec*.
-- [ ] Whether silent refresh should route through `O365OAuthManager` or `O365Client`'s own cache path — *Owner: spec*: pick the one already exercised by Gen 2/3.
+- [x] `VaultTokenSync` persistence contract — *Owner: Jesus*: canonical store = `VaultTokenSync` prefix `o365` with fields `access_token`/`refresh_token`/`expires_at`(epoch)/`scope`/`id_token`(opt)/`tenant_id`; `user_id` = canonical identity. `store_tokens(user_id, "o365", {...})` / `read_tokens(user_id, "o365")`. See Token-Store Standard.
+- [x] CLI surface / `CredentialRequired` — *Owner: Jesus*: inline blocking poll; `resolve()` prints `verification_uri`+`user_code` via `device_flow_callback` and returns the token. NO CLI handler catches `CredentialRequired` on the happy path — it is reserved for failure/timeout and future chat. Entry point: CLI bootstrap with env `O365_PRINCIPAL` + `_cred_channel="cli"`.
+- [x] Refresh path — *Owner: Jesus*: promote `O365OAuthManager._refresh_request` to a public stateless `refresh_access_token(refresh_token)`; device-code resolver reuses it and re-persists to `VaultTokenSync`. NOT MSAL-silent (would diverge into a second store).
+- [ ] **Follow-up:** add a `post_auth_o365` bridge so the 3LO (browser) flow also writes canonical `o365:*` keys, so 3LO-authenticated users can use WorkIQ OBO. — *Owner: spec/triage*: likely a separate small feature, not in this scope.
+- [ ] Confirm `VaultTokenSync._coerce_user_id` / `_synth_session_uuid` (`telegram-persistent:` prefix) behave correctly for a canonical email/OID `user_id` in a non-Telegram CLI context — *Owner: spec*.
