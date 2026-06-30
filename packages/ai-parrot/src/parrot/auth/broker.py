@@ -122,10 +122,12 @@ class CredentialResolverFactory:
             return self._build_static_key(cfg, opts)
         if kind == "mcp":
             return self._build_mcp(cfg, opts)
+        if kind == "device_code":
+            return self._build_device_code(cfg, opts)
 
         raise ValueError(
             f"CredentialResolverFactory: unknown auth kind {kind!r} for provider "
-            f"{cfg.provider!r}. Supported: obo, oauth2, static_key, mcp."
+            f"{cfg.provider!r}. Supported: obo, oauth2, static_key, mcp, device_code."
         )
 
     # ------------------------------------------------------------------
@@ -220,6 +222,44 @@ class CredentialResolverFactory:
         vault_key = opts.get("vault_key", f"{cfg.provider}:token")
         auth_url = opts.get("auth_url", "")
         return _MCPVaultResolver(vault=vault, vault_key=vault_key, auth_url=auth_url)
+
+    def _build_device_code(
+        self, cfg: ProviderCredentialConfig, opts: Dict[str, Any]
+    ) -> CredentialResolver:
+        """Build an O365DeviceCodeCredentialResolver (FEAT-266).
+
+        Expected deps: ``o365_client`` (or ``o365_interface``),
+        ``o365_oauth_manager``, ``vault``.
+        Expected opts: ``scopes`` (defaults to ``DEFAULT_O365_SCOPES`` inside
+        the resolver when omitted/``None``).
+        """
+        try:
+            from parrot.auth.oauth2.o365_devicecode_provider import (
+                O365DeviceCodeCredentialResolver,
+            )
+        except ImportError as exc:
+            raise ImportError(
+                "parrot.auth.oauth2.o365_devicecode_provider is required for "
+                "auth='device_code'."
+            ) from exc
+
+        o365 = self._deps.get("o365_client") or self._deps.get("o365_interface")
+        manager = self._deps.get("o365_oauth_manager")
+        vault = self._deps.get("vault")
+        if o365 is None or manager is None or vault is None:
+            raise KeyError(
+                "CredentialResolverFactory: 'o365_client'/'o365_interface', "
+                "'o365_oauth_manager', and 'vault' deps are required for "
+                f"auth='device_code' (provider={cfg.provider!r})"
+            )
+        scopes = opts.get("scopes")
+
+        return O365DeviceCodeCredentialResolver(
+            o365_client=o365,
+            o365_oauth_manager=manager,
+            vault_token_sync=vault,
+            scopes=scopes,
+        )
 
 
 # ---------------------------------------------------------------------------
