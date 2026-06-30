@@ -26,14 +26,30 @@ except ImportError:  # pragma: no cover - optional dependency
 logger = logging.getLogger(__name__)
 
 
-def _synth_session_uuid(nav_user_id: str) -> str:
+#: Legacy default session-uuid scheme — preserved verbatim for backward
+#: compatibility with existing Telegram-surfaced callers (jira/fireflies).
+_DEFAULT_SESSION_SCHEME: str = "telegram-persistent"
+
+
+def _synth_session_uuid(
+    nav_user_id: str, session_scheme: str = _DEFAULT_SESSION_SCHEME,
+) -> str:
     """Deterministic session_uuid used for persistent per-user vault access.
 
     The vault's *session layer* derives a key from ``session_uuid``; to make
-    entries survive across Telegram bot sessions we deterministically map
-    each navigator-auth user to a stable UUID-like string.
+    entries survive across bot/CLI sessions we deterministically map each
+    navigator-auth user to a stable UUID-like string.
+
+    Args:
+        nav_user_id: The navigator-auth user identifier.
+        session_scheme: Session-uuid scheme prefix. Defaults to the legacy
+            Telegram scheme (``"telegram-persistent"``) so existing
+            jira/fireflies/workiq callers are unaffected. FEAT-266 introduces
+            non-Telegram callers (e.g. the O365 device-code CLI resolver)
+            that pass a different scheme (e.g. ``"cli-persistent"``) so
+            tokens are not filed under a Telegram-namespaced key.
     """
-    return f"telegram-persistent:{nav_user_id}"
+    return f"{session_scheme}:{nav_user_id}"
 
 
 def _coerce_user_id(nav_user_id: Any) -> Any:
@@ -59,6 +75,13 @@ class VaultTokenSync:
         db_pool: The ``authdb`` asyncpg pool (``app["authdb"]``).
         redis: The shared Redis client (``app["redis"]``).
         session_ttl: Vault session TTL in seconds (defaults to 1h).
+        session_scheme: Session-uuid scheme prefix passed to
+            :func:`_synth_session_uuid`. Defaults to the legacy Telegram
+            scheme (``"telegram-persistent"``) — existing jira/fireflies/
+            workiq callers are unaffected. Non-Telegram surfaces (FEAT-266:
+            the O365 device-code CLI resolver) pass a different scheme
+            (e.g. ``"cli-persistent"``) so their tokens round-trip under a
+            non-Telegram-namespaced key.
 
     Notes:
         All failures (vault unavailable, Redis down, DB error) are logged
@@ -73,10 +96,12 @@ class VaultTokenSync:
         db_pool: Any,
         redis: Any,
         session_ttl: int = 3600,
+        session_scheme: str = _DEFAULT_SESSION_SCHEME,
     ) -> None:
         self._pool = db_pool
         self._redis = redis
         self._session_ttl = session_ttl
+        self._session_scheme = session_scheme
         self.logger = logger
 
     async def _load_vault(self, nav_user_id: str) -> Optional[Any]:
@@ -89,7 +114,7 @@ class VaultTokenSync:
             return None
         try:
             vault = await SessionVault.load_for_session(
-                session_uuid=_synth_session_uuid(nav_user_id),
+                session_uuid=_synth_session_uuid(nav_user_id, self._session_scheme),
                 user_id=_coerce_user_id(nav_user_id),
                 db_pool=self._pool,
                 redis=self._redis,
