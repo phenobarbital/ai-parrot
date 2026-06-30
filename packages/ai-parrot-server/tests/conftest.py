@@ -73,6 +73,15 @@ _CORE_PKG_SRC = (_WORKTREE_ROOT / "packages" / "ai-parrot" / "src").resolve()
 if str(_CORE_PKG_SRC) not in sys.path:
     sys.path.insert(0, str(_CORE_PKG_SRC))
 
+# ai-parrot-integrations worktree src — exports new integrations (e.g. mcp/)
+# added in FEAT-263 / TASK-1648 and not yet present in the installed editable
+# package that points at the main-repo path.
+_INTEGRATIONS_PKG_SRC = (
+    _WORKTREE_ROOT / "packages" / "ai-parrot-integrations" / "src"
+).resolve()
+if str(_INTEGRATIONS_PKG_SRC) not in sys.path:
+    sys.path.insert(0, str(_INTEGRATIONS_PKG_SRC))
+
 # Extend parrot.__path__ to include the worktree's parrot sub-directories so
 # that Python's sub-package resolution finds worktree-specific modules even
 # after parrot has already been imported via the editable install.
@@ -81,9 +90,17 @@ try:
     import parrot as _parrot_pkg  # noqa: E402
     _wt_parrot_dir = str(_CORE_PKG_SRC / "parrot")
     _wt_server_dir = str(_THIS_PKG_SRC / "parrot")
-    for _wt_dir in [_wt_server_dir, _wt_parrot_dir]:
+    _wt_integrations_dir = str(_INTEGRATIONS_PKG_SRC / "parrot")
+    for _wt_dir in [_wt_server_dir, _wt_parrot_dir, _wt_integrations_dir]:
         if _wt_dir not in _parrot_pkg.__path__:
             _parrot_pkg.__path__.insert(0, _wt_dir)
+    # Also extend parrot.integrations.__path__ so worktree-local sub-packages
+    # (e.g. parrot.integrations.mcp) are found even when parrot.integrations
+    # was already loaded from the editable install's main-repo path.
+    import parrot.integrations as _parrot_integrations_pkg  # noqa: E402
+    _wt_integrations_subdir = str(_INTEGRATIONS_PKG_SRC / "parrot" / "integrations")
+    if _wt_integrations_subdir not in _parrot_integrations_pkg.__path__:
+        _parrot_integrations_pkg.__path__.insert(0, _wt_integrations_subdir)
     # Invalidate Python's path finder cache so it rediscovers sub-packages
     # from the updated parrot.__path__.
     importlib.invalidate_caches()

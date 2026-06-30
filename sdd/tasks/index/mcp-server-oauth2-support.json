@@ -1,0 +1,180 @@
+{
+  "feature": "mcp-server-oauth2-support",
+  "feature_id": "FEAT-262",
+  "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-26T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1659",
+      "slug": "mcp-oauth2-config-models",
+      "title": "MCPOAuth2Config Model & Presets Registry",
+      "feature_id": "FEAT-262",
+      "feature": "mcp-server-oauth2-support",
+      "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task — all others depend on the config models",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-26T16:19:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1659-mcp-oauth2-config-models.md"
+    },
+    {
+      "id": "TASK-1660",
+      "slug": "vault-mcp-token-storage",
+      "title": "VaultMCPTokenStorage Adapter",
+      "feature_id": "FEAT-262",
+      "feature": "mcp-server-oauth2-support",
+      "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1659"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on MCPOAuth2Config from TASK-1659",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-26T16:20:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1660-vault-mcp-token-storage.md"
+    },
+    {
+      "id": "TASK-1661",
+      "slug": "mcp-oauth2-provider",
+      "title": "MCPOAuth2Provider & Registry Integration",
+      "feature_id": "FEAT-262",
+      "feature": "mcp-server-oauth2-support",
+      "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1659",
+        "TASK-1660"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs config model and storage adapter from prior tasks",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-26T16:22:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1661-mcp-oauth2-provider.md"
+    },
+    {
+      "id": "TASK-1662",
+      "slug": "mcp-client-config-extension",
+      "title": "MCPClientConfig Extension",
+      "feature_id": "FEAT-262",
+      "feature": "mcp-server-oauth2-support",
+      "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1659"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Only needs config models; could theoretically run parallel with TASK-1660/1661 but shares MCPClientConfig",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-26T16:23:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1662-mcp-client-config-extension.md"
+    },
+    {
+      "id": "TASK-1663",
+      "slug": "transport-oauth2-integration",
+      "title": "Transport OAuth2 Integration",
+      "feature_id": "FEAT-262",
+      "feature": "mcp-server-oauth2-support",
+      "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1659",
+        "TASK-1660",
+        "TASK-1662"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Core integration — needs config, storage, and MCPClientConfig extension",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-26T16:27:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1663-transport-oauth2-integration.md"
+    },
+    {
+      "id": "TASK-1664",
+      "slug": "navigator-callback-route",
+      "title": "Navigator Callback Route",
+      "feature_id": "FEAT-262",
+      "feature": "mcp-server-oauth2-support",
+      "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1660",
+        "TASK-1663"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must coordinate with transport callback mechanism from TASK-1663",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-26T16:29:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1664-navigator-callback-route.md"
+    },
+    {
+      "id": "TASK-1665",
+      "slug": "oauth-manager-removal",
+      "title": "OAuthManager Removal & Factory Migration",
+      "feature_id": "FEAT-262",
+      "feature": "mcp-server-oauth2-support",
+      "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1659",
+        "TASK-1660",
+        "TASK-1661",
+        "TASK-1662",
+        "TASK-1663",
+        "TASK-1664"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final migration — depends on all prior tasks being complete",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-26T16:37:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1665-oauth-manager-removal.md"
+    },
+    {
+      "id": "TASK-1666",
+      "slug": "mcp-oauth2-tests",
+      "title": "MCP OAuth2 End-to-End Tests",
+      "feature_id": "FEAT-262",
+      "feature": "mcp-server-oauth2-support",
+      "spec": "sdd/specs/mcp-server-oauth2-support.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1663",
+        "TASK-1664",
+        "TASK-1665"
+      ],
+      "parallel": false,
+      "parallelism_notes": "End-to-end tests need all implementation tasks complete",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-26T16:39:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1666-mcp-oauth2-tests.md"
+    }
+  ]
+}

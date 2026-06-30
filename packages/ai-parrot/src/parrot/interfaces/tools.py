@@ -140,17 +140,43 @@ class ToolInterface:
         )
 
     @property
+    def llmwiki_toolkit(self) -> Any:
+        """The bot's ``LLMWikiToolkit`` instance, or ``None``.
+
+        Populated by :meth:`_initialize_tools` when an LLMWikiToolkit is
+        wired into the bot.  Provides access to the full wiki lifecycle API
+        (ingest, query, lint, bookkeeping) from REST handlers and other code.
+        """
+        return getattr(self, "_llmwiki_toolkit", None)
+
+    @property
+    def has_llmwiki_tools(self) -> bool:
+        """Whether this bot has LLM Wiki tools incorporated.
+
+        ``True`` when an ``LLMWikiToolkit`` instance was captured during tool
+        wiring, or when any registered tool is namespaced under the
+        ``wiki_`` prefix.
+        """
+        if getattr(self, "_llmwiki_toolkit", None) is not None:
+            return True
+        return any(
+            name.startswith("wiki_")
+            for name in self.tool_manager.list_tools()
+        )
+
+    @property
     def has_knowledge_index(self) -> bool:
         """Whether the bot exposes any knowledge index (Page or Graph)."""
         return self.has_pageindex_tools or self.has_graphindex_tools
 
     def _capture_knowledge_toolkit(self, toolkit: Any) -> None:
-        """Capture PageIndex / GraphIndex toolkit instances on the bot.
+        """Capture PageIndex / GraphIndex / LLMWiki toolkit instances on the bot.
 
         The ``ToolManager`` only retains a toolkit's *tools*, not the toolkit
         itself. The REST knowledge handler needs the live toolkit to manage an
         agent's documents (import / search / delete), so we stash the instance
-        and let ``has_pageindex_tools`` / ``has_graphindex_tools`` report it.
+        and let ``has_pageindex_tools`` / ``has_graphindex_tools`` /
+        ``has_llmwiki_tools`` report it.
 
         Detection is by class name to avoid importing ``parrot_tools`` /
         ``parrot.knowledge`` here (prevents a circular import and keeps the
@@ -161,6 +187,8 @@ class ToolInterface:
             self._pageindex_toolkit = toolkit
         elif cls_name == "GraphIndexToolkit" and getattr(self, "_graphindex_toolkit", None) is None:
             self._graphindex_toolkit = toolkit
+        elif cls_name == "LLMWikiToolkit" and getattr(self, "_llmwiki_toolkit", None) is None:
+            self._llmwiki_toolkit = toolkit
 
     def sync_tools(self, llm: AbstractClient = None) -> None:
         """Assign Bot's ToolManager as a reference to LLM's ToolManager.

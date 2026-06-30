@@ -39,6 +39,9 @@ _EXTRA_PATHS = [
     # SuspendedExecutionStore) — prepend worktree src so they shadow the
     # main-repo editable install.
     os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-server", "src"),
+    # ai-parrot-integrations: FEAT-261 adds auth.py — prepend worktree src
+    # so the new module is discoverable by tests.
+    os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-integrations", "src"),
 ]
 for _p in reversed(_EXTRA_PATHS):
     if _p not in sys.path:
@@ -56,11 +59,32 @@ try:
     import parrot as _parrot_pkg
     _wt_parrot_src = os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot", "src", "parrot")
     _wt_server_src = os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-server", "src", "parrot")
-    for _wt_dir in [_wt_server_src, _wt_parrot_src]:
+    _wt_integrations_src = os.path.join(
+        _WORKTREE_ROOT, "packages", "ai-parrot-integrations", "src", "parrot"
+    )
+    for _wt_dir in [_wt_integrations_src, _wt_server_src, _wt_parrot_src]:
         if _wt_dir not in _parrot_pkg.__path__:
             _parrot_pkg.__path__.insert(0, _wt_dir)
 except Exception:
     pass  # If parrot isn't importable yet, the sys.path insertion above covers it
+
+# FEAT-226: Extend parrot_tools.__path__ so that new submodules added in this
+# worktree (advisory_engine, soc2_advisory) are discoverable even when
+# parrot_tools was already cached from the main-repo editable install.
+try:
+    import parrot_tools as _parrot_tools_pkg
+    _wt_parrot_tools_src = os.path.join(
+        _WORKTREE_ROOT, "packages", "ai-parrot-tools", "src", "parrot_tools"
+    )
+    if _wt_parrot_tools_src not in _parrot_tools_pkg.__path__:
+        _parrot_tools_pkg.__path__.insert(0, _wt_parrot_tools_src)
+    # Also extend the security sub-package path
+    import parrot_tools.security as _pt_security
+    _wt_security_src = os.path.join(_wt_parrot_tools_src, "security")
+    if _wt_security_src not in _pt_security.__path__:
+        _pt_security.__path__.insert(0, _wt_security_src)
+except Exception:
+    pass  # Non-fatal; the sys.path insertion above is sufficient in most cases
 
 # After updating parrot.__path__, invalidate cached parrot.human / parrot.handlers
 # so they are re-found from the updated path.

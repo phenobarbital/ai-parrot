@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-23T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-26T13:17:41+00:00",
   "tasks": [
     {
       "id": "TASK-1616",
@@ -14,16 +14,17 @@
       "feature_id": "FEAT-254",
       "feature": "botmanager-hot-registration-nav6239",
       "spec": "sdd/specs/botmanager-hot-registration-nav6239.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Must complete before TASK-1617 (Jira comment requires passing tests as evidence).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1616-hot-registration-regression-tests.md"
+      "started_at": "2026-06-26T12:00:03+00:00",
+      "completed_at": "2026-06-26T13:09:42+00:00",
+      "file": "sdd/tasks/completed/TASK-1616-hot-registration-regression-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1617",
@@ -32,16 +33,19 @@
       "feature_id": "FEAT-254",
       "feature": "botmanager-hot-registration-nav6239",
       "spec": "sdd/specs/botmanager-hot-registration-nav6239.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1616"],
+      "depends_on": [
+        "TASK-1616"
+      ],
       "parallel": false,
       "parallelism_notes": "Sequential after TASK-1616 — cannot post evidence before tests exist and pass.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1617-nav6239-jira-comment.md"
+      "started_at": "2026-06-26T13:10:56+00:00",
+      "completed_at": "2026-06-26T13:14:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1617-nav6239-jira-comment.md",
+      "verification": "verified"
     }
   ]
 }

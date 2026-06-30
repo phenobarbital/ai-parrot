@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import re
 import secrets
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from aiohttp import web
 from navconfig.logging import logging
 
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
+    from parrot.auth.broker import CredentialBroker
+    from parrot.auth.identity import CanonicalIdentityMapper
     from .models import MSAgentSDKConfig
 
 
@@ -88,6 +90,8 @@ class MSAgentSDKWrapper:
         agent: AbstractBot,
         config: MSAgentSDKConfig,
         app: web.Application,
+        broker: Optional["CredentialBroker"] = None,
+        identity_mapper: Optional["CanonicalIdentityMapper"] = None,
     ) -> None:
         """Initialise the wrapper, create adapter, and register HTTP route.
 
@@ -95,6 +99,12 @@ class MSAgentSDKWrapper:
             agent: Any ``AbstractBot`` subclass.
             config: ``MSAgentSDKConfig`` carrying auth credentials and options.
             app: The running aiohttp ``web.Application``.
+            broker: Optional :class:`~parrot.auth.broker.CredentialBroker`
+                (FEAT-264).  When supplied, per-user credential resolution
+                flows through the broker during tool invocations.
+            identity_mapper: Optional
+                :class:`~parrot.auth.identity.CanonicalIdentityMapper` for
+                cross-surface identity normalisation (FEAT-264 / TASK-1671).
         """
         self.agent = agent
         self.config = config
@@ -109,9 +119,33 @@ class MSAgentSDKWrapper:
         # Create bridge agent (ParrotM365Agent's lazy imports are inside on_turn)
         from .agent import ParrotM365Agent
 
+        # Wire per-user OAuth resolver and audit ledger when oauth_connections
+        # is configured. When empty, the bridge operates exactly as before
+        # (no user-token acquisition — backward compatible).
+        resolver = None
+        audit_ledger = None
+        if config.oauth_connections:
+            from .auth import BFTokenServiceResolver
+            from parrot.auth.audit import AuditLedger
+
+            audit_ledger = AuditLedger()
+            resolver = BFTokenServiceResolver(
+                oauth_connections=config.oauth_connections,
+                obo_scopes=config.obo_scopes,
+                audit_ledger=audit_ledger,
+            )
+            self.logger.info(
+                "BFTokenServiceResolver wired for connections: %s",
+                list(config.oauth_connections.keys()),
+            )
+
         self.m365_agent = ParrotM365Agent(
             parrot_agent=agent,
             welcome_message=config.welcome_message,
+            resolver=resolver,
+            audit_ledger=audit_ledger,
+            broker=broker,
+            identity_mapper=identity_mapper,
         )
 
         # Create CloudAdapter with auth configuration (lazy SDK import).
@@ -313,11 +347,14 @@ class MSAgentSDKWrapper:
         auth_header = request.headers.get("Authorization")
         if auth_header:
             try:
-                token = auth_header.split(" ")[1]
+                parts = auth_header.split(" ", 1)
+                if len(parts) != 2 or not parts[1].strip():
+                    raise ValueError(f"Malformed Authorization header: {auth_header!r}")
+                token = parts[1].strip()
                 request["claims_identity"] = (
                     await self._token_validator.validate_token(token)
                 )
-            except ValueError as exc:
+            except (ValueError, IndexError) as exc:
                 self.logger.warning("JWT validation failed: %s", exc)
                 return web.json_response({"error": str(exc)}, status=401)
         elif self._api_key:

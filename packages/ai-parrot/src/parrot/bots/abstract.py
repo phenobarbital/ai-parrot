@@ -352,8 +352,12 @@ class AbstractBot(
         # PageIndexToolkit / GraphIndexToolkit is wired into the agent.
         self._pageindex_toolkit: Optional[Any] = None
         self._graphindex_toolkit: Optional[Any] = None
+        self._llmwiki_toolkit: Optional[Any] = None
         # Optional GraphIndexBuilder enabling document ingestion into the graph.
         self._graphindex_builder: Optional[Any] = kwargs.pop('graphindex_builder', None)
+        # FEAT-264: Declarative per-agent credential provider configs.
+        # Consumed by configure() to build and attach a CredentialBroker to the ToolManager.
+        self._credentials: list = list(kwargs.pop('credentials', []) or [])
         # Initialize tools if provided
         if tools:
             self._initialize_tools(tools)
@@ -1376,6 +1380,38 @@ class AbstractBot(
                         f"Error initializing KB Selector: {e}"
                     )
                     raise
+            # FEAT-264: Build CredentialBroker from declarative credentials config
+            # and attach it to the ToolManager so the credential seam (TASK-1669)
+            # can resolve per-user secrets at tool-invocation time.
+            if self._credentials:
+                try:
+                    from parrot.auth.broker import CredentialBroker
+                    _broker_deps: dict = {}
+                    # Collect available deps from subclass attributes (may be None).
+                    for _attr, _key in (
+                        ("_vault", "vault"),
+                        ("_audit_ledger", "audit_ledger"),
+                        ("_o365_interface", "o365_interface"),
+                        ("_o365_oauth_manager", "o365_oauth_manager"),
+                        ("_oauth_manager", "oauth_manager"),
+                    ):
+                        _val = getattr(self, _attr, None)
+                        if _val is not None:
+                            _broker_deps[_key] = _val
+                    broker = CredentialBroker.from_config(self._credentials, **_broker_deps)
+                    self.tool_manager.set_broker(broker)
+                    self.logger.info(
+                        "CredentialBroker built with %d provider(s): %s",
+                        len(self._credentials),
+                        [c.provider for c in self._credentials],
+                    )
+                except Exception as _broker_exc:
+                    self.logger.error(
+                        "Error building CredentialBroker during configure(): %s",
+                        _broker_exc,
+                        exc_info=True,
+                    )
+
             # Post-configure hook — runs after the base configuration is complete
             # and after ``self.app`` has been attached. Subclasses can override to
             # wire up app-scoped resources (OAuth managers, DB pools, schedulers,

@@ -1,20 +1,20 @@
 {
   "feature_id": "FEAT-259",
   "feature": "microsoft-copilot-agent-sdk",
-  "phase": "proposal_drafted",
-  "mode": "investigation",
+  "phase": "committed",
+  "mode": "enrichment",
   "budget": {
     "profile": "default",
-    "files_read": 40,
-    "grep_calls": 25,
+    "files_read": 12,
+    "grep_calls": 11,
     "git_calls": 3,
     "max_depth": 2,
     "max_wall_seconds": 300
   },
   "source": {
-    "kind": "inline",
+    "kind": "file",
     "jira_key": null,
-    "summary": "Expose ai-parrot agents as Copilot Studio agents via Microsoft Agent SDK"
+    "summary": "Per-user authentication & OBO for ai-parrot agents exposed via Microsoft 365 Agents SDK"
   },
   "phases": {
     "source": {
@@ -23,32 +23,33 @@
     "plan": {
       "status": "complete",
       "approved_by_user": false,
-      "note": "auto-approved (--no-gate implicit for inline source)"
+      "note": "Research pre-done in auth-obo-research.md; verification pass executed"
     },
     "research": {
       "status": "complete",
-      "findings_count": 4,
-      "external_urls_fetched": 3
+      "findings_count": 8,
+      "external_urls_fetched": 5,
+      "note": "F001-F004 from original SDK research; F005-F008 from auth/OBO verification pass"
     },
     "synthesis": {
       "status": "complete",
       "overall_confidence": "high",
-      "claims_high": 6,
-      "claims_medium": 2,
-      "claims_low": 1,
-      "unknowns_total": 3,
+      "claims_high": 9,
+      "claims_medium": 3,
+      "claims_low": 2,
+      "unknowns_total": 7,
       "unknowns_resolved": 0
     },
     "qa": {
       "status": "pending",
-      "questions_total": 3,
+      "questions_total": 7,
       "questions_answered": 0
     },
     "output": {
-      "proposal_path": "sdd/proposals/microsoft-copilot-agent-sdk.proposal.md",
-      "commit_sha": null
+      "proposal_path": "sdd/proposals/auth-obo-msagentsdk.proposal.md",
+      "commit_sha": "673afd9a5"
     }
   },
   "started_at": "2026-06-25T00:00:00Z",
-  "updated_at": "2026-06-25T00:00:00Z"
+  "updated_at": "2026-06-26T00:00:00Z"
 }

@@ -247,6 +247,10 @@ class ToolManager(MCPToolManagerMixin):
         # Permission resolver for Layer 2 enforcement (optional)
         self._resolver: Optional["AbstractPermissionResolver"] = resolver
 
+        # FEAT-264: credential broker (optional).  When set, credentialed tools
+        # are gated per-user at invocation time via AbstractTool.execute().
+        self._broker: Optional[Any] = None
+
         # Grant guard for bounded approval windows (optional — FEAT-211)
         self._grant_guard: Optional["GrantGuard"] = None
 
@@ -304,6 +308,24 @@ class ToolManager(MCPToolManagerMixin):
         self._resolver = resolver
         self.logger.debug(
             "Permission resolver set: %s", resolver.__class__.__name__
+        )
+
+    # ── Credential Broker Methods (FEAT-264) ─────────────────────────────────────
+
+    @property
+    def broker(self) -> Optional[Any]:
+        """Return the credential broker, or None if none is configured."""
+        return self._broker
+
+    def set_broker(self, broker: Any) -> None:
+        """Set the credential broker that gates credentialed tool calls.
+
+        Args:
+            broker: A :class:`~parrot.auth.broker.CredentialBroker` instance.
+        """
+        self._broker = broker
+        self.logger.debug(
+            "Credential broker set: %s", broker.__class__.__name__
         )
 
     # ── Grant Guard Methods (FEAT-211) ─────────────────────────────────────────
@@ -1279,6 +1301,19 @@ class ToolManager(MCPToolManagerMixin):
                     exec_kwargs['_permission_context'] = permission_context
                 if self._resolver is not None:
                     exec_kwargs['_resolver'] = self._resolver
+                # FEAT-264: propagate credential broker + identity context
+                if self._broker is not None:
+                    exec_kwargs['_broker'] = self._broker
+                    # channel and user_id from permission_context if available
+                    if permission_context is not None:
+                        exec_kwargs.setdefault(
+                            '_cred_channel',
+                            getattr(permission_context, 'channel', 'unknown')
+                        )
+                        exec_kwargs.setdefault(
+                            '_cred_user_id',
+                            getattr(permission_context, 'user_id', None)
+                        )
 
                 result = await tool.execute(**exec_kwargs)
 
@@ -1521,6 +1556,9 @@ class ToolManager(MCPToolManagerMixin):
             include_search_tool=include_search_tool,
             resolver=self._resolver,
         )
+        # FEAT-264: carry the credential broker so cloned managers retain gating
+        if self._broker is not None:
+            new_tm._broker = self._broker
         # Share tool references. Tools that respect the per-invocation
         # CredentialResolver contract are safe; stateful toolkits caching
         # tokens on ``self`` should implement their own per-user clone.

@@ -5,7 +5,7 @@ All tests mock the ``microsoft_agents.*`` SDK so the suite runs without the
 optional dependency installed.
 """
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 
 def _activity_module():
@@ -50,7 +50,13 @@ def mock_context():
     ctx.activity = MagicMock()
     ctx.activity.type = "message"
     ctx.activity.text = "Hello, agent!"
-    ctx.activity.from_property = MagicMock(id="user-123")
+    # Explicitly set aad_object_id/aadObjectId=None so the agent falls back to
+    # the channel-level id ("user-123"). Without this, MagicMock auto-creates
+    # truthy attributes and the agent uses those instead.
+    from_prop = MagicMock(id="user-123")
+    from_prop.aad_object_id = None
+    from_prop.aadObjectId = None
+    ctx.activity.from_property = from_prop
     ctx.activity.conversation = MagicMock(id="conv-456")
     ctx.activity.recipient = MagicMock(id="bot-789")
     ctx.activity.members_added = None
@@ -93,6 +99,7 @@ class TestParrotM365AgentOnTurn:
             question="Hello, agent!",
             session_id="conv-456",
             user_id="user-123",
+            ctx=ANY,
         )
         mock_context.send_activity.assert_called_once()
         assert _sent_text(mock_context) == "Test response"

@@ -1,0 +1,78 @@
+{
+  "feat_id": "FEAT-263",
+  "detected_mode": "enrichment",
+  "overall_confidence": "medium",
+  "summary_oneline": "Publish AI-Parrot as an A2A connected agent in M365 Copilot with parrot-owned per-user tool credentials — most credential machinery already exists; new work is the A2A↔credential bridge.",
+  "summary": "The brainstorm proposes building a per-user credential-acquisition system for an AI-Parrot agent exposed to M365 Copilot over A2A. Codebase research shows ~70% of the asserted 'must be built' machinery already exists: CredentialResolver (resolve→None→get_auth_url is exactly the link-out contract), a full OAuth2 IntegrationsService with a jira+o365 provider registry and state-nonce issuance, an OAuth callback web surface (oauth2_routes), the SuspendedExecutionStore (Redis suspend/resume), the AbstractTool output-scrubber seam, Entra OBO (o365.acquire_token_on_behalf_of), PermissionContext/PBAC, and VaultTokenSync. The AgentCard serialization fix has also already landed (camelCase + a documented decision to OMIT supportedInterfaces, superseding the brainstorm's dual-emit plan). The genuinely-new, in-scope work is therefore much narrower than the brainstorm implies: (1) the A2A↔credential bridge inside A2AServer.process_message (identity extraction + suspend-on-missing-credential + consent-link response + OAuth-callback-as-resume-trigger), (2) building the work-iq tool (which does not exist) on top of the existing OBO, (3) wiring fireflies as an MCP-credential integration (it is MCP-based, not a native toolkit), and (4) deciding the fate of the AuditLedger (which does not exist at all). Recommend /sdd-spec, but the spike gate (OQ#1 inbound identity) remains a hard empirical blocker that must be answered before the vault-keying design is committed.",
+  "localization": [
+    {"path": "packages/ai-parrot/src/parrot/auth/credentials.py", "symbol": "CredentialResolver", "lines": "27-111", "role": "resolve(channel,user_id)->creds|None + get_auth_url — the link-out contract", "evidence": ["F001"]},
+    {"path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py", "symbol": "IntegrationsService", "lines": "67-333", "role": "start_connect(auth_url+nonce), persist_credential, registry w/ jira+o365", "evidence": ["F002"]},
+    {"path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py", "symbol": "setup_oauth2_routes / make_oauth2_callback", "lines": "151-221", "role": "parrot-owned OAuth callback web surface, origin allowlist, handle_callback(code,state)", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot-server/src/parrot/human/suspended_store.py", "symbol": "SuspendedExecutionStore", "lines": "64-162", "role": "Redis suspend/resume store; resume trigger today is HITL message (new: OAuth callback)", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot/src/parrot/a2a/models.py", "symbol": "AgentCard.to_dict", "lines": "353-385", "role": "camelCase card; deliberately omits supportedInterfaces (supersedes brainstorm §11 dual-emit)", "evidence": ["F005"]},
+    {"path": "packages/ai-parrot-server/src/parrot/a2a/server.py", "symbol": "A2AServer.process_message", "lines": "245-332", "role": "GAP: no identity extraction, no credential check, no suspend path — the core new bridge", "evidence": ["F006"]},
+    {"path": "packages/ai-parrot/src/parrot/tools/abstract.py", "symbol": "AbstractTool (output scrubber)", "lines": "98-637", "role": "single output-scrubbing seam — 'no secrets in conversational plane' enforcement", "evidence": ["F008"]},
+    {"path": "packages/ai-parrot/src/parrot/interfaces/o365.py", "symbol": "acquire_token_on_behalf_of", "lines": "621-660", "role": "Entra OBO implemented — reuse for work-iq + o365 cluster", "evidence": ["F009"]},
+    {"path": "packages/ai-parrot/src/parrot/services/vault_token_sync.py", "symbol": "VaultTokenSync.store_tokens", "lines": "n/a", "role": "encrypted per-user token persistence (custody store)", "evidence": ["F011"]}
+  ],
+  "constraints": [
+    {"claim": "resolve()==None is the documented signal to surface get_auth_url() — the credential-acquisition flow is already a contract, not a new invention", "evidence": ["F001"], "implication": "Build the A2A bridge ON this contract; do not invent a parallel resolver."},
+    {"claim": "OAuth callback route is excluded from auth middleware and validates return_origin against WEB_OAUTH_ALLOWED_ORIGINS", "evidence": ["F003"], "implication": "A2A consent links must reuse this surface; new resume trigger must correlate callback→suspended A2A task by nonce."},
+    {"claim": "SuspendedExecutionStore resume today assumes a human-approver message on a parrot channel", "evidence": ["F004"], "implication": "OAuth-callback / form-POST resume trigger is genuinely new, as the brainstorm states."},
+    {"claim": "AgentCard.to_dict already emits camelCase and deliberately omits supportedInterfaces (verified against a2a-dotnet)", "evidence": ["F005"], "implication": "Brainstorm §11 dual-emit recommendation is superseded; remaining card risk is empirical autopopulate (OQ#9), not code."},
+    {"claim": "Output scrubbing happens at exactly one seam in AbstractTool", "evidence": ["F008"], "implication": "Credential invariant #1/#3 has a real enforcement point to extend."}
+  ],
+  "scope": {
+    "whats_new": [
+      "A2A↔credential bridge in A2AServer.process_message: per-user identity derivation + suspend-on-missing-credential + TEXT consent-link response (F006).",
+      "OAuth-callback / form-POST resume trigger correlated by nonce to a suspended A2A task (F003+F004).",
+      "work-iq tool — does not exist anywhere; build on existing O365 OBO (F009, F010).",
+      "AuditLedger / key_fingerprint — does not exist; decide descope vs build (F007)."
+    ],
+    "what_changes": [
+      "A2AServer.process_message gains identity + credential-gate + suspend (F006).",
+      "fireflies wired as an MCP-credential integration reusing telegram mcp_persistence precedent, not a bespoke api-key form (F010)."
+    ],
+    "untouched": [
+      "AgentCard serialization (already fixed — F005).",
+      "OAuth2 IntegrationsService / provider registry / persistence schema (reuse as-is — F002).",
+      "VaultTokenSync, CredentialResolver, scrubber seam (reuse — F001/F008/F011)."
+    ],
+    "patterns_to_follow": [
+      "CredentialResolver.resolve→get_auth_url link-out (F001).",
+      "IntegrationsService.start_connect nonce + return_origin allowlist (F002/F003).",
+      "telegram post_auth_jira nonce→callback→VaultTokenSync.store_tokens (F011/F010)."
+    ],
+    "integration_risks": [
+      "Active in-flight 'a2a server + ms agent sdk' WIP (6d9b8b3ed) and FEAT-259 msagentsdk tenant-auth — coordinate to avoid divergence (F011).",
+      "OQ#1 identity is a hard blocker: if Copilot's low-code A2A connection carries no verifiable per-user identity, vault-keying needs a parrot-run Entra sign-in to bootstrap identity, changing the first-turn UX (F006)."
+    ]
+  },
+  "confidence_map": [
+    {"id": "C1", "claim": "CredentialResolver exists with resolve/get_auth_url link-out contract", "evidence": ["F001"], "confidence": "high", "reasoning": "direct read of credentials.py"},
+    {"id": "C2", "claim": "A full OAuth2 IntegrationsService + jira/o365 provider registry + state-nonce + persistence already exists", "evidence": ["F002"], "confidence": "high", "reasoning": "direct read of service.py"},
+    {"id": "C3", "claim": "Parrot-owned OAuth callback web surface exists (oauth2_routes)", "evidence": ["F003"], "confidence": "high", "reasoning": "grep + line-level read"},
+    {"id": "C4", "claim": "SuspendedExecutionStore exists; OAuth-callback resume trigger is new", "evidence": ["F004"], "confidence": "high", "reasoning": "direct read; resume semantics documented as HITL-message"},
+    {"id": "C5", "claim": "AgentCard.to_dict already camelCase and intentionally omits supportedInterfaces — brainstorm §11 dual-emit superseded", "evidence": ["F005"], "confidence": "high", "reasoning": "direct read incl. the documented decision NOTE"},
+    {"id": "C6", "claim": "A2AServer.process_message has no identity/credential/suspend hook — the core gap", "evidence": ["F006"], "confidence": "high", "reasoning": "direct read of process_message + handlers"},
+    {"id": "C7", "claim": "AuditLedger / key_fingerprint do not exist anywhere", "evidence": ["F007"], "confidence": "high", "reasoning": "exhaustive grep returned zero"},
+    {"id": "C8", "claim": "Entra OBO is implemented (o365.acquire_token_on_behalf_of) and reusable for work-iq", "evidence": ["F009"], "confidence": "high", "reasoning": "grep + read of o365.py OBO methods"},
+    {"id": "C9", "claim": "work-iq does not exist; fireflies is MCP-based not a native toolkit", "evidence": ["F010"], "confidence": "high", "reasoning": "zero work-iq hits; fireflies only under parrot/mcp + telegram MCP"},
+    {"id": "C10", "claim": "Copilot low-code A2A connection delivers a verifiable per-user identity to parrot", "evidence": [], "confidence": "medium", "reasoning": "spike gate OQ#1 confirmed YES by operator during Q&A; raises from low — still no codebase artifact to cite, hence medium not high"},
+    {"id": "C11", "claim": "work-iq public preview supports Entra OBO with a known resource id/scopes", "evidence": [], "confidence": "low", "reasoning": "external API unknown (OQ#5); work-iq not in codebase"}
+  ],
+  "unknowns": [
+    {"id": "U1", "question": "[SPIKE GATE / OQ#1] Does Copilot Studio's low-code A2A connection deliver a stable, verifiable per-user identity to parrot in the request? If not, must parrot bootstrap identity via its own Entra sign-in on the first turn?", "blocks_claims": ["C10"], "status": "resolved", "user_answer": "Yes — a verifiable per-user identity claim is present in the A2A request. Vault-keying can proceed directly; no parrot-run Entra sign-in needed to bootstrap identity. (The spec should still cite where in the payload the identity claim lands so process_message can extract it deterministically.)", "plausible_answers": ["a) Yes — a verifiable identity claim is present in the A2A request", "b) No — only chat history + locale + routing metadata; parrot must run its own Entra sign-in to establish identity", "c) Partially — identity present only for Foundry-hosted agents, not the low-code connection"]},
+    {"id": "U2", "question": "How should the AuditLedger requirement (brainstorm §6 invariant #4 / §12 AC) be handled, given it does not exist in code at all?", "blocks_claims": ["C7"], "status": "resolved", "user_answer": "Build the full append-only, KMS-signed AuditLedger as part of this feature. It is IN scope and greenfield (no existing code to extend); recording key_fingerprint per credentialed invocation is a hard acceptance criterion.", "plausible_answers": ["a) Descope to a thin structured audit-log (no KMS signing) for v1", "b) Build the full append-only KMS-signed AuditLedger as part of this feature", "c) Defer audit entirely to a follow-up feature; out of scope for the A2A bridge"]},
+    {"id": "U3", "question": "Is fireflies' MCP server static-API-key or MCP-OAuth (OQ#6)? This decides whether to reuse telegram's mcp_persistence (vault_credential_name) as-is or add an MCP-OAuth authorization-code path.", "blocks_claims": ["C9"], "status": "open", "user_answer": "Unknown — confirm during spec. Carry forward as an open spec question; bias toward static-API-key-over-MCP (reuse telegram mcp_persistence vault_credential_name) for v1 unless the MCP server is found to require OAuth.", "plausible_answers": ["a) Static API key over MCP — reuse mcp_persistence vault_credential_name directly", "b) MCP-OAuth — parrot becomes an MCP-OAuth client; new authorization-code surface", "c) Both supported — pick static key for v1"]},
+    {"id": "U4", "question": "Does work-iq (Microsoft, public preview) actually support Entra OBO, and what are its resource id + required scopes + admin-consent path (OQ#5)? The tool itself must be built either way.", "blocks_claims": ["C11"], "status": "open", "user_answer": "Unknown — spike/verify before building. The work-iq tool is greenfield regardless; verify OBO support + resource id + scopes empirically. If OBO is unavailable in preview, fall back to delegated auth-code 3LO via a new oauth2 provider (reusing the IntegrationsService registry pattern).", "plausible_answers": ["a) Yes, OBO supported — build work-iq tool on o365.acquire_token_on_behalf_of with the documented scopes", "b) No OBO in preview — fall back to delegated auth-code 3LO via a new oauth2 provider", "c) Unknown until spiked — gate work-iq behind the identity spike"]}
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization and reuse story are high-confidence (C1-C9): the spec can be written against concrete, existing seams with a tightly-bounded new surface (the A2A↔credential bridge). Two hard gates must be encoded as spec preconditions, not silently assumed: the OQ#1 identity spike (U1) and the AuditLedger fate (U2). Because the new code is a bridge over verified primitives rather than an architectural fork, /sdd-brainstorm is not needed.",
+    "alternatives": [
+      {"command": "spike-first", "when": "If U1 cannot be answered from the existing spike logs — run the payload-inspection spike before committing vault-keying design."},
+      {"command": "sdd-brainstorm", "when": "Only if U1=b forces a parrot-run Entra sign-in bootstrap, which is an architectural fork worth exploring separately."}
+    ]
+  }
+}

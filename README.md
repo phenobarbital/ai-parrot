@@ -4,18 +4,44 @@
 
 Whether you need a simple chatbot, a complex multi-agent orchestration workflow, or a robust production-ready AI service, AI-Parrot exposes the primitives to build it efficiently.
 
+---
+
 ## Monorepo Structure
 
-AI-Parrot is organized as a **monorepo** with four packages:
+AI-Parrot is organized as a **monorepo** managed by [uv workspaces](https://docs.astral.sh/uv/concepts/workspaces/). Each package is independently versioned and published to PyPI, so you install only what you need.
 
-| Package | PyPI Name | Description |
-|---------|-----------|-------------|
-| `packages/ai-parrot` | `ai-parrot` | Core framework: agents, clients, memory, orchestration |
-| `packages/ai-parrot-tools` | `ai-parrot-tools` | Tool and toolkit implementations (Jira, AWS, Slack, etc.) |
-| `packages/ai-parrot-loaders` | `ai-parrot-loaders` | Document loaders for RAG pipelines (PDF, YouTube, audio, etc.) |
-| `packages/ai-parrot-pipelines` | `ai-parrot-pipelines` | Specialized pipelines such as planogram compliance workflows |
+### Core
 
-The core package (`ai-parrot`) provides the base abstractions (`AbstractTool`, `AbstractToolkit`, `@tool`) and lightweight built-in tools. Heavy tool implementations, document loaders, and specialized pipelines are split into their own packages so you only install what you need.
+| Package | PyPI | Description |
+|---------|------|-------------|
+| [`ai-parrot`](packages/ai-parrot) | `pip install ai-parrot` | Core framework — agents, LLM clients, memory, orchestration (AgentCrew, AgentsFlow), skills, knowledge graphs, and the `parrot` CLI |
+
+### Satellite Packages
+
+Satellite packages extend the core with optional functionality. They contribute to the `parrot.*` namespace via PEP 420 implicit namespace packages, so import paths stay the same regardless of which packages are installed.
+
+| Package | PyPI | Description |
+|---------|------|-------------|
+| [`ai-parrot-server`](packages/ai-parrot-server) | `pip install ai-parrot-server` | Server infrastructure — HTTP handlers, MCP/A2A transports (QUIC, gRPC), scheduler (APScheduler), and autonomous agent deployment |
+| [`ai-parrot-tools`](packages/ai-parrot-tools) | `pip install ai-parrot-tools` | 30+ tool and toolkit implementations — Jira, AWS, Slack, Docker, Git, databases, finance, security scanners, code interpreters, and more |
+| [`ai-parrot-loaders`](packages/ai-parrot-loaders) | `pip install ai-parrot-loaders` | Document loaders for RAG pipelines — PDF, YouTube, audio transcription (WhisperX), web scraping, eBooks, video, and OCR |
+| [`ai-parrot-embeddings`](packages/ai-parrot-embeddings) | `pip install ai-parrot-embeddings` | Embedding, vector-store, and reranker backends — HuggingFace, OpenAI, Google, PgVector, Milvus, ArangoDB, FAISS, ChromaDB |
+| [`ai-parrot-integrations`](packages/ai-parrot-integrations) | `pip install ai-parrot-integrations` | Messaging channel integrations — Slack, Telegram, MS Teams, WhatsApp, Matrix, voice interfaces (ASR + TTS) |
+| [`ai-parrot-visualizations`](packages/ai-parrot-visualizations) | `pip install ai-parrot-visualizations` | Output renderers — Matplotlib, Seaborn, Plotly, Altair, ECharts, Folium maps, SVG infographics, Streamlit, Panel dashboards |
+| [`ai-parrot-pipelines`](packages/ai-parrot-pipelines) | `pip install ai-parrot-pipelines` | Specialized pipelines — planogram compliance, retail shelf analysis, and vision workflows |
+| [`ai-parrot-advisors`](packages/ai-parrot-advisors) | `pip install ai-parrot-advisors` | Product advisor and selection-matching components powered by embeddings and catalog search |
+| [`parrot-formdesigner`](packages/parrot-formdesigner) | `pip install parrot-formdesigner` | Platform-agnostic form design and rendering — Telegram, Slack, Teams, HTML, and Adaptive Cards |
+
+### How the namespace works
+
+The core and satellite packages share the `parrot.*` namespace. For example, `ai-parrot-embeddings` provides `parrot.embeddings.google`, `parrot.stores.pgvector`, and `parrot.rerankers.local` — the same import paths the core defines as abstract base classes. Install a satellite and its concrete implementations become available automatically.
+
+```
+ai-parrot (core)                          ai-parrot-embeddings (satellite)
+├── parrot.embeddings   ← base classes    ├── parrot.embeddings.google
+├── parrot.stores       ← base classes    ├── parrot.stores.pgvector
+└── parrot.rerankers    ← base classes    └── parrot.rerankers.local
+```
 
 ---
 
@@ -24,7 +50,7 @@ The core package (`ai-parrot`) provides the base abstractions (`AbstractTool`, `
 ### Core framework
 
 ```bash
-uv pip install ai-parrot
+pip install ai-parrot
 ```
 
 ### Quick Setup (CLI)
@@ -61,23 +87,15 @@ parrot autonomous install --agent my_agent.py --name my-agent
 Install only the providers you need:
 
 ```bash
-# Google Gemini
-uv pip install "ai-parrot[google]"
-
-# OpenAI / GPT
-uv pip install "ai-parrot[openai]"
-
-# Anthropic / Claude
-uv pip install "ai-parrot[anthropic]"
-
-# Groq
-uv pip install "ai-parrot[groq]"
-
-# X.AI / Grok
-uv pip install "ai-parrot[xai]"
+# Individual providers
+pip install "ai-parrot[openai]"       # OpenAI / GPT
+pip install "ai-parrot[anthropic]"    # Anthropic / Claude
+pip install "ai-parrot[google]"       # Google Gemini
+pip install "ai-parrot[groq]"         # Groq
+pip install "ai-parrot[xai]"          # X.AI / Grok
 
 # All LLM providers at once
-uv pip install "ai-parrot[llms]"
+pip install "ai-parrot[llms]"
 ```
 
 Additional providers supported out of the box (no extra install needed):
@@ -89,49 +107,68 @@ Additional providers supported out of the box (no extra install needed):
 ### Embeddings & Vector Stores
 
 ```bash
-# Sentence transformers, FAISS, ChromaDB, etc.
-uv pip install "ai-parrot[embeddings]"
+# Base embedding support
+pip install ai-parrot-embeddings
+
+# With specific backends
+pip install "ai-parrot-embeddings[huggingface]"    # Sentence transformers
+pip install "ai-parrot-embeddings[pgvector]"       # PostgreSQL pgvector
+pip install "ai-parrot-embeddings[milvus]"         # Milvus vector DB
+pip install "ai-parrot-embeddings[chroma]"         # ChromaDB
+pip install "ai-parrot-embeddings[all]"            # All backends
 ```
 
 ### Tools
 
 ```bash
-# Install the tools package
-uv pip install ai-parrot-tools
+pip install ai-parrot-tools
 
 # Or with specific tool extras
-uv pip install "ai-parrot-tools[jira]"
-uv pip install "ai-parrot-tools[aws]"
-uv pip install "ai-parrot-tools[slack]"
-uv pip install "ai-parrot-tools[finance]"
-uv pip install "ai-parrot-tools[all]"       # All tool dependencies
+pip install "ai-parrot-tools[jira]"
+pip install "ai-parrot-tools[aws]"
+pip install "ai-parrot-tools[slack]"
+pip install "ai-parrot-tools[finance]"
+pip install "ai-parrot-tools[all]"       # All tool dependencies
 ```
 
-Available tool extras: `jira`, `slack`, `aws`, `docker`, `git`, `analysis`, `excel`, `sandbox`, `codeinterpreter`, `pulumi`, `sitesearch`, `office365`, `scraping`, `finance`, `db`, `flowtask`, `google`, `arxiv`, `wikipedia`, `weather`, `messaging`.
+Available tool extras: `jira`, `slack`, `aws`, `docker`, `git`, `analysis`, `excel`, `kubernetes`, `sandbox`, `codeinterpreter`, `pulumi`, `sitesearch`, `office365`, `scraping`, `finance`, `db`, `flowtask`, `google`, `arxiv`, `wikipedia`, `weather`, `messaging`, `security`, `pdf`, `msword`.
 
 ### Document Loaders
 
 ```bash
-# Install the loaders package
-uv pip install ai-parrot-loaders
+pip install ai-parrot-loaders
 
 # Or with specific loader extras
-uv pip install "ai-parrot-loaders[youtube]"
-uv pip install "ai-parrot-loaders[pdf]"
-uv pip install "ai-parrot-loaders[audio]"
-uv pip install "ai-parrot-loaders[all]"     # All loader dependencies
+pip install "ai-parrot-loaders[youtube]"
+pip install "ai-parrot-loaders[pdf]"
+pip install "ai-parrot-loaders[audio]"
+pip install "ai-parrot-loaders[all]"     # All loader dependencies
 ```
 
-Available loader extras: `youtube`, `audio`, `pdf`, `web`, `ebook`, `video`.
+Available loader extras: `youtube`, `audio`, `pdf`, `web`, `ebook`, `video`, `images`, `document`, `scraping`.
 
-### Pipelines
+### Server & Integrations
 
 ```bash
-# Install the pipelines package
-uv pip install ai-parrot-pipelines
+# Server infrastructure (handlers, scheduler, MCP/A2A transports)
+pip install "ai-parrot-server[all]"
+
+# Messaging integrations
+pip install "ai-parrot-integrations[telegram]"
+pip install "ai-parrot-integrations[slack]"
+pip install "ai-parrot-integrations[msteams]"
+pip install "ai-parrot-integrations[whatsapp]"
+pip install "ai-parrot-integrations[voice]"      # All voice backends
+pip install "ai-parrot-integrations[all]"        # All integrations
 ```
 
-Backward-compatible imports from `parrot.pipelines` continue to work when the package is installed.
+### Visualizations
+
+```bash
+pip install "ai-parrot-visualizations[charts]"   # Matplotlib, Seaborn, Plotly, Altair, ECharts
+pip install "ai-parrot-visualizations[map]"       # Folium maps
+pip install "ai-parrot-visualizations[all]"       # All renderers
+```
 
 ### Platform & Security Tools
 
@@ -288,7 +325,7 @@ The server starts on `http://0.0.0.0:5000` by default (configurable via `APP_HOS
 
 ```bash
 # Install gunicorn
-uv pip install "ai-parrot[deploy]"
+pip install "ai-parrot[deploy]"
 
 # Run with aiohttp-compatible workers
 gunicorn run:app \
@@ -347,7 +384,9 @@ graph TD
 
     subgraph "Orchestration"
         Crew["AgentCrew"] --> Bot
+        Flow["AgentsFlow (DAG)"] --> Bot
         Crew --> OtherBots["Other Agents"]
+        Flow --> OtherBots
     end
 ```
 
@@ -362,7 +401,7 @@ The `Chatbot` class is your main entry point. It handles conversation history, R
 ```python
 bot = Chatbot(
     name="MyAgent",
-    model="anthropic:claude-3-5-sonnet-20240620",
+    model="anthropic:claude-sonnet-4-20250514",
     enable_memory=True
 )
 ```
@@ -415,7 +454,9 @@ petstore = OpenAPIToolkit(
 bot = Chatbot(name="PetBot", tools=petstore.get_tools())
 ```
 
-### Orchestration (`AgentCrew`)
+### Orchestration
+
+#### AgentCrew
 
 Orchestrate multiple agents to solve complex tasks using `AgentCrew`.
 
@@ -426,7 +467,7 @@ Orchestrate multiple agents to solve complex tasks using `AgentCrew`.
 - **Loop**: Iterative execution until a condition is met.
 
 ```python
-from parrot.bots.orchestration import AgentCrew
+from parrot.bots.flows.crew import AgentCrew
 
 crew = AgentCrew(
     name="ResearchTeam",
@@ -437,6 +478,21 @@ crew = AgentCrew(
 crew.task_flow(researcher_agent, writer_agent)
 
 await crew.run_flow("Research the latest advancements in Quantum Computing")
+```
+
+#### AgentsFlow
+
+Event-driven DAG executor for complex agent workflows with conditional routing, OR-join, and skip-propagation.
+
+```python
+from parrot.bots.flows.flow import AgentsFlow
+
+flow = AgentsFlow(name="pipeline")
+flow.add_node(analyzer)
+flow.add_node(writer)
+flow.add_edge(analyzer, writer, predicate=lambda ctx: ctx.get("proceed"))
+
+result = await flow.run_flow("Analyze and summarize this dataset")
 ```
 
 ### Scheduling (`@schedule`)
@@ -498,11 +554,13 @@ Allow Claude Desktop or other MCP clients to use your agent as a tool.
 
 ### Platform Integrations
 
-Expose your bots natively to chat platforms:
+Expose your bots natively to chat platforms (via `ai-parrot-integrations`):
 - **Telegram**
 - **Microsoft Teams**
 - **Slack**
 - **WhatsApp**
+- **Matrix / Element**
+- **Voice** (ASR + TTS with multiple backends)
 
 ---
 
@@ -601,51 +659,53 @@ uv sync --extra google --extra openai
 ```
 ai-parrot/
 ├── packages/
-│   ├── ai-parrot/           # Core framework
+│   ├── ai-parrot/               # Core framework (Cython + Rust/Maturin)
 │   │   └── src/parrot/
-│   ├── ai-parrot-tools/     # Tool implementations
+│   ├── ai-parrot-server/        # Server, handlers, MCP/A2A transports
+│   │   └── src/parrot/
+│   ├── ai-parrot-tools/         # 30+ tool implementations
 │   │   └── src/parrot_tools/
-│   └── ai-parrot-loaders/   # Document loaders
-│       └── src/parrot_loaders/
+│   ├── ai-parrot-loaders/       # Document loaders for RAG
+│   │   └── src/parrot_loaders/
+│   ├── ai-parrot-embeddings/    # Embedding & vector-store backends
+│   │   └── src/parrot/
+│   ├── ai-parrot-integrations/  # Messaging & voice channels
+│   │   └── src/parrot/
+│   ├── ai-parrot-visualizations/ # Output renderers & charts
+│   │   └── src/parrot/
+│   ├── ai-parrot-pipelines/     # Vision & planogram pipelines
+│   │   └── src/parrot_pipelines/
+│   ├── ai-parrot-advisors/      # Product advisor components
+│   │   └── src/parrot/
+│   └── parrot-formdesigner/     # Form design & rendering
+│       └── src/parrot_formdesigner/
 ├── tests/
 ├── examples/
-├── Makefile                  # Build, install, test, release shortcuts
-└── pyproject.toml            # Workspace root
+├── Makefile                      # Build, install, test, release shortcuts
+└── pyproject.toml                # uv workspace root
 ```
 
 ### Releasing to PyPI
 
-AI-Parrot publishes three packages on every GitHub release:
+AI-Parrot publishes packages on every GitHub release. Each package is independently versioned.
 
-| Package | PyPI Project | Build Method |
-|---------|-------------|-------------|
-| `ai-parrot` | [ai-parrot](https://pypi.org/p/ai-parrot) | cibuildwheel (Cython + Rust/Maturin) |
-| `ai-parrot-tools` | [ai-parrot-tools](https://pypi.org/p/ai-parrot-tools) | uv build (pure Python) |
-| `ai-parrot-loaders` | [ai-parrot-loaders](https://pypi.org/p/ai-parrot-loaders) | uv build (pure Python) |
-
-The release workflow (`.github/workflows/release.yml`) runs 3 parallel build jobs and a single deploy job:
-
-```
-release event
-    ├── build-core   — cibuildwheel for ai-parrot (Cython + Rust)
-    ├── build-tools  — uv build for ai-parrot-tools
-    ├── build-loaders — uv build for ai-parrot-loaders
-    └── deploy       — twine upload all artifacts to PyPI
-```
+| Package | Build Method |
+|---------|-------------|
+| `ai-parrot` | cibuildwheel (Cython + Rust/Maturin) |
+| `ai-parrot-server` | uv build (pure Python) |
+| `ai-parrot-tools` | uv build (pure Python) |
+| `ai-parrot-loaders` | uv build (pure Python) |
+| `ai-parrot-embeddings` | uv build (pure Python) |
+| `ai-parrot-integrations` | uv build (pure Python) |
+| `ai-parrot-visualizations` | uv build (pure Python) |
+| `ai-parrot-pipelines` | uv build (pure Python) |
+| `ai-parrot-advisors` | uv build (pure Python) |
+| `parrot-formdesigner` | uv build (pure Python) |
 
 **To create a release:**
 
-1. Bump the version in each package's `pyproject.toml` (or use `make bump-patch` to sync all three).
+1. Bump the version in each package's `pyproject.toml` (or use `make bump-patch` to sync all).
 2. Create a GitHub release — the workflow triggers automatically on the `release: created` event.
-
-**First-time PyPI setup (required once):**
-
-- Create `ai-parrot-tools` and `ai-parrot-loaders` projects on [PyPI](https://pypi.org) under the same account as `ai-parrot`.
-- Ensure the `NAV_AIPARROT_API_SECRET` GitHub secret holds a PyPI API token with **upload scope for all 3 projects**. A scoped token per project or a single account-level token both work.
-
-**Independent versioning:**
-
-Each package has its own version number in its `pyproject.toml`. All three are built and published on the same release event — there is no requirement to keep versions in sync.
 
 ---
 
