@@ -225,7 +225,7 @@ class JiraSpecialist(Agent):
         super().__init__(**kwargs)
         # Install the layered prompt builder (unless AbstractBot already set
         # one via prompt_preset=).
-        if self._prompt_builder is None:
+        if getattr(self, "_prompt_builder", None) is None:
             self.prompt_builder = _builder
         self._standup_config = DailyStandupConfig()
         self._redis: Optional[redis.Redis] = None
