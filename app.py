@@ -27,11 +27,6 @@ from parrot.handlers.artifacts import (
     ArtifactDetailView,
     ArtifactPublicHTMLView,
 )
-# from parrot.handlers.o365_auth import (
-#     O365InteractiveAuthSessions,
-#     O365InteractiveAuthSessionDetail,
-# )
-# from parrot.services.o365_remote_auth import RemoteAuthManager
 from parrot.handlers.jobs.worker import configure_job_manager
 from parrot.handlers.user import UserSocketManager
 from parrot.handlers.llm import LLMClient
@@ -162,18 +157,6 @@ class Main(AppHandler):
         )
         # Google Media Generation (Imagen/Veo) API:
         MediaGen.setup(self.app, "/api/v1/google/media")
-        # # Office 365 delegated authentication endpoints
-        # self.app['o365_auth_manager'] = RemoteAuthManager()
-        # self.app.router.add_view(
-        #     '/api/v1/o365/auth/sessions',
-        #     O365InteractiveAuthSessions,
-        #     name='o365_auth_sessions'
-        # )
-        # self.app.router.add_view(
-        #     '/api/v1/o365/auth/sessions/{session_id}',
-        #     O365InteractiveAuthSessionDetail,
-        #     name='o365_auth_session_detail'
-        # )
         # # Example Async View for Queue:
         # self.app.router.add_view(
         #     '/api/v1/example_async',
