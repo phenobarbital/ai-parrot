@@ -33,8 +33,8 @@ class FakeSessionVault:
 
 
 @pytest.fixture
-def sync_service(monkeypatch):
-    """A VaultTokenSync with `_load_vault` patched to return a FakeSessionVault."""
+def sync_service():
+    """A bare VaultTokenSync; tests patch `_load_vault` individually via `monkeypatch`."""
     service = VaultTokenSync(db_pool=MagicMock(), redis=MagicMock())
     return service
 

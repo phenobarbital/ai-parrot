@@ -243,6 +243,22 @@ class O365DeviceCodeCredentialResolver(CredentialResolver):
         """Persist ``payload`` to ``VaultTokenSync`` under the canonical field set."""
         now = time.time()
         expires_in = payload.get("expires_in")
+        if expires_in is None:
+            # Entra's token endpoint always includes `expires_in` per the OAuth2
+            # spec; its absence here is anomalous, not an expected shape. Since
+            # FEAT-267 treats a missing `expires_at` on read as *expired* (not
+            # valid-forever — see `resolve`/`is_connected`), a token persisted
+            # without it will force an extra refresh/device-flow round-trip on
+            # the next `resolve()` call. That's a safe (if wasteful) fail-safe
+            # trade-off, but log it loudly so a non-compliant upstream response
+            # is observable rather than silently swallowed.
+            logger.warning(
+                "O365DeviceCodeCredentialResolver: token payload for user=%s "
+                "is missing 'expires_in' (unexpected for Entra) — persisting "
+                "without expires_at; next resolve() will treat this token as "
+                "expired.",
+                user_id,
+            )
         expires_at = int(now + int(expires_in)) if expires_in is not None else None
 
         canonical: Dict[str, Any] = {

@@ -279,3 +279,33 @@ async def test_is_connected_true_when_expires_at_present_and_fresh(fake_vault):
     )
 
     assert await resolver.is_connected("cli", "user@x") is True
+
+
+@pytest.mark.asyncio
+async def test_persist_warns_when_expires_in_missing_from_payload(fake_vault, caplog):
+    """A token payload lacking `expires_in` (non-compliant Entra response) must
+    still persist (with `expires_at=None`) rather than raise, but must log a
+    warning so the anomaly is observable — since FEAT-267 now treats a missing
+    `expires_at` on next read as expired, not valid-forever.
+    """
+    import logging
+
+    o365 = FakeO365Client(token_response={
+        "access_token": "device-tok", "refresh_token": "device-rt",
+        "scope": "User.Read",
+        # deliberately no "expires_in"
+    })
+    resolver = O365DeviceCodeCredentialResolver(
+        o365_client=o365, o365_oauth_manager=FakeManager(),
+        vault_token_sync=fake_vault,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="parrot.auth.oauth2.o365_devicecode_provider"):
+        result = await resolver.resolve("cli", "user@x")
+
+    assert result == "device-tok"
+    persisted = fake_vault._store[("user@x", "o365")]
+    assert persisted["access_token"] == "device-tok"
+    assert "expires_at" not in persisted or persisted["expires_at"] is None
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("expires_in" in r.getMessage() for r in warnings)
