@@ -14,7 +14,7 @@
       "feature_id": "FEAT-268",
       "feature": "jiraspecialist-prompt-builder-stub-leak",
       "spec": "sdd/specs/jiraspecialist-prompt-builder-stub-leak.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only packages/ai-parrot/tests/conftest.py (+ test files that need updating to opt in). Disjoint from TASK-1690's single-line jira_specialist.py change.",
       "assigned_to": null,
       "started_at": "2026-07-01T18:09:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1689-scope-conftest-parrot-bots-stub-leak.md"
+      "completed_at": "2026-07-01T18:52:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1689-scope-conftest-parrot-bots-stub-leak.md"
     },
     {
       "id": "TASK-1690",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-268",
       "feature": "jiraspecialist-prompt-builder-stub-leak",
       "spec": "sdd/specs/jiraspecialist-prompt-builder-stub-leak.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "One-line change to jira_specialist.py:228 only. Disjoint from TASK-1689's conftest.py change.",
       "assigned_to": null,
       "started_at": "2026-07-01T18:09:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1690-jiraspecialist-defensive-prompt-builder-getattr.md"
+      "completed_at": "2026-07-01T18:52:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1690-jiraspecialist-defensive-prompt-builder-getattr.md"
     },
     {
       "id": "TASK-1691",

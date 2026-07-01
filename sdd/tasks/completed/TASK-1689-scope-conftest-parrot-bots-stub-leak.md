@@ -256,10 +256,54 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-07-01
+**Notes**:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Converted `_install_parrot_stubs()` into the opt-in `fake_parrot_bots(monkeypatch)`
+  fixture per the codebase contract, using `monkeypatch.setitem(sys.modules, ...)`
+  instead of `sys.modules.setdefault(...)`. Removed the unconditional
+  `_install_parrot_stubs()` call at former line 627; left `_install_navconfig_stub()`
+  and `_install_navigator_stubs()` untouched, as scoped.
+- Ran the mandated `grep -rl` sweep across `packages/ai-parrot/tests/` (27 hits)
+  and manually inspected every hit. Conclusion: **no test file currently needs
+  to be updated to request the new fixture.** Every hit fell into one of these
+  buckets:
+  - Files that already force-load the REAL `parrot.bots.abstract`/`.agent`
+    themselves (pop/reload/override sys.modules directly), e.g.
+    `test_basic_agent_new.py`, `test_agent_module.py`,
+    `test_resolve_output_mode_noop.py`, `bots/prompts/conftest.py` +
+    `test_abstractbot_integration.py` + `test_comparison.py`,
+    `test_vector_context_integration.py`, `test_rag_conversation_integration.py`,
+    `registry/test_vector_store_propagation.py`, `test_odoo_agent.py`.
+  - Files with their own fully independent stub machinery, unaffected either
+    way: `test_jira_specialist_grounding.py`, `test_bot_cleanup_lifecycle.py`
+    (the latter doesn't even touch `parrot.bots.agent`/`.abstract` — only
+    matched the grep on the substring "BasicAgent").
+  - Files that only reference the strings "BasicAgent"/`parrot.bots.agent` in
+    docstrings, YAML fixtures, or unrelated patch targets (`parrot.bots.search.
+    BasicAgent`), not the conftest leak: `test_agent_crew_examples.py`,
+    `factory/test_contracts.py`, `registry/test_register_db_bot_policies.py`,
+    `fixtures/agents/marketing.yaml`, `test_web_search_agent.py`,
+    `test_intent_router_output_mode_integration.py`.
+  - `test_agent_definitions.py`, `test_agent_registry_instances.py`,
+    `test_orchestrator_conference.py`: verified by temporarily disabling the
+    stub call and re-running — all pass identically with the REAL modules
+    (test_orchestrator_conference.py is ~10x slower with the real chain, 22s
+    vs 2s, but still 21/21 passing; no correctness dependency on the fake).
+  - `test_notification.py`: already has a pre-existing, unrelated collection
+    error (one of the 23 baseline errors) — out of scope.
+- **Bonus finding**: two test files were silent VICTIMS of the exact same leak
+  (not flagged in the task's 4-file list) and now pass reliably instead of
+  failing: `tests/bots/test_bot_warmup_registry.py` (was 6/6 failing on
+  `AbstractBot.warmup_embeddings` AttributeError against the fake — now 6/6
+  passing) and `tests/bots/database/test_database_agent.py` (was 9/15 failing
+  on `issubclass(DatabaseAgent, BasicAgent)` against the fake — now 15/15
+  passing when checked with the fixed conftest.py).
+- Full verification results (including two still-failing files that are
+  pre-existing/unrelated bugs, discovered while verifying this task) are
+  recorded in TASK-1691's Completion Note.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. No test file required modification to opt in
+to the new fixture (grep sweep found zero genuine consumers of the fake for
+correctness).
