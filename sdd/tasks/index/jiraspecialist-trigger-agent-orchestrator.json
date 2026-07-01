@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-30T23:15:57Z",
-  "completed_at": null,
+  "completed_at": "2026-07-01T14:00:15+00:00",
   "tasks": [
     {
       "id": "TASK-1678",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-265",
       "feature": "jiraspecialist-trigger-agent-orchestrator",
       "spec": "sdd/specs/jiraspecialist-trigger-agent-orchestrator.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundation task: creates parrot/bots/_types.py and the JiraSpecialist slot/setter that TASK-1679 and TASK-1680 both depend on.",
       "assigned_to": null,
       "started_at": "2026-06-30T23:22:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1678-agent-dispatcher-protocol-slot.md"
+      "completed_at": "2026-07-01T14:00:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1678-agent-dispatcher-protocol-slot.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1679",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-265",
       "feature": "jiraspecialist-trigger-agent-orchestrator",
       "spec": "sdd/specs/jiraspecialist-trigger-agent-orchestrator.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Modifies jira_specialist.py + the test file; depends on the slot/setter from TASK-1678. Shares jira_specialist.py with TASK-1678 so cannot run before it.",
       "assigned_to": null,
       "started_at": "2026-06-30T23:22:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1679-real-dispatch-in-action-trigger-agent.md"
+      "completed_at": "2026-07-01T14:00:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1679-real-dispatch-in-action-trigger-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1680",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-265",
       "feature": "jiraspecialist-trigger-agent-orchestrator",
       "spec": "sdd/specs/jiraspecialist-trigger-agent-orchestrator.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Docs-only task touching docs/ only; shares no files with TASK-1679. Can run in parallel with TASK-1679 once TASK-1678 finalizes the API names.",
       "assigned_to": null,
       "started_at": "2026-06-30T23:22:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1680-startup-wiring-docs.md"
+      "completed_at": "2026-07-01T14:00:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1680-startup-wiring-docs.md",
+      "verification": "verified"
     }
   ]
 }
