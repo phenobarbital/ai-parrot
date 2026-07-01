@@ -1,0 +1,47 @@
+{
+  "feature": "o365-devicecode-followups",
+  "feature_id": "FEAT-267",
+  "spec": "sdd/specs/o365-devicecode-followups.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-01T13:55:33+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1687",
+      "slug": "cli-identity-tenant-sentinel",
+      "title": "Replace hardcoded tenant_id=\"cli\" with explicit tenant / fail-loud sentinel",
+      "feature_id": "FEAT-267",
+      "feature": "o365-devicecode-followups",
+      "spec": "sdd/specs/o365-devicecode-followups.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only cli/identity.py — disjoint from TASK-1688 (vault_token_sync.py + o365_devicecode_provider.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1687-cli-identity-tenant-sentinel.md"
+    },
+    {
+      "id": "TASK-1688",
+      "slug": "vault-token-sync-atomic-persist",
+      "title": "Close VaultTokenSync.store_tokens partial-write / forever-valid-on-missing-expires_at gap",
+      "feature_id": "FEAT-267",
+      "feature": "o365-devicecode-followups",
+      "spec": "sdd/specs/o365-devicecode-followups.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches vault_token_sync.py + o365_devicecode_provider.py — disjoint from TASK-1687 (cli/identity.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1688-vault-token-sync-atomic-persist.md"
+    }
+  ]
+}
