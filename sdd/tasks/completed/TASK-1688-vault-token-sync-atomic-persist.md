@@ -162,4 +162,49 @@ When complete, the agent must:
 3. Add a brief completion note below
 
 ### Completion Note
-(Agent fills this in when done)
+
+Implemented as specified. Verified `SessionVault`'s public interface
+(`navigator_session.vault.SessionVault`) exposes only
+`get`/`set`/`delete`/`keys`/`exists` — no bulk/transactional write
+primitive — so the fix is write-ordering, not batching.
+
+`VaultTokenSync.store_tokens` (`vault_token_sync.py`): added a
+`_WRITE_FIRST_FIELD = "expires_at"` class constant; the write loop now
+writes `expires_at` first (via `sorted(..., key=lambda item: item[0] !=
+_WRITE_FIRST_FIELD)`) so a mid-loop failure either leaves `expires_at`
+already correctly persisted, or leaves other fields (e.g. `access_token`)
+never written at all. Added a `finally` block that compares expected vs.
+written keys and logs a distinguishable `"PARTIAL WRITE"` warning
+(`logger.warning`, separate from the existing `logger.exception`) whenever
+they differ — including total failure (0 written).
+
+`O365DeviceCodeCredentialResolver` (`o365_devicecode_provider.py`):
+`resolve()`'s cache-hit check now requires `expires_at is not None` (was
+`is None or ...`), i.e. a missing `expires_at` on a freshly-read `o365:*`
+token set is treated as expired, triggering refresh-or-device-flow instead
+of a silent cache-hit. `is_connected()` was updated to match (same `is not
+None and ...` condition) — chose to update rather than leave it diverging,
+since both methods read the exact same `o365:*` field contract for the
+same provider and no callers/tests anywhere in the repo exercise
+`is_connected()`'s prior fallback semantics (grepped; only
+`storage/backends/*`'s unrelated `is_connected` properties exist), so there
+was no regression risk in making the two consistent. Docstrings on both
+methods updated to document the FEAT-267 rationale.
+
+Tests: extended `test_o365_devicecode_resolver.py` with 4 new tests
+(missing-`expires_at` triggers refresh; missing-`expires_at` + no
+refresh_token falls back to device flow; `is_connected()` false/true
+matching the new semantics). No existing test in that file asserted the
+old "missing = valid forever" semantics, so none needed changing — all 7
+pre-existing tests pass unmodified.
+
+New file `packages/ai-parrot-server/tests/unit/test_vault_token_sync_atomic_persist.py`
+(no prior `test_vault_token_sync*.py` existed — verified via `find`) covers:
+`expires_at` written first; a failure after 1 successful write (`expires_at`)
+never persists `access_token`; the partial-write warning fires on partial
+failure; no partial-write warning fires on a fully successful write.
+
+Full FEAT-266 regression suite (`test_o365_devicecode_resolver.py`,
+`test_credentials_devicecode.py`, `test_broker_devicecode.py`,
+`test_o365_refresh.py`, `test_cli_devicecode_e2e.py`) — 34 tests, all pass.
+`ruff check` clean on all touched/created files.
