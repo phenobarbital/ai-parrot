@@ -1478,6 +1478,7 @@ class BaseBot(AbstractBot):
         memory: Optional[Callable] = None,
         ensemble_config: dict = None,
         ctx: Optional[RequestContext] = None,
+        permission_context: Optional[Any] = None,
         structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
         system_prompt: Optional[str] = None,
@@ -1630,6 +1631,14 @@ class BaseBot(AbstractBot):
                 llm = self.configure_llm(llm=new_llm, **kwargs.pop('llm_config', {}))
 
             async with llm as client:
+                # FEAT-266: forward caller identity to the tool manager so
+                # per-user credential resolvers (e.g. O365 device-code) can
+                # look up the right token — mirrors the propagation in
+                # ask() (client._permission_context, consumed by
+                # tool_manager.execute_tool's permission_context= kwarg).
+                if permission_context is not None:
+                    client._permission_context = permission_context
+
                 llm_kwargs = {
                     "prompt": prompt_for_llm,
                     "system_prompt": system_prompt,

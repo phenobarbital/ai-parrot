@@ -15,6 +15,7 @@ from typing import Optional
 import click
 from rich.console import Console
 
+from parrot.cli.identity import bot_declares_o365_device_code, build_cli_permission_context
 from parrot.cli.loaders import AgentLoadError, ServerAgentProxy, StandaloneAgentLoader
 from parrot.cli.repl import AgentREPL, REPLConfig
 from parrot.cli.renderer import ResponseRenderer
@@ -119,11 +120,23 @@ async def _run(
     # Print welcome banner
     _print_banner(bot, name, server)
 
+    # FEAT-266: bootstrap the device-code permission context ONLY when this
+    # agent actually declares the o365 device_code provider — agents that
+    # don't are completely unaffected (no O365_PRINCIPAL requirement).
+    permission_context = None
+    if not server and bot_declares_o365_device_code(bot):
+        try:
+            permission_context = build_cli_permission_context()
+        except RuntimeError as exc:
+            console.print(f"[bold red]O365 device-code identity error:[/bold red] {exc}")
+            raise SystemExit(1) from exc
+
     # Build config and run the REPL
     config = REPLConfig(
         agent_name=name,
         streaming=not no_stream,
         server_url=server,
+        permission_context=permission_context,
     )
     repl = AgentREPL(bot=bot, config=config, renderer=renderer)
 
