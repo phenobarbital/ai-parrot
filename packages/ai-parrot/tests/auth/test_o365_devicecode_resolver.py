@@ -198,3 +198,114 @@ async def test_get_auth_url_returns_device_login_url(fake_vault):
     )
     url = await resolver.get_auth_url("cli", "user@x")
     assert url == "https://microsoft.com/devicelogin"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-267: missing expires_at is treated as expired, not valid-forever
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_missing_expires_at_on_read_is_treated_as_expired(fake_vault):
+    """A freshly-read o365:* token set missing `expires_at` (e.g. from a
+    partial VaultTokenSync.store_tokens write) must NOT be treated as a
+    valid-forever cache hit — resolve() must attempt refresh (or fall back
+    to the device flow) instead.
+    """
+    fake_vault.seed(
+        "user@x", "o365",
+        {"access_token": "stale-tok", "refresh_token": "rt-1"},  # no expires_at
+    )
+    o365 = FakeO365Client()
+    manager = FakeManager(refresh_response={
+        "access_token": "refreshed-tok", "expires_in": 3600, "scope": "User.Read",
+    })
+    resolver = O365DeviceCodeCredentialResolver(
+        o365_client=o365, o365_oauth_manager=manager, vault_token_sync=fake_vault,
+    )
+
+    result = await resolver.resolve("cli", "user@x")
+
+    assert result == "refreshed-tok"
+    assert manager.calls == ["rt-1"]  # refresh was attempted, not a silent cache-hit
+    assert o365.calls == []
+
+
+@pytest.mark.asyncio
+async def test_missing_expires_at_without_refresh_token_falls_back_to_device_flow(fake_vault):
+    """Missing `expires_at` and no refresh_token -> device flow, not a cache-hit."""
+    fake_vault.seed(
+        "user@x", "o365",
+        {"access_token": "stale-tok"},  # no expires_at, no refresh_token
+    )
+    o365 = FakeO365Client(token_response={
+        "access_token": "device-tok", "expires_in": 3600, "scope": "User.Read",
+    })
+    manager = FakeManager()
+    resolver = O365DeviceCodeCredentialResolver(
+        o365_client=o365, o365_oauth_manager=manager, vault_token_sync=fake_vault,
+    )
+
+    result = await resolver.resolve("cli", "user@x")
+
+    assert result == "device-tok"
+    assert len(o365.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_is_connected_false_when_expires_at_missing(fake_vault):
+    """is_connected() mirrors resolve()'s interpretation — no silent divergence."""
+    fake_vault.seed(
+        "user@x", "o365",
+        {"access_token": "stale-tok"},  # no expires_at
+    )
+    resolver = O365DeviceCodeCredentialResolver(
+        o365_client=FakeO365Client(), o365_oauth_manager=FakeManager(),
+        vault_token_sync=fake_vault,
+    )
+
+    assert await resolver.is_connected("cli", "user@x") is False
+
+
+@pytest.mark.asyncio
+async def test_is_connected_true_when_expires_at_present_and_fresh(fake_vault):
+    fake_vault.seed(
+        "user@x", "o365",
+        {"access_token": "tok", "expires_at": time.time() + 99999},
+    )
+    resolver = O365DeviceCodeCredentialResolver(
+        o365_client=FakeO365Client(), o365_oauth_manager=FakeManager(),
+        vault_token_sync=fake_vault,
+    )
+
+    assert await resolver.is_connected("cli", "user@x") is True
+
+
+@pytest.mark.asyncio
+async def test_persist_warns_when_expires_in_missing_from_payload(fake_vault, caplog):
+    """A token payload lacking `expires_in` (non-compliant Entra response) must
+    still persist (with `expires_at=None`) rather than raise, but must log a
+    warning so the anomaly is observable — since FEAT-267 now treats a missing
+    `expires_at` on next read as expired, not valid-forever.
+    """
+    import logging
+
+    o365 = FakeO365Client(token_response={
+        "access_token": "device-tok", "refresh_token": "device-rt",
+        "scope": "User.Read",
+        # deliberately no "expires_in"
+    })
+    resolver = O365DeviceCodeCredentialResolver(
+        o365_client=o365, o365_oauth_manager=FakeManager(),
+        vault_token_sync=fake_vault,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="parrot.auth.oauth2.o365_devicecode_provider"):
+        result = await resolver.resolve("cli", "user@x")
+
+    assert result == "device-tok"
+    persisted = fake_vault._store[("user@x", "o365")]
+    assert persisted["access_token"] == "device-tok"
+    assert "expires_at" not in persisted or persisted["expires_at"] is None
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("expires_in" in r.getMessage() for r in warnings)

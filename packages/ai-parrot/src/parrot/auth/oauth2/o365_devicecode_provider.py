@@ -142,7 +142,15 @@ class O365DeviceCodeCredentialResolver(CredentialResolver):
         tokens = await self._vault.read_tokens(user_id, _O365_VAULT_PREFIX)
         if tokens and tokens.get("access_token"):
             expires_at = self._coerce_epoch(tokens.get("expires_at"))
-            if expires_at is None or expires_at > time.time() + _EXPIRY_SKEW_SECONDS:
+            # FEAT-267: expires_at is always part of a successful device-flow/
+            # refresh persist for this provider (module docstring's canonical
+            # o365:* field contract) — a missing value on a freshly-read
+            # token set is always anomalous (e.g. a partial
+            # VaultTokenSync.store_tokens write), so it is treated as
+            # EXPIRED here, not valid-forever. This intentionally diverges
+            # from the "field legitimately absent" fallback used elsewhere
+            # for providers without a fixed field contract.
+            if expires_at is not None and expires_at > time.time() + _EXPIRY_SKEW_SECONDS:
                 self.logger.debug(
                     "O365DeviceCodeCredentialResolver: cache hit user=%s", user_id,
                 )
@@ -178,14 +186,20 @@ class O365DeviceCodeCredentialResolver(CredentialResolver):
         return _DEVICE_LOGIN_URL
 
     async def is_connected(self, channel: str, user_id: str) -> bool:
-        """Return True when a non-expired ``o365:*`` token exists for ``user_id``."""
+        """Return True when a non-expired ``o365:*`` token exists for ``user_id``.
+
+        FEAT-267: mirrors :meth:`resolve`'s cache-hit interpretation — a
+        missing ``expires_at`` on a read token set is treated as expired
+        (returns ``False``), not valid-forever, so the two methods never
+        silently diverge on the same ``o365:*`` field contract.
+        """
         if not user_id:
             return False
         tokens = await self._vault.read_tokens(user_id, _O365_VAULT_PREFIX)
         if not tokens or not tokens.get("access_token"):
             return False
         expires_at = self._coerce_epoch(tokens.get("expires_at"))
-        return expires_at is None or expires_at > time.time() + _EXPIRY_SKEW_SECONDS
+        return expires_at is not None and expires_at > time.time() + _EXPIRY_SKEW_SECONDS
 
     # ------------------------------------------------------------------ internals
 
@@ -229,6 +243,22 @@ class O365DeviceCodeCredentialResolver(CredentialResolver):
         """Persist ``payload`` to ``VaultTokenSync`` under the canonical field set."""
         now = time.time()
         expires_in = payload.get("expires_in")
+        if expires_in is None:
+            # Entra's token endpoint always includes `expires_in` per the OAuth2
+            # spec; its absence here is anomalous, not an expected shape. Since
+            # FEAT-267 treats a missing `expires_at` on read as *expired* (not
+            # valid-forever — see `resolve`/`is_connected`), a token persisted
+            # without it will force an extra refresh/device-flow round-trip on
+            # the next `resolve()` call. That's a safe (if wasteful) fail-safe
+            # trade-off, but log it loudly so a non-compliant upstream response
+            # is observable rather than silently swallowed.
+            logger.warning(
+                "O365DeviceCodeCredentialResolver: token payload for user=%s "
+                "is missing 'expires_in' (unexpected for Entra) — persisting "
+                "without expires_at; next resolve() will treat this token as "
+                "expired.",
+                user_id,
+            )
         expires_at = int(now + int(expires_in)) if expires_in is not None else None
 
         canonical: Dict[str, Any] = {
