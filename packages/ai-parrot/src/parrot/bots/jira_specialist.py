@@ -1366,6 +1366,10 @@ class JiraSpecialist(Agent):
                 agent_id,
                 task,
             )
+            # NOTE: Jira webhook payloads do not currently carry `user_id`/
+            # `session_id` keys, so these will normally resolve to `None`.
+            # They are forwarded here so a future actor-mapping feature can
+            # populate them without changing this call site.
             result = await self._agent_dispatcher(
                 agent_id,
                 task,
