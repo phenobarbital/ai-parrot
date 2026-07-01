@@ -14,7 +14,7 @@
       "feature_id": "FEAT-267",
       "feature": "o365-devicecode-followups",
       "spec": "sdd/specs/o365-devicecode-followups.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only cli/identity.py — disjoint from TASK-1688 (vault_token_sync.py + o365_devicecode_provider.py).",
       "assigned_to": null,
       "started_at": "2026-07-01T14:01:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1687-cli-identity-tenant-sentinel.md"
+      "completed_at": "2026-07-01T14:03:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1687-cli-identity-tenant-sentinel.md"
     },
     {
       "id": "TASK-1688",

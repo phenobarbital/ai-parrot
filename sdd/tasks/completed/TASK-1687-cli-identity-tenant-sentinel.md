@@ -141,4 +141,22 @@ When complete, the agent must:
 3. Add a brief completion note below
 
 ### Completion Note
-(Agent fills this in when done)
+
+Implemented as specified. `packages/ai-parrot/src/parrot/cli/identity.py`:
+added `O365_TENANT_ID_ENV_VAR = "O365_TENANT_ID"` and
+`UNSET_CLI_TENANT = "unset-cli-tenant"` constants; grepped the codebase for
+an existing tenant-id env var convention first — none found (`o365_oauth.py`'s
+`tenant_id` is a constructor parameter for OAuth endpoint templating, not an
+env var), so `O365_TENANT_ID` is new. `build_cli_permission_context()` now
+reads `O365_TENANT_ID` (stripped, blank treated as unset) and falls back to
+`UNSET_CLI_TENANT`, never `CLI_CHANNEL`. Added a code comment at the
+`UserSession(...)` call site documenting the `roles=frozenset()` gap.
+
+New test file `packages/ai-parrot/tests/cli/test_identity.py` (no prior
+dedicated test file for `cli/identity.py` existed — checked
+`test_credentials_devicecode.py` and `test_cli_devicecode_e2e.py` first, the
+latter covers `channel`/`user_id` but not `tenant_id`) covers: env-set case,
+unset-sentinel case, blank-env-as-unset case, and roles-remains-empty.
+
+All 9 tests pass (4 new + 5 existing in `test_cli_devicecode_e2e.py`,
+unaffected since none asserted on `tenant_id`). `ruff check` clean.
