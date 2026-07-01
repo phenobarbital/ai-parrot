@@ -115,4 +115,46 @@ Standard SDD flow. Run the verification grep BEFORE deleting. Independent of oth
 can run first or last.
 
 ## Completion Note
-*(Agent fills this in when done)*
+Ran the required verification grep first — confirmed the only live
+(non-comment, non-test) reference to the Gen 1 symbols was the
+handler↔manager pair itself (`handlers/o365_auth.py:7` importing
+`RemoteAuthManager` from `services/o365_remote_auth.py`), exactly as the
+task predicted. Deleted both files (`git rm`). Surgically removed ONLY the
+commented Gen 1 blocks in `app.py`: the 3-line commented import block
+(former lines ~30-34) and the commented manager-assignment + two
+`add_view` blocks (former lines ~166-176). Left every other line —
+including the unrelated uncommitted logging refactor — untouched.
+
+**One discrepancy vs. the task's assumption, NOT deleted (per "STOP and
+note" instruction):** `app.py`'s `on_shutdown()` hook contains an
+**uncommented** `if manager := app.get('o365_auth_manager'): await
+manager.shutdown()` (originally line 355, now ~338). The task's file table
+description implied this shutdown reference lived within the same
+commented 166-181 region; in reality it's a separate, non-commented block
+elsewhere in the file. It was ALREADY inert before this change (nothing
+ever set `app['o365_auth_manager']` since its only setter was already
+commented out prior to this feature), so it remains 100% dead code that
+does not import or reference any deleted symbol by name (duck-typed
+`.shutdown()` call via a string key `.get()`). Left untouched per "remove
+ONLY the commented Gen 1 blocks... do NOT touch... unrelated" — flagging
+here as a candidate for a future trivial cleanup, not blocking this task's
+acceptance criteria (no dangling import, `grep` clean of live symbol
+references).
+
+Added `packages/ai-parrot-server/tests/unit/test_gen1_o365_auth_removed.py`
+(from the task's own Test Specification; not listed in the file table but
+implied by it) asserting `ModuleNotFoundError` for both deleted modules.
+**Test-harness caveat:** this worktree shares a `.venv` with the main repo
+checkout via an editable install; `parrot.services`/`parrot.handlers` are
+PEP 420 namespace packages merged across BOTH the worktree's and the main
+repo's `src/` roots. Since the main repo checkout (pre-merge) still
+physically has the old files, the merged namespace falls through to them
+and the test spuriously passes-as-found in that specific shared-venv
+setup. Verified the deletion is correct via (1) the required grep — clean;
+(2) a sys.path-isolated repro excluding all non-worktree paths — both
+imports correctly raise `ModuleNotFoundError`. This artifact disappears in
+any real single-checkout environment (CI, or this repo post-merge) where
+only one copy of `ai-parrot-server/src` is ever on the path.
+
+`ruff check app.py` clean (pre-existing unrelated `tasker` F841 finding
+confirmed present on `dev`, untouched by this task).
