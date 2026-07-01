@@ -7,7 +7,7 @@ Also exports ``REPLConfig`` — a Pydantic v2 model holding session configuratio
 """
 import logging
 from datetime import datetime
-from typing import AsyncIterator, List, Optional
+from typing import Any, AsyncIterator, List, Optional
 from uuid import uuid4
 
 from prompt_toolkit import PromptSession
@@ -33,6 +33,16 @@ class REPLConfig(BaseModel):
         server_url: Optional server URL for server-mode proxy.
         session_id: Unique session identifier (auto-generated if not provided).
         user_id: User identifier sent with each request.
+        permission_context: Optional FEAT-264/266 permission context (a
+            ``parrot.auth.permission.PermissionContext``) threaded into
+            ``bot.ask``/``bot.ask_stream`` so the credential broker seam
+            (``ToolManager`` → ``AbstractTool``) sees ``channel``/``user_id``
+            for per-user resolvers like the O365 device-code flow. Typed as
+            ``Any`` (not the concrete dataclass) to avoid forcing pydantic
+            to resolve ``PermissionContext``'s own TYPE_CHECKING-only
+            forward refs at schema-build time. ``None`` by default — agents
+            that don't declare broker-backed credentials are completely
+            unaffected.
     """
 
     agent_name: str
@@ -40,6 +50,7 @@ class REPLConfig(BaseModel):
     server_url: Optional[str] = None
     session_id: str = Field(default_factory=lambda: str(uuid4()))
     user_id: str = "cli-user"
+    permission_context: Optional[Any] = None
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -163,6 +174,7 @@ class AgentREPL:
             session_id=self.config.session_id,
             user_id=self.config.user_id,
             output_mode=OutputMode.TERMINAL,
+            permission_context=self.config.permission_context,
         )
         self.history.append(
             ConversationTurn(
@@ -193,6 +205,7 @@ class AgentREPL:
                 session_id=self.config.session_id,
                 user_id=self.config.user_id,
                 output_mode=OutputMode.TERMINAL,
+                permission_context=self.config.permission_context,
             )
             async for chunk in stream:
                 # Chunks may be strings or objects with a text/content attribute
