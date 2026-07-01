@@ -91,6 +91,15 @@ class VaultTokenSync:
         must never break the auth flow.
     """
 
+    #: Field written first (before all other fields) by `store_tokens` so a
+    #: mid-loop failure cannot leave a token set that reads as
+    #: permanently valid — see FEAT-267 (o365-devicecode-followups spec §2
+    #: Module 2). `SessionVault` (verified via `navigator_session.vault`)
+    #: exposes only `get`/`set`/`delete`/`keys`/`exists` — no bulk/
+    #: transactional write primitive — so this ordering is the mitigation,
+    #: not a batched write.
+    _WRITE_FIRST_FIELD: str = "expires_at"
+
     def __init__(
         self,
         db_pool: Any,
@@ -137,22 +146,36 @@ class VaultTokenSync:
         """Store each ``tokens[key]`` at ``{provider}:{key}`` in the vault.
 
         Empty / ``None`` values are skipped to avoid clobbering existing
-        keys with blanks.
+        keys with blanks. ``expires_at`` (when present) is written FIRST, so
+        a mid-loop failure either leaves ``expires_at`` already correctly
+        persisted, or leaves other fields (e.g. ``access_token``) never
+        written — a subsequent read cannot look "permanently valid" from a
+        partial write (FEAT-267; no bulk/transactional vault write primitive
+        exists, verified against ``SessionVault``'s public interface).
+
+        A distinguishable warning is logged (in addition to the existing
+        exception log) when the loop does not persist every expected key.
         """
         if not tokens:
             return
         vault = await self._load_vault(nav_user_id)
         if vault is None:
             return
+
+        expected_items = [(key, value) for key, value in tokens.items() if value is not None]
+        ordered_items = sorted(
+            expected_items, key=lambda item: item[0] != self._WRITE_FIRST_FIELD,
+        )
+
+        written_keys: list[str] = []
         try:
-            for key, value in tokens.items():
-                if value is None:
-                    continue
+            for key, value in ordered_items:
                 vault_key = f"{provider}:{key}"
                 await vault.set(vault_key, value)
+                written_keys.append(key)
             self.logger.info(
                 "VaultTokenSync: stored %d tokens user=%s provider=%s",
-                len(tokens),
+                len(written_keys),
                 nav_user_id,
                 provider,
             )
@@ -162,6 +185,19 @@ class VaultTokenSync:
                 nav_user_id,
                 provider,
             )
+        finally:
+            expected_keys = [key for key, _ in expected_items]
+            missing_keys = [key for key in expected_keys if key not in written_keys]
+            if missing_keys:
+                self.logger.warning(
+                    "VaultTokenSync: PARTIAL WRITE detected user=%s provider=%s "
+                    "written=%s missing=%s — token set may be inconsistent "
+                    "until the next successful store_tokens() call",
+                    nav_user_id,
+                    provider,
+                    written_keys,
+                    missing_keys,
+                )
 
     async def read_tokens(
         self,
