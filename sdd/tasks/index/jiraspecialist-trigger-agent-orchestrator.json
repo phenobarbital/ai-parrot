@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-30T23:15:57Z",
-  "completed_at": "2026-07-01T14:00:15+00:00",
+  "completed_at": null,
   "tasks": [
     {
       "id": "TASK-1678",
@@ -22,9 +22,8 @@
       "parallelism_notes": "Foundation task: creates parrot/bots/_types.py and the JiraSpecialist slot/setter that TASK-1679 and TASK-1680 both depend on.",
       "assigned_to": null,
       "started_at": "2026-06-30T23:22:31+00:00",
-      "completed_at": "2026-07-01T14:00:15+00:00",
-      "file": "sdd/tasks/completed/TASK-1678-agent-dispatcher-protocol-slot.md",
-      "verification": "verified"
+      "completed_at": "2026-06-30T23:27:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1678-agent-dispatcher-protocol-slot.md"
     },
     {
       "id": "TASK-1679",
@@ -43,9 +42,8 @@
       "parallelism_notes": "Modifies jira_specialist.py + the test file; depends on the slot/setter from TASK-1678. Shares jira_specialist.py with TASK-1678 so cannot run before it.",
       "assigned_to": null,
       "started_at": "2026-06-30T23:22:31+00:00",
-      "completed_at": "2026-07-01T14:00:15+00:00",
-      "file": "sdd/tasks/completed/TASK-1679-real-dispatch-in-action-trigger-agent.md",
-      "verification": "verified"
+      "completed_at": "2026-06-30T23:29:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1679-real-dispatch-in-action-trigger-agent.md"
     },
     {
       "id": "TASK-1680",
@@ -64,9 +62,8 @@
       "parallelism_notes": "Docs-only task touching docs/ only; shares no files with TASK-1679. Can run in parallel with TASK-1679 once TASK-1678 finalizes the API names.",
       "assigned_to": null,
       "started_at": "2026-06-30T23:22:31+00:00",
-      "completed_at": "2026-07-01T14:00:15+00:00",
-      "file": "sdd/tasks/completed/TASK-1680-startup-wiring-docs.md",
-      "verification": "verified"
+      "completed_at": "2026-06-30T23:31:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1680-startup-wiring-docs.md"
     }
   ]
 }

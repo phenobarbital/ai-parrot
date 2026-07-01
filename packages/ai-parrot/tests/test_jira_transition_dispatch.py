@@ -57,6 +57,7 @@ def _make_specialist(transition_actions=None):
     obj = object.__new__(JiraSpecialist)
     obj._transition_actions = transition_actions or []
     obj._wrapper = None
+    obj._agent_dispatcher = None
     obj.logger = MagicMock()
     return obj
 
@@ -72,6 +73,45 @@ def status_change_payload():
         "project_key": "NAV",
         "assignee": {"display_name": "Developer"},
     }
+
+
+# ---------------------------------------------------------------------------
+# TestAgentDispatcherSlot — _agent_dispatcher slot + set_agent_dispatcher()
+# ---------------------------------------------------------------------------
+
+
+class TestAgentDispatcherSlot:
+    """Tests for the AgentDispatcher protocol + dispatcher slot (TASK-1678)."""
+
+    def test_agent_dispatcher_defaults_to_none(self):
+        """A fresh specialist starts with _agent_dispatcher is None."""
+        specialist = _make_specialist()
+        assert specialist._agent_dispatcher is None
+
+    def test_set_agent_dispatcher_sets_attr(self):
+        """set_agent_dispatcher() stores the callable on _agent_dispatcher."""
+        specialist = _make_specialist()
+
+        async def disp(agent_name, task, *, user_id=None, session_id=None):
+            return None
+
+        assert specialist._agent_dispatcher is None
+        specialist.set_agent_dispatcher(disp)
+        assert specialist._agent_dispatcher is disp
+
+    def test_execute_agent_satisfies_protocol(self):
+        """A callable matching AutonomousOrchestrator.execute_agent's shape
+        is accepted as an AgentDispatcher (structural / duck-typed check).
+        """
+        from parrot.bots._types import AgentDispatcher
+
+        class _Orch:
+            async def execute_agent(self, agent_name, task, *, method_name=None,
+                                    user_id=None, session_id=None, **kw):
+                return {"ok": True}
+
+        disp: AgentDispatcher = _Orch().execute_agent
+        assert callable(disp)
 
 
 # ---------------------------------------------------------------------------
@@ -306,20 +346,32 @@ class TestActionNotifyChannel:
 # ---------------------------------------------------------------------------
 
 
+class _RecordingDispatcher:
+    """Fake AgentDispatcher that records every call it receives."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def __call__(self, agent_name, task, *, user_id=None, session_id=None):
+        self.calls.append((agent_name, task, user_id, session_id))
+        return {"ok": True}
+
+
 class TestActionTriggerAgent:
     """Tests for the _action_trigger_agent built-in handler."""
 
     @pytest.mark.asyncio
     async def test_logs_trigger_intent(self, status_change_payload):
-        """Logs at INFO level and returns a structured result."""
+        """With no dispatcher wired, logs intent (WARNING) and returns
+        status='skipped' — does NOT raise (backward-compatible degrade)."""
         specialist = _make_specialist()
         result = await specialist._action_trigger_agent(
             status_change_payload,
             {"agent_id": "deploy_bot", "task_template": "Deploy {issue_key}"},
         )
-        assert result["status"] == "triggered"
+        assert result["status"] == "skipped"
         assert result["agent_id"] == "deploy_bot"
-        specialist.logger.info.assert_called()
+        specialist.logger.warning.assert_called()
 
     @pytest.mark.asyncio
     async def test_formats_task_from_template(self, status_change_payload):
@@ -343,8 +395,80 @@ class TestActionTriggerAgent:
             status_change_payload,
             {"agent_id": "my_agent"},
         )
-        assert result["status"] == "triggered"
+        assert result["status"] == "skipped"
         assert result["task"] != ""
+
+    @pytest.mark.asyncio
+    async def test_no_agent_id_skips(self, status_change_payload):
+        """Missing agent_id returns status='skipped' (unchanged guard)."""
+        specialist = _make_specialist()
+        result = await specialist._action_trigger_agent(status_change_payload, {})
+        assert result["status"] == "skipped"
+        assert "agent_id" in result.get("reason", "")
+
+    @pytest.mark.asyncio
+    async def test_dispatches_to_wired_dispatcher(self, status_change_payload):
+        """With a dispatcher set, _action_trigger_agent awaits it exactly once
+        with the resolved agent_id and rendered task; returns status='dispatched'."""
+        specialist = _make_specialist()
+        disp = _RecordingDispatcher()
+        specialist.set_agent_dispatcher(disp)
+        result = await specialist._action_trigger_agent(
+            status_change_payload,
+            {"agent_id": "deploy_bot", "task_template": "Deploy {issue_key}"},
+        )
+        assert result["status"] == "dispatched"
+        assert len(disp.calls) == 1
+        assert disp.calls[0][0] == "deploy_bot"
+        assert disp.calls[0][1] == "Deploy NAV-1234"
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_dispatcher(self, status_change_payload):
+        """With no dispatcher, returns status='skipped' and does NOT raise."""
+        specialist = _make_specialist()
+        result = await specialist._action_trigger_agent(
+            status_change_payload, {"agent_id": "deploy_bot"}
+        )
+        assert result["status"] == "skipped"
+
+    @pytest.mark.asyncio
+    async def test_dispatcher_error_is_caught(self, status_change_payload):
+        """A dispatcher exception is caught and surfaced as status='error';
+        it must not raise out of the action handler."""
+        specialist = _make_specialist()
+
+        async def boom(*args, **kwargs):
+            raise RuntimeError("nope")
+
+        specialist.set_agent_dispatcher(boom)
+        result = await specialist._action_trigger_agent(
+            status_change_payload, {"agent_id": "deploy_bot"}
+        )
+        assert result["status"] == "error"
+        assert "nope" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_task_template_rendered_before_dispatch(self, status_change_payload):
+        """task_template placeholders are filled in the task passed to the
+        dispatcher (not the raw template)."""
+        specialist = _make_specialist()
+        disp = _RecordingDispatcher()
+        specialist.set_agent_dispatcher(disp)
+        await specialist._action_trigger_agent(
+            status_change_payload,
+            {
+                "agent_id": "deploy_bot",
+                "task_template": (
+                    "{issue_key}: {from_status} -> {to_status} "
+                    "({summary}) assignee={assignee}"
+                ),
+            },
+        )
+        assert len(disp.calls) == 1
+        rendered_task = disp.calls[0][1]
+        assert rendered_task == (
+            "NAV-1234: Open -> In Progress (Fix login timeout) assignee=Developer"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -531,6 +655,43 @@ class TestIntegration:
             (r for r in result["results"] if r.get("status") == "skipped"), None
         )
         assert notify_result is not None  # notify skipped (no wrapper)
+
+    @pytest.mark.asyncio
+    async def test_transition_triggers_agent_end_to_end(self, status_change_payload):
+        """A jira.transitioned payload with a TRIGGER_AGENT action, dispatcher
+        wired to a stub orchestrator, drives handle_hook_event →
+        _dispatch_transition → _action_trigger_agent → the stub dispatcher
+        records exactly one execute_agent-shaped call."""
+        actions = [
+            TransitionAction(
+                from_status="*",
+                to_status="Ready For Deploy",
+                action_type=TransitionActionType.TRIGGER_AGENT,
+                action_config={
+                    "agent_id": "deploy_bot",
+                    "task_template": "Deploy {issue_key}",
+                },
+            )
+        ]
+        specialist = _make_specialist(actions)
+        disp = _RecordingDispatcher()
+        specialist.set_agent_dispatcher(disp)
+
+        payload = dict(status_change_payload)
+        payload["to_status"] = "Ready For Deploy"
+        event = HookEvent(
+            hook_id="test-hook",
+            hook_type=HookType.JIRA_WEBHOOK,
+            event_type="jira.transitioned",
+            payload=payload,
+        )
+        result = await specialist.handle_hook_event(event)
+
+        assert result["actions_matched"] == 1
+        assert len(disp.calls) == 1
+        assert disp.calls[0][0] == "deploy_bot"
+        assert disp.calls[0][1] == "Deploy NAV-1234"
+        assert result["results"][0]["status"] == "dispatched"
 
 
 # ---------------------------------------------------------------------------

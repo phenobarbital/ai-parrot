@@ -602,6 +602,11 @@ class BaseHook(ABC):  # line 96
   dict. Full orchestrator integration can be added when `JiraSpecialist` gains
   orchestrator access (e.g., via `HookableAgent` mixin's callback chain or
   `EventBus` emit).
+  > **Update (FEAT-265)**: resolved. `JiraSpecialist` now exposes an
+  > injectable `AgentDispatcher` slot (`set_agent_dispatcher()`) and
+  > `_action_trigger_agent` performs a real dispatch when wired. See
+  > `sdd/specs/jiraspecialist-trigger-agent-orchestrator.spec.md` and
+  > `docs/jira-transition-actions.md` for activation details.
 
 - **Wildcard flood risk**: a `from_status="*"` action will fire on every
   transition. The `model_validator` on `TransitionAction` prevents

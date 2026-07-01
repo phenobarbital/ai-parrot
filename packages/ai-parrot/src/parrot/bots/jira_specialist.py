@@ -30,6 +30,7 @@ import redis.asyncio as redis
 from pydantic import BaseModel, Field
 from navconfig import config
 from parrot.bots import Agent
+from parrot.bots._types import AgentDispatcher
 from parrot.integrations.telegram.callbacks import (
     telegram_callback,
     CallbackContext,
@@ -234,6 +235,11 @@ class JiraSpecialist(Agent):
         self.jira_toolkit: Optional[JiraToolkit] = None
         # Transition-to-action registry for jira.transitioned events.
         self._transition_actions: List[TransitionAction] = _transition_actions
+        # Injectable async dispatcher used by the TRIGGER_AGENT transition
+        # action to invoke another agent (e.g. AutonomousOrchestrator.execute_agent
+        # from ai-parrot-server). Wired via set_agent_dispatcher(); without it,
+        # TRIGGER_AGENT degrades to log-only.
+        self._agent_dispatcher: Optional[AgentDispatcher] = None
 
     async def _get_redis(self) -> redis.Redis:
         """Lazy-init Redis connection."""
@@ -250,6 +256,23 @@ class JiraSpecialist(Agent):
         to the wrapper for proactive messaging.
         """
         self._wrapper = wrapper
+
+    def set_agent_dispatcher(self, dispatcher: AgentDispatcher) -> None:
+        """Wire an async dispatcher so TRIGGER_AGENT actions can invoke
+        other agents. Without this, TRIGGER_AGENT degrades to log-only.
+
+        Typically called at application startup once both the concrete
+        Jira agent and an orchestrator exist, e.g.::
+
+            jira_agent.set_agent_dispatcher(orchestrator.execute_agent)
+
+        Args:
+            dispatcher: An async callable matching the :class:`AgentDispatcher`
+                protocol shape (``agent_name``, ``task``, keyword-only
+                ``user_id``/``session_id``). ``AutonomousOrchestrator.execute_agent``
+                (``ai-parrot-server``) satisfies this shape.
+        """
+        self._agent_dispatcher = dispatcher
 
     async def load_developers(self) -> List[Developer]:
         """
@@ -1284,12 +1307,13 @@ class JiraSpecialist(Agent):
         payload: Dict[str, Any],
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Log the intent to invoke another agent for a transition event.
+        """Dispatch another agent for a transition event via the injected
+        :attr:`_agent_dispatcher`.
 
-        Full orchestrator integration is deferred until :class:`JiraSpecialist`
-        gains access to ``AutonomousOrchestrator``. This implementation logs
-        the trigger intent at ``INFO`` level and returns a structured result
-        so consumers can observe what *would* have been triggered.
+        When a dispatcher has been wired (see :meth:`set_agent_dispatcher`),
+        the resolved ``agent_id`` and rendered ``task`` are forwarded to it
+        and awaited. Without a dispatcher, this degrades to a log-only
+        no-op (backward compatible — does not raise).
 
         Args:
             payload: Transition event payload.
@@ -1298,7 +1322,9 @@ class JiraSpecialist(Agent):
                 as :meth:`_action_notify_channel`).
 
         Returns:
-            A dict with ``status="triggered"``, ``agent_id``, and ``task``.
+            A dict with ``status`` of ``"dispatched"``, ``"skipped"``, or
+            ``"error"``, plus ``agent_id`` and (when applicable) ``task``,
+            ``result``, or ``error``.
         """
         agent_id = config.get("agent_id")
         if not agent_id:
@@ -1321,13 +1347,49 @@ class JiraSpecialist(Agent):
                 f"Transition: {payload.get('issue_key', '?')} "
                 f"{payload.get('from_status', '?')} → {payload.get('to_status', '?')}"
             )
-        self.logger.info(
-            "Transition trigger_agent: agent_id=%s task=%s "
-            "(orchestrator integration pending)",
-            agent_id,
-            task,
-        )
-        return {"status": "triggered", "agent_id": agent_id, "task": task}
+        if self._agent_dispatcher is None:
+            self.logger.warning(
+                "Transition trigger_agent: agent_id=%s task=%s "
+                "(no dispatcher wired — degrading to log-only)",
+                agent_id,
+                task,
+            )
+            return {
+                "status": "skipped",
+                "reason": "no dispatcher wired",
+                "agent_id": agent_id,
+                "task": task,
+            }
+        try:
+            self.logger.info(
+                "Transition trigger_agent: dispatching agent_id=%s task=%s",
+                agent_id,
+                task,
+            )
+            # NOTE: Jira webhook payloads do not currently carry `user_id`/
+            # `session_id` keys, so these will normally resolve to `None`.
+            # They are forwarded here so a future actor-mapping feature can
+            # populate them without changing this call site.
+            result = await self._agent_dispatcher(
+                agent_id,
+                task,
+                user_id=payload.get("user_id"),
+                session_id=payload.get("session_id"),
+            )
+            return {
+                "status": "dispatched",
+                "agent_id": agent_id,
+                "task": task,
+                "result": str(result)[:500],
+            }
+        except Exception as exc:  # noqa: BLE001 — must not break the transition loop
+            self.logger.error(
+                "trigger_agent dispatch failed for %s: %s",
+                agent_id,
+                exc,
+                exc_info=True,
+            )
+            return {"status": "error", "agent_id": agent_id, "error": str(exc)}
 
     def _action_log_transition(
         self,
