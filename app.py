@@ -1,5 +1,4 @@
 from pathlib import Path
-from navconfig.logging import logging
 from navconfig import config
 from navigator.handlers.types import AppHandler
 # Tasker:
@@ -32,8 +31,6 @@ from parrot.handlers.artifacts import (
 #     O365InteractiveAuthSessions,
 #     O365InteractiveAuthSessionDetail,
 # )
-# from parrot.services.mcp import ParrotMCPServer
-# from parrot.tools.workday import WorkdayToolkit
 # from parrot.services.o365_remote_auth import RemoteAuthManager
 from parrot.handlers.jobs.worker import configure_job_manager
 from parrot.handlers.user import UserSocketManager
@@ -81,13 +78,13 @@ class Main(AppHandler):
     def _configure_logging(self):
         """Configuración explícita de logging para aiohttp server."""
         # Obtener el logger raíz
-        root_logger = logging.getLogger()
+        root_logger = self.logger.getLogger()
 
         # Limpiar handlers existentes si los hay
         root_logger.handlers.clear()
 
         # Configurar el nivel del logger raíz
-        root_logger.setLevel(logging.DEBUG)
+        root_logger.setLevel(self.logger.DEBUG)
 
     def configure(self):
         super(Main, self).configure()
@@ -127,13 +124,11 @@ class Main(AppHandler):
         setup_combined_auth_routes(self.app)
 
         ## End of Jira OAuth setup.
-
         # Scheduler Manager (after bot manager):
         self._scheduler = AgentSchedulerManager(
             bot_manager=self.bot_manager
         )
         self._scheduler.setup(app=self.app)
-
         # Configure Job Manager (with Redis persistence)
         configure_job_manager(self.app, use_redis=True)
 
@@ -185,12 +180,7 @@ class Main(AppHandler):
         #     ExampleAsyncView,
         #     name='example_async'
         # )
-        #if ENABLE_NEXTSTOP is True:
-        #    ## NextStop
-        #    nextstop = NextStopAgent(app=self.app)
-        #    nextstop.setup(self.app, '/api/v1/agents/nextstop')
-
-        # # MCP server lifecycle management
+        # MCP server lifecycle management
         # mcp_server = ParrotMCPServer(
         #     transports=["sse", "http", "websocket"],
         #     tools=WorkdayToolkit(redis_url="redis://localhost:6379/4")
@@ -339,11 +329,11 @@ class Main(AppHandler):
         if evaluator is not None:
             resolver = PBACPermissionResolver(evaluator=evaluator)
             self.app['pbac_resolver'] = resolver
-            logging.getLogger('parrot.app').info(
+            self.logger.getLogger('parrot.app').info(
                 "PBAC enabled: Guardian registered, PBACPermissionResolver active."
             )
         else:
-            logging.getLogger('parrot.app').info(
+            self.logger.getLogger('parrot.app').info(
                 "PBAC not configured — using default resolver (AllowAll)."
             )
 
@@ -362,8 +352,5 @@ class Main(AppHandler):
         on_shutdown.
         description: Signal for customize the response when server is shutting down
         """
-        manager = app.get('o365_auth_manager')
-        if manager:
+        if manager := app.get('o365_auth_manager'):
             await manager.shutdown()
-        # FormRegistry pool close is handled automatically by FormRegistry.on_shutdown
-        # via aiohttp signals (FEAT-185). No manual pool close needed here.

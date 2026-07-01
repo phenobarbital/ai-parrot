@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 import contextlib
+import json
 from collections.abc import Callable
 from datamodel.parsers.json import JSONContent  # pylint: disable=E0611 # noqa
 from navconfig.logging import logging
@@ -72,6 +73,47 @@ class AbstractStore(ABC):
         - PgVector
     """
 
+    @staticmethod
+    def _normalize_embedding_config(value: Union[dict, str]) -> dict:
+        """Coerce an ``embedding_model`` value into a normalized config dict.
+
+        Accepts either a ``dict`` config, a JSON-encoded string holding such a
+        config (e.g. ``'{"model": "...", "model_type": "huggingface"}'``), or a
+        bare model-name string. JSON strings are parsed; a string that is not
+        valid JSON (or does not decode to a dict) is treated as the model name.
+
+        The ``model`` key is aliased to ``model_name`` so callers can use either
+        spelling, and ``model_type`` defaults to ``"huggingface"``.
+
+        Args:
+            value: The raw ``embedding_model`` (dict or string).
+
+        Returns:
+            A config dict guaranteed to carry ``model_name`` and ``model_type``.
+        """
+        config: Optional[dict] = None
+        if isinstance(value, str):
+            candidate = value.strip()
+            if candidate.startswith('{'):
+                try:
+                    parsed = json.loads(candidate)
+                except (ValueError, TypeError):
+                    parsed = None
+                if isinstance(parsed, dict):
+                    config = parsed
+            if config is None:
+                # Plain model name, not a JSON config.
+                return {'model_name': value, 'model_type': 'huggingface'}
+        elif isinstance(value, dict):
+            config = dict(value)
+        else:  # pragma: no cover - defensive
+            return {'model_name': value, 'model_type': 'huggingface'}
+
+        if 'model_name' not in config and 'model' in config:
+            config['model_name'] = config['model']
+        config.setdefault('model_type', 'huggingface')
+        return config
+
     def __init__(
         self,
         embedding_model: Union[dict, str] = None,
@@ -84,15 +126,7 @@ class AbstractStore(ABC):
         self._connected: bool = False
         self.embedding_model: Union[dict, str, None] = None
         if embedding_model is not None:
-            if isinstance(embedding_model, str):
-                self.embedding_model = {
-                    'model_name': embedding_model,
-                    'model_type': 'huggingface'
-                }
-            elif isinstance(embedding_model, dict):
-                self.embedding_model = embedding_model
-                if 'model_name' not in self.embedding_model and 'model' in self.embedding_model:
-                    self.embedding_model['model_name'] = self.embedding_model['model']
+            self.embedding_model = self._normalize_embedding_config(embedding_model)
         # Use or not connection to a vector database:
         self._use_database: bool = kwargs.get('use_database', True)
         # Database Information:
@@ -103,13 +137,8 @@ class AbstractStore(ABC):
         self.database: str = kwargs.get('database', '')
         self.index_name = kwargs.get("index_name", "my_index")
         if embedding is not None:
-            if isinstance(embedding, str):
-                self.embedding_model = {
-                    'model_name': embedding,
-                    'model_type': 'huggingface'
-                }
-            elif isinstance(embedding, dict):
-                self.embedding_model = embedding
+            if isinstance(embedding, (str, dict)):
+                self.embedding_model = self._normalize_embedding_config(embedding)
             else:
                 # is a callable:
                 self.embedding_model = {

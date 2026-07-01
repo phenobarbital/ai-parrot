@@ -78,7 +78,7 @@ class TestWrapperAuthWiring:
         """ParrotM365Agent stores resolver and audit_ledger when passed."""
         from parrot.integrations.msagentsdk.agent import ParrotM365Agent
         from parrot.integrations.msagentsdk.auth import BFTokenServiceResolver
-        from parrot.auth.audit import AuditLedger
+        from parrot.security.audit_ledger import AuditLedger
 
         mock_bot = AsyncMock()
         ledger = AuditLedger()
