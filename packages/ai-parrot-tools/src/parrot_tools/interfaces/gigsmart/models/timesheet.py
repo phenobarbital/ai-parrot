@@ -26,7 +26,6 @@ class EngagementTimesheet(BaseModel):
     """
 
     model_config = ConfigDict(populate_by_name=True)
-
     id: str
     engagement_id: str | None = Field(default=None, alias="engagementId")
     is_approved: bool = Field(default=False, alias="isApproved")
@@ -43,7 +42,6 @@ class ApproveEngagementTimesheetInput(BaseModel, frozen=True):
     """
 
     model_config = ConfigDict(populate_by_name=True)
-
     timesheet_id: str = Field(alias="timesheetId")
     mutation_lock: str | None = Field(default=None, alias="mutationLock")
 
@@ -59,7 +57,6 @@ class RemoveEngagementTimesheetInput(BaseModel, frozen=True):
     """
 
     model_config = ConfigDict(populate_by_name=True)
-
     timesheet_id: str = Field(alias="timesheetId")
 
 
@@ -71,7 +68,6 @@ class AddEngagementDisputeInput(BaseModel, frozen=True):
     """
 
     model_config = ConfigDict(populate_by_name=True)
-
     engagement_id: str = Field(alias="engagementId")
 
 
@@ -87,7 +83,6 @@ class SetEngagementDisputeApprovalInput(BaseModel, frozen=True):
     """
 
     model_config = ConfigDict(populate_by_name=True)
-
     dispute_id: str = Field(alias="disputeId")
     accept: bool
     response_note: str | None = Field(default=None, alias="responseNote")
