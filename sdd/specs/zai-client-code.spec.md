@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-269
 **Date**: 2026-07-03
 **Author**: Jesus (jlara@trocglobal.com)
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Brainstorm**: `sdd/proposals/zai-client-code.brainstorm.md` (Option B accepted)
 
