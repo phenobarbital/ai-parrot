@@ -192,10 +192,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-07-01
+**Notes**: Changed `jira_specialist.py:228` exactly as specified, from
+`if self._prompt_builder is None:` to
+`if getattr(self, "_prompt_builder", None) is None:`. No other line touched.
+`ruff check` clean. `test_jira_transition_dispatch.py` still 46/46 passing in
+isolation. Combined with TASK-1689, `test_jira_assignment.py` (13/13) and
+`test_jira_ticket_created.py` (13/13) now fully pass — the original
+`AttributeError` is gone. `test_jiratoolkit_defaults.py` and
+`test_jiraspecialist_prompt_builder.py` still have residual failures, but
+verification in TASK-1691 confirms both are unrelated to this fix (a
+pre-existing `ai-parrot-tools` jiratoolkit bug, and a deeper pre-existing
+JiraSpecialist prompt-builder ordering bug — see TASK-1691's Completion Note).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
