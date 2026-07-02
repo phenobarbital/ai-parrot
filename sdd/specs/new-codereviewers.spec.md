@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-270
 **Date**: 2026-07-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
