@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-268 — jiraspecialist-prompt-builder-stub-leak
 **Spec**: `sdd/specs/jiraspecialist-prompt-builder-stub-leak.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1689, TASK-1690
@@ -126,11 +126,42 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code (interactive session)
+**Date**: 2026-07-02
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: Actual pytest output/pass-fail counts for each verification
-command above.
+**Notes** — actual pytest results:
 
-**Deviations from spec**: none | describe if any
+- `test_jiraspecialist_prompt_builder.py` — **7 passed** (was 5 failed / 2
+  passed on the `dev` baseline).
+- `test_jira_transition_dispatch.py` (FEAT-265) — **46 passed**, no regression.
+- Combined order-dependence run (all five jira files in one invocation):
+  **90 passed, 6 failed**. The 6 failures are all in
+  `test_jiratoolkit_defaults.py` (`TestCreateIssueDefaults` +
+  `TestDueDateOffset`) and were **confirmed pre-existing on the `dev`
+  baseline** (identical 6 failures, `ValueError: Issue type '…' is not valid
+  for project '…'` at `jiratoolkit.py:2027`). They are unrelated to the
+  `_prompt_builder` stub-leak bug and are explicitly out of scope per the
+  spec's Non-Goals. A follow-up should be filed for them separately.
+- The original `AttributeError: 'JiraSpecialist' object has no attribute
+  '_prompt_builder'` no longer occurs in any collection order.
+
+**Deviations from spec** — one, approved by the user during verification:
+
+The spec assumed **all** failures in the four affected files were caused by
+the conftest stub leak. Verification proved otherwise: with the leak fixed
+(TASK-1689) and the `getattr` guard in place (TASK-1690), three tests in
+`test_jiraspecialist_prompt_builder.py`
+(`test_specialist_layers_include_jira_layers`, `test_subclass_inherits_layers`,
+`test_caller_can_override_builder`) still failed — the stub-leak crash had
+been **masking** a real logic bug: `JiraSpecialist.__init__` never installed
+its `jira_workflow` / `jira_grounding` layers (nor a caller-supplied
+`prompt_builder=`) because `Agent.__init__` (`agent.py:96`) installs a generic
+`PromptBuilder.agent()` default first, making the post-`super()`
+`if _prompt_builder is None` guard always False.
+
+Fix applied to `jira_specialist.py` (beyond TASK-1690's one-line guard): the
+builder is now chosen explicitly with clear precedence
+(caller `prompt_builder=` > caller `prompt_preset=` > Jira default) and
+installed **after** `super().__init__()`, overriding Agent's generic default.
+`clone_for_user` fidelity is preserved. This is the actual functional fix the
+feature needed; the `getattr` guard remains valuable as defence-in-depth.

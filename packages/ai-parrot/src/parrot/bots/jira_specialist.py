@@ -211,22 +211,38 @@ class JiraSpecialist(Agent):
         # Pop transition_actions before super() so the base class does not
         # receive an unknown keyword argument.
         _transition_actions = kwargs.pop("transition_actions", None) or []
-        # Pop prompt_builder before super() so subclasses can supply their own
-        # by passing it as a kwarg.  AbstractBot does not consume this key, so
-        # we handle it here and set it via the property setter after init.
-        _builder = kwargs.pop("prompt_builder", None) or self._build_jira_prompt_builder()
+        # Pop prompt_builder before super() so we can control precedence
+        # explicitly. Builder precedence:
+        #   1. an explicit caller-supplied prompt_builder=  (wins outright)
+        #   2. an explicit caller-supplied prompt_preset=    (installed by
+        #      AbstractBot — JiraSpecialist must not clobber it)
+        #   3. JiraSpecialist's own default Jira layer stack (fallback)
+        # NOTE: we cannot gate this on ``self._prompt_builder is None`` after
+        # super(): Agent.__init__ (agent.py) installs a generic
+        # ``PromptBuilder.agent()`` default whenever neither a builder nor a
+        # preset was given, so the guard would always be False and the Jira
+        # layers (jira_workflow / jira_grounding) would silently never load
+        # (FEAT-268). Instead we decide here and overwrite after super().
+        _caller_builder = kwargs.pop("prompt_builder", None)
+        _has_preset = kwargs.get("prompt_preset") is not None
+        _builder = _caller_builder or self._build_jira_prompt_builder()
         # Keep a copy of the construction kwargs so ``clone_for_user`` can
         # rebuild an identical instance without guessing at the subclass
         # signature. Copy is shallow; the values are expected to be
         # immutable or safe to share across clones (LLM presets, model
         # names, etc.).
         self._init_kwargs: Dict[str, Any] = dict(kwargs)
-        self._init_kwargs["prompt_builder"] = _builder
         super().__init__(**kwargs)
-        # Install the layered prompt builder (unless AbstractBot already set
-        # one via prompt_preset=).
-        if getattr(self, "_prompt_builder", None) is None:
+        # Install the Jira layer stack (default) or the caller's own builder,
+        # overriding the generic default Agent.__init__ may have set. Only
+        # step aside when the caller explicitly asked for a prompt_preset=
+        # (and did not also pass an explicit prompt_builder=).
+        if _caller_builder is not None or not _has_preset:
             self.prompt_builder = _builder
+            # Record the effective builder so ``clone_for_user`` reproduces it
+            # faithfully (a preset-only construction keeps prompt_preset in
+            # _init_kwargs instead and lets super() rebuild the preset).
+            self._init_kwargs["prompt_builder"] = _builder
         self._standup_config = DailyStandupConfig()
         self._redis: Optional[redis.Redis] = None
         self._developers: List[Developer] = []
