@@ -244,3 +244,81 @@ def test_from_config_builds_broker_without_io():
     # The fireflies provider should be registered (or warned if integrations not installed)
     # Either way, from_config returns without I/O
     assert isinstance(broker, CredentialBroker)
+
+
+# ---------------------------------------------------------------------------
+# obo strategy fail-fast (missing deps must not build a broken resolver)
+# ---------------------------------------------------------------------------
+
+
+def test_build_obo_without_deps_raises_keyerror():
+    """auth='obo' with missing O365 deps fails at build time, not at runtime.
+
+    Regression: the factory used to silently construct a
+    WorkIQOBOCredentialResolver with None deps, which then crashed with
+    AttributeError inside get_auth_url() mid-conversation.
+    """
+    factory = CredentialResolverFactory()  # no deps at all
+    cfg = ProviderCredentialConfig(provider="workiq", auth="obo")
+
+    with pytest.raises(KeyError, match="o365_oauth_manager"):
+        factory.build(cfg)
+
+
+def test_build_obo_with_partial_deps_raises_keyerror():
+    """auth='obo' with only some deps present still fails fast."""
+    factory = CredentialResolverFactory(
+        deps={"vault": MagicMock(), "o365_interface": MagicMock()}
+    )
+    cfg = ProviderCredentialConfig(provider="workiq", auth="obo")
+
+    with pytest.raises(KeyError, match="required for auth='obo'"):
+        factory.build(cfg)
+
+
+def test_build_obo_with_all_deps_succeeds():
+    """auth='obo' builds normally when all three deps are supplied."""
+    factory = CredentialResolverFactory(
+        deps={
+            "vault": MagicMock(),
+            "o365_interface": MagicMock(),
+            "o365_oauth_manager": MagicMock(),
+        }
+    )
+    cfg = ProviderCredentialConfig(provider="workiq", auth="obo")
+
+    resolver = factory.build(cfg)
+    assert resolver is not None
+
+
+def test_from_config_strict_surfaces_obo_misconfiguration():
+    """Strict from_config turns the missing-deps KeyError into a config error."""
+    from parrot.auth.broker import CredentialBrokerConfigError
+
+    configs = [ProviderCredentialConfig(provider="workiq", auth="obo")]
+
+    with pytest.raises(CredentialBrokerConfigError, match="workiq"):
+        CredentialBroker.from_config(configs)  # strict=True default, no deps
+
+
+def test_from_config_lenient_skips_obo_misconfiguration():
+    """strict=False skips the broken provider instead of raising."""
+    configs = [ProviderCredentialConfig(provider="workiq", auth="obo")]
+
+    broker = CredentialBroker.from_config(configs, strict=False)
+    assert isinstance(broker, CredentialBroker)
+
+
+@pytest.mark.asyncio
+async def test_workiq_resolver_get_auth_url_without_manager_raises_runtimeerror():
+    """Defense in depth: a resolver built with manager=None raises a clear error."""
+    from parrot.auth.oauth2.workiq_provider import WorkIQOBOCredentialResolver
+
+    resolver = WorkIQOBOCredentialResolver(
+        o365_interface=MagicMock(),
+        o365_oauth_manager=None,
+        vault_token_sync=MagicMock(),
+    )
+
+    with pytest.raises(RuntimeError, match="o365_oauth_manager"):
+        await resolver.get_auth_url("msteams", "user@example.com")

@@ -279,16 +279,21 @@ class ParrotM365Agent:
         token = _pctx_var.set(pctx)
         request_ctx = RequestContext(user_id=user_id, session_id=session_id)
 
-        # FEAT-264 Issue 6: broker is registered on tool_manager.__init__ so no
-        # need to thread _broker/_cred_channel/_cred_user_id through ask() kwargs.
-        # The ContextVar seam (AbstractTool.execute) resolves credentials using
-        # tool_manager.broker which was set in __init__.
+        # FEAT-264 Issue 6: the broker is registered on tool_manager.__init__ so
+        # the low-level _broker/_cred_channel/_cred_user_id kwargs need not be
+        # threaded manually. But the caller identity still has to reach the LLM
+        # client: ``ask()`` forwards ``permission_context`` to
+        # ``client._permission_context``, which is where ToolManager.execute_tool
+        # reads ``_cred_user_id`` / ``_cred_channel`` from. Setting ``_pctx_var``
+        # alone is NOT enough — nothing in the ask()→execute_tool path reads it —
+        # so the broker seam would fail closed ("no user identity provided").
         try:
             response = await self.parrot_agent.ask(
                 question=text.strip(),
                 session_id=session_id,
                 user_id=user_id,
                 ctx=request_ctx,
+                permission_context=pctx,
             )
             await self._send_text(context, str(response.content))
         except Exception as exc:  # noqa: BLE001

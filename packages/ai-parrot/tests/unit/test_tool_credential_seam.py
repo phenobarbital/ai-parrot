@@ -248,3 +248,90 @@ def test_tool_manager_clone_carries_broker():
 
     cloned = tm.clone()
     assert cloned.broker is broker
+
+
+# ---------------------------------------------------------------------------
+# Tests: AbstractToolkit credential_provider propagation (FEAT-264)
+# ---------------------------------------------------------------------------
+
+
+def _make_credentialed_toolkit_cls():
+    from parrot.tools.toolkit import AbstractToolkit
+
+    class GatedToolkit(AbstractToolkit):
+        """Toolkit whose tools are gated through the broker seam."""
+
+        credential_provider = "testprovider"
+
+        async def do_thing(self, item: str = "x") -> str:
+            """Do a thing that needs a per-user credential."""
+            return f"did:{item}:cred={current_credential()}"
+
+    return GatedToolkit
+
+
+def test_toolkit_propagates_credential_provider_to_tools():
+    """Every generated ToolkitTool inherits the toolkit's credential_provider."""
+    toolkit = _make_credentialed_toolkit_cls()()
+    tools = toolkit.get_tools()
+
+    assert tools, "toolkit generated no tools"
+    assert all(t.credential_provider == "testprovider" for t in tools)
+
+
+def test_toolkit_credential_provider_constructor_override():
+    """The credential_provider kwarg overrides the class attribute per instance."""
+    toolkit = _make_credentialed_toolkit_cls()(credential_provider="other")
+    tools = toolkit.get_tools()
+
+    assert all(t.credential_provider == "other" for t in tools)
+
+
+def test_toolkit_without_credential_provider_leaves_tools_ungated():
+    """Default (None) keeps generated tools out of the broker seam."""
+    from parrot.tools.toolkit import AbstractToolkit
+
+    class PlainToolkit(AbstractToolkit):
+        async def do_plain(self, item: str = "x") -> str:
+            """A plain tool."""
+            return f"plain:{item}"
+
+    tools = PlainToolkit().get_tools()
+    assert all(not t.credential_provider for t in tools)
+
+
+@pytest.mark.asyncio
+async def test_toolkit_tool_miss_raises_credential_required_before_body():
+    """Broker miss on a toolkit tool raises CredentialRequired; body never runs."""
+    toolkit = _make_credentialed_toolkit_cls()()
+    tool = toolkit.get_tools()[0]
+    broker = _make_broker(token=None, auth_url="https://login/consent")
+
+    with pytest.raises(CredentialRequired) as exc_info:
+        await tool.execute(
+            _broker=broker,
+            _cred_channel="msteams",
+            _cred_user_id="alice@example.com",
+            item="x",
+        )
+
+    assert exc_info.value.provider == "testprovider"
+    assert exc_info.value.auth_url == "https://login/consent"
+
+
+@pytest.mark.asyncio
+async def test_toolkit_tool_hit_executes_with_credential():
+    """Broker hit lets the toolkit tool run with the credential in context."""
+    toolkit = _make_credentialed_toolkit_cls()()
+    tool = toolkit.get_tools()[0]
+    broker = _make_broker(token="user-token")
+
+    result = await tool.execute(
+        _broker=broker,
+        _cred_channel="msteams",
+        _cred_user_id="alice@example.com",
+        item="x",
+    )
+
+    payload = result.result if isinstance(result, ToolResult) else result
+    assert "cred=user-token" in str(payload)

@@ -116,3 +116,14 @@ def test_toolkit_generates_tools(fake_resolver):
         "o365_list_upcoming_events",
     }
     assert expected.issubset(names)
+
+
+def test_toolkit_tools_declare_credential_provider(fake_resolver):
+    """FEAT-264: generated tools carry credential_provider='o365' so a broker
+    miss raises CredentialRequired (→ OAuthCard on MSAgentSDK) instead of the
+    plain authorization_required ToolResult."""
+    toolkit = Office365Toolkit(credential_resolver=fake_resolver)
+    tools = toolkit.get_tools()
+
+    assert tools
+    assert all(t.credential_provider == "o365" for t in tools)

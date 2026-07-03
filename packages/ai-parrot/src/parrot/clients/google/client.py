@@ -72,6 +72,7 @@ from ...models.google import (
 )
 from ...tools.abstract import AbstractTool, ToolResult
 from ...core.exceptions import HumanInteractionInterrupt
+from ...auth.credentials import CredentialRequired  # FEAT-264 — per-user cred gate
 from ...security.redaction import OutputScrubber, ScrubPolicy  # FEAT-252 (TASK-1613)
 from .analysis import GoogleAnalysis
 from .generation import GoogleGeneration
@@ -1753,6 +1754,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     result.messages = messages.copy() if messages else []
                     result.tool_call_id = tc.id
                     result.agent_name = getattr(self, "name", "Google_Agent")
+                    raise result
+                elif isinstance(result, CredentialRequired):
+                    # FEAT-264: a per-user credential is missing. Propagate
+                    # (like HumanInteractionInterrupt) so the surface bridge
+                    # (e.g. MSAgentSDK) can emit a sign-in / capture card
+                    # instead of feeding the error back to the model.
                     raise result
                 elif isinstance(result, Exception):
                     tc.error = str(result)
@@ -3807,6 +3814,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                 result.messages = messages.copy() if messages else []
                                 result.tool_call_id = getattr(fc, "id", "")
                                 result.agent_name = getattr(self, "name", "Google_Agent")
+                                raise result
+                            elif isinstance(result, CredentialRequired):
+                                # FEAT-264: per-user credential missing —
+                                # propagate so the surface bridge can emit a
+                                # sign-in / capture card (see non-streaming path).
                                 raise result
                             elif isinstance(result, Exception):
                                 tc.error = str(result)

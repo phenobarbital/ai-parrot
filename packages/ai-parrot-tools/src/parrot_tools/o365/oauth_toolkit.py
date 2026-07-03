@@ -46,6 +46,16 @@ class Office365Toolkit(AbstractToolkit):
     - :meth:`list_sharepoint_sites` — search SharePoint sites the user can see.
     - :meth:`list_upcoming_events` — read upcoming calendar events.
 
+    Credential UX (FEAT-264): the toolkit declares
+    ``credential_provider = "o365"``, so when a CredentialBroker is attached
+    to the ToolManager (and the ``o365`` provider is registered on it, e.g.
+    ``ProviderCredentialConfig(provider="o365", auth="oauth2")`` with an
+    ``oauth_managers={"o365": manager}`` dep) a credential miss raises
+    :class:`~parrot.auth.credentials.CredentialRequired` before the tool
+    body — surfaces render their native consent UX (OAuthCard on MSAgentSDK).
+    Without a broker, the legacy ``_pre_execute`` path below applies and a
+    miss surfaces as an ``authorization_required`` ToolResult instead.
+
     Args:
         credential_resolver: Resolver bound to a
             :class:`parrot.auth.o365_oauth.O365OAuthManager` (typically via
@@ -56,6 +66,7 @@ class Office365Toolkit(AbstractToolkit):
     """
 
     tool_prefix: Optional[str] = "o365"
+    credential_provider: Optional[str] = "o365"
 
     _CLIENT_CACHE_MAX_SIZE: int = 100
     _OAUTH_SCOPES: tuple = (
