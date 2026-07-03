@@ -189,10 +189,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: Added `ZaiCodeDispatchProfile(LLMCodeDispatchProfile)` in
+`flows/dev_loop/models.py`, placed after `GrokCodeDispatchProfile`, with
+`model="glm-5.2"`, `llm="zai:glm-5.2"`, `enable_thinking=True`,
+`reasoning_effort` Literal (default `"max"`), and `max_tokens` redeclared
+`Field(default=8192, ge=256, le=131072)`. Added a Pydantic v2
+`model_validator(mode="after")` that derives `llm` from `model` only when
+`llm` was not explicitly set (checked via `model_fields_set`), so an
+explicit `llm=` override is respected. Added `model_validator` to the
+pydantic import line. Verified via inline smoke script covering all
+acceptance criteria (defaults, model→llm sync, explicit-llm override,
+max_tokens bounds, reasoning_effort Literal enforcement, isinstance check),
+`pytest packages/ai-parrot/tests/flows/dev_loop/ -v` (305 passed, 5 skipped,
+4 pre-existing failures reproduced identically on unmodified `dev` — test
+ordering flakiness in `test_webhook.py`/`test_server_repo_wiring.py`,
+unrelated to this change), and `ruff check` (clean).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
