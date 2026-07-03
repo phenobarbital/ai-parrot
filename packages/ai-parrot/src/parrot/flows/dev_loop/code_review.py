@@ -18,11 +18,12 @@ from typing import Dict, Type
 from pydantic import BaseModel
 
 from parrot import conf
-from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher, CodexCodeDispatcher
 from parrot.flows.dev_loop.models import (
     ClaudeCodeReviewProfile,
     CodeReviewFinding,
     CodeReviewVerdict,
+    CodexCodeReviewProfile,
 )
 
 
@@ -134,8 +135,58 @@ class ClaudeCodeReviewDispatcher(AbstractCodeReviewDispatcher):
             )
 
 
+@CodeReviewDispatcherFactory.register("codex")
+class CodexCodeReviewDispatcher(AbstractCodeReviewDispatcher):
+    """Wraps :class:`CodexCodeDispatcher` with a write-enabled sandbox profile.
+
+    Uses ``sandbox="workspace-write"`` and ``approval_policy="auto-edit"`` so
+    the reviewer can fix issues it finds and commit the fixes to the
+    worktree branch, mirroring the Claude reviewer's write-enabled behavior.
+    """
+
+    agent_name = "codex"
+
+    def __init__(self, *, dispatcher: CodexCodeDispatcher, model: str | None = None) -> None:
+        self._dispatcher = dispatcher
+        self._model = model or "gpt-5.5"
+        self.logger = logging.getLogger(__name__)
+
+    def build_review_profile(self) -> CodexCodeReviewProfile:
+        return CodexCodeReviewProfile(model=self._model)
+
+    async def review(
+        self,
+        *,
+        brief: BaseModel,
+        run_id: str,
+        node_id: str,
+        cwd: str,
+    ) -> CodeReviewVerdict:
+        try:
+            return await self._dispatcher.dispatch(
+                brief=brief,
+                profile=self.build_review_profile(),
+                output_model=CodeReviewVerdict,
+                run_id=run_id,
+                node_id=node_id,
+                cwd=cwd,
+            )
+        except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
+            self.logger.warning("Codex code-review dispatch failed: %s", exc)
+            return CodeReviewVerdict(
+                passed=True,
+                findings=[
+                    CodeReviewFinding(
+                        message=f"code-review could not run: {exc}",
+                        severity="nit",
+                    )
+                ],
+            )
+
+
 __all__ = [
     "AbstractCodeReviewDispatcher",
     "CodeReviewDispatcherFactory",
     "ClaudeCodeReviewDispatcher",
+    "CodexCodeReviewDispatcher",
 ]
