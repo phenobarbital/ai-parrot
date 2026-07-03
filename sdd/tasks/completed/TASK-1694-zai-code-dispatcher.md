@@ -277,10 +277,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: Added `ZaiCodeDispatcher(LLMCodeDispatcher)` in `dispatcher.py`
+after the `GrokCodeDispatcher` block: `__init__` forwards the fixed
+`client_factory=lambda model, **kw: LLMFactory.create(model, **kw)`;
+`_completion_args` builds base args (tools/tool_choice/parallel_tool_calls/
+max_tokens/temperature) then sets `thinking={"type": "enabled"|"disabled"}`
+and `reasoning_effort` from the profile, never `extra_body`, warning via
+`self.logger.warning` when thinking is requested for a model outside
+`THINKING_CAPABLE_ZAI_MODELS` (via `LLMFactory.parse_llm_string`);
+`_chat_completion` obtains the SDK via `await client._ensure_client()` and
+wraps `sdk.chat.completions.create` in `asyncio.to_thread`; a thin `dispatch`
+delegates to `super().dispatch()`. Added `"ZaiCodeDispatcher"` to `__all__`
+and the `ZaiCodeDispatchProfile`/`THINKING_CAPABLE_ZAI_MODELS` imports.
+Fixed `GrokCodeDispatcher.__init__`'s factory lambda (only the lambda
+signature; `_chat_completion`/`dispatch` untouched) to accept `**kw` so
+`_create_client`'s `model_args=` kwarg no longer raises `TypeError`.
+`parallel_tool_calls` kept in the Zai args dict per the base pattern (not
+flagged as rejected by the SDK at this stage; full behavioral verification
+deferred to TASK-1696's dispatch-loop tests against a fake client).
+Verified via inline smoke script covering completion-args (enabled/disabled/
+warning-on-non-capable-model) and both factories accepting `model_args=`
+without `TypeError`, `pytest packages/ai-parrot/tests/flows/dev_loop/ -v`
+(305 passed, 5 skipped, same 4 pre-existing order-dependent failures
+reproduced identically on unmodified `dev`), and `ruff check` (clean).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

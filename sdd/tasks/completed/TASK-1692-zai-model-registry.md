@@ -160,10 +160,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: Added `ZaiModel.GLM_5_2 = "glm-5.2"` above `GLM_5_1` (newest-first
+ordering preserved), added it to `THINKING_CAPABLE_ZAI_MODELS`, bumped
+`ZaiClient.model` / `ZaiClient._default_model` to `glm-5.2` (left
+`_lightweight_model` untouched), and tightened both `zai-sdk` pins in
+`packages/ai-parrot/pyproject.toml` to `>=0.2.3`. Verified via inline smoke
+script, `pytest packages/ai-parrot/tests/test_zai_client.py -v` (4 passed),
+and `ruff check` on both modified source files (clean). All acceptance
+criteria satisfied.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

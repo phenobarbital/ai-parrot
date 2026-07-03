@@ -97,6 +97,8 @@ from parrot.flows.dev_loop import (
     LLMCodeDispatchProfile,
     GrokCodeDispatcher,
     GrokCodeDispatchProfile,
+    ZaiCodeDispatcher,
+    ZaiCodeDispatchProfile,
     DevLoopRunner,
     build_dev_loop_flow,
     flow_stream_ws,
@@ -528,10 +530,33 @@ async def _on_startup(app: web.Application) -> None:
             "Development node using Grok code dispatcher (model=%s)",
             development_profile.model,
         )
+    elif development_agent == "zai":
+        development_dispatcher = ZaiCodeDispatcher(
+            max_concurrent=conf.config.getint(
+                "ZAI_CODE_MAX_CONCURRENT_DISPATCHES",
+                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+            ),
+            redis_url=redis_url,
+            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+        )
+        development_profile = ZaiCodeDispatchProfile(
+            model=conf.config.get("DEV_LOOP_ZAI_MODEL", fallback="glm-5.2"),
+            enable_thinking=conf.config.getboolean(
+                "DEV_LOOP_ZAI_ENABLE_THINKING", fallback=True
+            ),
+            reasoning_effort=conf.config.get(
+                "DEV_LOOP_ZAI_REASONING_EFFORT", fallback="max"
+            ),
+        )
+        logger.info(
+            "Development node using Z.ai code dispatcher (model=%s, thinking=%s)",
+            development_profile.model,
+            development_profile.enable_thinking,
+        )
     elif development_agent not in {"claude", "claude-code"}:
         raise RuntimeError(
             "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', "
-            "'gemini', 'nvidia', or 'grok', "
+            "'gemini', 'nvidia', 'grok', or 'zai', "
             f"got {development_agent!r}"
         )
 

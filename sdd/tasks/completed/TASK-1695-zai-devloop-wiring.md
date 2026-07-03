@@ -206,10 +206,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: Added `ZaiCodeDispatcher`/`ZaiCodeDispatchProfile` to the
+dispatcher/models import blocks and `__all__` in
+`flows/dev_loop/__init__.py`, keeping the Dispatcher-then-Profile pairing
+order used by the other providers. Added the same import pair to
+`examples/dev_loop/server.py`'s dispatcher import block, and a
+`elif development_agent == "zai":` branch mirroring the Grok branch shape
+(config keys `ZAI_CODE_MAX_CONCURRENT_DISPATCHES`, `DEV_LOOP_ZAI_MODEL`,
+`DEV_LOOP_ZAI_ENABLE_THINKING`, `DEV_LOOP_ZAI_REASONING_EFFORT`, all with
+the §2-specified defaults/fallbacks) plus the specified `logger.info` line.
+Extended the invalid-agent `RuntimeError` message to enumerate `'zai'`.
+Verified via inline smoke import
+(`from parrot.flows.dev_loop import ZaiCodeDispatcher, ZaiCodeDispatchProfile`
++ `__all__` membership), `pytest packages/ai-parrot/tests/flows/dev_loop/ -v`
+(305 passed, 5 skipped, same 4 pre-existing order-dependent failures
+reproduced identically on unmodified `dev`), and `ruff check` (clean).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
