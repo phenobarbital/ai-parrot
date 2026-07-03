@@ -18,12 +18,17 @@ from typing import Dict, Type
 from pydantic import BaseModel
 
 from parrot import conf
-from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher, CodexCodeDispatcher
+from parrot.flows.dev_loop.dispatcher import (
+    ClaudeCodeDispatcher,
+    CodexCodeDispatcher,
+    GeminiCodeDispatcher,
+)
 from parrot.flows.dev_loop.models import (
     ClaudeCodeReviewProfile,
     CodeReviewFinding,
     CodeReviewVerdict,
     CodexCodeReviewProfile,
+    GeminiCodeReviewProfile,
 )
 
 
@@ -184,9 +189,59 @@ class CodexCodeReviewDispatcher(AbstractCodeReviewDispatcher):
             )
 
 
+@CodeReviewDispatcherFactory.register("gemini")
+class GeminiCodeReviewDispatcher(AbstractCodeReviewDispatcher):
+    """Wraps :class:`GeminiCodeDispatcher` with sandbox disabled + auto-edit.
+
+    Uses ``sandbox=False`` and ``approval_mode="auto_edit"`` so the reviewer
+    can fix issues it finds and commit the fixes to the worktree branch,
+    mirroring the Claude and Codex reviewers' write-enabled behavior.
+    """
+
+    agent_name = "gemini"
+
+    def __init__(self, *, dispatcher: GeminiCodeDispatcher, model: str | None = None) -> None:
+        self._dispatcher = dispatcher
+        self._model = model or "auto"
+        self.logger = logging.getLogger(__name__)
+
+    def build_review_profile(self) -> GeminiCodeReviewProfile:
+        return GeminiCodeReviewProfile(model=self._model)
+
+    async def review(
+        self,
+        *,
+        brief: BaseModel,
+        run_id: str,
+        node_id: str,
+        cwd: str,
+    ) -> CodeReviewVerdict:
+        try:
+            return await self._dispatcher.dispatch(
+                brief=brief,
+                profile=self.build_review_profile(),
+                output_model=CodeReviewVerdict,
+                run_id=run_id,
+                node_id=node_id,
+                cwd=cwd,
+            )
+        except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
+            self.logger.warning("Gemini code-review dispatch failed: %s", exc)
+            return CodeReviewVerdict(
+                passed=True,
+                findings=[
+                    CodeReviewFinding(
+                        message=f"code-review could not run: {exc}",
+                        severity="nit",
+                    )
+                ],
+            )
+
+
 __all__ = [
     "AbstractCodeReviewDispatcher",
     "CodeReviewDispatcherFactory",
     "ClaudeCodeReviewDispatcher",
     "CodexCodeReviewDispatcher",
+    "GeminiCodeReviewDispatcher",
 ]

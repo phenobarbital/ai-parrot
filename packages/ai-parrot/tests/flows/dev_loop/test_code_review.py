@@ -8,6 +8,7 @@ from parrot.flows.dev_loop.code_review import (
     ClaudeCodeReviewDispatcher,
     CodeReviewDispatcherFactory,
     CodexCodeReviewDispatcher,
+    GeminiCodeReviewDispatcher,
 )
 from parrot.flows.dev_loop.models import (
     ClaudeCodeReviewProfile,
@@ -158,6 +159,40 @@ class TestCodexCodeReviewDispatcher:
         mock_disp = MagicMock()
         mock_disp.dispatch = AsyncMock(side_effect=RuntimeError("boom"))
         d = CodexCodeReviewDispatcher(dispatcher=mock_disp)
+        result = await d.review(brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp")
+        assert result.passed is True
+        assert any("code-review could not run" in f.message for f in result.findings)
+
+
+class TestGeminiCodeReviewDispatcher:
+    def test_agent_name(self):
+        d = GeminiCodeReviewDispatcher(dispatcher=MagicMock())
+        assert d.agent_name == "gemini"
+
+    def test_registered_in_factory(self):
+        d = CodeReviewDispatcherFactory.create("gemini", dispatcher=MagicMock())
+        assert isinstance(d, GeminiCodeReviewDispatcher)
+
+    def test_build_review_profile(self):
+        d = GeminiCodeReviewDispatcher(dispatcher=MagicMock())
+        p = d.build_review_profile()
+        assert isinstance(p, GeminiCodeReviewProfile)
+        assert p.sandbox is False
+        assert p.approval_mode == "auto_edit"
+
+    @pytest.mark.asyncio
+    async def test_review_delegates(self):
+        mock_disp = MagicMock()
+        mock_disp.dispatch = AsyncMock(return_value=CodeReviewVerdict(passed=True))
+        d = GeminiCodeReviewDispatcher(dispatcher=mock_disp)
+        result = await d.review(brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp")
+        assert result.passed is True
+
+    @pytest.mark.asyncio
+    async def test_review_degrades_on_error(self):
+        mock_disp = MagicMock()
+        mock_disp.dispatch = AsyncMock(side_effect=RuntimeError("boom"))
+        d = GeminiCodeReviewDispatcher(dispatcher=mock_disp)
         result = await d.review(brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp")
         assert result.passed is True
         assert any("code-review could not run" in f.message for f in result.findings)
