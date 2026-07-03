@@ -196,3 +196,51 @@ class TestGeminiCodeReviewDispatcher:
         result = await d.review(brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp")
         assert result.passed is True
         assert any("code-review could not run" in f.message for f in result.findings)
+
+
+class TestServerWiring:
+    """FEAT-270 Module 7 — factory-level wiring smoke tests."""
+
+    def test_factory_creates_claude(self):
+        d = CodeReviewDispatcherFactory.create("claude-code", dispatcher=MagicMock())
+        assert d.agent_name == "claude-code"
+
+    def test_factory_creates_codex(self):
+        d = CodeReviewDispatcherFactory.create("codex", dispatcher=MagicMock())
+        assert d.agent_name == "codex"
+
+    def test_factory_creates_gemini(self):
+        d = CodeReviewDispatcherFactory.create("gemini", dispatcher=MagicMock())
+        assert d.agent_name == "gemini"
+
+
+class TestBuildDevLoopNodeFactoriesWiring:
+    """FEAT-270 — codereview_dispatcher threads through the factory chain."""
+
+    def test_qa_factory_uses_explicit_codereview_dispatcher(self):
+        from parrot.bots.flows.flow.definition import NodeDefinition
+        from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
+
+        mock_reviewer = MagicMock()
+        factories = build_dev_loop_node_factories(
+            dispatcher=MagicMock(),
+            jira_toolkit=MagicMock(),
+            redis_url="redis://localhost:6379/0",
+            codereview_dispatcher=mock_reviewer,
+        )
+        nd = NodeDefinition(id="qa", type="dev_loop.qa")
+        node = factories["dev_loop.qa"](nd, set(), set())
+        assert node._codereview_dispatcher is mock_reviewer
+
+    def test_qa_factory_defaults_codereview_dispatcher(self):
+        from parrot.bots.flows.flow.definition import NodeDefinition
+        from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
+
+        factories = build_dev_loop_node_factories(
+            dispatcher=MagicMock(),
+            jira_toolkit=MagicMock(),
+            redis_url="redis://localhost:6379/0",
+        )
+        nd = NodeDefinition(id="qa", type="dev_loop.qa")
+        node = factories["dev_loop.qa"](nd, set(), set())
+        assert isinstance(node._codereview_dispatcher, ClaudeCodeReviewDispatcher)

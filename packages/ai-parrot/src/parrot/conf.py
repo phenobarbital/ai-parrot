@@ -899,6 +899,12 @@ DEV_LOOP_REVISION_TRIGGER: str = config.get(
 DEV_LOOP_CODEREVIEW_MODEL: str = config.get(
     "DEV_LOOP_CODEREVIEW_MODEL", fallback="claude-sonnet-4-6"
 )
+# Which code-review dispatcher backs the QA node's code-review gate
+# (FEAT-270): "claude-code" (default), "codex", or "gemini". Selected via
+# ``CodeReviewDispatcherFactory.create()`` at server startup.
+DEV_LOOP_CODEREVIEW_AGENT: str = config.get(
+    "DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code"
+)
 
 # Jira transition labels the dev-loop applies at each hand-off point. Every
 # Jira project ships its own workflow, so each setting is an *ordered list of

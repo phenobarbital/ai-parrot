@@ -102,6 +102,7 @@ from parrot.flows.dev_loop import (
     flow_stream_ws,
     parse_repo_specs,
 )
+from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
 from parrot_tools.gittoolkit import GitToolkit
 from parrot_tools.jiratoolkit import JiraToolkit
 
@@ -535,6 +536,54 @@ async def _on_startup(app: web.Application) -> None:
             f"got {development_agent!r}"
         )
 
+    # FEAT-270: select the QA node's code-review dispatcher. Reuses the
+    # matching development dispatcher instance when one is already wired up
+    # for the same agent (avoids a second CLI-spawning dispatcher instance);
+    # otherwise a dedicated dispatcher is created for the reviewer.
+    codereview_agent = conf.config.get(
+        "DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code"
+    ).strip().lower()
+    if codereview_agent in {"claude", "claude-code"}:
+        codereview_agent_key = "claude-code"
+        codereview_underlying_dispatcher: object = dispatcher
+    elif codereview_agent == "codex":
+        codereview_agent_key = "codex"
+        codereview_underlying_dispatcher = (
+            development_dispatcher
+            if isinstance(development_dispatcher, CodexCodeDispatcher)
+            else CodexCodeDispatcher(
+                max_concurrent=conf.config.getint(
+                    "CODEX_CODE_MAX_CONCURRENT_DISPATCHES",
+                    fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+                ),
+                redis_url=redis_url,
+                stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+            )
+        )
+    elif codereview_agent == "gemini":
+        codereview_agent_key = "gemini"
+        codereview_underlying_dispatcher = (
+            development_dispatcher
+            if isinstance(development_dispatcher, GeminiCodeDispatcher)
+            else GeminiCodeDispatcher(
+                max_concurrent=conf.config.getint(
+                    "GEMINI_CODE_MAX_CONCURRENT_DISPATCHES",
+                    fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+                ),
+                redis_url=redis_url,
+                stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+            )
+        )
+    else:
+        raise RuntimeError(
+            "DEV_LOOP_CODEREVIEW_AGENT must be 'claude-code', 'codex', or "
+            f"'gemini', got {codereview_agent!r}"
+        )
+    codereview_dispatcher = CodeReviewDispatcherFactory.create(
+        codereview_agent_key, dispatcher=codereview_underlying_dispatcher
+    )
+    logger.info("QA code-review gate using %s reviewer", codereview_agent_key)
+
     # FEAT-253: parse DEV_LOOP_REPOS -> list[RepoSpec] and wire git_toolkit.
     # When DEV_LOOP_REPOS is unset/empty, repos == [] and the flow falls
     # back to the local checkout at BASE_DIR (no clone, no network call).
@@ -557,6 +606,7 @@ async def _on_startup(app: web.Application) -> None:
         name="dev-loop-demo",
         git_toolkit=_build_git_toolkit(),
         repos=repos,
+        codereview_dispatcher=codereview_dispatcher,
     )
     # Orchestrator-side run cap (FLOW_MAX_CONCURRENT_RUNS) — spec G5.
     app["runner"] = DevLoopRunner(app["flow"])
