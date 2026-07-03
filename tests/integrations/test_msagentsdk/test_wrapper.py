@@ -39,7 +39,7 @@ def mock_config_with_spaces():
     )
 
 
-def _make_wrapper(mock_bot, mock_config, mock_app):
+def _make_wrapper(mock_bot, mock_config, mock_app, **wrapper_kwargs):
     """Helper that patches CloudAdapter and returns a wrapper."""
     mock_adapter_cls = MagicMock()
     mock_adapter_instance = MagicMock()
@@ -60,7 +60,7 @@ def _make_wrapper(mock_bot, mock_config, mock_app):
     ):
         from parrot.integrations.msagentsdk.wrapper import MSAgentSDKWrapper
 
-        wrapper = MSAgentSDKWrapper(mock_bot, mock_config, mock_app)
+        wrapper = MSAgentSDKWrapper(mock_bot, mock_config, mock_app, **wrapper_kwargs)
     return wrapper, mock_adapter_instance
 
 
@@ -352,6 +352,45 @@ class TestMSAgentSDKWrapperApiKey:
         result = await wrapper.handle_request(request)
         adapter.process.assert_not_awaited()
         assert result.status == 401
+
+
+class TestMSAgentSDKWrapperAgentClass:
+    """Custom bridge class injection via the ``agent_class`` parameter."""
+
+    def test_default_bridge_class(self, mock_app, mock_config):
+        """Without agent_class, the bridge is a plain ParrotM365Agent."""
+        from parrot.integrations.msagentsdk.agent import ParrotM365Agent
+
+        mock_bot = AsyncMock()
+        wrapper, _ = _make_wrapper(mock_bot, mock_config, mock_app)
+        assert type(wrapper.m365_agent) is ParrotM365Agent
+
+    def test_custom_agent_class_used(self, mock_app, mock_config):
+        """agent_class replaces the bridge and receives the parrot agent."""
+        from parrot.integrations.msagentsdk.agent import ParrotM365Agent
+
+        class CustomBridge(ParrotM365Agent):
+            pass
+
+        mock_bot = AsyncMock()
+        wrapper, _ = _make_wrapper(
+            mock_bot, mock_config, mock_app, agent_class=CustomBridge
+        )
+        assert type(wrapper.m365_agent) is CustomBridge
+        assert wrapper.m365_agent.parrot_agent is mock_bot
+        assert wrapper.m365_agent.welcome_message == (
+            mock_config.welcome_message or wrapper.m365_agent.welcome_message
+        )
+
+    def test_none_agent_class_falls_back_to_default(self, mock_app, mock_config):
+        """Explicit agent_class=None behaves like the default."""
+        from parrot.integrations.msagentsdk.agent import ParrotM365Agent
+
+        mock_bot = AsyncMock()
+        wrapper, _ = _make_wrapper(
+            mock_bot, mock_config, mock_app, agent_class=None
+        )
+        assert type(wrapper.m365_agent) is ParrotM365Agent
 
 
 class TestMSAgentSDKWrapperStop:
