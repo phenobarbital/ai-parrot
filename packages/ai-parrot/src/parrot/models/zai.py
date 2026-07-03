@@ -8,6 +8,7 @@ class ZaiModel(str, Enum):
     free-tier text/vision models.
     """
 
+    GLM_5_2 = "glm-5.2"
     GLM_5_1 = "glm-5.1"
     GLM_5 = "glm-5"
     GLM_5_TURBO = "glm-5-turbo"
@@ -33,6 +34,7 @@ class ZaiModel(str, Enum):
 
 THINKING_CAPABLE_ZAI_MODELS = frozenset(
     {
+        ZaiModel.GLM_5_2.value,
         ZaiModel.GLM_5_1.value,
         ZaiModel.GLM_5.value,
         ZaiModel.GLM_5_TURBO.value,
