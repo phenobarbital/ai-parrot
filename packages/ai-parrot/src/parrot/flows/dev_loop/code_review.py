@@ -11,10 +11,19 @@ See ``sdd/specs/new-codereviewers.spec.md`` for the full design.
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Type
 
 from pydantic import BaseModel
+
+from parrot import conf
+from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.models import (
+    ClaudeCodeReviewProfile,
+    CodeReviewFinding,
+    CodeReviewVerdict,
+)
 
 
 class AbstractCodeReviewDispatcher(ABC):
@@ -75,7 +84,58 @@ class CodeReviewDispatcherFactory:
         return cls._registry[name](**kwargs)
 
 
+@CodeReviewDispatcherFactory.register("claude-code")
+class ClaudeCodeReviewDispatcher(AbstractCodeReviewDispatcher):
+    """Wraps :class:`ClaudeCodeDispatcher` with a write-enabled review profile.
+
+    Delegates to the ``sdd-codereview`` subagent (via the shared
+    ``ClaudeCodeDispatcher``) with ``permission_mode="default"`` and the full
+    read/write tool set, allowing the reviewer to fix issues it finds and
+    commit the fixes to the worktree branch.
+    """
+
+    agent_name = "claude-code"
+
+    def __init__(self, *, dispatcher: ClaudeCodeDispatcher, model: str | None = None) -> None:
+        self._dispatcher = dispatcher
+        self._model = model or conf.DEV_LOOP_CODEREVIEW_MODEL
+        self.logger = logging.getLogger(__name__)
+
+    def build_review_profile(self) -> ClaudeCodeReviewProfile:
+        return ClaudeCodeReviewProfile(model=self._model)
+
+    async def review(
+        self,
+        *,
+        brief: BaseModel,
+        run_id: str,
+        node_id: str,
+        cwd: str,
+    ) -> CodeReviewVerdict:
+        try:
+            return await self._dispatcher.dispatch(
+                brief=brief,
+                profile=self.build_review_profile(),
+                output_model=CodeReviewVerdict,
+                run_id=run_id,
+                node_id=node_id,
+                cwd=cwd,
+            )
+        except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
+            self.logger.warning("Code-review dispatch failed: %s", exc)
+            return CodeReviewVerdict(
+                passed=True,
+                findings=[
+                    CodeReviewFinding(
+                        message=f"code-review could not run: {exc}",
+                        severity="nit",
+                    )
+                ],
+            )
+
+
 __all__ = [
     "AbstractCodeReviewDispatcher",
     "CodeReviewDispatcherFactory",
+    "ClaudeCodeReviewDispatcher",
 ]

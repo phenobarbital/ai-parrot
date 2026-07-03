@@ -1,9 +1,11 @@
 """Tests for the multi-dispatcher code review gate (FEAT-270)."""
 
 import pytest
+from unittest.mock import AsyncMock, MagicMock
 
 from parrot.flows.dev_loop.code_review import (
     AbstractCodeReviewDispatcher,
+    ClaudeCodeReviewDispatcher,
     CodeReviewDispatcherFactory,
 )
 from parrot.flows.dev_loop.models import (
@@ -89,3 +91,38 @@ class TestReviewProfiles:
         p = GeminiCodeReviewProfile()
         assert p.sandbox is False
         assert p.approval_mode == "auto_edit"
+
+
+class TestClaudeCodeReviewDispatcher:
+    def test_agent_name(self):
+        d = ClaudeCodeReviewDispatcher(dispatcher=MagicMock())
+        assert d.agent_name == "claude-code"
+
+    def test_registered_in_factory(self):
+        d = CodeReviewDispatcherFactory.create("claude-code", dispatcher=MagicMock())
+        assert isinstance(d, ClaudeCodeReviewDispatcher)
+
+    def test_build_review_profile(self):
+        d = ClaudeCodeReviewDispatcher(dispatcher=MagicMock())
+        p = d.build_review_profile()
+        assert isinstance(p, ClaudeCodeReviewProfile)
+        assert p.permission_mode == "default"
+        assert "Edit" in p.allowed_tools
+
+    @pytest.mark.asyncio
+    async def test_review_delegates(self):
+        mock_disp = MagicMock()
+        mock_disp.dispatch = AsyncMock(return_value=CodeReviewVerdict(passed=True))
+        d = ClaudeCodeReviewDispatcher(dispatcher=mock_disp)
+        result = await d.review(brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp")
+        assert result.passed is True
+        mock_disp.dispatch.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_review_degrades_on_error(self):
+        mock_disp = MagicMock()
+        mock_disp.dispatch = AsyncMock(side_effect=RuntimeError("boom"))
+        d = ClaudeCodeReviewDispatcher(dispatcher=mock_disp)
+        result = await d.review(brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp")
+        assert result.passed is True
+        assert any("code-review could not run" in f.message for f in result.findings)
