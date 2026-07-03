@@ -52,7 +52,7 @@
       "feature_id": "FEAT-270",
       "feature": "new-codereviewers",
       "spec": "sdd/specs/new-codereviewers.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Can run in parallel with TASK-1695 and TASK-1696 (independent concrete reviewers)",
       "assigned_to": null,
       "started_at": "2026-07-03T00:01:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1694-claude-code-reviewer.md"
+      "completed_at": "2026-07-03T01:02:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1694-claude-code-reviewer.md"
     },
     {
       "id": "TASK-1695",
