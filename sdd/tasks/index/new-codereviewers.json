@@ -137,7 +137,7 @@
       "feature_id": "FEAT-270",
       "feature": "new-codereviewers",
       "spec": "sdd/specs/new-codereviewers.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -150,8 +150,8 @@
       "parallelism_notes": "Depends on all reviewers + QANode changes to thread the dispatcher through",
       "assigned_to": null,
       "started_at": "2026-07-03T00:01:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1698-factory-wiring-server-bootstrap.md"
+      "completed_at": "2026-07-03T01:17:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1698-factory-wiring-server-bootstrap.md"
     },
     {
       "id": "TASK-1699",
