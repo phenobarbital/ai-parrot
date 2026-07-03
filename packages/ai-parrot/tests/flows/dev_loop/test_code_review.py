@@ -1,8 +1,13 @@
 """Tests for the multi-dispatcher code review gate (FEAT-270)."""
 
+import importlib.util
+import sys
+from pathlib import Path
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+from parrot.flows.dev_loop import BugBrief, FlowtaskCriterion, QAReport, ResearchOutput
 from parrot.flows.dev_loop.code_review import (
     AbstractCodeReviewDispatcher,
     ClaudeCodeReviewDispatcher,
@@ -17,6 +22,7 @@ from parrot.flows.dev_loop.models import (
     CodexCodeReviewProfile,
     GeminiCodeReviewProfile,
 )
+from parrot.flows.dev_loop.nodes.qa import QANode
 
 
 class _DummyReviewer(AbstractCodeReviewDispatcher):
@@ -244,3 +250,227 @@ class TestBuildDevLoopNodeFactoriesWiring:
         nd = NodeDefinition(id="qa", type="dev_loop.qa")
         node = factories["dev_loop.qa"](nd, set(), set())
         assert isinstance(node._codereview_dispatcher, ClaudeCodeReviewDispatcher)
+
+
+@pytest.fixture
+def qa_ctx() -> dict:
+    """Minimal QANode.execute() context, mirroring test_qa_codereview.py."""
+    return {
+        "run_id": "r1",
+        "research_output": ResearchOutput(
+            jira_issue_key="OPS-1",
+            spec_path="x",
+            feat_id="FEAT-130",
+            branch_name="feat-130-fix",
+            worktree_path="/abs/.claude/worktrees/feat-130-fix",
+        ),
+        "bug_brief": BugBrief(
+            summary="x" * 20,
+            affected_component="y",
+            log_sources=[],
+            acceptance_criteria=[FlowtaskCriterion(name="run", task_path="a.yaml")],
+            escalation_assignee="a",
+            reporter="b",
+        ),
+    }
+
+
+class TestFullQAFlowIntegration:
+    """FEAT-270 Module 9 — end-to-end deterministic QA -> review -> fix -> rerun."""
+
+    @pytest.mark.asyncio
+    async def test_claude_review_fix_rerun(self, qa_ctx):
+        """Full QA -> Claude review -> fix -> rerun cycle."""
+        underlying = MagicMock()
+        underlying.dispatch = AsyncMock(
+            side_effect=[
+                QAReport(passed=True, criterion_results=[], lint_passed=True),
+                CodeReviewVerdict(
+                    passed=True,
+                    findings=[
+                        CodeReviewFinding(message="fixed null guard", severity="minor")
+                    ],
+                    files_modified=["sync.py"],
+                ),
+                QAReport(passed=True, criterion_results=[], lint_passed=True),
+            ]
+        )
+        reviewer = ClaudeCodeReviewDispatcher(dispatcher=underlying)
+        node = QANode(dispatcher=underlying, codereview_dispatcher=reviewer)
+        report = await node.execute(qa_ctx)
+        assert report.passed is True
+        assert report.code_review_findings == ["fixed null guard"]
+        assert underlying.dispatch.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_codex_review_fix_rerun(self, qa_ctx):
+        """Full QA -> Codex review -> fix -> rerun cycle (separate dispatcher)."""
+        qa_dispatcher = MagicMock()
+        qa_dispatcher.dispatch = AsyncMock(
+            side_effect=[
+                QAReport(passed=True, criterion_results=[], lint_passed=True),
+                QAReport(passed=True, criterion_results=[], lint_passed=True),
+            ]
+        )
+        codex_dispatcher = MagicMock()
+        codex_dispatcher.dispatch = AsyncMock(
+            return_value=CodeReviewVerdict(
+                passed=True, findings=[], files_modified=["sync.py"]
+            )
+        )
+        reviewer = CodexCodeReviewDispatcher(dispatcher=codex_dispatcher)
+        node = QANode(dispatcher=qa_dispatcher, codereview_dispatcher=reviewer)
+        report = await node.execute(qa_ctx)
+        assert report.passed is True
+        assert qa_dispatcher.dispatch.await_count == 2
+        codex_dispatcher.dispatch.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_gemini_review_pass_no_fix(self, qa_ctx):
+        """Full QA -> Gemini review passes -> no rerun needed."""
+        qa_dispatcher = MagicMock()
+        qa_dispatcher.dispatch = AsyncMock(
+            return_value=QAReport(passed=True, criterion_results=[], lint_passed=True)
+        )
+        gemini_dispatcher = MagicMock()
+        gemini_dispatcher.dispatch = AsyncMock(
+            return_value=CodeReviewVerdict(passed=True, findings=[], files_modified=[])
+        )
+        reviewer = GeminiCodeReviewDispatcher(dispatcher=gemini_dispatcher)
+        node = QANode(dispatcher=qa_dispatcher, codereview_dispatcher=reviewer)
+        report = await node.execute(qa_ctx)
+        assert report.passed is True
+        qa_dispatcher.dispatch.assert_awaited_once()
+        gemini_dispatcher.dispatch.assert_awaited_once()
+
+
+class _FakeApp(dict):
+    """Minimal stand-in for ``aiohttp.web.Application``."""
+
+
+def _make_fake_redis() -> MagicMock:
+    redis = MagicMock()
+    redis.aclose = AsyncMock()
+    return redis
+
+
+def _load_server_module():
+    """Load examples/dev_loop/server.py as a Python module.
+
+    Mirrors the helper in test_server_repo_wiring.py (FEAT-253 TASK-004) —
+    duplicated locally so this file has no cross-test-module dependency.
+    """
+    server_path = Path(__file__).parents[5] / "examples" / "dev_loop" / "server.py"
+    if not server_path.exists():
+        pytest.skip(f"server.py not found at {server_path}")
+    module_name = "_dev_loop_server_under_test_codereview"
+    if module_name in sys.modules:
+        del sys.modules[module_name]
+    spec = importlib.util.spec_from_file_location(module_name, server_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class _CodeReviewAgentConfig:
+    """Fake ``conf.config`` returning a fixed DEV_LOOP_CODEREVIEW_AGENT."""
+
+    def __init__(self, codereview_agent: str) -> None:
+        self._codereview_agent = codereview_agent
+
+    def get(self, name: str, fallback=None):
+        if name == "DEV_LOOP_CODEREVIEW_AGENT":
+            return self._codereview_agent
+        return fallback
+
+    def getint(self, name: str, fallback=None):
+        return fallback
+
+    def getboolean(self, name: str, fallback=None):
+        return fallback
+
+
+class TestServerWiringIntegration:
+    """FEAT-270 — DEV_LOOP_CODEREVIEW_AGENT selects the reviewer at boot."""
+
+    @staticmethod
+    def _patch_common(monkeypatch, server_mod, captured):
+        def fake_build_flow(**kwargs):
+            captured.update(kwargs)
+            return MagicMock()
+
+        monkeypatch.setattr(server_mod, "build_dev_loop_flow", fake_build_flow)
+        monkeypatch.setattr(server_mod, "_build_log_toolkits", lambda: {})
+        monkeypatch.setattr(server_mod, "_build_jira_toolkit", lambda: MagicMock())
+        monkeypatch.setattr(server_mod, "_build_git_toolkit", lambda: MagicMock())
+        monkeypatch.setattr(
+            server_mod.aioredis, "from_url", lambda url, **kw: _make_fake_redis()
+        )
+        monkeypatch.setattr(
+            server_mod, "ClaudeCodeDispatcher", MagicMock(return_value=MagicMock())
+        )
+        monkeypatch.setattr(
+            server_mod,
+            "DevLoopRunner",
+            MagicMock(return_value=MagicMock(max_concurrent_runs=1)),
+        )
+
+    @pytest.mark.asyncio
+    async def test_server_wiring_default(self, monkeypatch):
+        """No DEV_LOOP_CODEREVIEW_AGENT set -> default Claude reviewer."""
+        captured: dict = {}
+        server_mod = _load_server_module()
+        self._patch_common(monkeypatch, server_mod, captured)
+        monkeypatch.setattr(
+            server_mod.conf, "config", _CodeReviewAgentConfig("claude-code")
+        )
+
+        app = _FakeApp()
+        app["redis_url"] = "redis://localhost:6379/0"
+        await server_mod._on_startup(app)
+
+        assert isinstance(captured["codereview_dispatcher"], ClaudeCodeReviewDispatcher)
+
+    @pytest.mark.asyncio
+    async def test_server_wiring_codex(self, monkeypatch):
+        """DEV_LOOP_CODEREVIEW_AGENT=codex -> Codex reviewer."""
+        captured: dict = {}
+        server_mod = _load_server_module()
+        self._patch_common(monkeypatch, server_mod, captured)
+        monkeypatch.setattr(server_mod.conf, "config", _CodeReviewAgentConfig("codex"))
+
+        app = _FakeApp()
+        app["redis_url"] = "redis://localhost:6379/0"
+        await server_mod._on_startup(app)
+
+        assert isinstance(captured["codereview_dispatcher"], CodexCodeReviewDispatcher)
+
+    @pytest.mark.asyncio
+    async def test_server_wiring_gemini(self, monkeypatch):
+        """DEV_LOOP_CODEREVIEW_AGENT=gemini -> Gemini reviewer."""
+        captured: dict = {}
+        server_mod = _load_server_module()
+        self._patch_common(monkeypatch, server_mod, captured)
+        monkeypatch.setattr(server_mod.conf, "config", _CodeReviewAgentConfig("gemini"))
+
+        app = _FakeApp()
+        app["redis_url"] = "redis://localhost:6379/0"
+        await server_mod._on_startup(app)
+
+        assert isinstance(captured["codereview_dispatcher"], GeminiCodeReviewDispatcher)
+
+    @pytest.mark.asyncio
+    async def test_server_wiring_invalid(self, monkeypatch):
+        """Invalid DEV_LOOP_CODEREVIEW_AGENT raises RuntimeError."""
+        captured: dict = {}
+        server_mod = _load_server_module()
+        self._patch_common(monkeypatch, server_mod, captured)
+        monkeypatch.setattr(
+            server_mod.conf, "config", _CodeReviewAgentConfig("not-a-real-agent")
+        )
+
+        app = _FakeApp()
+        app["redis_url"] = "redis://localhost:6379/0"
+        with pytest.raises(RuntimeError):
+            await server_mod._on_startup(app)
