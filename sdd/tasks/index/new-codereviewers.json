@@ -94,7 +94,7 @@
       "feature_id": "FEAT-270",
       "feature": "new-codereviewers",
       "spec": "sdd/specs/new-codereviewers.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -105,8 +105,8 @@
       "parallelism_notes": "Can run in parallel with TASK-1694 and TASK-1695 (independent concrete reviewers)",
       "assigned_to": null,
       "started_at": "2026-07-03T00:01:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1696-gemini-code-reviewer.md"
+      "completed_at": "2026-07-03T01:04:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1696-gemini-code-reviewer.md"
     },
     {
       "id": "TASK-1697",
