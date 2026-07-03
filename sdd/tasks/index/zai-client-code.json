@@ -14,7 +14,7 @@
       "feature_id": "FEAT-269",
       "feature": "zai-client-code",
       "spec": "sdd/specs/zai-client-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Root of the chain; ZaiModel.GLM_5_2 is imported by every later task.",
       "assigned_to": null,
       "started_at": "2026-07-03T00:04:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1692-zai-model-registry.md"
+      "completed_at": "2026-07-03T00:47:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1692-zai-model-registry.md"
     },
     {
       "id": "TASK-1693",
