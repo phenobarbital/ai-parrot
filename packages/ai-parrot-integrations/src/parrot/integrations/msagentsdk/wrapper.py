@@ -92,6 +92,7 @@ class MSAgentSDKWrapper:
         app: web.Application,
         broker: Optional["CredentialBroker"] = None,
         identity_mapper: Optional["CanonicalIdentityMapper"] = None,
+        agent_class: Optional[type] = None,
     ) -> None:
         """Initialise the wrapper, create adapter, and register HTTP route.
 
@@ -105,6 +106,11 @@ class MSAgentSDKWrapper:
             identity_mapper: Optional
                 :class:`~parrot.auth.identity.CanonicalIdentityMapper` for
                 cross-surface identity normalisation (FEAT-264 / TASK-1671).
+            agent_class: Optional :class:`~.agent.ParrotM365Agent` subclass to
+                use as the bridge instead of the default. Lets callers hook
+                the turn pipeline (e.g. capture sender identity from the
+                Activity before delegating to ``ask()``). Must accept the
+                same constructor arguments as ``ParrotM365Agent``.
         """
         self.agent = agent
         self.config = config
@@ -139,7 +145,8 @@ class MSAgentSDKWrapper:
                 list(config.oauth_connections.keys()),
             )
 
-        self.m365_agent = ParrotM365Agent(
+        bridge_cls = agent_class or ParrotM365Agent
+        self.m365_agent = bridge_cls(
             parrot_agent=agent,
             welcome_message=config.welcome_message,
             resolver=resolver,
@@ -297,26 +304,30 @@ class MSAgentSDKWrapper:
             ``web.Response`` produced by the ``CloudAdapter``, or a ``401`` JSON
             response when authentication fails.
         """
-        # DEBUG visibility for remote connections (e.g. Copilot Studio reaching
-        # us through a cloudflared/ngrok tunnel). Behind a proxy ``request.remote``
+        # Visibility for remote connections (e.g. Copilot Studio reaching us
+        # through a cloudflared/ngrok tunnel). Behind a proxy ``request.remote``
         # is the tunnel's local socket, so the real client IP lives in the
-        # forwarding headers. Guarded so the body is only parsed when DEBUG is on.
+        # forwarding headers. A concise one-liner is logged at INFO for every
+        # matched request so successful Copilot Studio / Teams calls are visible
+        # without enabling full DEBUG noise.
+        forwarded = (
+            request.headers.get("CF-Connecting-IP")
+            or request.headers.get("X-Forwarded-For")
+            or request.headers.get("X-Real-IP")
+        )
+        self.logger.info(
+            "Incoming %s %s peer=%s forwarded=%s ua=%r auth=%s len=%s",
+            request.method,
+            request.path,
+            request.remote,
+            forwarded,
+            request.headers.get("User-Agent"),
+            "yes" if request.headers.get("Authorization") else "no",
+            request.headers.get("Content-Length"),
+        )
+        # The full body peek stays at DEBUG (guarded so it is only parsed when
+        # DEBUG is on).
         if self.logger.isEnabledFor(logging.DEBUG):
-            forwarded = (
-                request.headers.get("CF-Connecting-IP")
-                or request.headers.get("X-Forwarded-For")
-                or request.headers.get("X-Real-IP")
-            )
-            self.logger.debug(
-                "Incoming %s %s peer=%s forwarded=%s ua=%r auth=%s len=%s",
-                request.method,
-                request.path,
-                request.remote,
-                forwarded,
-                request.headers.get("User-Agent"),
-                "yes" if request.headers.get("Authorization") else "no",
-                request.headers.get("Content-Length"),
-            )
             try:
                 # aiohttp caches the parsed body, so the CloudAdapter can still
                 # read it afterwards — this peek is non-destructive.

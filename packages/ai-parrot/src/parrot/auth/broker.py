@@ -73,7 +73,7 @@ class CredentialResolverFactory:
     ---------------
     ``obo``
         OBO exchange via ``WorkIQOBOCredentialResolver``
-        (``O365Interface.acquire_token_on_behalf_of`` + ``VaultTokenSync``).
+        (``O365Client.acquire_token_on_behalf_of`` + ``VaultTokenSync``).
     ``oauth2``
         Generic OAuth2 3LO via :class:`~parrot.auth.credentials.OAuthCredentialResolver`.
     ``static_key``
@@ -155,6 +155,12 @@ class CredentialResolverFactory:
         o365 = self._deps.get("o365_interface")
         o365_manager = self._deps.get("o365_oauth_manager")
         vault = self._deps.get("vault")
+        if o365 is None or o365_manager is None or vault is None:
+            raise KeyError(
+                "CredentialResolverFactory: 'o365_interface', "
+                "'o365_oauth_manager', and 'vault' deps are required for "
+                f"auth='obo' (provider={cfg.provider!r})"
+            )
         scope = opts.get("scope", WORKIQ_SCOPE)
 
         return WorkIQOBOCredentialResolver(

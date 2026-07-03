@@ -284,11 +284,25 @@ async def proactive_resume(
         channel_id=conv_ref.channel_id,
     )
 
-    # FEAT-264 Issue 6: broker is registered on tool_manager at init time;
-    # no need to thread _broker/_cred_channel/_cred_user_id through ask() kwargs.
-    # The ContextVar seam (AbstractTool.execute) resolves credentials using the
-    # broker stored on tool_manager.  The ``broker`` parameter is kept for
-    # backward compatibility but is no longer forwarded to ask().
+    # FEAT-264 Issue 6: the broker is registered on tool_manager at init time,
+    # so the low-level _broker/_cred_channel/_cred_user_id kwargs need not be
+    # threaded manually. But the re-run still has to tell the broker WHO the
+    # caller is: ToolManager.execute_tool reads ``_cred_user_id`` / ``_cred_channel``
+    # from the LLM client's ``_permission_context``, which ``ask()`` populates
+    # from its ``permission_context`` argument. Without it the seam fails closed
+    # ("no user identity provided") even though consent just completed and the
+    # credential is now stored. The ``broker`` parameter is kept for backward
+    # compatibility but is no longer forwarded to ask().
+    from parrot.auth.permission import UserSession, PermissionContext
+
+    resume_pctx = PermissionContext(
+        session=UserSession(
+            user_id=user_id,
+            tenant_id="msagentsdk",
+            roles=frozenset(),
+        ),
+        channel="msagentsdk",
+    )
 
     async def _callback(turn_context: Any) -> None:
         try:
@@ -296,6 +310,7 @@ async def proactive_resume(
                 question=question,
                 session_id=session_id,
                 user_id=user_id,
+                permission_context=resume_pctx,
             )
             reply_text = str(response.content) if response else "(no response)"
             await turn_context.send_activity(

@@ -15,7 +15,7 @@ OBO flow:
    ``O365OAuth2Provider``).  The Entra access token is stored in vault as
    ``o365:access_token``.
 2. :class:`WorkIQOBOCredentialResolver` calls
-   ``O365Interface.acquire_token_on_behalf_of(user_assertion, scopes)`` to
+   ``O365Client.acquire_token_on_behalf_of(user_assertion, scopes)`` to
    exchange the Entra token for a Work IQ OBO token.
 3. The OBO token is cached in vault as ``workiq:access_token`` and returned
    to the A2A bridge for use with the Work IQ MCP server.
@@ -26,9 +26,9 @@ Registration::
 
     from parrot.auth.oauth2.workiq_provider import WorkIQOAuth2Provider
     from parrot.auth.oauth2.registry import register_oauth2_provider
-    from parrot.interfaces.o365 import O365Interface
+    from parrot.interfaces.o365 import O365Client
 
-    o365 = O365Interface(credentials={...})
+    o365 = O365Client(credentials={...})
     provider = WorkIQOAuth2Provider(
         o365_interface=o365,
         o365_oauth_manager=o365_manager,
@@ -46,7 +46,7 @@ from parrot.auth.credentials import CredentialResolver
 from parrot.auth.oauth2.registry import OAuth2Provider
 
 if TYPE_CHECKING:  # pragma: no cover
-    from parrot.interfaces.o365 import O365Interface
+    from parrot.interfaces.o365 import O365Client
 
 logger = logging.getLogger(__name__)
 
@@ -75,14 +75,14 @@ class WorkIQOBOCredentialResolver(CredentialResolver):
     1. Check vault for a cached ``workiq:access_token`` for *user_id*.
     2. If absent, look for the user's Entra token (``o365:access_token`` in vault).
     3. If the Entra token exists, call
-       :meth:`O365Interface.acquire_token_on_behalf_of` with the Work IQ scope,
+       :meth:`O365Client.acquire_token_on_behalf_of` with the Work IQ scope,
        cache the result as ``workiq:access_token``, and return the token.
     4. If neither is available, return ``None`` — the bridge will surface the
        Entra sign-in link from :meth:`get_auth_url`.
 
     Args:
         o365_interface: A configured
-            :class:`~parrot.interfaces.o365.O365Interface` instance used for
+            :class:`~parrot.interfaces.o365.O365Client` instance used for
             the OBO token exchange.
         o365_oauth_manager: The application-level O365 OAuth manager (must
             expose ``create_authorization_url(channel, user_id)``).
@@ -95,7 +95,7 @@ class WorkIQOBOCredentialResolver(CredentialResolver):
 
     def __init__(
         self,
-        o365_interface: "O365Interface",
+        o365_interface: "O365Client",
         o365_oauth_manager: Any,
         vault_token_sync: Any,
         workiq_scope: str = WORKIQ_SCOPE,
@@ -195,7 +195,18 @@ class WorkIQOBOCredentialResolver(CredentialResolver):
 
         Returns:
             The Entra / Azure AD authorization URL.
+
+        Raises:
+            RuntimeError: If no ``o365_oauth_manager`` was provided at
+                construction time — the resolver cannot build a sign-in URL.
         """
+        if self._o365_manager is None:
+            raise RuntimeError(
+                "WorkIQOBOCredentialResolver: 'o365_oauth_manager' is not "
+                "configured — cannot build the Entra sign-in URL. Pass an "
+                "O365 OAuth manager when constructing the resolver (or as "
+                "the 'o365_oauth_manager' dep of CredentialBroker.from_config)."
+            )
         url, _ = await self._o365_manager.create_authorization_url(channel, user_id)
         return url
 
@@ -235,7 +246,7 @@ class WorkIQOAuth2Provider(OAuth2Provider):
 
     def __init__(
         self,
-        o365_interface: "O365Interface",
+        o365_interface: "O365Client",
         o365_oauth_manager: Any,
         vault_token_sync: Any,
         workiq_scope: str = WORKIQ_SCOPE,
@@ -243,7 +254,7 @@ class WorkIQOAuth2Provider(OAuth2Provider):
         """Initialise the Work IQ OAuth2 provider.
 
         Args:
-            o365_interface: Configured :class:`~parrot.interfaces.o365.O365Interface`
+            o365_interface: Configured :class:`~parrot.interfaces.o365.O365Client`
                 for OBO token exchange.
             o365_oauth_manager: Application-level O365 OAuth manager (used for
                 :meth:`get_auth_url` → Entra sign-in URL).

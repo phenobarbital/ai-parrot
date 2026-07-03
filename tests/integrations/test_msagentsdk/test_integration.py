@@ -76,6 +76,8 @@ class TestEndToEndMessageFlow:
             session_id="conv-001",
             user_id="user-001",
             ctx=ANY,
+            # FEAT-264: caller PermissionContext threaded to ask() for the broker seam.
+            permission_context=ANY,
         )
         ctx.send_activity.assert_awaited_once()
         assert _sent_text(ctx) == "42 is the answer"
