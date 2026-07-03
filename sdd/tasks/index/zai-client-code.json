@@ -52,7 +52,7 @@
       "feature_id": "FEAT-269",
       "feature": "zai-client-code",
       "spec": "sdd/specs/zai-client-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Imports ZaiCodeDispatchProfile; edits dispatcher.py which TASK-1695 then exports.",
       "assigned_to": null,
       "started_at": "2026-07-03T00:04:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1694-zai-code-dispatcher.md"
+      "completed_at": "2026-07-03T01:06:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1694-zai-code-dispatcher.md"
     },
     {
       "id": "TASK-1695",
