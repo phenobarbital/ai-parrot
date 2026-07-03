@@ -235,10 +235,31 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: Created `test_zai_code_dispatcher.py` with all 13 spec §4 tests
+(names verbatim), mirroring `test_grok_code_dispatcher.py`'s harness but
+adapted to the Zai contract: `_FakeZaiClient._ensure_client()` is an
+`AsyncMock` returning a fake SDK object whose `chat.completions.create` is a
+plain **synchronous** callable (since `ZaiCodeDispatcher._chat_completion`
+wraps it in `asyncio.to_thread`, unlike Grok's async client). Added
+`test_grok_client_factory_forwards_model_args` to
+`test_grok_code_dispatcher.py` (monkeypatches `LLMFactory.create` and
+asserts the fixed lambda forwards `model_args=` without `TypeError`). Added
+`test_server_zai_agent_startup` and `test_server_invalid_agent_lists_zai` to
+`test_server_repo_wiring.py`, mirroring `test_server_grok_agent_startup`
+(a `_MockConfig` stub with `get`/`getint`/`getboolean` plus
+`monkeypatch.setenv("ZAI_API_KEY", "test-key")`); `ZaiCodeDispatcher` was
+left un-mocked (its `__init__` performs no network I/O) and asserted via
+`isinstance` against `server_mod.ZaiCodeDispatcher`. All 16 new/changed
+tests pass; full `pytest packages/ai-parrot/tests/flows/dev_loop/ -v` →
+321 passed, 5 skipped, and the same 4 pre-existing order-dependent failures
+(`test_server_builds_flow_with_repos`, three in `test_webhook.py`) that
+reproduce identically on unmodified `dev` — confirmed via a side-by-side
+run before touching any code in this feature; unrelated to FEAT-269. No
+`api.z.ai` string appears anywhere in the test tree. `ruff check` clean on
+all three touched/created files (repo-wide `ruff check` on the whole
+`tests/flows/dev_loop/` dir shows 8 pre-existing F401s in unrelated files,
+untouched by this feature).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
