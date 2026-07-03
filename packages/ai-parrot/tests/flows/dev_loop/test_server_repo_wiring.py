@@ -212,3 +212,114 @@ async def test_server_grok_agent_startup(monkeypatch) -> None:
     assert "development_profile" in captured
     assert captured["development_profile"].model == "grok-build-0.1"
 
+
+@pytest.mark.asyncio
+async def test_server_zai_agent_startup(monkeypatch) -> None:
+    """With DEV_LOOP_DEVELOPMENT_AGENT=zai, _on_startup builds ZaiCodeDispatcher."""
+    captured: dict[str, Any] = {}
+
+    def fake_build_flow(**kwargs: Any) -> MagicMock:
+        captured.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(conf, "DEV_LOOP_REPOS", [])
+    monkeypatch.setenv("ZAI_API_KEY", "test-key")
+
+    class _MockConfig:
+        def get(self, name: str, fallback: Any = None) -> Any:
+            if name == "DEV_LOOP_DEVELOPMENT_AGENT":
+                return "zai"
+            if name == "DEV_LOOP_ZAI_MODEL":
+                return "glm-5.2"
+            if name == "DEV_LOOP_ZAI_REASONING_EFFORT":
+                return "max"
+            return fallback
+
+        def getint(self, name: str, fallback: Any = None) -> Any:
+            return fallback
+
+        def getboolean(self, name: str, fallback: Any = None) -> Any:
+            if name == "DEV_LOOP_ZAI_ENABLE_THINKING":
+                return True
+            return fallback
+
+    monkeypatch.setattr(conf, "config", _MockConfig())
+
+    server_mod = _load_server_module()
+
+    monkeypatch.setattr(server_mod, "build_dev_loop_flow", fake_build_flow)
+    monkeypatch.setattr(server_mod, "_build_log_toolkits", lambda: {})
+    monkeypatch.setattr(server_mod, "_build_jira_toolkit", lambda: MagicMock())
+    monkeypatch.setattr(
+        server_mod.aioredis,
+        "from_url",
+        lambda url, **kw: _make_fake_redis(),
+    )
+    monkeypatch.setattr(
+        server_mod,
+        "ClaudeCodeDispatcher",
+        MagicMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(
+        server_mod,
+        "DevLoopRunner",
+        MagicMock(return_value=MagicMock(max_concurrent_runs=1)),
+    )
+
+    app = _FakeApp()
+    app["redis_url"] = "redis://localhost:6379/0"
+    await server_mod._on_startup(app)
+
+    assert "development_dispatcher" in captured
+    assert "development_profile" in captured
+    assert isinstance(captured["development_dispatcher"], server_mod.ZaiCodeDispatcher)
+    assert isinstance(captured["development_profile"], server_mod.ZaiCodeDispatchProfile)
+    assert captured["development_profile"].model == "glm-5.2"
+    assert captured["development_profile"].enable_thinking is True
+    assert captured["development_profile"].reasoning_effort == "max"
+
+
+@pytest.mark.asyncio
+async def test_server_invalid_agent_lists_zai(monkeypatch) -> None:
+    """An unknown DEV_LOOP_DEVELOPMENT_AGENT raises RuntimeError mentioning 'zai'."""
+    monkeypatch.setattr(conf, "DEV_LOOP_REPOS", [])
+
+    class _MockConfig:
+        def get(self, name: str, fallback: Any = None) -> Any:
+            if name == "DEV_LOOP_DEVELOPMENT_AGENT":
+                return "not-a-real-agent"
+            return fallback
+
+        def getint(self, name: str, fallback: Any = None) -> Any:
+            return fallback
+
+        def getboolean(self, name: str, fallback: Any = None) -> Any:
+            return fallback
+
+    monkeypatch.setattr(conf, "config", _MockConfig())
+
+    server_mod = _load_server_module()
+
+    monkeypatch.setattr(server_mod, "_build_log_toolkits", lambda: {})
+    monkeypatch.setattr(server_mod, "_build_jira_toolkit", lambda: MagicMock())
+    monkeypatch.setattr(
+        server_mod.aioredis,
+        "from_url",
+        lambda url, **kw: _make_fake_redis(),
+    )
+    monkeypatch.setattr(
+        server_mod,
+        "ClaudeCodeDispatcher",
+        MagicMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(
+        server_mod,
+        "DevLoopRunner",
+        MagicMock(return_value=MagicMock(max_concurrent_runs=1)),
+    )
+
+    app = _FakeApp()
+    app["redis_url"] = "redis://localhost:6379/0"
+    with pytest.raises(RuntimeError, match="zai"):
+        await server_mod._on_startup(app)
+
