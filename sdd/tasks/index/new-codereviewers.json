@@ -160,7 +160,7 @@
       "feature_id": "FEAT-270",
       "feature": "new-codereviewers",
       "spec": "sdd/specs/new-codereviewers.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -168,8 +168,8 @@
       "parallelism_notes": "Prompt-only change, no code deps — can run any time",
       "assigned_to": null,
       "started_at": "2026-07-03T00:01:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1699-update-codereview-subagent.md"
+      "completed_at": "2026-07-03T01:20:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1699-update-codereview-subagent.md"
     },
     {
       "id": "TASK-1700",
