@@ -24,8 +24,8 @@ class ZaiClient(AbstractClient):
 
     client_type: str = "zai"
     client_name: str = "zai"
-    model: str = ZaiModel.GLM_5_1.value
-    _default_model: str = ZaiModel.GLM_5_1.value
+    model: str = ZaiModel.GLM_5_2.value
+    _default_model: str = ZaiModel.GLM_5_2.value
     _lightweight_model: str = ZaiModel.GLM_4_5_FLASH_FREE.value
     _min_cache_tokens: int = 0  # Z.ai does not support explicit prompt caching yet
 

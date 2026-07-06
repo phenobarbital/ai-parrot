@@ -131,4 +131,14 @@ def test_factory_device_code_missing_dep_raises():
 Standard SDD flow. Verify TASK-1683 is in `completed/` first.
 
 ## Completion Note
-*(Agent fills this in when done)*
+Added `_build_device_code(cfg, opts)` to `CredentialResolverFactory` mirroring
+`_build_obo`'s deps-lookup/error style (`o365_client` dep with
+`o365_interface` fallback, `o365_oauth_manager`, `vault`; raises `KeyError`
+on any missing required dep). Added the `device_code` dispatch branch in
+`build()` and updated the unknown-kind `ValueError` message to list
+`device_code`. 7 new tests in `test_broker_devicecode.py` cover the happy
+path, the `o365_interface` alias fallback, missing/partial deps,
+`CredentialBroker.from_config` registering `auth_kind="device_code"`, and
+that the existing `obo|oauth2|static_key|mcp` dispatch is unaffected. All
+pass; existing `test_credential_broker.py` (14 tests) unaffected; `ruff
+check` clean. No deviations from spec.

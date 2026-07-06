@@ -120,9 +120,23 @@ jira_agent.set_agent_dispatcher(orchestrator.execute_agent)
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-01
+**Notes**: No existing dedicated webhook doc was found under `docs/` (grep
+for `JiraWebhookHook`/`jiraspecialist`/`TransitionAction`/`TRIGGER_AGENT`
+turned up only unrelated pages and the spec files themselves), so created
+`docs/jira-transition-actions.md` documenting all four `TransitionAction`
+types with focus on activating `TRIGGER_AGENT`: the `app.py` snippet
+(`jira_agent.set_agent_dispatcher(orchestrator.execute_agent)`), the
+degrade behaviour (`status="skipped"` when unwired), the
+`dispatched`/`skipped`/`error` status vocabulary, the layering rationale
+(core cannot import `parrot.autonomous`), and the v1 await-inline latency
+caveat. Snippet uses the exact `set_agent_dispatcher`/`AgentDispatcher`
+names shipped in TASK-1678.
+**Deviations from spec**: Added a short "Update (FEAT-265)" note + link to
+the new doc inside the existing `_action_trigger_agent has limited reach`
+bullet of `sdd/specs/jiraspecialist-webhooks.spec.md` (Known Risks
+section), per this task's scope text ("link it from the webhook
+spec/doc"). This file is not listed in the task's Files-to-Modify table
+but is an append-only, doc-only edit explicitly called for by the task
+Scope; flagging here for visibility.

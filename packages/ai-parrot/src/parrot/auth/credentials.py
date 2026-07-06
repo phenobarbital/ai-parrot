@@ -40,7 +40,7 @@ if TYPE_CHECKING:  # pragma: no cover - import only for type checkers
 # FEAT-264: declarative config + broker signal models
 # ---------------------------------------------------------------------------
 
-AuthKind = Literal["obo", "oauth2", "static_key", "mcp"]
+AuthKind = Literal["obo", "oauth2", "static_key", "mcp", "device_code"]
 
 
 class ProviderCredentialConfig(BaseModel):
@@ -87,11 +87,27 @@ class NeedsAuth(BaseModel):
         auth_url: Consent / OOB capture URL the user must visit.
             **NEVER** a secret.
         auth_kind: Drives surface rendering (card type).
+        user_code: Device-code flow only (FEAT-266) — the short code the
+            user enters at ``verification_uri``. ``None`` for non-device-code
+            auth kinds.
+        verification_uri: Device-code flow only (FEAT-266) — the Microsoft
+            device-login URL. ``None`` for non-device-code auth kinds.
+        expires_in: Device-code flow only (FEAT-266) — seconds until the
+            device code expires. ``None`` for non-device-code auth kinds.
     """
 
     provider: str
     auth_url: str = Field(..., description="Consent URL — NEVER a secret")
     auth_kind: AuthKind = Field(..., description="Drives surface card rendering")
+    user_code: Optional[str] = Field(
+        default=None, description="Device-code flow: short user-entry code"
+    )
+    verification_uri: Optional[str] = Field(
+        default=None, description="Device-code flow: Microsoft device-login URL"
+    )
+    expires_in: Optional[int] = Field(
+        default=None, description="Device-code flow: seconds until code expiry"
+    )
 
 
 class CredentialRequired(Exception):
@@ -108,9 +124,24 @@ class CredentialRequired(Exception):
         provider: Provider identifier.
         auth_url: Consent / OOB capture URL (NEVER a secret).
         auth_kind: Auth kind for surface rendering.
+        user_code: Device-code flow only (FEAT-266, keyword-only) — the short
+            code the user enters at ``verification_uri``.
+        verification_uri: Device-code flow only (FEAT-266, keyword-only) —
+            the Microsoft device-login URL.
+        expires_in: Device-code flow only (FEAT-266, keyword-only) — seconds
+            until the device code expires.
     """
 
-    def __init__(self, provider: str, auth_url: str, auth_kind: str) -> None:
+    def __init__(
+        self,
+        provider: str,
+        auth_url: str,
+        auth_kind: str,
+        *,
+        user_code: Optional[str] = None,
+        verification_uri: Optional[str] = None,
+        expires_in: Optional[int] = None,
+    ) -> None:
         super().__init__(
             f"Credential required for provider={provider!r} — "
             f"visit {auth_url} to authorize (auth_kind={auth_kind!r})"
@@ -118,6 +149,9 @@ class CredentialRequired(Exception):
         self.provider = provider
         self.auth_url = auth_url
         self.auth_kind = auth_kind
+        self.user_code = user_code
+        self.verification_uri = verification_uri
+        self.expires_in = expires_in
 
 
 # ---------------------------------------------------------------------------

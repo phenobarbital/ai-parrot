@@ -138,4 +138,11 @@ Follow the standard SDD agent flow: verify the contract, implement per scope, ru
 move this file to `sdd/tasks/completed/`, update the per-spec index status to `done`.
 
 ## Completion Note
-*(Agent fills this in when done)*
+Added `"device_code"` to `AuthKind`, and three optional fields (`user_code`,
+`verification_uri`, `expires_in`, all default `None`) to both `NeedsAuth` and
+`CredentialRequired` (the latter as keyword-only `__init__` params, preserving
+the 3-positional-arg call signature). Created
+`packages/ai-parrot/tests/auth/test_credentials_devicecode.py` with 7 tests
+covering AuthKind validation, default-None behavior, field round-trip, and
+backward compatibility of existing `obo`/`oauth2`/`static_key`/`mcp` call
+sites. All tests pass; `ruff check` clean. No deviations from spec.

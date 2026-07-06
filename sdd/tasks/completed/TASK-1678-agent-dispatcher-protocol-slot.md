@@ -186,9 +186,18 @@ def test_execute_agent_satisfies_protocol():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-01
+**Notes**: Created `parrot/bots/_types.py` with the `AgentDispatcher` Protocol
+(stdlib `typing` only, dependency-free). Added `self._agent_dispatcher:
+Optional[AgentDispatcher] = None` to `JiraSpecialist.__init__` next to the
+other instance attrs, and `set_agent_dispatcher()` with a Google-style
+docstring. Added `TestAgentDispatcherSlot` (3 tests: default-None, setter
+stores callable, structural protocol-shape check against an
+`AutonomousOrchestrator.execute_agent`-shaped stub) and wired
+`_agent_dispatcher = None` into the existing `_make_specialist()` test
+helper so other tests in the file remain unaffected. All 40 tests in
+`test_jira_transition_dispatch.py` pass; `ruff check` clean;
+grep-verified no `parrot.autonomous` / `AutonomousOrchestrator` import was
+introduced into core (only docstring/comment mentions).
+**Deviations from spec**: none

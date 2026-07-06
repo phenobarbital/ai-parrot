@@ -261,3 +261,34 @@ async def test_grok_cwd_outside_worktree_base_rejected(monkeypatch, brief):
             node_id="development",
             cwd="/etc",
         )
+
+
+def test_grok_client_factory_forwards_model_args(monkeypatch):
+    """Regression (FEAT-269 TASK-1694): the default factory lambda used to be
+
+    ``lambda model: LLMFactory.create(model)``, which rejected the
+    ``model_args=`` kwarg that ``_create_client`` always passes, raising a
+    ``TypeError`` on every real (non-monkeypatched) dispatch. The fixed
+    lambda accepts and forwards ``**kw``.
+    """
+    captured: dict[str, Any] = {}
+
+    def _fake_create(model: str, **kwargs: Any) -> MagicMock:
+        captured["model"] = model
+        captured["kwargs"] = kwargs
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+        _fake_create,
+    )
+
+    disp = GrokCodeDispatcher(
+        max_concurrent=1,
+        redis_url="redis://localhost:6379/0",
+        stream_ttl_seconds=60,
+    )
+    disp._client_factory("grok:grok-build-0.1", model_args={"temperature": 0.0})
+
+    assert captured["model"] == "grok:grok-build-0.1"
+    assert captured["kwargs"] == {"model_args": {"temperature": 0.0}}

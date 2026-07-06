@@ -373,8 +373,17 @@ def _install_navigator_stubs() -> None:
     sys.modules.setdefault("parrot.plugins", parrot_plugins)
 
 
-def _install_parrot_stubs() -> None:
-    """Install lightweight stand-ins for heavy parrot dependencies."""
+@pytest.fixture
+def fake_parrot_bots(monkeypatch):
+    """Opt-in fake AbstractBot/Agent stand-ins for lightweight AgentCrew tests.
+
+    Scoped via monkeypatch.setitem so sys.modules is restored automatically at
+    fixture teardown, instead of the old sys.modules.setdefault() approach
+    (formerly ``_install_parrot_stubs()``, called unconditionally at conftest
+    import time) which leaked into unrelated tests needing the REAL
+    parrot.bots.abstract / parrot.bots.agent (see FEAT-268 for the bug this
+    caused in JiraSpecialist).
+    """
 
     # Stub ToolManager used by AgentCrew during initialisation
     class _ToolManager:
@@ -404,9 +413,6 @@ def _install_parrot_stubs() -> None:
         def all_tools(self) -> List[Any]:
             return list(self._tools.values())
 
-
-
-
     # Basic AbstractBot / BasicAgent definitions
     class _AbstractBot:
         def __init__(self, name: str = "Agent", **_):
@@ -419,7 +425,7 @@ def _install_parrot_stubs() -> None:
     bots_abstract_module = types.ModuleType("parrot.bots.abstract")
     bots_abstract_module.AbstractBot = _AbstractBot
     bots_abstract_module.OutputMode = type("OutputMode", (), {})
-    sys.modules.setdefault("parrot.bots.abstract", bots_abstract_module)
+    monkeypatch.setitem(sys.modules, "parrot.bots.abstract", bots_abstract_module)
 
     class _BasicAgent(_AbstractBot):
         async def configure(self):
@@ -431,7 +437,9 @@ def _install_parrot_stubs() -> None:
     bots_agent_module = types.ModuleType("parrot.bots.agent")
     bots_agent_module.BasicAgent = _BasicAgent
     bots_agent_module.Agent = _BasicAgent
-    sys.modules.setdefault("parrot.bots.agent", bots_agent_module)
+    monkeypatch.setitem(sys.modules, "parrot.bots.agent", bots_agent_module)
+
+    yield
 
     # clients_base_module = types.ModuleType("parrot.clients.base")
     # clients_base_module.AbstractClient = type("AbstractClient", (), {})
@@ -624,7 +632,11 @@ def _install_parrot_stubs() -> None:
 
 _install_navconfig_stub()
 _install_navigator_stubs()
-_install_parrot_stubs()
+# NOTE (FEAT-268): _install_parrot_stubs() used to be called unconditionally
+# here, poisoning sys.modules["parrot.bots.abstract"/"parrot.bots.agent"] for
+# the whole pytest process. It is now the opt-in `fake_parrot_bots` fixture
+# defined above — request it explicitly in tests that want the lightweight
+# stand-ins instead of the real AbstractBot/Agent classes.
 
 
 # ── Permission System Fixtures ─────────────────────────────────────────────────

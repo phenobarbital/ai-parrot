@@ -126,4 +126,10 @@ async def test_refresh_access_token_dead_token_raises_permissionerror(monkeypatc
 Standard SDD flow: verify contract, implement, test, move to completed, update index.
 
 ## Completion Note
-*(Agent fills this in when done)*
+Added a public `refresh_access_token(refresh_token)` to `O365OAuthManager` that
+delegates to the existing `_refresh_request` (no duplicated HTTP logic; the
+abstract-method override required by `AbstractOAuth2Manager._refresh_tokens`
+is untouched). Created `packages/ai-parrot/tests/auth/test_o365_refresh.py`
+with 4 tests (200 success, 400/401 → `PermissionError`, and a delegation
+test proving no duplicated logic) using a fake aiohttp session/response.
+All tests pass; `ruff check` clean. No deviations from spec.

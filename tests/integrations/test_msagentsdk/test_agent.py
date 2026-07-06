@@ -100,6 +100,9 @@ class TestParrotM365AgentOnTurn:
             session_id="conv-456",
             user_id="user-123",
             ctx=ANY,
+            # FEAT-264: the caller PermissionContext must reach ask() so the
+            # broker seam can resolve per-user credentials (see _handle_message).
+            permission_context=ANY,
         )
         mock_context.send_activity.assert_called_once()
         assert _sent_text(mock_context) == "Test response"

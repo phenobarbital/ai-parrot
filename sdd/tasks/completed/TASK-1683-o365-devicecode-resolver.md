@@ -168,4 +168,24 @@ async def test_fail_closed_without_identity(resolver):
 Standard SDD flow. Verify TASK-1681 + TASK-1682 are in `completed/` first.
 
 ## Completion Note
-*(Agent fills this in when done)*
+Created `O365DeviceCodeCredentialResolver` in
+`parrot/auth/oauth2/o365_devicecode_provider.py` implementing the
+vault-read → refresh → device-flow resolution chain exactly as specified
+(cache hit, silent refresh with fallback-to-device-flow on dead refresh
+token, inline blocking device flow with `prompt_callback`, canonical
+`o365:*` persistence). Made the `VaultTokenSync` non-Telegram session
+scheme change additively: `_synth_session_uuid` and `VaultTokenSync.__init__`
+gained a `session_scheme` parameter defaulting to the legacy
+`"telegram-persistent"` literal (verified byte-identical to the prior
+hardcoded behavior — all 16 pre-existing `test_vault_token_sync.py` tests
+pass unchanged). CLI callers (TASK-1685) are expected to construct their
+`VaultTokenSync` with `session_scheme="cli-persistent"`.
+
+7 new tests in `test_o365_devicecode_resolver.py` cover cache-hit,
+refresh-on-expiry, device-flow-on-miss, dead-refresh-token fallback,
+no-partial-write-on-timeout/error, fail-closed-without-identity, and
+`get_auth_url`. All pass; `ruff check` clean on both modules. Verified no
+regression via the full `tests/auth/` + `test_vault_token_sync.py` suite
+(248 passed, 6 pre-existing unrelated failures confirmed present on `dev`
+before this feature — `test_dataset_guard.py` / `test_pbac_setup.py`, no
+relation to FEAT-266 files).

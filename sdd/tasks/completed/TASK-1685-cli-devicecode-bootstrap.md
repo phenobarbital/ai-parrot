@@ -146,4 +146,72 @@ Standard SDD flow. Verify TASK-1683 + TASK-1684 are in `completed/` first. Start
 the CLI entry/permission-context seam (spec §8) before writing the bootstrap.
 
 ## Completion Note
-*(Agent fills this in when done)*
+**CLI entry confirmed (spec §8 open question resolved):** `parrot/cli/agent_repl.py`
+`_run()` (the `parrot agent` Click command) → `AgentREPL` (`parrot/cli/repl.py`)
+is the sole interactive CLI agent-run path. It calls `bot.ask()`/`bot.ask_stream()`
+which already accept `permission_context` (verified: `bots/base.py:858` on `ask()`)
+and forward it to `client._permission_context`, consumed by
+`clients/base.py:1370-1372` → `tool_manager.execute_tool(..., permission_context=...)`
+→ the existing `_cred_channel`/`_cred_user_id` injection in `tools/manager.py`.
+**Gap found and fixed:** `ask_stream()` (the REPL's default path, `streaming=True`)
+was missing the `client._permission_context = permission_context` propagation
+that `ask()` already had — added the matching 2-line block plus the
+`permission_context` parameter to `BaseBot.ask_stream()` (`bots/base.py`),
+mirroring the existing pattern exactly; no other `ask_stream` behavior changed.
+
+**Implementation:**
+- `parrot/cli/identity.py` (NEW): `resolve_cli_o365_principal()` reads
+  `O365_PRINCIPAL`, normalizes via `CanonicalIdentityMapper.to_canonical()`,
+  raises `RuntimeError` when absent/unmappable (fail closed);
+  `build_cli_permission_context()` wraps it into a
+  `PermissionContext(channel="cli", user_id=<canonical>)`;
+  `bot_declares_o365_device_code(bot)` inspects `bot._credentials` for an
+  `o365`/`device_code` entry.
+- `parrot/cli/repl.py`: `REPLConfig` gained an optional `permission_context`
+  field (typed `Any`, not the concrete dataclass — see pitfall below);
+  `AgentREPL.send()`/`send_stream()` now pass it to `bot.ask`/`ask_stream`.
+- `parrot/cli/agent_repl.py`: after loading the agent (standalone mode only),
+  calls `bot_declares_o365_device_code()`; only when True does it call
+  `build_cli_permission_context()` (which enforces `O365_PRINCIPAL`) and
+  attach it to `REPLConfig`. Agents that don't declare the o365 device-code
+  provider are completely unaffected — no blanket `O365_PRINCIPAL`
+  requirement for all CLI sessions.
+- `packages/ai-parrot/tests/integration/test_cli_devicecode_e2e.py` (NEW):
+  5 tests — fail-closed on missing principal, identity normalization,
+  `PermissionContext` construction, full end-to-end (device flow → vault
+  persist → cache hit on 2nd resolve) via a minimal `AbstractTool` subclass
+  driving the broker gate directly (mirrors the existing
+  `tests/unit/test_tool_credential_seam.py` pattern rather than a full
+  LLM-backed bot harness), and the WorkIQ-OBO interop test proving a
+  device-code-written `o365:access_token` is consumable by
+  `WorkIQOBOCredentialResolver` via the same `VaultTokenSync` instance.
+
+**Pitfall hit:** typing `REPLConfig.permission_context` as the concrete
+`PermissionContext` dataclass broke pydantic model construction
+(`PydanticUserError: REPLConfig is not fully defined` — pydantic tries to
+resolve `PermissionContext`'s own `TYPE_CHECKING`-only `TraceContext`
+forward ref even with `arbitrary_types_allowed=True`, since stdlib
+dataclasses get special schema treatment). Fixed by typing the field as
+`Optional[Any]`, matching how `bots/base.py` already types the same
+parameter on `ask()`/`ask_stream()`. Caught by the existing
+`tests/cli/test_integration.py` suite (43 tests total run — all pass; the
+regression was found and fixed before finalizing this task).
+
+**Known gap — flagged, not fixed here (no scope creep):** "agent
+credentials config (manifest or AgentDefinition)" from the task's file
+table was NOT created as a new concrete production file. A repo-wide grep
+found **zero** existing production call sites that pass `credentials=[...]`
+to an `AbstractBot` subclass — FEAT-264's broker is fully wired but no
+concrete CLI-launched O365 agent exists yet to attach
+`ProviderCredentialConfig(provider="o365", auth="device_code")` to.
+Inventing one would be speculative scope creep beyond this task's mechanism-
+wiring scope. The integration test proves the full chain works with a
+representative test double; wiring a REAL O365 CLI agent is a natural
+follow-up once one exists (tracked alongside the `post_auth_o365` bridge
+noted in spec §8).
+
+All 5 new integration tests pass; full `tests/cli/` + `test_tool_credential_seam.py`
+regression suite (43 tests) passes; `test_credential_broker.py` (14) and
+`test_agent_service.py` unaffected; `ruff check` clean on all
+created/modified files (pre-existing unrelated lint findings in
+`bots/base.py` confirmed present on `dev` before this feature).
