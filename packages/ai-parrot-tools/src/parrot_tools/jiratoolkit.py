@@ -2170,11 +2170,18 @@ class JiraToolkit(AbstractToolkit):
         On Jira Cloud, a silently failed authentication (wrong username or
         revoked API token) returns an empty project list with HTTP 200 and a
         ``X-Seraph-Loginreason: AUTHENTICATED_FAILED`` header. When the list
-        comes back empty this tool probes ``/rest/api/2/myself`` and surfaces
-        the auth status plus the Seraph header so the caller can explain it.
+        comes back empty this tool probes ``/rest/api/2/myself``; if the
+        probe confirms the session is not authenticated it raises
+        :class:`AuthorizationRequired` (surfaced by ``ToolManager`` as a
+        structured ``authorization_required`` ToolResult) instead of
+        returning an empty-but-successful payload.
 
-        Returns: ``{"projects": [...], "count": N, "authenticated": bool,
-        "auth_probe": {...}}``
+        Returns: ``{"projects": [...], "count": N, "authenticated": True,
+        "hint": ...}``
+
+        Raises:
+            AuthorizationRequired: When the empty list is caused by failed
+                authentication (expired/revoked token, wrong username).
         """
         def _run():
             return self.jira.projects()
@@ -2190,21 +2197,26 @@ class JiraToolkit(AbstractToolkit):
             }
 
         probe = await asyncio.to_thread(self._probe_auth_sync)
-        hint = (
-            "Authentication check failed — "
-            f"seraph={probe.get('seraph_login_reason')!r}, "
-            f"status={probe.get('status_code')}. "
-            "Verify JIRA_USERNAME / JIRA_PASSWORD (or JIRA_API_TOKEN) and "
-            "the configured JIRA_INSTANCE URL."
-            if not probe.get("authenticated")
-            else "Authenticated user has no accessible projects."
-        )
+        if not probe.get("authenticated"):
+            raise AuthorizationRequired(
+                tool_name="jira_get_projects",
+                message=(
+                    "Jira rejected the configured credentials: "
+                    f"{probe.get('error') or 'authentication failed'} "
+                    f"(status={probe.get('status_code')}, "
+                    f"seraph={probe.get('seraph_login_reason')!r}, "
+                    f"auth_type={self.auth_type}). The API token is likely "
+                    "expired or revoked — generate a new one and update "
+                    "JIRA_API_TOKEN (or re-authorize via OAuth)."
+                ),
+                provider="jira",
+            )
         return {
             "projects": [],
             "count": 0,
-            "authenticated": probe.get("authenticated", False),
+            "authenticated": True,
             "auth_probe": probe,
-            "hint": hint,
+            "hint": "Authenticated user has no accessible projects.",
         }
 
     @tool_schema(VerifyAuthInput)

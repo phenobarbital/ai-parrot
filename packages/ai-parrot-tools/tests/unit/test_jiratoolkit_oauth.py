@@ -319,3 +319,86 @@ class TestNoSilentDefaultAuth:
         with pytest.raises(AuthorizationRequired) as exc_info:
             await tk._pre_execute("jira_get_issue")
         assert exc_info.value.provider == "jira"
+
+
+# ---------------------------------------------------------------------------
+# jira_get_projects — runtime auth failure must be explicit
+# ---------------------------------------------------------------------------
+
+
+class TestGetProjectsAuthProbe:
+    """A 401/silent-auth failure must raise AuthorizationRequired, never
+    return an empty-but-successful payload the LLM has to interpret."""
+
+    def _toolkit(self) -> JiraToolkit:
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit(
+                auth_type="basic_auth",
+                server_url="https://acme.atlassian.net",
+                username="bot@acme.com",
+                password="token",
+            )
+        return tk
+
+    @pytest.mark.asyncio
+    async def test_empty_list_with_failed_probe_raises(self) -> None:
+        tk = self._toolkit()
+        tk.jira = MagicMock()
+        tk.jira.projects.return_value = []
+        tk._probe_auth_sync = MagicMock(
+            return_value={
+                "authenticated": False,
+                "status_code": 401,
+                "seraph_login_reason": "AUTHENTICATED_FAILED",
+                "error": "HTTP 401 — AUTHENTICATED_FAILED",
+            }
+        )
+        with pytest.raises(AuthorizationRequired) as exc_info:
+            await tk.jira_get_projects()
+        exc = exc_info.value
+        assert exc.provider == "jira"
+        assert exc.tool_name == "jira_get_projects"
+        assert "401" in exc.message
+
+    @pytest.mark.asyncio
+    async def test_empty_list_with_probe_exception_raises(self) -> None:
+        # The probe itself swallows transport/JiraError exceptions and
+        # reports authenticated=False with only an ``error`` field.
+        tk = self._toolkit()
+        tk.jira = MagicMock()
+        tk.jira.projects.return_value = []
+        tk._probe_auth_sync = MagicMock(
+            return_value={
+                "authenticated": False,
+                "error": "JIRAError: HTTP 401",
+            }
+        )
+        with pytest.raises(AuthorizationRequired) as exc_info:
+            await tk.jira_get_projects()
+        assert "JIRAError" in exc_info.value.message
+
+    @pytest.mark.asyncio
+    async def test_empty_list_authenticated_returns_success(self) -> None:
+        tk = self._toolkit()
+        tk.jira = MagicMock()
+        tk.jira.projects.return_value = []
+        tk._probe_auth_sync = MagicMock(
+            return_value={"authenticated": True, "status_code": 200}
+        )
+        result = await tk.jira_get_projects()
+        assert result["count"] == 0
+        assert result["authenticated"] is True
+        assert "no accessible projects" in result["hint"]
+
+    @pytest.mark.asyncio
+    async def test_nonempty_list_skips_probe(self) -> None:
+        tk = self._toolkit()
+        tk.jira = MagicMock()
+        tk.jira.projects.return_value = [
+            SimpleNamespace(id="1", key="NAV", name="Navigator"),
+        ]
+        tk._probe_auth_sync = MagicMock()
+        result = await tk.jira_get_projects()
+        assert result["count"] == 1
+        assert result["authenticated"] is True
+        tk._probe_auth_sync.assert_not_called()

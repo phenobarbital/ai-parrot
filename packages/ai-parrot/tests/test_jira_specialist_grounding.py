@@ -161,7 +161,26 @@ _mk("parrot.tools.reminder", ReminderToolkit=MagicMock())
 _mk("parrot.models.google", GoogleModel=MagicMock())
 _mk("parrot.auth.credentials", OAuthCredentialResolver=MagicMock())
 _mk("parrot.auth.context", UserContext=MagicMock())
-_mk("parrot.core.hooks.models", HookEvent=MagicMock())
+_mk("parrot.core.hooks.models",
+    HookEvent=MagicMock(),
+    TransitionAction=MagicMock(),
+    TransitionActionType=MagicMock())
+# parrot_tools.jiratoolkit is the satellite-package home of JiraToolkit; the
+# real module drags in parrot.tools.manager → parrot.auth, which the stubs
+# above deliberately break. Tests patch JiraToolkit on the loaded module
+# anyway, so a stub class is enough.
+_mk("parrot_tools.jiratoolkit", JiraToolkit=MagicMock())
+
+# ── parrot.bots._types — load the REAL module (stdlib-only by design) ─────
+# TASK-1678 added `from parrot.bots._types import AgentDispatcher` to
+# jira_specialist; the stubbed parrot.bots package (__path__=[]) would make
+# that import fail, so register the real module explicitly.
+_types_spec = importlib.util.spec_from_file_location(
+    "parrot.bots._types", str(_WORKTREE / "src/parrot/bots/_types.py")
+)
+_types_mod = importlib.util.module_from_spec(_types_spec)
+sys.modules["parrot.bots._types"] = _types_mod
+_types_spec.loader.exec_module(_types_mod)
 
 # ── load jira_specialist.py directly from worktree ────────────────────────
 _js_spec = importlib.util.spec_from_file_location(
