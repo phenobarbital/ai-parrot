@@ -325,9 +325,12 @@ class JiraSpecialist(Agent):
           unset with ``app['jira_oauth_manager']`` present → per-user OAuth2
           3LO.  Every tool call resolves the caller's own tokens via
           :class:`OAuthCredentialResolver`, backed by :class:`JiraOAuthManager`.
-        * ``JIRA_AUTH_TYPE=basic_auth`` / ``token_auth`` / ``oauth`` (or no
-          OAuth manager configured) → a shared service-account client built
-          from env config (``JIRA_INSTANCE`` + credentials).
+        * ``JIRA_AUTH_TYPE=basic_auth`` / ``token_auth`` / ``oauth`` → a
+          shared service-account client built from env config
+          (``JIRA_INSTANCE`` + credentials).
+        * Neither an OAuth manager nor an explicit ``JIRA_AUTH_TYPE`` → the
+          toolkit is built unauthenticated (no silent default account); tool
+          calls return an ``AuthorizationRequired`` error to the LLM.
 
         Tools are registered with ``self.tool_manager`` and synced back to
         the LLM so that schemas are visible for the first user turn.
@@ -356,20 +359,25 @@ class JiraSpecialist(Agent):
                 default_project=config.get("JIRA_PROJECT"),
             )
         else:
-            effective = auth_type or "basic_auth"
+            # No OAuth manager and no explicit JIRA_AUTH_TYPE → do NOT
+            # fabricate a shared basic_auth service account. Pass only an
+            # explicitly configured static mode; when none is set the toolkit
+            # enters its unauthenticated state and surfaces a clear
+            # AuthorizationRequired to the LLM on first tool use.
             toolkit_kwargs: Dict[str, Any] = {
                 "server_url": config.get("JIRA_INSTANCE"),
-                "auth_type": effective,
                 "default_project": config.get("JIRA_PROJECT"),
             }
-            if effective == "basic_auth":
-                toolkit_kwargs["username"] = config.get("JIRA_USERNAME")
-                toolkit_kwargs["password"] = config.get("JIRA_API_TOKEN")
-            elif effective == "token_auth":
-                toolkit_kwargs["token"] = (
-                    config.get("JIRA_SECRET_TOKEN")
-                    or config.get("JIRA_API_TOKEN")
-                )
+            if auth_type:
+                toolkit_kwargs["auth_type"] = auth_type
+                if auth_type == "basic_auth":
+                    toolkit_kwargs["username"] = config.get("JIRA_USERNAME")
+                    toolkit_kwargs["password"] = config.get("JIRA_API_TOKEN")
+                elif auth_type == "token_auth":
+                    toolkit_kwargs["token"] = (
+                        config.get("JIRA_SECRET_TOKEN")
+                        or config.get("JIRA_API_TOKEN")
+                    )
             self.jira_toolkit = JiraToolkit(**toolkit_kwargs)
 
         try:

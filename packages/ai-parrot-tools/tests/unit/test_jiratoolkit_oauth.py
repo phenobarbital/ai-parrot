@@ -236,3 +236,86 @@ class TestPreExecute:
         assert set(tk._client_cache.keys()) == {
             "telegram:alice", "telegram:bob",
         }
+
+
+# ---------------------------------------------------------------------------
+# No silent default auth — the env-var fallback is gone
+# ---------------------------------------------------------------------------
+
+
+class TestNoSilentDefaultAuth:
+    """The toolkit no longer fabricates a shared account when auth is
+    unconfigured. It enters an *unauthenticated* state and surfaces an
+    explicit ``AuthorizationRequired`` to the LLM at tool-call time."""
+
+    def test_no_auth_type_enters_unauthenticated_state(self) -> None:
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit(server_url="https://acme.atlassian.net")
+        assert tk.auth_type is None
+        assert tk.jira is None
+        assert tk._auth_error is not None
+        # No client was fabricated from a heuristic/default.
+        assert _FakeJIRA.instances == []
+
+    def test_atlassian_url_no_longer_implies_basic_auth(self) -> None:
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit(server_url="https://acme.atlassian.net")
+        # Old heuristic mapped atlassian.net → basic_auth; that is gone.
+        assert tk.auth_type is None
+
+    def test_env_credentials_not_used_without_explicit_auth_type(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setenv("JIRA_INSTANCE", "https://acme.atlassian.net")
+        monkeypatch.setenv("JIRA_USERNAME", "bot@acme.com")
+        monkeypatch.setenv("JIRA_PASSWORD", "env-token")
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit()
+        assert tk.auth_type is None
+        assert tk.jira is None
+        assert _FakeJIRA.instances == []
+
+    @pytest.mark.asyncio
+    async def test_tool_call_raises_authorization_required(self) -> None:
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit(server_url="https://acme.atlassian.net")
+        with pytest.raises(AuthorizationRequired) as exc_info:
+            await tk._pre_execute("jira_get_issue")
+        exc = exc_info.value
+        assert exc.provider == "jira"
+        assert exc.tool_name == "jira_get_issue"
+        assert "not authenticated" in exc.message.lower()
+
+    def test_explicit_basic_auth_with_env_creds_still_works(
+        self, monkeypatch
+    ) -> None:
+        # Regression: explicit service-account config is preserved.
+        monkeypatch.setenv("JIRA_USERNAME", "bot@acme.com")
+        monkeypatch.setenv("JIRA_PASSWORD", "env-token")
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit(
+                auth_type="basic_auth",
+                server_url="https://jira.example.com",
+            )
+        assert tk.auth_type == "basic_auth"
+        assert tk._auth_error is None
+        assert tk.jira is not None
+        assert len(_FakeJIRA.instances) == 1
+
+    @pytest.mark.asyncio
+    async def test_explicit_static_mode_missing_creds_defers_to_llm(
+        self,
+    ) -> None:
+        # Explicit basic_auth but no credentials anywhere: construction must
+        # NOT crash (tools stay registered); the error reaches the LLM.
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit(
+                auth_type="basic_auth",
+                server_url="https://jira.example.com",
+            )
+        assert tk.jira is None
+        assert tk._auth_error is not None
+        assert _FakeJIRA.instances == []
+        with pytest.raises(AuthorizationRequired) as exc_info:
+            await tk._pre_execute("jira_get_issue")
+        assert exc_info.value.provider == "jira"
