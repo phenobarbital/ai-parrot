@@ -657,6 +657,19 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if not methods:
             return None
 
+        # enable_login=False means authentication is deliberately off for
+        # this bot. auth_methods always has at least the "basic" default
+        # (auth_method defaults to "basic" and __post_init__ normalizes it
+        # into the list), so without this gate a bot with login disabled
+        # and no auth_url would hit the "required config missing" warning
+        # for a strategy it never intended to use.
+        if not getattr(config, "enable_login", True):
+            self.logger.debug(
+                "Agent '%s': enable_login is False; skipping auth strategy.",
+                getattr(config, "name", "?"),
+            )
+            return None
+
         if len(methods) == 1:
             return self._build_single_strategy(methods[0], config)
 
