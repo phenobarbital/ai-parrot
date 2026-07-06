@@ -14,6 +14,7 @@ from parrot.flows.dev_loop import (
     QAReport,
     ResearchOutput,
 )
+from parrot.flows.dev_loop.models import CodeReviewVerdict
 from parrot.flows.dev_loop.nodes.qa import QANode
 
 
@@ -47,14 +48,18 @@ class TestPermissionMode:
     async def test_uses_plan_permission_no_edit_write(self, ctx):
         dispatcher = MagicMock()
         dispatcher.dispatch = AsyncMock(
-            return_value=QAReport(
-                passed=True, criterion_results=[], lint_passed=True
-            )
+            side_effect=[
+                QAReport(passed=True, criterion_results=[], lint_passed=True),
+                CodeReviewVerdict(passed=True),
+            ]
         )
         node = QANode(dispatcher=dispatcher)
         await node.execute(ctx)
+        # The FIRST dispatch is the deterministic sdd-qa pass — the SECOND
+        # (code-review, FEAT-270) is intentionally write-enabled and is
+        # covered separately in test_qa_codereview.py.
         profile: ClaudeCodeDispatchProfile = (
-            dispatcher.dispatch.await_args.kwargs["profile"]
+            dispatcher.dispatch.await_args_list[0].kwargs["profile"]
         )
         assert profile.permission_mode == "plan"
         assert "Edit" not in (profile.allowed_tools or [])
@@ -73,7 +78,9 @@ class TestFailureDoesNotRaise:
             notes="boom",
         )
         dispatcher = MagicMock()
-        dispatcher.dispatch = AsyncMock(return_value=failing)
+        dispatcher.dispatch = AsyncMock(
+            side_effect=[failing, CodeReviewVerdict(passed=True)]
+        )
         node = QANode(dispatcher=dispatcher)
         result = await node.execute(ctx)
         assert result.passed is False
@@ -87,7 +94,9 @@ class TestSuccessReturnsReport:
             passed=True, criterion_results=[], lint_passed=True
         )
         dispatcher = MagicMock()
-        dispatcher.dispatch = AsyncMock(return_value=passing)
+        dispatcher.dispatch = AsyncMock(
+            side_effect=[passing, CodeReviewVerdict(passed=True)]
+        )
         node = QANode(dispatcher=dispatcher)
         result = await node.execute(ctx)
         assert result.passed is True
@@ -114,10 +123,12 @@ class TestCwd:
             passed=True, criterion_results=[], lint_passed=True
         )
         dispatcher = MagicMock()
-        dispatcher.dispatch = AsyncMock(return_value=passing)
+        dispatcher.dispatch = AsyncMock(
+            side_effect=[passing, CodeReviewVerdict(passed=True)]
+        )
         node = QANode(dispatcher=dispatcher)
         await node.execute(ctx)
         assert (
-            dispatcher.dispatch.await_args.kwargs["cwd"]
+            dispatcher.dispatch.await_args_list[0].kwargs["cwd"]
             == ctx["research_output"].worktree_path
         )

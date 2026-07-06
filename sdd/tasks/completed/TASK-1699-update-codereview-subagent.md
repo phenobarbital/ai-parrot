@@ -139,10 +139,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: Frontmatter: `permissionMode: plan` → `default`, `tools: Read, Bash,
+Grep, Glob` → `Read, Write, Edit, Bash, Grep, Glob`. Replaced the "Read-only"
+cardinal rule with "Fix what you find" / "Stage and commit your fixes" /
+"Report every file you touched" rules (`codereview:` commit-message prefix).
+Kept "Judge against the acceptance criteria first" and the AI-Parrot
+standards checklist unchanged. Updated the Output Contract: `findings` is
+now a list of `{message, severity, file, line}` objects (matching
+`CodeReviewFinding`) instead of plain strings, and added `files_modified`.
+Added step 4-5 to the Steps section (apply safe fixes, commit them) before
+the verdict decision step. Kept the prompt vendor-neutral (no Claude-specific
+references) since Codex/Gemini also load it as their system instruction, per
+the task's constraint.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Updated
+`test_subagent_codereview.py::test_codereview_body_is_read_only_posture`
+(not in this task's file list) — it asserted `"read-only" in body`, which is
+exactly the phrase this task requires removing. Renamed it to
+`test_codereview_body_is_write_enabled_posture`, asserting the new
+`fix`/`commit`/`files_modified` vocabulary instead. Left
+`_subagent_defs.py`'s module docstring (still says "read-only qualitative
+code-review gate") untouched — it's an unenforced doc comment with no test
+coverage, so leaving it stale poses no regression risk and touching it would
+exceed this task's file list without a test-driven reason.

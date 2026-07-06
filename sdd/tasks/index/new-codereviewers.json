@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-03T00:00:00Z",
-  "completed_at": "2026-07-06T15:38:42+00:00",
+  "completed_at": "2026-07-03T01:23:44+00:00",
   "tasks": [
     {
       "id": "TASK-1692",
@@ -22,9 +22,8 @@
       "parallelism_notes": "Foundation task — all other tasks depend on the ABC interface",
       "assigned_to": null,
       "started_at": "2026-07-03T00:01:33+00:00",
-      "completed_at": "2026-07-06T15:38:41+00:00",
-      "file": "sdd/tasks/completed/TASK-1692-abc-and-factory.md",
-      "verification": "verified"
+      "completed_at": "2026-07-03T00:59:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1692-abc-and-factory.md"
     },
     {
       "id": "TASK-1693",
@@ -43,9 +42,8 @@
       "parallelism_notes": "Depends on ABC for type references; must precede concrete reviewers",
       "assigned_to": null,
       "started_at": "2026-07-03T00:01:33+00:00",
-      "completed_at": "2026-07-06T15:38:42+00:00",
-      "file": "sdd/tasks/completed/TASK-1693-extended-verdict-model.md",
-      "verification": "verified"
+      "completed_at": "2026-07-03T01:00:59+00:00",
+      "file": "sdd/tasks/completed/TASK-1693-extended-verdict-model.md"
     },
     {
       "id": "TASK-1694",
@@ -65,9 +63,8 @@
       "parallelism_notes": "Can run in parallel with TASK-1695 and TASK-1696 (independent concrete reviewers)",
       "assigned_to": null,
       "started_at": "2026-07-03T00:01:33+00:00",
-      "completed_at": "2026-07-06T15:38:42+00:00",
-      "file": "sdd/tasks/completed/TASK-1694-claude-code-reviewer.md",
-      "verification": "verified"
+      "completed_at": "2026-07-03T01:02:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1694-claude-code-reviewer.md"
     },
     {
       "id": "TASK-1695",
@@ -87,9 +84,8 @@
       "parallelism_notes": "Can run in parallel with TASK-1694 and TASK-1696 (independent concrete reviewers)",
       "assigned_to": null,
       "started_at": "2026-07-03T00:01:33+00:00",
-      "completed_at": "2026-07-06T15:38:42+00:00",
-      "file": "sdd/tasks/completed/TASK-1695-codex-code-reviewer.md",
-      "verification": "verified"
+      "completed_at": "2026-07-03T01:03:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1695-codex-code-reviewer.md"
     },
     {
       "id": "TASK-1696",
@@ -109,9 +105,8 @@
       "parallelism_notes": "Can run in parallel with TASK-1694 and TASK-1695 (independent concrete reviewers)",
       "assigned_to": null,
       "started_at": "2026-07-03T00:01:33+00:00",
-      "completed_at": "2026-07-06T15:38:42+00:00",
-      "file": "sdd/tasks/completed/TASK-1696-gemini-code-reviewer.md",
-      "verification": "verified"
+      "completed_at": "2026-07-03T01:04:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1696-gemini-code-reviewer.md"
     },
     {
       "id": "TASK-1697",
@@ -132,9 +127,8 @@
       "parallelism_notes": "Modifies QANode which depends on the ABC and at least the Claude reviewer for backward compat",
       "assigned_to": null,
       "started_at": "2026-07-03T00:01:33+00:00",
-      "completed_at": "2026-07-06T15:38:42+00:00",
-      "file": "sdd/tasks/completed/TASK-1697-qa-review-fix-rerun.md",
-      "verification": "verified"
+      "completed_at": "2026-07-03T01:12:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1697-qa-review-fix-rerun.md"
     },
     {
       "id": "TASK-1698",
@@ -156,9 +150,8 @@
       "parallelism_notes": "Depends on all reviewers + QANode changes to thread the dispatcher through",
       "assigned_to": null,
       "started_at": "2026-07-03T00:01:33+00:00",
-      "completed_at": "2026-07-06T15:38:42+00:00",
-      "file": "sdd/tasks/completed/TASK-1698-factory-wiring-server-bootstrap.md",
-      "verification": "verified"
+      "completed_at": "2026-07-03T01:17:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1698-factory-wiring-server-bootstrap.md"
     },
     {
       "id": "TASK-1699",
@@ -175,9 +168,8 @@
       "parallelism_notes": "Prompt-only change, no code deps — can run any time",
       "assigned_to": null,
       "started_at": "2026-07-03T00:01:33+00:00",
-      "completed_at": "2026-07-06T15:38:42+00:00",
-      "file": "sdd/tasks/completed/TASK-1699-update-codereview-subagent.md",
-      "verification": "verified"
+      "completed_at": "2026-07-03T01:20:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1699-update-codereview-subagent.md"
     },
     {
       "id": "TASK-1700",
@@ -197,9 +189,8 @@
       "parallelism_notes": "Final task — must verify all prior work",
       "assigned_to": null,
       "started_at": "2026-07-03T00:01:33+00:00",
-      "completed_at": "2026-07-06T15:38:42+00:00",
-      "file": "sdd/tasks/completed/TASK-1700-integration-tests.md",
-      "verification": "verified"
+      "completed_at": "2026-07-03T01:23:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1700-integration-tests.md"
     }
   ]
 }

@@ -237,10 +237,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: Added `CodeReviewFinding`, `CodeReviewVerdict`, `ClaudeCodeReviewProfile`,
+`CodexCodeReviewProfile`, `GeminiCodeReviewProfile` to `models.py`, placed
+immediately after `GrokCodeDispatchProfile` and before `DispatchEvent`, per
+the existing profile-model pattern. `_CodeReviewVerdict` in `qa.py` was left
+untouched (its removal is scoped to TASK-1697). Added model unit tests to
+`test_code_review.py` (finding validation, verdict defaults/backward
+compat, profile field assertions). All 11 tests pass; `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

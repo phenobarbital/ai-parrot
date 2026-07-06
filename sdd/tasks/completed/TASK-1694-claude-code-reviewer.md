@@ -218,10 +218,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: Added `ClaudeCodeReviewDispatcher` to `code_review.py`, registered as
+`"claude-code"`. Constructor accepts a `ClaudeCodeDispatcher` + optional model
+override (defaulting to `conf.DEV_LOOP_CODEREVIEW_MODEL`). `review()`
+delegates to `dispatcher.dispatch()` with `CodeReviewVerdict` as the output
+model, and degrades to `passed=True` with a `"code-review could not run: ..."`
+finding on any exception (FEAT-250 G4 preserved). Tests cover agent_name,
+factory registration, profile write-tools, delegation, and error-degradation.
+All 16 tests pass; `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

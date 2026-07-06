@@ -566,6 +566,66 @@ class ZaiCodeDispatchProfile(LLMCodeDispatchProfile):
         return self
 
 
+class CodeReviewFinding(BaseModel):
+    """A single finding from the code review (FEAT-270)."""
+
+    message: str
+    severity: Literal["critical", "major", "minor", "nit"]
+    file: str = ""
+    line: int = 0
+
+
+class CodeReviewVerdict(BaseModel):
+    """Extended verdict emitted by all code review dispatchers (FEAT-270).
+
+    Public replacement for the previous ``_CodeReviewVerdict`` private model
+    in ``nodes/qa.py``. A verdict with no findings and no modified files is a
+    pass, matching the old model's backward-compatible defaults.
+    """
+
+    passed: bool = True
+    findings: List[CodeReviewFinding] = Field(default_factory=list)
+    summary: str = ""
+    files_modified: List[str] = Field(default_factory=list)
+
+
+class ClaudeCodeReviewProfile(BaseModel):
+    """Review profile for the Claude Code review dispatcher (FEAT-270).
+
+    Unlike the development profile, this one is write-enabled: the
+    ``sdd-codereview`` subagent is allowed to fix issues it finds and commit
+    the fixes to the worktree branch.
+    """
+
+    subagent: str = "sdd-codereview"
+    permission_mode: Literal["default", "acceptEdits"] = "default"
+    allowed_tools: List[str] = Field(
+        default_factory=lambda: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+    )
+    model: str = "claude-sonnet-4-6"
+    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+
+
+class CodexCodeReviewProfile(BaseModel):
+    """Review profile for the Codex code review dispatcher (FEAT-270)."""
+
+    subagent: str = "sdd-codereview"
+    model: str = "gpt-5.5"
+    sandbox: Literal["workspace-write"] = "workspace-write"
+    approval_policy: Literal["auto-edit", "on-request"] = "auto-edit"
+    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+
+
+class GeminiCodeReviewProfile(BaseModel):
+    """Review profile for the Gemini code review dispatcher (FEAT-270)."""
+
+    subagent: str = "sdd-codereview"
+    model: str = "auto"
+    sandbox: bool = False
+    approval_mode: Literal["auto_edit", "yolo"] = "auto_edit"
+    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+
+
 class DispatchEvent(BaseModel):
     """Envelope for stream-json events published to Redis.
 

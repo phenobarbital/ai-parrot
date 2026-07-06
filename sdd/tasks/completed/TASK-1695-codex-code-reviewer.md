@@ -199,10 +199,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: Added `CodexCodeReviewDispatcher` to `code_review.py`, registered as
+`"codex"`. Mirrors `ClaudeCodeReviewDispatcher`'s structure exactly, wrapping
+`CodexCodeDispatcher` with `CodexCodeReviewProfile` (`sandbox="workspace-write"`,
+`approval_policy="auto-edit"`) and the same degrade-on-infra-error behavior.
+Tests cover agent_name, factory registration, profile fields, delegation,
+and error-degradation. All 21 tests pass; `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

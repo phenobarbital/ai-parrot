@@ -199,10 +199,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: Added `GeminiCodeReviewDispatcher` to `code_review.py`, registered as
+`"gemini"`. Mirrors the Claude/Codex reviewers, wrapping `GeminiCodeDispatcher`
+with `GeminiCodeReviewProfile` (`sandbox=False`, `approval_mode="auto_edit"`)
+and the same degrade-on-infra-error behavior. Tests cover agent_name, factory
+registration, profile fields, delegation, and error-degradation. All 26 tests
+pass; `ruff check` clean. `code_review.py` now contains all three concrete
+reviewers (Modules 1–5 of the spec complete).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

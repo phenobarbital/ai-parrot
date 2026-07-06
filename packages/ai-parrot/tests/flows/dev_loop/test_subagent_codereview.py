@@ -29,9 +29,12 @@ def test_codereview_body_demands_single_json_object():
     assert "Output Contract" in body
 
 
-def test_codereview_body_is_read_only_posture():
+def test_codereview_body_is_write_enabled_posture():
+    """FEAT-270: the reviewer may fix issues it finds and commit the fix."""
     body = load_subagent_definition("sdd-codereview").lower()
-    assert "read-only" in body or "read only" in body
+    assert "fix" in body
+    assert "commit" in body
+    assert "files_modified" in body
 
 
 def test_unknown_subagent_still_rejected():
