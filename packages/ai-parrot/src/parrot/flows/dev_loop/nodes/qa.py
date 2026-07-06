@@ -158,7 +158,8 @@ class QANode(DevLoopNode):
                 files_modified,
             )
             report = await self._run_deterministic_qa(
-                shared, research, brief, executable
+                shared, research, brief, executable,
+                cwd_override=research.repo_path or research.worktree_path,
             )
             deterministic_passed = report.passed
 
@@ -214,6 +215,8 @@ class QANode(DevLoopNode):
         research: ResearchOutput,
         brief: BugBrief,
         executable: List[AcceptanceCriterion],
+        *,
+        cwd_override: Optional[str] = None,
     ) -> QAReport:
         """Dispatch the read-only ``sdd-qa`` gate (or synthesize a report).
 
@@ -237,10 +240,11 @@ class QANode(DevLoopNode):
             allowed_tools=["Read", "Bash"],  # NEVER Edit/Write
             setting_sources=["project"],
         )
+        effective_cwd = cwd_override or research.worktree_path
         qa_brief = _QABrief(
             acceptance_criteria=executable,
             lint_command=self._lint_command,
-            worktree_path=research.worktree_path,
+            worktree_path=effective_cwd,
             summary=brief.summary,
         )
         return await self._dispatcher.dispatch(
@@ -249,7 +253,7 @@ class QANode(DevLoopNode):
             output_model=QAReport,
             run_id=shared["run_id"],
             node_id=self.name,
-            cwd=research.worktree_path,
+            cwd=effective_cwd,
         )
 
     # ------------------------------------------------------------------
@@ -278,14 +282,20 @@ class QANode(DevLoopNode):
             summary=brief.summary,
             jira_issue_key=research.jira_issue_key,
         )
-        verdict = await self._codereview_dispatcher.review(
-            brief=review_brief,
-            run_id=shared["run_id"],
-            node_id=self.name,
-            cwd=review_cwd,
-        )
-        findings = [f.message for f in verdict.findings]
-        return verdict.passed, findings, list(verdict.files_modified)
+        try:
+            verdict = await self._codereview_dispatcher.review(
+                brief=review_brief,
+                run_id=shared["run_id"],
+                node_id=self.name,
+                cwd=review_cwd,
+            )
+        except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
+            self.logger.warning("Code-review dispatcher raised: %s", exc)
+            return True, [f"{_CODE_REVIEW_SKIP_PREFIX} {exc}"], []
+        findings = [f.message for f in getattr(verdict, "findings", [])]
+        files_modified = list(getattr(verdict, "files_modified", []))
+        passed = getattr(verdict, "passed", True)
+        return passed, findings, files_modified
 
     @staticmethod
     def _merge_manual_results(

@@ -93,7 +93,7 @@ class TestReviewProfiles:
     def test_codex_profile_write_sandbox(self):
         p = CodexCodeReviewProfile()
         assert p.sandbox == "workspace-write"
-        assert p.approval_policy == "auto-edit"
+        assert p.approval_policy == "on-request"
 
     def test_gemini_profile_no_sandbox(self):
         p = GeminiCodeReviewProfile()
@@ -150,7 +150,7 @@ class TestCodexCodeReviewDispatcher:
         p = d.build_review_profile()
         assert isinstance(p, CodexCodeReviewProfile)
         assert p.sandbox == "workspace-write"
-        assert p.approval_policy == "auto-edit"
+        assert p.approval_policy == "on-request"
 
     @pytest.mark.asyncio
     async def test_review_delegates(self):

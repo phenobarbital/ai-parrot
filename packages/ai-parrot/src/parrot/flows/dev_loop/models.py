@@ -581,6 +581,10 @@ class CodeReviewVerdict(BaseModel):
     Public replacement for the previous ``_CodeReviewVerdict`` private model
     in ``nodes/qa.py``. A verdict with no findings and no modified files is a
     pass, matching the old model's backward-compatible defaults.
+
+    The ``findings`` validator coerces plain strings (the format the old model
+    accepted) into ``CodeReviewFinding(message=s, severity="minor")`` so an LLM
+    that returns the legacy format doesn't fail Pydantic validation.
     """
 
     passed: bool = True
@@ -588,17 +592,31 @@ class CodeReviewVerdict(BaseModel):
     summary: str = ""
     files_modified: List[str] = Field(default_factory=list)
 
+    @field_validator("findings", mode="before")
+    @classmethod
+    def _coerce_plain_strings(cls, v: Any) -> Any:
+        if isinstance(v, list):
+            return [
+                CodeReviewFinding(message=item, severity="minor")
+                if isinstance(item, str)
+                else item
+                for item in v
+            ]
+        return v
 
-class ClaudeCodeReviewProfile(BaseModel):
+
+class ClaudeCodeReviewProfile(ClaudeCodeDispatchProfile):
     """Review profile for the Claude Code review dispatcher (FEAT-270).
 
-    Unlike the development profile, this one is write-enabled: the
+    Inherits ``ClaudeCodeDispatchProfile`` so it carries the ``setting_sources``
+    and ``strict_mcp_config`` fields that ``ClaudeCodeDispatcher._resolve_run_options()``
+    accesses. Overrides defaults for the write-enabled review use case: the
     ``sdd-codereview`` subagent is allowed to fix issues it finds and commit
     the fixes to the worktree branch.
     """
 
-    subagent: str = "sdd-codereview"
-    permission_mode: Literal["default", "acceptEdits"] = "default"
+    subagent: Optional[Literal["sdd-research", "sdd-worker", "sdd-qa", "sdd-codereview"]] = "sdd-codereview"
+    permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "default"
     allowed_tools: List[str] = Field(
         default_factory=lambda: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
     )
@@ -606,23 +624,33 @@ class ClaudeCodeReviewProfile(BaseModel):
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
 
 
-class CodexCodeReviewProfile(BaseModel):
-    """Review profile for the Codex code review dispatcher (FEAT-270)."""
+class CodexCodeReviewProfile(CodexCodeDispatchProfile):
+    """Review profile for the Codex code review dispatcher (FEAT-270).
 
-    subagent: str = "sdd-codereview"
+    Inherits ``CodexCodeDispatchProfile`` so it carries the ``ignore_user_config``
+    and ``ignore_rules`` fields that ``CodexCodeDispatcher._build_command()`` accesses.
+    Overrides defaults for the write-enabled review use case.
+    """
+
+    subagent: Literal["sdd-worker"] = "sdd-worker"
     model: str = "gpt-5.5"
-    sandbox: Literal["workspace-write"] = "workspace-write"
-    approval_policy: Literal["auto-edit", "on-request"] = "auto-edit"
+    sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "workspace-write"
+    approval_policy: Literal["untrusted", "on-request", "never"] = "on-request"
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
 
 
-class GeminiCodeReviewProfile(BaseModel):
-    """Review profile for the Gemini code review dispatcher (FEAT-270)."""
+class GeminiCodeReviewProfile(GeminiCodeDispatchProfile):
+    """Review profile for the Gemini code review dispatcher (FEAT-270).
 
-    subagent: str = "sdd-codereview"
+    Inherits ``GeminiCodeDispatchProfile`` so it carries the fields that
+    ``GeminiCodeDispatcher._build_command()`` accesses. Overrides defaults
+    for the write-enabled review use case.
+    """
+
+    subagent: Literal["sdd-worker"] = "sdd-worker"
     model: str = "auto"
     sandbox: bool = False
-    approval_mode: Literal["auto_edit", "yolo"] = "auto_edit"
+    approval_mode: Literal["default", "auto_edit", "yolo", "plan"] = "auto_edit"
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
 
 

@@ -48,6 +48,7 @@ def build_dev_loop_revision_flow(
     jira_toolkit: Any,
     git_toolkit: Any,
     redis_url: str,
+    codereview_dispatcher: Optional[Any] = None,
     name: str = "dev-loop-revision",
     publish_flow_events: bool = True,
 ) -> AgentsFlow:
@@ -65,6 +66,7 @@ def build_dev_loop_revision_flow(
         jira_toolkit=jira_toolkit,
         redis_url=redis_url,
         git_toolkit=git_toolkit,
+        codereview_dispatcher=codereview_dispatcher,
     )
     staged = AgentsFlow.from_definition(
         definition,
@@ -113,6 +115,7 @@ class DevLoopRunner:
         jira_toolkit: Optional[Any] = None,
         git_toolkit: Optional[Any] = None,
         redis_url: Optional[str] = None,
+        codereview_dispatcher: Optional[Any] = None,
     ) -> None:
         self.flow = flow
         self.max_concurrent_runs = int(
@@ -129,6 +132,7 @@ class DevLoopRunner:
         self._jira_toolkit = jira_toolkit
         self._git_toolkit = git_toolkit
         self._redis_url = redis_url
+        self._codereview_dispatcher = codereview_dispatcher
         # Lazily-built, reused revision flow (fixed topology — built once).
         self._rev_flow: Optional[AgentsFlow] = None
         self.logger = logging.getLogger("parrot.dev_loop.runner")
@@ -247,6 +251,7 @@ class DevLoopRunner:
                 jira_toolkit=self._jira_toolkit,
                 git_toolkit=self._git_toolkit,
                 redis_url=self._redis_url,
+                codereview_dispatcher=self._codereview_dispatcher,
             )
         rev_flow = self._rev_flow
 

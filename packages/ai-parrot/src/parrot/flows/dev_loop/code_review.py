@@ -1,10 +1,9 @@
 """AbstractCodeReviewDispatcher ABC + factory (FEAT-270).
 
 Decouples the QA node's code-review gate from any specific development
-dispatcher. Concrete review dispatchers (added in follow-up tasks) wrap the
-existing Claude/Codex/Gemini development dispatchers with a write-enabled
-review profile, allowing the reviewer to fix issues it discovers and commit
-fixes to the worktree branch.
+dispatcher. Concrete review dispatchers wrap the existing Claude/Codex/Gemini
+development dispatchers with a write-enabled review profile, allowing the
+reviewer to fix issues it discovers and commit fixes to the worktree branch.
 
 See ``sdd/specs/new-codereviewers.spec.md`` for the full design.
 """
@@ -40,11 +39,14 @@ class AbstractCodeReviewDispatcher(ABC):
     enforcing the ``CodeReviewVerdict`` output contract (see
     ``parrot.flows.dev_loop.models``), and allowing the reviewer to fix +
     commit issues it finds.
+
+    Concrete subclasses only need to implement ``build_review_profile()``
+    and set ``agent_name``; the ``review()`` dispatch + degrade loop is
+    handled by the ABC.
     """
 
     agent_name: str
 
-    @abstractmethod
     async def review(
         self,
         *,
@@ -52,12 +54,35 @@ class AbstractCodeReviewDispatcher(ABC):
         run_id: str,
         node_id: str,
         cwd: str,
-    ) -> BaseModel:
+    ) -> CodeReviewVerdict:
         """Run code review, optionally fix issues, return a verdict.
 
-        Concrete implementations return a
-        :class:`parrot.flows.dev_loop.models.CodeReviewVerdict`.
+        Delegates to the underlying development dispatcher's ``dispatch()``
+        with the review profile. On any infrastructure error, degrades to a
+        passing verdict with a nit-level finding noting the failure.
         """
+        try:
+            return await self._dispatcher.dispatch(
+                brief=brief,
+                profile=self.build_review_profile(),
+                output_model=CodeReviewVerdict,
+                run_id=run_id,
+                node_id=node_id,
+                cwd=cwd,
+            )
+        except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
+            self.logger.warning(
+                "%s code-review dispatch failed: %s", self.agent_name, exc
+            )
+            return CodeReviewVerdict(
+                passed=True,
+                findings=[
+                    CodeReviewFinding(
+                        message=f"code-review could not run: {exc}",
+                        severity="nit",
+                    )
+                ],
+            )
 
     @abstractmethod
     def build_review_profile(self) -> BaseModel:
@@ -110,41 +135,12 @@ class ClaudeCodeReviewDispatcher(AbstractCodeReviewDispatcher):
     def build_review_profile(self) -> ClaudeCodeReviewProfile:
         return ClaudeCodeReviewProfile(model=self._model)
 
-    async def review(
-        self,
-        *,
-        brief: BaseModel,
-        run_id: str,
-        node_id: str,
-        cwd: str,
-    ) -> CodeReviewVerdict:
-        try:
-            return await self._dispatcher.dispatch(
-                brief=brief,
-                profile=self.build_review_profile(),
-                output_model=CodeReviewVerdict,
-                run_id=run_id,
-                node_id=node_id,
-                cwd=cwd,
-            )
-        except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
-            self.logger.warning("Code-review dispatch failed: %s", exc)
-            return CodeReviewVerdict(
-                passed=True,
-                findings=[
-                    CodeReviewFinding(
-                        message=f"code-review could not run: {exc}",
-                        severity="nit",
-                    )
-                ],
-            )
-
 
 @CodeReviewDispatcherFactory.register("codex")
 class CodexCodeReviewDispatcher(AbstractCodeReviewDispatcher):
     """Wraps :class:`CodexCodeDispatcher` with a write-enabled sandbox profile.
 
-    Uses ``sandbox="workspace-write"`` and ``approval_policy="auto-edit"`` so
+    Uses ``sandbox="workspace-write"`` and ``approval_policy="on-request"`` so
     the reviewer can fix issues it finds and commit the fixes to the
     worktree branch, mirroring the Claude reviewer's write-enabled behavior.
     """
@@ -158,35 +154,6 @@ class CodexCodeReviewDispatcher(AbstractCodeReviewDispatcher):
 
     def build_review_profile(self) -> CodexCodeReviewProfile:
         return CodexCodeReviewProfile(model=self._model)
-
-    async def review(
-        self,
-        *,
-        brief: BaseModel,
-        run_id: str,
-        node_id: str,
-        cwd: str,
-    ) -> CodeReviewVerdict:
-        try:
-            return await self._dispatcher.dispatch(
-                brief=brief,
-                profile=self.build_review_profile(),
-                output_model=CodeReviewVerdict,
-                run_id=run_id,
-                node_id=node_id,
-                cwd=cwd,
-            )
-        except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
-            self.logger.warning("Codex code-review dispatch failed: %s", exc)
-            return CodeReviewVerdict(
-                passed=True,
-                findings=[
-                    CodeReviewFinding(
-                        message=f"code-review could not run: {exc}",
-                        severity="nit",
-                    )
-                ],
-            )
 
 
 @CodeReviewDispatcherFactory.register("gemini")
@@ -207,35 +174,6 @@ class GeminiCodeReviewDispatcher(AbstractCodeReviewDispatcher):
 
     def build_review_profile(self) -> GeminiCodeReviewProfile:
         return GeminiCodeReviewProfile(model=self._model)
-
-    async def review(
-        self,
-        *,
-        brief: BaseModel,
-        run_id: str,
-        node_id: str,
-        cwd: str,
-    ) -> CodeReviewVerdict:
-        try:
-            return await self._dispatcher.dispatch(
-                brief=brief,
-                profile=self.build_review_profile(),
-                output_model=CodeReviewVerdict,
-                run_id=run_id,
-                node_id=node_id,
-                cwd=cwd,
-            )
-        except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
-            self.logger.warning("Gemini code-review dispatch failed: %s", exc)
-            return CodeReviewVerdict(
-                passed=True,
-                findings=[
-                    CodeReviewFinding(
-                        message=f"code-review could not run: {exc}",
-                        severity="nit",
-                    )
-                ],
-            )
 
 
 __all__ = [
