@@ -169,6 +169,7 @@ def build_dev_loop_flow(
     development_profile: Optional[Any] = None,
     git_toolkit: Optional[Any] = None,
     repos: Optional[list[RepoSpec]] = None,
+    codereview_dispatcher: Optional[Any] = None,
 ) -> AgentsFlow:
     """Build the eight-node dev-loop ``AgentsFlow`` (FEAT-132).
 
@@ -206,6 +207,10 @@ def build_dev_loop_flow(
             ``DevelopmentNode``. Defaults to ``dispatcher``.
         development_profile: Optional dispatch profile passed only to
             ``DevelopmentNode``.
+        codereview_dispatcher: Optional ``AbstractCodeReviewDispatcher``
+            (FEAT-270) used by ``QANode`` for the code-review gate. Defaults
+            to ``None``, in which case ``QANode`` auto-wraps ``dispatcher``
+            in a ``ClaudeCodeReviewDispatcher`` (backward compat).
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -224,6 +229,7 @@ def build_dev_loop_flow(
         git_toolkit=git_toolkit,
         log_toolkits=log_toolkits,
         repos=repos,
+        codereview_dispatcher=codereview_dispatcher,
     )
     staged = AgentsFlow.from_definition(
         definition,

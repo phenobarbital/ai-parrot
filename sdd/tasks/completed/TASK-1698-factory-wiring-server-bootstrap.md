@@ -206,10 +206,31 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: Added `DEV_LOOP_CODEREVIEW_AGENT` to `conf.py` (default
+`"claude-code"`). Added `codereview_dispatcher: Optional[Any] = None` to
+`build_dev_loop_node_factories()`, threaded into `QANode(codereview_dispatcher=...)`
+in `qa_factory`. Added the same param to `build_dev_loop_flow()`, threaded
+into `build_dev_loop_node_factories(...)`. Wired `examples/dev_loop/server.py`
+`_on_startup`: reads `DEV_LOOP_CODEREVIEW_AGENT` via `conf.config.get(...)`
+(mirroring the existing `development_agent` read pattern exactly, rather
+than the precomputed `conf.DEV_LOOP_CODEREVIEW_AGENT` constant — this matters
+for `test_server_grok_agent_startup`, which monkeypatches `conf.config`
+directly), reuses the matching development dispatcher instance when the
+review agent equals the development agent (avoids spinning up a second
+Codex/Gemini CLI dispatcher), otherwise builds a dedicated one, then calls
+`CodeReviewDispatcherFactory.create(agent_key, dispatcher=...)` and passes
+the result to `build_dev_loop_flow(codereview_dispatcher=...)`. Invalid
+`DEV_LOOP_CODEREVIEW_AGENT` values raise `RuntimeError` at startup (mirrors
+the existing `DEV_LOOP_DEVELOPMENT_AGENT` validation). Added
+`TestServerWiring` (factory creates claude/codex/gemini) and
+`TestBuildDevLoopNodeFactoriesWiring` (explicit + default `codereview_dispatcher`
+threading through `qa_factory`) to `test_code_review.py`. Full `dev_loop/`
+suite re-run: 334 passed, same 4 pre-existing flaky failures (unrelated,
+verified via `git stash` in TASK-1697).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — the `conf.config.get(...)` vs.
+`conf.DEV_LOOP_CODEREVIEW_AGENT` module-constant choice follows the task's
+own "Pattern to Follow" snippet and the file's existing
+`development_agent` convention, not a deviation from either.

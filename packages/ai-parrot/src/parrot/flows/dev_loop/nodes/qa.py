@@ -1,10 +1,17 @@
-"""QANode — sdd-qa dispatch in plan mode.
+"""QANode — sdd-qa dispatch in plan mode + pluggable code-review gate.
 
-Implements **Module 7**. Dispatches the ``sdd-qa`` subagent under
-``permission_mode="plan"`` with no edit/write tools so the QA pass is
-strictly read-only. The subagent runs each acceptance criterion as a
-subprocess (deterministic — exit code is the source of truth, not LLM
-judgement; spec G6) and runs lint, then returns a :class:`QAReport`.
+Implements **Module 7** (FEAT-129/132) and its FEAT-270 extension. Dispatches
+the ``sdd-qa`` subagent under ``permission_mode="plan"`` with no edit/write
+tools so the deterministic QA pass is strictly read-only. The subagent runs
+each acceptance criterion as a subprocess (deterministic — exit code is the
+source of truth, not LLM judgement; spec G6) and runs lint, then returns a
+:class:`QAReport`.
+
+The code-review gate (FEAT-250, extended by FEAT-270) is additive and
+pluggable: it delegates to an :class:`AbstractCodeReviewDispatcher` (Claude,
+Codex, or Gemini) which is allowed to fix issues it finds and commit the
+fixes to the worktree branch. When the reviewer reports modified files, the
+deterministic QA pass re-runs to confirm the fix didn't regress anything.
 
 The node returns the report regardless of ``passed`` — the flow factory
 (TASK-886) decides routing via a :class:`FlowTransition`.
@@ -16,9 +23,12 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
+from parrot.flows.dev_loop.code_review import (
+    AbstractCodeReviewDispatcher,
+    ClaudeCodeReviewDispatcher,
+)
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import (
     AcceptanceCriterion,
@@ -56,7 +66,7 @@ class _QABrief(BaseModel):
 
 
 class _CodeReviewBrief(BaseModel):
-    """Brief passed to the ``sdd-codereview`` subagent (FEAT-250).
+    """Brief passed to the code-review dispatcher (FEAT-250 / FEAT-270).
 
     Bundles the acceptance criteria the change must satisfy with the path to
     review and the issue summary, so the reviewer can judge the diff against
@@ -69,19 +79,6 @@ class _CodeReviewBrief(BaseModel):
     jira_issue_key: str = ""
 
 
-class _CodeReviewVerdict(BaseModel):
-    """Structured verdict emitted by the ``sdd-codereview`` subagent.
-
-    Backward-tolerant defaults: a malformed/empty verdict is treated as a
-    pass so an infra hiccup never blocks the flow (the deterministic gate is
-    the hard guarantee; code-review is additive).
-    """
-
-    passed: bool = True
-    findings: List[str] = Field(default_factory=list)
-    summary: str = ""
-
-
 @register_dev_loop_node("dev_loop.qa")
 class QANode(DevLoopNode):
     """Fourth node — runs deterministic acceptance verification."""
@@ -91,17 +88,18 @@ class QANode(DevLoopNode):
         *,
         dispatcher: ClaudeCodeDispatcher,
         lint_command: Optional[str] = None,
-        codereview_model: Optional[str] = None,
+        codereview_dispatcher: Optional[AbstractCodeReviewDispatcher] = None,
         name: str = "qa",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_dispatcher", dispatcher)
         object.__setattr__(self, "_lint_command", lint_command or _DEFAULT_LINT_COMMAND)
-        object.__setattr__(
-            self,
-            "_codereview_model",
-            codereview_model or conf.DEV_LOOP_CODEREVIEW_MODEL,
-        )
+        # Backward compat: if no reviewer dispatcher is supplied, wrap the
+        # existing development dispatcher in a ClaudeCodeReviewDispatcher so
+        # zero-config callers keep working unchanged (FEAT-270).
+        if codereview_dispatcher is None:
+            codereview_dispatcher = ClaudeCodeReviewDispatcher(dispatcher=dispatcher)
+        object.__setattr__(self, "_codereview_dispatcher", codereview_dispatcher)
 
     # ------------------------------------------------------------------
     # Execute
@@ -137,49 +135,37 @@ class QANode(DevLoopNode):
             if not isinstance(c, ManualCriterion)
         ]
 
-        if executable:
-            profile = ClaudeCodeDispatchProfile(
-                subagent="sdd-qa",
-                permission_mode="plan",
-                allowed_tools=["Read", "Bash"],  # NEVER Edit/Write
-                setting_sources=["project"],
-            )
-            qa_brief = _QABrief(
-                acceptance_criteria=executable,
-                lint_command=self._lint_command,
-                worktree_path=research.worktree_path,
-                summary=brief.summary,
-            )
-            report: QAReport = await self._dispatcher.dispatch(
-                brief=qa_brief,
-                profile=profile,
-                output_model=QAReport,
-                run_id=shared["run_id"],
-                node_id=self.name,
-                cwd=research.worktree_path,
-            )
-        else:
-            # All criteria are manual — skip the dispatch entirely.
-            report = QAReport(
-                passed=True,
-                criterion_results=[],
-                lint_passed=True,
-                lint_output="(skipped: no executable criteria)",
-                notes="No executable acceptance criteria; manual review only.",
-            )
-
-        if manual:
-            report = self._merge_manual_results(report, manual)
-
-        # FEAT-250 G4: additive code-review gate. A run passes QA only when the
-        # deterministic criteria/lint AND the qualitative review both pass.
+        report = await self._run_deterministic_qa(
+            shared, research, brief, executable
+        )
         deterministic_passed = report.passed
-        cr_passed, cr_findings = await self._run_code_review(
+
+        # FEAT-250 G4 / FEAT-270: additive code-review gate. A run passes QA
+        # only when the deterministic criteria/lint AND the qualitative
+        # review both pass. The reviewer may fix issues it finds and commit
+        # the fixes to the worktree branch (FEAT-270); when it does, the
+        # deterministic pass re-runs to confirm the fix didn't regress.
+        cr_passed, cr_findings, files_modified = await self._run_code_review(
             shared, research, brief
         )
         cr_skipped = any(
             f.startswith(_CODE_REVIEW_SKIP_PREFIX) for f in cr_findings
         )
+
+        if files_modified:
+            self.logger.info(
+                "Code review modified %s — re-running deterministic QA",
+                files_modified,
+            )
+            report = await self._run_deterministic_qa(
+                shared, research, brief, executable,
+                cwd_override=research.repo_path or research.worktree_path,
+            )
+            deterministic_passed = report.passed
+
+        if manual:
+            report = self._merge_manual_results(report, manual)
+
         update: Dict[str, Any] = {
             "passed": deterministic_passed and cr_passed,
             "code_review_passed": cr_passed,
@@ -205,7 +191,8 @@ class QANode(DevLoopNode):
 
         self.logger.info(
             "QA report: passed=%s, deterministic=%s, code_review=%s, "
-            "code_review_ran=%s, lint_passed=%s, n_executable=%s, n_manual=%s",
+            "code_review_ran=%s, lint_passed=%s, n_executable=%s, n_manual=%s, "
+            "files_modified=%s",
             report.passed,
             deterministic_passed,
             cr_passed,
@@ -213,12 +200,64 @@ class QANode(DevLoopNode):
             report.lint_passed,
             len(executable),
             len(manual),
+            files_modified,
         )
         shared["qa_report"] = report
         return report
 
     # ------------------------------------------------------------------
-    # Code-review gate (FEAT-250)
+    # Deterministic QA dispatch
+    # ------------------------------------------------------------------
+
+    async def _run_deterministic_qa(
+        self,
+        shared: Dict[str, Any],
+        research: ResearchOutput,
+        brief: BugBrief,
+        executable: List[AcceptanceCriterion],
+        *,
+        cwd_override: Optional[str] = None,
+    ) -> QAReport:
+        """Dispatch the read-only ``sdd-qa`` gate (or synthesize a report).
+
+        Used both for the initial deterministic pass and for the
+        review-fix-rerun loop (FEAT-270) — same subagent, same profile, same
+        brief shape; only the worktree contents may have changed between
+        calls (the reviewer's fix commit).
+        """
+        if not executable:
+            # All criteria are manual — skip the dispatch entirely.
+            return QAReport(
+                passed=True,
+                criterion_results=[],
+                lint_passed=True,
+                lint_output="(skipped: no executable criteria)",
+                notes="No executable acceptance criteria; manual review only.",
+            )
+        profile = ClaudeCodeDispatchProfile(
+            subagent="sdd-qa",
+            permission_mode="plan",
+            allowed_tools=["Read", "Bash"],  # NEVER Edit/Write
+            setting_sources=["project"],
+        )
+        effective_cwd = cwd_override or research.worktree_path
+        qa_brief = _QABrief(
+            acceptance_criteria=executable,
+            lint_command=self._lint_command,
+            worktree_path=effective_cwd,
+            summary=brief.summary,
+        )
+        return await self._dispatcher.dispatch(
+            brief=qa_brief,
+            profile=profile,
+            output_model=QAReport,
+            run_id=shared["run_id"],
+            node_id=self.name,
+            cwd=effective_cwd,
+        )
+
+    # ------------------------------------------------------------------
+    # Code-review gate (FEAT-250, pluggable dispatcher since FEAT-270)
     # ------------------------------------------------------------------
 
     async def _run_code_review(
@@ -226,22 +265,17 @@ class QANode(DevLoopNode):
         shared: Dict[str, Any],
         research: ResearchOutput,
         brief: BugBrief,
-    ) -> tuple[bool, List[str]]:
-        """Dispatch the read-only ``sdd-codereview`` gate.
+    ) -> tuple[bool, List[str], List[str]]:
+        """Delegate to the configured code-review dispatcher.
 
-        Returns ``(passed, findings)``. A dispatch error never raises and
-        never blocks the flow on infra grounds — it degrades to
-        ``(True, ["code-review could not run: …"])`` so the deterministic
-        gate remains the hard guarantee.
+        Returns ``(passed, findings, files_modified)``. A dispatch error
+        never raises and never blocks the flow on infra grounds — the
+        dispatcher itself degrades to
+        ``CodeReviewVerdict(passed=True, findings=["code-review could not
+        run: …"])`` so the deterministic gate remains the hard guarantee
+        (FEAT-250 G4).
         """
         review_cwd = research.repo_path or research.worktree_path
-        profile = ClaudeCodeDispatchProfile(
-            subagent="sdd-codereview",
-            permission_mode="plan",
-            allowed_tools=["Read", "Bash", "Grep", "Glob"],  # NEVER Edit/Write
-            setting_sources=["project"],
-            model=self._codereview_model,
-        )
         review_brief = _CodeReviewBrief(
             acceptance_criteria=list(brief.acceptance_criteria),
             worktree_path=review_cwd,
@@ -249,20 +283,19 @@ class QANode(DevLoopNode):
             jira_issue_key=research.jira_issue_key,
         )
         try:
-            verdict: _CodeReviewVerdict = await self._dispatcher.dispatch(
+            verdict = await self._codereview_dispatcher.review(
                 brief=review_brief,
-                profile=profile,
-                output_model=_CodeReviewVerdict,
                 run_id=shared["run_id"],
                 node_id=self.name,
                 cwd=review_cwd,
             )
-            return verdict.passed, list(verdict.findings)
-        except Exception as exc:  # noqa: BLE001 - never raise from QA
-            self.logger.warning(
-                "Code-review dispatch failed (not blocking): %s", exc
-            )
-            return True, [f"code-review could not run: {exc}"]
+        except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
+            self.logger.warning("Code-review dispatcher raised: %s", exc)
+            return True, [f"{_CODE_REVIEW_SKIP_PREFIX} {exc}"], []
+        findings = [f.message for f in getattr(verdict, "findings", [])]
+        files_modified = list(getattr(verdict, "files_modified", []))
+        passed = getattr(verdict, "passed", True)
+        return passed, findings, files_modified
 
     @staticmethod
     def _merge_manual_results(

@@ -170,10 +170,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: Created `parrot/flows/dev_loop/code_review.py` with `AbstractCodeReviewDispatcher`
+(ABC, `agent_name` attribute + abstract `review()`/`build_review_profile()`) and
+`CodeReviewDispatcherFactory` (class-level registry, `register()` decorator,
+`create()` raising `ValueError` on unknown name). Per the task's own guidance,
+the ABC does not import `CodeReviewVerdict` at definition time (it isn't
+defined until TASK-1693) — `review()` is typed to return `BaseModel`, to be
+narrowed by concrete subclasses. Added
+`tests/flows/dev_loop/test_code_review.py` covering register/create, unknown
+name, and ABC non-instantiation. All 3 tests pass; `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

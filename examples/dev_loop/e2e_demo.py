@@ -132,15 +132,20 @@ class SimulatedDispatcher:
                 lint_passed=self._qa_passed,
                 notes="(simulated QA run)",
             )
-        # FEAT-250: the QA node now dispatches a code-review verdict in
-        # addition to the deterministic sdd-qa run. Match by name to avoid
-        # importing the private ``_CodeReviewVerdict`` symbol from qa.py.
-        if output_model.__name__ == "_CodeReviewVerdict":
+        # FEAT-250/270: the QA node dispatches a code-review verdict in
+        # addition to the deterministic sdd-qa run.
+        if output_model.__name__ == "CodeReviewVerdict":
+            from parrot.flows.dev_loop.models import CodeReviewFinding
             return output_model(
                 passed=self._code_review_passed,
                 findings=(
                     [] if self._code_review_passed
-                    else ["simulated reviewer finding: missing regression test"]
+                    else [
+                        CodeReviewFinding(
+                            message="simulated reviewer finding: missing regression test",
+                            severity="major",
+                        )
+                    ]
                 ),
                 summary="(simulated code review)",
             )
