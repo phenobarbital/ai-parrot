@@ -141,3 +141,198 @@ class TestRegister:
             "help", "clear", "whoami", "question",
         }
         assert expected.issubset(set(router.registered_commands))
+
+
+class TestHandleTool:
+    @pytest.mark.asyncio
+    async def test_lists_tools_when_no_name(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        agent = _make_agent()
+        agent.tool_manager._tools = {"weather": MagicMock(description="Get weather")}
+        handler = AgentCommandHandler(agent, _make_wrapper())
+        ctx = _make_turn_context("/tool")
+        await handler.handle_tool(ctx)
+        call_text = handler.wrapper.send_text.call_args[0][0]
+        assert "weather" in call_text
+
+    @pytest.mark.asyncio
+    async def test_tool_not_found(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        handler = AgentCommandHandler(_make_agent(), _make_wrapper())
+        ctx = _make_turn_context("/tool nonexistent")
+        await handler.handle_tool(ctx)
+        call_text = handler.wrapper.send_text.call_args[0][0]
+        assert "not found" in call_text
+
+    @pytest.mark.asyncio
+    async def test_invokes_agent_ask_with_tool(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        agent = _make_agent()
+        tool_mock = MagicMock(description="Get weather")
+        agent.tool_manager.get_tool.return_value = tool_mock
+        agent.ask = AsyncMock(return_value="Sunny")
+        handler = AgentCommandHandler(agent, _make_wrapper())
+        ctx = _make_turn_context("/tool weather New York")
+        await handler.handle_tool(ctx)
+        agent.ask.assert_called_once()
+        prompt = agent.ask.call_args[0][0]
+        assert "weather" in prompt
+        assert "New York" in prompt
+
+
+class TestHandleSkill:
+    @pytest.mark.asyncio
+    async def test_lists_skills_when_no_name(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        agent = _make_agent()
+        file_reg = MagicMock()
+        skill_def = MagicMock()
+        skill_def.name = "data_analysis"
+        skill_def.description = "Analyze data"
+        skill_def.triggers = ["/analyze"]
+        file_reg.list_skills.return_value = [skill_def]
+        agent._skill_file_registry = file_reg
+        handler = AgentCommandHandler(agent, _make_wrapper())
+        ctx = _make_turn_context("/skill")
+        await handler.handle_skill(ctx)
+        call_text = handler.wrapper.send_text.call_args[0][0]
+        assert "data_analysis" in call_text
+
+    @pytest.mark.asyncio
+    async def test_skill_not_found(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        agent = _make_agent()
+        agent._skill_file_registry = None
+        agent._skill_registry = None
+        handler = AgentCommandHandler(agent, _make_wrapper())
+        ctx = _make_turn_context("/skill nonexistent_skill")
+        await handler.handle_skill(ctx)
+        call_text = handler.wrapper.send_text.call_args[0][0]
+        assert "not found" in call_text
+
+    @pytest.mark.asyncio
+    async def test_activates_file_skill(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        agent = _make_agent()
+        skill_def = MagicMock()
+        skill_def.name = "data_analysis"
+        file_reg = MagicMock()
+        file_reg.get_by_name.return_value = skill_def
+        agent._skill_file_registry = file_reg
+        agent.ask = AsyncMock(return_value="analysis done")
+        handler = AgentCommandHandler(agent, _make_wrapper())
+        ctx = _make_turn_context("/skill data_analysis summarize sales")
+        await handler.handle_skill(ctx)
+        assert agent._active_skill is None  # cleaned up in finally
+        agent.ask.assert_called_once()
+
+
+class TestHandleHelp:
+    @pytest.mark.asyncio
+    async def test_returns_help_text(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        handler = AgentCommandHandler(_make_agent(), _make_wrapper())
+        ctx = _make_turn_context("/help")
+        await handler.handle_help(ctx)
+        call_text = handler.wrapper.send_text.call_args[0][0]
+        assert "/function" in call_text
+        assert "/tool" in call_text
+        assert "/skill" in call_text
+
+
+class TestHandleWhoami:
+    @pytest.mark.asyncio
+    async def test_returns_agent_and_user_info(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        handler = AgentCommandHandler(_make_agent(), _make_wrapper())
+        ctx = _make_turn_context("/whoami")
+        await handler.handle_whoami(ctx)
+        call_text = handler.wrapper.send_text.call_args[0][0]
+        assert "Test Agent" in call_text
+        assert "Test User" in call_text
+
+
+class TestHandleClear:
+    @pytest.mark.asyncio
+    async def test_clears_conversation_state(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        wrapper = _make_wrapper()
+        handler = AgentCommandHandler(_make_agent(), wrapper)
+        ctx = _make_turn_context("/clear")
+        await handler.handle_clear(ctx)
+        wrapper.conversation_state.clear_state.assert_called_once_with(ctx)
+        wrapper.conversation_state.save_changes.assert_called_once()
+        call_text = wrapper.send_text.call_args[0][0]
+        assert "cleared" in call_text.lower()
+
+
+class TestHandleCommands:
+    @pytest.mark.asyncio
+    async def test_lists_registered_commands(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+        from parrot.integrations.msteams.commands import MSTeamsCommandRouter
+
+        wrapper = _make_wrapper()
+        router = MSTeamsCommandRouter()
+        wrapper._command_router = router
+        handler = AgentCommandHandler(_make_agent(), wrapper)
+        handler.register(router)
+        ctx = _make_turn_context("/commands")
+        await handler.handle_commands(ctx)
+        call_text = wrapper.send_text.call_args[0][0]
+        assert "/function" in call_text
+        assert "/help" in call_text
+
+
+class TestCustomCommands:
+    def test_registers_custom_commands_from_config(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+        from parrot.integrations.msteams.commands import MSTeamsCommandRouter
+
+        agent = _make_agent()
+        agent.speech_report = AsyncMock()
+        wrapper = _make_wrapper()
+        wrapper.config.commands = {"report": "speech_report"}
+        handler = AgentCommandHandler(agent, wrapper)
+        router = MSTeamsCommandRouter()
+        handler.register(router)
+        assert "report" in router.registered_commands
+
+    def test_skips_missing_methods(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+        from parrot.integrations.msteams.commands import MSTeamsCommandRouter
+
+        agent = _make_agent()
+        del agent.nonexistent_method  # ensure it doesn't exist
+        wrapper = _make_wrapper()
+        wrapper.config.commands = {"bad": "nonexistent_method"}
+        handler = AgentCommandHandler(agent, wrapper)
+        router = MSTeamsCommandRouter()
+        handler.register(router)
+        assert "bad" not in router.registered_commands
+
+    @pytest.mark.asyncio
+    async def test_custom_command_invokes_method_with_kwargs(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+        from parrot.integrations.msteams.commands import MSTeamsCommandRouter
+
+        agent = _make_agent()
+        agent.speech_report = AsyncMock(return_value={"ok": True})
+        wrapper = _make_wrapper()
+        wrapper.config.commands = {"report": "speech_report"}
+        handler = AgentCommandHandler(agent, wrapper)
+        router = MSTeamsCommandRouter()
+        handler.register(router)
+
+        ctx = _make_turn_context('/report report="hello" max_lines=2')
+        await router.try_dispatch("/report", ctx)
+        agent.speech_report.assert_called_once_with(report="hello", max_lines="2")
