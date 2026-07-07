@@ -23,6 +23,7 @@ import pandas as pd
 from pydantic import BaseModel, Field, ValidationError as PydanticValidationError
 
 from parrot.tools.toolkit import AbstractToolkit
+from parrot.template.engine import TemplateEngine
 from parrot.models.infographic import (
     InfographicBlock,
     InfographicResponse,
@@ -73,6 +74,8 @@ class InfographicValidationError(Exception):
         DATA_VAR_EMPTY
         THEME_INVALID
         ENHANCE_OUTPUT_INVALID
+        TEMPLATE_ENGINE_UNSET    # render_template: no templates configured
+        TEMPLATE_RENDER_ERROR    # render_template: Jinja render failure
     """
 
     def __init__(self, code: str, detail: Dict[str, Any]) -> None:
@@ -116,7 +119,8 @@ class InfographicToolkit(AbstractToolkit):
 
     Tools exposed (prefixed with ``infographic_``)::
 
-        infographic_render
+        infographic_render            — typed blocks + pandas (PandasAgent).
+        infographic_render_template   — trusted HTML+Jinja template + data (ANY agent).
         infographic_list_templates
         infographic_get_template_contract
         infographic_validate_blocks
@@ -127,11 +131,24 @@ class InfographicToolkit(AbstractToolkit):
     prefix_separator: str = "_"
     exclude_tools: Tuple[str, ...] = ()
 
-    def __init__(self, *, artifact_store: ArtifactStore, **kwargs) -> None:
+    def __init__(
+        self,
+        *,
+        artifact_store: ArtifactStore,
+        template_dirs: Optional[Any] = None,
+        templates: Optional[Dict[str, str]] = None,
+        **kwargs,
+    ) -> None:
         """Initialise the toolkit.
 
         Args:
             artifact_store: Initialised ``ArtifactStore`` instance.
+            template_dirs: Optional directory (or list of directories) of trusted
+                HTML+Jinja templates consumed by ``render_template``. Passed
+                straight to :class:`~parrot.template.engine.TemplateEngine`.
+            templates: Optional mapping of ``{name: source}`` in-memory HTML+Jinja
+                templates for ``render_template`` (registered via the engine's
+                ``DictLoader``). Combine with ``template_dirs`` or use alone.
             **kwargs: Forwarded to ``AbstractToolkit.__init__``.
         """
         super().__init__(**kwargs)
@@ -141,6 +158,28 @@ class InfographicToolkit(AbstractToolkit):
         # Ensure the class-level return_direct=True is set as an instance
         # attribute so AbstractToolkit._generate_tool can read it correctly.
         self.return_direct = True  # explicit — do not let kwargs override this
+        # Template-driven rendering (usable by ANY agent, not just PandasAgent):
+        # a trusted Jinja engine built lazily from developer-supplied templates.
+        self._template_engine: Optional[TemplateEngine] = None
+        if template_dirs is not None or templates:
+            self._template_engine = TemplateEngine(template_dirs=template_dirs)
+            if templates:
+                self._template_engine.add_templates(templates)
+
+    def add_template(self, name: str, source: str) -> None:
+        """Register a trusted in-memory HTML+Jinja template for ``render_template``.
+
+        Sync helper (not exposed as an LLM tool). Lets an agent register
+        templates after construction. Templates are trusted — never pass
+        untrusted/LLM-authored Jinja source here (no sandbox is applied).
+
+        Args:
+            name: Template name referenced by ``render_template(template_name=...)``.
+            source: HTML+Jinja template source.
+        """
+        if self._template_engine is None:
+            self._template_engine = TemplateEngine()
+        self._template_engine.add_templates({name: source})
 
     def get_tools(self, **kwargs):
         """Return the generated tools, ensuring return_direct is propagated."""
@@ -307,6 +346,205 @@ class InfographicToolkit(AbstractToolkit):
             data_variables=data_variables,
             enhanced=enhanced,
         )
+
+    async def render_template(
+        self,
+        template_name: str,
+        data: Optional[Dict[str, Any]] = None,
+        theme: Optional[str] = None,
+        title: Optional[str] = None,
+    ) -> InfographicRenderResult:
+        """Render a pre-registered HTML+Jinja template into an infographic artifact.
+
+        Use this when you already have the answer *data* (a dict, or the text/JSON
+        produced by a previous step) plus a named HTML+Jinja template registered
+        on this toolkit. Unlike ``infographic_render`` (typed blocks computed from
+        DataFrames in a pandas REPL), this path fills a trusted template directly,
+        so it works for **any** agent — no pandas namespace required.
+
+        Call it as the LAST tool in the turn. The result is returned *verbatim* —
+        do NOT summarise it or paste the HTML/envelope into your answer.
+
+        Args:
+            template_name: Name of a template registered via ``template_dirs``,
+                ``templates=`` or ``add_template()``.
+            data: Authoritative, JSON-serialisable payload exposed to the template
+                as ``data`` (e.g. ``{{ data.title }}``). This is the reliable
+                channel — prefer it over the best-effort ``message`` context.
+            theme: Optional theme name, exposed as ``theme`` and stored on the
+                artifact definition.
+            title: Optional artifact title (defaults to ``Infographic — <name>``).
+
+        Returns:
+            ``InfographicRenderResult`` with ``artifact_id``, ``html_url`` and
+            optional ``html_inline`` (populated only when the HTML is < 50 KB).
+
+        Raises:
+            InfographicValidationError: ``TEMPLATE_ENGINE_UNSET`` when no template
+                source is configured; ``TEMPLATE_UNKNOWN`` when ``template_name``
+                is not found; ``TEMPLATE_RENDER_ERROR`` on any Jinja error (e.g. a
+                missing variable under ``StrictUndefined``).
+        """
+        if self._template_engine is None:
+            raise InfographicValidationError(
+                "TEMPLATE_ENGINE_UNSET",
+                {
+                    "detail": (
+                        "No HTML+Jinja templates are configured. Pass "
+                        "template_dirs= or templates= to InfographicToolkit, or "
+                        "call add_template() before rendering."
+                    ),
+                },
+            )
+
+        # Resolve the template first so an unknown name is reported distinctly
+        # (``TemplateEngine.render`` wraps a missing template into a generic
+        # RuntimeError, collapsing it with genuine render errors).
+        try:
+            self._template_engine.get_template(template_name)
+        except FileNotFoundError as exc:
+            raise InfographicValidationError(
+                "TEMPLATE_UNKNOWN",
+                {"template_name": template_name},
+            ) from exc
+        except Exception:  # noqa: BLE001 — surfaces below as TEMPLATE_RENDER_ERROR
+            pass
+
+        context = self._build_template_context(data, theme, title)
+        try:
+            html = await self._template_engine.render(template_name, context)
+        except (ValueError, RuntimeError) as exc:
+            raise InfographicValidationError(
+                "TEMPLATE_RENDER_ERROR",
+                {"template_name": template_name, "error": str(exc)},
+            ) from exc
+
+        artifact_id, html_url = await self._persist_template(
+            html=html,
+            template_name=template_name,
+            theme=theme,
+            title=title,
+        )
+
+        self.logger.info(
+            "Rendered template infographic: template=%s theme=%s size=%d bytes",
+            template_name, theme, len(html),
+        )
+
+        return InfographicRenderResult(
+            artifact_id=artifact_id,
+            html_url=html_url,
+            html_inline=html if len(html) < _INLINE_THRESHOLD else None,
+            template_name=template_name,
+            theme=theme,
+            data_variables=[],
+            enhanced=False,
+        )
+
+    def _build_template_context(
+        self,
+        data: Optional[Dict[str, Any]],
+        theme: Optional[str],
+        title: Optional[str],
+    ) -> Dict[str, Any]:
+        """Assemble the Jinja context for ``render_template``.
+
+        ``data`` is the authoritative payload. ``message`` is a *best-effort*
+        snapshot of the bound bot's most recent ``AIMessage`` (may be ``{}`` when
+        the current turn is still in flight); templates should prefer ``data``.
+
+        Returns:
+            Dict with ``data``, ``message``, ``meta`` (``message.metadata``),
+            ``theme``, ``title`` and ``now`` (UTC).
+        """
+        message = self._snapshot_bot_message()
+        meta = message.get("metadata") if isinstance(message, dict) else None
+        return {
+            "data": data or {},
+            "message": message,
+            "meta": meta or {},
+            "theme": theme,
+            "title": title,
+            "now": datetime.now(timezone.utc),
+        }
+
+    def _snapshot_bot_message(self) -> Dict[str, Any]:
+        """Best-effort dict view of the bound bot's last ``AIMessage``.
+
+        Returns ``{}`` when no bot is bound or it exposes no last message. Any
+        serialisation failure degrades to a small set of well-known fields, and
+        finally to ``{}`` — this context is optional, never authoritative.
+        """
+        bot = getattr(self, "_bot", None)
+        if bot is None:
+            return {}
+        msg = (
+            getattr(bot, "last_response", None)
+            or getattr(bot, "_last_message", None)
+            or getattr(bot, "last_message", None)
+        )
+        if msg is None:
+            return {}
+        for attr in ("model_dump", "dict"):
+            dumper = getattr(msg, attr, None)
+            if callable(dumper):
+                try:
+                    return dumper()
+                except Exception:  # noqa: BLE001
+                    break
+        return {
+            k: getattr(msg, k, None)
+            for k in ("output", "response", "structured_output", "metadata", "sources")
+            if hasattr(msg, k)
+        }
+
+    async def _persist_template(
+        self,
+        *,
+        html: str,
+        template_name: str,
+        theme: Optional[str],
+        title: Optional[str],
+    ) -> Tuple[str, str]:
+        """Persist a template-rendered infographic; return ``(artifact_id, html_url)``.
+
+        Mirrors :meth:`_persist` but for the raw-HTML template path: the
+        definition carries the rendered ``html`` (served by the public HTML
+        route), the ``template`` name and ``theme``, and an empty ``js_bundles``
+        list (template output ships no vetted CDN bundles).
+        """
+        bot = getattr(self, "_bot", None)
+        user_id, agent_id, session_id = self._resolve_scope(bot)
+
+        now = datetime.now(timezone.utc)
+        artifact_id = f"infographic-{uuid.uuid4().hex[:12]}"
+
+        artifact = Artifact(
+            artifact_id=artifact_id,
+            artifact_type=ArtifactType.INFOGRAPHIC,
+            title=title or f"Infographic — {template_name}",
+            created_at=now,
+            updated_at=now,
+            source_turn_id=None,
+            created_by=ArtifactCreator.AGENT,
+            definition={
+                "html": html,
+                "template": template_name,
+                "theme": theme,
+                "js_bundles": [],
+            },
+        )
+
+        await self._artifact_store.save_artifact(user_id, agent_id, session_id, artifact)
+
+        html_url = build_public_html_url(
+            artifact_id,
+            user_id=user_id,
+            agent_id=agent_id,
+            session_id=session_id,
+        )
+
+        return artifact_id, html_url
 
     async def list_templates(self) -> List[Dict[str, str]]:
         """Return the list of available infographic templates.
