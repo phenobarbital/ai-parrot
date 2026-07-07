@@ -315,3 +315,119 @@ class TestOrgGraphServiceNoPool:
             os.environ.pop("FIELDSYNC_AUTH_RO_DSN", None)
             with pytest.raises(RuntimeError, match="FIELDSYNC_AUTH_RO_DSN"):
                 await svc.get_graph(1, tenant="t1")
+
+
+# ---------------------------------------------------------------------------
+# FEAT-330 — Store → Site → Location sub-structure in the graph
+# ---------------------------------------------------------------------------
+
+
+class TestOrgGraphStoreSubstructure:
+    """Store/Site/Location nodes, gated by depth (4/5/6)."""
+
+    def _base_fetch(self) -> dict:
+        return {
+            "auth.clients": [{"client_id": 10, "client_name": "C1"}],
+            "auth.programs": [],
+            "fieldsync.projects": [],
+            "networkninja.regions": [],
+            "networkninja.districts": [],
+            "networkninja.markets": [{"market_id": 500, "market_name": "M1"}],
+            "networkninja.stores_geographies": [
+                {"store_id": "store-501", "store_name": "S1", "market_id": 500}
+            ],
+            "fieldsync.sites": [
+                {"site_id": 1, "store_id": "store-501", "name": "Vending Zone"}
+            ],
+            "fieldsync.locations": [
+                {
+                    "location_id": 1,
+                    "site_id": 1,
+                    "name": "Kiosk A-12",
+                    "location_type": "kiosk",
+                    "latitude": 34.0,
+                    "longitude": -118.0,
+                    "geofence_radius_m": 50,
+                }
+            ],
+        }
+
+    def _svc(self, fetch: dict) -> OrgGraphService:
+        conn = _make_conn(
+            fetchrow_results={"auth.organizations": {"name": "Org"}},
+            fetch_results=fetch,
+        )
+        return OrgGraphService(_make_pool(conn))
+
+    def _node_types(self, graph) -> set[str]:
+        seen: set[str] = set()
+
+        def walk(n) -> None:
+            seen.add(n.node_type)
+            for c in n.children:
+                walk(c)
+
+        walk(graph.root)
+        return seen
+
+    def test_orgnode_accepts_site_and_location(self) -> None:
+        assert OrgNode(node_type="site", node_id="1").node_type == "site"
+        assert OrgNode(node_type="location", node_id="1").node_type == "location"
+
+    @pytest.mark.asyncio
+    async def test_depth_3_excludes_substructure(self) -> None:
+        svc = self._svc(self._base_fetch())
+        graph = await svc.get_graph(7, tenant="t1", depth=3)
+        types = self._node_types(graph)
+        assert "store" not in types
+        assert "site" not in types
+        assert "location" not in types
+
+    @pytest.mark.asyncio
+    async def test_depth_4_includes_store_under_market(self) -> None:
+        svc = self._svc(self._base_fetch())
+        graph = await svc.get_graph(7, tenant="t1", depth=4)
+        client_node = graph.root.children[0].children[0]
+        market = next(n for n in client_node.children if n.node_type == "market")
+        store_types = {n.node_type for n in market.children}
+        assert store_types == {"store"}
+        assert "site" not in self._node_types(graph)
+
+    @pytest.mark.asyncio
+    async def test_depth_5_includes_site_under_store(self) -> None:
+        svc = self._svc(self._base_fetch())
+        graph = await svc.get_graph(7, tenant="t1", depth=5)
+        types = self._node_types(graph)
+        assert "store" in types and "site" in types
+        assert "location" not in types
+
+    @pytest.mark.asyncio
+    async def test_depth_6_includes_location_with_geofence(self) -> None:
+        svc = self._svc(self._base_fetch())
+        graph = await svc.get_graph(7, tenant="t1", depth=6)
+
+        # Descend store → site → location and check geofence metadata carried.
+        loc = None
+
+        def walk(n):
+            nonlocal loc
+            if n.node_type == "location":
+                loc = n
+            for c in n.children:
+                walk(c)
+
+        walk(graph.root)
+        assert loc is not None
+        assert loc.metadata["geofence_radius_m"] == 50
+
+    @pytest.mark.asyncio
+    async def test_store_without_market_falls_back_to_client(self) -> None:
+        fetch = self._base_fetch()
+        fetch["networkninja.stores_geographies"] = [
+            {"store_id": "orphan", "store_name": "O", "market_id": None}
+        ]
+        svc = self._svc(fetch)
+        graph = await svc.get_graph(7, tenant="t1", depth=4)
+        client_node = graph.root.children[0].children[0]
+        store_ids = {n.node_id for n in client_node.children if n.node_type == "store"}
+        assert "orphan" in store_ids

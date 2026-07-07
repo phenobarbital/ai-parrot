@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from ..services.question_bank import QuestionBankService
     from ..services.rbac import RBACService
     from ..services.submissions import FormSubmissionStorage
+    from ..services.venue_service import VenueService
     from ..services.workday_sync import WorkdayIdentitySyncAdapter
     from ..tools.services.networkninja import ImportDiffReport
 
@@ -83,6 +84,7 @@ class FormAPIHandler:
         project_service: "ProjectService | None" = None,
         rbac_service: "RBACService | None" = None,
         workday_adapter: "WorkdayIdentitySyncAdapter | None" = None,
+        venue_service: "VenueService | None" = None,
         rbac_enforcing: bool = False,
     ) -> None:
         self.registry = registry
@@ -95,6 +97,8 @@ class FormAPIHandler:
         self._project_service = project_service
         self._rbac_service = rbac_service
         self._workday_adapter = workday_adapter
+        # FEAT-330 — Store sub-structure (Site / Location)
+        self._venue_service = venue_service
         self.rbac_enforcing = rbac_enforcing
         self.schema_renderer = JsonSchemaRenderer()
         self.validator = FormValidator()
@@ -1975,4 +1979,249 @@ class FormAPIHandler:
             return JSONResponse({"error": "Internal server error"}, status=500)
 
         return JSONResponse(result, status=202)
+
+    # ------------------------------------------------------------------
+    # FEAT-330 — Store sub-structure (Site / Location) endpoints
+    # ------------------------------------------------------------------
+
+    async def list_sites(self, request: web.Request) -> web.Response:
+        """GET /api/v1/org/stores/{store_id}/sites — List sites under a store.
+
+        Args:
+            request: Incoming HTTP request (path param: ``store_id``).
+
+        Returns:
+            200: List of ``Site`` as JSON.
+            400: Missing org_id in session.
+            501: VenueService not configured.
+        """
+        if self._venue_service is None:
+            return JSONResponse({"error": "VenueService not configured"}, status=501)
+
+        store_id = request.match_info.get("store_id", "")
+        org_id = self._get_org_id(request)
+        if org_id is None:
+            return JSONResponse({"error": "org_id not found in session"}, status=400)
+
+        tenant = self._get_tenant(request)
+        try:
+            sites = await self._venue_service.list_sites(
+                store_id=store_id, org_id=org_id, tenant=tenant
+            )
+        except Exception as exc:
+            self.logger.exception("list_sites failed: %s", exc)
+            return JSONResponse({"error": "Internal server error"}, status=500)
+
+        return JSONResponse([s.model_dump(mode="json") for s in sites], status=200)
+
+    async def create_site(self, request: web.Request) -> web.Response:
+        """POST /api/v1/org/stores/{store_id}/sites — Create a site.
+
+        Request body::
+
+            {"client_id": 42, "name": "Vending Zone"}
+
+        ``org_id`` is taken from the authenticated session, never the body.
+
+        Returns:
+            201: Created ``Site`` as JSON.
+            400: Invalid/missing fields.
+            409: Duplicate site name in the store.
+            501: VenueService not configured.
+        """
+        if self._venue_service is None:
+            return JSONResponse({"error": "VenueService not configured"}, status=501)
+
+        store_id = request.match_info.get("store_id", "")
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        name = body.get("name")
+        if not name:
+            return JSONResponse({"error": "name is required"}, status=400)
+
+        client_id = body.get("client_id")
+        if client_id is None:
+            return JSONResponse({"error": "client_id is required"}, status=400)
+        try:
+            client_id_int = int(client_id)
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "client_id must be an integer"}, status=400)
+
+        org_id = self._get_org_id(request)
+        if org_id is None:
+            return JSONResponse({"error": "org_id not found in session"}, status=400)
+
+        tenant = self._get_tenant(request)
+        try:
+            site = await self._venue_service.create_site(
+                store_id=store_id,
+                client_id=client_id_int,
+                org_id=org_id,
+                name=str(name),
+                tenant=tenant,
+            )
+        except Exception as exc:
+            from ..services.venue_service import DuplicateVenueError
+
+            if isinstance(exc, DuplicateVenueError):
+                return JSONResponse({"error": str(exc)}, status=409)
+            self.logger.exception("create_site failed: %s", exc)
+            return JSONResponse({"error": "Internal server error"}, status=500)
+
+        return JSONResponse(site.model_dump(mode="json"), status=201)
+
+    async def list_locations(self, request: web.Request) -> web.Response:
+        """GET /api/v1/org/sites/{site_id}/locations — List locations in a site.
+
+        Returns:
+            200: List of ``Location`` as JSON.
+            400: Invalid site_id or missing org_id.
+            501: VenueService not configured.
+        """
+        if self._venue_service is None:
+            return JSONResponse({"error": "VenueService not configured"}, status=501)
+
+        site_id_str = request.match_info.get("site_id", "")
+        try:
+            site_id = int(site_id_str)
+        except (ValueError, TypeError):
+            return JSONResponse(
+                {"error": f"Invalid site_id: {site_id_str!r}"}, status=400
+            )
+
+        org_id = self._get_org_id(request)
+        if org_id is None:
+            return JSONResponse({"error": "org_id not found in session"}, status=400)
+
+        tenant = self._get_tenant(request)
+        try:
+            locations = await self._venue_service.list_locations(
+                site_id=site_id, org_id=org_id, tenant=tenant
+            )
+        except Exception as exc:
+            self.logger.exception("list_locations failed: %s", exc)
+            return JSONResponse({"error": "Internal server error"}, status=500)
+
+        return JSONResponse(
+            [loc.model_dump(mode="json") for loc in locations], status=200
+        )
+
+    async def create_location(self, request: web.Request) -> web.Response:
+        """POST /api/v1/org/sites/{site_id}/locations — Create a location.
+
+        Request body::
+
+            {
+                "client_id": 42,
+                "name": "Kiosk A-12",
+                "location_type": "kiosk",
+                "latitude": 34.0522,
+                "longitude": -118.2437,
+                "geofence_radius_m": 50
+            }
+
+        ``org_id`` is taken from the session, never the body.
+
+        Returns:
+            201: Created ``Location`` as JSON.
+            400: Invalid/missing fields.
+            409: Duplicate location name in the site.
+            501: VenueService not configured.
+        """
+        if self._venue_service is None:
+            return JSONResponse({"error": "VenueService not configured"}, status=501)
+
+        site_id_str = request.match_info.get("site_id", "")
+        try:
+            site_id = int(site_id_str)
+        except (ValueError, TypeError):
+            return JSONResponse(
+                {"error": f"Invalid site_id: {site_id_str!r}"}, status=400
+            )
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        name = body.get("name")
+        if not name:
+            return JSONResponse({"error": "name is required"}, status=400)
+
+        client_id = body.get("client_id")
+        if client_id is None:
+            return JSONResponse({"error": "client_id is required"}, status=400)
+        try:
+            client_id_int = int(client_id)
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "client_id must be an integer"}, status=400)
+
+        org_id = self._get_org_id(request)
+        if org_id is None:
+            return JSONResponse({"error": "org_id not found in session"}, status=400)
+
+        tenant = self._get_tenant(request)
+        try:
+            location = await self._venue_service.create_location(
+                site_id=site_id,
+                client_id=client_id_int,
+                org_id=org_id,
+                name=str(name),
+                location_type=str(body.get("location_type", "kiosk")),
+                latitude=body.get("latitude"),
+                longitude=body.get("longitude"),
+                geofence_radius_m=body.get("geofence_radius_m"),
+                tenant=tenant,
+            )
+        except Exception as exc:
+            from ..services.venue_service import DuplicateVenueError
+
+            if isinstance(exc, DuplicateVenueError):
+                return JSONResponse({"error": str(exc)}, status=409)
+            self.logger.exception("create_location failed: %s", exc)
+            return JSONResponse({"error": "Internal server error"}, status=500)
+
+        return JSONResponse(location.model_dump(mode="json"), status=201)
+
+    async def get_location(self, request: web.Request) -> web.Response:
+        """GET /api/v1/org/locations/{location_id} — Fetch one location.
+
+        Returns:
+            200: ``Location`` as JSON (includes geofence params).
+            400: Invalid location_id or missing org_id.
+            404: Location not found in the session's org.
+            501: VenueService not configured.
+        """
+        if self._venue_service is None:
+            return JSONResponse({"error": "VenueService not configured"}, status=501)
+
+        location_id_str = request.match_info.get("location_id", "")
+        try:
+            location_id = int(location_id_str)
+        except (ValueError, TypeError):
+            return JSONResponse(
+                {"error": f"Invalid location_id: {location_id_str!r}"}, status=400
+            )
+
+        org_id = self._get_org_id(request)
+        if org_id is None:
+            return JSONResponse({"error": "org_id not found in session"}, status=400)
+
+        tenant = self._get_tenant(request)
+        try:
+            location = await self._venue_service.get_location(
+                location_id, org_id=org_id, tenant=tenant
+            )
+        except Exception as exc:
+            from ..services.venue_service import LocationNotFoundError
+
+            if isinstance(exc, LocationNotFoundError):
+                return JSONResponse({"error": str(exc)}, status=404)
+            self.logger.exception("get_location failed: %s", exc)
+            return JSONResponse({"error": "Internal server error"}, status=500)
+
+        return JSONResponse(location.model_dump(mode="json"), status=200)
 
