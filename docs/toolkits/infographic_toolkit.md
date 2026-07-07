@@ -51,6 +51,47 @@ LLM-generated JavaScript interactivity, persist the artifact, and return the res
 
 ---
 
+### `infographic_render_template`
+
+Render a **pre-registered HTML+Jinja2 template** with data you already have into a
+self-contained infographic artifact. Unlike `infographic_render` (typed blocks
+computed from DataFrames in a pandas REPL), this path fills a trusted template
+directly, so it is usable by **any** agent — no pandas namespace required.
+
+Templates are **trusted** and supplied by the developer (never LLM-authored Jinja),
+so no sandbox is applied. Register them at construction or at runtime:
+
+```python
+toolkit = InfographicToolkit(
+    artifact_store=store,
+    template_dirs=["/path/to/templates"],           # filesystem templates
+    templates={"summary.html.j2": "<h1>{{ data.title }}</h1>"},  # in-memory
+)
+toolkit.add_template("late.html.j2", "<b>{{ data.v }}</b>")       # runtime
+toolkit.set_bot(agent)
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `template_name` | `str` | Name of a registered template. |
+| `data` | `Optional[Dict]` | Authoritative, JSON-serialisable payload exposed to the template as `data` (e.g. `{{ data.title }}`). This is the reliable channel. |
+| `theme` | `Optional[str]` | Theme name, exposed as `theme` and stored on the artifact. |
+| `title` | `Optional[str]` | Artifact title (defaults to `Infographic — <name>`). |
+
+**Template context**: `data` (your payload), `message` (best-effort snapshot of the
+bound bot's last `AIMessage` — may be `{}` mid-turn; prefer `data`), `meta`
+(`message.metadata`), `theme`, `title`, and `now` (UTC). Autoescaping is on and
+missing variables raise under `StrictUndefined`.
+
+**Returns**: `InfographicRenderResult` (same shape as `infographic_render`;
+`data_variables` is empty, `enhanced` is `false`).
+
+Any agent (not only `PandasAgent`) finalizes the result: the `BaseBot.ask()`
+post-loop detects `InfographicRenderResult` and sets `response.output` (HTML or
+signed URL), `response.output_mode = infographic`, and `response.artifact_id`.
+
+---
+
 ### `infographic_list_templates`
 
 List all registered templates with name and description.
@@ -89,7 +130,9 @@ never raises.
 
 | Code | When |
 |---|---|
-| `TEMPLATE_UNKNOWN` | `template_name` not in the registry. |
+| `TEMPLATE_UNKNOWN` | `template_name` not in the registry (or, for `render_template`, not a registered Jinja template). |
+| `TEMPLATE_ENGINE_UNSET` | `render_template` called but no `template_dirs`/`templates`/`add_template()` were configured. |
+| `TEMPLATE_RENDER_ERROR` | `render_template` hit a Jinja error (e.g. a missing variable under `StrictUndefined`). |
 | `SLOT_MISSING` | A required block slot has no corresponding block. |
 | `SLOT_TYPE_MISMATCH` | A block's `type` does not match the spec at that position. |
 | `SLOT_ITEM_COUNT_INVALID` | A block violates `min_items` / `max_items` constraints. |

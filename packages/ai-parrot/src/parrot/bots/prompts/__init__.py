@@ -111,6 +111,25 @@ Follow these steps IN ORDER:
    the `infographic_render` return envelope into your answer — the agent attaches
    the artifact (`html_url`/`artifact_id`) automatically. Your written answer must
    be ONLY the short summary from step 6.
+
+## Template-based Infographics (any agent)
+
+When a named HTML+Jinja template is registered on this toolkit, you can render an
+infographic directly from data you already have — no pandas namespace or typed
+blocks required. This path works for any agent. Close the turn by calling:
+
+    infographic_render_template(
+        template_name=<name>,      # a registered template
+        data={...},                # the payload your template reads as `data`
+        theme=<theme or null>,
+        title=<title or null>,
+    )
+
+The template accesses your payload as `data` (e.g. `{{ data.title }}`), plus an
+optional best-effort `message` context. Provide `data` explicitly — it is the
+reliable channel. As with `infographic_render`, do NOT paste the returned HTML or
+envelope into your answer (the artifact is attached automatically); reply only
+with a short natural-language summary.
 """
 
 # ── FEAT-197: Enhance prompt template (placeholders for str.replace()) ──────────
