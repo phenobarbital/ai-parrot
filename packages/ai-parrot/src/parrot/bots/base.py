@@ -35,6 +35,15 @@ def _get_interactive_result_class() -> Optional[type]:
         return _cls
     except ImportError:
         return None
+
+
+def _get_infographic_result_class() -> Optional[type]:
+    """Lazy import of ``InfographicRenderResult`` (avoids circular deps)."""
+    try:
+        from ..tools.infographic_toolkit import InfographicRenderResult as _cls
+        return _cls
+    except ImportError:
+        return None
 # FEAT-176: Lifecycle Events
 from parrot.core.events.lifecycle.trace import TraceContext
 from parrot.core.events.lifecycle.events import (
@@ -841,6 +850,64 @@ class BaseBot(AbstractBot):
 
         return explanation
 
+    def _extract_last_infographic_result(
+        self, tool_calls: Optional[List[Any]],
+    ) -> Optional[Any]:
+        """Return the last ``InfographicRenderResult`` from the tool calls list.
+
+        Generalises FEAT-197 beyond ``PandasAgent``: any agent whose
+        ``infographic_render`` / ``infographic_render_template`` tool produced an
+        ``InfographicRenderResult`` can have it finalized to an HTML artifact.
+        When multiple render calls occurred in the same turn, only the LAST one
+        is returned.
+        """
+        if not tool_calls:
+            return None
+        cls = _get_infographic_result_class()
+        if cls is None:
+            return None
+        for tc in reversed(tool_calls):
+            result = getattr(tc, "result", None)
+            if isinstance(result, cls):
+                return result
+        return None
+
+    def _finalize_infographic_response(
+        self, response: Any, envelope: Any,
+    ) -> Optional[str]:
+        """Apply an ``InfographicRenderResult`` to the agent response in place.
+
+        Mirrors ``PandasAgent._finalize_infographic_response`` (FEAT-197): the
+        natural-language explanation is preserved on ``response.response`` (the
+        chat bubble) while ``response.output`` carries the infographic HTML
+        (inline when small, otherwise the signed URL). The explanation MUST be
+        captured before ``response.output`` is overwritten, because
+        ``AIMessage.content`` aliases ``output``.
+        """
+        explanation = getattr(response, "response", None)
+        if not explanation and isinstance(response.output, str):
+            explanation = response.output
+
+        response.output = envelope.html_inline or envelope.html_url
+        response.output_mode = OutputMode.INFOGRAPHIC
+        response.artifact_id = envelope.artifact_id
+        if explanation:
+            response.response = explanation
+
+        meta = dict(getattr(response, "metadata", None) or {})
+        meta.update({
+            "html_url": envelope.html_url,
+            "html_inline_omitted": envelope.html_inline is None,
+            "enhanced": envelope.enhanced,
+            "template_name": envelope.template_name,
+            "theme": envelope.theme,
+            "explanation": explanation,
+        })
+        if hasattr(response, "metadata"):
+            response.metadata = meta
+
+        return explanation
+
     async def ask(
         self,
         question: str,
@@ -1314,9 +1381,33 @@ class BaseBot(AbstractBot):
                     output_mode = OutputMode.DEFAULT
                     response.output_mode = OutputMode.DEFAULT
 
+                # Tool-driven infographic HTML artifact (FEAT-197, generalized):
+                # when any agent's ``infographic_render`` /
+                # ``infographic_render_template`` tool produced an
+                # ``InfographicRenderResult``, finalize it to an HTML artifact and
+                # bypass the formatter — the same contract ``PandasAgent`` uses,
+                # now available to every ``Agent``.
+                infographic_envelope = self._extract_last_infographic_result(
+                    getattr(response, "tool_calls", None)
+                )
+                if infographic_envelope is not None:
+                    self._finalize_infographic_response(response, infographic_envelope)
+                    self.logger.info(
+                        "InfographicRenderResult detected — bypassing formatter: "
+                        "artifact_id=%s",
+                        infographic_envelope.artifact_id,
+                    )
+                elif output_mode == OutputMode.INFOGRAPHIC:
+                    self.logger.warning(
+                        "output_mode=infographic requested but no infographic "
+                        "artifact was produced; falling back to plain response."
+                    )
+                    output_mode = OutputMode.DEFAULT
+                    response.output_mode = OutputMode.DEFAULT
+
                 # Determine output mode
                 format_kwargs = format_kwargs or {}
-                if interactive_envelope is not None:
+                if interactive_envelope is not None or infographic_envelope is not None:
                     pass  # already finalized above — skip the formatter
                 elif output_mode in [
                     OutputMode.TELEGRAM,
