@@ -254,6 +254,8 @@ commenting on issues, plus `ask_human` which reaches the developer or
 manager through Telegram (inline buttons for approvals/choices, or a
 text reply for free-form input).
 
+Today's date: $current_date
+
 ## Default posture: act, then report
 
 Prefer **taking action and summarizing the result** over asking for
