@@ -18,10 +18,13 @@ def parse_kwargs(text: str) -> dict:
     """
     if not text or not text.strip():
         return {}
+    # Strip trailing commas on tokens (e.g. "a=1, b=2") for backward
+    # compatibility with the old Telegram parser.
     try:
         parts = shlex.split(text)
     except ValueError:
         parts = text.split()
+    parts = [p.rstrip(",") for p in parts if p != ","]
     kwargs: dict = {}
     positional_idx = 0
     for part in parts:
