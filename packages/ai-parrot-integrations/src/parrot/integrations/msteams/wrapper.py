@@ -142,10 +142,15 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             conversation_state=self.conversation_state
         )
 
-        # Command router — Jira commands wired here (FEAT-225)
-        self._command_router: Optional[MSTeamsCommandRouter] = None
+        # Command router — always created for agent commands;
+        # Jira commands added only when oauth_manager is provided (FEAT-225).
+        from .commands.agent_commands import AgentCommandHandler
+
+        self._command_router: MSTeamsCommandRouter = MSTeamsCommandRouter()
+        agent_cmd_handler = AgentCommandHandler(agent, self)
+        agent_cmd_handler.register(self._command_router)
+
         if oauth_manager is not None:
-            self._command_router = MSTeamsCommandRouter()
             register_jira_commands(self._command_router, oauth_manager)
             # Register the OAuth notifier for proactive messaging after callback.
             # continue_conversation needs a valid App ID, so skip (with a
@@ -421,11 +426,15 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             await turn_context.send_activity("You are not authorized to use this bot.")
             return
 
-        # Command interception — Jira commands (FEAT-225)
-        # Strip mentions first so "/connect_jira" is detected after "@BotName"
-        if self._command_router is not None and turn_context.activity.text:
+        # Command interception — agent + Jira commands (FEAT-225)
+        # Strip mentions first so "/connect_jira" is detected after "@BotName".
+        # The mention-stripped text is cached on `mention_stripped_text` so the
+        # later "Clean message" step can reuse it instead of stripping twice.
+        mention_stripped_text = None
+        if turn_context.activity.text:
             raw_text = turn_context.activity.text
-            clean_text = self._remove_mentions(turn_context.activity, raw_text).strip()
+            mention_stripped_text = self._remove_mentions(turn_context.activity, raw_text)
+            clean_text = mention_stripped_text.strip()
             dispatched = await self._command_router.try_dispatch(clean_text, turn_context)
             if not dispatched:
                 # Secondary plain-text dispatch for discoverability keywords
@@ -504,8 +513,12 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             if not is_mentioned:
                 return
 
-        # Clean message (remove bot mentions)
-        text = self._remove_mentions(turn_context.activity, text)
+        # Clean message (remove bot mentions) — reuse the value computed
+        # during command interception above to avoid stripping mentions twice.
+        if mention_stripped_text is not None:
+            text = mention_stripped_text
+        else:
+            text = self._remove_mentions(turn_context.activity, text)
 
         # Sanitize text (normalize unicode characters like NBSP from French keyboards)
         text = self._sanitize_text(text)

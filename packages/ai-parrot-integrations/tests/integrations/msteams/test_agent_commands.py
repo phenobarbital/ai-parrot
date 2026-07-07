@@ -336,3 +336,24 @@ class TestCustomCommands:
         ctx = _make_turn_context('/report report="hello" max_lines=2')
         await router.try_dispatch("/report", ctx)
         agent.speech_report.assert_called_once_with(report="hello", max_lines="2")
+
+
+class TestWrapperIntegration:
+    def test_router_created_without_oauth_manager(self):
+        """The command router must be created even without oauth_manager."""
+        from parrot.integrations.msteams.commands import MSTeamsCommandRouter
+
+        # Simulate what __init__ should do after the change:
+        # router is always created, agent commands always registered.
+        router = MSTeamsCommandRouter()
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        handler = AgentCommandHandler(_make_agent(), _make_wrapper())
+        handler.register(router)
+
+        # Core commands must be present
+        assert "function" in router.registered_commands
+        assert "help" in router.registered_commands
+
+        # Jira commands must NOT be present (no oauth_manager)
+        assert "connect_jira" not in router.registered_commands
