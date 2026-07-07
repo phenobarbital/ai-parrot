@@ -98,6 +98,44 @@ class TestHandleFunction:
         await handler.handle_function(ctx)
         agent.get_info.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_blocks_denylisted_method(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        agent = _make_agent()
+        agent.ask = AsyncMock(return_value="should not run")
+        handler = AgentCommandHandler(agent, _make_wrapper())
+        ctx = _make_turn_context("/function ask")
+        await handler.handle_function(ctx)
+        agent.ask.assert_not_called()
+        call_text = handler.wrapper.send_text.call_args[0][0]
+        assert "cannot be invoked directly" in call_text
+
+    @pytest.mark.asyncio
+    async def test_blocks_private_method(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        agent = _make_agent()
+        agent._private_method = AsyncMock(return_value="should not run")
+        handler = AgentCommandHandler(agent, _make_wrapper())
+        ctx = _make_turn_context("/function _private_method")
+        await handler.handle_function(ctx)
+        agent._private_method.assert_not_called()
+        call_text = handler.wrapper.send_text.call_args[0][0]
+        assert "cannot be invoked directly" in call_text
+
+    @pytest.mark.asyncio
+    async def test_reports_error_from_method(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        agent = _make_agent()
+        agent.speech_report = AsyncMock(side_effect=RuntimeError("boom"))
+        handler = AgentCommandHandler(agent, _make_wrapper())
+        ctx = _make_turn_context("/function speech_report")
+        await handler.handle_function(ctx)
+        call_text = handler.wrapper.send_text.call_args[0][0]
+        assert "boom" in call_text
+
 
 class TestHandleCall:
     @pytest.mark.asyncio
@@ -110,6 +148,31 @@ class TestHandleCall:
         ctx = _make_turn_context("/call greet Alice")
         await handler.handle_call(ctx)
         agent.greet.assert_called_once_with("Alice")
+
+    @pytest.mark.asyncio
+    async def test_blocks_denylisted_method(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        agent = _make_agent()
+        agent.shutdown = AsyncMock(return_value="should not run")
+        handler = AgentCommandHandler(agent, _make_wrapper())
+        ctx = _make_turn_context("/call shutdown")
+        await handler.handle_call(ctx)
+        agent.shutdown.assert_not_called()
+        call_text = handler.wrapper.send_text.call_args[0][0]
+        assert "cannot be invoked directly" in call_text
+
+    @pytest.mark.asyncio
+    async def test_reports_error_from_method(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        agent = _make_agent()
+        agent.greet = AsyncMock(side_effect=RuntimeError("boom"))
+        handler = AgentCommandHandler(agent, _make_wrapper())
+        ctx = _make_turn_context("/call greet Alice")
+        await handler.handle_call(ctx)
+        call_text = handler.wrapper.send_text.call_args[0][0]
+        assert "boom" in call_text
 
 
 class TestHandleQuestion:
@@ -125,6 +188,47 @@ class TestHandleQuestion:
         agent.ask.assert_called_once()
         call_kwargs = agent.ask.call_args
         assert call_kwargs.kwargs.get("use_tools") is False
+
+    @pytest.mark.asyncio
+    async def test_reports_error_from_ask(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        agent = _make_agent()
+        agent.ask = AsyncMock(side_effect=RuntimeError("llm down"))
+        handler = AgentCommandHandler(agent, _make_wrapper())
+        ctx = _make_turn_context("/question What is the answer?")
+        await handler.handle_question(ctx)
+        call_text = handler.wrapper.send_text.call_args[0][0]
+        assert "llm down" in call_text
+
+
+class TestSendResult:
+    @pytest.mark.asyncio
+    async def test_prepends_prefix_to_text_response(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        agent = _make_agent()
+        wrapper = _make_wrapper()
+        parsed = MagicMock(text="hello world")
+        wrapper._parse_response = MagicMock(return_value=parsed)
+        handler = AgentCommandHandler(agent, wrapper)
+        ctx = _make_turn_context()
+        await handler._send_result(ctx, "raw-result", prefix="**foo** result:\n\n")
+        assert parsed.text == "**foo** result:\n\nhello world"
+        wrapper._send_parsed_response.assert_called_once_with(parsed, ctx)
+
+    @pytest.mark.asyncio
+    async def test_no_prefix_leaves_text_unchanged(self):
+        from parrot.integrations.msteams.commands.agent_commands import AgentCommandHandler
+
+        agent = _make_agent()
+        wrapper = _make_wrapper()
+        parsed = MagicMock(text="hello world")
+        wrapper._parse_response = MagicMock(return_value=parsed)
+        handler = AgentCommandHandler(agent, wrapper)
+        ctx = _make_turn_context()
+        await handler._send_result(ctx, "raw-result")
+        assert parsed.text == "hello world"
 
 
 class TestRegister:

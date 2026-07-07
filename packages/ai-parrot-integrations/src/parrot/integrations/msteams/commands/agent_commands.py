@@ -35,6 +35,11 @@ class AgentCommandHandler:
             helpers and config access).
     """
 
+    _BLOCKED_METHODS = frozenset({
+        "ask", "completion", "stream", "embed", "run", "start", "stop",
+        "configure", "close", "shutdown",
+    })
+
     def __init__(self, agent: Any, wrapper: Any) -> None:
         self.agent = agent
         self.wrapper = wrapper
@@ -68,6 +73,8 @@ class AgentCommandHandler:
         if isinstance(parsed, dict):
             await self.wrapper.send_card(parsed, turn_context)
         else:
+            if prefix and hasattr(parsed, "text") and parsed.text:
+                parsed.text = prefix + parsed.text
             await self.wrapper._send_parsed_response(parsed, turn_context)
 
     async def _send_text(self, turn_context, text: str) -> None:
@@ -117,11 +124,9 @@ class AgentCommandHandler:
         return "\n".join(skills[:15])
 
     def _list_callable_methods(self) -> str:
-        skip = {"ask", "completion", "stream", "embed", "run", "start", "stop",
-                "configure", "close", "shutdown"}
         methods = []
         for name in sorted(dir(self.agent)):
-            if name.startswith("_") or name in skip:
+            if name.startswith("_") or name in self._BLOCKED_METHODS:
                 continue
             attr = getattr(self.agent, name, None)
             if callable(attr) and not isinstance(attr, type):
@@ -170,17 +175,27 @@ class AgentCommandHandler:
             await self._send_text(turn_context, f"Method '{method_name}' not found on agent.")
             return
 
+        if method_name.startswith("_") or method_name in self._BLOCKED_METHODS:
+            await self._send_text(
+                turn_context, f"Method '{method_name}' cannot be invoked directly."
+            )
+            return
+
         await self.wrapper.send_typing(turn_context)
         method = getattr(self.agent, method_name)
         kwargs = parse_kwargs(args_text)
         self.logger.info("/function %s(%s)", method_name, kwargs)
 
-        if asyncio.iscoroutinefunction(method):
-            result = await method(**kwargs) if kwargs else await method()
-        else:
-            result = method(**kwargs) if kwargs else method()
+        try:
+            if asyncio.iscoroutinefunction(method):
+                result = await method(**kwargs) if kwargs else await method()
+            else:
+                result = method(**kwargs) if kwargs else method()
 
-        await self._send_result(turn_context, result, prefix=f"**{method_name}** result:\n\n")
+            await self._send_result(turn_context, result, prefix=f"**{method_name}** result:\n\n")
+        except Exception as err:
+            self.logger.error("/function %s error: %s", method_name, err)
+            await self._send_text(turn_context, f"Error: {err}")
 
     async def handle_call(self, turn_context) -> None:
         """Handle /call <method> [args ...] -- invoke agent method with positional args."""
@@ -200,17 +215,27 @@ class AgentCommandHandler:
             await self._send_text(turn_context, f"Method '{method_name}' not found on agent.")
             return
 
+        if method_name.startswith("_") or method_name in self._BLOCKED_METHODS:
+            await self._send_text(
+                turn_context, f"Method '{method_name}' cannot be invoked directly."
+            )
+            return
+
         await self.wrapper.send_typing(turn_context)
         method = getattr(self.agent, method_name)
         args = args_text.split() if args_text else []
         self.logger.info("/call %s(%s)", method_name, args)
 
-        if asyncio.iscoroutinefunction(method):
-            result = await method(*args) if args else await method()
-        else:
-            result = method(*args) if args else method()
+        try:
+            if asyncio.iscoroutinefunction(method):
+                result = await method(*args) if args else await method()
+            else:
+                result = method(*args) if args else method()
 
-        await self._send_result(turn_context, result, prefix=f"**{method_name}** result:\n\n")
+            await self._send_result(turn_context, result, prefix=f"**{method_name}** result:\n\n")
+        except Exception as err:
+            self.logger.error("/call %s error: %s", method_name, err)
+            await self._send_text(turn_context, f"Error: {err}")
 
     async def handle_tool(self, turn_context) -> None:
         """Handle /tool <name> [input] -- use a specific tool via LLM."""
@@ -242,10 +267,14 @@ class AgentCommandHandler:
         self.logger.info("/tool %s — prompt: %s", tool_name, prompt[:100])
         from parrot.models.outputs import OutputMode
 
-        response = await self.agent.ask(
-            prompt, session_id=conversation_id, output_mode=OutputMode.MSTEAMS
-        )
-        await self._send_result(turn_context, response)
+        try:
+            response = await self.agent.ask(
+                prompt, session_id=conversation_id, output_mode=OutputMode.MSTEAMS
+            )
+            await self._send_result(turn_context, response)
+        except Exception as err:
+            self.logger.error("/tool %s error: %s", tool_name, err)
+            await self._send_text(turn_context, f"Error: {err}")
 
     async def handle_skill(self, turn_context) -> None:
         """Handle /skill <name> [input] -- activate a skill and query the agent."""
@@ -293,28 +322,32 @@ class AgentCommandHandler:
 
         from parrot.models.outputs import OutputMode
 
-        if skill_def is not None:
-            setattr(self.agent, "_active_skill", skill_def)
-            try:
+        try:
+            if skill_def is not None:
+                setattr(self.agent, "_active_skill", skill_def)
+                try:
+                    response = await self.agent.ask(
+                        question,
+                        session_id=conversation_id,
+                        output_mode=OutputMode.MSTEAMS,
+                    )
+                finally:
+                    self.agent._active_skill = None
+            else:
+                framed = (
+                    f"Follow these skill instructions:\n\n{db_skill_body}\n\n"
+                    f"User request: {question}"
+                )
                 response = await self.agent.ask(
-                    question,
+                    framed,
                     session_id=conversation_id,
                     output_mode=OutputMode.MSTEAMS,
                 )
-            finally:
-                self.agent._active_skill = None
-        else:
-            framed = (
-                f"Follow these skill instructions:\n\n{db_skill_body}\n\n"
-                f"User request: {question}"
-            )
-            response = await self.agent.ask(
-                framed,
-                session_id=conversation_id,
-                output_mode=OutputMode.MSTEAMS,
-            )
 
-        await self._send_result(turn_context, response)
+            await self._send_result(turn_context, response)
+        except Exception as err:
+            self.logger.error("/skill %s error: %s", skill_name, err)
+            await self._send_text(turn_context, f"Error: {err}")
 
     async def handle_question(self, turn_context) -> None:
         """Handle /question <text> -- ask the LLM without tools."""
@@ -332,13 +365,17 @@ class AgentCommandHandler:
 
         from parrot.models.outputs import OutputMode
 
-        response = await self.agent.ask(
-            question,
-            use_tools=False,
-            session_id=conversation_id,
-            output_mode=OutputMode.MSTEAMS,
-        )
-        await self._send_result(turn_context, response)
+        try:
+            response = await self.agent.ask(
+                question,
+                use_tools=False,
+                session_id=conversation_id,
+                output_mode=OutputMode.MSTEAMS,
+            )
+            await self._send_result(turn_context, response)
+        except Exception as err:
+            self.logger.error("/question error: %s", err)
+            await self._send_text(turn_context, f"Error: {err}")
 
     async def handle_commands(self, turn_context) -> None:
         """Handle /commands -- list all commands, tools, skills, agent methods."""
@@ -437,13 +474,17 @@ class AgentCommandHandler:
             kwargs = parse_kwargs(args_text)
             self.logger.info("/%s -> %s(%s)", cmd_name, method_name, kwargs)
 
-            if asyncio.iscoroutinefunction(method):
-                result = await method(**kwargs) if kwargs else await method()
-            else:
-                result = method(**kwargs) if kwargs else method()
+            try:
+                if asyncio.iscoroutinefunction(method):
+                    result = await method(**kwargs) if kwargs else await method()
+                else:
+                    result = method(**kwargs) if kwargs else method()
 
-            await self._send_result(
-                turn_context, result, prefix=f"**{method_name}** result:\n\n"
-            )
+                await self._send_result(
+                    turn_context, result, prefix=f"**{method_name}** result:\n\n"
+                )
+            except Exception as err:
+                self.logger.error("/%s error: %s", cmd_name, err)
+                await self._send_text(turn_context, f"Error: {err}")
 
         return handler
