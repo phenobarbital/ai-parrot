@@ -35,6 +35,7 @@ from aiogram.types import (
 )
 from aiogram.filters import CommandStart, Command
 from parrot.integrations.core.state import IntegrationStateManager
+from parrot.integrations.utils import parse_kwargs as _shared_parse_kwargs
 from navconfig.logging import logging
 from .callbacks import CallbackRegistry, CallbackContext, CallbackResult
 from .context import telegram_chat_scope
@@ -1040,21 +1041,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
     @staticmethod
     def _parse_kwargs(text: str) -> dict:
-        """Parse 'key=val key2=val2' or 'arg1 arg2' into kwargs/args dict."""
-        if not text.strip():
-            return {}
-        # Support both space and comma separators
-        parts = [p.strip() for p in text.replace(",", " ").split() if p.strip()]
-        kwargs: dict = {}
-        positional_idx = 0
-        for part in parts:
-            if "=" in part:
-                key, _, val = part.partition("=")
-                kwargs[key.strip()] = val.strip()
-            else:
-                kwargs[f"arg{positional_idx}"] = part
-                positional_idx += 1
-        return kwargs
+        """Parse 'key=val key2="quoted val"' into a kwargs dict."""
+        return _shared_parse_kwargs(text)
 
     def _is_authorized(self, chat_id: int) -> bool:
         """Check if chat is authorized to use this bot."""
