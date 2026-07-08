@@ -949,6 +949,25 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             except json.JSONDecodeError:
                 continue
 
+        # Fallback: try parsing the entire text as raw JSON (no backticks)
+        stripped = text.strip()
+        if stripped.startswith('{'):
+            try:
+                parsed_json = json.loads(stripped)
+                if isinstance(parsed_json, dict):
+                    if parsed_json.get('type') == 'AdaptiveCard':
+                        self.logger.info("Detected raw AdaptiveCard JSON (no code block)")
+                        return parsed_json
+                    if parsed_json.get('type') == 'message':
+                        for attachment in parsed_json.get('attachments', []):
+                            if isinstance(attachment, dict):
+                                content = attachment.get('content', attachment)
+                                if isinstance(content, dict) and content.get('type') == 'AdaptiveCard':
+                                    self.logger.info("Detected AdaptiveCard in raw message JSON")
+                                    return content
+            except json.JSONDecodeError:
+                pass
+
         return None
 
     def _parse_response(self, response: Any) -> Union[ParsedResponse, Dict[str, Any]]:
