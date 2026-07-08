@@ -338,7 +338,7 @@ async def run(source_path: Path, output_path: Path) -> None:
     synth_specs = [
         ("claude_synth", "anthropic", "claude-opus-4-5", "claude"),
         ("gemini_synth", "google", "gemini-2.5-pro", "gemini"),
-        ("grok_synth", "grok", "grok-4", "grok"),
+        ("grok_synth", "grok", "grok-4.3", "grok"),
     ]
     synth_agents = {
         node_id: build_synthesizer(node_id, use_llm, model, source_path)
@@ -354,7 +354,7 @@ async def run(source_path: Path, output_path: Path) -> None:
     judges = {
         "claude_judge": build_judge("claude_judge", "anthropic", "claude-opus-4-5"),
         "gemini_judge": build_judge("gemini_judge", "google", "gemini-2.5-pro"),
-        "grok_judge": build_judge("grok_judge", "grok", "grok-4"),
+        "grok_judge": build_judge("grok_judge", "grok", "grok-4.3"),
     }
     consensus_node = ConsensusDecisionNode(
         node_id="consensus",
