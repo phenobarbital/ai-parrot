@@ -15,20 +15,16 @@ if TYPE_CHECKING:
 
 
 def _xai_chat_helpers():
-    """Lazy-import the xai_sdk.chat role builders.
-
-    Centralised so each ``ask``/``ask_stream``/``resume`` method can pull
-    ``user``, ``system``, ``assistant`` without forcing ``xai_sdk`` to be
-    installed at module import time.
-    """
+    """Lazy-import the xai_sdk.chat role/tool builders."""
     try:
-        from xai_sdk.chat import user, system, assistant
+        from xai_sdk.chat import user, system, assistant, tool_result
     except ImportError as exc:
         raise ImportError(
-            "GrokClient requires the 'xai-sdk' package. "
+            "GrokClient requires the 'xai-sdk' package (>=1.12). "
             "Install with: pip install ai-parrot[grok]"
         ) from exc
-    return user, system, assistant
+    return user, system, assistant, tool_result
+
 from ..models import (
     MessageResponse,
     CompletionUsage,
@@ -42,16 +38,17 @@ from ..memory import ConversationTurn
 from ..tools.manager import ToolFormat
 
 class GrokModel(str, Enum):
-    """Grok model versions."""
+    """Grok model versions (xAI API, July 2026)."""
+    GROK_4_3 = "grok-4.3"
+    GROK_4_20 = "grok-4.20"
+    GROK_4_20_NON_REASONING = "grok-4.20-non-reasoning"
+    GROK_4_20_REASONING = "grok-4.20-reasoning"
+    GROK_4_20_MULTI_AGENT = "grok-4.20-multi-agent"
     GROK_BUILD_0_1 = "grok-build-0.1"
-    GROK_4_FAST_REASONING = "grok-4-fast-reasoning"
-    GROK_4 = "grok-4"
-    GROK_4_1_FAST_NON_REASONING = "grok-4-1-fast-non-reasoning"
-    GROK_4_1_FAST_REASONING = "grok-4-1-fast-reasoning"
-    GROK_3_MINI = "gro-3-mini"
     GROK_CODE_FAST_1 = "grok-code-fast-1"
-    GROK_2_IMAGE = "grok-2-image-1212"
-    GROK_2_VISION = "grok-2-vision-1212"
+    GROK_IMAGINE_IMAGE = "grok-imagine-image"
+    GROK_IMAGINE_IMAGE_QUALITY = "grok-imagine-image-quality"
+    GROK_IMAGINE_VIDEO = "grok-imagine-video"
 
 class GrokClient(AbstractClient):
     """
@@ -59,8 +56,8 @@ class GrokClient(AbstractClient):
     """
     client_type: str = "xai"
     client_name: str = "grok"
-    _default_model: str = GrokModel.GROK_4.value
-    _lightweight_model: str = "grok-4-1-fast-non-reasoning"
+    _default_model: str = GrokModel.GROK_4_3.value
+    _lightweight_model: str = GrokModel.GROK_4_20_NON_REASONING.value
 
     def __init__(
         self,
@@ -70,7 +67,7 @@ class GrokClient(AbstractClient):
     ):
         """
         Initialize Grok client.
-        
+
         Args:
             api_key: xAI API key (defaults to XAI_API_KEY env var)
             timeout: Request timeout in seconds
@@ -79,44 +76,31 @@ class GrokClient(AbstractClient):
         super().__init__(**kwargs)
         self.api_key = api_key or os.getenv("XAI_API_KEY")
         if not self.api_key:
-            # Try to get from config if available
             try:
                 from navconfig import config
                 self.api_key = config.get("XAI_API_KEY")
             except ImportError:
                 pass
-                
+
         if not self.api_key:
             raise ValueError("XAI_API_KEY not found in environment or config")
-            
+
         self.timeout = timeout
-        # NOTE: no self.client = None — base class owns the per-loop cache as a property.
 
     async def get_client(self) -> "AsyncClient":
-        """Construct and return a fresh xAI AsyncClient for the current loop.
-
-        The per-loop cache in AbstractClient calls this on a cache miss.
-        Do NOT cache here — the base class ``_ensure_client()`` handles that.
-
-        Returns:
-            A freshly constructed ``AsyncClient`` instance.
-        """
+        """Construct and return a fresh xAI AsyncClient for the current loop."""
         try:
             from xai_sdk import AsyncClient
         except ImportError as exc:
             raise ImportError(
-                "GrokClient requires the 'xai-sdk' package. "
+                "GrokClient requires the 'xai-sdk' package (>=1.12). "
                 "Install with: pip install ai-parrot[grok]"
             ) from exc
         return AsyncClient(api_key=self.api_key, timeout=self.timeout)
 
     async def close(self) -> None:
-        """Close all per-loop SDK clients.
-
-        Delegates to the base class which safely handles dead / foreign loops.
-        """
+        """Close all per-loop SDK clients."""
         await super().close()
-        # NOTE: no self.client = None — base close() already cleared the per-loop cache.
 
     def _convert_messages(self, messages: List[Dict[str, Any]]) -> Any:
         pass
@@ -126,7 +110,6 @@ class GrokClient(AbstractClient):
         if not structured_output:
             return {}
 
-        # Normalize instance → class
         if isinstance(structured_output, BaseModel):
             structured_output = structured_output.__class__
         if is_dataclass(structured_output) and not isinstance(structured_output, type):
@@ -135,11 +118,9 @@ class GrokClient(AbstractClient):
         schema = None
         name = "structured_output"
 
-        # Pydantic models
         if isinstance(structured_output, type) and hasattr(structured_output, 'model_json_schema'):
             schema = structured_output.model_json_schema()
             name = structured_output.__name__.lower()
-        # Dataclasses
         elif is_dataclass(structured_output):
             schema = TypeAdapter(structured_output).json_schema()
             name = structured_output.__name__.lower()
@@ -156,27 +137,52 @@ class GrokClient(AbstractClient):
                 }
             }
 
-        # Fallback
         return {"response_format": {"type": "json_object"}}
 
-    def _prepare_tools_for_grok(self) -> List[Dict[str, Any]]:
-        """Prepare tools using OpenAI format which is compatible with xAI."""
-        # Use ToolManager to get OpenAI formatted schemas
+    def _get_response_format_for_sdk(self, structured_output) -> Any:
+        """Return a response_format value accepted by the xai_sdk chat.create().
+
+        The SDK accepts a Pydantic BaseModel subclass directly, or the
+        string ``"json_object"`` for unstructured JSON. Raw dicts are not
+        supported by the gRPC transport.
+        """
+        if not structured_output:
+            return None
+
+        output_type = structured_output
+        if isinstance(output_type, StructuredOutputConfig):
+            output_type = output_type.output_type
+        if isinstance(output_type, BaseModel):
+            output_type = output_type.__class__
+        if is_dataclass(output_type) and not isinstance(output_type, type):
+            output_type = output_type.__class__
+
+        # Pydantic models can be passed directly — the SDK generates the JSON schema
+        if isinstance(output_type, type) and issubclass(output_type, BaseModel):
+            return output_type
+
+        # Fallback: request JSON and parse manually afterward
+        return "json_object"
+
+    def _prepare_tools_for_grok(self) -> list:
+        """Prepare tools using xai_sdk.chat.tool() for gRPC transport."""
+        try:
+            from xai_sdk.chat import tool as make_tool
+        except ImportError:
+            return []
+
         schemas = self.tool_manager.get_tool_schemas(provider_format=ToolFormat.OPENAI)
         prepared_tools = []
         for schema in schemas:
-            # Clean internal keys
             s = schema.copy()
             s.pop('_tool_instance', None)
-            
-            # Wrap in OpenAI Tool format (xAI SDK specific: no 'type' field)
-            prepared_tools.append({
-                "function": {
-                    "name": s.get("name"),
-                    "description": s.get("description"),
-                    "parameters": json.dumps(s.get("parameters", {}))
-                }
-            })
+            prepared_tools.append(
+                make_tool(
+                    name=s.get("name", ""),
+                    description=s.get("description", ""),
+                    parameters=s.get("parameters", {}),
+                )
+            )
         return prepared_tools
 
     async def ask(
@@ -199,30 +205,25 @@ class GrokClient(AbstractClient):
         client = await self.get_client()
         model = model or self.model or self.default_model
         turn_id = str(uuid.uuid4())
-        
+
         # 1. Prepare Structured Output
         response_format = None
         output_config = None
         if structured_output:
             output_config = self._get_structured_config(structured_output)
             if output_config and output_config.output_type:
-                 fmt = self._prepare_structured_output_format(output_config.output_type)
-                 if fmt:
-                     response_format = fmt.get("response_format")
+                response_format = self._get_response_format_for_sdk(output_config)
             elif isinstance(structured_output, (type, BaseModel)) or is_dataclass(structured_output):
-                 fmt = self._prepare_structured_output_format(structured_output)
-                 if fmt:
-                     response_format = fmt.get("response_format")
+                response_format = self._get_response_format_for_sdk(structured_output)
 
         # 2. Prepare Tools
         _use_tools = use_tools if use_tools is not None else self.enable_tools
         prepared_tools = []
         if _use_tools:
-             if tools:
-                 # TODO: Normalize manual tools if needed, assuming OpenAI format for now
-                 prepared_tools = tools
-             else:
-                 prepared_tools = self._prepare_tools_for_grok()
+            if tools:
+                prepared_tools = tools
+            else:
+                prepared_tools = self._prepare_tools_for_grok()
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time_grok2
@@ -242,97 +243,63 @@ class GrokClient(AbstractClient):
             "max_tokens": max_tokens,
             "temperature": temperature
         }
-        if response_format:
+        if response_format is not None:
             chat_kwargs["response_format"] = response_format
-            
-        if prepared_tools:
-             chat_kwargs['tools'] = prepared_tools
-             chat_kwargs['tool_choice'] = "auto"
 
-        # Note: xAI SDK stateful 'chat' object might be tricky for tool loops + structured output
-        # if we need to modify 'messages' manually. 
-        # Using chat.create() creates a new conversation container.
+        if prepared_tools:
+            chat_kwargs['tools'] = prepared_tools
+            chat_kwargs['tool_choice'] = "auto"
+
         chat = client.chat.create(**chat_kwargs)
 
-        user, system, assistant = _xai_chat_helpers()
+        user_fn, system_fn, assistant_fn, tool_result_fn = _xai_chat_helpers()
 
         # 4. Add Context (System, History, User)
         if system_prompt:
-            chat.append(system(system_prompt))
+            chat.append(system_fn(system_prompt))
 
         if self.conversation_memory and user_id and session_id:
             history = await self.get_conversation(user_id, session_id)
             if history:
                 for turn in history.turns:
-                     chat.append(user(turn.input))
-                     if turn.output:
-                         chat.append(assistant(turn.output))
+                    chat.append(user_fn(turn.input))
+                    if turn.output:
+                        chat.append(assistant_fn(turn.output))
 
-        chat.append(user(prompt))
+        chat.append(user_fn(prompt))
 
         # 5. Execution Loop (Tools)
         final_response = None
         all_tool_calls = []
-        
-        # Limit loops to prevent infinite recursion
         max_turns = 10
         current_turn = 0
-        
+
         while current_turn < max_turns:
             current_turn += 1
-            
+
             try:
-                # Execute request
                 response = await chat.sample()
-                
-                # Check for tools
-                # xAI SDK response object structure for tool calls needs verification.
-                # Assuming standard OpenAI-like or SDK specific attribute.
-                # Looking at xai_sdk/chat.py source or behavior would be ideal.
-                # Based on `GrokClient` previous implementation attempt and standard patterns:
-                # response.tool_calls might exist if using `tool_choice`.
-                
-                # If the SDK handles tool execution automatically, we might not need this loop?
-                # Usually client SDKs don't auto-execute.
-                
-                tool_calls = getattr(response, 'tool_calls', [])
-                if not tool_calls and hasattr(response, 'message'):
-                     # Check nested message object if present
-                     tool_calls = getattr(response.message, 'tool_calls', [])
-                
-                # If no tool calls, we are done
+                chat.append(response)
+
+                tool_calls = response.tool_calls or []
+
                 if not tool_calls:
                     final_response = response
                     break
-                    
-                # Handle Tool Calls
-                # response should be added to chat? 
-                # The SDK might auto-append the assistants reply to its internal history 
-                # if we use `chat.sample()`? 
-                # Wait, `chat` is a stateful object. `chat.sample()` returns a response 
-                # AND likely updates internal state? 
-                # Let's assume `chat` object maintains state. 
-                # If we need to add the tool result, we likely check `chat` methods.
-                # `chat.append` takes a message.
-                # We need to append the tool result.
-                
-                # For each tool call:
+
                 for tc in tool_calls:
                     fn = tc.function
                     tool_name = fn.name
                     tool_args_str = fn.arguments
                     tool_id = tc.id
-                    
+
                     try:
                         tool_args = json.loads(tool_args_str)
                     except json.JSONDecodeError:
-                         # Try cleaning or fallback
                         tool_args = {}
-                        
-                    # Execute
+
                     tool_exec_result = await self._execute_tool(tool_name, tool_args)
-                    
-                    # Create ToolCall record for AIMessage
+
                     tool_call_rec = ToolCall(
                         id=tool_id,
                         name=tool_name,
@@ -340,45 +307,31 @@ class GrokClient(AbstractClient):
                         result=tool_exec_result
                     )
                     all_tool_calls.append(tool_call_rec)
-                    
-                    # Append result to chat. xAI's API rejects ``name`` on
-                    # any role other than ``user`` — use the SDK's
-                    # ``tool_result(content, tool_call_id=...)`` signature.
-                    from xai_sdk.chat import tool_result as ToolResultMsg
-                    chat.append(ToolResultMsg(str(tool_exec_result), tool_call_id=tool_id))
-                
-                # Loop continues to next sample()
+
+                    chat.append(tool_result_fn(str(tool_exec_result), tool_call_id=tool_id))
+
                 continue
-                
+
             except Exception as e:
                 self.logger.error(f"Error in GrokClient loop: {e}")
-                # If failure, break and return what we have or re-raise
                 raise
-        
+
         # 6. Parse Final Response
         if not final_response:
-             # Should not happen unless max_turns hit without final response
-             # Just return last response
-             final_response = response
+            final_response = response
 
-        # Local import to avoid circular dependency
         from ..models.responses import AIMessageFactory
 
-        # Parse structured output if native handling didn't yield an object 
-        # (xAI SDK might return object if response_format was used? or just JSON string)
-        # Assuming JSON string for safely.
         text_content = final_response.content if hasattr(final_response, 'content') else str(final_response)
-        
+
         structured_payload = None
         if output_config:
             try:
-                # If response_format was used, text_content should be JSON
                 if output_config.custom_parser:
                     structured_payload = output_config.custom_parser(text_content)
                 else:
                     structured_payload = await self._parse_structured_output(text_content, output_config)
             except Exception:
-                # If parsing failed, keep as text
                 pass
 
         ai_message = AIMessageFactory.create_message(
@@ -390,15 +343,15 @@ class GrokClient(AbstractClient):
             usage=CompletionUsage.from_grok(final_response.usage) if hasattr(final_response, 'usage') else None,
             text_response=text_content
         )
-        
+
         ai_message.tool_calls = all_tool_calls
         if structured_payload:
             ai_message.structured_output = structured_payload
             ai_message.is_structured = True
-            ai_message.output = structured_payload # Swap if structured is primary
+            ai_message.output = structured_payload
 
         if user_id and session_id:
-             turn = ConversationTurn(
+            turn = ConversationTurn(
                 turn_id=turn_id,
                 user_id=user_id,
                 user_message=prompt,
@@ -406,7 +359,7 @@ class GrokClient(AbstractClient):
                 tools_used=[t.name for t in ai_message.tool_calls] if ai_message.tool_calls else [],
                 metadata=ai_message.usage.dict() if ai_message.usage else None
             )
-             await self.conversation_memory.add_turn(
+            await self.conversation_memory.add_turn(
                 user_id,
                 session_id,
                 turn
@@ -467,48 +420,42 @@ class GrokClient(AbstractClient):
             "model": model,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "stream": True
         }
 
         if structured_output:
             config = self._get_structured_config(structured_output)
-            if config:
-                if output_config and output_config.output_type:
-                     fmt = self._prepare_structured_output_format(output_config.output_type)
-                     if fmt:
-                         chat_kwargs["response_format"] = fmt.get("response_format")
-                elif isinstance(structured_output, (type, BaseModel)) or is_dataclass(structured_output):
-                     fmt = self._prepare_structured_output_format(structured_output)
-                     if fmt:
-                         chat_kwargs["response_format"] = fmt.get("response_format")
+            if config and config.output_type:
+                rf = self._get_response_format_for_sdk(config)
+                if rf is not None:
+                    chat_kwargs["response_format"] = rf
+            elif isinstance(structured_output, (type, BaseModel)) or is_dataclass(structured_output):
+                rf = self._get_response_format_for_sdk(structured_output)
+                if rf is not None:
+                    chat_kwargs["response_format"] = rf
 
         chat = client.chat.create(**chat_kwargs)
 
-        user, system, assistant = _xai_chat_helpers()
+        user_fn, system_fn, assistant_fn, _ = _xai_chat_helpers()
 
         if system_prompt:
-            chat.append(system(system_prompt))
+            chat.append(system_fn(system_prompt))
 
         if self.conversation_memory and user_id and session_id:
             history = await self.get_conversation(user_id, session_id)
             if history:
                 for turn in history.turns:
-                    chat.append(user(turn.input))
+                    chat.append(user_fn(turn.input))
                     if turn.output:
-                        chat.append(assistant(turn.output))
+                        chat.append(assistant_fn(turn.output))
 
-        chat.append(user(prompt))
+        chat.append(user_fn(prompt))
 
         full_response = []
+        final_sdk_response = None
 
-        async for token in chat.stream():
-            content = token
-            if hasattr(token, 'choices'):
-                delta = token.choices[0].delta
-                if hasattr(delta, 'content'):
-                    content = delta.content
-            elif hasattr(token, 'content'):
-                content = token.content
+        async for response, chunk in chat.stream():
+            content = chunk.content
+            final_sdk_response = response
 
             if content:
                 full_response.append(content)
@@ -523,15 +470,20 @@ class GrokClient(AbstractClient):
                     _lc_chunk_idx_grok2 += 1
                 yield content
 
-        # Build and yield final AIMessage (xAI has no final response object)
-        final_text = "".join(full_response)
+        # Build and yield final AIMessage
+        final_text = final_sdk_response.content if final_sdk_response else "".join(full_response)
+        usage = (
+            CompletionUsage.from_grok(final_sdk_response.usage)
+            if final_sdk_response and hasattr(final_sdk_response, 'usage')
+            else CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+        )
         ai_message = AIMessage(
             input=prompt,
             output=final_text,
             response=final_text,
             model=model or self.model or self.default_model,
             provider="grok",
-            usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            usage=usage,
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
@@ -540,7 +492,9 @@ class GrokClient(AbstractClient):
         await self._emit_after_call(
             _lc_tc_groks, client_name="grok", model=model,
             duration_ms=(_lc_time_groks.perf_counter() - _lc_t0_groks) * 1000,
-            input_tokens=None, output_tokens=None, finish_reason=None,
+            input_tokens=getattr(usage, 'prompt_tokens', None),
+            output_tokens=getattr(usage, 'completion_tokens', None),
+            finish_reason=None,
         )
         yield ai_message
 
@@ -570,22 +524,7 @@ class GrokClient(AbstractClient):
         when a ``tool_call_id`` is present in ``state``, otherwise as a normal
         ``user`` turn) and continues the tool-call loop until a final response
         is produced.
-
-        Args:
-            session_id: Session identifier (propagated to the AIMessage and to
-                any ``HumanInteractionInterrupt`` raised inside the loop).
-            user_input: User reply to inject into the conversation as the
-                resumption value.
-            state: Suspended state — expects keys ``messages`` (list of
-                OpenAI-style dicts with ``role`` / ``content`` / ``tool_calls``),
-                ``tool_call_id`` (optional) and ``agent_name`` / ``model``
-                (optional, used to pick the model).
-
-        Returns:
-            :class:`AIMessage` with the final assistant response and the list
-            of tool calls that ran during resumption.
         """
-        from xai_sdk.chat import tool_result as ToolResultMsg
         from ..models.responses import AIMessageFactory
 
         client = await self.get_client()
@@ -594,7 +533,6 @@ class GrokClient(AbstractClient):
         model = state.get("agent_name") or state.get("model") or self.model or self._default_model
         turn_id = str(uuid.uuid4())
 
-        # Re-create a stateful chat from the suspended history.
         chat_kwargs: Dict[str, Any] = {
             "model": model,
             "max_tokens": 4096,
@@ -607,34 +545,30 @@ class GrokClient(AbstractClient):
 
         chat = client.chat.create(**chat_kwargs)
 
-        user, system, assistant = _xai_chat_helpers()
+        user_fn, system_fn, assistant_fn, tool_result_fn = _xai_chat_helpers()
 
-        # Replay history into the new chat object.
         for msg in messages:
             role = msg.get("role")
             content = msg.get("content") or ""
             if role == "system":
-                chat.append(system(content))
+                chat.append(system_fn(content))
             elif role == "user":
-                chat.append(user(content))
+                chat.append(user_fn(content))
             elif role == "assistant":
-                chat.append(assistant(content))
+                chat.append(assistant_fn(content))
             elif role == "tool":
                 chat.append(
-                    ToolResultMsg(
+                    tool_result_fn(
                         content,
                         tool_call_id=msg.get("tool_call_id") or msg.get("name"),
                     )
                 )
 
-        # Inject the resumption value: as a tool_result if we paused inside a
-        # tool call, otherwise as a regular user turn.
         if tool_call_id:
-            chat.append(ToolResultMsg(user_input, tool_call_id=tool_call_id))
+            chat.append(tool_result_fn(user_input, tool_call_id=tool_call_id))
         else:
-            chat.append(user(user_input))
+            chat.append(user_fn(user_input))
 
-        # Continue the tool-call loop just like ``ask()`` does.
         all_tool_calls: List[ToolCall] = []
         max_turns = 10
         current_turn = 0
@@ -643,10 +577,9 @@ class GrokClient(AbstractClient):
         while current_turn < max_turns:
             current_turn += 1
             response = await chat.sample()
+            chat.append(response)
 
-            tool_calls = getattr(response, "tool_calls", []) or []
-            if not tool_calls and hasattr(response, "message"):
-                tool_calls = getattr(response.message, "tool_calls", []) or []
+            tool_calls = response.tool_calls or []
 
             if not tool_calls:
                 final_response = response
@@ -669,7 +602,7 @@ class GrokClient(AbstractClient):
                         result=tool_exec_result,
                     )
                     all_tool_calls.append(rec)
-                    chat.append(ToolResultMsg(str(tool_exec_result), tool_call_id=tc.id))
+                    chat.append(tool_result_fn(str(tool_exec_result), tool_call_id=tc.id))
                 except Exception as exc:
                     from parrot.core.exceptions import HumanInteractionInterrupt
 
@@ -687,7 +620,7 @@ class GrokClient(AbstractClient):
                         error=str(exc),
                     )
                     all_tool_calls.append(err_rec)
-                    chat.append(ToolResultMsg(f"Error: {exc}", tool_call_id=tc.id))
+                    chat.append(tool_result_fn(f"Error: {exc}", tool_call_id=tc.id))
 
         if final_response is None:
             final_response = response
@@ -728,75 +661,59 @@ class GrokClient(AbstractClient):
     ) -> InvokeResult:
         """Lightweight stateless invocation for GrokClient.
 
-        Uses native ``json_schema`` response_format with ``strict: True`` for
-        structured output (same approach as OpenAI).  A single SDK call is made
-        — no retry, no history, no prompt builder.
-
-        Args:
-            prompt: User prompt.
-            output_type: Pydantic model or dataclass to parse the response into.
-            structured_output: Full :class:`StructuredOutputConfig`; takes
-                precedence over ``output_type``.
-            model: Model override. Defaults to ``_lightweight_model``.
-            system_prompt: System prompt override.
-            max_tokens: Maximum completion tokens.
-            temperature: Sampling temperature.
-            use_tools: Whether to inject registered tools.
-            tools: Additional tool definitions.
-
-        Returns:
-            :class:`InvokeResult` with parsed output.
-
-        Raises:
-            :class:`InvokeError`: On provider errors.
+        Uses the xai_sdk stateful chat API with ``response_format`` for
+        structured output. A single ``chat.sample()`` or ``chat.parse()``
+        call is made — no retry, no history, no prompt builder.
         """
         try:
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
 
-            await self._ensure_client()
+            client = await self.get_client()
 
-            messages = [
-                {"role": "system", "content": resolved_prompt},
-                {"role": "user", "content": prompt},
-            ]
+            user_fn, system_fn, _, _ = _xai_chat_helpers()
 
-            kwargs: Dict[str, Any] = {
+            chat_kwargs: Dict[str, Any] = {
                 "model": resolved_model,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
-                "messages": messages,
             }
 
-            # Native JSON schema structured output
-            if config:
-                schema = config.get_schema()
-                kwargs["response_format"] = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": config.output_type.__name__,
-                        "schema": schema,
-                        "strict": True,
-                    },
-                }
+            # Pydantic models without custom_parser → SDK-native parse()
+            use_sdk_parse = False
+            if config and config.output_type:
+                if (
+                    not config.custom_parser
+                    and isinstance(config.output_type, type)
+                    and issubclass(config.output_type, BaseModel)
+                ):
+                    use_sdk_parse = True
+                else:
+                    chat_kwargs["response_format"] = "json_object"
 
-            # Tools
             if use_tools:
                 tool_defs = self._prepare_tools_for_grok()
                 if tool_defs:
-                    kwargs["tools"] = tool_defs
+                    chat_kwargs["tools"] = tool_defs
 
-            response = await self.client.chat.completions.create(**kwargs)
-            raw_text = response.choices[0].message.content or ""
+            chat = client.chat.create(**chat_kwargs)
+            chat.append(system_fn(resolved_prompt))
+            chat.append(user_fn(prompt))
 
-            # Parse output
-            output: Any = raw_text
-            if config:
-                if config.custom_parser:
-                    output = config.custom_parser(raw_text)
-                else:
-                    output = await self._parse_structured_output(raw_text, config)
+            output: Any
+            if use_sdk_parse and config:
+                response, parsed = await chat.parse(config.output_type)
+                output = parsed
+            else:
+                response = await chat.sample()
+                raw_text = response.content or ""
+                output = raw_text
+                if config:
+                    if config.custom_parser:
+                        output = config.custom_parser(raw_text)
+                    else:
+                        output = await self._parse_structured_output(raw_text, config)
 
             usage = CompletionUsage.from_grok(response.usage) if hasattr(response, 'usage') else CompletionUsage()
             return self._build_invoke_result(
