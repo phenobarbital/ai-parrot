@@ -425,7 +425,7 @@ async def test_grok_contract_shape():
     """GrokClient contract shape: conforming generator is consumed correctly."""
     from parrot.clients.grok import GrokClient
 
-    sentinel = _make_aimessage(provider="grok", model="grok-4")
+    sentinel = _make_aimessage(provider="grok", model="grok-4.3")
 
     async def _conforming(*args, **kwargs):
         yield "Hello"
