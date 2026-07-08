@@ -163,10 +163,35 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: Added to `test_code_review.py`: `TestFullQAFlowIntegration`
+(`test_claude_review_fix_rerun`, `test_codex_review_fix_rerun`,
+`test_gemini_review_pass_no_fix` — each drives `QANode.execute()` end-to-end
+through a real concrete review dispatcher wrapping a mocked underlying
+dispatcher, covering the rerun and skip-rerun paths) and
+`TestServerWiringIntegration` (`test_server_wiring_default`,
+`test_server_wiring_codex`, `test_server_wiring_gemini`,
+`test_server_wiring_invalid` — load `examples/dev_loop/server.py` via
+`importlib` like `test_server_repo_wiring.py` does, monkeypatch
+`conf.config` with a small fake exposing `DEV_LOOP_CODEREVIEW_AGENT`, run
+`_on_startup`, and assert the `codereview_dispatcher` kwarg captured from
+the (monkeypatched) `build_dev_loop_flow` call is the right concrete
+reviewer type, or that an invalid agent name raises `RuntimeError`).
+`TestServerWiring` (factory-level `create()` smoke tests) was already added
+in TASK-1698 — left as-is since it satisfies this task's Test Specification
+too.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Full `dev_loop/` suite (excluding `-m live`): 341 passed, 4 failed. The 4
+failures (`test_server_repo_wiring.py::test_server_builds_flow_with_repos`,
+`test_webhook.py::TestSweepFinishedWorktrees::{test_removes_only_merged_and_closed,
+test_remove_orphans_also_clears_no_pr, test_per_branch_error_is_isolated}`)
+reproduce identically with `git stash` applied against the pre-FEAT-270
+`qa.py`/`code_review.py` (verified during TASK-1697) and pass individually
+in isolation — confirmed pre-existing test-order/pollution flakiness,
+unrelated to this feature. `test_qa_codereview.py` (16 tests) and
+`test_code_review.py` (38 tests) both fully green. `ruff check` clean across
+every file this feature touched.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — all integration tests added to
+`test_code_review.py` per the task's file list.

@@ -305,3 +305,58 @@ class TestGitToolkitAuthMode:
                 await tk.get_pull_request(pr_number=42)
         call = req.call_args
         assert call.kwargs["headers"]["Authorization"] == "Bearer ghs_xxx"
+
+
+class TestNoDefaultAuthFallback:
+    """The toolkit no longer silently adopts GITHUB_* env credentials. Auth
+    must be passed explicitly; otherwise a clear GitToolkitError surfaces to
+    the LLM at call time instead of the toolkit acting as a shared account."""
+
+    def test_pat_env_token_no_longer_used(self):
+        """A GITHUB_TOKEN in the environment is NOT silently adopted."""
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "env_pat"}, clear=False):
+            tk = GitToolkit(default_repository="o/r")
+        assert tk.github_token is None
+        with pytest.raises(GitToolkitError, match="explicitly"):
+            tk._bearer_token()
+
+    def test_explicit_pat_still_works_and_ignores_env(self):
+        """Regression: an explicit PAT works and env is never consulted."""
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "env_pat"}, clear=False):
+            tk = GitToolkit(
+                default_repository="o/r", github_token="explicit_pat"
+            )
+        assert tk.github_token == "explicit_pat"
+        assert tk._bearer_token() == "explicit_pat"
+
+    def test_ad_hoc_connection_has_no_env_token_fallback(self):
+        """Unknown-slug ad-hoc connections also require an explicit token."""
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "env_pat"}, clear=False):
+            tk = GitToolkit(github_token=None)
+            with pytest.raises(GitToolkitError, match="explicitly"):
+                tk._resolve_connection("owner/other")
+
+    def test_app_env_ids_no_longer_used(self):
+        """GITHUB_APP_* env vars are NOT silently adopted in app mode."""
+        env = {
+            "GITHUB_APP_ID": "12345",
+            "GITHUB_APP_INSTALLATION_ID": "67890",
+            "GITHUB_APP_PRIVATE_KEY": PEM_SENTINEL,
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with pytest.raises(GitToolkitError, match="app_id"):
+                GitToolkit(
+                    default_repository="o/r", auth_type="github_app"
+                )
+
+    def test_app_env_private_key_no_longer_used(self):
+        """GITHUB_APP_PRIVATE_KEY env is ignored; explicit key required."""
+        env = {"GITHUB_APP_PRIVATE_KEY": PEM_SENTINEL}
+        with patch.dict(os.environ, env, clear=False):
+            with pytest.raises(GitToolkitError, match="private_key"):
+                GitToolkit(
+                    default_repository="o/r",
+                    auth_type="github_app",
+                    app_id=12345,
+                    installation_id=67890,
+                )

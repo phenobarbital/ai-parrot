@@ -527,36 +527,30 @@ class AIMessageFactory:
         turn_id: Optional[str] = None,
         structured_output: Any = None
     ) -> AIMessage:
-        """Create AIMessage from Grok response."""
-        # xAI SDK response structure needs verification, assuming OpenAI-like for now based on 'usage'
-        # If response is a Pydantic model from structured output, content might be parsed.
-        
+        """Create AIMessage from Grok response (xai_sdk Response object)."""
+        import json as _json
+
         content = ""
         tool_calls = []
-        finish_reason = None
+        finish_reason = getattr(response, 'finish_reason', None)
 
-        # Check if it's a simple text response or object
         if hasattr(response, 'content'):
             content = response.content
         elif isinstance(response, dict) and 'content' in response:
             content = response['content']
-            
-        # Try to extract standard fields if present
+
         if hasattr(response, 'tool_calls') and response.tool_calls:
-             # Map tool calls
-             tool_calls.extend(
-                ToolCall(
-                    id=tc.id,
-                    name=tc.function.name,
-                    arguments=(
-                        tc.function.arguments
-                        if isinstance(tc.function.arguments, dict)
-                        else eval(tc.function.arguments)
-                    ),
+            for tc in response.tool_calls:
+                args = tc.function.arguments
+                if isinstance(args, str):
+                    try:
+                        args = _json.loads(args)
+                    except (_json.JSONDecodeError, ValueError):
+                        args = {}
+                tool_calls.append(
+                    ToolCall(id=tc.id, name=tc.function.name, arguments=args)
                 )
-                for tc in response.tool_calls
-            )
-            
+
         return AIMessage(
             input=input_text,
             output=structured_output or content,
@@ -571,7 +565,7 @@ class AIMessageFactory:
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            raw_response=response.__dict__ if hasattr(response, '__dict__') else response,
+            raw_response={"content": content, "model": model},
             response=content
         )
 
@@ -994,7 +988,6 @@ class AIMessageFactory:
             ai_message.conversation_context_length = len(conversation_history.turns) if hasattr(conversation_history, 'turns') else 0
 
         return ai_message
-
 
     @staticmethod
     def create_message(

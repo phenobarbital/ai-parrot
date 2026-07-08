@@ -255,10 +255,46 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-03
+**Notes**: `QANode.__init__` now accepts `codereview_dispatcher:
+Optional[AbstractCodeReviewDispatcher]`; when omitted it auto-wraps the
+existing `dispatcher` in a `ClaudeCodeReviewDispatcher` (backward compat).
+`codereview_model` param and `_codereview_model` attribute removed (the
+reviewer dispatcher now owns its own model). Extracted the original inline
+deterministic-dispatch block into `_run_deterministic_qa()` so it can be
+called twice: once for the initial pass, once for the re-run after the
+reviewer reports `files_modified`. `_run_code_review()` now delegates to
+`self._codereview_dispatcher.review()` and returns `(passed, findings,
+files_modified)`, converting `CodeReviewFinding` objects to plain message
+strings for `QAReport.code_review_findings` (kept as `List[str]` — not
+touching `models.QAReport` since it isn't in this task's file list).
+Removed the private `_CodeReviewVerdict` model from `qa.py` (replaced by the
+public `CodeReviewVerdict` from `models.py`, per TASK-1693).
+`_CODE_REVIEW_SKIP_PREFIX` detection preserved, now applied to
+`finding.message` strings. Degrade-on-infra-error (FEAT-250 G4) preserved
+via the reviewer dispatcher's own try/except.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Rewrote `test_qa_codereview.py` for the new interface (imports
+`CodeReviewVerdict`/`CodeReviewFinding` from `models.py` instead of the
+removed `_CodeReviewVerdict`), updated the write-enabled-profile assertion
+(FEAT-270 review profiles are write-enabled, not read-only), and added the
+re-run/skip-rerun/rerun-fails/backward-compat/custom-dispatcher test cases
+from the task's Test Specification.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Also had to touch `test_qa.py` (not in this
+task's file list) because four of its existing tests mocked
+`dispatcher.dispatch` with a single `return_value` applied to *every* call;
+since the default `codereview_dispatcher` re-uses the same `dispatcher` for
+the code-review pass, those mocks now returned a `QAReport` where a
+`CodeReviewVerdict` was expected (`AttributeError` on `.findings`). Fixed by
+switching those mocks to `side_effect=[<qa-report>, CodeReviewVerdict(...)]`
+and pointing `TestPermissionMode`/`TestCwd` assertions at
+`await_args_list[0]` (the deterministic dispatch) instead of `await_args`
+(which is now the write-enabled review dispatch) — otherwise `pytest
+tests/flows/dev_loop/` would regress. Full `dev_loop/` suite (excluding
+`-m live`) re-run after this change: 329 passed; the same 4 pre-existing
+failures (`test_server_repo_wiring.py`, `test_webhook.py`
+`TestSweepFinishedWorktrees`) reproduce identically on unmodified `qa.py`
+(verified via `git stash`) — confirmed pre-existing test-order flakiness,
+unrelated to this feature.

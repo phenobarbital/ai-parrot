@@ -47,6 +47,7 @@ def build_dev_loop_node_factories(
     git_toolkit: Optional[Any] = None,
     log_toolkits: Optional[Dict[str, Any]] = None,
     repos: Optional[List[RepoSpec]] = None,
+    codereview_dispatcher: Optional[Any] = None,
 ) -> Dict[str, NodeFactory]:
     """Return the ``{dev_loop.* type: factory}`` map binding live deps.
 
@@ -62,6 +63,10 @@ def build_dev_loop_node_factories(
         git_toolkit: Optional ``GitToolkit`` for repo provisioning (FEAT-250).
         log_toolkits: Optional ``{source_kind: toolkit}`` map for ResearchNode.
         repos: Optional ``RepoSpec`` list cloned/pulled before Development.
+        codereview_dispatcher: Optional ``AbstractCodeReviewDispatcher``
+            (FEAT-270) used by ``QANode`` for the code-review gate. Defaults
+            to ``None``, in which case ``QANode`` auto-wraps ``dispatcher``
+            in a ``ClaudeCodeReviewDispatcher`` (backward compat).
 
     Returns:
         A mapping suitable for ``node_factories=`` on
@@ -103,7 +108,15 @@ def build_dev_loop_node_factories(
         )
 
     def qa_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
-        return _with_graph(QANode(dispatcher=dispatcher, name=nd.id), deps, succs)
+        return _with_graph(
+            QANode(
+                dispatcher=dispatcher,
+                codereview_dispatcher=codereview_dispatcher,
+                name=nd.id,
+            ),
+            deps,
+            succs,
+        )
 
     def handoff_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(

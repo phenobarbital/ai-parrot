@@ -188,6 +188,13 @@ class JiraSpecialist(Agent):
     """
     model = GoogleModel.GEMINI_3_FLASH_PREVIEW
 
+    #: Declarative Jira credentials for subclasses. When set (non-empty
+    #: dict), :meth:`_configure_jira` passes it verbatim as ``JiraToolkit``
+    #: kwargs — no method override needed. ``server_url`` and
+    #: ``default_project`` are filled from env when absent. Leave ``None``
+    #: to use the env/OAuth auto-selection in :meth:`_configure_jira`.
+    _credentials: Optional[Dict[str, Any]] = None
+
     @staticmethod
     def _build_jira_prompt_builder():
         """Build the default layered prompt for JiraSpecialist.
@@ -316,23 +323,45 @@ class JiraSpecialist(Agent):
         """
         return [TelegramHumanTool(source_agent=self.agent_id)]
 
-    async def post_configure(self) -> None:
-        """Wire the :class:`JiraToolkit` using app-scoped credentials.
+    def _configure_jira(self) -> Optional[JiraToolkit]:
+        """Build the :class:`JiraToolkit` with explicit credentials.
 
-        Auth selection:
+        Template-method hook called from :meth:`post_configure`.
+        ``JiraToolkit`` performs no auth-fallback on its own, so every
+        credential must be passed explicitly here. Subclasses have two
+        extension points — toolkit registration, LLM sync, and the
+        reminder toolkit always stay in :meth:`post_configure`:
+
+        1. Set the :attr:`_credentials` class attribute (simple case):
+           a dict of explicit ``JiraToolkit`` kwargs, used verbatim with
+           ``server_url`` / ``default_project`` defaulted from env.
+        2. Override this method (complex case: vault lookups, custom
+           credential resolvers, per-instance auth).
+
+        Default auth selection when :attr:`_credentials` is unset:
 
         * ``JIRA_AUTH_TYPE=oauth2_3lo`` (explicit) **or** ``JIRA_AUTH_TYPE``
           unset with ``app['jira_oauth_manager']`` present → per-user OAuth2
           3LO.  Every tool call resolves the caller's own tokens via
           :class:`OAuthCredentialResolver`, backed by :class:`JiraOAuthManager`.
-        * ``JIRA_AUTH_TYPE=basic_auth`` / ``token_auth`` / ``oauth`` (or no
-          OAuth manager configured) → a shared service-account client built
-          from env config (``JIRA_INSTANCE`` + credentials).
+        * ``JIRA_AUTH_TYPE=basic_auth`` / ``token_auth`` / ``oauth`` → a
+          shared service-account client built from env config
+          (``JIRA_INSTANCE`` + credentials).
+        * Neither an OAuth manager nor an explicit ``JIRA_AUTH_TYPE`` → the
+          toolkit is built unauthenticated (no silent default account); tool
+          calls return an ``AuthorizationRequired`` error to the LLM.
 
-        Tools are registered with ``self.tool_manager`` and synced back to
-        the LLM so that schemas are visible for the first user turn.
+        Returns:
+            A configured :class:`JiraToolkit`, or ``None`` when credentials
+            cannot be resolved (Jira tools stay unregistered).
         """
-        await super().post_configure()
+        if self._credentials:
+            toolkit_kwargs = {
+                "server_url": config.get("JIRA_INSTANCE"),
+                "default_project": config.get("JIRA_PROJECT"),
+                **self._credentials,
+            }
+            return JiraToolkit(**toolkit_kwargs)
 
         auth_type = (config.get("JIRA_AUTH_TYPE") or "").lower()
         oauth_manager = self.app.get("jira_oauth_manager") if self.app else None
@@ -349,28 +378,48 @@ class JiraSpecialist(Agent):
                     "be unavailable. Check that JiraOAuthManager is wired "
                     "in app.py."
                 )
-                return
-            self.jira_toolkit = JiraToolkit(
+                return None
+            return JiraToolkit(
                 auth_type="oauth2_3lo",
                 credential_resolver=OAuthCredentialResolver(oauth_manager),
                 default_project=config.get("JIRA_PROJECT"),
             )
-        else:
-            effective = auth_type or "basic_auth"
-            toolkit_kwargs: Dict[str, Any] = {
-                "server_url": config.get("JIRA_INSTANCE"),
-                "auth_type": effective,
-                "default_project": config.get("JIRA_PROJECT"),
-            }
-            if effective == "basic_auth":
+
+        # No OAuth manager and no explicit JIRA_AUTH_TYPE → do NOT
+        # fabricate a shared basic_auth service account. Pass only an
+        # explicitly configured static mode; when none is set the toolkit
+        # enters its unauthenticated state and surfaces a clear
+        # AuthorizationRequired to the LLM on first tool use.
+        toolkit_kwargs: Dict[str, Any] = {
+            "server_url": config.get("JIRA_INSTANCE"),
+            "default_project": config.get("JIRA_PROJECT"),
+        }
+        if auth_type:
+            toolkit_kwargs["auth_type"] = auth_type
+            if auth_type == "basic_auth":
                 toolkit_kwargs["username"] = config.get("JIRA_USERNAME")
                 toolkit_kwargs["password"] = config.get("JIRA_API_TOKEN")
-            elif effective == "token_auth":
+            elif auth_type == "token_auth":
                 toolkit_kwargs["token"] = (
                     config.get("JIRA_SECRET_TOKEN")
                     or config.get("JIRA_API_TOKEN")
                 )
-            self.jira_toolkit = JiraToolkit(**toolkit_kwargs)
+        return JiraToolkit(**toolkit_kwargs)
+
+    async def post_configure(self) -> None:
+        """Wire the :class:`JiraToolkit` using app-scoped credentials.
+
+        Credential resolution is delegated to the :meth:`_configure_jira`
+        hook (override it in subclasses to change auth). This method then
+        registers the resulting tools with ``self.tool_manager``, syncs
+        them back to the LLM so schemas are visible for the first user
+        turn, and wires the reminder toolkit.
+        """
+        await super().post_configure()
+
+        self.jira_toolkit = self._configure_jira()
+        if self.jira_toolkit is None:
+            return
 
         try:
             tools = self.tool_manager.register_toolkit(self.jira_toolkit)

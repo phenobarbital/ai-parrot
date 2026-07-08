@@ -236,3 +236,169 @@ class TestPreExecute:
         assert set(tk._client_cache.keys()) == {
             "telegram:alice", "telegram:bob",
         }
+
+
+# ---------------------------------------------------------------------------
+# No silent default auth — the env-var fallback is gone
+# ---------------------------------------------------------------------------
+
+
+class TestNoSilentDefaultAuth:
+    """The toolkit no longer fabricates a shared account when auth is
+    unconfigured. It enters an *unauthenticated* state and surfaces an
+    explicit ``AuthorizationRequired`` to the LLM at tool-call time."""
+
+    def test_no_auth_type_enters_unauthenticated_state(self) -> None:
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit(server_url="https://acme.atlassian.net")
+        assert tk.auth_type is None
+        assert tk.jira is None
+        assert tk._auth_error is not None
+        # No client was fabricated from a heuristic/default.
+        assert _FakeJIRA.instances == []
+
+    def test_atlassian_url_no_longer_implies_basic_auth(self) -> None:
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit(server_url="https://acme.atlassian.net")
+        # Old heuristic mapped atlassian.net → basic_auth; that is gone.
+        assert tk.auth_type is None
+
+    def test_env_credentials_not_used_without_explicit_auth_type(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setenv("JIRA_INSTANCE", "https://acme.atlassian.net")
+        monkeypatch.setenv("JIRA_USERNAME", "bot@acme.com")
+        monkeypatch.setenv("JIRA_PASSWORD", "env-token")
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit()
+        assert tk.auth_type is None
+        assert tk.jira is None
+        assert _FakeJIRA.instances == []
+
+    @pytest.mark.asyncio
+    async def test_tool_call_raises_authorization_required(self) -> None:
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit(server_url="https://acme.atlassian.net")
+        with pytest.raises(AuthorizationRequired) as exc_info:
+            await tk._pre_execute("jira_get_issue")
+        exc = exc_info.value
+        assert exc.provider == "jira"
+        assert exc.tool_name == "jira_get_issue"
+        assert "not authenticated" in exc.message.lower()
+
+    def test_explicit_basic_auth_with_env_creds_still_works(
+        self, monkeypatch
+    ) -> None:
+        # Regression: explicit service-account config is preserved.
+        monkeypatch.setenv("JIRA_USERNAME", "bot@acme.com")
+        monkeypatch.setenv("JIRA_PASSWORD", "env-token")
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit(
+                auth_type="basic_auth",
+                server_url="https://jira.example.com",
+            )
+        assert tk.auth_type == "basic_auth"
+        assert tk._auth_error is None
+        assert tk.jira is not None
+        assert len(_FakeJIRA.instances) == 1
+
+    @pytest.mark.asyncio
+    async def test_explicit_static_mode_missing_creds_defers_to_llm(
+        self,
+    ) -> None:
+        # Explicit basic_auth but no credentials anywhere: construction must
+        # NOT crash (tools stay registered); the error reaches the LLM.
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit(
+                auth_type="basic_auth",
+                server_url="https://jira.example.com",
+            )
+        assert tk.jira is None
+        assert tk._auth_error is not None
+        assert _FakeJIRA.instances == []
+        with pytest.raises(AuthorizationRequired) as exc_info:
+            await tk._pre_execute("jira_get_issue")
+        assert exc_info.value.provider == "jira"
+
+
+# ---------------------------------------------------------------------------
+# jira_get_projects — runtime auth failure must be explicit
+# ---------------------------------------------------------------------------
+
+
+class TestGetProjectsAuthProbe:
+    """A 401/silent-auth failure must raise AuthorizationRequired, never
+    return an empty-but-successful payload the LLM has to interpret."""
+
+    def _toolkit(self) -> JiraToolkit:
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            tk = JiraToolkit(
+                auth_type="basic_auth",
+                server_url="https://acme.atlassian.net",
+                username="bot@acme.com",
+                password="token",
+            )
+        return tk
+
+    @pytest.mark.asyncio
+    async def test_empty_list_with_failed_probe_raises(self) -> None:
+        tk = self._toolkit()
+        tk.jira = MagicMock()
+        tk.jira.projects.return_value = []
+        tk._probe_auth_sync = MagicMock(
+            return_value={
+                "authenticated": False,
+                "status_code": 401,
+                "seraph_login_reason": "AUTHENTICATED_FAILED",
+                "error": "HTTP 401 — AUTHENTICATED_FAILED",
+            }
+        )
+        with pytest.raises(AuthorizationRequired) as exc_info:
+            await tk.jira_get_projects()
+        exc = exc_info.value
+        assert exc.provider == "jira"
+        assert exc.tool_name == "jira_get_projects"
+        assert "401" in exc.message
+
+    @pytest.mark.asyncio
+    async def test_empty_list_with_probe_exception_raises(self) -> None:
+        # The probe itself swallows transport/JiraError exceptions and
+        # reports authenticated=False with only an ``error`` field.
+        tk = self._toolkit()
+        tk.jira = MagicMock()
+        tk.jira.projects.return_value = []
+        tk._probe_auth_sync = MagicMock(
+            return_value={
+                "authenticated": False,
+                "error": "JIRAError: HTTP 401",
+            }
+        )
+        with pytest.raises(AuthorizationRequired) as exc_info:
+            await tk.jira_get_projects()
+        assert "JIRAError" in exc_info.value.message
+
+    @pytest.mark.asyncio
+    async def test_empty_list_authenticated_returns_success(self) -> None:
+        tk = self._toolkit()
+        tk.jira = MagicMock()
+        tk.jira.projects.return_value = []
+        tk._probe_auth_sync = MagicMock(
+            return_value={"authenticated": True, "status_code": 200}
+        )
+        result = await tk.jira_get_projects()
+        assert result["count"] == 0
+        assert result["authenticated"] is True
+        assert "no accessible projects" in result["hint"]
+
+    @pytest.mark.asyncio
+    async def test_nonempty_list_skips_probe(self) -> None:
+        tk = self._toolkit()
+        tk.jira = MagicMock()
+        tk.jira.projects.return_value = [
+            SimpleNamespace(id="1", key="NAV", name="Navigator"),
+        ]
+        tk._probe_auth_sync = MagicMock()
+        result = await tk.jira_get_projects()
+        assert result["count"] == 1
+        assert result["authenticated"] is True
+        tk._probe_auth_sync.assert_not_called()

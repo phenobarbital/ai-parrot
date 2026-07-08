@@ -33,31 +33,32 @@ class DynamicValueProvider:
         
         # Call provider with context if it accepts it
         sig = inspect.signature(provider)
-        if len(sig.parameters) > 0:
-            # Check if it accepts **kwargs or specific context keys
-            try:
-                if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
-                    return await provider(**context)
-                else:
-                    # Only pass what's needed? Or assume single argument 'context'?
-                    # The user example showed `def get_user_name(context):` so it expects a single dict arg
-                    # OR we can pass it as a named argument if the function signature matches keys in context.
-                    # BUT, to be safer and follow the user's snippet design:
-                    # "if len(sig.parameters) > 0: return await provider(context)"
-                    # Let's stick to the simplest interpretation of the user request first:
-                    return await provider(context)
-            except TypeError as e:
-                # Fallback or re-raise with better message
-                raise RuntimeError(f"Error calling provider '{name}': {e}") from e
-        else:
+        if len(sig.parameters) <= 0:
             return await provider()
-            
+        # Check if it accepts **kwargs or specific context keys
+        try:
+            if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+                return await provider(**context)
+            else:
+                # Only pass what's needed? Or assume single argument 'context'?
+                # The user example showed `def get_user_name(context):` so it expects a single dict arg
+                # OR we can pass it as a named argument if the function signature matches keys in context.
+                # BUT, to be safer and follow the user's snippet design:
+                # "if len(sig.parameters) > 0: return await provider(context)"
+                # Let's stick to the simplest interpretation of the user request first:
+                return await provider(context)
+        except TypeError as e:
+            # Fallback or re-raise with better message
+            raise RuntimeError(f"Error calling provider '{name}': {e}") from e
+ 
     def get_all_names(self):
         """Return list of all registered value names"""
         return list(self._providers.keys())
 
+
 # Global registry
 dynamic_values = DynamicValueProvider()
+
 
 # Register built-in providers
 @dynamic_values.register("current_date")
@@ -81,7 +82,5 @@ async def get_user_name(context):
         
     # Fallback to user_id
     user_id = context.get("user_id")
-    if user_id:
-        return str(user_id)
-        
-    return str(user or "User")
+    return str(user_id) if user_id else str(user or "User")
+

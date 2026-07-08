@@ -742,27 +742,26 @@ class JiraToolkit(AbstractToolkit):
         self.logger = logging.getLogger(__name__)
 
         # Determine auth_type FIRST so oauth2_3lo can skip server_url validation.
+        #
+        # There is intentionally NO heuristic default here. The legacy code
+        # guessed ``basic_auth`` from an ``atlassian.net`` URL and silently
+        # pulled env-var credentials, producing a shared service-account
+        # client whenever auth was left unconfigured. That is dangerous now
+        # that per-user OAuth 2.0 (3LO) exists. When ``auth_type`` cannot be
+        # resolved from an explicit arg or ``JIRA_AUTH_TYPE``, the toolkit
+        # enters an *unauthenticated* state (see the client-init block below):
+        # tools stay registered and every call raises ``AuthorizationRequired``
+        # via :meth:`_pre_execute` so the LLM gets an explicit credential error.
         _configured_auth = auth_type or _cfg("JIRA_AUTH_TYPE")
         if _configured_auth:
             self.auth_type = _configured_auth.lower()
         else:
-            # Defer until we know server_url (resolved below).
             self.auth_type = None  # type: ignore[assignment]
 
         # For oauth2_3lo the server URL is resolved per-user at runtime via the
-        # CredentialResolver, so ``server_url`` is optional.
+        # CredentialResolver, so ``server_url`` is optional. Explicit static
+        # modes validate it in the client-init block below.
         self.server_url = server_url or _cfg("JIRA_INSTANCE") or ""
-        if self.auth_type != "oauth2_3lo" and not self.server_url:
-            raise ValueError(
-                "Jira server_url is required (e.g., https://your.atlassian.net)"
-            )
-
-        if self.auth_type is None:
-            # Legacy heuristic: Jira Cloud defaults to basic_auth, server to token_auth.
-            if "atlassian.net" in self.server_url:
-                self.auth_type = "basic_auth"
-            else:
-                self.auth_type = "token_auth"
 
         self.username = username or _cfg("JIRA_USERNAME")
         self.password = password or _cfg("JIRA_PASSWORD") or _cfg("JIRA_API_TOKEN")
@@ -823,6 +822,13 @@ class JiraToolkit(AbstractToolkit):
                 else self._parse_workflow_path(str(_value))
             )
 
+        # Deferred authentication error, surfaced to the LLM at tool-call time
+        # via :meth:`_pre_execute` (converted by ``ToolManager.execute_tool``
+        # into an ``authorization_required`` ToolResult). ``None`` means the
+        # toolkit is authenticated, or resolves credentials per-user at call
+        # time (oauth2_3lo).
+        self._auth_error: Optional[str] = None
+
         # OAuth 2.0 (3LO) per-user mode: defer client creation to _pre_execute.
         self.credential_resolver = credential_resolver
         if self.auth_type == "oauth2_3lo":
@@ -833,9 +839,36 @@ class JiraToolkit(AbstractToolkit):
             self.jira = None  # resolved per-call in _pre_execute
             # Per-user JIRA client cache: {"{channel}:{user_id}": (client, token_hash)}
             self._client_cache: Dict[str, tuple] = {}
-        else:
-            # Legacy: create the client immediately.
+            return
+
+        if self.auth_type is None:
+            # No explicit auth configured and no per-user resolver: do NOT
+            # fabricate a shared service-account client from env vars. Enter
+            # the unauthenticated state — tools stay registered so the LLM
+            # receives a clear ``AuthorizationRequired`` when it calls one.
+            self.jira = None
+            self._auth_error = (
+                "Jira is not authenticated: no credentials were provided and "
+                "the toolkit no longer falls back to a default account. "
+                "Configure per-user OAuth 2.0 (3LO), or set JIRA_AUTH_TYPE "
+                "(basic_auth/token_auth/oauth) with matching credentials."
+            )
+            return
+
+        # Explicit static mode (basic_auth / token_auth / oauth): a server URL
+        # is mandatory.
+        if not self.server_url:
+            raise ValueError(
+                "Jira server_url is required (e.g., https://your.atlassian.net)"
+            )
+        try:
             self._set_jira_client()
+        except ValueError as exc:
+            # Missing/partial credentials for an explicitly selected static
+            # mode. Keep tools registered and surface the error to the LLM at
+            # call time rather than crashing agent construction.
+            self.jira = None
+            self._auth_error = str(exc)
 
     def _set_jira_client(self):
         """Set the internal Jira client instance."""
@@ -934,6 +967,15 @@ class JiraToolkit(AbstractToolkit):
             AuthorizationRequired: When the user has not authorized yet.
         """
         if self.auth_type != "oauth2_3lo":
+            if self._auth_error is not None:
+                # Unauthenticated (or misconfigured static) toolkit: surface
+                # an explicit, actionable credential error to the LLM instead
+                # of silently operating as a default/shared account.
+                raise AuthorizationRequired(
+                    tool_name=tool_name,
+                    message=self._auth_error,
+                    provider="jira",
+                )
             return None
 
         perm_ctx = kwargs.get("_permission_context")
@@ -2128,11 +2170,18 @@ class JiraToolkit(AbstractToolkit):
         On Jira Cloud, a silently failed authentication (wrong username or
         revoked API token) returns an empty project list with HTTP 200 and a
         ``X-Seraph-Loginreason: AUTHENTICATED_FAILED`` header. When the list
-        comes back empty this tool probes ``/rest/api/2/myself`` and surfaces
-        the auth status plus the Seraph header so the caller can explain it.
+        comes back empty this tool probes ``/rest/api/2/myself``; if the
+        probe confirms the session is not authenticated it raises
+        :class:`AuthorizationRequired` (surfaced by ``ToolManager`` as a
+        structured ``authorization_required`` ToolResult) instead of
+        returning an empty-but-successful payload.
 
-        Returns: ``{"projects": [...], "count": N, "authenticated": bool,
-        "auth_probe": {...}}``
+        Returns: ``{"projects": [...], "count": N, "authenticated": True,
+        "hint": ...}``
+
+        Raises:
+            AuthorizationRequired: When the empty list is caused by failed
+                authentication (expired/revoked token, wrong username).
         """
         def _run():
             return self.jira.projects()
@@ -2148,21 +2197,26 @@ class JiraToolkit(AbstractToolkit):
             }
 
         probe = await asyncio.to_thread(self._probe_auth_sync)
-        hint = (
-            "Authentication check failed — "
-            f"seraph={probe.get('seraph_login_reason')!r}, "
-            f"status={probe.get('status_code')}. "
-            "Verify JIRA_USERNAME / JIRA_PASSWORD (or JIRA_API_TOKEN) and "
-            "the configured JIRA_INSTANCE URL."
-            if not probe.get("authenticated")
-            else "Authenticated user has no accessible projects."
-        )
+        if not probe.get("authenticated"):
+            raise AuthorizationRequired(
+                tool_name="jira_get_projects",
+                message=(
+                    "Jira rejected the configured credentials: "
+                    f"{probe.get('error') or 'authentication failed'} "
+                    f"(status={probe.get('status_code')}, "
+                    f"seraph={probe.get('seraph_login_reason')!r}, "
+                    f"auth_type={self.auth_type}). The API token is likely "
+                    "expired or revoked — generate a new one and update "
+                    "JIRA_API_TOKEN (or re-authorize via OAuth)."
+                ),
+                provider="jira",
+            )
         return {
             "projects": [],
             "count": 0,
-            "authenticated": probe.get("authenticated", False),
+            "authenticated": True,
             "auth_probe": probe,
-            "hint": hint,
+            "hint": "Authenticated user has no accessible projects.",
         }
 
     @tool_schema(VerifyAuthInput)

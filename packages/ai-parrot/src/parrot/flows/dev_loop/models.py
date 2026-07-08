@@ -566,6 +566,94 @@ class ZaiCodeDispatchProfile(LLMCodeDispatchProfile):
         return self
 
 
+class CodeReviewFinding(BaseModel):
+    """A single finding from the code review (FEAT-270)."""
+
+    message: str
+    severity: Literal["critical", "major", "minor", "nit"]
+    file: str = ""
+    line: int = 0
+
+
+class CodeReviewVerdict(BaseModel):
+    """Extended verdict emitted by all code review dispatchers (FEAT-270).
+
+    Public replacement for the previous ``_CodeReviewVerdict`` private model
+    in ``nodes/qa.py``. A verdict with no findings and no modified files is a
+    pass, matching the old model's backward-compatible defaults.
+
+    The ``findings`` validator coerces plain strings (the format the old model
+    accepted) into ``CodeReviewFinding(message=s, severity="minor")`` so an LLM
+    that returns the legacy format doesn't fail Pydantic validation.
+    """
+
+    passed: bool = True
+    findings: List[CodeReviewFinding] = Field(default_factory=list)
+    summary: str = ""
+    files_modified: List[str] = Field(default_factory=list)
+
+    @field_validator("findings", mode="before")
+    @classmethod
+    def _coerce_plain_strings(cls, v: Any) -> Any:
+        if isinstance(v, list):
+            return [
+                CodeReviewFinding(message=item, severity="minor")
+                if isinstance(item, str)
+                else item
+                for item in v
+            ]
+        return v
+
+
+class ClaudeCodeReviewProfile(ClaudeCodeDispatchProfile):
+    """Review profile for the Claude Code review dispatcher (FEAT-270).
+
+    Inherits ``ClaudeCodeDispatchProfile`` so it carries the ``setting_sources``
+    and ``strict_mcp_config`` fields that ``ClaudeCodeDispatcher._resolve_run_options()``
+    accesses. Overrides defaults for the write-enabled review use case: the
+    ``sdd-codereview`` subagent is allowed to fix issues it finds and commit
+    the fixes to the worktree branch.
+    """
+
+    subagent: Optional[Literal["sdd-research", "sdd-worker", "sdd-qa", "sdd-codereview"]] = "sdd-codereview"
+    permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "default"
+    allowed_tools: List[str] = Field(
+        default_factory=lambda: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+    )
+    model: str = "claude-sonnet-4-6"
+    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+
+
+class CodexCodeReviewProfile(CodexCodeDispatchProfile):
+    """Review profile for the Codex code review dispatcher (FEAT-270).
+
+    Inherits ``CodexCodeDispatchProfile`` so it carries the ``ignore_user_config``
+    and ``ignore_rules`` fields that ``CodexCodeDispatcher._build_command()`` accesses.
+    Overrides defaults for the write-enabled review use case.
+    """
+
+    subagent: Literal["sdd-worker"] = "sdd-worker"
+    model: str = "gpt-5.5"
+    sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "workspace-write"
+    approval_policy: Literal["untrusted", "on-request", "never"] = "on-request"
+    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+
+
+class GeminiCodeReviewProfile(GeminiCodeDispatchProfile):
+    """Review profile for the Gemini code review dispatcher (FEAT-270).
+
+    Inherits ``GeminiCodeDispatchProfile`` so it carries the fields that
+    ``GeminiCodeDispatcher._build_command()`` accesses. Overrides defaults
+    for the write-enabled review use case.
+    """
+
+    subagent: Literal["sdd-worker"] = "sdd-worker"
+    model: str = "auto"
+    sandbox: bool = False
+    approval_mode: Literal["default", "auto_edit", "yolo", "plan"] = "auto_edit"
+    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+
+
 class DispatchEvent(BaseModel):
     """Envelope for stream-json events published to Redis.
 

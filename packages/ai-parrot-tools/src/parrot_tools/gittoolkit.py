@@ -168,9 +168,10 @@ class GitToolkitInput(BaseModel):
         default=None,
         description=(
             "Named registry mapping an alias to that repository's credentials "
-            "and defaults. Registry entries are explicit-config only and do NOT "
-            "inherit GITHUB_* environment variables (those feed only the default "
-            "and ad-hoc fallback paths)."
+            "and defaults. All credentials are explicit-config only: the "
+            "toolkit does NOT read GITHUB_* environment variables for auth "
+            "(the default and ad-hoc connections also require explicitly "
+            "passed credentials)."
         ),
     )
 
@@ -725,8 +726,8 @@ def _load_pem(
         )
     if not private_key and not private_key_path:
         raise GitToolkitError(
-            "auth_type='github_app' requires private_key or private_key_path "
-            "(or GITHUB_APP_PRIVATE_KEY[_PATH] env)."
+            "auth_type='github_app' requires an explicit private_key or "
+            "private_key_path (no environment-variable fallback)."
         )
     pem = private_key
     if private_key_path:
@@ -791,7 +792,9 @@ class _RepoConnection:
             return self._token_provider.get_token()
         if not self._github_token:
             raise GitToolkitError(
-                "A GitHub personal access token is required via init argument or GITHUB_TOKEN."
+                "A GitHub personal access token is required: pass github_token "
+                "explicitly. The toolkit no longer falls back to the "
+                "GITHUB_TOKEN environment variable."
             )
         return self._github_token
 
@@ -947,25 +950,6 @@ class _FileBlobCache:
                 pass
 
 
-def _coerce_int(value: Optional[str]) -> Optional[int]:
-    """Coerce a string env-var value to int, returning None for empty/missing.
-
-    Args:
-        value: String value to coerce, or None.
-
-    Returns:
-        Integer value, or None if value is None, empty, or non-numeric.
-    """
-    if value is None or value == "":
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        # Intentionally returns None; caller raises a descriptive GitToolkitError
-        # indicating the value was present but not a valid integer.
-        return None
-
-
 class GitToolkit(AbstractToolkit):
     """Toolkit dedicated to Git patch generation and GitHub pull requests."""
 
@@ -1028,7 +1012,12 @@ class GitToolkit(AbstractToolkit):
         self.default_branch = (
             default_branch or os.getenv("GIT_DEFAULT_BRANCH") or "main"
         )
-        self.github_token = github_token or os.getenv("GITHUB_TOKEN")
+        # No silent env-var fallback for credentials. The PAT must be passed
+        # explicitly; otherwise the toolkit stays unauthenticated and raises a
+        # clear GitToolkitError at call time (see ``_default_token`` /
+        # ``_resolve_connection`` / ``_RepoConnection.token``) rather than
+        # quietly authenticating as a shared ``GITHUB_TOKEN`` account.
+        self.github_token = github_token
 
         self.auth_type: Literal["pat", "github_app"] = auth_type
         if self.auth_type not in ("pat", "github_app"):
@@ -1036,28 +1025,25 @@ class GitToolkit(AbstractToolkit):
                 f"Unsupported auth_type {self.auth_type!r}; expected 'pat' or 'github_app'."
             )
 
-        # Always initialise these attributes; None in PAT mode.
-        self.app_id: Optional[int] = app_id or _coerce_int(os.getenv("GITHUB_APP_ID"))
-        self.installation_id: Optional[int] = (
-            installation_id or _coerce_int(os.getenv("GITHUB_APP_INSTALLATION_ID"))
-        )
+        # Always initialise these attributes; None in PAT mode. GitHub App
+        # credentials must be passed explicitly — no silent env-var fallback.
+        self.app_id: Optional[int] = app_id
+        self.installation_id: Optional[int] = installation_id
         self._private_key_pem: Optional[str] = None
         self._token_provider: Optional[_GitHubAppTokenProvider] = None
 
         if self.auth_type == "github_app":
             if not self.app_id:
                 raise GitToolkitError(
-                    "auth_type='github_app' requires app_id (or GITHUB_APP_ID env)."
+                    "auth_type='github_app' requires an explicit app_id."
                 )
             if not self.installation_id:
                 raise GitToolkitError(
-                    "auth_type='github_app' requires installation_id (or "
-                    "GITHUB_APP_INSTALLATION_ID env)."
+                    "auth_type='github_app' requires an explicit installation_id."
                 )
 
-            inline_pem = private_key or os.getenv("GITHUB_APP_PRIVATE_KEY")
-            pem_path = private_key_path or os.getenv("GITHUB_APP_PRIVATE_KEY_PATH")
-            inline_pem = _load_pem(inline_pem, pem_path)
+            # Explicit-only: no GITHUB_APP_PRIVATE_KEY / _PATH env fallback.
+            inline_pem = _load_pem(private_key, private_key_path)
 
             self._token_provider = _GitHubAppTokenProvider(
                 app_id=self.app_id,
@@ -1120,7 +1106,9 @@ class GitToolkit(AbstractToolkit):
         # PAT mode
         if not self.github_token:
             raise GitToolkitError(
-                "A GitHub personal access token is required via init argument or GITHUB_TOKEN."
+                "A GitHub personal access token is required: pass github_token "
+                "explicitly. The toolkit no longer falls back to the "
+                "GITHUB_TOKEN environment variable."
             )
         return self.github_token
 
@@ -1161,8 +1149,9 @@ class GitToolkit(AbstractToolkit):
                     )
             elif not self.github_token:
                 raise GitToolkitError(
-                    "A GitHub personal access token is required via init "
-                    "argument or GITHUB_TOKEN."
+                    "A GitHub personal access token is required: pass "
+                    "github_token explicitly. The toolkit no longer falls back "
+                    "to the GITHUB_TOKEN environment variable."
                 )
             conn = _RepoConnection(
                 repository=repository,

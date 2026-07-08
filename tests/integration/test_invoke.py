@@ -159,17 +159,34 @@ def _make_grok_client(response_text: str = '{"name": "John", "age": 30}'):
             raise NotImplementedError
 
     client = _ConcreteGrokClient.__new__(_ConcreteGrokClient)
-    client.model = "grok-4"
-    client._lightweight_model = "grok-4-1-fast-non-reasoning"
+    client.model = "grok-4.3"
+    client._lightweight_model = "grok-4.20-non-reasoning"
     client._fallback_model = None
     client.logger = MagicMock()
     client._tool_manager = MagicMock()
     client._tool_manager.get_tool_schemas.return_value = []
+    client._clients_by_loop = {}
     _init_json(client)
-    client.client = MagicMock()
-    client.client.chat.completions.create = AsyncMock(
-        return_value=_make_openai_response(response_text)
+    mock_resp = MagicMock()
+    mock_resp.content = response_text
+    mock_resp.tool_calls = []
+    mock_resp.usage = MagicMock(
+        prompt_tokens=10, completion_tokens=5, total_tokens=15,
+        reasoning_tokens=0, cached_prompt_text_tokens=0, prompt_image_tokens=0,
     )
+    mock_resp.finish_reason = "stop"
+    mock_chat = MagicMock()
+    mock_chat.sample = AsyncMock(return_value=mock_resp)
+
+    async def _parse_side_effect(shape):
+        parsed = shape.model_validate_json(mock_resp.content)
+        return mock_resp, parsed
+
+    mock_chat.parse = AsyncMock(side_effect=_parse_side_effect)
+    mock_chat.append = MagicMock(return_value=mock_chat)
+    sdk_client = MagicMock()
+    sdk_client.chat.create = MagicMock(return_value=mock_chat)
+    client.get_client = AsyncMock(return_value=sdk_client)
     return client
 
 
@@ -342,12 +359,15 @@ class TestInvokeErrors:
         # Detect client type and patch the relevant SDK call
         from parrot.clients.claude import AnthropicClient
         from parrot.clients.google.client import GoogleGenAIClient
+        from parrot.clients.grok import GrokClient
         if isinstance(mock_client, AnthropicClient):
             mock_client.client.messages.create = AsyncMock(side_effect=original_error)
         elif isinstance(mock_client, GoogleGenAIClient):
             mock_client.client.aio.models.generate_content = AsyncMock(side_effect=original_error)
+        elif isinstance(mock_client, GrokClient):
+            mock_client.get_client = AsyncMock(side_effect=original_error)
         else:
-            # OpenAI-compatible (OpenAI, Groq, Grok, LocalLLM)
+            # OpenAI-compatible (OpenAI, Groq, LocalLLM)
             mock_client.client.chat.completions.create = AsyncMock(side_effect=original_error)
 
         with pytest.raises(InvokeError) as exc_info:
@@ -356,7 +376,11 @@ class TestInvokeErrors:
 
     async def test_invoke_error_is_exception(self, mock_client):
         """InvokeError is a proper Exception subclass."""
-        mock_client.client = None  # Force uninitialized error
+        from parrot.clients.grok import GrokClient
+        if isinstance(mock_client, GrokClient):
+            mock_client.get_client = AsyncMock(side_effect=RuntimeError("no client"))
+        else:
+            mock_client.client = None  # Force uninitialized error
         with pytest.raises((InvokeError, Exception)):
             await mock_client.invoke("test")
 
