@@ -855,45 +855,103 @@ class AgentCapabilities:
 
 @dataclass
 class AgentCard:
-    """Self-describing manifest for an agent.
+    """Self-describing manifest for an agent (A2A v1.0 structure).
 
-    NOTE (FEAT-272): the v1.0 restructure to `supported_interfaces` happens in
-    TASK-1713. This TASK-1712 version keeps the flat v0.3 shape but consumes the
-    updated `AgentCapabilities`.
+    Replaces the flat v0.3 ``url`` + ``preferredTransport`` with a structured
+    ``supported_interfaces`` array. The flat accessors remain available as
+    read-only backward-compat properties (``url``, ``preferred_transport``,
+    ``protocol_version``) so existing consumers keep working.
     """
     name: str
     description: str
     version: str
     skills: List[AgentSkill]
-    url: Optional[str] = None
+    supported_interfaces: List[AgentInterface] = field(default_factory=list)
     capabilities: AgentCapabilities = field(default_factory=AgentCapabilities)
     default_input_modes: List[str] = field(default_factory=lambda: ["text/plain", "application/json"])
     default_output_modes: List[str] = field(default_factory=lambda: ["text/plain", "application/json"])
-    # A2A protocol version. Use the fully-qualified "0.3.0" (the a2a-dotnet v0.3
-    # `AgentCard.ProtocolVersion` default that Microsoft Copilot Studio
-    # validates), not the abbreviated "0.3".
-    protocol_version: str = "0.3.0"
-    # Transport the agent prefers at `url`. REQUIRED by the A2A spec and by
-    # Microsoft Copilot Studio's parser (a2a-dotnet marks it `[JsonRequired]`,
-    # so a card without it is rejected). Core ones: JSONRPC, GRPC, HTTP+JSON.
-    preferred_transport: str = "JSONRPC"
+    provider: Optional[AgentProvider] = None
+    documentation_url: Optional[str] = None
+    security_schemes: Optional[Dict[str, SecurityScheme]] = None
+    security_requirements: Optional[List[SecurityRequirement]] = None
+    signatures: Optional[List[AgentCardSignature]] = None
     icon_url: Optional[str] = None
     tags: List[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    @property
+    def url(self) -> Optional[str]:
+        """Backward-compat: first interface URL (the v0.3 flat `url`)."""
+        if self.supported_interfaces:
+            return self.supported_interfaces[0].url
+        return None
+
+    @property
+    def preferred_transport(self) -> str:
+        """Backward-compat: first interface protocol binding."""
+        if self.supported_interfaces:
+            return self.supported_interfaces[0].protocol_binding
+        return "JSONRPC"
+
+    @property
+    def protocol_version(self) -> str:
+        """Backward-compat: first interface protocol version."""
+        if self.supported_interfaces:
+            return self.supported_interfaces[0].protocol_version
+        return "0.3.0"
+
+    def to_dict(self, version: str = "1.0") -> Dict[str, Any]:
+        if version == "0.3":
+            return self._to_dict_v03()
+        return self._to_dict_v1()
+
+    def _to_dict_v1(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
-            "protocolVersion": self.protocol_version,
             "name": self.name,
             "description": self.description,
             "version": self.version,
-            # Flat `url` + `preferredTransport` ARE the A2A v0.3 card shape that
-            # Microsoft Copilot Studio's a2a-dotnet parser deserializes.
-            "url": self.url,
-            "preferredTransport": self.preferred_transport,
-            "capabilities": self.capabilities.to_dict(),
+            "supportedInterfaces": [i.to_dict("1.0") for i in self.supported_interfaces],
+            "capabilities": self.capabilities.to_dict("1.0"),
             "defaultInputModes": self.default_input_modes,
             "defaultOutputModes": self.default_output_modes,
-            "skills": [s.to_dict() for s in self.skills],
+            "skills": [s.to_dict("1.0") for s in self.skills],
+            "tags": self.tags,
+        }
+        if self.provider is not None:
+            data["provider"] = self.provider.to_dict("1.0")
+        if self.documentation_url is not None:
+            data["documentationUrl"] = self.documentation_url
+        if self.security_schemes is not None:
+            data["securitySchemes"] = {
+                k: v.to_dict("1.0") for k, v in self.security_schemes.items()
+            }
+        if self.security_requirements is not None:
+            data["securityRequirements"] = [
+                s.to_dict("1.0") for s in self.security_requirements
+            ]
+        if self.signatures is not None:
+            data["signatures"] = [s.to_dict("1.0") for s in self.signatures]
+        if self.icon_url is not None:
+            data["iconUrl"] = self.icon_url
+        return data
+
+    def _to_dict_v03(self) -> Dict[str, Any]:
+        # Flat `url` + `preferredTransport` ARE the A2A v0.3 card shape that
+        # Microsoft Copilot Studio's a2a-dotnet parser deserializes. Both are
+        # `[JsonRequired]` in `A2A.V0_3/Models/AgentCard.cs`; `url` must point at
+        # the JSON-RPC message endpoint (where `message/send` is POSTed), not at
+        # the card itself. The v0.3 deserializer does NOT set
+        # `JsonUnmappedMemberHandling.Disallow`, so unknown fields are ignored.
+        data: Dict[str, Any] = {
+            "protocolVersion": "0.3.0",
+            "name": self.name,
+            "description": self.description,
+            "version": self.version,
+            "url": self.url,
+            "preferredTransport": self.preferred_transport,
+            "capabilities": self.capabilities.to_dict("0.3"),
+            "defaultInputModes": self.default_input_modes,
+            "defaultOutputModes": self.default_output_modes,
+            "skills": [s.to_dict("0.3") for s in self.skills],
             "tags": self.tags,
         }
         # Omit `iconUrl` when unset rather than emitting `null` (strict parsers).
@@ -916,17 +974,50 @@ class AgentCard:
         else:
             capabilities = caps or AgentCapabilities()
 
+        # Auto-detect the card shape: `supportedInterfaces` => v1.0, flat `url`
+        # => v0.3. `additionalInterfaces` (v0.3 optional) is also accepted.
+        interfaces: List[AgentInterface] = []
+        if data.get("supportedInterfaces"):
+            interfaces = [
+                AgentInterface.from_dict(i) for i in data["supportedInterfaces"]
+            ]
+        elif data.get("url"):
+            interfaces = [
+                AgentInterface(
+                    url=data["url"],
+                    protocol_binding=data.get("preferredTransport", "JSONRPC"),
+                    protocol_version=data.get("protocolVersion", "0.3.0"),
+                )
+            ]
+            for extra in data.get("additionalInterfaces", []):
+                interfaces.append(AgentInterface.from_dict(extra))
+
+        provider = data.get("provider")
+        schemes = data.get("securitySchemes")
+        sec_reqs = data.get("securityRequirements")
+        sigs = data.get("signatures")
+
         return cls(
             name=data["name"],
             description=data["description"],
             version=data["version"],
             skills=skills,
-            url=data.get("url"),
+            supported_interfaces=interfaces,
             capabilities=capabilities,
             default_input_modes=data.get("defaultInputModes", ["text/plain", "application/json"]),
             default_output_modes=data.get("defaultOutputModes", ["text/plain", "application/json"]),
-            protocol_version=data.get("protocolVersion", "0.3.0"),
-            preferred_transport=data.get("preferredTransport", "JSONRPC"),
+            provider=AgentProvider.from_dict(provider) if provider else None,
+            documentation_url=data.get("documentationUrl"),
+            security_schemes=(
+                {k: SecurityScheme.from_dict(v) for k, v in schemes.items()}
+                if schemes else None
+            ),
+            security_requirements=(
+                [SecurityRequirement.from_dict(s) for s in sec_reqs] if sec_reqs else None
+            ),
+            signatures=(
+                [AgentCardSignature.from_dict(s) for s in sigs] if sigs else None
+            ),
             icon_url=data.get("iconUrl"),
             tags=data.get("tags", []),
         )

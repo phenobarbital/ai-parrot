@@ -32,6 +32,7 @@ from aiohttp import web
 from navconfig.logging import logging
 from parrot.a2a.models import (
     AgentCard,
+    AgentInterface,
     AgentSkill,
     AgentCapabilities,
     Task,
@@ -233,11 +234,21 @@ class A2AServer:
 
         description = " | ".join(description_parts) if description_parts else f"AI Agent: {self.agent.name}"
 
+        # v1.0 AgentCard: describe the endpoint via a structured
+        # `supported_interfaces` entry instead of the flat v0.3 `url`. Version
+        # negotiation at serialization time (to_dict(version=)) reproduces the
+        # flat shape for v0.3 clients.
         self._agent_card = AgentCard(
             name=self.agent.name,
             description=description,
             version=self.version,
-            url=self._url,
+            supported_interfaces=[
+                AgentInterface(
+                    url=self._url,
+                    protocol_binding="JSONRPC",
+                    protocol_version="1.0",
+                )
+            ],
             skills=skills,
             capabilities=self.capabilities,
             tags=self.tags or getattr(self.agent, 'tags', []),

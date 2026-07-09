@@ -174,8 +174,60 @@ class TestNewModelTypes:
         assert e.to_dict()["code"] == -32001
 
 
-class TestBackwardCompatImports:
-    def test_agent_card_still_flat(self):
-        card = AgentCard(name="T", description="d", version="1.0", skills=[], url="https://a.com")
-        d = card.to_dict()
-        assert d["url"] == "https://a.com"
+class TestAgentCardV1:
+    def _card(self, **kwargs):
+        return AgentCard(
+            name="Test", description="Test agent", version="1.0", skills=[],
+            supported_interfaces=[
+                AgentInterface(url="https://a.com/a2a", protocol_binding="JSONRPC",
+                               protocol_version="1.0")
+            ],
+            **kwargs,
+        )
+
+    def test_to_dict_v1_supported_interfaces(self):
+        d = self._card().to_dict(version="1.0")
+        assert "supportedInterfaces" in d
+        assert d["supportedInterfaces"][0]["url"] == "https://a.com/a2a"
+        assert "url" not in d  # flat url NOT in v1.0
+
+    def test_to_dict_v03_flat_url(self):
+        d = self._card().to_dict(version="0.3")
+        assert d["url"] == "https://a.com/a2a"
+        assert d["preferredTransport"] == "JSONRPC"
+        assert "supportedInterfaces" not in d
+
+    def test_url_property(self):
+        assert self._card().url == "https://a.com/a2a"
+        assert self._card().preferred_transport == "JSONRPC"
+
+    def test_from_dict_v1(self):
+        d = {
+            "name": "Test", "description": "T", "version": "1.0",
+            "supportedInterfaces": [{"url": "https://a.com", "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}],
+            "capabilities": {"streaming": True},
+            "defaultInputModes": ["text/plain"],
+            "defaultOutputModes": ["text/plain"],
+            "skills": [],
+        }
+        card = AgentCard.from_dict(d)
+        assert len(card.supported_interfaces) == 1
+        assert card.url == "https://a.com"
+
+    def test_from_dict_v03_compat(self):
+        d = {
+            "name": "Test", "description": "T", "version": "1.0",
+            "url": "https://a.com", "preferredTransport": "JSONRPC",
+            "protocolVersion": "0.3.0",
+            "capabilities": {"streaming": True},
+            "defaultInputModes": ["text/plain"],
+            "defaultOutputModes": ["text/plain"],
+            "skills": [],
+        }
+        card = AgentCard.from_dict(d)
+        assert card.url == "https://a.com"
+
+    def test_provider_field(self):
+        card = self._card(provider=AgentProvider(url="https://example.com", organization="Acme"))
+        d = card.to_dict(version="1.0")
+        assert d["provider"]["organization"] == "Acme"
