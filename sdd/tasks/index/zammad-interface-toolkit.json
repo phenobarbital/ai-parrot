@@ -14,7 +14,7 @@
       "feature_id": "FEAT-218",
       "feature": "zammad-interface-toolkit",
       "spec": "sdd/specs/zammad-interface-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all other tasks depend on these env vars",
       "assigned_to": null,
       "started_at": "2026-07-09T15:59:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1701-zammad-conf-vars.md"
+      "completed_at": "2026-07-09T16:47:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1701-zammad-conf-vars.md"
     },
     {
       "id": "TASK-1702",
