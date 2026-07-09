@@ -467,7 +467,7 @@ from parrot.auth.manifest import load_credentials_manifest  # packages/ai-parrot
 
 ## Open Questions
 
-- [ ] Should the `/a2a/directory` endpoint list ALL agents (including non-A2A ones) or only agents with `kind: a2a`? — *Owner: Jesus*
-- [ ] Should the `msagent` kind automatically mount a companion A2A surface (like `examples/msagent/server.py` does), or should this be opt-in via a flag like `enable_a2a_companion: true`? — *Owner: Jesus*
-- [ ] For A2A security: should the YAML support all auth schemes (JWT, API key, mTLS, HMAC) or start with JWT + API key only? — *Owner: Jesus*
-- [ ] Should the credential broker's `credentials` list in YAML reuse the existing `load_credentials_manifest()` format, or should it be inlined directly in the agent config? — *Owner: Jesus*
+- [x] Should the `/a2a/directory` endpoint list ALL agents (including non-A2A ones) or only agents with `kind: a2a`? — *Owner: Jesus*: A2A agents only. Only agents declared with `kind: a2a` appear in the `/directory` listing.
+- [x] Should the `msagent` kind automatically mount a companion A2A surface (like `examples/msagent/server.py` does), or should this be opt-in via a flag like `enable_a2a_companion: true`? — *Owner: Jesus*: Auto (always on). Every `msagent` bot also gets an A2A endpoint, matching the example server behavior. The companion A2A surface also registers in `/directory`.
+- [x] For A2A security: should the YAML support all auth schemes (JWT, API key, mTLS, HMAC) or start with JWT + API key only? — *Owner: Jesus*: All schemes from day one. Support JWT, API key, mTLS, HMAC, and Basic — everything `A2ASecurityMiddleware` already handles.
+- [x] Should the credential broker's `credentials` list in YAML reuse the existing `load_credentials_manifest()` format, or should it be inlined directly in the agent config? — *Owner: Jesus*: Inline in agent config. The `credentials:` list lives directly under the agent entry in `integrations_bots.yaml` — simpler and self-contained.
