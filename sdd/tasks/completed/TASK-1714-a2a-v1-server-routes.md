@@ -244,4 +244,77 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-09
+**Notes**:
+- `setup()`: added v1.0 colon-syntax routes (`message:send`, `message:stream`,
+  `tasks/{id}:cancel`, `tasks/{id}:subscribe`) reusing the SAME handlers as
+  the v0.3 slash routes (confirmed aiohttp routes colons in fixed path
+  segments correctly — no routing conflicts, verified via the new tests).
+  Added `/.well-known/agent-card.json` (v1.0) alongside the existing
+  `/.well-known/agent.json` (v0.3), both wired to `_handle_agent_card`.
+- Added `_get_request_version()` (raises `web.HTTPBadRequest` with
+  `{"error": {"code": -32009, ...}}` for unsupported versions — the -32009
+  constant matches the A2A error table TASK-1715 formalizes),
+  `_content_type_for()` (`application/a2a+json` for v1.0, `application/json`
+  for v0.3), and `_state_str()` (thin wrapper around
+  `TaskStatus(state=X).to_dict(version=)["state"]` so SSE handlers building
+  raw event dicts don't need to reach into `models.py` private helpers).
+- All REST handlers (`_handle_agent_card`, `_handle_send_message`,
+  `_handle_stream_message` + its two streaming helpers, `_handle_get_task`,
+  `_handle_list_tasks`, `_handle_cancel_task`, `_handle_subscribe`) now call
+  `_get_request_version()` first (so `HTTPBadRequest` propagates before
+  entering any `try/except Exception` block that would otherwise swallow it
+  as a 500) and pass `version=` through to every `to_dict()` call, including
+  nested `Message`/`Artifact` serialization inside SSE payloads.
+- `process_message()` gained an optional `task: Optional[Task] = None`
+  parameter (default preserves existing behavior for all current callers —
+  verified via the full existing A2A regression suite) so the
+  `returnImmediately` path can hand it a pre-created `SUBMITTED` task,
+  schedule `process_message(message, task=task)` as a background
+  `asyncio.Task`, and return the same task object immediately.
+- `SendMessageConfiguration` is parsed from `data.get("configuration")` in
+  `_handle_send_message`; `historyLength` trims `task.history`,
+  `returnImmediately` triggers the background-processing path described above.
+- `_handle_list_tasks`'s `status` query-param filter was changed from
+  `t.status.state.value == state` to `t.status.state == parse_task_state(state)`
+  — the literal `.value` comparison silently broke for v0.3 lowercase query
+  values once `TaskState.value` became SCREAMING_SNAKE in TASK-1712; using
+  the existing `parse_task_state()` compat helper keeps the filter working
+  for both wire formats. No test covered this before (verified via grep), so
+  this is a necessary correctness fix, not scope creep.
+- **Bug fix required to make the task's own prescribed test fixture work**:
+  `_build_skills_from_tools()` checked `hasattr(self.agent, 'tool_manager')`
+  without an `is not None` guard (unlike the equivalent, already-correct
+  guard in `_find_tool()`). Both this task's own test spec pattern and
+  TASK-1719's prescribed `mock_agent` fixture set `agent.tool_manager = None`
+  explicitly — with the old code, `get_agent_card()` (called by
+  `_handle_agent_card`) crashed with `AttributeError: 'NoneType' object has
+  no attribute 'list_tools'` for any such agent, because no prior test ever
+  called `get_agent_card()` over HTTP. Added the same `is not None` guard
+  used elsewhere in the file. Documented inline at the fix site.
+- New test file `packages/ai-parrot-server/tests/unit/test_a2a_v1_server.py`
+  (14 tests): well-known discovery (both URIs/versions + content-type),
+  version negotiation (-32009 on unsupported version), v1.0 REST routes
+  (`message:send`, `tasks/{id}:cancel`, `tasks/{id}:subscribe`),
+  `SendMessageConfiguration` (`returnImmediately`, `historyLength`), and
+  `GetTask` 404/200. `ruff check` clean.
+- Regression: full existing A2A suites (`test_a2a_tools.py`,
+  `test_a2a_credential_gate.py`, `test_a2a_identity.py`,
+  `test_a2a_resume_trigger.py`, `test_a2a_bridge_e2e.py` — 60 tests total)
+  still pass; none of them exercise the HTTP layer (all call
+  `process_message()` directly), so route/handler changes carried zero
+  regression risk for them, confirmed empirically.
+- `_handle_jsonrpc()` was deliberately left untouched (its own task,
+  TASK-1715, explicitly owns the JSON-RPC method dispatch and error-code
+  refactor) — it will keep emitting `to_dict()`'s new default v1.0 format
+  until TASK-1715 wires version negotiation into it. No test currently
+  exercises `_handle_jsonrpc` over HTTP (verified via grep), so this is a
+  safe, explicitly-scoped deferral, not a regression.
+**Deviations from spec**: the `_build_skills_from_tools()` None-guard fix and
+the `_handle_list_tasks` status-filter fix are both outside the task's
+literal "Scope" bullets but were required for (a) the task's own prescribed
+test fixtures to run at all, and (b) not silently breaking status filtering
+after the TASK-1712 enum rename. Both are minimal, guard-only changes with no
+behavioral surface beyond fixing a crash / restoring existing filtering
+semantics.
