@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import logging
 import mimetypes
+import os
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -219,6 +220,22 @@ class ZammadToolkit(AbstractToolkit):
         if self._interface:
             await self._interface.close()
 
+    def _require_interface(self) -> ZammadInterface:
+        """Return the active interface or raise if the toolkit was not started.
+
+        Returns:
+            The initialized :class:`ZammadInterface`.
+
+        Raises:
+            RuntimeError: If :meth:`start` has not been called yet.
+        """
+        if self._interface is None:
+            raise RuntimeError(
+                "ZammadToolkit is not started; call 'await toolkit.start()' "
+                "(or use it via a bot/ToolManager) before invoking tools."
+            )
+        return self._interface
+
     # ── Ticket Tools ──────────────────────────────────────────────────────────
 
     @tool_schema(CreateTicketInput)
@@ -248,12 +265,12 @@ class ZammadToolkit(AbstractToolkit):
             state_id=state_id,
             on_behalf_of=on_behalf_of,
         )
-        return await self._interface.create_ticket(payload)
+        return await self._require_interface().create_ticket(payload)
 
     @tool_schema(GetTicketInput)
     async def get_ticket(self, ticket_id: int, expand: bool = False) -> dict[str, Any]:
         """Retrieve a single Zammad ticket by ID."""
-        return await self._interface.get_ticket(ticket_id, expand=expand)
+        return await self._require_interface().get_ticket(ticket_id, expand=expand)
 
     @tool_schema(ListTicketsInput)
     async def list_tickets(
@@ -263,7 +280,7 @@ class ZammadToolkit(AbstractToolkit):
         per_page: int = 100,
     ) -> dict[str, Any]:
         """List Zammad tickets, optionally filtered by state."""
-        return await self._interface.list_tickets(
+        return await self._require_interface().list_tickets(
             state_ids=state_ids, page=page, per_page=per_page
         )
 
@@ -292,20 +309,20 @@ class ZammadToolkit(AbstractToolkit):
             article_internal=article_internal,
             on_behalf_of=on_behalf_of,
         )
-        return await self._interface.update_ticket(payload)
+        return await self._require_interface().update_ticket(payload)
 
     @tool_schema(CloseTicketInput)
     async def close_ticket(self, ticket_id: int) -> dict[str, Any]:
         """Close a Zammad ticket by setting its state to 'closed'."""
         payload = TicketUpdatePayload(ticket_id=ticket_id, state_id=self._closed_state_id)
-        return await self._interface.update_ticket(payload)
+        return await self._require_interface().update_ticket(payload)
 
     @tool_schema(SearchTicketsInput)
     async def search_tickets(
         self, query: str, page: int = 1, per_page: int = 100
     ) -> dict[str, Any]:
         """Search Zammad tickets by query string."""
-        return await self._interface.search_tickets(query, page=page, per_page=per_page)
+        return await self._require_interface().search_tickets(query, page=page, per_page=per_page)
 
     async def delete_ticket(self, ticket_id: int) -> dict[str, Any]:
         """Delete a Zammad ticket by ID.
@@ -313,7 +330,7 @@ class ZammadToolkit(AbstractToolkit):
         Excluded from the generated tool set via ``exclude_tools`` — not
         exposed to LLMs. Remains callable directly for programmatic use.
         """
-        await self._interface.delete_ticket(ticket_id)
+        await self._require_interface().delete_ticket(ticket_id)
         return {"ticket_id": ticket_id, "deleted": True}
 
     # ── User Tools ────────────────────────────────────────────────────────────
@@ -321,12 +338,12 @@ class ZammadToolkit(AbstractToolkit):
     @tool_schema(GetUserInput)
     async def get_user(self, user_id: int, expand: bool = False) -> dict[str, Any]:
         """Retrieve a single Zammad user by ID."""
-        return await self._interface.get_user(user_id, expand=expand)
+        return await self._require_interface().get_user(user_id, expand=expand)
 
     @tool_schema(SearchUsersInput)
     async def search_users(self, query: str) -> list[dict[str, Any]]:
         """Search Zammad users by query string."""
-        return await self._interface.search_users(query)
+        return await self._require_interface().search_users(query)
 
     @tool_schema(CreateUserInput)
     async def create_user(
@@ -347,24 +364,24 @@ class ZammadToolkit(AbstractToolkit):
             roles=roles or ["Customer"],
             active=active,
         )
-        return await self._interface.create_user(payload)
+        return await self._require_interface().create_user(payload)
 
     # ── Article & Attachment Tools ────────────────────────────────────────────
 
     @tool_schema(GetArticlesInput)
     async def get_articles(self, ticket_id: int) -> list[dict[str, Any]]:
         """List all articles for a Zammad ticket."""
-        return await self._interface.get_articles(ticket_id)
+        return await self._require_interface().get_articles(ticket_id)
 
     @tool_schema(GetAttachmentInput)
     async def get_attachment(
         self, ticket_id: int, article_id: int, attachment_id: int
     ) -> dict[str, Any]:
         """Download a Zammad attachment and return its content and metadata."""
-        data, file_path = await self._interface.get_attachment(
+        data, file_path = await self._require_interface().get_attachment(
             ticket_id, article_id, attachment_id
         )
-        filename = file_path.rsplit("/", 1)[-1]
+        filename = os.path.basename(file_path)
         mime_type, _ = mimetypes.guess_type(filename)
         return {
             "file_path": file_path,

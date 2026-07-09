@@ -149,3 +149,10 @@ class TestZammadToolkitMethods:
 
         assert result == [{"id": 5, "login": "jane@example.com"}]
         toolkit._interface.search_users.assert_called_once_with("jane")
+
+    @pytest.mark.asyncio
+    async def test_tool_call_without_start_raises(self, toolkit):
+        """Invoking a tool before start() raises a clear RuntimeError."""
+        assert toolkit._interface is None
+        with pytest.raises(RuntimeError, match="not started"):
+            await toolkit.get_ticket(ticket_id=1)

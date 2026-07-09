@@ -16,6 +16,7 @@ from parrot.interfaces.zammad import (
     ZammadConnectionError,
     ZammadError,
     ZammadInterface,
+    _extract_filename,
 )
 
 
@@ -74,6 +75,22 @@ class TestZammadInterfaceInit:
         z = ZammadInterface()
         assert z.config.instance_url == "https://env.example.com"
         assert z.config.token == "env-token"
+
+    def test_init_missing_url_raises(self, monkeypatch):
+        monkeypatch.setattr("parrot.interfaces.zammad.ZAMMAD_INSTANCE", None)
+        monkeypatch.setattr("parrot.interfaces.zammad.ZAMMAD_TOKEN", "env-token")
+        with pytest.raises(ZammadError, match="instance URL is required"):
+            ZammadInterface(token="tok")
+
+    def test_init_missing_token_raises(self, monkeypatch):
+        monkeypatch.setattr("parrot.interfaces.zammad.ZAMMAD_INSTANCE", None)
+        monkeypatch.setattr("parrot.interfaces.zammad.ZAMMAD_TOKEN", None)
+        with pytest.raises(ZammadError, match="API token is required"):
+            ZammadInterface(instance_url="https://z.example.com")
+
+    def test_attachment_dir_not_created_eagerly(self, zammad):
+        """A temp dir is only created on first attachment download."""
+        assert zammad.config.attachment_dir is None
 
 
 class TestZammadInterfaceContextManager:
@@ -354,3 +371,51 @@ class TestUserOperations:
         assert users == [{"id": 5, "login": "jane@example.com"}]
         _, kwargs = mock_session.request.call_args
         assert kwargs["params"]["query"] == "jane"
+
+    @pytest.mark.asyncio
+    async def test_get_current_user(self, zammad):
+        mock_session = AsyncMock(spec=aiohttp.ClientSession)
+        mock_session.closed = False
+        mock_session.request = MagicMock(
+            return_value=_mock_response(200, {"id": 1, "login": "svc@example.com"})
+        )
+        zammad._session = mock_session
+
+        result = await zammad.get_current_user()
+        assert result["login"] == "svc@example.com"
+        args, _ = mock_session.request.call_args
+        assert args == ("GET", "https://zammad.example.com/api/v1/users/me")
+
+    @pytest.mark.asyncio
+    async def test_update_user(self, zammad):
+        mock_session = AsyncMock(spec=aiohttp.ClientSession)
+        mock_session.closed = False
+        mock_session.request = MagicMock(
+            return_value=_mock_response(200, {"id": 5, "active": False})
+        )
+        zammad._session = mock_session
+
+        result = await zammad.update_user(5, {"active": False})
+        assert result["active"] is False
+        args, kwargs = mock_session.request.call_args
+        assert args[0] == "PUT"
+        assert kwargs["json"] == {"active": False}
+
+
+class TestFilenameSanitization:
+    """Tests for _extract_filename path-traversal hardening."""
+
+    def test_extract_plain_filename(self):
+        assert (
+            _extract_filename('attachment; filename="report.pdf"', "fallback")
+            == "report.pdf"
+        )
+
+    def test_extract_strips_path_traversal(self):
+        assert (
+            _extract_filename('attachment; filename="../../etc/passwd"', "fallback")
+            == "passwd"
+        )
+
+    def test_extract_uses_fallback_when_absent(self):
+        assert _extract_filename("", "fallback.bin") == "fallback.bin"

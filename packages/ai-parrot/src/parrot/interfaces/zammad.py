@@ -137,21 +137,27 @@ _FILENAME_RE = re.compile(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', re.IGNORECA
 
 
 def _extract_filename(content_disposition: str, fallback: str) -> str:
-    """Extract a filename from a ``Content-Disposition`` header value.
+    """Extract a safe filename from a ``Content-Disposition`` header value.
+
+    The returned name is reduced to its basename to prevent path-traversal
+    writes (e.g. a malicious ``filename="../../etc/passwd"``) since the value
+    is server-controlled and later joined onto the attachment directory.
 
     Args:
         content_disposition: Raw ``Content-Disposition`` header value.
         fallback: Filename to use when none can be extracted.
 
     Returns:
-        The extracted filename, or ``fallback`` if not found.
+        The extracted, sanitized filename, or ``fallback`` if not found.
     """
     if not content_disposition:
         return fallback
     match = _FILENAME_RE.search(content_disposition)
-    if match:
-        return match.group(1)
-    return fallback
+    if not match:
+        return fallback
+    # Strip any directory components — never trust a server-supplied path.
+    candidate = os.path.basename(match.group(1).strip())
+    return candidate or fallback
 
 
 def _write_bytes(path: str, data: bytes) -> None:
@@ -215,9 +221,21 @@ class ZammadInterface:
             attachment_dir: Directory to save downloaded attachments;
                 defaults to a temp dir.
         """
+        resolved_url = instance_url or ZAMMAD_INSTANCE
+        resolved_token = token or ZAMMAD_TOKEN
+        if not resolved_url:
+            raise ZammadError(
+                "Zammad instance URL is required: pass instance_url or set "
+                "ZAMMAD_INSTANCE."
+            )
+        if not resolved_token:
+            raise ZammadError(
+                "Zammad API token is required: pass token or set ZAMMAD_TOKEN."
+            )
+
         self.config = ZammadConfig(
-            instance_url=instance_url or ZAMMAD_INSTANCE or "",
-            token=token or ZAMMAD_TOKEN or "",
+            instance_url=resolved_url,
+            token=resolved_token,
             default_customer=default_customer or ZAMMAD_DEFAULT_CUSTOMER,
             default_group=default_group or ZAMMAD_DEFAULT_GROUP,
             default_catalog=default_catalog or ZAMMAD_DEFAULT_CATALOG,
@@ -226,10 +244,24 @@ class ZammadInterface:
             timeout=timeout if timeout is not None else 30,
             verify_ssl=verify_ssl if verify_ssl is not None else True,
             on_behalf_of_header=on_behalf_of_header,
-            attachment_dir=attachment_dir or tempfile.mkdtemp(prefix="zammad_attachments_"),
+            # Left as-is (possibly None); a temp dir is created lazily on the
+            # first attachment download so unused interfaces leave no dangling
+            # directories behind.
+            attachment_dir=attachment_dir,
         )
         self._session: aiohttp.ClientSession | None = None
         self.logger = logging.getLogger("parrot.interfaces.zammad")
+
+    def _ensure_attachment_dir(self) -> str:
+        """Return the attachment directory, creating a temp dir on first use.
+
+        Returns:
+            The configured ``attachment_dir``, or a lazily-created temp
+            directory when none was configured.
+        """
+        if not self.config.attachment_dir:
+            self.config.attachment_dir = tempfile.mkdtemp(prefix="zammad_attachments_")
+        return self.config.attachment_dir
 
     # ── Session Management ────────────────────────────────────────────────────
 
@@ -605,7 +637,7 @@ class ZammadInterface:
                 f"Network error contacting Zammad at {url}: {exc}"
             ) from exc
 
-        file_path = os.path.join(self.config.attachment_dir, filename)
+        file_path = os.path.join(self._ensure_attachment_dir(), filename)
         await asyncio.to_thread(_write_bytes, file_path, data)
         self.logger.debug("Saved Zammad attachment to %s", file_path)
         return data, file_path
