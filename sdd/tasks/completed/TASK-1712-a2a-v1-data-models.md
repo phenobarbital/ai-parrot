@@ -390,9 +390,53 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-09
 **Notes**:
-**Deviations from spec**: none
+- Implemented all v1.0.0 enum/model changes in `packages/ai-parrot/src/parrot/a2a/models.py`:
+  `TaskState` (SCREAMING_SNAKE, `UNSPECIFIED`/`AUTH_REQUIRED` added, `CANCELED`
+  canonical with `CANCELLED` as a true Python enum alias), `Role` (`ROLE_*`,
+  `UNSPECIFIED` added), `parse_task_state()`/`parse_role()` compat parsers,
+  `_serialize_task_state()`/`_serialize_role()` version-aware serializers.
+- `Part`: added `filename`; `to_dict(version=)` now branches into
+  `_to_dict_v03()` (unchanged legacy nested `file{fileWithUri,fileWithBytes}`)
+  and `_to_dict_v1()` (flat `url`/`raw`/`filename` at top level, matching the
+  task's own test spec literally: `"url" in d` on the top-level dict, not
+  nested under `d["file"]`). `from_dict()` now accepts both the v0.3 nested
+  shape and the v1.0 flat shape.
+- `Message`: added `extensions`, `reference_task_ids`; `to_dict(version=)`
+  cascades version to `Part.to_dict()` and role serialization; `from_dict()`
+  uses `parse_role()` for compat.
+- `TaskStatus`, `Task`, `Artifact`: added `version: str = "1.0"` param to
+  `to_dict()`, cascading to nested `Message`/`Part` serialization.
+- `AgentCapabilities`: removed `state_transition_history`; added
+  `extended_agent_card`, `extensions: List[AgentExtension]`.
+- `AgentSkill`: added `input_modes`, `output_modes`, `security_requirements`;
+  `from_dict()` refactored into a real classmethod (previously inlined in
+  `AgentCard.from_dict()`) so it can round-trip the new fields — `AgentCard.
+  from_dict()` now calls `AgentSkill.from_dict(s)` instead of duplicating the
+  parsing inline. This is a small internal refactor with no behavior change
+  for existing callers (same fields read, same defaults), done because
+  `AgentCard.from_dict()` needed to stop hand-rolling `AgentSkill` construction
+  once `AgentSkill` gained new optional fields.
+- Created new dataclasses exactly as scoped: `AgentInterface`, `AgentProvider`,
+  `SendMessageConfiguration`, `TaskPushNotificationConfig`,
+  `AuthenticationInfo`, `A2AError`, `SecurityScheme` (as a `Union` of
+  `APIKeySecurityScheme`, `HTTPAuthSecurityScheme`, `OAuth2SecurityScheme`,
+  `OpenIdConnectSecurityScheme`, `MutualTlsSecurityScheme`, plus a
+  `security_scheme_from_dict()` discriminator helper), `SecurityRequirement`,
+  `AgentExtension`, `AgentCardSignature`.
+- `AgentCard` itself was deliberately left UNCHANGED in this task (out of
+  scope per the task file — restructuring is TASK-1713).
+- Verified no regressions: `pytest packages/ai-parrot/tests/test_a2a_tools.py
+  packages/ai-parrot-server/tests/unit/test_a2a_credential_gate.py
+  packages/ai-parrot-server/tests/unit/test_a2a_identity.py
+  packages/ai-parrot-server/tests/unit/test_a2a_resume_trigger.py
+  packages/ai-parrot-server/tests/integration/test_a2a_bridge_e2e.py` — all
+  pass (60 tests). `ruff check` clean on `models.py` and the new test file.
+- New test file `packages/ai-parrot/tests/test_a2a_v1_models.py` created with
+  33 tests covering this task's scope (TestAgentCardV1 tests deferred to
+  TASK-1713, which appends to this same file per its own task spec).
+**Deviations from spec**: none functionally; one internal refactor
+(`AgentSkill.from_dict()` extracted as a reusable classmethod, used by
+`AgentCard.from_dict()`) beyond the literal task text, justified above.
