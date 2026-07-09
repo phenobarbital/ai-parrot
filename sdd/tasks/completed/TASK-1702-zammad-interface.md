@@ -259,4 +259,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `ZammadInterface` in `parrot/interfaces/zammad.py`, mirroring
+`OdooInterface`'s structure: Pydantic `ZammadConfig`, lazy `aiohttp.ClientSession`
+creation with Bearer-auth headers baked in, async context manager, and a
+centralized `_request()` core method. Exception hierarchy
+(`ZammadError` → `ZammadAuthError`/`ZammadConnectionError`) with `status_code`
+carried on `ZammadError`. All ticket/user/article operations implemented per
+signatures in spec §2. `get_attachment` streams binary content directly
+(bypassing `_request`'s JSON parsing), saves to `attachment_dir` via
+`asyncio.to_thread`, and returns `(bytes, file_path)`.
+
+Deviation note: added an optional `attachments` field to `TicketCreatePayload`
+(not listed in the spec's literal model) because the spec's own Test
+Specification (§4) requires `test_create_ticket_with_attachments` — "attachment
+data encoded and sent" — which cannot be satisfied without a place to carry
+attachment data on the payload. Kept minimal: `list[dict[str, str]]` matching
+Zammad's native article attachment shape (`filename`, `data`, `mime-type`).
+
+22/22 unit tests pass (`pytest packages/ai-parrot/tests/interfaces/test_zammad.py -v`).
+`ruff check` clean on both new files.

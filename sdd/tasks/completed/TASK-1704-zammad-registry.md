@@ -107,4 +107,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `"zammad": "parrot_tools.zammad.ZammadToolkit"` to `TOOL_REGISTRY` in
+`parrot_tools/__init__.py`, placed next to the `"odoo"` entry. Verified via
+import that `TOOL_REGISTRY["zammad"] == "parrot_tools.zammad.ZammadToolkit"`.
+Pre-existing `ruff` F401 findings on line 10 (`__title__`/`__description__`
+unused) are unrelated to this change and predate this task.

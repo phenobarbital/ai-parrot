@@ -124,4 +124,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Appended the 7 `ZAMMAD_*` declarations directly after the `ODOO_*` block
+(line 829) in `packages/ai-parrot/src/parrot/conf.py`, following the exact
+pattern requested (all via `config.get()`, no `getint`/`getboolean`).
+Verified via `PYTHONPATH` import that all 7 names are importable from
+`parrot.conf`. Pre-existing `ruff` E402 finding at conf.py:450 is unrelated
+to this change (import-not-at-top for `GoogleModel`, predates this task).
