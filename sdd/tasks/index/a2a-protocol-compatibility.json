@@ -52,7 +52,7 @@
       "feature_id": "FEAT-272",
       "feature": "a2a-protocol-compatibility",
       "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Modifies server.py which TASK-1713 also touches",
       "assigned_to": null,
       "started_at": "2026-07-09T17:24:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1714-a2a-v1-server-routes.md"
+      "completed_at": "2026-07-09T23:55:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1714-a2a-v1-server-routes.md"
     },
     {
       "id": "TASK-1715",
