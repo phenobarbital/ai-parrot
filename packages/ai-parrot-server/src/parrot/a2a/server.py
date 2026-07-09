@@ -50,6 +50,7 @@ from parrot.a2a.models import (
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
     from parrot.tools.abstract import AbstractTool
+    from parrot.a2a.push_notifications import PushNotificationStore
 
 
 class _A2ARpcError(Exception):
@@ -116,6 +117,8 @@ class A2AServer:
         credential_resolvers: Optional[Dict[str, Any]] = None,
         suspended_store: Optional[Any] = None,
         audit_ledger: Optional[Any] = None,
+        # FEAT-272 / TASK-1716 — push notification config store
+        push_store: Optional["PushNotificationStore"] = None,
     ):
         """Initialize A2A server wrapper.
 
@@ -144,6 +147,12 @@ class A2AServer:
             audit_ledger: Optional
                 :class:`~parrot.security.audit_ledger.AuditLedger` for
                 recording credentialed tool invocations (TASK-1642/1644).
+            push_store: Optional
+                :class:`~parrot.a2a.push_notifications.PushNotificationStore`
+                (FEAT-272 / TASK-1716) backing the push notification config
+                CRUD operations. If ``capabilities.push_notifications`` is
+                true and no store is supplied, an in-memory store is
+                auto-created.
         """
         self.agent = agent
         self.base_path = base_path.rstrip("/")
@@ -157,6 +166,15 @@ class A2AServer:
         self._app: Optional[web.Application] = None
         self._url: Optional[str] = None
         self._agent_card: Optional[AgentCard] = None
+
+        # FEAT-272 / TASK-1716 — push notification config store.
+        if push_store is not None:
+            self._push_store: Optional["PushNotificationStore"] = push_store
+        elif self.capabilities.push_notifications:
+            from parrot.a2a.push_notifications import PushNotificationStore as _PNS
+            self._push_store = _PNS()
+        else:
+            self._push_store = None
 
         # SuspendedExecutionStore for A2A suspend/resume
         self._suspended_store: Optional[Any] = suspended_store
@@ -228,6 +246,28 @@ class A2AServer:
 
         # JSON-RPC binding (alternative)
         app.router.add_post(f"{self.base_path}/rpc", self._handle_jsonrpc)
+
+        # Push notification config CRUD (v1.0.0, FEAT-272 / TASK-1716) —
+        # only meaningful once `self._push_store` is set (either explicitly
+        # passed in or auto-created because `capabilities.push_notifications`
+        # is true); the handlers themselves return -32003 otherwise, so the
+        # routes are always registered for consistent discoverability.
+        app.router.add_post(
+            f"{self.base_path}/tasks/{{task_id}}/pushNotificationConfigs",
+            self._handle_push_config_create,
+        )
+        app.router.add_get(
+            f"{self.base_path}/tasks/{{task_id}}/pushNotificationConfigs/{{config_id}}",
+            self._handle_push_config_get,
+        )
+        app.router.add_get(
+            f"{self.base_path}/tasks/{{task_id}}/pushNotificationConfigs",
+            self._handle_push_config_list,
+        )
+        app.router.add_delete(
+            f"{self.base_path}/tasks/{{task_id}}/pushNotificationConfigs/{{config_id}}",
+            self._handle_push_config_delete,
+        )
 
         self.logger.info(
             f"A2A server mounted for agent '{self.agent.name}' at {self.base_path}"
@@ -1609,6 +1649,78 @@ class A2AServer:
         config_id = params.get("configId")
         deleted = await store.delete(task_id, config_id)
         return {"deleted": deleted}
+
+    # ─────────────────────────────────────────────────────────────
+    # Push notification config REST handlers (v1.0.0, FEAT-272 / TASK-1716)
+    # ─────────────────────────────────────────────────────────────
+
+    async def _handle_push_config_create(self, request: web.Request) -> web.Response:
+        """POST {base}/tasks/{task_id}/pushNotificationConfigs"""
+        version = self._get_request_version(request)
+        if self._push_store is None:
+            return self._rest_error_response(
+                "PushNotificationNotSupportedError",
+                "Push notifications are not supported by this agent",
+            )
+        task_id = request.match_info["task_id"]
+        data = await request.json()
+        data.setdefault("taskId", task_id)
+        config = TaskPushNotificationConfig.from_dict(data)
+        config.task_id = task_id
+        created = await self._push_store.create(config)
+        return web.json_response(
+            created.to_dict(), status=201, content_type=self._content_type_for(version)
+        )
+
+    async def _handle_push_config_get(self, request: web.Request) -> web.Response:
+        """GET {base}/tasks/{task_id}/pushNotificationConfigs/{config_id}"""
+        version = self._get_request_version(request)
+        if self._push_store is None:
+            return self._rest_error_response(
+                "PushNotificationNotSupportedError",
+                "Push notifications are not supported by this agent",
+            )
+        task_id = request.match_info["task_id"]
+        config_id = request.match_info["config_id"]
+        config = await self._push_store.get(task_id, config_id)
+        if config is None:
+            return self._rest_error_response(
+                "TaskNotFoundError", f"Push notification config {config_id!r} not found"
+            )
+        return web.json_response(
+            config.to_dict(), content_type=self._content_type_for(version)
+        )
+
+    async def _handle_push_config_list(self, request: web.Request) -> web.Response:
+        """GET {base}/tasks/{task_id}/pushNotificationConfigs"""
+        version = self._get_request_version(request)
+        if self._push_store is None:
+            return self._rest_error_response(
+                "PushNotificationNotSupportedError",
+                "Push notifications are not supported by this agent",
+            )
+        task_id = request.match_info["task_id"]
+        configs = await self._push_store.list_for_task(task_id)
+        return web.json_response(
+            {"configs": [c.to_dict() for c in configs]},
+            content_type=self._content_type_for(version),
+        )
+
+    async def _handle_push_config_delete(self, request: web.Request) -> web.Response:
+        """DELETE {base}/tasks/{task_id}/pushNotificationConfigs/{config_id}"""
+        if self._push_store is None:
+            return self._rest_error_response(
+                "PushNotificationNotSupportedError",
+                "Push notifications are not supported by this agent",
+            )
+        task_id = request.match_info["task_id"]
+        config_id = request.match_info["config_id"]
+        deleted = await self._push_store.delete(task_id, config_id)
+        if not deleted:
+            return self._rest_error_response(
+                "TaskNotFoundError", f"Push notification config {config_id!r} not found"
+            )
+        return web.json_response({"deleted": True})
 
     # ─────────────────────────────────────────────────────────────
     # Streaming JSON-RPC methods (SendStreamingMessage, SubscribeToTask)
