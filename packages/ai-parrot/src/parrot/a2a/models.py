@@ -1111,3 +1111,8 @@ class RegisteredAgent:
     card: AgentCard
     last_seen: datetime = field(default_factory=datetime.utcnow)
     healthy: bool = True
+    #: A2A protocol version this agent speaks, as discovered by
+    #: `A2AClient.discover()` (FEAT-272 / TASK-1718). Defaults to "0.3" —
+    #: the safe assumption for any agent whose version wasn't explicitly
+    #: recorded (e.g. constructed directly rather than via discovery).
+    protocol_version: str = "0.3"

@@ -590,6 +590,12 @@ class A2AMeshDiscovery:
                 timeout=endpoint.timeout,
             ) as client:
                 card = await client.discover()
+                # FEAT-272 / TASK-1718: capture the negotiated protocol
+                # version while the client is still connected (read it
+                # inside the `async with` block — `disconnect()` doesn't
+                # clear `_server_version`, but there's no reason to rely on
+                # post-disconnect state when we don't have to).
+                discovered_version = client._server_version
 
             # Merge local tags with agent's tags
             if endpoint.tags:
@@ -601,6 +607,7 @@ class A2AMeshDiscovery:
                 card=card,
                 last_seen=datetime.now(timezone.utc),
                 healthy=True,
+                protocol_version=discovered_version,
             )
 
             # Store in registry

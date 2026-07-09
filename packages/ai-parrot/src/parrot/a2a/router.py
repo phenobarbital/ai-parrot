@@ -729,6 +729,28 @@ class A2AProxyRouter:
     # Proxy Execution (No LLM!)
     # ─────────────────────────────────────────────────────────────────────────
 
+    def _apply_version_header(
+        self, client: A2AClient, version_header: Optional[str]
+    ) -> None:
+        """Forward an incoming `A2A-Version` header onto an outbound client.
+
+        FEAT-272 / TASK-1718: each downstream `A2AClient` negotiates its own
+        protocol version independently via `discover()` (TASK-1717). When
+        the router is itself called with an explicit `A2A-Version` header,
+        this forwards that same header onto the live outbound session so the
+        downstream agent sees the caller's original intent (at minimum,
+        letting each agent handle its own negotiation per the task's Key
+        Constraints) rather than silently only ever using whatever version
+        the client happened to negotiate at connect time.
+
+        Args:
+            client: The outbound `A2AClient` for the target agent.
+            version_header: The `A2A-Version` header value from the
+                inbound request, or `None` if absent.
+        """
+        if version_header and client._session is not None:
+            client._session.headers["A2A-Version"] = version_header
+
     async def route_message(
         self,
         message: str,
@@ -738,6 +760,7 @@ class A2AProxyRouter:
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None,
+        version_header: Optional[str] = None,
     ) -> Task:
         """
         Route a message to the appropriate agent and return the response.
@@ -752,6 +775,8 @@ class A2AProxyRouter:
             context_id: Optional context ID for conversations
             metadata: Optional metadata
             timeout: Optional timeout override
+            version_header: Optional `A2A-Version` header value forwarded
+                from the inbound request (FEAT-272 / TASK-1718).
 
         Returns:
             Task with the response from the downstream agent
@@ -789,6 +814,7 @@ class A2AProxyRouter:
 
             # Get or create client
             client = await self._get_client(agent)
+            self._apply_version_header(client, version_header)
 
             # Send message (PASSTHROUGH - no LLM!)
             task = await client.send_message(
@@ -830,6 +856,7 @@ class A2AProxyRouter:
         tags: Optional[List[str]] = None,
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        version_header: Optional[str] = None,
     ) -> AsyncIterator[str]:
         """
         Route a message and stream the response.
@@ -840,6 +867,8 @@ class A2AProxyRouter:
             tags: Optional tags
             context_id: Optional context ID
             metadata: Optional metadata
+            version_header: Optional `A2A-Version` header value forwarded
+                from the inbound request (FEAT-272 / TASK-1718).
 
         Yields:
             Text chunks as they arrive from the downstream agent
@@ -862,6 +891,7 @@ class A2AProxyRouter:
 
         # Get client and stream
         client = await self._get_client(agent)
+        self._apply_version_header(client, version_header)
 
         async for chunk in client.stream_message(
             transformed_message,
@@ -1124,12 +1154,18 @@ class A2AProxyRouter:
             tags=["routing", "gateway"],
         ))
 
+        # FEAT-272 / TASK-1718: `AgentCard.url` (kwarg) was replaced by
+        # `supported_interfaces` in TASK-1713 — the URL is still unknown at
+        # this point (set once the router is mounted), so pass an empty
+        # interfaces list. `_handle_discovery` sets `card.url = ...` via the
+        # `AgentCard.url` property setter (TASK-1713), which populates
+        # `supported_interfaces` in place once the request's host is known.
         card = AgentCard(
             name=self.name,
             description=self.description,
             version=self.version,
-            url=None,  # Set when mounted
             skills=skills,
+            supported_interfaces=[],  # Set when mounted (via card.url setter)
             capabilities=self.capabilities,
             tags=list(all_tags),
         )
@@ -1196,19 +1232,42 @@ class A2AProxyRouter:
         await self.close_clients()
 
     async def _handle_discovery(self, request: web.Request) -> web.Response:
-        """Handler for /.well-known/agent.json"""
+        """Handler for /.well-known/agent.json (v0.3) — aggregated AgentCard.
+
+        FEAT-272 / TASK-1718: emits a v1.0.0-compatible aggregated card
+        (`supportedInterfaces`) when the caller sends `A2A-Version: 1.0`;
+        defaults to the v0.3 flat-`url` shape otherwise, mirroring
+        `A2AServer`'s own version negotiation (TASK-1714).
+        """
+        version = self._get_request_version(request)
         card = self.get_agent_card()
 
-        # Set URL from request
+        # Set URL from request. `AgentCard.url` is a property (TASK-1713)
+        # that writes through to `supported_interfaces[0].url`.
         host = request.host
         scheme = request.scheme
         card.url = f"{scheme}://{host}"
 
-        return web.json_response(card.to_dict())
+        return web.json_response(card.to_dict(version=version))
+
+    def _get_request_version(self, request: web.Request) -> str:
+        """Extract the A2A protocol version from the `A2A-Version` header.
+
+        Mirrors `A2AServer._get_request_version()` (TASK-1714): empty/`"0.3"`
+        -> v0.3, `"1.x"` -> v1.0, unrecognized values fall back to v0.3
+        rather than erroring (the router is a best-effort aggregator, not
+        the authoritative protocol endpoint for any single agent).
+        """
+        version = request.headers.get("A2A-Version", "").strip()
+        if version.startswith("1."):
+            return "1.0"
+        return "0.3"
 
     async def _handle_message(self, request: web.Request) -> web.Response:
         """Handler for POST /a2a/message/send"""
         try:
+            version = self._get_request_version(request)
+            version_header = request.headers.get("A2A-Version")
             data = await request.json()
 
             # Extract message
@@ -1224,14 +1283,16 @@ class A2AProxyRouter:
             skill_id = data.get("skillId")
             context_id = message_data.get("contextId") if isinstance(message_data, dict) else None
 
-            # Route and proxy
+            # Route and proxy — forward the caller's A2A-Version header to
+            # the downstream agent (FEAT-272 / TASK-1718).
             task = await self.route_message(
                 content,
                 skill_id=skill_id,
                 context_id=context_id,
+                version_header=version_header,
             )
 
-            return web.json_response(task.to_dict())
+            return web.json_response(task.to_dict(version=version))
 
         except json.JSONDecodeError:
             return web.json_response(
@@ -1253,6 +1314,7 @@ class A2AProxyRouter:
     async def _handle_stream(self, request: web.Request) -> web.StreamResponse:
         """Handler for POST /a2a/message/stream"""
         try:
+            version_header = request.headers.get("A2A-Version")
             data = await request.json()
 
             message_data = data.get("message", {})
@@ -1272,9 +1334,12 @@ class A2AProxyRouter:
             await response.prepare(request)
 
             try:
+                # Forward the caller's A2A-Version header to the downstream
+                # agent (FEAT-272 / TASK-1718).
                 async for chunk in self.route_message_stream(
                     content,
                     skill_id=data.get("skillId"),
+                    version_header=version_header,
                 ):
                     event_data = {
                         "artifactUpdate": {
