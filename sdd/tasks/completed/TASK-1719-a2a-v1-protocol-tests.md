@@ -246,4 +246,106 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-09
+**Notes**:
+- Created `packages/ai-parrot-server/tests/integration/test_a2a_v1_roundtrip.py`
+  (17 tests) using a real `aiohttp.test_utils.TestServer` + `A2AClient`
+  connected over an actual local socket (genuine end-to-end, not mocked):
+  full v1.0 lifecycle (discover -> send -> get -> list), v0.3 backward
+  compat (a real `aiohttp.ClientSession` that never sends `A2A-Version`,
+  proving the SAME server instance serves both wire formats correctly),
+  v1.0 SSE streaming (fallback path — the mock agent is built with
+  `spec=[...]` explicitly excluding `ask_stream` so the test exercises the
+  intended non-streaming-fallback branch rather than accidentally tripping
+  `hasattr(agent, "ask_stream")` truthy on a bare `MagicMock()`), version
+  negotiation (-32009), push notification CRUD via BOTH REST and JSON-RPC,
+  and the full A2A error code table.
+- **Error code table verification design decision**: -32001
+  (TaskNotFoundError), -32002 (TaskNotCancelableError), -32003
+  (PushNotificationNotSupportedError), -32007
+  (ExtendedAgentCardNotConfiguredError), and -32009
+  (VersionNotSupportedError) are triggered END-TO-END over real HTTP calls.
+  -32004 (UnsupportedOperationError), -32005 (ContentTypeNotSupportedError),
+  -32006 (InvalidAgentResponseError), and -32008
+  (ExtensionSupportRequiredError) have NO operation in this spec that raises
+  them — extensions, content-negotiation, and gRPC are all explicitly listed
+  as out of scope in the spec's Non-Goals (§1) and Gap Analysis (§ "Out of
+  scope" rows). Rather than inventing new server operations (which would
+  violate this task's own file list — test files only — and TASK-1715's
+  scope, which only wired the 5 codes above), these four are verified
+  directly against the `A2A_ERRORS` table (code + HTTP status), plus a
+  completeness assertion that all 9 codes are present. Documented inline in
+  the test file's module docstring and `TestA2AErrorCodeTable` class
+  docstring.
+- Created `packages/ai-parrot/tests/test_a2a_v1_compat.py` (12 tests).
+  **Scope note flagged clearly in the file's own docstring**: this file was
+  kept WITHIN the `ai-parrot` package boundary (models + client only, no
+  `A2AServer` import) rather than importing across into `ai-parrot-server`.
+  Verified empirically that `ai-parrot`'s own test conftest chain
+  (`packages/ai-parrot/conftest.py` + `packages/ai-parrot/tests/conftest.py`)
+  only inserts `ai-parrot`'s OWN worktree `src/` into `sys.path` — NOT
+  `ai-parrot-server`'s — so a bare `import parrot.a2a.server` from a test
+  under `packages/ai-parrot/tests/` resolves to the stale MAIN-REPO
+  `ai-parrot-server` install (pre-FEAT-272), not this worktree's version,
+  when that test file is run standalone (outside a combined invocation that
+  happens to load `ai-parrot-server`'s conftest first). Modifying the shared
+  `packages/ai-parrot/tests/conftest.py` to insert a cross-package path was
+  judged out of scope (a shared infra file, not part of any of this
+  feature's 8 tasks' file lists, and risky to touch for every other test in
+  that tree). Since every "cross-version compatibility" scenario is fully
+  expressible in terms of `parrot.a2a.client` + `parrot.a2a.models` alone
+  (AgentCard round-tripping both wire shapes, Task/Part/enum compat parsing,
+  and the client's route-selection logic for v0.3-vs-v1.0 servers), this
+  file covers that ground with synthetic payloads and mocked
+  `aiohttp.ClientSession`s instead. All the scenarios that genuinely need a
+  live server (full roundtrip, SSE, push CRUD, error codes) are already
+  covered end-to-end in `test_a2a_v1_roundtrip.py` (same package as
+  `A2AServer`, no cross-package import concern).
+- **Full regression run** (final, after all 8 tasks):
+  - `packages/ai-parrot/tests/test_a2a_tools.py` (22) — pass
+  - `packages/ai-parrot/tests/test_a2a_v1_models.py` (40) — pass
+  - `packages/ai-parrot/tests/test_a2a_v1_client.py` (11) — pass
+  - `packages/ai-parrot/tests/test_a2a_v1_mesh_router.py` (10) — pass
+  - `packages/ai-parrot/tests/test_a2a_v1_compat.py` (12) — pass
+  - `packages/ai-parrot-server/tests/unit/test_a2a_v1_server.py` (14) — pass
+  - `packages/ai-parrot-server/tests/unit/test_a2a_v1_jsonrpc_errors.py` (15) — pass
+  - `packages/ai-parrot-server/tests/unit/test_a2a_push_notifications.py` (16) — pass
+  - `packages/ai-parrot-server/tests/unit/test_a2a_credential_gate.py` (existing, pre-FEAT-272) — pass
+  - `packages/ai-parrot-server/tests/unit/test_a2a_identity.py` (existing) — pass
+  - `packages/ai-parrot-server/tests/unit/test_a2a_resume_trigger.py` (existing) — pass
+  - `packages/ai-parrot-server/tests/integration/test_a2a_bridge_e2e.py` (existing) — pass
+  - `packages/ai-parrot-server/tests/integration/test_a2a_v1_roundtrip.py` (17) — pass
+  - Total new tests across the feature: 155. Total including pre-existing
+    A2A regression coverage exercised: 195 passing.
+- **`ruff check` acceptance criterion — partial, with pre-existing
+  violations flagged, NOT fixed (file-fidelity decision)**:
+  `ruff check packages/ai-parrot-server/src/parrot/a2a/` — **clean, 0
+  errors**. `ruff check packages/ai-parrot/src/parrot/a2a/` — **3
+  pre-existing errors** (`client.py`: unused `asyncio`, unused
+  `dataclasses.field`; `router.py`: unused exception variable `e` at one
+  `except Exception as e: ... raise` site), all three confirmed via
+  `git show dev:packages/ai-parrot/src/parrot/a2a/<file>.py` + `ruff check`
+  against `dev` directly to predate FEAT-272 entirely — none are on lines I
+  touched. I chose NOT to fix them here: TASK-1719's own file list is
+  exactly the two test files above (no source files), and the cardinal
+  "touch ONLY the files listed in the task" rule takes precedence over the
+  literal wording of this task's ruff-check acceptance bullet when the two
+  conflict. Flagging this explicitly rather than silently either violating
+  file fidelity or silently leaving the acceptance criterion looking
+  unaddressed.
+- Pre-existing, unrelated failures (present before and after this entire
+  feature, confirmed unrelated to A2A): 3 tests in
+  `test_a2a_jira_vertical.py` / `test_a2a_fireflies_vertical.py` /
+  `test_a2a_workiq_vertical.py` (`*_broker_registers_provider`) fail on an
+  assertion about `CredentialBroker._resolvers` internal tuple structure —
+  this is in `parrot.auth.broker`, a module untouched by any of this
+  feature's 8 tasks.
+**Deviations from spec**: the two design decisions above (error-code
+verification split between live-triggered and table-only for codes with no
+wired operation; and `test_a2a_v1_compat.py` staying within the `ai-parrot`
+package boundary) are both documented in-file and here. The `ruff check`
+partial-pass on `ai-parrot/src/parrot/a2a/` (3 pre-existing, unrelated
+violations) is flagged for the user's awareness — recommend a separate,
+explicitly-scoped cleanup task if a fully clean `ruff check` is desired
+across that file.
