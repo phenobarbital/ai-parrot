@@ -50,7 +50,7 @@
       "feature_id": "FEAT-271",
       "feature": "msagent-a2a-integrations",
       "spec": "sdd/specs/msagent-a2a-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -61,8 +61,8 @@
       "parallelism_notes": "Imports classes created by TASK-1706 and TASK-1707; must run after both.",
       "assigned_to": null,
       "started_at": "2026-07-09T17:12:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1708-config-dispatch-extension.md"
+      "completed_at": "2026-07-09T17:19:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1708-config-dispatch-extension.md"
     },
     {
       "id": "TASK-1709",
