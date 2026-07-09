@@ -247,4 +247,51 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-09
+**Notes**:
+- Created `packages/ai-parrot-server/src/parrot/a2a/push_notifications.py`
+  with `PushNotificationStore` (in-memory `Dict[task_id, Dict[config_id,
+  TaskPushNotificationConfig]]`), async `create()`/`get()`/`list_for_task()`/
+  `delete()`, and `_validate_webhook_url()`.
+- **Bug fix vs. the task's own snippet**: the Implementation Notes' suggested
+  `_validate_webhook_url()` raises `ValueError("Private/loopback IP not
+  allowed")` INSIDE a `try` block whose own `except ValueError: pass`
+  immediately swallows that same exception — so the literal snippet would
+  never actually reject a private IP, contradicting the task's own
+  `test_reject_private_ip` acceptance test. Rewrote the control flow so the
+  `ipaddress.ip_address()` parse-failure path (a DNS hostname, not an IP
+  literal — allowed) is isolated from the is_private/is_loopback check (which
+  now raises unguarded). Verified against the task's own prescribed test:
+  `test_reject_private_ip` passes.
+- Wired `push_store: Optional[PushNotificationStore] = None` into
+  `A2AServer.__init__()`: explicit `push_store` takes precedence; else, if
+  `capabilities.push_notifications` is true, an in-memory store is
+  auto-created; else `self._push_store = None`. This also makes the
+  `getattr(self, "_push_store", None)` lookups added in TASK-1715's `_rpc_*`
+  push methods start resolving to a real store (verified: TASK-1715's own
+  `test_push_notification_not_supported` tests still correctly report -32003
+  because their fixture's `AgentCapabilities()` defaults
+  `push_notifications=False`).
+- Added the four REST routes in `setup()`
+  (`POST/GET/GET/DELETE .../tasks/{task_id}/pushNotificationConfigs[/{config_id}]`)
+  and their handlers (`_handle_push_config_create` returns HTTP 201,
+  `_handle_push_config_get`/`_list`/`_delete`), all gated on
+  `self._push_store is None` → `_rest_error_response("PushNotificationNotSupportedError", ...)`
+  (-32003 / HTTP 400).
+- New test file `packages/ai-parrot-server/tests/unit/test_a2a_push_notifications.py`
+  (16 tests): store CRUD (including the corrected SSRF rejection for
+  loopback and RFC 1918 private ranges, and an explicit "public hostname is
+  allowed" case), invalid-scheme rejection, `A2AServer` wiring (auto-create
+  vs. disabled vs. explicit-store-precedence), and a full REST CRUD
+  roundtrip test (create → get → list → delete → 404 after delete) plus the
+  disabled-capability -32003 path.
+- Regression: full TASK-1712 through 1716 test suite (83 tests across
+  `test_a2a_v1_jsonrpc_errors.py`, `test_a2a_v1_server.py`,
+  `test_a2a_push_notifications.py`, `test_a2a_credential_gate.py`,
+  `test_a2a_identity.py`, `test_a2a_resume_trigger.py`,
+  `test_a2a_bridge_e2e.py`) all pass. `ruff check` clean on all touched files.
+**Deviations from spec**: the SSRF-check control-flow fix described above
+(the task's own snippet had a self-swallowing exception bug that contradicted
+its own acceptance test) — implemented the clearly-intended behavior instead
+of the literal (broken) snippet.
