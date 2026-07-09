@@ -91,7 +91,7 @@
       "feature_id": "FEAT-271",
       "feature": "msagent-a2a-integrations",
       "spec": "sdd/specs/msagent-a2a-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Reuses A2A infrastructure from TASK-1709 and dispatch from TASK-1708; must run after both.",
       "assigned_to": null,
       "started_at": "2026-07-09T17:12:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1710-msagent-bot-startup.md"
+      "completed_at": "2026-07-09T17:33:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1710-msagent-bot-startup.md"
     },
     {
       "id": "TASK-1711",
