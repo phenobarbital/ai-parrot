@@ -210,4 +210,77 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-09
+**Notes**:
+- **Pre-existing break confirmed and fixed**: `discover()` previously
+  constructed `AgentCard(url=..., protocol_version=..., preferred_transport=...)`
+  — all three kwargs were removed from `AgentCard`'s constructor in
+  TASK-1713 (replaced by `supported_interfaces`), so `discover()` would have
+  raised `TypeError` for every call before this task. Rewrote it to use
+  `AgentCard.from_dict()` (which already auto-detects v0.3/v1.0 shape),
+  following the exact fallback pattern given in the task's own
+  Implementation Notes: try `/.well-known/agent-card.json` first (catching
+  `aiohttp.ClientError`, not bare `Exception`, to avoid masking programming
+  errors), fall back to `/.well-known/agent.json`. `self._server_version`
+  is set from the actual response shape (`"supportedInterfaces" in data`)
+  regardless of which URI answered.
+- Added `self._server_version: str = "1.0"` (optimistic default) and
+  `self._default_headers` (includes `"A2A-Version": "1.0"`; `self.headers`
+  is kept as a same-object alias for backward compat with any external code
+  reading `client.headers`). `_set_server_version()` pops `A2A-Version` from
+  the LIVE session's headers when a v0.3 server is detected (some v0.3
+  servers, per the task's Key Constraints, may reject unknown headers) —
+  `self._default_headers` itself is left untouched so it always reflects the
+  client's own default intent (matches the task's own prescribed test:
+  `client._default_headers.get("A2A-Version") == "1.0"`).
+- `send_message()`, `stream_message()`, `invoke_skill()`, `cancel_task()`
+  now pick the colon-syntax v1.0 route or the slash-syntax v0.3 route based
+  on `self._server_version`, and pass `version=self._server_version` into
+  `Message.to_dict()`. `get_task()`/`list_tasks()` are unchanged (the server
+  exposes ONE shared GET route for both versions, per TASK-1714).
+- `_parse_task()` now uses `parse_task_state()` instead of raw
+  `TaskState(status_data.get("state", "submitted"))` — the latter would
+  raise `ValueError` for any v1.0 SCREAMING_SNAKE value (or, after
+  TASK-1712, even fail to construct from the old default `"submitted"`
+  under certain code paths). Also fixed a latent bug in `stream_message()`'s
+  SSE parsing: `if state == "failed"` was a raw string compare that silently
+  stopped matching once `TaskState.value` became `"TASK_STATE_FAILED"` —
+  changed to `parse_task_state(state) == TaskState.FAILED`.
+- Added `create_push_config()`, `get_push_config()`, `list_push_configs()`,
+  `delete_push_config()` — thin wrappers around the REST CRUD routes added
+  in TASK-1716 (same URL shape for both protocol versions, so no
+  version-branching needed here).
+- `rpc_call()` gained a `_RPC_METHOD_ALIASES_V03` table (`SendMessage` ->
+  `message/send`, `GetTask` -> `tasks/get`, `ListTasks` -> `tasks/list`) so
+  callers can always pass the canonical v1.0.0 PascalCase name; the client
+  downgrades automatically for v0.3 servers, satisfying "use PascalCase for
+  v1.0 servers and slash-separated names for v0.3" from the caller's
+  perspective without requiring the caller to know the server's version.
+- **`A2ARemoteAgentTool` / `A2ARemoteSkillTool`**: read the task's own
+  scope bullet ("Update A2ARemoteAgentTool and A2ARemoteSkillTool to handle
+  v1.0 task responses") and re-read both classes in full. Neither does any
+  direct enum/string parsing of its own — `_execute()` only reads
+  `task.status.state == TaskState.FAILED` and `task.artifacts[0].parts[0].
+  text` on an already-parsed `Task` object returned by `client.send_message()`
+  / `client.invoke_skill()`, both of which route through the now-fixed
+  `_parse_task()`. No code changes were needed in these two classes — the
+  fix is transitive through `_parse_task()`. Verified: no compile/behavior
+  change required, confirmed no other raw-string state comparisons exist
+  in either class via `grep`.
+- New test file `packages/ai-parrot/tests/test_a2a_v1_client.py` (11 tests):
+  default headers/version, `discover()` v1-first-then-v0.3-fallback (with
+  header-drop verification), `_parse_task()` compat for both v1.0 and v0.3
+  state values (including the `CANCELED`/`cancelled` alias), `rpc_call()`
+  PascalCase-vs-downgraded method names, and a push-config-create round trip.
+- Regression: `test_a2a_tools.py` (22) + `test_a2a_v1_models.py` (40) still
+  pass. `ruff check` clean on `client.py` and the new test file — EXCEPT two
+  pre-existing unused imports (`asyncio`, `dataclasses.field`) verified via
+  `git show dev:.../client.py` and `ruff check` against `dev` directly to
+  predate this feature entirely; left untouched (out of scope, not part of
+  any task's file list beyond what I'm already modifying for a different
+  reason, and fixing them risks masking a future intended use).
+**Deviations from spec**: none — `A2ARemoteAgentTool`/`A2ARemoteSkillTool`
+required no direct edits (documented above as a transitive fix via
+`_parse_task()`), which I flag explicitly since the task's file list didn't
+separately call this out.
