@@ -16,6 +16,7 @@ from parrot.a2a.models import (
     TaskStatus,
     AgentSkill,
     AgentCapabilities,
+    AgentCard,
     AgentInterface,
     AgentProvider,
     SendMessageConfiguration,
@@ -232,5 +233,80 @@ class TestNewV1Dataclasses:
         assert d["code"] == -32001
 
 
-# NOTE: AgentCard v1.0 `supportedInterfaces` restructuring tests are added by
-# TASK-1713 (AgentCard v1.0 Structure) in a follow-up edit to this same file.
+class TestAgentCardV1:
+    def test_to_dict_v1_supported_interfaces(self):
+        card = AgentCard(
+            name="Test", description="Test agent", version="1.0",
+            skills=[], supported_interfaces=[
+                AgentInterface(url="https://a.com/a2a", protocol_binding="JSONRPC",
+                               protocol_version="1.0")
+            ],
+        )
+        d = card.to_dict(version="1.0")
+        assert "supportedInterfaces" in d
+        assert d["supportedInterfaces"][0]["url"] == "https://a.com/a2a"
+        assert "url" not in d  # flat url NOT in v1.0
+
+    def test_to_dict_v03_flat_url(self):
+        card = AgentCard(
+            name="Test", description="Test", version="1.0",
+            skills=[], supported_interfaces=[
+                AgentInterface(url="https://a.com/a2a", protocol_binding="JSONRPC",
+                               protocol_version="1.0")
+            ],
+        )
+        d = card.to_dict(version="0.3")
+        assert d["url"] == "https://a.com/a2a"
+        assert d["preferredTransport"] == "JSONRPC"
+        assert "supportedInterfaces" not in d
+
+    def test_from_dict_v1(self):
+        d = {
+            "name": "Test", "description": "T", "version": "1.0",
+            "supportedInterfaces": [{"url": "https://a.com", "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}],
+            "capabilities": {"streaming": True},
+            "defaultInputModes": ["text/plain"],
+            "defaultOutputModes": ["text/plain"],
+            "skills": [],
+        }
+        card = AgentCard.from_dict(d)
+        assert len(card.supported_interfaces) == 1
+        assert card.url == "https://a.com"
+
+    def test_from_dict_v03_compat(self):
+        d = {
+            "name": "Test", "description": "T", "version": "1.0",
+            "url": "https://a.com", "preferredTransport": "JSONRPC",
+            "protocolVersion": "0.3.0",
+            "capabilities": {"streaming": True},
+            "defaultInputModes": ["text/plain"],
+            "defaultOutputModes": ["text/plain"],
+            "skills": [],
+        }
+        card = AgentCard.from_dict(d)
+        assert card.url == "https://a.com"
+
+    def test_provider_field(self):
+        card = AgentCard(
+            name="Test", description="T", version="1.0", skills=[],
+            supported_interfaces=[AgentInterface(url="https://a.com", protocol_binding="JSONRPC", protocol_version="1.0")],
+            provider=AgentProvider(url="https://example.com", organization="Acme"),
+        )
+        d = card.to_dict(version="1.0")
+        assert d["provider"]["organization"] == "Acme"
+
+    def test_url_setter_backward_compat(self):
+        card = AgentCard(
+            name="Test", description="T", version="1.0", skills=[],
+            supported_interfaces=[AgentInterface(url="https://a.com", protocol_binding="JSONRPC", protocol_version="1.0")],
+        )
+        card.url = "https://b.com"
+        assert card.url == "https://b.com"
+        assert card.supported_interfaces[0].url == "https://b.com"
+
+    def test_url_setter_no_existing_interface(self):
+        card = AgentCard(name="Test", description="T", version="1.0", skills=[])
+        assert card.url is None
+        card.url = "https://c.com"
+        assert card.url == "https://c.com"
+        assert len(card.supported_interfaces) == 1

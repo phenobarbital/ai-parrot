@@ -80,7 +80,27 @@ from .models import (
     Part,
     Artifact,
     RegisteredAgent,
-    AgentConfig
+    AgentConfig,
+    Role,
+    # v1.0.0 additions (FEAT-272)
+    AgentInterface,
+    AgentProvider,
+    AgentExtension,
+    AgentCardSignature,
+    SecurityScheme,
+    SecurityRequirement,
+    APIKeySecurityScheme,
+    HTTPAuthSecurityScheme,
+    OAuth2SecurityScheme,
+    OpenIdConnectSecurityScheme,
+    MutualTlsSecurityScheme,
+    SendMessageConfiguration,
+    TaskPushNotificationConfig,
+    AuthenticationInfo,
+    A2AError,
+    parse_task_state,
+    parse_role,
+    security_scheme_from_dict,
 )
 
 # Mesh Discovery - Centralized agent discovery
@@ -171,6 +191,27 @@ __all__ = [
     "Artifact",
     "RegisteredAgent",
     "AgentConfig",
+    "Role",
+
+    # === Models — v1.0.0 additions (FEAT-272) ===
+    "AgentInterface",
+    "AgentProvider",
+    "AgentExtension",
+    "AgentCardSignature",
+    "SecurityScheme",
+    "SecurityRequirement",
+    "APIKeySecurityScheme",
+    "HTTPAuthSecurityScheme",
+    "OAuth2SecurityScheme",
+    "OpenIdConnectSecurityScheme",
+    "MutualTlsSecurityScheme",
+    "SendMessageConfiguration",
+    "TaskPushNotificationConfig",
+    "AuthenticationInfo",
+    "A2AError",
+    "parse_task_state",
+    "parse_role",
+    "security_scheme_from_dict",
 
     # === Mesh Discovery ===
     "A2AMeshDiscovery",

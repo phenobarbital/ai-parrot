@@ -34,6 +34,7 @@ from parrot.a2a.models import (
     AgentCard,
     AgentSkill,
     AgentCapabilities,
+    AgentInterface,
     Task,
     TaskState,
     TaskStatus,
@@ -233,12 +234,20 @@ class A2AServer:
 
         description = " | ".join(description_parts) if description_parts else f"AI Agent: {self.agent.name}"
 
+        # v1.0.0 (FEAT-272): AgentCard exposes `supportedInterfaces` instead of
+        # a flat `url`. `AgentCard.url` (property, TASK-1713) still reads/writes
+        # `supported_interfaces[0].url` for backward compat.
+        supported_interfaces = (
+            [AgentInterface(url=self._url, protocol_binding="JSONRPC", protocol_version="1.0")]
+            if self._url else []
+        )
+
         self._agent_card = AgentCard(
             name=self.agent.name,
             description=description,
             version=self.version,
-            url=self._url,
             skills=skills,
+            supported_interfaces=supported_interfaces,
             capabilities=self.capabilities,
             tags=self.tags or getattr(self.agent, 'tags', []),
         )
