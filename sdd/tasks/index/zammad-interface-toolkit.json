@@ -52,7 +52,7 @@
       "feature_id": "FEAT-218",
       "feature": "zammad-interface-toolkit",
       "spec": "sdd/specs/zammad-interface-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Depends on ZammadInterface from TASK-1702",
       "assigned_to": null,
       "started_at": "2026-07-09T15:59:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1703-zammad-toolkit.md"
+      "completed_at": "2026-07-09T18:11:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1703-zammad-toolkit.md"
     },
     {
       "id": "TASK-1704",

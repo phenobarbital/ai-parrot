@@ -234,4 +234,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `ZammadToolkit` in `parrot_tools/zammad.py` following the
+Odoo/Jira toolkit pattern: `tool_prefix = "zammad"`, `exclude_tools =
+("delete_ticket",)`, lifecycle via `start()`/`stop()` composing a
+`ZammadInterface`. All 11 public methods listed in scope implemented with
+`@tool_schema` Pydantic input models. `get_attachment` base64-encodes the
+downloaded bytes and guesses `mime_type` via `mimetypes.guess_type`.
+`delete_ticket` exists (delegating to `self._interface.delete_ticket()`) so
+the exclusion has a method to exclude, but is verified absent from
+`list_tool_names()`.
+
+Deviation note: `close_ticket` needs a Zammad "closed" state ID, which isn't
+specified anywhere in the spec (Zammad's default state IDs vary per
+installation). Added a `closed_state_id: int = 4` constructor parameter
+(matching a stock Zammad install) so deployments with custom state schemes
+can override it — flagging this as an assumption since the spec doesn't
+pin down the exact ID.
+
+9/9 unit tests pass (`pytest packages/ai-parrot-tools/tests/test_zammad_toolkit.py -v`).
+`ruff check` clean on both new files.
