@@ -41,6 +41,11 @@ from parrot.a2a.models import (
     Message,
     Part,
     Artifact,
+    Role,
+    SendMessageConfiguration,
+    serialize_task_state,
+    serialize_role,
+    parse_task_state,
 )
 
 if TYPE_CHECKING:
@@ -183,19 +188,31 @@ class A2AServer:
         # Store reference in app
         app[f"a2a_server_{self.agent.name}"] = self
 
-        # Well-known agent card endpoint
+        bp = self.base_path
+
+        # Well-known agent card endpoints:
+        #   - /.well-known/agent-card.json  (A2A v1.0 discovery URI)
+        #   - /.well-known/agent.json       (v0.3 compat)
+        app.router.add_get("/.well-known/agent-card.json", self._handle_agent_card)
         app.router.add_get("/.well-known/agent.json", self._handle_agent_card)
 
-        # A2A HTTP+JSON Binding endpoints
-        app.router.add_post(f"{self.base_path}/message/send", self._handle_send_message)
-        app.router.add_post(f"{self.base_path}/message/stream", self._handle_stream_message)
-        app.router.add_get(f"{self.base_path}/tasks/{{task_id}}", self._handle_get_task)
-        app.router.add_get(f"{self.base_path}/tasks", self._handle_list_tasks)
-        app.router.add_post(f"{self.base_path}/tasks/{{task_id}}/cancel", self._handle_cancel_task)
-        app.router.add_get(f"{self.base_path}/tasks/{{task_id}}/subscribe", self._handle_subscribe)
+        # A2A HTTP+JSON Binding endpoints (v0.3 compat surface).
+        app.router.add_post(f"{bp}/message/send", self._handle_send_message)
+        app.router.add_post(f"{bp}/message/stream", self._handle_stream_message)
+        app.router.add_get(f"{bp}/tasks/{{task_id}}", self._handle_get_task)
+        app.router.add_get(f"{bp}/tasks", self._handle_list_tasks)
+        app.router.add_post(f"{bp}/tasks/{{task_id}}/cancel", self._handle_cancel_task)
+        app.router.add_get(f"{bp}/tasks/{{task_id}}/subscribe", self._handle_subscribe)
+
+        # A2A v1.0 REST-binding routes (colon-suffixed method style). aiohttp
+        # treats the colon as a literal in a fixed path segment.
+        app.router.add_post(f"{bp}/message:send", self._handle_send_message)
+        app.router.add_post(f"{bp}/message:stream", self._handle_stream_message)
+        app.router.add_post(f"{bp}/tasks/{{task_id}}:cancel", self._handle_cancel_task)
+        app.router.add_post(f"{bp}/tasks/{{task_id}}:subscribe", self._handle_subscribe)
 
         # JSON-RPC binding (alternative)
-        app.router.add_post(f"{self.base_path}/rpc", self._handle_jsonrpc)
+        app.router.add_post(f"{bp}/rpc", self._handle_jsonrpc)
 
         self.logger.info(
             f"A2A server mounted for agent '{self.agent.name}' at {self.base_path}"
@@ -268,8 +285,9 @@ class A2AServer:
         """Convert agent's tools to A2A skills (excluding internal plumbing)."""
         skills = []
 
-        # Get tools from tool_manager if available
-        if hasattr(self.agent, 'tool_manager'):
+        # Get tools from tool_manager if available (guard against a None
+        # tool_manager so agents without one fall through to `tools`).
+        if getattr(self.agent, 'tool_manager', None) is not None:
             tools = self.agent.tool_manager.list_tools()
             for tool_name in tools:
                 if tool_name in self._INTERNAL_TOOL_NAMES:
@@ -603,7 +621,9 @@ class A2AServer:
     # Core Message Processing (delegates to Agent)
     # ─────────────────────────────────────────────────────────────
 
-    async def process_message(self, message: Message) -> Task:
+    async def process_message(
+        self, message: Message, task: Optional[Task] = None
+    ) -> Task:
         """Process an A2A message by delegating to the wrapped agent.
 
         FEAT-260 / TASK-1643: extracts the per-user identity at the entry
@@ -613,10 +633,16 @@ class A2AServer:
         ``credential_provider``, the credential gate is engaged.  A missing
         per-user credential suspends the task and returns a TEXT consent link;
         there is NEVER a service-identity fallback for per-user tools.
+
+        FEAT-272 / TASK-1714: an optional pre-created ``task`` may be supplied
+        (used by the ``returnImmediately`` path so the caller and the background
+        processor share the same task object). When omitted a new task is
+        created and registered.
         """
-        task = Task.create(context_id=message.context_id)
-        task.history.append(message)
-        self._tasks[task.id] = task
+        if task is None:
+            task = Task.create(context_id=message.context_id)
+            task.history.append(message)
+            self._tasks[task.id] = task
 
         # TASK-1643: extract the per-user identity (fail-closed gate seam).
         user_id: Optional[str] = self._extract_identity(message)
@@ -878,30 +904,84 @@ class A2AServer:
         return await self._execute_tool(tool, params)
 
     # ─────────────────────────────────────────────────────────────
+    # Version negotiation (A2A v1.0)
+    # ─────────────────────────────────────────────────────────────
+
+    def _get_request_version(self, request: web.Request) -> str:
+        """Resolve the A2A protocol version for a request.
+
+        Reads the ``A2A-Version`` header. ``"1.0"`` → v1.0 serialization;
+        empty or ``"0.3"`` → v0.3 (per spec: "empty = 0.3"); anything else
+        raises ``VersionNotSupportedError`` (-32009, HTTP 400).
+        """
+        version = request.headers.get("A2A-Version", "").strip()
+        if not version or version.startswith("0.3"):
+            return "0.3"
+        if version.startswith("1."):
+            return "1.0"
+        raise web.HTTPBadRequest(
+            text=json.dumps({
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {
+                    "code": -32009,
+                    "message": f"Version not supported: {version}",
+                },
+            }),
+            content_type="application/json",
+        )
+
+    @staticmethod
+    def _content_type_for(version: str) -> str:
+        """v1.0 responses use ``application/a2a+json``; v0.3 uses plain JSON."""
+        return "application/a2a+json" if version != "0.3" else "application/json"
+
+    def _versioned_response(
+        self, obj: Dict[str, Any], version: str, status: int = 200
+    ) -> web.Response:
+        """Build a JSON response with the version-appropriate Content-Type."""
+        return web.json_response(
+            obj, status=status, content_type=self._content_type_for(version)
+        )
+
+    # ─────────────────────────────────────────────────────────────
     # HTTP Handlers
     # ─────────────────────────────────────────────────────────────
 
     async def _handle_agent_card(self, request: web.Request) -> web.Response:
-        """GET /.well-known/agent.json"""
+        """GET /.well-known/agent-card.json (v1.0) or /.well-known/agent.json (v0.3)."""
+        version = self._get_request_version(request)
         card = self.get_agent_card()
-        return web.json_response(card.to_dict())
+        return self._versioned_response(card.to_dict(version), version)
 
     async def _handle_send_message(self, request: web.Request) -> web.Response:
-        """POST /a2a/message/send"""
+        """POST /a2a/message:send (v1.0) or /a2a/message/send (v0.3)."""
+        version = self._get_request_version(request)
         try:
             data = await request.json()
             message = Message.from_dict(data.get("message", {}))
-            # configuration is accepted but not yet used; reserved for future
-            # push-notification / streaming config per the A2A spec.
-            _config = data.get("configuration", {})  # noqa: F841
+            config = SendMessageConfiguration.from_dict(data.get("configuration") or {})
 
-            task = await self.process_message(message)
+            if config.return_immediately:
+                # Create the task, store it, return SUBMITTED immediately, and
+                # process it in the background on the SAME task object.
+                task = Task.create(context_id=message.context_id)
+                task.history.append(message)
+                self._tasks[task.id] = task
+                asyncio.create_task(self.process_message(message, task=task))
+            else:
+                task = await self.process_message(message)
 
-            # If blocking mode, wait for completion (already done in process_message)
-            # but if we had async processing, we'd wait here
+            result = task.to_dict(version)
+            # Honour historyLength by trimming the response history (keep newest).
+            if config.history_length is not None:
+                n = config.history_length
+                result["history"] = result["history"][-n:] if n > 0 else []
 
-            return web.json_response(task.to_dict())
+            return self._versioned_response(result, version)
 
+        except web.HTTPException:
+            raise
         except json.JSONDecodeError:
             return web.json_response(
                 {"error": {"code": "InvalidJSON", "message": "Invalid JSON body"}},
@@ -924,6 +1004,7 @@ class A2AServer:
             }
         )
         await response.prepare(request)
+        version = self._get_request_version(request)
 
         try:
             data = await request.json()
@@ -935,7 +1016,7 @@ class A2AServer:
             self._tasks[task.id] = task
 
             # Send initial task
-            await self._send_sse(response, {"task": task.to_dict()})
+            await self._send_sse(response, {"task": task.to_dict(version)})
 
             # Send working status
             task.working(f"Processing with {self.agent.name}...")
@@ -943,7 +1024,7 @@ class A2AServer:
                 "statusUpdate": {
                     "taskId": task.id,
                     "contextId": task.context_id,
-                    "status": {"state": "working"},
+                    "status": {"state": serialize_task_state(TaskState.WORKING, version)},
                     "final": False
                 }
             })
@@ -954,10 +1035,10 @@ class A2AServer:
 
                 # Try to use streaming method
                 if hasattr(self.agent, 'ask_stream'):
-                    await self._stream_with_ask_stream(response, task, question, message)
+                    await self._stream_with_ask_stream(response, task, question, message, version)
                 else:
                     # Fallback to non-streaming
-                    await self._stream_fallback(response, task, question, message)
+                    await self._stream_fallback(response, task, question, message, version)
 
             except Exception as e:
                 self.logger.error("Error in streaming: %s", e, exc_info=True)
@@ -967,8 +1048,11 @@ class A2AServer:
                         "taskId": task.id,
                         "contextId": task.context_id,
                         "status": {
-                            "state": "failed",
-                            "message": {"role": "agent", "parts": [{"text": str(e)}]}
+                            "state": serialize_task_state(TaskState.FAILED, version),
+                            "message": {
+                                "role": serialize_role(Role.AGENT, version),
+                                "parts": [{"text": str(e)}]
+                            }
                         },
                         "final": True
                     }
@@ -986,7 +1070,8 @@ class A2AServer:
         response: web.StreamResponse,
         task: Task,
         question: str,
-        message: Message
+        message: Message,
+        version: str = "0.3",
     ) -> None:
         """Stream using agent's ask_stream method with light buffering."""
         kwargs = {}
@@ -1058,7 +1143,7 @@ class A2AServer:
                 "artifactUpdate": {
                     "taskId": task.id,
                     "contextId": task.context_id,
-                    "artifact": artifact.to_dict(),
+                    "artifact": artifact.to_dict(version),
                     "append": False,
                     "lastChunk": True
                 }
@@ -1069,7 +1154,7 @@ class A2AServer:
                 "statusUpdate": {
                     "taskId": task.id,
                     "contextId": task.context_id,
-                    "status": {"state": "completed"},
+                    "status": {"state": serialize_task_state(TaskState.COMPLETED, version)},
                     "final": True
                 }
             })
@@ -1083,7 +1168,8 @@ class A2AServer:
         response: web.StreamResponse,
         task: Task,
         question: str,
-        message: Message
+        message: Message,
+        version: str = "0.3",
     ) -> None:
         """Fallback when streaming is not available - use regular ask."""
         result = await self._ask_agent(question, message)
@@ -1095,7 +1181,7 @@ class A2AServer:
             "artifactUpdate": {
                 "taskId": task.id,
                 "contextId": task.context_id,
-                "artifact": artifact.to_dict(),
+                "artifact": artifact.to_dict(version),
                 "lastChunk": True
             }
         })
@@ -1106,7 +1192,7 @@ class A2AServer:
             "statusUpdate": {
                 "taskId": task.id,
                 "contextId": task.context_id,
-                "status": {"state": "completed"},
+                "status": {"state": serialize_task_state(TaskState.COMPLETED, version)},
                 "final": True
             }
         })
@@ -1161,9 +1247,10 @@ class A2AServer:
 
     async def _handle_get_task(self, request: web.Request) -> web.Response:
         """GET /a2a/tasks/{task_id}"""
+        version = self._get_request_version(request)
         task_id = request.match_info["task_id"]
         if task := self._tasks.get(task_id):
-            return web.json_response(task.to_dict())
+            return self._versioned_response(task.to_dict(version), version)
 
         return web.json_response(
             {"error": {"code": "TaskNotFoundError", "message": f"Task {task_id} not found"}},
@@ -1172,6 +1259,7 @@ class A2AServer:
 
     async def _handle_list_tasks(self, request: web.Request) -> web.Response:
         """GET /a2a/tasks"""
+        version = self._get_request_version(request)
         context_id = request.query.get("contextId")
         state = request.query.get("status")
         page_size = int(request.query.get("pageSize", 50))
@@ -1181,19 +1269,22 @@ class A2AServer:
         if context_id:
             tasks = [t for t in tasks if t.context_id == context_id]
         if state:
-            tasks = [t for t in tasks if t.status.state.value == state]
+            # Accept both v0.3 lowercase and v1.0 SCREAMING_SNAKE filter values.
+            wanted = parse_task_state(state)
+            tasks = [t for t in tasks if t.status.state == wanted]
 
         tasks = tasks[:page_size]
 
-        return web.json_response({
-            "tasks": [t.to_dict() for t in tasks],
+        return self._versioned_response({
+            "tasks": [t.to_dict(version) for t in tasks],
             "totalSize": len(tasks),
             "pageSize": page_size,
             "nextPageToken": ""
-        })
+        }, version)
 
     async def _handle_cancel_task(self, request: web.Request) -> web.Response:
-        """POST /a2a/tasks/{task_id}/cancel"""
+        """POST /a2a/tasks/{task_id}:cancel (v1.0) or /a2a/tasks/{task_id}/cancel (v0.3)."""
+        version = self._get_request_version(request)
         task_id = request.match_info["task_id"]
         task = self._tasks.get(task_id)
 
@@ -1203,18 +1294,19 @@ class A2AServer:
                 status=404
             )
 
-        terminal_states = {TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED}
+        terminal_states = {TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELED}
         if task.status.state in terminal_states:
             return web.json_response(
                 {"error": {"code": "TaskNotCancelableError"}},
                 status=400
             )
 
-        task.status = TaskStatus(state=TaskState.CANCELLED)
-        return web.json_response(task.to_dict())
+        task.status = TaskStatus(state=TaskState.CANCELED)
+        return self._versioned_response(task.to_dict(version), version)
 
     async def _handle_subscribe(self, request: web.Request) -> web.StreamResponse:
-        """GET /a2a/tasks/{task_id}/subscribe"""
+        """GET/POST /a2a/tasks/{task_id}:subscribe (v1.0) or .../subscribe (v0.3)."""
+        version = self._get_request_version(request)
         task_id = request.match_info["task_id"]
         task = self._tasks.get(task_id)
 
@@ -1230,7 +1322,7 @@ class A2AServer:
         await response.prepare(request)
 
         # Send current state
-        await self._send_sse(response, {"task": task.to_dict()})
+        await self._send_sse(response, {"task": task.to_dict(version)})
 
         # For now, just close (in production, would subscribe to updates)
         await response.write_eof()
