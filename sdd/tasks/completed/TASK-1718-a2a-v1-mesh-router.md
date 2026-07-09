@@ -187,4 +187,72 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-09
+**Notes**:
+- **Fixed the temporary gap flagged in TASK-1713's own Completion Note**:
+  `A2AProxyRouter.get_agent_card()` constructed `AgentCard(url=None, ...)`,
+  which raised `TypeError` after TASK-1713 removed `url` from `AgentCard`'s
+  constructor. Changed to `supported_interfaces=[]` (the URL is genuinely
+  unknown until the router is mounted/a request arrives) — `_handle_discovery`
+  already does `card.url = f"{scheme}://{host}"`, which now correctly writes
+  through the `AgentCard.url` property setter (TASK-1713) to populate
+  `supported_interfaces` in place.
+- `RegisteredAgent` (models.py) gained `protocol_version: str = "0.3"`.
+  `A2AMeshDiscovery._discover_endpoint()` now captures
+  `client._server_version` INSIDE the `async with A2AClient(...) as client:`
+  block (right after `discover()`, before `disconnect()` runs) and passes it
+  as `protocol_version=` when constructing the `RegisteredAgent` — read
+  after the context manager exits, `_server_version` would still be
+  set, but capturing while still connected is more defensive against future
+  `disconnect()` changes.
+- Verified via `grep` that neither `mesh.py` nor the rest of `router.py`
+  ever read `card.url`/`card.preferred_transport`/`card.protocol_version`
+  directly — all existing code paths use `RegisteredAgent.url` /
+  `endpoint.url` (a plain str field unrelated to `AgentCard.url`), so the
+  `AgentCard.url` property (TASK-1713) already makes those call sites work
+  transparently. No other mesh.py changes were needed.
+- `A2AProxyRouter`: added `_get_request_version()` (mirrors
+  `A2AServer._get_request_version()` from TASK-1714, but falls back to v0.3
+  for unrecognized values instead of raising — the router is a best-effort
+  aggregator across potentially many differently-versioned agents, not the
+  authoritative endpoint for any single one, so a hard 400 felt wrong here;
+  flagging this as a deliberate, documented divergence from the server's
+  stricter negotiation). `_handle_discovery` now emits
+  `card.to_dict(version=version)` — v1.0.0 callers get the aggregated
+  `supportedInterfaces` card format.
+- Added `_apply_version_header(client, version_header)`: forwards an
+  incoming `A2A-Version` header onto a downstream `A2AClient`'s live
+  session headers. `route_message()` / `route_message_stream()` both gained
+  an optional `version_header` kwarg; `_handle_message` / `_handle_stream`
+  read `request.headers.get("A2A-Version")` and pass it through — satisfies
+  the task's Key Approach #2 ("at minimum, forward the version header so
+  each agent handles its own negotiation") without requiring per-request
+  client instances (the existing per-agent client cache in `_get_client()`
+  is preserved; only the live session's header is mutated per call).
+- `_handle_message`'s `task.to_dict()` call also became version-aware
+  (`task.to_dict(version=version)`), matching the caller's own negotiated
+  version for the router's own response (separate from what was forwarded
+  to the downstream agent).
+- Did NOT add a `/.well-known/agent-card.json` route to the router's own
+  `setup()` — not explicitly requested by this task's Scope (that was
+  TASK-1714's ask for `A2AServer` specifically), and the existing single
+  `/.well-known/agent.json` route already negotiates format via the
+  `A2A-Version` header regardless of URL path, consistent with how
+  `A2AServer` itself handles the SAME header-based negotiation on both its
+  routes. Flagging this as a scope boundary decision, not an oversight.
+- New test file `packages/ai-parrot/tests/test_a2a_v1_mesh_router.py`
+  (10 tests): `RegisteredAgent.protocol_version` (default + explicit),
+  `A2AMeshDiscovery` still instantiates, `get_agent_card()` builds without
+  the removed `url` kwarg + the setter works once "mounted",
+  `_get_request_version()`, `_apply_version_header()`, and an end-to-end
+  discovery-handler test for both v1.0 and v0.3 formats via a live aiohttp
+  `TestClient`.
+- Regression: full TASK-1712-1717 test suites (166 tests total across both
+  packages) still pass. `ruff check` clean on all touched files (one
+  pre-existing `F841` on an unrelated line in `router.py`, confirmed via
+  `ruff check` against `dev` directly, left untouched).
+**Deviations from spec**: `_get_request_version()`'s fallback-to-v0.3 (vs.
+`A2AServer`'s hard 400) for unrecognized versions, and not adding a second
+well-known route to the router — both documented above as deliberate,
+narrow scope decisions with no test/AC pinning the alternative.
