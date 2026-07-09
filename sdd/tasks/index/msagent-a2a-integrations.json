@@ -32,7 +32,7 @@
       "feature_id": "FEAT-271",
       "feature": "msagent-a2a-integrations",
       "spec": "sdd/specs/msagent-a2a-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "No shared files with TASK-1706; creates MSAgentIntegrationConfig in msagentsdk/models.py.",
       "assigned_to": null,
       "started_at": "2026-07-09T17:12:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1707-msagent-integration-config.md"
+      "completed_at": "2026-07-09T17:17:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1707-msagent-integration-config.md"
     },
     {
       "id": "TASK-1708",
