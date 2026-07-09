@@ -40,7 +40,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-logger = logging.getLogger(__name__)
+from ._db_utils import is_unique_violation
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -203,20 +203,6 @@ WHERE site_id = $1 AND org_id = $2
 ORDER BY location_id
 """
 
-# asyncpg error code for UNIQUE constraint violation
-_UNIQUE_VIOLATION_CODE = "23505"
-
-
-def _is_unique_violation(exc: Exception) -> bool:
-    """Return True when ``exc`` looks like a Postgres UNIQUE violation."""
-    exc_str = str(exc)
-    return (
-        "unique" in exc_str.lower()
-        or _UNIQUE_VIOLATION_CODE in exc_str
-        or "UniqueViolation" in type(exc).__name__
-    )
-
-
 # ---------------------------------------------------------------------------
 # Service
 # ---------------------------------------------------------------------------
@@ -275,19 +261,11 @@ class VenueService:
                     _INSERT_SITE_SQL, store_id, client_id, org_id, name
                 )
             except Exception as exc:
-                if _is_unique_violation(exc):
+                if is_unique_violation(exc):
                     raise DuplicateVenueError("site", name) from exc
                 raise
 
-        return Site(
-            site_id=row["site_id"],
-            store_id=str(row["store_id"]),
-            client_id=row["client_id"],
-            org_id=row["org_id"],
-            name=row["name"],
-            is_active=row["is_active"],
-            tenant=tenant,
-        )
+        return self._row_to_site(row, tenant=tenant)
 
     async def get_site(
         self, site_id: int, *, org_id: int, tenant: str | None = None
@@ -309,15 +287,7 @@ class VenueService:
             row = await conn.fetchrow(_SELECT_SITE_SQL, site_id, org_id)
         if row is None:
             raise SiteNotFoundError(site_id)
-        return Site(
-            site_id=row["site_id"],
-            store_id=str(row["store_id"]),
-            client_id=row["client_id"],
-            org_id=row["org_id"],
-            name=row["name"],
-            is_active=row["is_active"],
-            tenant=tenant,
-        )
+        return self._row_to_site(row, tenant=tenant)
 
     async def list_sites(
         self, *, store_id: str, org_id: int, tenant: str | None = None
@@ -335,18 +305,7 @@ class VenueService:
         """
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(_SELECT_SITES_BY_STORE_SQL, store_id, org_id)
-        return [
-            Site(
-                site_id=row["site_id"],
-                store_id=str(row["store_id"]),
-                client_id=row["client_id"],
-                org_id=row["org_id"],
-                name=row["name"],
-                is_active=row["is_active"],
-                tenant=tenant,
-            )
-            for row in rows
-        ]
+        return [self._row_to_site(row, tenant=tenant) for row in rows]
 
     # ------------------------------------------------------------------
     # Location CRUD
@@ -398,7 +357,7 @@ class VenueService:
                     geofence_radius_m,
                 )
             except Exception as exc:
-                if _is_unique_violation(exc):
+                if is_unique_violation(exc):
                     raise DuplicateVenueError("location", name) from exc
                 raise
 
@@ -447,6 +406,19 @@ class VenueService:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _row_to_site(row: Any, *, tenant: str | None) -> Site:
+        """Build a ``Site`` model from a DB row."""
+        return Site(
+            site_id=row["site_id"],
+            store_id=str(row["store_id"]),
+            client_id=row["client_id"],
+            org_id=row["org_id"],
+            name=row["name"],
+            is_active=row["is_active"],
+            tenant=tenant,
+        )
 
     @staticmethod
     def _row_to_location(row: Any, *, tenant: str | None) -> Location:

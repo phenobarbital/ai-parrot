@@ -38,6 +38,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from ._db_utils import is_unique_violation
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -173,10 +175,6 @@ FROM fieldsync.workday_cost_center_mappings
 WHERE project_id = $1
 """
 
-# asyncpg error code for UNIQUE constraint violation
-_UNIQUE_VIOLATION_CODE = "23505"
-
-
 # ---------------------------------------------------------------------------
 # Service
 # ---------------------------------------------------------------------------
@@ -244,14 +242,7 @@ class ProjectService:
                     org_id,
                 )
             except Exception as exc:
-                # Detect asyncpg UniqueViolationError by message or code
-                exc_str = str(exc)
-                if (
-                    "unique" in exc_str.lower()
-                    or _UNIQUE_VIOLATION_CODE in exc_str
-                    or "uq_projects_client_accounting" in exc_str
-                    or "UniqueViolation" in type(exc).__name__
-                ):
+                if is_unique_violation(exc):
                     raise DuplicateAccountingCodeError(client_id, accounting_code) from exc
                 raise
 

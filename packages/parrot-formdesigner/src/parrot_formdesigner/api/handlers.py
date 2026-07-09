@@ -25,7 +25,13 @@ from ..services.csrf import issue_form_csrf_token, validate_form_csrf_token
 from ..services.event_dispatcher import apply_schema_overrides, dispatch
 from ..services.registry import FormAlreadyExistsError, FormRegistry
 from ..services.validators import FormValidator
+from ..services.venue_service import (
+    DuplicateVenueError,
+    LocationNotFoundError,
+)
 from ._utils import _bump_version, _deep_merge, _loc_to_str
+
+_MAX_GRAPH_DEPTH = 10
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
@@ -1690,9 +1696,22 @@ class FormAPIHandler:
                 {"error": "org_id not found in session"}, status=400
             )
 
+        depth = 3
+        depth_str = request.query.get("depth")
+        if depth_str is not None:
+            try:
+                depth = int(depth_str)
+            except (ValueError, TypeError):
+                return JSONResponse(
+                    {"error": f"Invalid depth: {depth_str!r}"}, status=400
+                )
+            depth = max(1, min(depth, _MAX_GRAPH_DEPTH))
+
         tenant = self._get_tenant(request)
         try:
-            graph = await self._org_graph_service.get_graph(org_id, tenant=tenant)
+            graph = await self._org_graph_service.get_graph(
+                org_id, tenant=tenant, depth=depth
+            )
         except KeyError as exc:
             return JSONResponse({"error": str(exc)}, status=404)
         except Exception as exc:
@@ -2063,11 +2082,9 @@ class FormAPIHandler:
                 name=str(name),
                 tenant=tenant,
             )
+        except DuplicateVenueError as exc:
+            return JSONResponse({"error": str(exc)}, status=409)
         except Exception as exc:
-            from ..services.venue_service import DuplicateVenueError
-
-            if isinstance(exc, DuplicateVenueError):
-                return JSONResponse({"error": str(exc)}, status=409)
             self.logger.exception("create_site failed: %s", exc)
             return JSONResponse({"error": "Internal server error"}, status=500)
 
@@ -2163,6 +2180,27 @@ class FormAPIHandler:
         if org_id is None:
             return JSONResponse({"error": "org_id not found in session"}, status=400)
 
+        location_type = body.get("location_type") or "kiosk"
+
+        latitude: float | None = None
+        longitude: float | None = None
+        geofence_radius_m: int | None = None
+        raw_lat = body.get("latitude")
+        raw_lng = body.get("longitude")
+        raw_radius = body.get("geofence_radius_m")
+        try:
+            if raw_lat is not None:
+                latitude = float(raw_lat)
+            if raw_lng is not None:
+                longitude = float(raw_lng)
+            if raw_radius is not None:
+                geofence_radius_m = int(raw_radius)
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {"error": "latitude/longitude must be numbers, geofence_radius_m must be an integer"},
+                status=400,
+            )
+
         tenant = self._get_tenant(request)
         try:
             location = await self._venue_service.create_location(
@@ -2170,17 +2208,15 @@ class FormAPIHandler:
                 client_id=client_id_int,
                 org_id=org_id,
                 name=str(name),
-                location_type=str(body.get("location_type", "kiosk")),
-                latitude=body.get("latitude"),
-                longitude=body.get("longitude"),
-                geofence_radius_m=body.get("geofence_radius_m"),
+                location_type=str(location_type),
+                latitude=latitude,
+                longitude=longitude,
+                geofence_radius_m=geofence_radius_m,
                 tenant=tenant,
             )
+        except DuplicateVenueError as exc:
+            return JSONResponse({"error": str(exc)}, status=409)
         except Exception as exc:
-            from ..services.venue_service import DuplicateVenueError
-
-            if isinstance(exc, DuplicateVenueError):
-                return JSONResponse({"error": str(exc)}, status=409)
             self.logger.exception("create_location failed: %s", exc)
             return JSONResponse({"error": "Internal server error"}, status=500)
 
@@ -2215,11 +2251,9 @@ class FormAPIHandler:
             location = await self._venue_service.get_location(
                 location_id, org_id=org_id, tenant=tenant
             )
+        except LocationNotFoundError as exc:
+            return JSONResponse({"error": str(exc)}, status=404)
         except Exception as exc:
-            from ..services.venue_service import LocationNotFoundError
-
-            if isinstance(exc, LocationNotFoundError):
-                return JSONResponse({"error": str(exc)}, status=404)
             self.logger.exception("get_location failed: %s", exc)
             return JSONResponse({"error": "Internal server error"}, status=500)
 
