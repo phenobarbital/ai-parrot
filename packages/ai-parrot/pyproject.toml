@@ -289,7 +289,7 @@ agents-lite = [
 # embeddings extra removed from host in FEAT-201.
 
 mcp = [
-    "google-genai>=2.6.0",
+    "google-genai>=2.10.0",
     "openai==2.41.0",
     "yfinance==0.2.54",
     "youtube_search==2.1.2",
@@ -364,7 +364,7 @@ openai = [
 google = [
     "google-api-python-client>=2.166.0,<=2.177.0",
     "google-cloud-texttospeech==2.27.0",
-    "google-genai>=2.6.0",
+    "google-genai>=2.10.0",
     "google-cloud-aiplatform>=1.153.0",
 ]
 
@@ -377,7 +377,7 @@ zai = [
 ]
 
 llms = [
-    "google-genai>=2.6.0",
+    "google-genai>=2.10.0",
     "openai==2.41.0",
     "groq==0.33.0",
     # FIX-2: include both direct-API and Bedrock SDK so that `llms` covers all

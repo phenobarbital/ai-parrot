@@ -52,7 +52,7 @@ google = [
     # google-cloud-storage<=3.1.0 (e.g. navigator-api[google]). Keep this extra
     # to google-genai only; add a dedicated `vertex` extra if Vertex SDK use is
     # ever introduced.
-    "google-genai>=2.6.0",
+    "google-genai>=2.10.0",
 ]
 openai = [
     "openai==2.41.0",
