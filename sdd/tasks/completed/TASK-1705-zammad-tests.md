@@ -100,4 +100,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Reviewed the spec §4 test matrix against `test_zammad.py` (TASK-1702) and
+`test_zammad_toolkit.py` (TASK-1703). `test_zammad.py` already covered every
+Module 2 test case listed in the matrix (including on-behalf-of custom
+header, attachments-on-create, search pagination, state filtering, and
+attachment-saves-file) — no changes needed there.
+
+`test_zammad_toolkit.py` was missing the exact-named `test_toolkit_delete_excluded`
+and `test_toolkit_attachment_returns_dict` cases from the spec's Module 3
+list (functionally covered by differently-named tests already, but added
+verbatim to match the spec's test matrix), plus `test_zammad_in_registry`
+verifying `TOOL_REGISTRY["zammad"] == "parrot_tools.zammad.ZammadToolkit"`.
+
+Full suite: 22 tests in `test_zammad.py` + 12 tests in `test_zammad_toolkit.py`
+= 34 passing. Note: the two test files must be run as separate `pytest`
+invocations (from each package's own root) — `ai-parrot/tests` and
+`ai-parrot-tools/tests` are both top-level `tests` packages in this monorepo,
+so a single combined pytest invocation across both packages hits a module-name
+collision (`tests.test_zammad_toolkit` vs `tests.interfaces.test_zammad`);
+this is a pre-existing repo-structure characteristic, not something
+introduced by this feature. `ruff check` clean on both test files. No live
+Zammad server tests were added — out of scope per the task's "NOT in scope"
+note.
