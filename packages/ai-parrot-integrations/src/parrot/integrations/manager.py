@@ -30,7 +30,7 @@ from .models import (
     WhatsAppAgentConfig,
     SlackAgentConfig,
     MSAgentSDKConfig,
-    MSAgentIntegrationConfig,  # noqa: F401 — consumed by _start_msagent_bot (TASK-1710)
+    MSAgentIntegrationConfig,
     A2AAgentConfig,
 )
 if TYPE_CHECKING:
@@ -82,6 +82,7 @@ class IntegrationBotManager:
         self.slack_bots: Dict[str, 'SlackAgentWrapper'] = {}
         self.msagentsdk_bots: Dict[str, 'MSAgentSDKWrapper'] = {}
         self.a2a_bots: Dict[str, Any] = {}
+        self.msagent_bots: Dict[str, Any] = {}
 
         # Dedicated aiohttp.web.AppRunner instances for A2A agents started
         # with a per-agent ``port`` (i.e. NOT mounted on the shared app).
@@ -180,6 +181,8 @@ class IntegrationBotManager:
                     await self._start_msagentsdk_bot(name, agent_config)
                 elif isinstance(agent_config, A2AAgentConfig):
                     await self._start_a2a_bot(name, agent_config)
+                elif isinstance(agent_config, MSAgentIntegrationConfig):
+                    await self._start_msagent_bot(name, agent_config)
             except Exception as e:
                 self.logger.error("Failed to start bot %s: %s", name, e, exc_info=True)
 
@@ -382,16 +385,24 @@ class IntegrationBotManager:
         self.msagentsdk_bots[name] = wrapper
         self.logger.info("Started MS Agent SDK bot '%s'", name)
 
-    def _wire_a2a_security(self, app: web.Application, config: A2AAgentConfig) -> None:
+    def _wire_a2a_security(self, app: web.Application, config: Any) -> None:
         """Build and attach an ``A2ASecurityMiddleware`` for an A2A agent.
 
         Wires whichever authenticators correspond to the security fields set
         on *config* (JWT, mTLS, API key / HMAC via the in-memory credential
         provider) and appends the resulting middleware to *app*.
 
+        Shared by ``_start_a2a_bot()`` (``A2AAgentConfig``, TASK-1709) and the
+        A2A companion surface in ``_start_msagent_bot()``
+        (``MSAgentIntegrationConfig``, TASK-1710) — the latter only carries
+        ``jwt_secret``/``api_key``, not the full mTLS/HMAC/basic-auth/policy
+        surface, so every field is read via ``getattr(..., None)`` rather
+        than direct attribute access.
+
         Args:
             app: The aiohttp application the A2A agent is mounted on.
-            config: ``A2AAgentConfig`` carrying the security fields.
+            config: ``A2AAgentConfig`` or ``MSAgentIntegrationConfig``
+                carrying the security fields.
         """
         from parrot.a2a.security import (
             A2ASecurityMiddleware,
@@ -401,19 +412,26 @@ class IntegrationBotManager:
             InMemoryCredentialProvider,
         )
 
+        jwt_secret = getattr(config, "jwt_secret", None)
+        mtls_ca_cert = getattr(config, "mtls_ca_cert", None)
+        api_key = getattr(config, "api_key", None)
+        hmac_secret = getattr(config, "hmac_secret", None)
+        basic_credentials = getattr(config, "basic_credentials", None)
+        security_policy = getattr(config, "security_policy", None)
+
         jwt_authenticator = None
-        if config.jwt_secret:
-            jwt_authenticator = JWTAuthenticator(secret_key=config.jwt_secret)
+        if jwt_secret:
+            jwt_authenticator = JWTAuthenticator(secret_key=jwt_secret)
 
         mtls_authenticator = None
-        if config.mtls_ca_cert:
-            mtls_authenticator = MTLSAuthenticator(ca_cert_path=config.mtls_ca_cert)
+        if mtls_ca_cert:
+            mtls_authenticator = MTLSAuthenticator(ca_cert_path=mtls_ca_cert)
 
         credential_provider = None
-        if config.api_key or config.hmac_secret or config.basic_credentials:
+        if api_key or hmac_secret or basic_credentials:
             credential_provider = InMemoryCredentialProvider()
 
-        policy_kwargs = dict(config.security_policy or {})
+        policy_kwargs = dict(security_policy or {})
         default_policy = SecurityPolicy(**policy_kwargs)
 
         middleware = A2ASecurityMiddleware(
@@ -423,7 +441,7 @@ class IntegrationBotManager:
             default_policy=default_policy,
         )
         app.middlewares.append(middleware.middleware)
-        self.logger.info("Wired A2ASecurityMiddleware for A2A agent config '%s'", config.name)
+        self.logger.info("Wired A2ASecurityMiddleware for agent config '%s'", config.name)
 
     async def _start_a2a_bot(self, name: str, config: A2AAgentConfig) -> None:
         """Start an agent as an A2A (Agent-to-Agent protocol) service.
@@ -532,6 +550,127 @@ class IntegrationBotManager:
 
         self.a2a_bots[name] = a2a_server
         self.logger.info("Started A2A bot '%s' at %s", name, base_path)
+
+    async def _setup_o365_oauth(self, app: web.Application, manager: Any) -> None:
+        """Wire an ``O365OAuthManager`` into *app*, tolerating a frozen ``on_startup``.
+
+        ``O365OAuthManager.setup()`` (inherited from ``AbstractOAuth2Manager``)
+        appends itself to ``app.on_startup`` to resolve its Redis client
+        lazily. ``_start_msagent_bot()`` runs from the shared app's OWN
+        ``on_startup`` dispatch (``IntegrationBotManager.startup()`` is
+        invoked from ``BotManagerServer.on_startup``), and aiohttp freezes
+        ``app.on_startup`` before dispatching it — so ``setup()`` would raise
+        ``RuntimeError: Cannot modify frozen list`` in that context.
+
+        Replicates ``setup()``'s remaining side effects (app slot,
+        ``on_cleanup`` hook, callback route) and resolves the Redis client
+        immediately instead of deferring to the already-fired ``on_startup``
+        signal.
+
+        Args:
+            app: The aiohttp application to wire the manager into.
+            manager: An ``O365OAuthManager`` constructed with ``app=app``.
+        """
+        try:
+            manager.setup()
+        except RuntimeError:
+            slot = f"oauth2_manager_{manager.provider_id}"
+            app[slot] = manager
+            app.on_cleanup.append(manager._on_cleanup)
+
+            from parrot.auth.oauth2_routes import setup_oauth2_routes
+
+            setup_oauth2_routes(app, manager.provider_id, manager._callback_path)
+            manager._setup_done = True
+            await manager._on_startup(app)
+
+    async def _start_msagent_bot(self, name: str, config: MSAgentIntegrationConfig) -> None:
+        """Start a full-featured MS Agent SDK bot with broker + A2A companion.
+
+        Resolves the parrot agent from BotManager, converts *config* to the
+        inner ``MSAgentSDKConfig`` via ``to_msagentsdk_config()``, optionally
+        builds a ``CredentialBroker`` from the inline ``credentials`` list
+        and an O365 OAuth2 SSO manager when ``o365_client_id`` is set,
+        constructs the ``MSAgentSDKWrapper`` (which registers its HTTP
+        route(s) on construction), and always mounts a companion A2A surface
+        sharing the same broker (registered in the discovery registry).
+
+        Args:
+            name: Agent name as declared in the YAML config.
+            config: ``MSAgentIntegrationConfig`` for this bot.
+        """
+        agent = await self._get_agent(config.chatbot_id, config.system_prompt_override)
+        if not agent:
+            return
+
+        sdk_config = config.to_msagentsdk_config()
+
+        # Build credential broker if enabled
+        broker = None
+        if config.enable_credential_broker and config.credentials:
+            from parrot.auth.broker import CredentialBroker
+            from parrot.auth.credentials import ProviderCredentialConfig
+
+            configs = [ProviderCredentialConfig(**c) for c in config.credentials]
+            broker = CredentialBroker.from_config(configs, strict=False)
+
+        app = self.bot_manager.get_app()
+
+        # O365 OAuth2 SSO infrastructure (optional)
+        if config.o365_client_id and config.o365_client_secret:
+            from parrot.auth.o365_oauth import O365OAuthManager
+
+            o365_manager = O365OAuthManager(
+                client_id=config.o365_client_id,
+                client_secret=config.o365_client_secret,
+                redirect_uri=config.redirect_uri,
+                tenant_id=config.o365_tenant_id or "common",
+                app=app,
+            )
+            await self._setup_o365_oauth(app, o365_manager)
+
+        # Create MS Agent SDK wrapper (constructor registers the HTTP
+        # route(s) synchronously — no separate async setup() call).
+        from .msagentsdk.wrapper import MSAgentSDKWrapper
+
+        wrapper = MSAgentSDKWrapper(
+            agent=agent,
+            config=sdk_config,
+            app=app,
+            broker=broker,
+        )
+        self.msagent_bots[name] = wrapper
+
+        # Companion A2A surface (always-on per spec)
+        try:
+            from parrot.a2a.server import A2AServer
+
+            app.setdefault("a2a_discovery_registry", {})
+            if not app.get("a2a_directory_registered"):
+                app.router.add_get("/a2a/directory", handle_a2a_directory)
+                app["a2a_directory_registered"] = True
+
+            companion_path = f"/a2a/{name.lower()}"
+            if config.jwt_secret:
+                self._wire_a2a_security(app, config)
+
+            a2a_server = A2AServer(
+                agent=agent,
+                base_path=companion_path,
+                tags=config.tags,
+                broker=broker,
+            )
+            a2a_server.setup(app, url=config.url)
+            card = a2a_server.get_agent_card()
+            app["a2a_discovery_registry"][name] = card
+            self.a2a_bots[name] = a2a_server
+        except ImportError:
+            self.logger.warning(
+                "ai-parrot-server not installed — A2A companion skipped for '%s'",
+                name,
+            )
+
+        self.logger.info("Started MSAgent bot '%s'", name)
 
     async def _start_slack_bot(self, name: str, config: SlackAgentConfig):
         # Suppress the verbose DEBUG/INFO output from the slack_sdk internals
@@ -656,6 +795,14 @@ class IntegrationBotManager:
             except Exception as e:
                 self.logger.error("Error stopping MS Agent SDK bot '%s': %s", name, e)
 
+        # Stop MSAgent bots (full-featured surface + A2A companion)
+        for name, wrapper in self.msagent_bots.items():
+            try:
+                self.logger.debug("Stopping MSAgent bot '%s'", name)
+                await wrapper.stop()
+            except Exception as e:
+                self.logger.error("Error stopping MSAgent bot '%s': %s", name, e)
+
         # Stop Slack bots (including Socket Mode handlers)
         for name, wrapper in self.slack_bots.items():
             try:
@@ -710,6 +857,7 @@ class IntegrationBotManager:
         self.slack_bots.clear()
         self.msagentsdk_bots.clear()
         self.a2a_bots.clear()
+        self.msagent_bots.clear()
         self._a2a_runners.clear()
         self._polling_tasks.clear()
 
