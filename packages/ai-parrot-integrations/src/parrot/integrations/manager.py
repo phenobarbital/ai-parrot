@@ -29,6 +29,8 @@ from .models import (
     WhatsAppAgentConfig,
     SlackAgentConfig,
     MSAgentSDKConfig,
+    MSAgentIntegrationConfig,  # noqa: F401 — consumed by _start_msagent_bot (TASK-1710)
+    A2AAgentConfig,  # noqa: F401 — consumed by _start_a2a_bot (TASK-1709)
 )
 if TYPE_CHECKING:
     from aiogram import Bot, Dispatcher

@@ -11,6 +11,14 @@ try:
     from .msagentsdk.models import MSAgentSDKConfig
 except ImportError:
     MSAgentSDKConfig = None  # type: ignore[assignment,misc]
+try:
+    from .msagentsdk.models import MSAgentIntegrationConfig
+except ImportError:
+    MSAgentIntegrationConfig = None  # type: ignore[assignment,misc]
+try:
+    from .a2a.models import A2AAgentConfig
+except ImportError:
+    A2AAgentConfig = None  # type: ignore[assignment,misc]
 
 
 @dataclass
@@ -33,7 +41,7 @@ class IntegrationBotConfig:
             client_id: "xxx"
             client_secret: "yyy"
     """
-    agents: Dict[str, Union[TelegramAgentConfig, MSTeamsAgentConfig, WhatsAppAgentConfig, SlackAgentConfig, MSAgentSDKConfig]] = field(default_factory=dict)
+    agents: Dict[str, Union[TelegramAgentConfig, MSTeamsAgentConfig, WhatsAppAgentConfig, SlackAgentConfig, MSAgentSDKConfig, MSAgentIntegrationConfig, A2AAgentConfig]] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'IntegrationBotConfig':
@@ -41,7 +49,7 @@ class IntegrationBotConfig:
         agents = {}
         if not data:
             return cls(agents=agents)
-            
+
         agents_data = data.get('agents') or {}
         for name, agent_data in agents_data.items():
             if not agent_data:
@@ -57,6 +65,10 @@ class IntegrationBotConfig:
                 agents[name] = SlackAgentConfig.from_dict(name, agent_data)
             elif kind == 'msagentsdk':
                 agents[name] = MSAgentSDKConfig.from_dict(name, agent_data)
+            elif kind == 'a2a' and A2AAgentConfig is not None:
+                agents[name] = A2AAgentConfig.from_dict(name, agent_data)
+            elif kind == 'msagent' and MSAgentIntegrationConfig is not None:
+                agents[name] = MSAgentIntegrationConfig.from_dict(name, agent_data)
         return cls(agents=agents)
 
     def validate(self) -> List[str]:
