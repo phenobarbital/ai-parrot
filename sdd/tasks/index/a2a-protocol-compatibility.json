@@ -14,7 +14,7 @@
       "feature_id": "FEAT-272",
       "feature": "a2a-protocol-compatibility",
       "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all other tasks depend on the updated models",
       "assigned_to": null,
       "started_at": "2026-07-09T17:24:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1712-a2a-v1-data-models.md"
+      "completed_at": "2026-07-09T23:12:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1712-a2a-v1-data-models.md"
     },
     {
       "id": "TASK-1713",
