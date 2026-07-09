@@ -242,4 +242,72 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-09
+**Notes**:
+- Added `A2A_ERRORS` (the -32001..-32009 error code table, mapping
+  symbolic name -> `(json_rpc_code, http_status)`) to `models.py` per the
+  task's own file list ("Add A2A error code constants" — placed alongside
+  the existing `A2AError` dataclass), exported from `parrot.a2a.__init__`.
+- `server.py`: added `_JSONRPC_METHODS` dispatch table (11 v1.0.0 PascalCase
+  methods + 3 v0.3 slash-name aliases mapping to the SAME handler),
+  `_JSONRPC_STREAMING_METHODS` for the two SSE-returning methods, a small
+  internal `_A2ARpcError(error_name, message)` marker exception (module-level,
+  above the `A2AServer` class) that `_rpc_*` methods raise and
+  `_handle_jsonrpc` catches centrally via `_a2a_jsonrpc_error_response()` —
+  this follows the task's own `_a2a_error_response()` snippet pattern but
+  routes through a typed exception instead of returning early from each
+  `_rpc_*` method, so the dispatcher stays a single, uniform try/except.
+- Implemented all 11 methods: `_rpc_send_message` (SendMessage/message-send,
+  including `SendMessageConfiguration.returnImmediately`/`historyLength`),
+  `_rpc_get_task`, `_rpc_list_tasks`, `_rpc_cancel_task`,
+  `_rpc_get_extended_agent_card` (-32007 when
+  `capabilities.extended_agent_card` is false), and the four push
+  notification CRUD methods (`_rpc_create_push_config`,
+  `_rpc_get_push_config`, `_rpc_list_push_configs`,
+  `_rpc_delete_push_config`) — these look up `getattr(self, "_push_store",
+  None)` defensively (returns -32003 today; TASK-1716 will set
+  `self._push_store` in `__init__`, after which these methods work
+  unchanged, satisfying "this task wires it" from TASK-1715's own scope
+  text without touching `__init__`, which is explicitly TASK-1716's file
+  responsibility).
+- `SendStreamingMessage`/`SubscribeToTask` implemented via a new
+  `_rpc_stream()` helper that upgrades the JSON-RPC POST to an SSE
+  `web.StreamResponse`, reusing the existing `_stream_with_ask_stream()` /
+  `_stream_fallback()` streaming helpers (version-aware since TASK-1714).
+  **Design decision flagged for review**: frames are emitted using the same
+  bare event shapes as the REST SSE binding (`task`, `statusUpdate`,
+  `artifactUpdate`) rather than each being wrapped in a
+  `{"jsonrpc": "2.0", "id": ..., "result": ...}` envelope — the v1.0.0 spec
+  text given in the task doesn't fully specify JSON-RPC-over-SSE frame
+  shape for these two methods, and wrapping would double the payload size
+  without a clear spec mandate. Documented inline at `_rpc_stream()` and
+  here per the "when in doubt, note it" rule. No acceptance criterion or
+  test pins the exact envelope shape for these two methods specifically.
+- All pre-existing ad-hoc string error codes in the REST handlers
+  (`_handle_get_task`, `_handle_cancel_task`, `_handle_subscribe`) were
+  updated to use the new `_rest_error_response()` helper (mirrors
+  `_a2a_jsonrpc_error_response()` but without the JSON-RPC envelope),
+  satisfying "Update existing error responses across all handlers to use
+  the error table."
+- Standard JSON-RPC errors (-32601 MethodNotFound, -32603 InternalError)
+  were preserved from the pre-existing code (not part of the A2A_ERRORS
+  table — they're generic JSON-RPC 2.0 codes, not A2A-specific).
+- New test file `packages/ai-parrot-server/tests/unit/test_a2a_v1_jsonrpc_errors.py`
+  (15 tests): all 5 of the PascalCase methods exercised (SendMessage,
+  GetTask, ListTasks, CancelTask, GetExtendedAgentCard — the 4 push-CRUD
+  and 2 streaming methods are exercised indirectly via the -32003 path,
+  since a real store doesn't exist until TASK-1716), v0.3 compat aliases,
+  unknown-method -32601, and 4 distinct A2A error codes
+  (-32001/-32002/-32003/-32007) verified end-to-end over HTTP.
+- Regression: full existing + TASK-1712/1713/1714 test suites (129 tests
+  across `test_a2a_tools.py`, `test_a2a_v1_models.py`,
+  `test_a2a_v1_server.py`, `test_a2a_v1_jsonrpc_errors.py`,
+  `test_a2a_credential_gate.py`, `test_a2a_identity.py`,
+  `test_a2a_resume_trigger.py`, `test_a2a_bridge_e2e.py`) all pass.
+  `ruff check` clean on every touched file.
+**Deviations from spec**: none beyond the `_rpc_stream()` framing decision
+flagged above (no test/AC pins it either way) and using a typed exception
+(`_A2ARpcError`) instead of inline early-returns for error propagation
+inside the dispatch table — a mechanical implementation detail, not a
+behavioral deviation from the error-code-table requirement itself.
