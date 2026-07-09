@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-218
 **Date**: 2026-07-09
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -41,11 +41,13 @@ actual end-user rather than the API service account.
 - Provide a reusable `ZammadInterface` async HTTP client for Zammad REST API v1
 - Support all core Zammad operations: tickets (CRUD + search), users (CRUD +
   search), articles (list by ticket), attachments (download)
-- Implement "On Behalf Of" via the `From` header for all requests
+- Implement "On Behalf Of" via a configurable header (defaults to `From`,
+  configurable to `X-On-Behalf-Of` for older instances)
 - Create a `ZammadToolkit` extending `AbstractToolkit` so LLMs can use Zammad
-  as tools
+  as tools (`delete_ticket` excluded for safety)
 - Support Bearer token authentication (OAuth2 / API token)
 - Read configuration from environment variables via `parrot.conf`
+- Attachments: save to configurable directory AND return base64-encoded data
 
 ### Non-Goals (explicitly out of scope)
 
@@ -67,14 +69,16 @@ Two new modules following established AI-Parrot patterns:
 
 1. **`ZammadInterface`** — async HTTP client in `parrot/interfaces/zammad.py`,
    modeled after `OdooInterface`. Uses `aiohttp.ClientSession` for all HTTP
-   calls. Manages authentication headers, the `From` header for on-behalf-of
-   operations, response parsing, pagination, and error handling. Supports async
-   context manager (`async with`) for session lifecycle.
+   calls. Manages authentication headers, a configurable on-behalf-of header
+   (`From` by default, `X-On-Behalf-Of` for older instances), response parsing,
+   pagination, and error handling. Supports async context manager (`async with`)
+   for session lifecycle. Downloads attachments to a configurable directory.
 
 2. **`ZammadToolkit`** — in `parrot_tools/zammad.py`, extends
    `AbstractToolkit`. Wraps `ZammadInterface` methods as public async methods
    that auto-register as LLM tools. Uses `@tool_schema` decorators with
-   Pydantic input models for structured argument schemas.
+   Pydantic input models for structured argument schemas. `delete_ticket` is
+   excluded via `exclude_tools` for safety.
 
 ### Component Diagram
 
@@ -100,6 +104,8 @@ Two new modules following established AI-Parrot patterns:
 │ • get_articles()    │     │ • create_user(...)       │
 │ • get_attachment()  │     │ • get_articles(ticket)   │
 │                     │     │ • get_attachment(...)     │
+│ (delete_ticket      │     │                          │
+│  EXCLUDED for LLMs) │     │                          │
 └─────────────────────┘     └────────────┬────────────┘
                                          │ aiohttp
                                          ▼
@@ -139,6 +145,8 @@ class ZammadConfig(BaseModel):
     default_role: str = Field(default="Customer", description="Default role for new users")
     timeout: int = Field(default=30, description="Request timeout in seconds")
     verify_ssl: bool = Field(default=True, description="Verify SSL certificates")
+    on_behalf_of_header: str = Field(default="From", description="Header name for on-behalf-of; use 'X-On-Behalf-Of' for older Zammad instances")
+    attachment_dir: Optional[str] = Field(default=None, description="Directory to save downloaded attachments; defaults to a temp dir")
 
 
 class TicketCreatePayload(BaseModel):
@@ -152,7 +160,7 @@ class TicketCreatePayload(BaseModel):
     article_internal: bool = Field(default=False, description="Internal note flag")
     priority_id: Optional[int] = Field(default=None, description="Priority ID")
     state_id: Optional[int] = Field(default=None, description="State ID")
-    on_behalf_of: Optional[str] = Field(default=None, description="User ID/login/email for From header")
+    on_behalf_of: Optional[str] = Field(default=None, description="User ID/login/email for on-behalf-of header")
 
 
 class TicketUpdatePayload(BaseModel):
@@ -165,7 +173,7 @@ class TicketUpdatePayload(BaseModel):
     article_body: Optional[str] = Field(default=None, description="Article body for the update")
     article_type: str = Field(default="note", description="Article type")
     article_internal: bool = Field(default=True, description="Internal note flag")
-    on_behalf_of: Optional[str] = Field(default=None, description="User ID/login/email for From header")
+    on_behalf_of: Optional[str] = Field(default=None, description="User ID/login/email for on-behalf-of header")
 
 
 class UserCreatePayload(BaseModel):
@@ -195,6 +203,8 @@ class ZammadInterface:
         default_role: str | None = None,
         timeout: int | None = None,
         verify_ssl: bool | None = None,
+        on_behalf_of_header: str = "From",
+        attachment_dir: str | None = None,
     ) -> None: ...
 
     async def __aenter__(self) -> "ZammadInterface": ...
@@ -230,12 +240,16 @@ class ZammadInterface:
 
     # Article & attachment operations
     async def get_articles(self, ticket_id: int) -> list[dict[str, Any]]: ...
-    async def get_attachment(self, ticket_id: int, article_id: int, attachment_id: int) -> bytes: ...
+    async def get_attachment(
+        self, ticket_id: int, article_id: int, attachment_id: int
+    ) -> tuple[bytes, str]: ...
+    # Returns (binary_data, file_path) — saves to attachment_dir and returns both
 
 
 class ZammadToolkit(AbstractToolkit):
     """LLM-facing toolkit for Zammad operations."""
     tool_prefix = "zammad"
+    exclude_tools = ("delete_ticket",)  # excluded for safety — available on ZammadInterface directly
 
     def __init__(
         self,
@@ -243,13 +257,15 @@ class ZammadToolkit(AbstractToolkit):
         token: str | None = None,
         default_customer: str | None = None,
         default_group: str | None = None,
+        on_behalf_of_header: str = "From",
+        attachment_dir: str | None = None,
         **kwargs,
     ) -> None: ...
 
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
 
-    # Each public async method becomes an LLM tool
+    # Each public async method becomes an LLM tool (except delete_ticket)
     async def create_ticket(self, ...) -> dict: ...
     async def get_ticket(self, ticket_id: int) -> dict: ...
     async def list_tickets(self, ...) -> dict: ...
@@ -261,6 +277,7 @@ class ZammadToolkit(AbstractToolkit):
     async def create_user(self, ...) -> dict: ...
     async def get_articles(self, ticket_id: int) -> list: ...
     async def get_attachment(self, ticket_id: int, article_id: int, attachment_id: int) -> dict: ...
+    # get_attachment returns {"file_path": str, "base64": str, "mime_type": str, "filename": str}
 ```
 
 ---
@@ -288,35 +305,42 @@ ZAMMAD_DEFAULT_ROLE = config.get("ZAMMAD_DEFAULT_ROLE", fallback="Customer")
 
 - **Path**: `packages/ai-parrot/src/parrot/interfaces/zammad.py`
 - **Responsibility**: Async HTTP client wrapping the Zammad REST API v1.
-  Handles authentication (Bearer token), the `From` header for on-behalf-of
-  operations, pagination, response parsing, and error handling.
+  Handles authentication (Bearer token), a configurable on-behalf-of header
+  (defaults to `From`, switchable to `X-On-Behalf-Of`), pagination, response
+  parsing, attachment download to disk, and error handling.
 - **Depends on**: Module 1 (conf vars), `aiohttp`
 
 Key implementation details:
 - Uses `aiohttp.ClientSession` with persistent session (created in
   `__aenter__` or lazily on first request)
 - All responses parsed as JSON; non-2xx status raises `ZammadError`
-- `From` header injected when `on_behalf_of` parameter is provided
+- On-behalf-of header (configurable via `on_behalf_of_header`) injected when
+  `on_behalf_of` parameter is provided
 - Default headers: `Authorization: Bearer {token}`,
   `Content-Type: application/json`
 - Supports `?expand=true` query parameter for enriched responses
 - Pagination via `page` + `per_page` (Zammad calls it `limit`)
+- `get_attachment` saves binary to `attachment_dir` (or temp dir) and returns
+  both the binary data and the file path
 
 ### Module 3: ZammadToolkit
 
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/zammad.py`
 - **Responsibility**: `AbstractToolkit` subclass exposing `ZammadInterface`
   methods as LLM tools. Each public async method has a Pydantic `@tool_schema`
-  for argument validation.
+  for argument validation. `delete_ticket` is excluded via `exclude_tools`.
 - **Depends on**: Module 2, `AbstractToolkit`, `@tool_schema`
 
 Key implementation details:
 - Creates `ZammadInterface` in `start()`, closes in `stop()`
 - `tool_prefix = "zammad"` so tools are named `zammad_create_ticket`, etc.
+- `exclude_tools = ("delete_ticket",)` — prevents LLMs from deleting tickets
 - Constructor accepts Zammad credentials directly or falls back to env vars
 - Each method docstring becomes the LLM tool description
 - Uses `on_behalf_of` parameter where applicable, allowing the LLM to
   specify which user to act as
+- `get_attachment` saves file to `attachment_dir` and returns a dict with
+  `file_path`, `base64`, `mime_type`, and `filename`
 
 ### Module 4: Registry & Exports
 
@@ -343,8 +367,9 @@ Key implementation details:
 | `test_zammad_interface_init_from_kwargs` | Module 2 | Config loads from explicit kwargs |
 | `test_zammad_interface_context_manager` | Module 2 | Session created/closed properly |
 | `test_zammad_request_auth_header` | Module 2 | Bearer token in Authorization header |
-| `test_zammad_request_on_behalf_of` | Module 2 | `From` header set when `on_behalf_of` provided |
-| `test_zammad_request_no_on_behalf_of` | Module 2 | No `From` header when `on_behalf_of` is None |
+| `test_zammad_request_on_behalf_of_from` | Module 2 | `From` header set when `on_behalf_of` provided (default) |
+| `test_zammad_request_on_behalf_of_custom_header` | Module 2 | Custom header name (`X-On-Behalf-Of`) when configured |
+| `test_zammad_request_no_on_behalf_of` | Module 2 | No on-behalf-of header when `on_behalf_of` is None |
 | `test_create_ticket_payload` | Module 2 | Correct JSON payload structure |
 | `test_create_ticket_with_attachments` | Module 2 | Attachment data encoded and sent |
 | `test_update_ticket` | Module 2 | PUT request with correct payload |
@@ -352,14 +377,16 @@ Key implementation details:
 | `test_search_tickets_pagination` | Module 2 | Multi-page search aggregates results |
 | `test_list_tickets_state_filter` | Module 2 | State IDs encoded in query |
 | `test_get_articles` | Module 2 | Articles list returned for ticket |
-| `test_get_attachment_binary` | Module 2 | Binary attachment data returned |
+| `test_get_attachment_saves_file` | Module 2 | Attachment saved to disk and binary returned |
 | `test_create_user` | Module 2 | User creation payload correct |
 | `test_search_users` | Module 2 | User search query correct |
 | `test_error_handling_4xx` | Module 2 | Non-2xx raises `ZammadError` |
 | `test_error_handling_network` | Module 2 | Connection error raises `ZammadConnectionError` |
 | `test_toolkit_tools_registered` | Module 3 | All expected tools appear in `get_tools()` |
 | `test_toolkit_tool_prefix` | Module 3 | Tool names start with `zammad_` |
+| `test_toolkit_delete_excluded` | Module 3 | `zammad_delete_ticket` NOT in tool list |
 | `test_toolkit_start_stop` | Module 3 | Interface created/closed via lifecycle |
+| `test_toolkit_attachment_returns_dict` | Module 3 | Returns `{file_path, base64, mime_type, filename}` |
 
 ### Integration Tests
 
@@ -414,17 +441,20 @@ def mock_user_response():
 - [ ] `ZammadInterface` can be instantiated from env vars or explicit kwargs
 - [ ] `ZammadInterface` supports async context manager (`async with`)
 - [ ] All HTTP requests include `Authorization: Bearer {token}` header
-- [ ] `From` header is set when `on_behalf_of` is provided (user ID, login, or email)
-- [ ] `From` header is absent when `on_behalf_of` is not provided
+- [ ] On-behalf-of header (default `From`) is set when `on_behalf_of` is provided (user ID, login, or email)
+- [ ] On-behalf-of header is absent when `on_behalf_of` is not provided
+- [ ] `on_behalf_of_header` parameter defaults to `"From"` and is configurable (e.g. `"X-On-Behalf-Of"`)
 - [ ] Ticket CRUD operations work: create, get, list, update, delete, search
 - [ ] User operations work: get, search, create, update, get current user
 - [ ] Article retrieval works: list articles by ticket ID
-- [ ] Attachment download works: returns binary data
+- [ ] Attachment download saves file to configurable `attachment_dir` and returns binary data
 - [ ] Pagination is handled for list/search endpoints
 - [ ] Non-2xx responses raise `ZammadError` with status code and message
 - [ ] Network errors raise `ZammadConnectionError`
 - [ ] `ZammadToolkit` extends `AbstractToolkit` and generates tools from public async methods
 - [ ] All toolkit tool names are prefixed with `zammad_`
+- [ ] `delete_ticket` excluded from `ZammadToolkit` via `exclude_tools`
+- [ ] `get_attachment` toolkit method returns `{"file_path": str, "base64": str, "mime_type": str, "filename": str}`
 - [ ] `ZammadToolkit` is registered in `TOOL_REGISTRY`
 - [ ] ZAMMAD_* env vars added to `parrot/conf.py`
 - [ ] All unit tests pass (`pytest tests/interfaces/test_zammad.py -v`)
@@ -542,9 +572,9 @@ class ZammadBackend(ActionBackend):                 # line 18
     method, `tool_prefix` for namespaced tool names, lifecycle in
     `start()`/`stop()`
 - **Authentication**: Bearer token via `Authorization: Bearer {token}` header
-  (Zammad OAuth2 style). The navigator reference uses `X-On-Behalf-Of` but the
-  official Zammad REST API documents the `From` header for on-behalf-of.
-  **Use the official `From` header.**
+  (Zammad OAuth2 style). The on-behalf-of header name is **configurable** via
+  `on_behalf_of_header` (defaults to `"From"`, set to `"X-On-Behalf-Of"` for
+  older Zammad instances).
 - **Async-first**: All HTTP calls via `aiohttp`, no blocking I/O
 - **Logging**: Use `logging.getLogger(f"parrot.interfaces.zammad")` pattern
 - **Error handling**: Custom exceptions (`ZammadError`, `ZammadAuthError`,
@@ -571,25 +601,32 @@ class ZammadBackend(ActionBackend):                 # line 18
 
 ### On Behalf Of
 
-The Zammad API supports the `From` HTTP header for acting on behalf of another
-user. The value can be:
+The Zammad API supports acting on behalf of another user via an HTTP header.
+The value can be:
 - User ID (integer as string)
 - User login
 - User email address
+
+The header name defaults to `From` (official Zammad docs) but is configurable
+to `X-On-Behalf-Of` (used by the navigator reference and some older Zammad
+instances) via the `on_behalf_of_header` constructor parameter.
 
 Requires `admin.user` permission on the API token.
 
 ### Known Risks / Gotchas
 
 - **Navigator uses `X-On-Behalf-Of`**: The navigator reference code uses
-  `X-On-Behalf-Of` header. The official Zammad docs specify `From`. Verify
-  which header the target Zammad version supports; some older versions may
-  use the non-standard header. We will use `From` as primary, with a
-  constructor option to override the header name if needed.
+  `X-On-Behalf-Of` header. The official Zammad docs specify `From`.
+  **Resolved**: the header name is configurable via `on_behalf_of_header`
+  parameter (defaults to `"From"`).
 - **Pagination differences**: Zammad uses `page` + `per_page` for ticket lists
   but `page` + `limit` for search. Normalize in the interface.
-- **Binary attachments**: `get_attachment` returns raw binary; the toolkit
-  wrapper should base64-encode for LLM consumption.
+- **Binary attachments**: `get_attachment` saves the file to a configurable
+  `attachment_dir` AND returns base64-encoded data. The toolkit returns a dict
+  with `file_path`, `base64`, `mime_type`, and `filename`.
+- **`delete_ticket` excluded from toolkit**: The `delete_ticket` method exists
+  on `ZammadInterface` for direct callers but is excluded from `ZammadToolkit`
+  via `exclude_tools` to prevent LLMs from accidentally deleting tickets.
 - **Rate limiting**: Zammad does not have built-in rate limiting docs, but
   server admins may configure it. No retry logic in v1; add if needed later.
 
@@ -606,12 +643,17 @@ No new external dependencies required.
 
 ## 8. Open Questions
 
-- [ ] Should the `From` header name be configurable (to support older Zammad
-  instances that use `X-On-Behalf-Of`)? — *Owner: Jesus*
-- [ ] Should the toolkit expose `delete_ticket` to LLMs, or should that be
-  excluded via `exclude_tools` for safety? — *Owner: Jesus*
-- [ ] Should attachment download in the toolkit return base64-encoded data or
-  save to a file and return the path? — *Owner: Jesus*
+- [x] Should the `From` header name be configurable (to support older Zammad
+  instances that use `X-On-Behalf-Of`)? — *Resolved*: Yes. Added
+  `on_behalf_of_header` parameter defaulting to `"From"`.
+- [x] Should the toolkit expose `delete_ticket` to LLMs, or should that be
+  excluded via `exclude_tools` for safety? — *Resolved*: Excluded. Added to
+  `exclude_tools` tuple. `ZammadInterface.delete_ticket()` remains available
+  for direct Python callers.
+- [x] Should attachment download in the toolkit return base64-encoded data or
+  save to a file and return the path? — *Resolved*: Both. Saves file to
+  configurable `attachment_dir` AND returns base64 + file path + metadata
+  (`{"file_path": str, "base64": str, "mime_type": str, "filename": str}`).
 
 ---
 
@@ -628,3 +670,4 @@ No new external dependencies required.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-09 | Jesus Lara | Initial draft |
+| 0.2 | 2026-07-09 | Jesus Lara | Resolved open questions; marked approved |
