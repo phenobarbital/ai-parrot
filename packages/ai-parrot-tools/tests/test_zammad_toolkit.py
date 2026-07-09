@@ -41,6 +41,21 @@ class TestZammadToolkitRegistration:
         }
         assert expected.issubset(names)
 
+    def test_toolkit_delete_excluded(self, toolkit):
+        """Spec §4: zammad_delete_ticket must not be a registered tool."""
+        names = toolkit.list_tool_names()
+        assert "zammad_delete_ticket" not in names
+        # The underlying method remains directly callable (not tool-exposed).
+        assert hasattr(toolkit, "delete_ticket")
+
+
+def test_zammad_in_registry():
+    """Spec §4 / TASK-1704: TOOL_REGISTRY resolves the zammad entry."""
+    from parrot_tools import TOOL_REGISTRY
+
+    assert "zammad" in TOOL_REGISTRY
+    assert TOOL_REGISTRY["zammad"] == "parrot_tools.zammad.ZammadToolkit"
+
 
 class TestZammadToolkitLifecycle:
     """Tests for start()/stop() lifecycle wiring the interface."""
@@ -109,6 +124,21 @@ class TestZammadToolkitMethods:
         assert result["filename"] == "report.txt"
         assert result["base64"] == base64.b64encode(b"hello").decode("ascii")
         assert result["mime_type"] == "text/plain"
+
+    @pytest.mark.asyncio
+    async def test_toolkit_attachment_returns_dict(self, toolkit):
+        """Spec §4: get_attachment must return file_path/base64/mime_type/filename."""
+        toolkit._interface = AsyncMock()
+        toolkit._interface.get_attachment.return_value = (
+            b"%PDF-1.4 fake",
+            "/tmp/zammad_attachments/invoice.pdf",
+        )
+
+        result = await toolkit.get_attachment(ticket_id=10, article_id=20, attachment_id=30)
+
+        assert set(result.keys()) == {"file_path", "base64", "mime_type", "filename"}
+        assert result["filename"] == "invoice.pdf"
+        assert result["mime_type"] == "application/pdf"
 
     @pytest.mark.asyncio
     async def test_search_users_delegates(self, toolkit):
