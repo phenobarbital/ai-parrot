@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, ConfigDict
 
 from ..core.schema import FormSchema
+from ._db_utils import is_unique_violation
 from .registry import FormRegistry, FormStorage
 
 logger = logging.getLogger(__name__)
@@ -27,18 +28,6 @@ logger = logging.getLogger(__name__)
 #: Upper bound for storage probing when reconstructing version history
 #: (defensive cap — real forms have far fewer published versions).
 _MAX_VERSION_PROBES = 200
-
-
-def _is_unique_violation(exc: Exception) -> bool:
-    """Heuristically detect a UNIQUE(form_id, version) constraint violation.
-
-    Works for asyncpg (``UniqueViolationError``) and for drivers that wrap
-    the original error, without importing driver-specific exception types.
-    """
-    if type(exc).__name__ == "UniqueViolationError":
-        return True
-    text = str(exc).lower()
-    return "duplicate key" in text or "unique constraint" in text
 
 
 # ---------------------------------------------------------------------------
