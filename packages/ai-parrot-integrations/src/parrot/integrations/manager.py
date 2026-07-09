@@ -12,8 +12,9 @@ Loads configuration from {ENV_DIR}/integrations_bots.yaml (or telegram_bots.yaml
 from __future__ import annotations
 import asyncio
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 import yaml
+from aiohttp import web
 
 from navconfig import BASE_DIR
 from navconfig.logging import logging
@@ -30,7 +31,7 @@ from .models import (
     SlackAgentConfig,
     MSAgentSDKConfig,
     MSAgentIntegrationConfig,  # noqa: F401 — consumed by _start_msagent_bot (TASK-1710)
-    A2AAgentConfig,  # noqa: F401 — consumed by _start_a2a_bot (TASK-1709)
+    A2AAgentConfig,
 )
 if TYPE_CHECKING:
     from aiogram import Bot, Dispatcher
@@ -44,6 +45,19 @@ if TYPE_CHECKING:
 
 
 ENV_DIR = BASE_DIR.joinpath('env')
+
+
+async def handle_a2a_directory(request: web.Request) -> web.Response:
+    """GET /a2a/directory — returns JSON array of all registered AgentCards.
+
+    Lists only agents declared with ``kind: a2a`` (including the automatic
+    A2A companion surface of ``kind: msagent`` bots); other integration
+    kinds (telegram/slack/etc.) never register into
+    ``app["a2a_discovery_registry"]``.
+    """
+    registry: Dict[str, Any] = request.app.get("a2a_discovery_registry", {})
+    cards = [card.to_dict() for card in registry.values()]
+    return web.json_response(cards)
 
 
 class IntegrationBotManager:
@@ -67,6 +81,11 @@ class IntegrationBotManager:
         self.whatsapp_bots: Dict[str, 'WhatsAppAgentWrapper'] = {}
         self.slack_bots: Dict[str, 'SlackAgentWrapper'] = {}
         self.msagentsdk_bots: Dict[str, 'MSAgentSDKWrapper'] = {}
+        self.a2a_bots: Dict[str, Any] = {}
+
+        # Dedicated aiohttp.web.AppRunner instances for A2A agents started
+        # with a per-agent ``port`` (i.e. NOT mounted on the shared app).
+        self._a2a_runners: List[web.AppRunner] = []
 
         # Matrix crew transport (FEAT-044)
         self.matrix_crew: Optional[object] = None  # MatrixCrewTransport
@@ -159,6 +178,8 @@ class IntegrationBotManager:
                     await self._start_slack_bot(name, agent_config)
                 elif isinstance(agent_config, MSAgentSDKConfig):
                     await self._start_msagentsdk_bot(name, agent_config)
+                elif isinstance(agent_config, A2AAgentConfig):
+                    await self._start_a2a_bot(name, agent_config)
             except Exception as e:
                 self.logger.error("Failed to start bot %s: %s", name, e, exc_info=True)
 
@@ -361,6 +382,157 @@ class IntegrationBotManager:
         self.msagentsdk_bots[name] = wrapper
         self.logger.info("Started MS Agent SDK bot '%s'", name)
 
+    def _wire_a2a_security(self, app: web.Application, config: A2AAgentConfig) -> None:
+        """Build and attach an ``A2ASecurityMiddleware`` for an A2A agent.
+
+        Wires whichever authenticators correspond to the security fields set
+        on *config* (JWT, mTLS, API key / HMAC via the in-memory credential
+        provider) and appends the resulting middleware to *app*.
+
+        Args:
+            app: The aiohttp application the A2A agent is mounted on.
+            config: ``A2AAgentConfig`` carrying the security fields.
+        """
+        from parrot.a2a.security import (
+            A2ASecurityMiddleware,
+            SecurityPolicy,
+            JWTAuthenticator,
+            MTLSAuthenticator,
+            InMemoryCredentialProvider,
+        )
+
+        jwt_authenticator = None
+        if config.jwt_secret:
+            jwt_authenticator = JWTAuthenticator(secret_key=config.jwt_secret)
+
+        mtls_authenticator = None
+        if config.mtls_ca_cert:
+            mtls_authenticator = MTLSAuthenticator(ca_cert_path=config.mtls_ca_cert)
+
+        credential_provider = None
+        if config.api_key or config.hmac_secret or config.basic_credentials:
+            credential_provider = InMemoryCredentialProvider()
+
+        policy_kwargs = dict(config.security_policy or {})
+        default_policy = SecurityPolicy(**policy_kwargs)
+
+        middleware = A2ASecurityMiddleware(
+            jwt_authenticator=jwt_authenticator,
+            mtls_authenticator=mtls_authenticator,
+            credential_provider=credential_provider,
+            default_policy=default_policy,
+        )
+        app.middlewares.append(middleware.middleware)
+        self.logger.info("Wired A2ASecurityMiddleware for A2A agent config '%s'", config.name)
+
+    async def _start_a2a_bot(self, name: str, config: A2AAgentConfig) -> None:
+        """Start an agent as an A2A (Agent-to-Agent protocol) service.
+
+        Resolves the parrot agent from BotManager, optionally builds a
+        ``CredentialBroker`` from the inline ``credentials`` list, wraps the
+        agent with ``A2AServer``, mounts it on the shared aiohttp app (or a
+        dedicated ``TCPSite`` when ``config.port`` is set), registers its
+        ``AgentCard`` in the in-process discovery registry, and wires
+        ``A2ASecurityMiddleware`` when any security field is configured.
+
+        Args:
+            name: Agent name as declared in the YAML config.
+            config: ``A2AAgentConfig`` for this bot.
+        """
+        agent = await self._get_agent(config.chatbot_id, config.system_prompt_override)
+        if not agent:
+            return
+
+        try:
+            from parrot.a2a.server import A2AServer
+        except ImportError:
+            self.logger.warning(
+                "Cannot start A2A bot '%s': ai-parrot-server is not installed.",
+                name,
+            )
+            return
+
+        # Build credential broker if enabled
+        broker = None
+        if config.enable_credential_broker and config.credentials:
+            from parrot.auth.broker import CredentialBroker
+            from parrot.auth.credentials import ProviderCredentialConfig
+
+            configs = [ProviderCredentialConfig(**c) for c in config.credentials]
+            broker = CredentialBroker.from_config(configs, strict=False)
+
+        app = self.bot_manager.get_app()
+
+        # Init discovery registry (shared across all A2A + msagent-companion bots)
+        app.setdefault("a2a_discovery_registry", {})
+
+        # Register the discovery listing route once on the shared app,
+        # regardless of whether THIS agent is mounted there or on a
+        # dedicated port — /a2a/directory always lives on the shared app.
+        if not app.get("a2a_directory_registered"):
+            app.router.add_get("/a2a/directory", handle_a2a_directory)
+            app["a2a_directory_registered"] = True
+
+        # Avoid base_path collisions when multiple A2A agents share the app:
+        # only the first agent may keep the default "/a2a" path.
+        used_base_paths: set = app.setdefault("a2a_base_paths", set())
+        base_path = config.base_path
+        if base_path in used_base_paths:
+            base_path = f"{config.base_path}/{name.lower()}"
+        used_base_paths.add(base_path)
+
+        a2a_server = A2AServer(
+            agent=agent,
+            base_path=base_path,
+            tags=config.tags,
+            broker=broker,
+        )
+
+        has_security = bool(
+            config.jwt_secret or config.api_key or config.mtls_ca_cert
+            or config.hmac_secret or config.basic_credentials
+        )
+
+        if config.port:
+            # Dedicated port: mount on a standalone sub-application. Security
+            # middleware and routes MUST be registered before ``runner.setup()``
+            # — aiohttp freezes the app's middlewares/router at that point.
+            target_app = web.Application()
+            target_app["a2a_discovery_registry"] = app["a2a_discovery_registry"]
+            if has_security:
+                self._wire_a2a_security(target_app, config)
+            a2a_server.setup(target_app, url=config.url)
+            runner = web.AppRunner(target_app)
+            await runner.setup()
+            try:
+                site = web.TCPSite(runner, "0.0.0.0", config.port)
+                await site.start()
+                self._a2a_runners.append(runner)
+            except OSError as exc:
+                self.logger.error(
+                    "Failed to start dedicated A2A port %s for bot '%s': %s",
+                    config.port,
+                    name,
+                    exc,
+                )
+                await runner.cleanup()
+                return
+        else:
+            # Shared app: this runs from the aiohttp ``on_startup`` signal
+            # (via IntegrationBotManager.startup()), before the app is
+            # frozen, so middleware/router mutation here is safe.
+            target_app = app
+            if has_security:
+                self._wire_a2a_security(target_app, config)
+            a2a_server.setup(target_app, url=config.url)
+
+        # Register in discovery registry
+        card = a2a_server.get_agent_card()
+        app["a2a_discovery_registry"][name] = card
+
+        self.a2a_bots[name] = a2a_server
+        self.logger.info("Started A2A bot '%s' at %s", name, base_path)
+
     async def _start_slack_bot(self, name: str, config: SlackAgentConfig):
         # Suppress the verbose DEBUG/INFO output from the slack_sdk internals
         # (heartbeats, raw WebSocket frames, HTTP request dumps, etc.)
@@ -496,6 +668,15 @@ class IntegrationBotManager:
             except Exception as e:
                 self.logger.error("Error stopping Slack bot '%s': %s", name, e)
         
+        # Stop dedicated-port A2A runners (shared-app A2A bots are torn down
+        # with the shared app itself and need no explicit cleanup here).
+        for runner in self._a2a_runners:
+            try:
+                self.logger.debug("Stopping dedicated A2A runner")
+                await runner.cleanup()
+            except Exception as e:
+                self.logger.error("Error stopping A2A runner: %s", e)
+
         # Stop Matrix crew transport (FEAT-044)
         if self.matrix_crew is not None:
             try:
@@ -528,6 +709,8 @@ class IntegrationBotManager:
         self.whatsapp_bots.clear()
         self.slack_bots.clear()
         self.msagentsdk_bots.clear()
+        self.a2a_bots.clear()
+        self._a2a_runners.clear()
         self._polling_tasks.clear()
 
         self.logger.info("Integration Manager shutdown complete")
