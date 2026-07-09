@@ -770,6 +770,21 @@ class A2AError:
         return cls(code=data["code"], message=data["message"], data=data.get("data"))
 
 
+#: A2A Protocol v1.0.0 error code table (spec §2 / §7; TASK-1715).
+#: Maps a symbolic error name to its ``(json_rpc_code, http_status)`` pair.
+A2A_ERRORS: Dict[str, "tuple[int, int]"] = {
+    "TaskNotFoundError": (-32001, 404),
+    "TaskNotCancelableError": (-32002, 400),
+    "PushNotificationNotSupportedError": (-32003, 400),
+    "UnsupportedOperationError": (-32004, 400),
+    "ContentTypeNotSupportedError": (-32005, 400),
+    "InvalidAgentResponseError": (-32006, 500),
+    "ExtendedAgentCardNotConfiguredError": (-32007, 400),
+    "ExtensionSupportRequiredError": (-32008, 400),
+    "VersionNotSupportedError": (-32009, 400),
+}
+
+
 @dataclass
 class AgentSkill:
     """A capability exposed by an agent (maps to a tool)."""

@@ -42,12 +42,28 @@ from parrot.a2a.models import (
     Part,
     Artifact,
     SendMessageConfiguration,
+    TaskPushNotificationConfig,
     parse_task_state,
+    A2A_ERRORS,
 )
 
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
     from parrot.tools.abstract import AbstractTool
+
+
+class _A2ARpcError(Exception):
+    """Internal marker exception for A2A JSON-RPC method errors (TASK-1715).
+
+    Raised by `_rpc_*` method implementations; caught centrally by
+    `A2AServer._handle_jsonrpc()`, which turns it into the correct
+    JSON-RPC error envelope via `A2A_ERRORS` (numeric code + HTTP status).
+    """
+
+    def __init__(self, error_name: str, message: str):
+        super().__init__(message)
+        self.error_name = error_name
+        self.message = message
 
 
 class A2AServer:
@@ -246,12 +262,13 @@ class A2AServer:
             return "0.3"
         if version.startswith("1."):
             return "1.0"
+        code, _http_status = A2A_ERRORS["VersionNotSupportedError"]
         raise web.HTTPBadRequest(
             text=json.dumps({
                 "jsonrpc": "2.0",
                 "id": None,
                 "error": {
-                    "code": -32009,
+                    "code": code,
                     "message": f"Version not supported: {version}",
                 },
             }),
@@ -1275,6 +1292,18 @@ class A2AServer:
         """Send SSE event."""
         await response.write(f"data: {json.dumps(data)}\n\n".encode())
 
+    def _rest_error_response(self, error_name: str, message: str) -> web.Response:
+        """Build a REST (non-JSON-RPC) error response from the A2A error table.
+
+        Args:
+            error_name: Key into `A2A_ERRORS` (e.g. `"TaskNotFoundError"`).
+            message: Human-readable error message.
+        """
+        code, http_status = A2A_ERRORS[error_name]
+        return web.json_response(
+            {"error": {"code": code, "message": message}}, status=http_status
+        )
+
     async def _handle_get_task(self, request: web.Request) -> web.Response:
         """GET {base}/tasks/{task_id} — shared by v0.3 and v1.0."""
         version = self._get_request_version(request)
@@ -1284,9 +1313,8 @@ class A2AServer:
                 task.to_dict(version=version), content_type=self._content_type_for(version)
             )
 
-        return web.json_response(
-            {"error": {"code": "TaskNotFoundError", "message": f"Task {task_id} not found"}},
-            status=404
+        return self._rest_error_response(
+            "TaskNotFoundError", f"Task {task_id} not found"
         )
 
     async def _handle_list_tasks(self, request: web.Request) -> web.Response:
@@ -1323,16 +1351,14 @@ class A2AServer:
         task = self._tasks.get(task_id)
 
         if not task:
-            return web.json_response(
-                {"error": {"code": "TaskNotFoundError"}},
-                status=404
+            return self._rest_error_response(
+                "TaskNotFoundError", f"Task {task_id} not found"
             )
 
         terminal_states = {TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELED}
         if task.status.state in terminal_states:
-            return web.json_response(
-                {"error": {"code": "TaskNotCancelableError"}},
-                status=400
+            return self._rest_error_response(
+                "TaskNotCancelableError", f"Task {task_id} is in a terminal state and cannot be canceled"
             )
 
         task.status = TaskStatus(state=TaskState.CANCELED)
@@ -1347,9 +1373,8 @@ class A2AServer:
         task = self._tasks.get(task_id)
 
         if not task:
-            return web.json_response(
-                {"error": {"code": "TaskNotFoundError"}},
-                status=404
+            return self._rest_error_response(
+                "TaskNotFoundError", f"Task {task_id} not found"
             )
 
         response = web.StreamResponse(
@@ -1364,42 +1389,321 @@ class A2AServer:
         await response.write_eof()
         return response
 
-    async def _handle_jsonrpc(self, request: web.Request) -> web.Response:
-        """POST /a2a/rpc - JSON-RPC 2.0 binding."""
+    #: JSON-RPC method dispatch table (FEAT-272 / TASK-1715). Maps both the
+    #: v1.0.0 PascalCase method names and the legacy v0.3 slash-separated
+    #: names to the same `_rpc_*` implementation, so v0.3 clients (Microsoft
+    #: Copilot Studio) keep working unchanged.
+    _JSONRPC_METHODS: Dict[str, str] = {
+        # v1.0.0 PascalCase
+        "SendMessage": "_rpc_send_message",
+        "GetTask": "_rpc_get_task",
+        "ListTasks": "_rpc_list_tasks",
+        "CancelTask": "_rpc_cancel_task",
+        "CreateTaskPushNotificationConfig": "_rpc_create_push_config",
+        "GetTaskPushNotificationConfig": "_rpc_get_push_config",
+        "ListTaskPushNotificationConfigs": "_rpc_list_push_configs",
+        "DeleteTaskPushNotificationConfig": "_rpc_delete_push_config",
+        "GetExtendedAgentCard": "_rpc_get_extended_agent_card",
+        # v0.3 compat aliases
+        "message/send": "_rpc_send_message",
+        "tasks/get": "_rpc_get_task",
+        "tasks/list": "_rpc_list_tasks",
+    }
+
+    #: Methods that stream results over SSE rather than returning a single
+    #: JSON-RPC response object (v1.0.0 §3 Module 3).
+    _JSONRPC_STREAMING_METHODS = frozenset({"SendStreamingMessage", "SubscribeToTask"})
+
+    async def _handle_jsonrpc(self, request: web.Request) -> web.StreamResponse:
+        """POST /a2a/rpc - JSON-RPC 2.0 binding (v0.3 + v1.0.0 methods)."""
+        version = self._get_request_version(request)
         data = await request.json()
         method = data.get("method")
-        params = data.get("params", {})
+        params = data.get("params", {}) or {}
         req_id = data.get("id")
 
-        try:
-            if method == "message/send":
-                message = Message.from_dict(params.get("message", {}))
-                task = await self.process_message(message)
-                result = task.to_dict()
-            elif method == "tasks/get":
-                task = self._tasks.get(params.get("id"))
-                result = task.to_dict() if task else None
-            elif method == "tasks/list":
-                tasks = list(self._tasks.values())
-                result = {"tasks": [t.to_dict() for t in tasks]}
-            else:
-                return web.json_response({
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {"code": -32601, "message": f"Method not found: {method}"}
-                })
+        if method in self._JSONRPC_STREAMING_METHODS:
+            return await self._rpc_stream(request, method, params, req_id, version)
 
+        handler_name = self._JSONRPC_METHODS.get(method)
+        if handler_name is None:
             return web.json_response({
                 "jsonrpc": "2.0",
                 "id": req_id,
-                "result": result
+                "error": {"code": -32601, "message": f"Method not found: {method}"}
             })
+
+        try:
+            handler = getattr(self, handler_name)
+            result = await handler(params, version)
+            return web.json_response({
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": result,
+            })
+        except _A2ARpcError as err:
+            return self._a2a_jsonrpc_error_response(err.error_name, err.message, req_id)
         except Exception as e:
             return web.json_response({
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "error": {"code": -32603, "message": str(e)}
             })
+
+    def _a2a_jsonrpc_error_response(
+        self, error_name: str, message: str, req_id: Any = None
+    ) -> web.Response:
+        """Build a JSON-RPC 2.0 error envelope from the A2A error table.
+
+        Args:
+            error_name: Key into `A2A_ERRORS` (e.g. `"TaskNotFoundError"`).
+            message: Human-readable error message.
+            req_id: The JSON-RPC request `id` to echo back.
+        """
+        code, http_status = A2A_ERRORS[error_name]
+        return web.json_response({
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {"code": code, "message": message},
+        }, status=http_status)
+
+    # ─────────────────────────────────────────────────────────────
+    # JSON-RPC method implementations (v1.0.0, FEAT-272 / TASK-1715)
+    # ─────────────────────────────────────────────────────────────
+
+    async def _rpc_send_message(self, params: Dict[str, Any], version: str) -> Dict[str, Any]:
+        """`SendMessage` / `message/send`."""
+        message = Message.from_dict(params.get("message", {}))
+        config = SendMessageConfiguration.from_dict(params.get("configuration") or {})
+
+        if config.return_immediately:
+            task = Task.create(context_id=message.context_id)
+            task.history.append(message)
+            self._tasks[task.id] = task
+            asyncio.create_task(self.process_message(message, task=task))
+            return task.to_dict(version=version)
+
+        task = await self.process_message(message)
+        if config.history_length is not None:
+            task.history = (
+                task.history[-config.history_length:] if config.history_length > 0 else []
+            )
+        return task.to_dict(version=version)
+
+    async def _rpc_get_task(self, params: Dict[str, Any], version: str) -> Dict[str, Any]:
+        """`GetTask` / `tasks/get`."""
+        task_id = params.get("id") or params.get("taskId")
+        task = self._tasks.get(task_id)
+        if not task:
+            raise _A2ARpcError("TaskNotFoundError", f"Task {task_id} not found")
+        return task.to_dict(version=version)
+
+    async def _rpc_list_tasks(self, params: Dict[str, Any], version: str) -> Dict[str, Any]:
+        """`ListTasks` / `tasks/list`."""
+        tasks = list(self._tasks.values())
+        context_id = params.get("contextId")
+        state = params.get("status")
+        if context_id:
+            tasks = [t for t in tasks if t.context_id == context_id]
+        if state:
+            wanted_state = parse_task_state(state)
+            tasks = [t for t in tasks if t.status.state == wanted_state]
+        return {"tasks": [t.to_dict(version=version) for t in tasks]}
+
+    async def _rpc_cancel_task(self, params: Dict[str, Any], version: str) -> Dict[str, Any]:
+        """`CancelTask` (new JSON-RPC binding, v1.0.0)."""
+        task_id = params.get("id") or params.get("taskId")
+        task = self._tasks.get(task_id)
+        if not task:
+            raise _A2ARpcError("TaskNotFoundError", f"Task {task_id} not found")
+
+        terminal_states = {TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELED}
+        if task.status.state in terminal_states:
+            raise _A2ARpcError(
+                "TaskNotCancelableError",
+                f"Task {task_id} is in a terminal state and cannot be canceled",
+            )
+
+        task.status = TaskStatus(state=TaskState.CANCELED)
+        return task.to_dict(version=version)
+
+    async def _rpc_get_extended_agent_card(
+        self, params: Dict[str, Any], version: str
+    ) -> Dict[str, Any]:
+        """`GetExtendedAgentCard` (v1.0.0)."""
+        card = self.get_agent_card()
+        if not card.capabilities.extended_agent_card:
+            raise _A2ARpcError(
+                "ExtendedAgentCardNotConfiguredError",
+                "This agent does not expose an extended agent card",
+            )
+        return card.to_dict(version=version)
+
+    # ─────────────────────────────────────────────────────────────
+    # Push notification config JSON-RPC methods (v1.0.0, FEAT-272 / TASK-1715)
+    #
+    # The actual `PushNotificationStore` is created/wired in `__init__` by
+    # TASK-1716; here we only look it up defensively via `getattr` so these
+    # methods work correctly both before AND after TASK-1716 lands (before:
+    # no attribute -> None -> -32003; after: the real store).
+    # ─────────────────────────────────────────────────────────────
+
+    async def _rpc_create_push_config(
+        self, params: Dict[str, Any], version: str
+    ) -> Dict[str, Any]:
+        """`CreateTaskPushNotificationConfig` (v1.0.0)."""
+        store = getattr(self, "_push_store", None)
+        if store is None:
+            raise _A2ARpcError(
+                "PushNotificationNotSupportedError",
+                "Push notifications are not supported by this agent",
+            )
+        config = TaskPushNotificationConfig.from_dict(params.get("config") or params)
+        created = await store.create(config)
+        return created.to_dict()
+
+    async def _rpc_get_push_config(
+        self, params: Dict[str, Any], version: str
+    ) -> Dict[str, Any]:
+        """`GetTaskPushNotificationConfig` (v1.0.0)."""
+        store = getattr(self, "_push_store", None)
+        if store is None:
+            raise _A2ARpcError(
+                "PushNotificationNotSupportedError",
+                "Push notifications are not supported by this agent",
+            )
+        task_id = params.get("taskId") or params.get("id")
+        config_id = params.get("configId")
+        config = await store.get(task_id, config_id)
+        if config is None:
+            raise _A2ARpcError(
+                "TaskNotFoundError", f"Push notification config {config_id!r} not found"
+            )
+        return config.to_dict()
+
+    async def _rpc_list_push_configs(
+        self, params: Dict[str, Any], version: str
+    ) -> Dict[str, Any]:
+        """`ListTaskPushNotificationConfigs` (v1.0.0)."""
+        store = getattr(self, "_push_store", None)
+        if store is None:
+            raise _A2ARpcError(
+                "PushNotificationNotSupportedError",
+                "Push notifications are not supported by this agent",
+            )
+        task_id = params.get("taskId") or params.get("id")
+        configs = await store.list_for_task(task_id)
+        return {"configs": [c.to_dict() for c in configs]}
+
+    async def _rpc_delete_push_config(
+        self, params: Dict[str, Any], version: str
+    ) -> Dict[str, Any]:
+        """`DeleteTaskPushNotificationConfig` (v1.0.0)."""
+        store = getattr(self, "_push_store", None)
+        if store is None:
+            raise _A2ARpcError(
+                "PushNotificationNotSupportedError",
+                "Push notifications are not supported by this agent",
+            )
+        task_id = params.get("taskId") or params.get("id")
+        config_id = params.get("configId")
+        deleted = await store.delete(task_id, config_id)
+        return {"deleted": deleted}
+
+    # ─────────────────────────────────────────────────────────────
+    # Streaming JSON-RPC methods (SendStreamingMessage, SubscribeToTask)
+    # ─────────────────────────────────────────────────────────────
+
+    async def _rpc_stream(
+        self,
+        request: web.Request,
+        method: str,
+        params: Dict[str, Any],
+        req_id: Any,
+        version: str,
+    ) -> web.StreamResponse:
+        """Handle the two v1.0.0 JSON-RPC methods that stream via SSE.
+
+        `SendStreamingMessage` reuses the same event stream produced by the
+        REST `message:stream` binding (`_handle_stream_message`'s
+        implementation); `SubscribeToTask` reuses the `tasks/{id}:subscribe`
+        snapshot-then-close behavior. Framing note: frames are emitted using
+        the same event-object shapes as the REST SSE binding (`task`,
+        `statusUpdate`, `artifactUpdate`) rather than double-wrapping each
+        frame in a `{"jsonrpc": "2.0", ...}` envelope — the v1.0.0 spec is
+        not fully explicit on JSON-RPC-over-SSE frame shape for these two
+        methods, so this mirrors the REST binding for consistency across
+        both bindings (documented as a design decision in TASK-1715's
+        Completion Note; no test currently pins the exact envelope shape).
+        """
+        if method == "SendStreamingMessage":
+            response = web.StreamResponse(
+                headers={
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                }
+            )
+            await response.prepare(request)
+
+            message = Message.from_dict(params.get("message", {}))
+            task = Task.create(context_id=message.context_id)
+            task.history.append(message)
+            self._tasks[task.id] = task
+
+            await self._send_sse(response, {"task": task.to_dict(version=version)})
+            task.working(f"Processing with {self.agent.name}...")
+            await self._send_sse(response, {
+                "statusUpdate": {
+                    "taskId": task.id,
+                    "contextId": task.context_id,
+                    "status": {"state": self._state_str(TaskState.WORKING, version)},
+                    "final": False,
+                }
+            })
+
+            try:
+                question = message.get_text()
+                if hasattr(self.agent, "ask_stream"):
+                    await self._stream_with_ask_stream(response, task, question, message, version=version)
+                else:
+                    await self._stream_fallback(response, task, question, message, version=version)
+            except Exception as e:
+                self.logger.error("Error in JSON-RPC streaming: %s", e, exc_info=True)
+                task.fail(str(e))
+                await self._send_sse(response, {
+                    "statusUpdate": {
+                        "taskId": task.id,
+                        "contextId": task.context_id,
+                        "status": {
+                            "state": self._state_str(TaskState.FAILED, version),
+                            "message": Message.agent(str(e)).to_dict(version=version),
+                        },
+                        "final": True,
+                    }
+                })
+
+            await response.write_eof()
+            return response
+
+        # method == "SubscribeToTask"
+        response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+        await response.prepare(request)
+
+        task_id = params.get("id") or params.get("taskId")
+        task = self._tasks.get(task_id)
+        if not task:
+            code, _ = A2A_ERRORS["TaskNotFoundError"]
+            await self._send_sse(response, {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": code, "message": f"Task {task_id} not found"},
+            })
+        else:
+            await self._send_sse(response, {"task": task.to_dict(version=version)})
+
+        await response.write_eof()
+        return response
 
 
 class A2AEnabledMixin:
