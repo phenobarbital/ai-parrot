@@ -257,4 +257,64 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-09
+**Notes**:
+- Restructured `AgentCard` in `packages/ai-parrot/src/parrot/a2a/models.py`:
+  removed the `url`/`preferred_transport`/`protocol_version` dataclass fields,
+  added `supported_interfaces: List[AgentInterface]` plus `provider`,
+  `documentation_url`, `security_schemes`, `security_requirements`,
+  `signatures`.
+- Added backward-compat `url` property WITH a setter (getter returns
+  `supported_interfaces[0].url`; setter mutates the first interface, or
+  creates one if none exist) — the task's Key Constraints said "add a
+  `@property url` ... so existing code doesn't break," and a grep of the
+  codebase found `router.py:_handle_discovery` does `card.url = f"{scheme}://
+  {host}"` (assignment, not just read). A getter-only property would raise
+  `AttributeError` there, so a setter was necessary to fulfill the stated
+  intent — this is implemented now in models.py; wiring/verifying all
+  mesh.py/router.py call sites remains TASK-1718's scope per its own file list.
+  Also added a `preferred_transport` read-only property (getter only, as
+  specified — no code assigns to it).
+- `to_dict()` now takes `version: str = "1.0"` (was version-less before) and
+  dispatches to `_to_dict_v1()` (emits `supportedInterfaces`, `provider`,
+  `documentationUrl`, `securitySchemes`, `securityRequirements`, `signatures`)
+  or `_to_dict_v03()` (unchanged flat `url`/`preferredTransport`/hardcoded
+  `protocolVersion: "0.3.0"` shape, byte-for-byte compatible with the
+  pre-existing Copilot Studio wire format).
+- `from_dict()` auto-detects `supportedInterfaces` (v1.0) vs flat `url` (v0.3)
+  exactly as specified; both are covered by tests.
+- `A2AServer.get_agent_card()` (`packages/ai-parrot-server/src/parrot/a2a/
+  server.py`) now builds `supported_interfaces=[AgentInterface(url=self._url,
+  protocol_binding="JSONRPC", protocol_version="1.0")]` instead of
+  `url=self._url`, per the task's own Implementation Notes code snippet. Note:
+  the task's "Scope" bullet said to construct from "`self._url` and
+  `self.base_path`" but the "Implementation Notes" snippet shows only
+  `url=self._url` (no base_path concatenation, matching the PRE-EXISTING
+  behavior which also never appended base_path to the flat `url` field) — I
+  followed the literal code snippet / preserved existing behavior rather than
+  introducing a new base_path-concatenation not covered by any test or by the
+  pre-existing runtime behavior. Flagging this ambiguity per the "when in
+  doubt" rule; no test exercises the difference either way.
+- `packages/ai-parrot/src/parrot/a2a/__init__.py` now exports all TASK-1712/
+  1713 model types (`AgentInterface`, `AgentProvider`, `AgentExtension`,
+  `AgentCardSignature`, `SecurityScheme` + subtypes, `SecurityRequirement`,
+  `SendMessageConfiguration`, `TaskPushNotificationConfig`,
+  `AuthenticationInfo`, `A2AError`, `parse_task_state`, `parse_role`,
+  `security_scheme_from_dict`, `Role`).
+- Appended `TestAgentCardV1` (6 tests) to `test_a2a_v1_models.py` per the
+  task's own Test Specification (same file as TASK-1712, as instructed there).
+  Full file: 40 tests, all passing. `ruff check` clean on all touched files.
+- Regression check: `test_a2a_tools.py` (22), and the identity/credential-gate/
+  resume-trigger/bridge-e2e A2AServer suites (38) all still pass — the
+  `get_agent_card()` change is behavior-preserving for `card.url` reads.
+- **Known temporary gap (expected, tracked by TASK-1718)**: `router.py`'s
+  `get_agent_card()` still constructs `AgentCard(url=None, ...)` — `url` is no
+  longer a constructor kwarg, so this call will raise `TypeError` until
+  TASK-1718 (which explicitly lists `router.py` as MODIFY) fixes it. No
+  existing test exercises `A2AProxyRouter.get_agent_card()` (verified via
+  grep — no test file references `A2AProxyRouter`), so this does not
+  regress any test in the interim.
+**Deviations from spec**: none beyond the `url` setter addition (justified
+above) and the base_path question (flagged above, no observable behavior
+change either way).
