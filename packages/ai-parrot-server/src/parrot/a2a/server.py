@@ -43,6 +43,7 @@ from parrot.a2a.models import (
     Artifact,
     Role,
     SendMessageConfiguration,
+    TaskPushNotificationConfig,
     serialize_task_state,
     serialize_role,
     parse_task_state,
@@ -51,6 +52,7 @@ from parrot.a2a.models import (
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
     from parrot.tools.abstract import AbstractTool
+    from parrot.a2a.push_notifications import PushNotificationStore
 
 
 class A2AServer:
@@ -103,6 +105,7 @@ class A2AServer:
         credential_resolvers: Optional[Dict[str, Any]] = None,
         suspended_store: Optional[Any] = None,
         audit_ledger: Optional[Any] = None,
+        push_store: Optional["PushNotificationStore"] = None,
     ):
         """Initialize A2A server wrapper.
 
@@ -144,6 +147,13 @@ class A2AServer:
         self._app: Optional[web.Application] = None
         self._url: Optional[str] = None
         self._agent_card: Optional[AgentCard] = None
+
+        # Push notification config store (FEAT-272 / TASK-1716). Auto-create an
+        # in-memory store when the agent advertises push_notifications.
+        self._push_store: Optional["PushNotificationStore"] = push_store
+        if self._push_store is None and self.capabilities.push_notifications:
+            from parrot.a2a.push_notifications import PushNotificationStore
+            self._push_store = PushNotificationStore()
 
         # SuspendedExecutionStore for A2A suspend/resume
         self._suspended_store: Optional[Any] = suspended_store
@@ -210,6 +220,26 @@ class A2AServer:
         app.router.add_post(f"{bp}/message:stream", self._handle_stream_message)
         app.router.add_post(f"{bp}/tasks/{{task_id}}:cancel", self._handle_cancel_task)
         app.router.add_post(f"{bp}/tasks/{{task_id}}:subscribe", self._handle_subscribe)
+
+        # Push notification config CRUD (v1.0). Registered only when the agent
+        # advertises push_notifications (a store is present).
+        if self._push_store is not None:
+            app.router.add_post(
+                f"{bp}/tasks/{{task_id}}/pushNotificationConfigs",
+                self._handle_push_config_create,
+            )
+            app.router.add_get(
+                f"{bp}/tasks/{{task_id}}/pushNotificationConfigs/{{config_id}}",
+                self._handle_push_config_get,
+            )
+            app.router.add_get(
+                f"{bp}/tasks/{{task_id}}/pushNotificationConfigs",
+                self._handle_push_config_list,
+            )
+            app.router.add_delete(
+                f"{bp}/tasks/{{task_id}}/pushNotificationConfigs/{{config_id}}",
+                self._handle_push_config_delete,
+            )
 
         # JSON-RPC binding (alternative)
         app.router.add_post(f"{bp}/rpc", self._handle_jsonrpc)
@@ -1327,6 +1357,82 @@ class A2AServer:
         # For now, just close (in production, would subscribe to updates)
         await response.write_eof()
         return response
+
+    # ─────────────────────────────────────────────────────────────
+    # Push notification config CRUD (A2A v1.0 / TASK-1716)
+    # ─────────────────────────────────────────────────────────────
+
+    async def _handle_push_config_create(self, request: web.Request) -> web.Response:
+        """POST /a2a/tasks/{task_id}/pushNotificationConfigs"""
+        version = self._get_request_version(request)
+        if self._push_store is None:
+            return web.json_response(
+                {"error": {"code": "PushNotificationNotSupportedError"}}, status=400
+            )
+        task_id = request.match_info["task_id"]
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            return web.json_response(
+                {"error": {"code": "InvalidJSON", "message": "Invalid JSON body"}},
+                status=400,
+            )
+        # Accept either the bare config or a `{pushNotificationConfig: {...}}` wrap.
+        payload = body.get("pushNotificationConfig", body)
+        payload.setdefault("taskId", task_id)
+        try:
+            config = TaskPushNotificationConfig.from_dict(payload)
+            created = await self._push_store.create(config)
+        except (KeyError, ValueError) as e:
+            return web.json_response(
+                {"error": {"code": "InvalidParams", "message": str(e)}}, status=400
+            )
+        return self._versioned_response(created.to_dict(version), version)
+
+    async def _handle_push_config_get(self, request: web.Request) -> web.Response:
+        """GET /a2a/tasks/{task_id}/pushNotificationConfigs/{config_id}"""
+        version = self._get_request_version(request)
+        if self._push_store is None:
+            return web.json_response(
+                {"error": {"code": "PushNotificationNotSupportedError"}}, status=400
+            )
+        task_id = request.match_info["task_id"]
+        config_id = request.match_info["config_id"]
+        config = await self._push_store.get(task_id, config_id)
+        if config is None:
+            return web.json_response(
+                {"error": {"code": "TaskNotFoundError"}}, status=404
+            )
+        return self._versioned_response(config.to_dict(version), version)
+
+    async def _handle_push_config_list(self, request: web.Request) -> web.Response:
+        """GET /a2a/tasks/{task_id}/pushNotificationConfigs"""
+        version = self._get_request_version(request)
+        if self._push_store is None:
+            return web.json_response(
+                {"error": {"code": "PushNotificationNotSupportedError"}}, status=400
+            )
+        task_id = request.match_info["task_id"]
+        configs = await self._push_store.list_for_task(task_id)
+        return self._versioned_response(
+            {"configs": [c.to_dict(version) for c in configs]}, version
+        )
+
+    async def _handle_push_config_delete(self, request: web.Request) -> web.Response:
+        """DELETE /a2a/tasks/{task_id}/pushNotificationConfigs/{config_id}"""
+        version = self._get_request_version(request)
+        if self._push_store is None:
+            return web.json_response(
+                {"error": {"code": "PushNotificationNotSupportedError"}}, status=400
+            )
+        task_id = request.match_info["task_id"]
+        config_id = request.match_info["config_id"]
+        deleted = await self._push_store.delete(task_id, config_id)
+        if not deleted:
+            return web.json_response(
+                {"error": {"code": "TaskNotFoundError"}}, status=404
+            )
+        return self._versioned_response({"deleted": True}, version)
 
     async def _handle_jsonrpc(self, request: web.Request) -> web.Response:
         """POST /a2a/rpc - JSON-RPC 2.0 binding."""
