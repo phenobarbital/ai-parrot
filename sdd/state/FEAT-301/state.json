@@ -1,0 +1,50 @@
+{
+  "feature_id": "FEAT-301",
+  "title": "Themed Component Catalog — HTML Renderer v2 + A2UI Output",
+  "phase": "proposal_drafted",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 28,
+    "grep_calls": 18,
+    "git_calls": 4,
+    "depth_reached": 2,
+    "queries_skipped": 0
+  },
+  "truncated": false,
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "path": "sdd/proposals/infographic-theme-catalog-a2ui.spec.md",
+    "summary_oneline": "Extend ThemeConfig + HTML renderer with FieldSync blocks, i18n, and document chrome; add A2UI v0.9.1 catalog+renderer"
+  },
+  "type": "feature",
+  "base_branch": "dev",
+  "started_at": "2026-07-10T12:00:00Z",
+  "phases": {
+    "source": { "status": "complete" },
+    "plan": { "status": "complete", "approved_by_user": true },
+    "research": {
+      "status": "complete",
+      "findings_count": 13,
+      "files_read": 28,
+      "grep_calls": 18
+    },
+    "synthesis": {
+      "status": "complete",
+      "overall_confidence": "medium",
+      "claims_high": 6,
+      "claims_medium": 3,
+      "claims_low": 1
+    },
+    "qa": { "status": "pending" },
+    "output": { "status": "pending" }
+  }
+}
