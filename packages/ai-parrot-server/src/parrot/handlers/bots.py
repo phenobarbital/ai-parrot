@@ -186,12 +186,16 @@ class UserPromptsManagement(ModelView):
         return value
 
     async def get(self):
-        """Override GET to scope results to the authenticated user_id."""
-        user_id = await self.get_userid(session=self._session)
-        # Inject user_id into the query string so ModelView's generic
-        # filter machinery picks it up and scopes the query.
-        new_query = dict(self.request.rel_url.query)
-        new_query['user_id'] = str(user_id)
+        """Override GET to require an authenticated session.
+
+        self._session is only populated by service_auth, which wraps the
+        parent get() — so it must be loaded explicitly before reading the
+        user here, otherwise get_userid(None) rejects every request with
+        a 403. Row filtering comes from the query-string params handled
+        by ModelView's generic machinery (user_id, chatbot_id).
+        """
+        await self.session()
+        await self.get_userid(session=self._session)
         return await super().get()
 
 
