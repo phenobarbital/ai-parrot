@@ -3,7 +3,7 @@ id: FEAT-301
 title: "Themed Component Catalog — HTML Renderer v2 + A2UI Output"
 type: feature
 mode: enrichment
-status: discussion
+status: review
 source:
   kind: file
   path: sdd/proposals/infographic-theme-catalog-a2ui.spec.md
@@ -161,6 +161,8 @@ FEAT-273 conflict for WS-C is clear.
 | BASE_CSS additions (only CSS variables, no literal colors) | |
 | `INFOGRAPHIC_SYSTEM_PROMPT` update (all 19 blocks) | |
 | Declare `markdown-it-py` and `markupsafe` as explicit deps | |
+| Migrate existing literal colors in BASE_CSS to CSS variables | |
+| Document all 19 blocks in INFOGRAPHIC_SYSTEM_PROMPT | |
 
 ---
 
@@ -191,14 +193,15 @@ FEAT-273 conflict for WS-C is clear.
 - [x] **Is `jsonschema` available?** Yes (v4.26.0, transitive), but undeclared. [F011]
 - [x] **Does FEAT-273 conflict with WS-C?** Yes, significantly. [F012]
 
-### Unresolved — Require Human Decision
+### Resolved by Human Decision
 
-- [ ] **U1**: Should WS-C be deferred to FEAT-273, or should this spec create its own
-      A2UI renderer (accepting the rework cost when FEAT-273 lands)?
-- [ ] **U2**: Should existing literal colors in BASE_CSS be migrated to CSS variables
-      as part of WS-B, or is that out of scope?
-- [ ] **U3**: Should the INFOGRAPHIC_SYSTEM_PROMPT update also add the 3 existing
-      undocumented blocks (accordion, checklist, tab_view)?
+- [x] **U1**: WS-C deferred to FEAT-273. FEAT-301 scoped to WS-A + WS-B only.
+      WS-C's `to_envelopes()` design carries into FEAT-273 as a concrete renderer.
+- [x] **U2**: Yes — migrate existing literal colors in BASE_CSS to CSS variables as
+      part of WS-B. Adds ~15 values to the migration but ensures a clean, complete
+      variable-only CSS surface.
+- [x] **U3**: Yes — document all 19 block types in INFOGRAPHIC_SYSTEM_PROMPT (the 3
+      existing undocumented blocks + 4 new ones).
 
 ---
 

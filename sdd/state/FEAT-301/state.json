@@ -1,7 +1,7 @@
 {
   "feature_id": "FEAT-301",
   "title": "Themed Component Catalog — HTML Renderer v2 + A2UI Output",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "mode": "enrichment",
   "budget": {
     "profile": "default",
@@ -44,7 +44,19 @@
       "claims_medium": 3,
       "claims_low": 1
     },
-    "qa": { "status": "pending" },
-    "output": { "status": "pending" }
+    "qa": {
+      "status": "complete",
+      "questions_total": 3,
+      "questions_answered": 3,
+      "answers": {
+        "U1": "Defer WS-C to FEAT-273",
+        "U2": "Migrate existing literal colors",
+        "U3": "Document all 19 blocks"
+      }
+    },
+    "output": {
+      "status": "complete",
+      "proposal_path": "sdd/proposals/infographic-theme-catalog-a2ui.proposal.md"
+    }
   }
 }
