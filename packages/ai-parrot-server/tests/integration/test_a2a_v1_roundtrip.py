@@ -86,6 +86,30 @@ class TestV1Roundtrip:
         data = await resp.json()
         assert data["result"]["status"]["state"] == "TASK_STATE_COMPLETED"
 
+    async def test_jsonrpc_streaming_v1(self, aiohttp_client, a2a_app):
+        """SendStreamingMessage over JSON-RPC streams SSE (ported from feat-272)."""
+        client = await aiohttp_client(a2a_app)
+        resp = await client.post("/a2a/rpc", headers={"A2A-Version": "1.0"}, json={
+            "jsonrpc": "2.0", "id": 1, "method": "SendStreamingMessage",
+            "params": _v1_msg()})
+        assert resp.status == 200
+        # Must be an SSE stream, NOT a unary JSON-RPC envelope.
+        assert "text/event-stream" in resp.content_type
+        body = await resp.text()
+        assert "TASK_STATE_COMPLETED" in body
+
+    async def test_jsonrpc_streaming_v03_alias(self, aiohttp_client, a2a_app):
+        """The v0.3 message/stream JSON-RPC alias streams SSE too."""
+        client = await aiohttp_client(a2a_app)
+        resp = await client.post("/a2a/rpc", json={
+            "jsonrpc": "2.0", "id": 2, "method": "message/stream",
+            "params": {"message": {"messageId": "m1", "role": "user",
+                                   "parts": [{"kind": "text", "text": "Hi"}]}}})
+        assert resp.status == 200
+        assert "text/event-stream" in resp.content_type
+        body = await resp.text()
+        assert "completed" in body
+
     async def test_well_known_v1(self, aiohttp_client, a2a_app):
         client = await aiohttp_client(a2a_app)
         resp = await client.get("/.well-known/agent-card.json",
