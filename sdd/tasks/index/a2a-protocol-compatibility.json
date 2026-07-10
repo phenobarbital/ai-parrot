@@ -1,0 +1,177 @@
+{
+  "feature": "a2a-protocol-compatibility",
+  "feature_id": "FEAT-272",
+  "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-09T00:00:00Z",
+  "completed_at": "2026-07-10T00:35:13+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1712",
+      "slug": "a2a-v1-data-models",
+      "title": "v1.0 Data Models — Core Types & Enums",
+      "feature_id": "FEAT-272",
+      "feature": "a2a-protocol-compatibility",
+      "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task — all other tasks depend on the updated models",
+      "assigned_to": null,
+      "started_at": "2026-07-09T17:24:18+00:00",
+      "completed_at": "2026-07-09T23:12:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1712-a2a-v1-data-models.md"
+    },
+    {
+      "id": "TASK-1713",
+      "slug": "a2a-v1-agent-card",
+      "title": "AgentCard v1.0 Structure",
+      "feature_id": "FEAT-272",
+      "feature": "a2a-protocol-compatibility",
+      "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1712"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies models.py (same file as TASK-1712) and server.py",
+      "assigned_to": null,
+      "started_at": "2026-07-09T17:24:18+00:00",
+      "completed_at": "2026-07-09T23:34:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1713-a2a-v1-agent-card.md"
+    },
+    {
+      "id": "TASK-1714",
+      "slug": "a2a-v1-server-routes",
+      "title": "A2AServer — v1.0 REST Routes & Version Negotiation",
+      "feature_id": "FEAT-272",
+      "feature": "a2a-protocol-compatibility",
+      "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1712",
+        "TASK-1713"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies server.py which TASK-1713 also touches",
+      "assigned_to": null,
+      "started_at": "2026-07-09T17:24:18+00:00",
+      "completed_at": "2026-07-09T23:55:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1714-a2a-v1-server-routes.md"
+    },
+    {
+      "id": "TASK-1715",
+      "slug": "a2a-v1-jsonrpc-errors",
+      "title": "A2AServer — v1.0 JSON-RPC Methods & Error Codes",
+      "feature_id": "FEAT-272",
+      "feature": "a2a-protocol-compatibility",
+      "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1714"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies server.py — must follow TASK-1714",
+      "assigned_to": null,
+      "started_at": "2026-07-09T17:24:18+00:00",
+      "completed_at": "2026-07-10T00:15:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1715-a2a-v1-jsonrpc-errors.md"
+    },
+    {
+      "id": "TASK-1716",
+      "slug": "a2a-v1-push-notifications",
+      "title": "Push Notification Config Store",
+      "feature_id": "FEAT-272",
+      "feature": "a2a-protocol-compatibility",
+      "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1712"
+      ],
+      "parallel": false,
+      "parallelism_notes": "New file (push_notifications.py) but wires into server.py which TASK-1714/1715 modify — keep sequential",
+      "assigned_to": null,
+      "started_at": "2026-07-09T17:24:18+00:00",
+      "completed_at": "2026-07-10T00:03:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1716-a2a-v1-push-notifications.md"
+    },
+    {
+      "id": "TASK-1717",
+      "slug": "a2a-v1-client-upgrade",
+      "title": "A2AClient v1.0 Upgrade",
+      "feature_id": "FEAT-272",
+      "feature": "a2a-protocol-compatibility",
+      "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1712",
+        "TASK-1713"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies client.py (separate from server.py) but depends on model changes being stable",
+      "assigned_to": null,
+      "started_at": "2026-07-09T17:24:18+00:00",
+      "completed_at": "2026-07-10T00:25:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1717-a2a-v1-client-upgrade.md"
+    },
+    {
+      "id": "TASK-1718",
+      "slug": "a2a-v1-mesh-router",
+      "title": "Mesh & Router v1.0 Compatibility",
+      "feature_id": "FEAT-272",
+      "feature": "a2a-protocol-compatibility",
+      "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1713"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies mesh.py and router.py — separate files but depends on AgentCard restructuring",
+      "assigned_to": null,
+      "started_at": "2026-07-09T17:24:18+00:00",
+      "completed_at": "2026-07-10T00:32:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1718-a2a-v1-mesh-router.md"
+    },
+    {
+      "id": "TASK-1719",
+      "slug": "a2a-v1-protocol-tests",
+      "title": "v1.0 Protocol Integration Tests",
+      "feature_id": "FEAT-272",
+      "feature": "a2a-protocol-compatibility",
+      "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1712",
+        "TASK-1713",
+        "TASK-1714",
+        "TASK-1715",
+        "TASK-1716",
+        "TASK-1717",
+        "TASK-1718"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final validation — must run after all implementation tasks are complete",
+      "assigned_to": null,
+      "started_at": "2026-07-09T17:24:18+00:00",
+      "completed_at": "2026-07-10T00:35:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1719-a2a-v1-protocol-tests.md"
+    }
+  ]
+}

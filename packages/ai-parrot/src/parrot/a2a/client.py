@@ -4,9 +4,8 @@ A2A Client - Connect to remote A2A agents from AI-Parrot.
 """
 from __future__ import annotations
 import json
-import asyncio
 from typing import Dict, List, Optional, Any, AsyncIterator, Type
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import aiohttp
 from pydantic import BaseModel, Field
 from navconfig.logging import logging
@@ -20,6 +19,8 @@ from .models import (
     Artifact,
     Message,
     Part,
+    TaskPushNotificationConfig,
+    parse_task_state,
 )
 
 
@@ -79,15 +80,21 @@ class A2AClient:
         self._session: Optional[aiohttp.ClientSession] = None
         self._agent_card: Optional[AgentCard] = None
         self._owns_session = False
+        # Protocol version spoken by the remote server, detected during
+        # discover() from the AgentCard shape ("1.0" or "0.3").
+        self._server_version: Optional[str] = None
 
-        # Build headers
-        self.headers = {"Content-Type": "application/json"}
+        # Build headers. The client speaks A2A v1.0 by default and advertises
+        # it via the `A2A-Version` header (FEAT-272 / TASK-1717).
+        self.headers = {"Content-Type": "application/json", "A2A-Version": "1.0"}
         if headers:
             self.headers.update(headers)
         if auth_token:
             self.headers["Authorization"] = f"Bearer {auth_token}"
         if api_key:
             self.headers["X-API-Key"] = api_key
+        # Public alias for tests/introspection.
+        self._default_headers = self.headers
 
         self.logger = logging.getLogger(f"A2AClient.{base_url}")
 
@@ -135,34 +142,56 @@ class A2AClient:
     # ─────────────────────────────────────────────────────────────
 
     async def discover(self) -> AgentCard:
-        """Fetch the remote agent's card."""
-        url = f"{self.base_url}/.well-known/agent.json"
+        """Fetch the remote agent's card.
 
-        async with self._session.get(url) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
+        Tries the A2A v1.0 discovery URI (``/.well-known/agent-card.json``)
+        first and falls back to the v0.3 URI (``/.well-known/agent.json``).
+        The server's protocol version is detected from the card shape
+        (presence of ``supportedInterfaces`` => v1.0) and cached on
+        ``self._server_version``.
+        """
+        data: Optional[Dict[str, Any]] = None
 
-        # Parse into AgentCard
-        skills = [
-            AgentSkill(
-                id=s.get("id", ""),
-                name=s.get("name", ""),
-                description=s.get("description", ""),
-                tags=s.get("tags", []),
-                input_schema=s.get("inputSchema"),
-            )
-            for s in data.get("skills", [])
-        ]
+        # v1.0 discovery URI first.
+        try:
+            async with self._session.get(
+                f"{self.base_url}/.well-known/agent-card.json"
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+        except aiohttp.ClientError:
+            data = None
 
-        return AgentCard(
-            name=data.get("name", "Unknown"),
-            description=data.get("description", ""),
-            version=data.get("version", "1.0.0"),
-            url=data.get("url") or self.base_url,
-            skills=skills,
-            protocol_version=data.get("protocolVersion", "0.3"),
-            preferred_transport=data.get("preferredTransport", "JSONRPC"),
-        )
+        # Fall back to the v0.3 discovery URI.
+        if data is None:
+            async with self._session.get(
+                f"{self.base_url}/.well-known/agent.json"
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+        self._server_version = "1.0" if "supportedInterfaces" in data else "0.3"
+
+        # AgentCard.from_dict auto-detects the v1.0/v0.3 shape.
+        card = AgentCard.from_dict(data)
+        # Guarantee a usable URL even when the card omits one.
+        if not card.supported_interfaces:
+            from .models import AgentInterface
+            card.supported_interfaces = [
+                AgentInterface(url=self.base_url, protocol_binding="JSONRPC")
+            ]
+        return card
+
+    @property
+    def _verb_sep(self) -> str:
+        """Separator for A2A REST "method-style" verbs.
+
+        v1.0 uses colon syntax (``/message:send``); v0.3 uses slash
+        (``/message/send``). Defaults to v0.3 until a v1.0 server is detected
+        by :meth:`discover`, which is the safe interop choice (AI-Parrot's own
+        server serves both).
+        """
+        return ":" if self._server_version == "1.0" else "/"
 
     def get_skills(self) -> List[AgentSkill]:
         """Get available skills from the remote agent."""
@@ -199,7 +228,7 @@ class A2AClient:
         Returns:
             Task with the response
         """
-        url = f"{self.base_url}/a2a/message/send"
+        url = f"{self.base_url}/a2a/message{self._verb_sep}send"
 
         message = Message.user(content, context_id=context_id, metadata=metadata)
 
@@ -231,7 +260,7 @@ class A2AClient:
         Yields:
             Text chunks as they arrive
         """
-        url = f"{self.base_url}/a2a/message/stream"
+        url = f"{self.base_url}/a2a/message{self._verb_sep}stream"
 
         message = Message.user(content, context_id=context_id, metadata=metadata)
 
@@ -268,7 +297,8 @@ class A2AClient:
                         status = data["statusUpdate"]
                         if status.get("final"):
                             state = status.get("status", {}).get("state")
-                            if state == "failed":
+                            # Accept both v0.3 "failed" and v1.0 "TASK_STATE_FAILED".
+                            if state and parse_task_state(state) == TaskState.FAILED:
                                 error_msg = status.get("status", {}).get("message", {})
                                 error_text = error_msg.get("parts", [{}])[0].get("text", "Unknown error")
                                 raise RuntimeError(f"Remote agent failed: {error_text}")
@@ -300,7 +330,7 @@ class A2AClient:
             context_id=context_id
         )
 
-        url = f"{self.base_url}/a2a/message/send"
+        url = f"{self.base_url}/a2a/message{self._verb_sep}send"
         payload = {"message": message.to_dict()}
 
         async with self._session.post(url, json=payload) as resp:
@@ -360,13 +390,73 @@ class A2AClient:
 
     async def cancel_task(self, task_id: str) -> Task:
         """Cancel a running task."""
-        url = f"{self.base_url}/a2a/tasks/{task_id}/cancel"
+        url = f"{self.base_url}/a2a/tasks/{task_id}{self._verb_sep}cancel"
 
         async with self._session.post(url) as resp:
             resp.raise_for_status()
             data = await resp.json()
 
         return self._parse_task(data)
+
+    # ─────────────────────────────────────────────────────────────
+    # Push notification config (A2A v1.0 / TASK-1717)
+    # ─────────────────────────────────────────────────────────────
+
+    async def create_push_config(
+        self,
+        task_id: str,
+        url: str,
+        *,
+        config_id: str = "",
+        authentication: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> TaskPushNotificationConfig:
+        """Register a push-notification webhook config for a task."""
+        endpoint = f"{self.base_url}/a2a/tasks/{task_id}/pushNotificationConfigs"
+        payload: Dict[str, Any] = {"id": config_id, "taskId": task_id, "url": url}
+        if authentication is not None:
+            payload["authentication"] = authentication
+        if metadata is not None:
+            payload["metadata"] = metadata
+
+        async with self._session.post(endpoint, json=payload) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+        return TaskPushNotificationConfig.from_dict(data)
+
+    async def get_push_config(
+        self, task_id: str, config_id: str
+    ) -> TaskPushNotificationConfig:
+        """Fetch a single push-notification config."""
+        endpoint = (
+            f"{self.base_url}/a2a/tasks/{task_id}/pushNotificationConfigs/{config_id}"
+        )
+        async with self._session.get(endpoint) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+        return TaskPushNotificationConfig.from_dict(data)
+
+    async def list_push_configs(
+        self, task_id: str
+    ) -> List[TaskPushNotificationConfig]:
+        """List all push-notification configs registered for a task."""
+        endpoint = f"{self.base_url}/a2a/tasks/{task_id}/pushNotificationConfigs"
+        async with self._session.get(endpoint) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+        return [
+            TaskPushNotificationConfig.from_dict(c) for c in data.get("configs", [])
+        ]
+
+    async def delete_push_config(self, task_id: str, config_id: str) -> bool:
+        """Delete a push-notification config; returns True on success."""
+        endpoint = (
+            f"{self.base_url}/a2a/tasks/{task_id}/pushNotificationConfigs/{config_id}"
+        )
+        async with self._session.delete(endpoint) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+        return bool(data.get("deleted", False))
 
     # ─────────────────────────────────────────────────────────────
     # JSON-RPC
@@ -404,7 +494,8 @@ class A2AClient:
         """Parse a task from JSON response."""
         status_data = data.get("status", {})
         status = TaskStatus(
-            state=TaskState(status_data.get("state", "submitted")),
+            # Accept both v0.3 lowercase and v1.0 SCREAMING_SNAKE state values.
+            state=parse_task_state(status_data.get("state", "submitted")),
             message=Message.from_dict(status_data["message"]) if status_data.get("message") else None,
             timestamp=status_data.get("timestamp"),
         )

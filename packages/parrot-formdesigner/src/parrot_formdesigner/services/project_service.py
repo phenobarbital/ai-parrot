@@ -38,6 +38,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from ._db_utils import is_unique_violation
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

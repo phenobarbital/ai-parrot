@@ -63,10 +63,12 @@ from .client import A2AClient
 from .mesh import A2AMeshDiscovery, RegisteredAgent
 from .models import (
     AgentCard,
+    AgentInterface,
     AgentCapabilities,
     AgentSkill,
     Task,
     TaskState,
+    serialize_task_state,
 )
 
 
@@ -919,7 +921,7 @@ class A2AProxyRouter:
 
             return result
 
-        except Exception as e:
+        except Exception:
             self._stats.requests_failed += 1
             raise
 
@@ -1128,7 +1130,9 @@ class A2AProxyRouter:
             name=self.name,
             description=self.description,
             version=self.version,
-            url=None,  # Set when mounted
+            # supported_interfaces is populated with the mount URL in
+            # _handle_discovery (the flat v0.3 `url` is now a derived property).
+            supported_interfaces=[],
             skills=skills,
             capabilities=self.capabilities,
             tags=list(all_tags),
@@ -1157,7 +1161,11 @@ class A2AProxyRouter:
         """
         path = base_path or self.base_path
 
-        # Discovery endpoint
+        # Discovery endpoints (v1.0 agent-card.json + v0.3 agent.json).
+        app.router.add_get(
+            "/.well-known/agent-card.json",
+            self._handle_discovery
+        )
         app.router.add_get(
             "/.well-known/agent.json",
             self._handle_discovery
@@ -1195,16 +1203,31 @@ class A2AProxyRouter:
         """Cleanup handler for aiohttp app shutdown."""
         await self.close_clients()
 
-    async def _handle_discovery(self, request: web.Request) -> web.Response:
-        """Handler for /.well-known/agent.json"""
-        card = self.get_agent_card()
+    @staticmethod
+    def _request_version(request: web.Request) -> str:
+        """Resolve the A2A protocol version from the request header."""
+        version = request.headers.get("A2A-Version", "").strip()
+        if version.startswith("1."):
+            return "1.0"
+        return "0.3"
 
-        # Set URL from request
+    async def _handle_discovery(self, request: web.Request) -> web.Response:
+        """Handler for /.well-known/agent.json (and v1.0 agent-card.json)."""
+        card = self.get_agent_card()
+        version = self._request_version(request)
+
+        # Set the interface URL from the incoming request.
         host = request.host
         scheme = request.scheme
-        card.url = f"{scheme}://{host}"
+        card.supported_interfaces = [
+            AgentInterface(
+                url=f"{scheme}://{host}",
+                protocol_binding="JSONRPC",
+                protocol_version="1.0",
+            )
+        ]
 
-        return web.json_response(card.to_dict())
+        return web.json_response(card.to_dict(version))
 
     async def _handle_message(self, request: web.Request) -> web.Response:
         """Handler for POST /a2a/message/send"""
@@ -1223,6 +1246,7 @@ class A2AProxyRouter:
 
             skill_id = data.get("skillId")
             context_id = message_data.get("contextId") if isinstance(message_data, dict) else None
+            version = self._request_version(request)
 
             # Route and proxy
             task = await self.route_message(
@@ -1231,7 +1255,7 @@ class A2AProxyRouter:
                 context_id=context_id,
             )
 
-            return web.json_response(task.to_dict())
+            return web.json_response(task.to_dict(version))
 
         except json.JSONDecodeError:
             return web.json_response(
@@ -1264,6 +1288,8 @@ class A2AProxyRouter:
             else:
                 content = str(message_data)
 
+            version = self._request_version(request)
+
             # Prepare streaming response
             response = web.StreamResponse()
             response.headers["Content-Type"] = "text/event-stream"
@@ -1291,7 +1317,7 @@ class A2AProxyRouter:
                 completion = {
                     "statusUpdate": {
                         "final": True,
-                        "status": {"state": "completed"}
+                        "status": {"state": serialize_task_state(TaskState.COMPLETED, version)}
                     }
                 }
                 await response.write(
@@ -1303,7 +1329,7 @@ class A2AProxyRouter:
                     "statusUpdate": {
                         "final": True,
                         "status": {
-                            "state": "failed",
+                            "state": serialize_task_state(TaskState.FAILED, version),
                             "message": {"parts": [{"type": "text", "text": str(e)}]}
                         }
                     }

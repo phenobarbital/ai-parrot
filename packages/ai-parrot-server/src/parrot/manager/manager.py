@@ -1947,7 +1947,7 @@ class BotManager:
         if self.enable_swagger_api:
             self.logger.info("Setting up OpenAPI documentation...")
             setup_swagger(self.app)
-        self.logger.info("""
+            self.logger.info("""
 ✅ OpenAPI Documentation configured successfully!
 
 Available documentation UIs:
@@ -1955,7 +1955,7 @@ Available documentation UIs:
 - ReDoc:       http://localhost:5000/api/docs/redoc
 - RapiDoc:     http://localhost:5000/api/docs/rapidoc
 - OpenAPI Spec: http://localhost:5000/api/docs/swagger.json
-        """)
+            """)
         return self.app
 
     async def _cleanup_expired_bots(self) -> None:

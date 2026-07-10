@@ -122,10 +122,15 @@ def _install_navigator_stubs() -> None:
     # tests can collect without requiring that version installed.
     import navigator.utils.file as _nuf  # already importable, just missing attrs
 
+    from unittest.mock import AsyncMock
+
     _FileManagerInterface = type(
         "FileManagerInterface",
         (),
-        {"__init__": lambda self, *a, **kw: None},
+        {
+            "__init__": lambda self, *a, **kw: None,
+            "__getattr__": lambda self, name: AsyncMock(),
+        },
     )
     _FileMetadata = type("FileMetadata", (), {})
     _LocalFileManager = type("LocalFileManager", (_FileManagerInterface,), {})

@@ -828,6 +828,15 @@ ODOO_PASSWORD = config.get("ODOO_PASSWORD", fallback=None)
 ODOO_TIMEOUT = config.getint("ODOO_TIMEOUT", fallback=30)
 ODOO_VERIFY_SSL = config.getboolean("ODOO_VERIFY_SSL", fallback=True)
 
+# ── Zammad Helpdesk (REST API v1) ──
+ZAMMAD_INSTANCE = config.get("ZAMMAD_INSTANCE", fallback=None)
+ZAMMAD_TOKEN = config.get("ZAMMAD_TOKEN", fallback=None)
+ZAMMAD_DEFAULT_CUSTOMER = config.get("ZAMMAD_DEFAULT_CUSTOMER", fallback=None)
+ZAMMAD_DEFAULT_GROUP = config.get("ZAMMAD_DEFAULT_GROUP", fallback=None)
+ZAMMAD_DEFAULT_CATALOG = config.get("ZAMMAD_DEFAULT_CATALOG", fallback=None)
+ZAMMAD_ORGANIZATION = config.get("ZAMMAD_ORGANIZATION", fallback=None)
+ZAMMAD_DEFAULT_ROLE = config.get("ZAMMAD_DEFAULT_ROLE", fallback="Customer")
+
 # ── Dev-Loop Orchestration (FEAT-129) ──
 # Two-level concurrency control: dispatcher-side and orchestrator-side caps.
 CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES: int = config.getint(

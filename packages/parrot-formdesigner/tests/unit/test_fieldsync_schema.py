@@ -17,8 +17,10 @@ import pytest
 from parrot_formdesigner.services.fieldsync_schema import (
     FieldsyncSchemaManager,
     _CREATE_AUTH_POLICIES_SQL,
+    _CREATE_LOCATIONS_SQL,
     _CREATE_PROJECTS_SQL,
     _CREATE_SCHEMA_SQL,
+    _CREATE_SITES_SQL,
     _CREATE_WORKDAY_COST_CENTER_MAPPINGS_SQL,
 )
 
@@ -77,14 +79,29 @@ class TestDDLContent:
         assert "enforcing" in sql
         assert "priority" in sql
 
-    def test_ddl_statements_returns_four(self) -> None:
+    def test_sites_table_ddl(self) -> None:
+        sql = _CREATE_SITES_SQL
+        assert "CREATE TABLE IF NOT EXISTS fieldsync.sites" in sql
+        assert "store_id" in sql
+        assert "uq_sites_store_name" in sql
+
+    def test_locations_table_ddl(self) -> None:
+        sql = _CREATE_LOCATIONS_SQL
+        assert "CREATE TABLE IF NOT EXISTS fieldsync.locations" in sql
+        assert "geofence_radius_m" in sql
+        assert "REFERENCES fieldsync.sites" in sql
+        assert "ON DELETE CASCADE" in sql
+
+    def test_ddl_statements_returns_six(self) -> None:
+        # 4 base (schema, projects, workday_map, auth_policies)
+        # + 2 FEAT-330 (sites, locations)
         stmts = FieldsyncSchemaManager.ddl_statements()
-        assert len(stmts) == 4
+        assert len(stmts) == 6
 
     def test_ddl_statements_is_copy(self) -> None:
         stmts = FieldsyncSchemaManager.ddl_statements()
         stmts.clear()
-        assert len(FieldsyncSchemaManager.ddl_statements()) == 4
+        assert len(FieldsyncSchemaManager.ddl_statements()) == 6
 
 
 # ---------------------------------------------------------------------------
@@ -116,8 +133,8 @@ class TestFieldsyncSchemaManager:
         await mgr.initialize()
         await mgr.initialize()  # should not raise
         conn = pool._conn
-        # 4 statements × 2 calls = 8
-        assert conn.execute.call_count == 8
+        # 6 statements × 2 calls = 12
+        assert conn.execute.call_count == 12
 
     @pytest.mark.asyncio
     async def test_initialize_propagates_db_error(self) -> None:

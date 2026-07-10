@@ -55,7 +55,7 @@ dependencies = [
     # break the circular import (loaders depends on core).
     "semantic-text-splitter>=0.30,<1.0",
     # Navigator stack (core)
-    "navconfig[default]>=2.1.3",
+    "navconfig[default]>=2.2.2",
     # navigator-auth<=0.20.9 passes a `PolicyEffect` enum (not a str) to the
     # rs_pep Rust engine's `default_effect` arg, causing every ABAC/PBAC
     # evaluation to fail-closed with a PyO3 TypeError. Require >0.20.9.
@@ -131,7 +131,7 @@ bigquery = [
 
 # PDF / document generation and conversion
 pdf = [
-    "weasyprint==68.0",
+    "weasyprint==69.0",
     "fpdf==1.7.2",
     "markdownify>=1.2.2",
     "python-docx==1.1.2",
@@ -289,7 +289,7 @@ agents-lite = [
 # embeddings extra removed from host in FEAT-201.
 
 mcp = [
-    "google-genai>=2.6.0",
+    "google-genai>=2.10.0",
     "openai==2.41.0",
     "yfinance==0.2.54",
     "youtube_search==2.1.2",
@@ -364,7 +364,7 @@ openai = [
 google = [
     "google-api-python-client>=2.166.0,<=2.177.0",
     "google-cloud-texttospeech==2.27.0",
-    "google-genai>=2.6.0",
+    "google-genai>=2.10.0",
     "google-cloud-aiplatform>=1.153.0",
 ]
 
@@ -377,7 +377,7 @@ zai = [
 ]
 
 llms = [
-    "google-genai>=2.6.0",
+    "google-genai>=2.10.0",
     "openai==2.41.0",
     "groq==0.33.0",
     # FIX-2: include both direct-API and Bedrock SDK so that `llms` covers all

@@ -50,6 +50,11 @@ NodeType = Literal[
     "region",
     "territory",
     "store",
+    # FEAT-330 — Store sub-structure (Store → Site → Location). A ``location``
+    # is a kiosk or any spot inside a store (vending case). ``site``/``location``
+    # are FieldSync-owned (``fieldsync.*``); ``store`` stays read-only geography.
+    "site",
+    "location",
 ]
 
 # ---------------------------------------------------------------------------
@@ -140,6 +145,34 @@ _SQL_GET_REGIONS_FOR_CLIENT = """
 SELECT region_id, region_name
 FROM networkninja.regions
 WHERE client_id = $1 AND orgid = $2
+"""
+
+# FEAT-330 — Store sub-structure.
+# ``store`` = read-only geography (networkninja); ``site``/``location`` =
+# FieldSync-owned (fieldsync.*). Hung under the tree only at depth >= 4/5/6 so
+# the default (depth<=3) behaviour of FEAT-302 is unchanged.
+# NOTE: the exact networkninja stores table/columns must be confirmed against
+# the production dump (candidate ``stores_geographies``; FEAT-302 §8). Adjust
+# the column names here once verified.
+_SQL_GET_STORES_FOR_CLIENT = """
+SELECT store_id, store_name, market_id
+FROM networkninja.stores_geographies
+WHERE client_id = $1 AND orgid = $2
+"""
+
+_SQL_GET_SITES_FOR_CLIENT = """
+SELECT site_id, store_id, name
+FROM fieldsync.sites
+WHERE client_id = $1 AND org_id = $2 AND is_active = TRUE
+ORDER BY site_id
+"""
+
+_SQL_GET_LOCATIONS_FOR_CLIENT = """
+SELECT location_id, site_id, name, location_type,
+       latitude, longitude, geofence_radius_m
+FROM fieldsync.locations
+WHERE client_id = $1 AND org_id = $2 AND is_active = TRUE
+ORDER BY location_id
 """
 
 # Tenant-scoped single-node lookups (hard isolation: filtered by org_id).
@@ -300,7 +333,10 @@ class OrgGraphService:
                             )
                             client_node.children.append(proj_node)
 
-                        # Geography: regions, districts, markets (per-client)
+                        # Geography: regions, districts, markets (per-client).
+                        # Market nodes are indexed so FEAT-330 stores can hang
+                        # under them.
+                        markets_by_id: dict[str, OrgNode] = {}
                         for _sql, _ntype, _id_col, _name_col in (
                             (_SQL_GET_REGIONS_FOR_CLIENT, "region", "region_id", "region_name"),
                             (_SQL_GET_DISTRICTS_FOR_CLIENT, "district", "district_id", "district_name"),
@@ -308,12 +344,28 @@ class OrgGraphService:
                         ):
                             geo_rows = await conn.fetch(_sql, client_id, org_id)
                             for g in geo_rows:
-                                client_node.children.append(OrgNode(
+                                geo_node = OrgNode(
                                     node_type=_ntype,
                                     node_id=str(g[_id_col]),
                                     parent_id=str(client_id),
                                     metadata={_name_col: g[_name_col]},
-                                ))
+                                )
+                                client_node.children.append(geo_node)
+                                if _ntype == "market":
+                                    markets_by_id[str(g[_id_col])] = geo_node
+
+                        # FEAT-330: Store → Site → Location sub-structure,
+                        # gated by depth (4=stores, 5=sites, 6=locations) so the
+                        # default depth<=3 tree is byte-identical to FEAT-302.
+                        if depth >= 4:
+                            await self._attach_store_substructure(
+                                conn,
+                                client_node=client_node,
+                                client_id=client_id,
+                                org_id=org_id,
+                                markets_by_id=markets_by_id,
+                                depth=depth,
+                            )
 
                     client_nodes.append(client_node)
 
@@ -329,6 +381,95 @@ class OrgGraphService:
         )
 
         return OrgGraph(org_id=org_id, tenant=tenant, root=company_root)
+
+    async def _attach_store_substructure(
+        self,
+        conn: Any,
+        *,
+        client_node: OrgNode,
+        client_id: int,
+        org_id: int,
+        markets_by_id: dict[str, OrgNode],
+        depth: int,
+    ) -> None:
+        """Hang FEAT-330 ``store → site → location`` nodes under a client.
+
+        Each store is attached to its market node when the market is known,
+        else to the client node directly (fallback). Sites hang under their
+        store, locations under their site. Everything is gated by ``depth``:
+        stores at ``depth >= 4``, sites at ``depth >= 5``, locations at
+        ``depth >= 6``.
+
+        Args:
+            conn: Live asyncpg connection (read-only).
+            client_node: The client ``OrgNode`` whose subtree is extended.
+            client_id: Client identifier (hard-isolation filter).
+            org_id: Organization identifier (hard-isolation filter).
+            markets_by_id: Map of ``market_id`` → market ``OrgNode`` for
+                parent resolution.
+            depth: Requested traversal depth.
+        """
+        # Level 4: stores
+        store_rows = await conn.fetch(_SQL_GET_STORES_FOR_CLIENT, client_id, org_id)
+        stores_by_id: dict[str, OrgNode] = {}
+        for s in store_rows:
+            store_id = str(s["store_id"])
+            market_id = str(s["market_id"]) if s["market_id"] is not None else None
+            parent_node = markets_by_id.get(market_id) if market_id else None
+            parent_id = parent_node.node_id if parent_node else str(client_id)
+            store_node = OrgNode(
+                node_type="store",
+                node_id=store_id,
+                parent_id=parent_id,
+                metadata={"store_name": s["store_name"], "market_id": market_id},
+            )
+            (parent_node.children if parent_node else client_node.children).append(
+                store_node
+            )
+            stores_by_id[store_id] = store_node
+
+        if depth < 5 or not stores_by_id:
+            return
+
+        # Level 5: sites (grouped by store_id)
+        site_rows = await conn.fetch(_SQL_GET_SITES_FOR_CLIENT, client_id, org_id)
+        sites_by_id: dict[str, OrgNode] = {}
+        for si in site_rows:
+            store_id = str(si["store_id"])
+            store_node = stores_by_id.get(store_id)
+            if store_node is None:
+                continue  # orphan site (store not in this org view) — skip
+            site_node = OrgNode(
+                node_type="site",
+                node_id=str(si["site_id"]),
+                parent_id=store_id,
+                metadata={"name": si["name"]},
+            )
+            store_node.children.append(site_node)
+            sites_by_id[str(si["site_id"])] = site_node
+
+        if depth < 6 or not sites_by_id:
+            return
+
+        # Level 6: locations (grouped by site_id)
+        loc_rows = await conn.fetch(_SQL_GET_LOCATIONS_FOR_CLIENT, client_id, org_id)
+        for lo in loc_rows:
+            site_id = str(lo["site_id"])
+            site_node = sites_by_id.get(site_id)
+            if site_node is None:
+                continue  # orphan location — skip
+            site_node.children.append(OrgNode(
+                node_type="location",
+                node_id=str(lo["location_id"]),
+                parent_id=site_id,
+                metadata={
+                    "name": lo["name"],
+                    "location_type": lo["location_type"],
+                    "latitude": lo["latitude"],
+                    "longitude": lo["longitude"],
+                    "geofence_radius_m": lo["geofence_radius_m"],
+                },
+            ))
 
     async def get_node(
         self,
