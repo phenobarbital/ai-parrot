@@ -4,6 +4,11 @@ This module defines the Pydantic models and typed exception used by the
 form lifecycle events system (FEAT-188). All later modules (event_registry,
 event_dispatcher, schema extension, handlers, renderer) import from here.
 
+FEAT-329 extends the same pattern with the ``visit.*`` namespace: visit /
+assignment lifecycle events reuse the FEAT-188 registry and semantics
+(context → handler → ``EventResolution`` | ``FormEventAbort``) without a
+``FormSchema`` in the path.
+
 Public surface:
     - FormEventName
     - FormEventBinding
@@ -11,6 +16,8 @@ Public surface:
     - FormEventContext
     - EventResolution
     - FormEventAbort
+    - VisitEventName
+    - VisitEventContext
 """
 
 from collections.abc import Mapping
@@ -28,6 +35,14 @@ FormEventName = Literal[
     "onBeforeSubmit",
     "onAfterSubmit",
     "onError",
+]
+
+VisitEventName = Literal[
+    "visit.onAssignmentCreated",
+    "visit.onArtifactAttached",
+    "visit.onArrival",
+    "visit.onGeofenceExit",
+    "visit.onCheckout",
 ]
 
 
@@ -115,6 +130,40 @@ class FormEventContext(BaseModel):
     schema_dump: Mapping[str, Any] | None = None   # open / schema_loaded only
     error: BaseException | None = None             # onError only
     user_message: str | None = None                # onError mutable
+    extra: dict[str, Any] = Field(default_factory=dict)  # correlation_id, etc.
+
+
+class VisitEventContext(BaseModel):
+    """Payload passed to a visit lifecycle event handler (FEAT-329).
+
+    Mirror of ``FormEventContext`` for the ``visit.*`` namespace: same
+    context → handler → resolution semantics, but scoped to a visit /
+    assignment rather than a form — no ``form_id`` / ``schema_dump``
+    in the path.
+
+    Attributes:
+        event: The name of the visit lifecycle event being dispatched.
+        tenant: Tenant slug used to resolve the handler in the registry.
+        auth_context: Resolved auth credentials.  Typed as ``Any`` to
+            avoid a circular import through ``core/`` → ``services/``.
+        event_id: Identifier of the parent Event (FEAT-303), if any.
+        shift_id: Identifier of the Shift the visit belongs to, if any.
+        visit_id: Identifier of the Visit being processed, if any.
+        staff_id: Identifier of the staff member performing the visit.
+        payload: Event-specific data (artifact metadata, GPS fix, ...).
+        extra: Free-form bag for correlation IDs, tracing data, etc.
+    """
+
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    event: VisitEventName
+    tenant: str | None
+    auth_context: Any  # services.auth_context.AuthContext — avoid circular
+    event_id: str | None = None
+    shift_id: str | None = None
+    visit_id: str | None = None
+    staff_id: str | None = None
+    payload: Mapping[str, Any] | None = None
     extra: dict[str, Any] = Field(default_factory=dict)  # correlation_id, etc.
 
 
