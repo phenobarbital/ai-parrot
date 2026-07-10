@@ -182,6 +182,17 @@ class A2AClient:
             ]
         return card
 
+    @property
+    def _verb_sep(self) -> str:
+        """Separator for A2A REST "method-style" verbs.
+
+        v1.0 uses colon syntax (``/message:send``); v0.3 uses slash
+        (``/message/send``). Defaults to v0.3 until a v1.0 server is detected
+        by :meth:`discover`, which is the safe interop choice (AI-Parrot's own
+        server serves both).
+        """
+        return ":" if self._server_version == "1.0" else "/"
+
     def get_skills(self) -> List[AgentSkill]:
         """Get available skills from the remote agent."""
         if not self._agent_card:
@@ -217,7 +228,7 @@ class A2AClient:
         Returns:
             Task with the response
         """
-        url = f"{self.base_url}/a2a/message/send"
+        url = f"{self.base_url}/a2a/message{self._verb_sep}send"
 
         message = Message.user(content, context_id=context_id, metadata=metadata)
 
@@ -249,7 +260,7 @@ class A2AClient:
         Yields:
             Text chunks as they arrive
         """
-        url = f"{self.base_url}/a2a/message/stream"
+        url = f"{self.base_url}/a2a/message{self._verb_sep}stream"
 
         message = Message.user(content, context_id=context_id, metadata=metadata)
 
@@ -319,7 +330,7 @@ class A2AClient:
             context_id=context_id
         )
 
-        url = f"{self.base_url}/a2a/message/send"
+        url = f"{self.base_url}/a2a/message{self._verb_sep}send"
         payload = {"message": message.to_dict()}
 
         async with self._session.post(url, json=payload) as resp:
@@ -379,7 +390,7 @@ class A2AClient:
 
     async def cancel_task(self, task_id: str) -> Task:
         """Cancel a running task."""
-        url = f"{self.base_url}/a2a/tasks/{task_id}/cancel"
+        url = f"{self.base_url}/a2a/tasks/{task_id}{self._verb_sep}cancel"
 
         async with self._session.post(url) as resp:
             resp.raise_for_status()

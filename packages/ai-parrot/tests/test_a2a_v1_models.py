@@ -1,7 +1,6 @@
 """Unit tests for A2A v1.0 data models (FEAT-272 TASK-1712 / TASK-1713)."""
-import pytest
 from parrot.a2a.models import (
-    TaskState, Role, Part, Message, Artifact, Task, TaskStatus,
+    TaskState, Role, Part, Message, Task, TaskStatus,
     AgentSkill, AgentCapabilities, AgentInterface, AgentProvider,
     SendMessageConfiguration, TaskPushNotificationConfig,
     AuthenticationInfo, A2AError, AgentCard,
@@ -231,3 +230,22 @@ class TestAgentCardV1:
         card = self._card(provider=AgentProvider(url="https://example.com", organization="Acme"))
         d = card.to_dict(version="1.0")
         assert d["provider"]["organization"] == "Acme"
+
+    def test_url_setter_updates_first_interface(self):
+        # Regression: ToolManager.register_a2a_agent assigns card.url directly.
+        card = self._card()
+        card.url = "https://b.com/a2a"
+        assert card.url == "https://b.com/a2a"
+        assert card.supported_interfaces[0].url == "https://b.com/a2a"
+
+    def test_url_setter_creates_interface_when_empty(self):
+        card = AgentCard(name="T", description="d", version="1.0", skills=[])
+        assert card.url is None
+        card.url = "https://c.com/a2a"
+        assert card.url == "https://c.com/a2a"
+        assert card.preferred_transport == "JSONRPC"
+
+    def test_url_setter_ignores_none(self):
+        card = self._card()
+        card.url = None  # must not raise, must not clobber
+        assert card.url == "https://a.com/a2a"

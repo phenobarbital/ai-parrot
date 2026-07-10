@@ -1,4 +1,5 @@
 """Unit tests for A2A v1.0 server routes & version negotiation (FEAT-272)."""
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from aiohttp import web
@@ -101,6 +102,54 @@ class TestV1Routes:
         resp = await client.post(f"/a2a/tasks/{task_id}:cancel",
                                  headers={"A2A-Version": "1.0"})
         assert resp.status == 400
+
+    async def test_return_immediately_submitted_then_completed(self, aiohttp_client, a2a_app):
+        client = await aiohttp_client(a2a_app)
+        resp = await client.post(
+            "/a2a/message:send",
+            headers={"A2A-Version": "1.0"},
+            json={
+                "message": {"messageId": "m1", "role": "ROLE_USER",
+                            "parts": [{"kind": "text", "text": "Hi"}]},
+                "configuration": {"returnImmediately": True},
+            },
+        )
+        data = await resp.json()
+        assert data["status"]["state"] == "TASK_STATE_SUBMITTED"
+        task_id = data["id"]
+        # Let the background task run, then confirm it progressed (not stuck).
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            got = await client.get(f"/a2a/tasks/{task_id}", headers={"A2A-Version": "1.0"})
+            state = (await got.json())["status"]["state"]
+            if state != "TASK_STATE_SUBMITTED":
+                break
+        assert state == "TASK_STATE_COMPLETED"
+
+    async def test_return_immediately_malformed_fails_not_hangs(self, aiohttp_client, a2a_app):
+        # Regression: identity extraction runs INSIDE process_message's try, so a
+        # malformed message in the background path fails the task instead of
+        # hanging forever in SUBMITTED with an unretrieved task exception.
+        client = await aiohttp_client(a2a_app)
+        resp = await client.post(
+            "/a2a/message:send",
+            headers={"A2A-Version": "1.0"},
+            json={
+                "message": {"messageId": "m1", "role": "ROLE_USER",
+                            "parts": [{"kind": "text", "text": "Hi"}],
+                            "metadata": "not-a-dict"},
+                "configuration": {"returnImmediately": True},
+            },
+        )
+        task_id = (await resp.json())["id"]
+        state = "TASK_STATE_SUBMITTED"
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            got = await client.get(f"/a2a/tasks/{task_id}", headers={"A2A-Version": "1.0"})
+            state = (await got.json())["status"]["state"]
+            if state != "TASK_STATE_SUBMITTED":
+                break
+        assert state == "TASK_STATE_FAILED"
 
     async def test_history_length_config(self, aiohttp_client, a2a_app):
         client = await aiohttp_client(a2a_app)

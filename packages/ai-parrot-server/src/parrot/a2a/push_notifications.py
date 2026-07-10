@@ -12,6 +12,8 @@ import ipaddress
 import uuid
 from urllib.parse import urlparse
 
+from navconfig.logging import logging
+
 from parrot.a2a.models import TaskPushNotificationConfig
 
 
@@ -26,12 +28,20 @@ class PushNotificationStore:
     def __init__(self) -> None:
         # task_id -> {config_id -> config}
         self._configs: Dict[str, Dict[str, TaskPushNotificationConfig]] = {}
+        self.logger = logging.getLogger("A2A.PushNotificationStore")
 
     async def create(
         self, config: TaskPushNotificationConfig
     ) -> TaskPushNotificationConfig:
         """Store a push-notification config, assigning an id when absent."""
-        self._validate_webhook_url(config.url)
+        try:
+            self._validate_webhook_url(config.url)
+        except ValueError as exc:
+            self.logger.warning(
+                "Rejected push-notification webhook for task %s: %s",
+                config.task_id, exc,
+            )
+            raise
         if not config.id:
             config.id = str(uuid.uuid4())
         task_configs = self._configs.setdefault(config.task_id, {})
@@ -67,10 +77,17 @@ class PushNotificationStore:
         hostname = parsed.hostname
         if not hostname:
             raise ValueError("Webhook URL has no host")
-        try:
-            ip = ipaddress.ip_address(hostname)
-        except ValueError:
-            return  # hostname, not a literal IP — allow (DNS rebinding is out of scope)
+
+        # Block the `localhost` name outright (it isn't an IP literal, so the
+        # IP checks below would otherwise let it through).
+        host_l = hostname.lower()
+        if host_l == "localhost" or host_l.endswith(".localhost"):
+            raise ValueError(f"Loopback host not allowed: {hostname}")
+
+        ip = self._coerce_ip(hostname)
+        if ip is None:
+            return  # a real hostname — allowed (DNS rebinding is out of scope)
+
         # Reject every non-globally-routable class: loopback (127.0.0.0/8, ::1),
         # private (RFC1918, fc00::/7), link-local (169.254/16 incl. the cloud
         # metadata endpoint 169.254.169.254, fe80::/10), unspecified (0.0.0.0, ::),
@@ -84,3 +101,24 @@ class PushNotificationStore:
             or ip.is_multicast
         ):
             raise ValueError(f"Private/loopback IP not allowed: {hostname}")
+
+    @staticmethod
+    def _coerce_ip(hostname: str):
+        """Return an ``ip_address`` for a literal or numeric-encoded host, else None.
+
+        Covers the dotted/colon literals AND the integer forms many resolvers
+        accept (decimal ``2130706433`` and hex ``0x7f000001`` both == 127.0.0.1),
+        which would otherwise slip past a naive ``ip_address()`` parse.
+        """
+        try:
+            return ipaddress.ip_address(hostname)
+        except ValueError:
+            pass
+        try:
+            if hostname.isdigit():
+                return ipaddress.ip_address(int(hostname))
+            if hostname.lower().startswith("0x"):
+                return ipaddress.ip_address(int(hostname, 16))
+        except ValueError:
+            pass
+        return None

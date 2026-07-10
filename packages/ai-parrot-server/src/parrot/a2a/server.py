@@ -63,9 +63,12 @@ class _A2ARpcError(Exception):
     to the numeric JSON-RPC code.
     """
 
-    def __init__(self, error_name: str, message: str = ""):
+    def __init__(self, error_name: str, message: str = "", code: Optional[int] = None):
         self.error_name = error_name
         self.message = message or error_name
+        # Optional explicit JSON-RPC code for errors outside A2A_ERROR_CODES
+        # (e.g. the standard -32602 Invalid params).
+        self.code = code
         super().__init__(self.message)
 
 
@@ -691,10 +694,13 @@ class A2AServer:
             task.history.append(message)
             self._tasks[task.id] = task
 
-        # TASK-1643: extract the per-user identity (fail-closed gate seam).
-        user_id: Optional[str] = self._extract_identity(message)
-
         try:
+            # TASK-1643: extract the per-user identity (fail-closed gate seam).
+            # Kept inside the try so a malformed message (e.g. non-dict metadata)
+            # fails the task instead of escaping — critical for the
+            # returnImmediately background path where there is no outer handler.
+            user_id: Optional[str] = self._extract_identity(message)
+
             task.working(f"Processing with {self.agent.name}...")
 
             # Extract the question/input from message
@@ -964,12 +970,12 @@ class A2AServer:
         version = request.headers.get("A2A-Version", "").strip()
         if not version or version.startswith("0.3"):
             return "0.3"
-        if version.startswith("1."):
+        if version == "1" or version.startswith("1."):
             return "1.0"
+        # Plain A2A error shape (matches _a2a_http_error), consistent across the
+        # REST endpoints that call this. The numeric -32009 is what clients check.
         raise web.HTTPBadRequest(
             text=json.dumps({
-                "jsonrpc": "2.0",
-                "id": None,
                 "error": {
                     "code": -32009,
                     "message": f"Version not supported: {version}",
@@ -1419,8 +1425,10 @@ class A2AServer:
             config = TaskPushNotificationConfig.from_dict(payload)
             created = await self._push_store.create(config)
         except (KeyError, ValueError) as e:
+            # Standard JSON-RPC "Invalid params" (-32602) — kept consistent with
+            # the JSON-RPC push-create path.
             return web.json_response(
-                {"error": {"code": "InvalidParams", "message": str(e)}}, status=400
+                {"error": {"code": -32602, "message": str(e)}}, status=400
             )
         return self._versioned_response(created.to_dict(version), version)
 
@@ -1509,7 +1517,7 @@ class A2AServer:
         try:
             result = await getattr(self, handler_name)(params, version)
         except _A2ARpcError as e:
-            code, _http = A2A_ERROR_CODES[e.error_name]
+            code = e.code if e.code is not None else A2A_ERROR_CODES[e.error_name][0]
             return self._jsonrpc_error(req_id, code, e.message)
         except web.HTTPException:
             raise
@@ -1604,7 +1612,7 @@ class A2AServer:
             config = TaskPushNotificationConfig.from_dict(payload)
             created = await store.create(config)
         except (KeyError, ValueError) as e:
-            raise _A2ARpcError("UnsupportedOperationError", str(e))
+            raise _A2ARpcError("InvalidParams", str(e), code=-32602)
         return created.to_dict(version)
 
     async def _rpc_push_get(self, params: Dict[str, Any], version: str) -> Dict[str, Any]:

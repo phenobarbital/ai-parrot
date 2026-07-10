@@ -899,12 +899,43 @@ class AgentCard:
             return self.supported_interfaces[0].url
         return None
 
+    @url.setter
+    def url(self, value: Optional[str]) -> None:
+        """Backward-compat writable `url`: update (or create) the first interface.
+
+        Existing callers (e.g. ``ToolManager.register_a2a_agent``) assign
+        ``card.url`` directly; the setter keeps that contract working after the
+        v1.0 ``supported_interfaces`` restructure.
+        """
+        if value is None:
+            return
+        if self.supported_interfaces:
+            self.supported_interfaces[0].url = value
+        else:
+            self.supported_interfaces = [
+                AgentInterface(
+                    url=value, protocol_binding="JSONRPC", protocol_version="1.0"
+                )
+            ]
+
     @property
     def preferred_transport(self) -> str:
         """Backward-compat: first interface protocol binding."""
         if self.supported_interfaces:
             return self.supported_interfaces[0].protocol_binding
         return "JSONRPC"
+
+    @preferred_transport.setter
+    def preferred_transport(self, value: str) -> None:
+        """Backward-compat writable `preferred_transport`."""
+        if self.supported_interfaces:
+            self.supported_interfaces[0].protocol_binding = value
+        else:
+            self.supported_interfaces = [
+                AgentInterface(
+                    url="", protocol_binding=value, protocol_version="1.0"
+                )
+            ]
 
     @property
     def protocol_version(self) -> str:
