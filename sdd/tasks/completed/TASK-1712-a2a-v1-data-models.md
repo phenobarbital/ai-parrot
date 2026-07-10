@@ -390,9 +390,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 4.8)
+**Date**: 2026-07-10
 **Notes**:
-**Deviations from spec**: none
+- Rewrote `models.py` with v1.0 core types: `TaskState`/`Role` now use
+  `SCREAMING_SNAKE_CASE` ProtoJSON values. Added `UNSPECIFIED`, `AUTH_REQUIRED`;
+  renamed `CANCELLED` → `CANCELED` with `CANCELLED` retained as a same-value
+  deprecated alias (`TaskState.CANCELLED is TaskState.CANCELED`).
+- Added compat helpers `parse_task_state`, `parse_role`, `serialize_task_state`,
+  `serialize_role` that map both v0.3 lowercase and v1.0 SCREAMING_SNAKE.
+- `Part`: added `filename`; `to_dict(version=)` emits v1.0 top-level `url`/`raw`
+  or v0.3 nested `fileWithUri`/`fileWithBytes`; `from_dict` accepts both.
+- `Message`: added `extensions`, `reference_task_ids` (v1.0-only in output).
+- `TaskStatus`, `Task`, `Artifact`, `Part`, `Message` all gained
+  `to_dict(version="1.0")` with v0.3 fallback.
+- `AgentCapabilities`: removed `state_transition_history`; added
+  `extended_agent_card` and `extensions`.
+- `AgentSkill`: added `input_modes`, `output_modes`, `security_requirements`
+  and a `from_dict`.
+- New dataclasses: `AgentInterface`, `AgentProvider`, `SendMessageConfiguration`,
+  `TaskPushNotificationConfig`, `AuthenticationInfo`, `A2AError`,
+  `SecurityScheme` (+ `APIKeySecurityScheme`, `HTTPAuthSecurityScheme`,
+  `OAuth2SecurityScheme`, `OpenIdConnectSecurityScheme`,
+  `MutualTlsSecurityScheme`), `SecurityRequirement`, `AgentExtension`,
+  `AgentCardSignature`.
+- 30 new unit tests in `test_a2a_v1_models.py` pass; ruff clean; existing
+  ai-parrot a2a tests still green.
+**Deviations from spec**: `AgentCard` was intentionally kept in its flat v0.3
+shape here (the restructure is TASK-1713's scope, per this task's explicit
+"NOT in scope"). `AgentCard.from_dict` now delegates skill parsing to the new
+`AgentSkill.from_dict`.

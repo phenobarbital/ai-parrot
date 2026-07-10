@@ -243,3 +243,19 @@ When you pick up this task:
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+**Completed by**: sdd-worker (Claude Opus 4.8) — 2026-07-10
+**Notes**: Added `A2A_ERROR_CODES` table (-32001..-32009 + HTTP status) to
+models.py. Refactored `_handle_jsonrpc` into a `_JSONRPC_METHODS` dispatch
+covering all 11 v1.0 PascalCase methods plus v0.3 slash aliases; added
+`_rpc_*` implementations (send/get/list/cancel/subscribe, push CRUD,
+GetExtendedAgentCard) and `_A2ARpcError` → numeric-code mapping. Standard
+JSON-RPC errors (-32700/-32600/-32601/-32603) handled. REST error responses
+(get/cancel/subscribe/push) now use the A2A error table via `_a2a_http_error`.
+`GetExtendedAgentCard` → -32007 when not configured; push methods → -32003
+when unsupported. 38 unit tests pass (incl. e2e regression); ruff clean.
+**Deviations from spec**: `SendStreamingMessage`/`SubscribeToTask` over JSON-RPC
+return the (final/current) task rather than a live SSE stream — JSON-RPC over a
+single POST cannot stream in this handler; SSE remains available on the REST
+`:stream`/`:subscribe` routes. Push-config create validation errors map to
+`UnsupportedOperationError` (-32004).

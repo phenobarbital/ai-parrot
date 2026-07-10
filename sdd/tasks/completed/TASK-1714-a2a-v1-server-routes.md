@@ -245,3 +245,18 @@ When you pick up this task:
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+**Completed by**: sdd-worker (Claude Opus 4.8) — 2026-07-10
+**Notes**: Added v1.0 REST colon-routes (`message:send`, `message:stream`,
+`tasks/{id}:cancel`, `tasks/{id}:subscribe`) alongside the v0.3 slash-routes;
+added `/.well-known/agent-card.json`. Implemented `_get_request_version`
+(A2A-Version header → 0.3/1.0, unsupported → HTTP 400 -32009),
+`_content_type_for` (`application/a2a+json` for v1.0), and `_versioned_response`.
+All task/card/stream handlers now serialize version-aware; SSE events use
+`serialize_task_state`/`serialize_role`. `SendMessageConfiguration.historyLength`
+trims response history; `returnImmediately` returns a SUBMITTED task and
+processes in the background on the same task object (`process_message` gained an
+optional `task=` param).
+**Deviations from spec**: fixed a latent bug in `_build_skills_from_tools` where
+`tool_manager=None` crashed `get_agent_card()` (now guards `is not None`) — the
+new v1.0 well-known route exercises this path with the standard mock agent.

@@ -247,3 +247,15 @@ When you pick up this task:
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+**Completed by**: sdd-worker (Claude Opus 4.8) — 2026-07-10
+**Notes**: Added `test_a2a_v1_roundtrip.py` (server): v1.0 REST/JSON-RPC/SSE
+round-trips, well-known v1.0 card, push-config CRUD, v0.3 backward compat, and
+all error codes (-32001/-32007/-32009/-32601). Added `test_a2a_v1_compat.py`
+(core): transport-free cross-version model round-trips (enums, Task, Message,
+Part, AgentCard). Full a2a suites green: ai-parrot 74 passed, ai-parrot-server
+78 passed (incl. bridge-e2e, credential-gate, identity, resume-trigger — no
+regressions). `ruff check` clean on both `parrot/a2a/` dirs.
+**Deviations from spec**: none. (Two unrelated server test modules —
+test_suspended_store / test_hitl_web_suspend_resume — fail to *collect* due to a
+missing `fakeredis` dev dependency; pre-existing and unrelated to A2A.)

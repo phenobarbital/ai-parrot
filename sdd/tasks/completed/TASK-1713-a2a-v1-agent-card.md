@@ -258,3 +258,25 @@ When you pick up this task:
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+**Completed by**: sdd-worker (Claude Opus 4.8)
+**Date**: 2026-07-10
+**Notes**:
+- Restructured `AgentCard`: replaced flat `url`/`preferred_transport`/
+  `protocol_version` fields with `supported_interfaces: List[AgentInterface]`.
+  Added `provider`, `documentation_url`, `security_schemes`,
+  `security_requirements`, `signatures`.
+- Added read-only backward-compat properties `url`, `preferred_transport`,
+  `protocol_version` returning the first interface's values so existing
+  consumers (client/mesh/router) keep working.
+- `to_dict(version="1.0")` emits `supportedInterfaces` + v1.0 fields;
+  `to_dict(version="0.3")` emits the flat `url`+`preferredTransport` shape.
+  `from_dict()` auto-detects `supportedInterfaces` (v1.0) vs flat `url` (v0.3)
+  and also folds in v0.3 `additionalInterfaces`.
+- `A2AServer.get_agent_card()` now builds a single `AgentInterface` from
+  `self._url`.
+- Exported all new v1.0 model types from `parrot.a2a.__init__`.
+- 35 model unit tests pass (incl. 6 new `TestAgentCardV1`); ruff clean.
+**Deviations from spec**: none. (Server-side default serialization still
+version-unaware until TASK-1714 wires the `A2A-Version` header; the e2e v0.3
+regression is resolved there.)

@@ -188,3 +188,19 @@ When you pick up this task:
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+**Completed by**: sdd-worker (Claude Opus 4.8) — 2026-07-10
+**Notes**: Added `RegisteredAgent.protocol_version` (default "0.3").
+`A2AMeshDiscovery` records the discovered version from `client._server_version`.
+The `AgentCard.url`/`preferred_transport` properties (TASK-1713) mean mesh code
+that reads `card.url` needs no change. Router fixes: aggregated card now built
+with `supported_interfaces=[]` (flat `url` is a read-only property);
+`_handle_discovery` sets `supported_interfaces` from the request host and
+serializes version-aware; added the v1.0 `/.well-known/agent-card.json` route;
+`_handle_message`/`_handle_stream` read `A2A-Version` (`_request_version`) and
+serialize task/SSE state version-aware. 67 ai-parrot a2a tests pass;
+`ruff check packages/ai-parrot/src/parrot/a2a/` clean.
+**Deviations from spec**: cleaned a pre-existing unused `except ... as e` (F841)
+in router.py so the whole-directory ruff check (a TASK-1719 acceptance gate)
+passes. Header forwarding to backends relies on A2AClient already sending
+`A2A-Version: 1.0` by default (TASK-1717) rather than per-request injection.

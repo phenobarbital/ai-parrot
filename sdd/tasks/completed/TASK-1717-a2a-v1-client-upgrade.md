@@ -211,3 +211,18 @@ When you pick up this task:
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+**Completed by**: sdd-worker (Claude Opus 4.8) — 2026-07-10
+**Notes**: Client now sends `A2A-Version: 1.0` by default (`_default_headers`).
+`discover()` tries `/.well-known/agent-card.json` first, falls back to
+`/.well-known/agent.json`, uses the version-aware `AgentCard.from_dict`, and
+records `_server_version` from the card shape. `_parse_task` and the streaming
+failure check use `parse_task_state` (accept both enum formats). Added
+`create_push_config`/`get_push_config`/`list_push_configs`/`delete_push_config`.
+`A2ARemoteAgentTool`/`A2ARemoteSkillTool` need no change: they route through
+`send_message`/`invoke_skill` → compat `_parse_task`. 6 client tests pass; ruff
+clean.
+**Deviations from spec**: A2A-Version header is always sent (even to v0.3
+servers) — harmless for AI-Parrot's compat server, and version detection is
+card-based, so selective omission was not implemented. Removed two pre-existing
+unused imports (`asyncio`, `dataclasses.field`) to satisfy ruff on the edited file.

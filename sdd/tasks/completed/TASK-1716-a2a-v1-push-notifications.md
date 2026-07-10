@@ -248,3 +248,13 @@ When you pick up this task:
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+**Completed by**: sdd-worker (Claude Opus 4.8) — 2026-07-10
+**Notes**: Created `push_notifications.py` with an in-memory
+`PushNotificationStore` (create/get/list_for_task/delete + `_validate_webhook_url`
+SSRF guard rejecting private/loopback/link-local IPs and non-http(s) schemes).
+Wired into `A2AServer.__init__` via a new `push_store=` param (auto-created when
+`capabilities.push_notifications` is set) and registered the four REST CRUD
+routes under `.../pushNotificationConfigs` (gated on the store's presence).
+19 unit tests pass; ruff clean.
+**Deviations from spec**: none.
