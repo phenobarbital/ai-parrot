@@ -234,8 +234,12 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (claude)
+**Date**: 2026-07-09
+**Notes**: Implemented in `manager.py`: `self.a2a_bots` dict + `self._a2a_runners` list (init), module-level `handle_a2a_directory()` handler, `_wire_a2a_security()` helper (builds `JWTAuthenticator`/`MTLSAuthenticator`/`InMemoryCredentialProvider` from whichever config fields are set, appends `A2ASecurityMiddleware` to the target app), and `_start_a2a_bot()` (resolves agent, optional `CredentialBroker.from_config(strict=False)`, `A2AServer` construction, shared-app vs dedicated-port `TCPSite` mounting, `/a2a/directory` route registered once on the shared app regardless of per-agent port, base_path collision avoidance for multiple default-path agents on the shared app, discovery registry population, `OSError` handling for port conflicts). Added `isinstance(agent_config, A2AAgentConfig)` dispatch branch in `startup()` and A2A runner cleanup + dict clearing in `shutdown()`.
 
-**Deviations from spec**: none | describe if any
+One implementation detail not spelled out in the task's Pattern-to-Follow snippet: security middleware wiring for the dedicated-port path had to happen on `target_app` BEFORE `await runner.setup()` — aiohttp freezes `app.middlewares`/`app.router` at that point (confirmed via `AppRunner._make_server()`: `on_startup.freeze(); await app.startup(); app.freeze()`), so appending middleware afterward raises `RuntimeError: Cannot modify frozen list`. Restructured to wire security + call `a2a_server.setup()` before `runner.setup()` for the port case; for the shared-app case this is inherently safe since `_start_a2a_bot()` itself runs from the `on_startup` signal (via `IntegrationBotManager.startup()`), before the app is frozen.
+
+Verified end-to-end with a live aiohttp `TestClient`/`TestServer` (shared app) and a real `TCPSite` on a free port (dedicated port): `/.well-known/agent.json` returns a valid AgentCard, `/a2a/directory` returns only A2A-agent cards, unauthenticated requests to a JWT-protected dedicated-port agent get HTTP 401, multiple shared-app agents get distinct base_paths, and a simulated missing `ai-parrot-server` (patched `builtins.__import__`) degrades gracefully (agent skipped, no crash). `ruff check` passes clean. Pre-existing failures in `tests/integrations/test_msagentsdk/` (14, `importlib.reload` module-identity issue) reproduce identically on unmodified `dev` — unrelated to this task.
+
+**Deviations from spec**: none in scope/files/class names. One implementation refinement beyond the task's illustrative snippet: security middleware for the dedicated-port path is wired before `runner.setup()` (not after, as loosely implied) to avoid the aiohttp frozen-app error described above.

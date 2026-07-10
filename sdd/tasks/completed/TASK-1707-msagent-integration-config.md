@@ -241,8 +241,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (claude)
+**Date**: 2026-07-09
+**Notes**: Added `MSAgentIntegrationConfig` dataclass to `packages/ai-parrot-integrations/src/parrot/integrations/msagentsdk/models.py`, directly below the existing `MSAgentSDKConfig`, exactly per the Codebase Contract's pattern to follow. Implemented `from_dict()`, `__post_init__()` (env var fallback for MS Azure AD, O365, and JWT secret fields, mirroring `MSAgentSDKConfig.__post_init__`), and `to_msagentsdk_config()` producing a valid `MSAgentSDKConfig`. Verified against the task's 3-case test scaffold (minimal parse, full parse, `to_msagentsdk_config()` conversion) — all pass. `ruff check` passes clean. No new files created; only the one file listed in scope was modified.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -186,8 +186,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (claude)
+**Date**: 2026-07-09
+**Notes**: Added `try/except ImportError` guarded imports for `MSAgentIntegrationConfig` and `A2AAgentConfig` to `models.py`, added `elif kind == 'a2a'` and `elif kind == 'msagent'` branches (each guarded with `and XConfig is not None`) to `IntegrationBotConfig.from_dict()`, and updated the `agents` dict's `Union` type annotation to include both new types. Added the same two imports to `manager.py`'s import block (with `# noqa: F401` — they're forward-compatible imports consumed by `_start_a2a_bot()`/`_start_msagent_bot()` added in TASK-1709/TASK-1710, unused in this task's scope). Verified against the task's 4-case test scaffold (a2a parsed, msagent parsed, existing kinds unaffected, unknown kind skipped) — all pass. `ruff check` passes clean on both files.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

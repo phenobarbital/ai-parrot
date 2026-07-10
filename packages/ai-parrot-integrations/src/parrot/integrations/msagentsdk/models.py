@@ -157,3 +157,208 @@ class MSAgentSDKConfig:
             oauth_connections=data.get("oauth_connections", {}),
             obo_scopes=data.get("obo_scopes", {}),
         )
+
+
+@dataclass
+class MSAgentIntegrationConfig:
+    """
+    Configuration for a full-featured Microsoft Agents SDK bot exposed via
+    ``kind: msagent`` entries in ``integrations_bots.yaml``.
+
+    Extends the minimal ``MSAgentSDKConfig`` surface with a
+    ``CredentialBroker`` (built from the inline ``credentials`` list), O365
+    OAuth2 SSO/OBO infrastructure, and an automatic A2A companion surface
+    (sharing the same broker). Use ``to_msagentsdk_config()`` to obtain the
+    inner ``MSAgentSDKConfig`` consumed by ``MSAgentSDKWrapper``.
+
+    Attributes:
+        name: Agent name (used as key in YAML and for env var fallback prefix).
+        chatbot_id: ID/name of the bot in BotManager (used with get_bot()).
+        kind: Integration type discriminator — always ``"msagent"``.
+        microsoft_app_id: Microsoft App ID / Azure AD application (client) ID.
+            Forwarded to ``MSAgentSDKConfig.client_id``.
+        microsoft_app_password: Microsoft App password / Azure AD client
+            secret. Forwarded to ``MSAgentSDKConfig.client_secret``.
+        microsoft_tenant_id: Azure AD tenant ID for single-tenant apps.
+            Forwarded to ``MSAgentSDKConfig.tenant_id``.
+        anonymous_auth: If True, skip JWT validation (local dev only).
+        api_key: Shared secret for API-Key inbound auth.
+        api_key_header: Header name that carries ``api_key``.
+        app_type: Azure AD application type — ``"SingleTenant"`` or
+            ``"MultiTenant"``.
+        authority: Explicit OAuth authority override.
+        welcome_message: Message sent when a new member joins.
+        system_prompt_override: Override the agent's default system prompt.
+        endpoint: Custom messaging route path override.
+        oauth_connections: Maps tool name to Azure Bot OAuth connection name.
+        obo_scopes: Maps tool name to a list of OBO target scopes.
+        url: Public base URL for the automatic A2A companion surface.
+        tags: Tags describing the agent, surfaced in the companion AgentCard.
+        enable_credential_broker: If True, build a ``CredentialBroker`` from
+            ``credentials`` and pass it to ``MSAgentSDKWrapper`` and the A2A
+            companion.
+        credentials: Inline list of provider credential dicts (raw, parsed
+            into ``ProviderCredentialConfig`` at startup time).
+        o365_client_id: Azure AD application (client) ID for O365 OAuth2 SSO.
+        o365_client_secret: Azure AD client secret for O365 OAuth2 SSO.
+        o365_tenant_id: Azure AD tenant ID for O365 OAuth2 SSO.
+        redirect_uri: OAuth2 redirect URI for the O365 SSO flow.
+        jwt_secret: Shared secret for JWT auth on the A2A companion surface.
+        debug: If True, enable verbose debug logging for this bot.
+    """
+
+    name: str
+    chatbot_id: str
+    kind: str = "msagent"
+
+    # MS Agent SDK fields (forwarded to MSAgentSDKConfig)
+    microsoft_app_id: Optional[str] = None
+    microsoft_app_password: Optional[str] = None
+    microsoft_tenant_id: Optional[str] = None
+    anonymous_auth: bool = False
+    api_key: Optional[str] = None
+    api_key_header: str = "x-api-key"
+    app_type: str = "SingleTenant"
+    authority: Optional[str] = None
+    welcome_message: Optional[str] = None
+    system_prompt_override: Optional[str] = None
+    endpoint: Optional[str] = None
+    oauth_connections: Dict[str, str] = field(default_factory=dict)
+    obo_scopes: Dict[str, List[str]] = field(default_factory=dict)
+
+    # A2A companion (always on)
+    url: Optional[str] = None
+    tags: List[str] = field(default_factory=list)
+
+    # Credential broker
+    enable_credential_broker: bool = False
+    credentials: List[Dict[str, Any]] = field(default_factory=list)
+
+    # O365 OAuth infra
+    o365_client_id: Optional[str] = None
+    o365_client_secret: Optional[str] = None
+    o365_tenant_id: Optional[str] = None
+    redirect_uri: Optional[str] = None
+
+    # JWT for A2A companion
+    jwt_secret: Optional[str] = None
+    debug: bool = False
+
+    def __post_init__(self) -> None:
+        """
+        Resolve Azure AD, O365, and security credentials from environment
+        variables when not provided directly in the YAML config.
+
+        Falls back to ``{AGENT_NAME}_MICROSOFT_APP_ID``,
+        ``{AGENT_NAME}_MICROSOFT_APP_PASSWORD``,
+        ``{AGENT_NAME}_MICROSOFT_TENANT_ID``, ``{AGENT_NAME}_O365_CLIENT_ID``,
+        ``{AGENT_NAME}_O365_CLIENT_SECRET``, ``{AGENT_NAME}_O365_TENANT_ID``,
+        and ``{AGENT_NAME}_JWT_SECRET`` environment variables.
+        """
+        prefix = self.name.upper()
+        if not self.microsoft_app_id:
+            self.microsoft_app_id = config.get(f"{prefix}_MICROSOFT_APP_ID")
+        if not self.microsoft_app_password:
+            self.microsoft_app_password = config.get(f"{prefix}_MICROSOFT_APP_PASSWORD")
+        if not self.microsoft_tenant_id:
+            self.microsoft_tenant_id = config.get(f"{prefix}_MICROSOFT_TENANT_ID")
+        env_app_type = config.get(f"{prefix}_MICROSOFT_APP_TYPE")
+        if env_app_type:
+            self.app_type = env_app_type
+        if not self.authority:
+            self.authority = config.get(f"{prefix}_MICROSOFT_AUTHORITY")
+        if not self.api_key:
+            self.api_key = config.get(f"{prefix}_API_KEY")
+        env_api_key_header = config.get(f"{prefix}_API_KEY_HEADER")
+        if env_api_key_header:
+            self.api_key_header = env_api_key_header
+        if not self.endpoint:
+            self.endpoint = config.get(f"{prefix}_ENDPOINT")
+        if not self.oauth_connections:
+            raw = config.get(f"{prefix}_OAUTH_CONNECTIONS")
+            if raw:
+                try:
+                    self.oauth_connections = json.loads(raw)
+                except (ValueError, TypeError):
+                    pass
+        if not self.obo_scopes:
+            raw = config.get(f"{prefix}_OBO_SCOPES")
+            if raw:
+                try:
+                    self.obo_scopes = json.loads(raw)
+                except (ValueError, TypeError):
+                    pass
+        if not self.o365_client_id:
+            self.o365_client_id = config.get(f"{prefix}_O365_CLIENT_ID")
+        if not self.o365_client_secret:
+            self.o365_client_secret = config.get(f"{prefix}_O365_CLIENT_SECRET")
+        if not self.o365_tenant_id:
+            self.o365_tenant_id = config.get(f"{prefix}_O365_TENANT_ID")
+        if not self.redirect_uri:
+            self.redirect_uri = config.get(f"{prefix}_REDIRECT_URI")
+        if not self.jwt_secret:
+            self.jwt_secret = config.get(f"{prefix}_JWT_SECRET")
+
+    @classmethod
+    def from_dict(cls, name: str, data: Dict[str, Any]) -> "MSAgentIntegrationConfig":
+        """Create config from dictionary (YAML parsed data).
+
+        Args:
+            name: Agent name used as YAML key and env var prefix.
+            data: Parsed YAML dictionary for this agent.
+
+        Returns:
+            Fully initialised ``MSAgentIntegrationConfig`` instance.
+        """
+        return cls(
+            name=name,
+            chatbot_id=data.get("chatbot_id", name),
+            microsoft_app_id=data.get("microsoft_app_id"),
+            microsoft_app_password=data.get("microsoft_app_password"),
+            microsoft_tenant_id=data.get("microsoft_tenant_id"),
+            anonymous_auth=data.get("anonymous_auth", False),
+            api_key=data.get("api_key"),
+            api_key_header=data.get("api_key_header", "x-api-key"),
+            app_type=data.get("app_type", "SingleTenant"),
+            authority=data.get("authority"),
+            welcome_message=data.get("welcome_message"),
+            system_prompt_override=data.get("system_prompt_override"),
+            endpoint=data.get("endpoint"),
+            oauth_connections=data.get("oauth_connections", {}),
+            obo_scopes=data.get("obo_scopes", {}),
+            url=data.get("url"),
+            tags=data.get("tags", []),
+            enable_credential_broker=data.get("enable_credential_broker", False),
+            credentials=data.get("credentials", []),
+            o365_client_id=data.get("o365_client_id"),
+            o365_client_secret=data.get("o365_client_secret"),
+            o365_tenant_id=data.get("o365_tenant_id"),
+            redirect_uri=data.get("redirect_uri"),
+            jwt_secret=data.get("jwt_secret"),
+            debug=data.get("debug", False),
+        )
+
+    def to_msagentsdk_config(self) -> MSAgentSDKConfig:
+        """Convert to the inner ``MSAgentSDKConfig`` used by ``MSAgentSDKWrapper``.
+
+        Returns:
+            ``MSAgentSDKConfig`` populated from the MS Agent SDK fields of
+            this config.
+        """
+        return MSAgentSDKConfig(
+            name=self.name,
+            chatbot_id=self.chatbot_id,
+            client_id=self.microsoft_app_id,
+            client_secret=self.microsoft_app_password,
+            tenant_id=self.microsoft_tenant_id,
+            anonymous_auth=self.anonymous_auth,
+            api_key=self.api_key,
+            api_key_header=self.api_key_header,
+            app_type=self.app_type,
+            authority=self.authority,
+            welcome_message=self.welcome_message,
+            system_prompt_override=self.system_prompt_override,
+            endpoint=self.endpoint,
+            oauth_connections=self.oauth_connections,
+            obo_scopes=self.obo_scopes,
+        )

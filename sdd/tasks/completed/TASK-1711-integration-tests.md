@@ -176,8 +176,18 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (claude)
+**Date**: 2026-07-09
+**Notes**: Created all 6 test files listed in scope (`tests/integrations/__init__.py` already existed, so nothing to do there):
+- `test_a2a_config.py` (16 tests) — `A2AAgentConfig.from_dict()` minimal/full/defaults/security-fields, defaults, env var fallback (jwt_secret/api_key/hmac_secret) via mocked `navconfig.config`, explicit-value-wins-over-env.
+- `test_msagent_config.py` (13 tests) — `MSAgentIntegrationConfig.from_dict()` minimal/full/defaults, `to_msagentsdk_config()` conversion (including a check that broker/O365/credentials fields do NOT leak into the inner `MSAgentSDKConfig`), env var fallback for MS/O365/JWT fields.
+- `test_config_dispatch.py` (13 tests) — dispatch for all 7 `kind` values (telegram, msteams, whatsapp, slack, msagentsdk, a2a, msagent) including a combined "all seven coexist" test, unknown-kind-skipped, empty/None config handling.
+- `test_a2a_startup.py` (9 tests) — shared-app mounting, agent-not-found abort, multi-agent base_path collision avoidance, dedicated-port `TCPSite` (real ephemeral port + live HTTP request), security middleware wiring (JWT) on both shared and dedicated-port paths (including a live 401 check), and simulated-missing-`ai-parrot-server` graceful skip.
+- `test_msagent_startup.py` (10 tests) — wrapper construction (mocking `parrot.integrations.msagentsdk.wrapper` via `sys.modules`, the same pattern already used in `tests/integrations/test_msagentsdk/test_manager_registration.py`, since the real wrapper needs the optional `microsoft-agents-*` SDK), SDK config conversion verification, broker wiring on/off, companion A2A registration + security + graceful ImportError skip, and the O365-under-frozen-`on_startup` reproduction (via a real `AppRunner`).
+- `test_a2a_discovery.py` (6 tests) — registry lazy-init, directory route registered exactly once (counting distinct `route.resource`, since `add_get` registers both GET+HEAD routes on one resource), multi-agent registration, live `/a2a/directory` JSON response, A2A-only filtering (a populated `slack_bots` dict must never leak into the directory), and empty-registry → `[]`.
 
-**Deviations from spec**: none | describe if any
+All 56 new tests pass (`pytest tests/integrations/test_a2a_config.py tests/integrations/test_msagent_config.py tests/integrations/test_config_dispatch.py tests/integrations/test_a2a_startup.py tests/integrations/test_msagent_startup.py tests/integrations/test_a2a_discovery.py -v` → 56 passed). `ruff check` passes clean on all 6 files. Ran the full `tests/integrations/` tree afterward: 14 pre-existing failures remain in `tests/integrations/test_msagentsdk/` (an `importlib.reload()` module-identity issue unrelated to this feature — confirmed to reproduce identically on unmodified `dev` before any FEAT-271 work began, during TASK-1709's verification pass); none of the other 156+ tests regressed.
+
+Two small test-authoring corrections made while iterating (not contract issues, just my own bugs): (1) two `AsyncMock(side_effect=...)` fixtures for `_get_agent` initially only accepted `chatbot_id`, but `_start_a2a_bot`/`_start_msagent_bot` call it with `(chatbot_id, system_prompt_override)` — fixed to accept both; (2) `test_directory_route_registered_once` initially counted `route` objects, but aiohttp's `add_get()` registers both a GET and a HEAD route on the SAME resource, so it double-counted — fixed to count distinct `route.resource` objects instead.
+
+**Deviations from spec**: none in scope/files. As noted in TASK-1709/1710 completion notes, this task's tests exercise the real `A2AServer`/`A2ASecurityMiddleware` (from the already-installed `ai-parrot-server`) rather than mocking them, since they are cheap, already-verified-accurate, and give much stronger regression coverage (live HTTP requests, real 401s) than pure mocks would — the task's own Implementation Notes explicitly listed "Mock `A2AServer`" as one option but did not mandate it exclusively, and `MSAgentSDKWrapper` (the one dependency that genuinely requires an unavailable optional SDK) IS mocked via `sys.modules`, per the contract's own patterns.

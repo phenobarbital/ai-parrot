@@ -61,11 +61,18 @@ from parrot.auth.credentials import ProviderCredentialConfig           # package
 ### Existing Signatures to Use
 ```python
 # packages/ai-parrot-integrations/src/parrot/integrations/msagentsdk/wrapper.py:63
+# CONTRACT CORRECTION (verified 2026-07-09, TASK-1710): the wrapper's
+# constructor is synchronous and registers the HTTP route(s) directly
+# (``self.app.router.add_post(path, self.handle_request)`` at wrapper.py:244)
+# — there is NO separate ``async def setup()``/``async def cleanup()`` pair.
+# The existing ``_start_msagentsdk_bot()`` (manager.py:357) already reflects
+# this: it just constructs ``MSAgentSDKWrapper(...)`` and stores it, with no
+# follow-up ``.setup()`` call. Cleanup is ``async def stop(self) -> None``
+# (wrapper.py:410), called from ``IntegrationBotManager.shutdown()``.
 class MSAgentSDKWrapper:
     def __init__(self, agent, config, app, broker=None,
                  identity_mapper=None, agent_class=None):  # line 88
-    async def setup(self) -> None:  # starts the MS Agent SDK surface
-    async def cleanup(self) -> None:
+    async def stop(self) -> None:  # line 410 — graceful shutdown (no-op today, lifecycle symmetry)
 
 # packages/ai-parrot-integrations/src/parrot/integrations/msagentsdk/models.py (TASK-1707)
 class MSAgentIntegrationConfig:
@@ -93,6 +100,8 @@ class IntegrationBotManager:
 - ~~`IntegrationBotManager._start_msagent_bot()`~~ — does not exist yet; this task creates it
 - ~~`MSAgentSDKWrapper.from_config()`~~ — no such classmethod; construct directly
 - ~~`MSAgentIntegrationConfig.to_wrapper()`~~ — no such method; use `to_msagentsdk_config()` + construct wrapper manually
+- ~~`MSAgentSDKWrapper.setup()`~~ / ~~`MSAgentSDKWrapper.cleanup()`~~ — do NOT exist (contract correction above); constructor does the setup work synchronously, `stop()` is the cleanup method
+- ~~`MSAgentIntegrationConfig.mtls_ca_cert`~~ / ~~`.hmac_secret`~~ / ~~`.basic_credentials`~~ / ~~`.security_policy`~~ — none of these fields exist on `MSAgentIntegrationConfig` (only `jwt_secret` and `api_key` overlap with `A2AAgentConfig`'s security surface). The existing `_wire_a2a_security()` helper (added in TASK-1709) accesses these attributes directly on an `A2AAgentConfig`-typed `config` param, so calling it as-is with an `MSAgentIntegrationConfig` instance would raise `AttributeError`. **Correction**: `_wire_a2a_security()` must be updated to use `getattr(config, "field", None)` for the fields not common to both configs before this task's companion-A2A code can safely call it.
 
 ---
 
@@ -118,7 +127,8 @@ async def _start_msagent_bot(self, name: str, config: MSAgentIntegrationConfig) 
 
     app = self.bot_manager.get_app()
 
-    # Create MS Agent SDK wrapper
+    # Create MS Agent SDK wrapper (constructor registers the HTTP route(s)
+    # synchronously — there is no separate async setup() call).
     from parrot.integrations.msagentsdk.wrapper import MSAgentSDKWrapper
     wrapper = MSAgentSDKWrapper(
         agent=agent,
@@ -126,7 +136,6 @@ async def _start_msagent_bot(self, name: str, config: MSAgentIntegrationConfig) 
         app=app,
         broker=broker,
     )
-    await wrapper.setup()
 
     # Companion A2A surface (always-on)
     try:
@@ -158,6 +167,34 @@ async def _start_msagent_bot(self, name: str, config: MSAgentIntegrationConfig) 
 - Reference `_start_msagentsdk_bot()` (line 334) for the existing pattern — `_start_msagent_bot()` extends it with broker, O365, and companion A2A.
 - The companion A2A surface is always-on per spec. Wrap in `try/except ImportError` since `ai-parrot-server` is optional.
 - Use `config.to_msagentsdk_config()` to get the inner config — do NOT manually construct `MSAgentSDKConfig`.
+
+### CONTRACT CORRECTION — `O365OAuthManager.setup()` frozen-app gotcha (verified 2026-07-09)
+`examples/msagent/server.py`'s `build_o365_infra()` (referenced by this task's
+Agent Instructions as "the reference implementation pattern") calls
+`O365OAuthManager(...).setup()` **before** the aiohttp app is ever run via
+`AppRunner` — i.e. before `app.on_startup` is frozen. That pattern does NOT
+transfer directly to `_start_msagent_bot()`: this method runs from
+`IntegrationBotManager.startup()`, which in production
+(`packages/ai-parrot-server/src/parrot/manager/manager.py:2118`) is itself
+invoked from `BotManagerServer.on_startup()` — an `app.on_startup` handler
+(registered at `manager.py:1654`). `aiohttp.web.AppRunner._make_server()`
+calls `app.on_startup.freeze()` **before** dispatching `on_startup` handlers,
+so by the time `_start_msagent_bot()` runs, `app.on_startup` is ALREADY
+frozen. `AbstractOAuth2Manager.setup()`
+(`packages/ai-parrot/src/parrot/auth/oauth2_base.py:186`) does
+`app.on_startup.append(self._on_startup)` as its first mutating step — this
+raises `RuntimeError: Cannot modify frozen list` in that context. (Verified
+empirically: a minimal aiohttp repro appending to `on_startup` from inside a
+running `on_startup` handler raises the same error; `app.middlewares` and
+`app.on_cleanup` are NOT frozen at that point, only `on_startup` is.)
+
+**Required workaround**: do not call `manager.setup()` directly from
+`_start_msagent_bot()`. Instead replicate its remaining side effects (app
+slot, `on_cleanup` hook, callback route via `setup_oauth2_routes()` from
+`parrot.auth.oauth2_routes` — `packages/ai-parrot/src/parrot/auth/oauth2_routes.py:279`)
+and resolve the Redis client immediately via `await manager._on_startup(app)`
+instead of deferring to the (already-fired) `on_startup` signal. See the
+corrected `_setup_o365_oauth()` helper in the implementation.
 - O365 OAuth setup follows `examples/msagent/server.py` pattern for `redirect_uri` and token endpoints.
 - All `parrot.a2a.*` imports must be lazy (inside the method body).
 
@@ -232,8 +269,16 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (claude)
+**Date**: 2026-07-09
+**Notes**: Implemented `self.msagent_bots` dict (init), `_setup_o365_oauth()` helper, and `_start_msagent_bot()` in `manager.py`: resolves agent, converts config via `to_msagentsdk_config()`, optionally builds `CredentialBroker.from_config(strict=False)`, optionally wires O365 OAuth2 SSO, constructs `MSAgentSDKWrapper` (route registration happens synchronously in its constructor — see contract correction below), and always mounts a companion A2A surface at `/a2a/{name.lower()}` sharing the same broker (registered in the discovery registry, security wired when `jwt_secret` set, guarded by `try/except ImportError` for missing `ai-parrot-server`). Added `isinstance(agent_config, MSAgentIntegrationConfig)` dispatch branch in `startup()` and `msagent_bots` stop-loop + dict clearing in `shutdown()`.
 
-**Deviations from spec**: none | describe if any
+Two Codebase Contract corrections discovered during verification (documented in-file above before implementing, per the anti-hallucination protocol):
+1. `MSAgentSDKWrapper.setup()`/`.cleanup()` do NOT exist — the constructor registers HTTP routes synchronously (matching the existing `_start_msagentsdk_bot()` pattern, which never calls a `.setup()`), and cleanup is `async def stop()` (wrapper.py:410).
+2. `_wire_a2a_security()` (added in TASK-1709) was typed for `A2AAgentConfig` and accessed `mtls_ca_cert`/`hmac_secret`/`basic_credentials`/`security_policy` directly — attributes `MSAgentIntegrationConfig` does not have. Updated it to read every security field via `getattr(config, "field", None)` so it's safely shared by both config types (this is the only change to previously-completed-task code; done in-file since `manager.py` is this task's own scope).
+
+A third, more consequential issue surfaced only through live testing (not spelled out in the contract): `examples/msagent/server.py`'s `O365OAuthManager(...).setup()` pattern — cited in this task's Agent Instructions as the reference — calls `app.on_startup.append(self._on_startup)` as its first mutating step. That works in the example because `setup()` runs BEFORE the app's `AppRunner` starts. It does NOT work here: `_start_msagent_bot()` runs from `IntegrationBotManager.startup()`, itself invoked from the shared app's own `on_startup` handler (`BotManagerServer.on_startup`, ai-parrot-server manager.py:2118). aiohttp's `AppRunner._make_server()` calls `app.on_startup.freeze()` BEFORE dispatching `on_startup` handlers, so calling `.setup()` from within that dispatch chain raises `RuntimeError: Cannot modify frozen list`. Added `_setup_o365_oauth()`, which tries `manager.setup()` and, on that specific `RuntimeError`, replicates its remaining side effects (app slot, `on_cleanup` hook via `app.on_cleanup.append` — confirmed NOT frozen at this point, only `on_startup` is — and the callback route via `setup_oauth2_routes()`) and resolves the Redis client immediately via `await manager._on_startup(app)` instead of deferring to the already-fired signal. Verified this exact scenario end-to-end: ran `_start_msagent_bot()` with `o365_client_id`/`o365_client_secret` set from inside a real `aiohttp.web.AppRunner`-driven `on_startup` handler (reproducing the production call chain) — the O365 manager's app slot, callback route, and Redis ping all completed successfully with no exception.
+
+Also verified: broker wiring (credential passed into `MSAgentSDKWrapper` constructor kwargs), companion A2A registration (`msagent_bots` + `a2a_bots` + `a2a_discovery_registry` all populated under the same name), and graceful A2A-companion skip when `parrot.a2a.server` import is simulated to fail (wrapper still starts; only the companion is skipped with a warning) — all via ad-hoc aiohttp `TestServer`/`AppRunner` scripts (mocking `parrot.integrations.msagentsdk.wrapper` in `sys.modules`, same pattern as `tests/integrations/test_msagentsdk/test_manager_registration.py`, since the real wrapper needs the optional `microsoft-agents-*` SDK). `ruff check` passes clean; existing `test_manager_registration.py` (10 tests) still passes unchanged.
+
+**Deviations from spec**: none in scope/files/class names/signatures. Two corrections to code from prior tasks were necessary and made within this task's own file scope (`manager.py`): (1) `_wire_a2a_security()` uses `getattr` instead of direct attribute access so it works for both `A2AAgentConfig` and `MSAgentIntegrationConfig`; (2) added `_setup_o365_oauth()` as a helper not explicitly named in the task's Pattern-to-Follow snippet, required to make the O365 acceptance criterion actually functional given the frozen-`on_startup` timing described above.

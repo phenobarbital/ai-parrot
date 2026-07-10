@@ -192,8 +192,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (claude)
+**Date**: 2026-07-09
+**Notes**: Created `packages/ai-parrot-integrations/src/parrot/integrations/a2a/__init__.py` and `models.py` with `A2AAgentConfig` dataclass, following the `MSAgentSDKConfig` pattern exactly (dataclass, `from_dict()`, `__post_init__()` env var fallback). The `__init__.py` uses the same lazy PEP-562 re-export pattern as `msagentsdk/__init__.py` since future A2A submodules (server wiring, added in TASK-1709) will depend on the optional `ai-parrot-server` package — importing `parrot.integrations.a2a.models` directly never touches that dependency. Verified import, `from_dict()`, and defaults against the task's test scaffold (all 3 cases pass) using `PYTHONPATH` pointing at the worktree's package `src/` dirs (the shared venv's editable install still points at the main repo's absolute paths, so this was necessary purely for ad-hoc verification in the worktree — no test files were created here since `tests/integrations/test_a2a_config.py` is explicitly scoped to TASK-1711). `ruff check` passes clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
