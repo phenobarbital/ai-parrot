@@ -93,7 +93,7 @@
       "feature_id": "FEAT-272",
       "feature": "a2a-protocol-compatibility",
       "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "New file (push_notifications.py) but wires into server.py which TASK-1714/1715 modify — keep sequential",
       "assigned_to": null,
       "started_at": "2026-07-09T17:24:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1716-a2a-v1-push-notifications.md"
+      "completed_at": "2026-07-10T00:03:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1716-a2a-v1-push-notifications.md"
     },
     {
       "id": "TASK-1717",
