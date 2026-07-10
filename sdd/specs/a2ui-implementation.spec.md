@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-273
 **Date**: 2026-07-10
 **Author**: Jesus Lara (decisions) + Claude (research/synthesis)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.0
 **Brainstorm**: `sdd/proposals/a2ui-implementation.brainstorm.md` (authoritative input; decisions D1–D10 from `sdd/proposals/a2ui-outputs-brainstorm.md` carried forward)
 **Follow-up feature**: FEAT-B — ActionRouter + interactive data-flow (gated by SPK-2; out of scope here)
