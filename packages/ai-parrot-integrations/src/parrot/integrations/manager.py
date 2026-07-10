@@ -385,12 +385,31 @@ class IntegrationBotManager:
         self.msagentsdk_bots[name] = wrapper
         self.logger.info("Started MS Agent SDK bot '%s'", name)
 
-    def _wire_a2a_security(self, app: web.Application, config: Any) -> None:
-        """Build and attach an ``A2ASecurityMiddleware`` for an A2A agent.
+    # A2A endpoint sub-paths registered by ``A2AServer.setup()`` under an
+    # agent's ``base_path`` (``{base_path}/message/*``, ``{base_path}/tasks/*``,
+    # ``{base_path}/rpc``). Used to scope the security middleware to ONLY the
+    # authenticated routes of the agent it belongs to — see ``_wire_a2a_security``.
+    _A2A_PROTECTED_SEGMENTS: Tuple[str, ...] = ("message", "tasks", "rpc")
+
+    def _wire_a2a_security(
+        self, app: web.Application, config: Any, base_path: str
+    ) -> None:
+        """Build and attach a path-scoped ``A2ASecurityMiddleware`` for an A2A agent.
 
         Wires whichever authenticators correspond to the security fields set
         on *config* (JWT, mTLS, API key / HMAC via the in-memory credential
         provider) and appends the resulting middleware to *app*.
+
+        The middleware is **scoped to this agent's own routes** (those under
+        ``base_path`` — ``/message/*``, ``/tasks/*``, ``/rpc``). aiohttp
+        middlewares are application-global, so an unscoped
+        ``A2ASecurityMiddleware`` on the *shared* app would authenticate every
+        other integration's routes too (Telegram/Slack/MSTeams/WhatsApp
+        webhooks, the public ``/a2a/directory`` listing, and any other A2A
+        agent mounted at a deeper ``base_path``), locking them out with 401s
+        the moment one A2A agent enables auth. The scope wrapper only delegates
+        to the real middleware for requests that target this agent's endpoints;
+        everything else passes straight through.
 
         Shared by ``_start_a2a_bot()`` (``A2AAgentConfig``, TASK-1709) and the
         A2A companion surface in ``_start_msagent_bot()``
@@ -403,6 +422,8 @@ class IntegrationBotManager:
             app: The aiohttp application the A2A agent is mounted on.
             config: ``A2AAgentConfig`` or ``MSAgentIntegrationConfig``
                 carrying the security fields.
+            base_path: The agent's route prefix (e.g. ``/a2a`` or
+                ``/a2a/<name>``); the middleware only guards paths under it.
         """
         from parrot.a2a.security import (
             A2ASecurityMiddleware,
@@ -440,8 +461,65 @@ class IntegrationBotManager:
             credential_provider=credential_provider,
             default_policy=default_policy,
         )
-        app.middlewares.append(middleware.middleware)
-        self.logger.info("Wired A2ASecurityMiddleware for agent config '%s'", config.name)
+
+        # Only guard THIS agent's authenticated endpoints. Matching on the
+        # exact endpoint sub-paths (rather than a bare ``base_path`` prefix)
+        # keeps agents isolated even when their base paths nest — e.g. agent 1
+        # at ``/a2a`` must NOT catch agent 2's ``/a2a/<name>/...`` routes, and
+        # the public ``/a2a/directory`` listing must stay unauthenticated.
+        protected_prefixes = tuple(
+            f"{base_path}/{segment}" for segment in self._A2A_PROTECTED_SEGMENTS
+        )
+        inner_middleware = middleware.middleware
+
+        @web.middleware
+        async def scoped_a2a_security(request: web.Request, handler):
+            if request.path.startswith(protected_prefixes):
+                return await inner_middleware(request, handler)
+            return await handler(request)
+
+        app.middlewares.append(scoped_a2a_security)
+        self.logger.info(
+            "Wired scoped A2ASecurityMiddleware for agent config '%s' "
+            "(guarding paths under %s)",
+            config.name,
+            base_path,
+        )
+
+    def _parse_credential_configs(
+        self, raw_configs: List[Dict[str, Any]], bot_name: str
+    ) -> List[Any]:
+        """Parse raw credential dicts into ``ProviderCredentialConfig`` objects.
+
+        Each entry is validated independently: a malformed dict is skipped with
+        a warning rather than aborting the whole bot startup. This mirrors the
+        ``CredentialBroker.from_config(strict=False)`` contract — invalid
+        credential configs are skipped, not fatal — which an eager
+        ``[ProviderCredentialConfig(**c) for c in ...]`` comprehension would
+        otherwise defeat by raising before ``from_config`` ever runs.
+
+        Args:
+            raw_configs: Inline credential dicts from the YAML config.
+            bot_name: Bot name, for log context.
+
+        Returns:
+            The successfully parsed ``ProviderCredentialConfig`` list (possibly
+            shorter than the input when entries are skipped).
+        """
+        from parrot.auth.credentials import ProviderCredentialConfig
+
+        parsed: List[Any] = []
+        for entry in raw_configs:
+            try:
+                parsed.append(ProviderCredentialConfig(**entry))
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "Bot '%s': skipping invalid credential config %r: %s",
+                    bot_name,
+                    entry,
+                    exc,
+                )
+        return parsed
 
     async def _start_a2a_bot(self, name: str, config: A2AAgentConfig) -> None:
         """Start an agent as an A2A (Agent-to-Agent protocol) service.
@@ -470,13 +548,14 @@ class IntegrationBotManager:
             )
             return
 
-        # Build credential broker if enabled
+        # Build credential broker if enabled. Parse defensively so a single
+        # malformed credential dict is skipped (not fatal) — consistent with
+        # ``CredentialBroker.from_config(strict=False)``.
         broker = None
         if config.enable_credential_broker and config.credentials:
             from parrot.auth.broker import CredentialBroker
-            from parrot.auth.credentials import ProviderCredentialConfig
 
-            configs = [ProviderCredentialConfig(**c) for c in config.credentials]
+            configs = self._parse_credential_configs(config.credentials, name)
             broker = CredentialBroker.from_config(configs, strict=False)
 
         app = self.bot_manager.get_app()
@@ -515,11 +594,13 @@ class IntegrationBotManager:
             # Dedicated port: mount on a standalone sub-application. Security
             # middleware and routes MUST be registered before ``runner.setup()``
             # — aiohttp freezes the app's middlewares/router at that point.
+            # This app hosts only this agent, so it always owns its own
+            # ``/.well-known/agent.json`` card route.
             target_app = web.Application()
             target_app["a2a_discovery_registry"] = app["a2a_discovery_registry"]
             if has_security:
-                self._wire_a2a_security(target_app, config)
-            a2a_server.setup(target_app, url=config.url)
+                self._wire_a2a_security(target_app, config, base_path)
+            a2a_server.setup(target_app, url=config.url, register_well_known=True)
             runner = web.AppRunner(target_app)
             await runner.setup()
             try:
@@ -539,10 +620,22 @@ class IntegrationBotManager:
             # Shared app: this runs from the aiohttp ``on_startup`` signal
             # (via IntegrationBotManager.startup()), before the app is
             # frozen, so middleware/router mutation here is safe.
+            #
+            # ``/.well-known/agent.json`` is a single fixed route per app: only
+            # the FIRST A2A agent registers it (its card is what the endpoint
+            # serves); later agents rely on ``/a2a/directory`` for discovery
+            # (spec §"Known Risks"). Registering it more than once would leave
+            # a redundant, unreachable second route on the shared router.
             target_app = app
             if has_security:
-                self._wire_a2a_security(target_app, config)
-            a2a_server.setup(target_app, url=config.url)
+                self._wire_a2a_security(target_app, config, base_path)
+            register_well_known = not app.get("a2a_well_known_registered", False)
+            a2a_server.setup(
+                target_app,
+                url=config.url,
+                register_well_known=register_well_known,
+            )
+            app["a2a_well_known_registered"] = True
 
         # Register in discovery registry
         card = a2a_server.get_agent_card()
@@ -559,30 +652,54 @@ class IntegrationBotManager:
         lazily. ``_start_msagent_bot()`` runs from the shared app's OWN
         ``on_startup`` dispatch (``IntegrationBotManager.startup()`` is
         invoked from ``BotManagerServer.on_startup``), and aiohttp freezes
-        ``app.on_startup`` before dispatching it — so ``setup()`` would raise
-        ``RuntimeError: Cannot modify frozen list`` in that context.
+        ``app.on_startup`` before dispatching it — so ``setup()``'s
+        ``app.on_startup.append()`` would raise ``RuntimeError: Cannot modify
+        frozen list`` in that context.
 
-        Replicates ``setup()``'s remaining side effects (app slot,
-        ``on_cleanup`` hook, callback route) and resolves the Redis client
-        immediately instead of deferring to the already-fired ``on_startup``
-        signal.
+        This method distinguishes that expected timing case (detected up-front
+        via ``app.on_startup.frozen``) from a genuine conflict — a *different*
+        ``O365OAuthManager`` instance already bound to the same app slot — which
+        it refuses rather than silently clobbering. During ``on_startup``
+        dispatch only ``on_startup`` itself is frozen; ``app.router`` and
+        ``app.on_cleanup`` remain mutable, so the callback route and cleanup
+        hook can still be registered while the Redis client is resolved
+        immediately.
 
         Args:
             app: The aiohttp application to wire the manager into.
             manager: An ``O365OAuthManager`` constructed with ``app=app``.
+
+        Raises:
+            RuntimeError: If the app slot is already bound to a *different*
+                ``O365OAuthManager`` instance (conflicting O365 app
+                registrations across bots).
         """
-        try:
+        slot = f"oauth2_manager_{manager.provider_id}"
+        existing = app.get(slot)
+        if existing is not None and existing is not manager:
+            raise RuntimeError(
+                f"app['{slot}'] is already bound to a different "
+                "O365OAuthManager instance; multiple MSAgent bots must share a "
+                "single O365 app registration rather than each registering "
+                "their own."
+            )
+
+        if not app.on_startup.frozen:
+            # Normal path: on_startup has not been dispatched yet, so the
+            # manager's own setup() can append its startup hook safely.
             manager.setup()
-        except RuntimeError:
-            slot = f"oauth2_manager_{manager.provider_id}"
-            app[slot] = manager
+            return
+
+        # Frozen on_startup path: replicate setup()'s side effects without
+        # touching the frozen on_startup signal, and resolve Redis immediately.
+        from parrot.auth.oauth2_routes import setup_oauth2_routes
+
+        app[slot] = manager
+        setup_oauth2_routes(app, manager.provider_id, manager._callback_path)
+        manager._setup_done = True
+        if not app.on_cleanup.frozen:
             app.on_cleanup.append(manager._on_cleanup)
-
-            from parrot.auth.oauth2_routes import setup_oauth2_routes
-
-            setup_oauth2_routes(app, manager.provider_id, manager._callback_path)
-            manager._setup_done = True
-            await manager._on_startup(app)
+        await manager._on_startup(app)
 
     async def _start_msagent_bot(self, name: str, config: MSAgentIntegrationConfig) -> None:
         """Start a full-featured MS Agent SDK bot with broker + A2A companion.
@@ -605,29 +722,40 @@ class IntegrationBotManager:
 
         sdk_config = config.to_msagentsdk_config()
 
-        # Build credential broker if enabled
+        # Build credential broker if enabled. Parse defensively so a single
+        # malformed credential dict is skipped (not fatal) — consistent with
+        # ``CredentialBroker.from_config(strict=False)``.
         broker = None
         if config.enable_credential_broker and config.credentials:
             from parrot.auth.broker import CredentialBroker
-            from parrot.auth.credentials import ProviderCredentialConfig
 
-            configs = [ProviderCredentialConfig(**c) for c in config.credentials]
+            configs = self._parse_credential_configs(config.credentials, name)
             broker = CredentialBroker.from_config(configs, strict=False)
 
         app = self.bot_manager.get_app()
 
-        # O365 OAuth2 SSO infrastructure (optional)
+        # O365 OAuth2 SSO infrastructure (optional). One O365 app registration
+        # is shared per aiohttp app (single callback route). If another bot
+        # already wired an O365 manager, reuse it rather than constructing a
+        # second one that would clobber the first bot's slot/route.
         if config.o365_client_id and config.o365_client_secret:
             from parrot.auth.o365_oauth import O365OAuthManager
 
-            o365_manager = O365OAuthManager(
-                client_id=config.o365_client_id,
-                client_secret=config.o365_client_secret,
-                redirect_uri=config.redirect_uri,
-                tenant_id=config.o365_tenant_id or "common",
-                app=app,
-            )
-            await self._setup_o365_oauth(app, o365_manager)
+            o365_slot = f"oauth2_manager_{O365OAuthManager.provider_id}"
+            if app.get(o365_slot) is not None:
+                self.logger.info(
+                    "MSAgent bot '%s': reusing existing O365OAuthManager from app",
+                    name,
+                )
+            else:
+                o365_manager = O365OAuthManager(
+                    client_id=config.o365_client_id,
+                    client_secret=config.o365_client_secret,
+                    redirect_uri=config.redirect_uri,
+                    tenant_id=config.o365_tenant_id or "common",
+                    app=app,
+                )
+                await self._setup_o365_oauth(app, o365_manager)
 
         # Create MS Agent SDK wrapper (constructor registers the HTTP
         # route(s) synchronously — no separate async setup() call).
@@ -651,8 +779,13 @@ class IntegrationBotManager:
                 app["a2a_directory_registered"] = True
 
             companion_path = f"/a2a/{name.lower()}"
-            if config.jwt_secret:
-                self._wire_a2a_security(app, config)
+            # Wire security when ANY auth field is configured — not just
+            # ``jwt_secret``. ``MSAgentIntegrationConfig`` carries ``jwt_secret``
+            # and ``api_key``; gating on ``jwt_secret`` alone would leave an
+            # ``api_key``-only companion surface unauthenticated.
+            companion_has_security = bool(config.jwt_secret or config.api_key)
+            if companion_has_security:
+                self._wire_a2a_security(app, config, companion_path)
 
             a2a_server = A2AServer(
                 agent=agent,
@@ -660,7 +793,13 @@ class IntegrationBotManager:
                 tags=config.tags,
                 broker=broker,
             )
-            a2a_server.setup(app, url=config.url)
+            # Register the single ``/.well-known/agent.json`` route only if no
+            # earlier A2A agent (or companion) already claimed it on this app.
+            register_well_known = not app.get("a2a_well_known_registered", False)
+            a2a_server.setup(
+                app, url=config.url, register_well_known=register_well_known
+            )
+            app["a2a_well_known_registered"] = True
             card = a2a_server.get_agent_card()
             app["a2a_discovery_registry"][name] = card
             self.a2a_bots[name] = a2a_server

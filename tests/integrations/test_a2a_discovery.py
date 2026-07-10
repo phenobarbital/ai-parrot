@@ -67,6 +67,33 @@ class TestDiscoveryRegistryInitialization:
         assert len(directory_resources) == 1
 
 
+    @pytest.mark.asyncio
+    async def test_well_known_route_registered_once(self, manager_with_app):
+        """Only the first shared-app A2A agent registers /.well-known/agent.json.
+
+        A second registration would leave a redundant, unreachable duplicate
+        GET route on the shared router (spec §"Known Risks").
+        """
+        manager, app = manager_with_app
+        agents = {"a": _DummyAgent("Agent1"), "b": _DummyAgent("Agent2")}
+
+        async def get_bot(chatbot_id, system_prompt_override=None):
+            return agents.get(chatbot_id)
+
+        manager._get_agent = AsyncMock(side_effect=get_bot)
+
+        await manager._start_a2a_bot("First", A2AAgentConfig(name="First", chatbot_id="a"))
+        await manager._start_a2a_bot("Second", A2AAgentConfig(name="Second", chatbot_id="b"))
+
+        well_known_resources = {
+            route.resource
+            for route in app.router.routes()
+            if route.resource is not None
+            and route.resource.canonical == "/.well-known/agent.json"
+        }
+        assert len(well_known_resources) == 1
+
+
 class TestDiscoveryRegistryMultipleAgents:
     @pytest.mark.asyncio
     async def test_multiple_agents_registered(self, manager_with_app):

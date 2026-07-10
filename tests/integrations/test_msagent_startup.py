@@ -150,6 +150,41 @@ class TestMSAgentBotCredentialBroker:
         _, kwargs = mock_wrapper_cls.call_args
         assert kwargs["broker"] is None
 
+    @pytest.mark.asyncio
+    async def test_invalid_credential_entry_skipped_not_fatal(
+        self, manager_with_app, mock_wrapper
+    ):
+        """A malformed credential dict is skipped, not fatal — the broker is
+        still built from the remaining valid entries (strict=False contract).
+        """
+        manager, app = manager_with_app
+        mock_wrapper_cls, _ = mock_wrapper
+        manager._get_agent = AsyncMock(return_value=_DummyAgent())
+
+        cfg = MSAgentIntegrationConfig(
+            name="MSBot",
+            chatbot_id="agent",
+            enable_credential_broker=True,
+            credentials=[
+                {"provider": "broken"},  # missing required 'auth' → skipped
+                {"provider": "fireflies", "auth": "static_key", "options": {}},
+            ],
+        )
+        with patch.dict(
+            "sys.modules",
+            {
+                "parrot.integrations.msagentsdk.wrapper": MagicMock(
+                    MSAgentSDKWrapper=mock_wrapper_cls
+                )
+            },
+        ):
+            await manager._start_msagent_bot("MSBot", cfg)
+
+        # Bot still started and a broker was built despite the bad entry.
+        assert "MSBot" in manager.msagent_bots
+        _, kwargs = mock_wrapper_cls.call_args
+        assert kwargs["broker"] is not None
+
 
 class TestMSAgentBotA2ACompanion:
     @pytest.mark.asyncio
@@ -182,6 +217,34 @@ class TestMSAgentBotA2ACompanion:
 
         cfg = MSAgentIntegrationConfig(
             name="MSBot", chatbot_id="agent", jwt_secret="s3cret"
+        )
+        with patch.dict(
+            "sys.modules",
+            {
+                "parrot.integrations.msagentsdk.wrapper": MagicMock(
+                    MSAgentSDKWrapper=mock_wrapper_cls
+                )
+            },
+        ):
+            await manager._start_msagent_bot("MSBot", cfg)
+
+        assert len(app.middlewares) == 1
+
+    @pytest.mark.asyncio
+    async def test_companion_security_wired_when_only_api_key_set(
+        self, manager_with_app, mock_wrapper
+    ):
+        """api_key alone must still secure the companion A2A surface.
+
+        Regression: gating companion security on jwt_secret only left an
+        api_key-only companion surface unauthenticated.
+        """
+        manager, app = manager_with_app
+        mock_wrapper_cls, _ = mock_wrapper
+        manager._get_agent = AsyncMock(return_value=_DummyAgent())
+
+        cfg = MSAgentIntegrationConfig(
+            name="MSBot", chatbot_id="agent", api_key="sekret-key"
         )
         with patch.dict(
             "sys.modules",
@@ -279,3 +342,48 @@ class TestMSAgentBotO365:
             assert "oauth2_manager_o365" in app
         finally:
             await runner.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_second_o365_bot_reuses_manager_without_clobbering(
+        self, manager_with_app, mock_wrapper
+    ):
+        """A second MSAgent bot must reuse the shared O365 manager rather than
+        registering its own — which would clobber the first bot's app slot and
+        duplicate the OAuth callback route.
+        """
+        manager, app = manager_with_app
+        mock_wrapper_cls, _ = mock_wrapper
+        manager._get_agent = AsyncMock(return_value=_DummyAgent())
+
+        def make_cfg(name):
+            return MSAgentIntegrationConfig(
+                name=name,
+                chatbot_id="agent",
+                o365_client_id="cid",
+                o365_client_secret="csecret",
+                redirect_uri="http://localhost/callback",
+            )
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "parrot.integrations.msagentsdk.wrapper": MagicMock(
+                    MSAgentSDKWrapper=mock_wrapper_cls
+                )
+            },
+        ):
+            await manager._start_msagent_bot("MSBot1", make_cfg("MSBot1"))
+            first_manager = app["oauth2_manager_o365"]
+            await manager._start_msagent_bot("MSBot2", make_cfg("MSBot2"))
+
+        # Same manager instance reused; slot never clobbered.
+        assert app["oauth2_manager_o365"] is first_manager
+        # Both bots started; single OAuth callback route (not duplicated).
+        assert {"MSBot1", "MSBot2"} <= set(manager.msagent_bots)
+        callback_resources = {
+            route.resource
+            for route in app.router.routes()
+            if route.resource is not None
+            and route.resource.canonical == "/api/auth/oauth2/o365/callback"
+        }
+        assert len(callback_resources) == 1

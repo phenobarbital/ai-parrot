@@ -166,6 +166,75 @@ class TestA2ABotSecurity:
             await manager.shutdown()
 
 
+class TestA2ASecurityScoping:
+    """The security middleware must guard ONLY its own agent's routes.
+
+    aiohttp middlewares are app-global, so an unscoped ``A2ASecurityMiddleware``
+    on the shared app would 401 every other integration's routes the moment one
+    A2A agent enables auth. These tests pin the scoping fix.
+    """
+
+    @pytest.mark.asyncio
+    async def test_security_does_not_gate_other_routes(self, manager_with_app):
+        manager, app = manager_with_app
+        manager._get_agent = AsyncMock(return_value=_DummyAgent())
+
+        async def telegram_webhook(request):
+            return web.json_response({"ok": True})
+
+        app.router.add_post("/telegram/webhook", telegram_webhook)
+
+        cfg = A2AAgentConfig(
+            name="SecureAgent", chatbot_id="test_agent", jwt_secret="s3cret"
+        )
+        await manager._start_a2a_bot("SecureAgent", cfg)
+
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            # Unrelated integration route must NOT be gated by A2A auth.
+            resp = await client.post("/telegram/webhook", json={})
+            assert resp.status == 200
+            # The A2A agent's own route IS gated (no credentials → 401).
+            resp = await client.post("/a2a/rpc", json={})
+            assert resp.status == 401
+        finally:
+            await client.close()
+
+    @pytest.mark.asyncio
+    async def test_security_does_not_gate_directory_or_other_a2a_agents(
+        self, manager_with_app
+    ):
+        manager, app = manager_with_app
+        agents = {"a1": _DummyAgent("Agent1"), "a2": _DummyAgent("Agent2")}
+
+        async def get_bot(chatbot_id, system_prompt_override=None):
+            return agents.get(chatbot_id)
+
+        manager._get_agent = AsyncMock(side_effect=get_bot)
+
+        # First agent secured on /a2a; second agent open on /a2a/second.
+        await manager._start_a2a_bot(
+            "First", A2AAgentConfig(name="First", chatbot_id="a1", jwt_secret="s3cret")
+        )
+        await manager._start_a2a_bot(
+            "Second", A2AAgentConfig(name="Second", chatbot_id="a2")
+        )
+
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            # Public directory listing must never be gated.
+            resp = await client.get("/a2a/directory")
+            assert resp.status == 200
+            # The second (open) agent's routes must not be caught by the
+            # first agent's scoped middleware.
+            resp = await client.post("/a2a/second/rpc", json={})
+            assert resp.status != 401
+        finally:
+            await client.close()
+
+
 class TestA2ABotGracefulDegradation:
     @pytest.mark.asyncio
     async def test_missing_ai_parrot_server_is_handled_gracefully(

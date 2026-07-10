@@ -168,13 +168,26 @@ class A2AServer:
 
         self.logger = logging.getLogger(f"A2A.{agent.name}")
 
-    def setup(self, app: web.Application, url: Optional[str] = None) -> None:
+    def setup(
+        self,
+        app: web.Application,
+        url: Optional[str] = None,
+        *,
+        register_well_known: bool = True,
+    ) -> None:
         """
         Register A2A routes on an aiohttp application.
 
         Args:
             app: The aiohttp Application
             url: Public URL where this agent is accessible (for AgentCard)
+            register_well_known: When ``True`` (default), register the fixed
+                ``GET /.well-known/agent.json`` discovery route serving this
+                agent's card. Set to ``False`` when mounting additional agents
+                on a shared app where the single well-known route has already
+                been claimed by an earlier agent — those agents remain
+                discoverable via a multi-agent directory endpoint. Prevents a
+                redundant, unreachable duplicate route on the shared router.
         """
         self._app = app
         self._url = url
@@ -182,8 +195,9 @@ class A2AServer:
         # Store reference in app
         app[f"a2a_server_{self.agent.name}"] = self
 
-        # Well-known agent card endpoint
-        app.router.add_get("/.well-known/agent.json", self._handle_agent_card)
+        # Well-known agent card endpoint (single fixed route per app)
+        if register_well_known:
+            app.router.add_get("/.well-known/agent.json", self._handle_agent_card)
 
         # A2A HTTP+JSON Binding endpoints
         app.router.add_post(f"{self.base_path}/message/send", self._handle_send_message)
