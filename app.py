@@ -73,13 +73,14 @@ class Main(AppHandler):
     def _configure_logging(self):
         """Configuración explícita de logging para aiohttp server."""
         # Obtener el logger raíz
-        root_logger = self.logger.getLogger()
+        import logging
+        root_logger = logging.getLogger()
 
         # Limpiar handlers existentes si los hay
         root_logger.handlers.clear()
 
         # Configurar el nivel del logger raíz
-        root_logger.setLevel(self.logger.DEBUG)
+        root_logger.setLevel(logging.DEBUG)
 
     def configure(self):
         super(Main, self).configure()
@@ -292,6 +293,7 @@ class Main(AppHandler):
         # an HMAC signature, not a session — exclude it from the auth/ABAC
         # middlewares so the frontend can embed it in an <iframe> without a
         # session cookie. fnmatch pattern; '*' spans the signature + id.html.
+        auth.add_exclude_list('/api/docs*')
         auth.add_exclude_list('/api/v1/artifacts/public/*')
         auth.add_exclude_list(github_hook.url)
         # FEAT-236: the audio form WebSocket authenticates itself via the
@@ -299,6 +301,23 @@ class Main(AppHandler):
         # Authorization: Bearer header). Exclude it from the auth/ABAC chain so
         # the upgrade reaches AudioFormWSHandler, which does its own JWT check.
         auth.add_exclude_list('/api/v1/forms/*/audio/ws')
+        # MS Agent SDK (Bot Framework) messaging endpoints authenticate inbound
+        # requests with a Bot Framework JWT or an API key (x-api-key) inside
+        # MSAgentSDKWrapper.handle_request — NOT a navigator session/ABAC
+        # identity. Exclude them so ABAC does not flag Copilot Studio / Teams /
+        # Emulator POSTs as unauthenticated. Covers every msagentsdk bot's
+        # canonical route (/api/msagentsdk/<safe_id>/messages) plus the fixed
+        # ``/api/messages`` path that Microsoft Copilot Studio requires (the
+        # standard Bot Framework endpoint a bot exposes via ``endpoint``).
+        auth.add_exclude_list('/api/msagentsdk/*/messages')
+        auth.add_exclude_list('/api/messages')
+        # A2A protocol + discovery surface. Authenticated A2A routes
+        # (/a2a[/<name>]/message|tasks|rpc) are guarded by the per-agent
+        # A2ASecurityMiddleware (JWT/mTLS/API-key), and the discovery routes
+        # (/a2a/directory, /.well-known/agent.json) are public — none of them
+        # use the navigator session/ABAC chain, so exclude the whole surface.
+        auth.add_exclude_list('/a2a/*')
+        auth.add_exclude_list('/.well-known/agent.json')
 
         # PBAC setup — navigator-auth Rust evaluator bug is now fixed.
         # setup_pbac() MUST be called BEFORE BotManager.setup(app) so that
@@ -312,11 +331,11 @@ class Main(AppHandler):
         if evaluator is not None:
             resolver = PBACPermissionResolver(evaluator=evaluator)
             self.app['pbac_resolver'] = resolver
-            self.logger.getLogger('parrot.app').info(
+            self.logger.info(
                 "PBAC enabled: Guardian registered, PBACPermissionResolver active."
             )
         else:
-            self.logger.getLogger('parrot.app').info(
+            self.logger.info(
                 "PBAC not configured — using default resolver (AllowAll)."
             )
 
