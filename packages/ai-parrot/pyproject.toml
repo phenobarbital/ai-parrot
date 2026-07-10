@@ -228,7 +228,7 @@ agents = [
     "docker==7.1.0",
     "aiogoogle==5.17.0",
     "rq==2.6.0",
-    "zeep[async]==4.3.2",
+    "zeep[async]==4.3.3",
     "branca==0.8.2",
     "webdriver-manager==4.0.2",
     "prophet==1.2.1",
@@ -279,7 +279,7 @@ agents-lite = [
     "docker==7.1.0",
     "aiogoogle==5.17.0",
     "rq==2.6.0",
-    "zeep[async]==4.3.2",
+    "zeep[async]==4.3.3",
     "branca==0.8.2",
     "opensearch-py==3.1.0",
 ]
@@ -312,7 +312,7 @@ mcp = [
     "docker==7.1.0",
     "aiogoogle==5.17.0",
     "rq==2.6.0",
-    "zeep[async]==4.3.2",
+    "zeep[async]==4.3.3",
     "branca==0.8.2",
     "opensearch-py==3.1.0",
 ]

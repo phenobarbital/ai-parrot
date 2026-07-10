@@ -20,6 +20,8 @@ from .events import (
     FormEventContext,
     FormEventName,
     FormEventsConfig,
+    VisitEventContext,
+    VisitEventName,
 )
 from .options import FieldOption, OptionsSource
 from .schema import (
@@ -88,4 +90,7 @@ __all__ = [
     "FormEventContext",
     "EventResolution",
     "FormEventAbort",
+    # Visit lifecycle events (FEAT-329)
+    "VisitEventName",
+    "VisitEventContext",
 ]

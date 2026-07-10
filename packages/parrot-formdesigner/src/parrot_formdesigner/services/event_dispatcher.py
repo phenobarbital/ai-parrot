@@ -23,6 +23,13 @@ Responsibilities
 Also exposes ``apply_schema_overrides(base, overrides)`` — a pure helper
 for shallow-merging ``EventResolution.schema_overrides`` into a serialised
 ``FormSchema`` dict (top-level keys only, per spec §7).
+
+FEAT-329 adds ``dispatch_visit(...)`` — the same pattern for the
+``visit.*`` namespace (visit / assignment lifecycle). Visit events reuse
+the FEAT-188 string-keyed tenant-scoped registry: the visit event name
+itself acts as the ``handler_ref`` (``"visit.onArrival"`` vs
+``"<form_id>.onBeforeSubmit"`` — the namespace disambiguates). No
+``FormSchema`` / binding / ``schema_dump`` is involved in the visit path.
 """
 
 from __future__ import annotations
@@ -35,13 +42,23 @@ from aiohttp import web
 
 from parrot_formdesigner.core.events import (
     EventResolution,
+    FormEventAbort,
     FormEventContext,
     FormEventName,
+    VisitEventContext,
+    VisitEventName,
 )
 from parrot_formdesigner.core.schema import FormSchema
 from parrot_formdesigner.services.event_registry import get_form_event
 
 logger = logging.getLogger(__name__)
+
+# Visit events with pre-hook (interceptor) semantics: ``FormEventAbort``
+# raised by the handler is re-raised to the caller, mirroring the
+# ``before*`` form events of FEAT-188 (per FEAT-329 spec §2). All other
+# visit events are post-hooks: fire-and-forget, handler failures are
+# logged and never break the visit flow.
+_VISIT_PRE_HOOKS: frozenset[str] = frozenset({"visit.onArrival"})
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +196,136 @@ async def dispatch(
     result = await handler(ctx)
 
     # --- Step 4: normalise result ---------------------------------------
+    if result is None:
+        return EventResolution()
+
+    return result
+
+
+async def dispatch_visit(
+    event: VisitEventName,
+    *,
+    tenant: str | None,
+    auth_context: Any,
+    event_id: str | None = None,
+    shift_id: str | None = None,
+    visit_id: str | None = None,
+    staff_id: str | None = None,
+    payload: Mapping[str, Any] | None = None,
+    extra: dict[str, Any] | None = None,
+    handler_ref: str | None = None,
+) -> EventResolution:
+    """Resolve and run the handler bound to a visit lifecycle ``event``.
+
+    Mirror of :func:`dispatch` for the ``visit.*`` namespace (FEAT-329).
+    Reuses the FEAT-188 tenant-scoped registry: handlers are registered
+    with ``@register_form_event("visit.onArrival")`` (optionally with
+    ``tenant="<slug>"``) and the visit event name itself acts as the
+    ``handler_ref``. No ``FormSchema`` / binding / ``schema_dump`` is
+    involved in the visit path.
+
+    Hook semantics (per FEAT-329 spec §2):
+
+    - **Pre-hooks** (``visit.onArrival``): ``FormEventAbort`` raised by
+      the handler is re-raised intact (the caller converts it to an HTTP
+      ``status_code`` + ``user_message``); other exceptions propagate
+      unchanged, mirroring the ``before*`` form events.
+    - **Post-hooks** (all other visit events): fire-and-forget — any
+      exception raised by the handler (including ``FormEventAbort``) is
+      logged and swallowed so side-effects never break the visit flow.
+
+    Args:
+        event: The visit lifecycle event name to dispatch
+            (e.g. ``"visit.onArrival"``).
+        tenant: Tenant slug used for registry lookup with global fallback.
+        auth_context: Resolved authentication credentials (typed ``Any``
+            to avoid a circular import; typically an ``AuthContext`` instance).
+        event_id: Identifier of the parent Event (FEAT-303), if any.
+        shift_id: Identifier of the Shift the visit belongs to, if any.
+        visit_id: Identifier of the Visit being processed, if any.
+        staff_id: Identifier of the staff member performing the visit.
+        payload: Event-specific data (artifact metadata, GPS fix, ...).
+        extra: Free-form bag for correlation IDs, tracing data, etc.
+        handler_ref: Registry key to look up. Defaults to ``event``
+            itself (the ``visit.*`` namespace disambiguates it from
+            form-scoped ``'<form_id>.<event>'`` refs in the shared registry).
+
+    Returns:
+        An ``EventResolution``. If no handler is registered for
+        ``handler_ref`` (tenant-specific or global), returns an empty
+        ``EventResolution()`` (no-op).
+
+    Raises:
+        FormEventAbort: Re-raised intact when a **pre-hook** handler
+            aborts (``visit.onArrival``). Never raised for post-hooks.
+        Exception: Any other exception raised by a **pre-hook** handler
+            propagates unchanged. Post-hook exceptions are logged and
+            swallowed (fire-and-forget).
+    """
+    ref = handler_ref if handler_ref is not None else event
+    is_pre_hook = event in _VISIT_PRE_HOOKS
+
+    # --- Step 1: look up handler (tenant → global fallback) --------------
+    try:
+        handler = get_form_event(ref, tenant=tenant)
+    except KeyError:
+        logger.warning(
+            "no handler registered for %r (event=%r, tenant=%r); skipping",
+            ref,
+            event,
+            tenant,
+        )
+        return EventResolution()
+
+    # --- Step 2: build context and run ------------------------------------
+    ctx = VisitEventContext(
+        event=event,
+        tenant=tenant,
+        auth_context=auth_context,
+        event_id=event_id,
+        shift_id=shift_id,
+        visit_id=visit_id,
+        staff_id=staff_id,
+        payload=payload,
+        extra=extra if extra is not None else {},
+    )
+
+    logger.debug(
+        "dispatching %r → %r (visit=%r, tenant=%r)",
+        event,
+        ref,
+        visit_id,
+        tenant,
+    )
+
+    if is_pre_hook:
+        # FormEventAbort propagates intact (not caught here).
+        # All other exceptions also propagate; the caller handles them.
+        result = await handler(ctx)
+    else:
+        # Post-hooks are fire-and-forget: never break the visit flow.
+        try:
+            result = await handler(ctx)
+        except FormEventAbort:
+            logger.warning(
+                "handler %r raised FormEventAbort for post-hook %r; "
+                "aborts are only meaningful for pre-hooks — ignoring",
+                ref,
+                event,
+            )
+            return EventResolution()
+        except Exception:  # noqa: BLE001 — fire-and-forget by design
+            logger.exception(
+                "handler %r failed for post-hook %r (visit=%r, tenant=%r); "
+                "ignoring (fire-and-forget)",
+                ref,
+                event,
+                visit_id,
+                tenant,
+            )
+            return EventResolution()
+
+    # --- Step 3: normalise result -----------------------------------------
     if result is None:
         return EventResolution()
 
