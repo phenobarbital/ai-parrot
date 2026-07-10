@@ -81,12 +81,53 @@ CREATE TABLE IF NOT EXISTS fieldsync.auth_policies (
 );
 """
 
+# FEAT-330 — Store sub-structure (Store → Site → Location).
+# ``Store`` is read-only geography (networkninja.*); ``Site`` and ``Location``
+# are FieldSync-owned. A ``Location`` is a kiosk or any spot inside a store
+# (vending case). Geofence params live on the location (SoT moved out of the
+# visit ``Event.meta`` — FEAT-303 §8 / FEAT-318 D5.7).
+_CREATE_SITES_SQL = """
+CREATE TABLE IF NOT EXISTS fieldsync.sites (
+    site_id     SERIAL PRIMARY KEY,
+    store_id    VARCHAR(100) NOT NULL,
+    client_id   INTEGER NOT NULL,
+    org_id      INTEGER NOT NULL,
+    name        VARCHAR(255) NOT NULL,
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_sites_store_name UNIQUE (store_id, client_id, name)
+);
+"""
+
+_CREATE_LOCATIONS_SQL = """
+CREATE TABLE IF NOT EXISTS fieldsync.locations (
+    location_id       SERIAL PRIMARY KEY,
+    site_id           INTEGER NOT NULL
+                        REFERENCES fieldsync.sites (site_id) ON DELETE CASCADE,
+    client_id         INTEGER NOT NULL,
+    org_id            INTEGER NOT NULL,
+    name              VARCHAR(255) NOT NULL,
+    location_type     VARCHAR(50) NOT NULL DEFAULT 'kiosk',
+    latitude          DOUBLE PRECISION,
+    longitude         DOUBLE PRECISION,
+    geofence_radius_m INTEGER,
+    is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+    inserted_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_locations_site_name UNIQUE (site_id, name)
+);
+"""
+
 # Ordered list of DDL statements executed by ``initialize()``.
+# ``sites`` before ``locations`` (FK dependency).
 _ALL_DDL: list[str] = [
     _CREATE_SCHEMA_SQL,
     _CREATE_PROJECTS_SQL,
     _CREATE_WORKDAY_COST_CENTER_MAPPINGS_SQL,
     _CREATE_AUTH_POLICIES_SQL,
+    _CREATE_SITES_SQL,
+    _CREATE_LOCATIONS_SQL,
 ]
 
 

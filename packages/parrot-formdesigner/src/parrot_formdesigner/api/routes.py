@@ -56,6 +56,7 @@ if TYPE_CHECKING:
     from ..services.rbac import RBACService
     from ..services.rest_field_resolver import RestFieldResolver
     from ..services.submissions import FormSubmissionStorage
+    from ..services.venue_service import VenueService
     from ..services.workday_sync import WorkdayIdentitySyncAdapter
 
 
@@ -108,6 +109,7 @@ def setup_form_api(
     project_service: "ProjectService | None" = None,
     rbac_service: "RBACService | None" = None,
     workday_adapter: "WorkdayIdentitySyncAdapter | None" = None,
+    venue_service: "VenueService | None" = None,
     rbac_enforcing: bool = False,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
@@ -195,6 +197,7 @@ def setup_form_api(
         project_service=project_service,
         rbac_service=rbac_service,
         workday_adapter=workday_adapter,
+        venue_service=venue_service,
         rbac_enforcing=rbac_enforcing,
     )
 
@@ -347,6 +350,25 @@ def setup_form_api(
     )
     app.router.add_post(
         f"{bp}/org/sync/workday", _wrap_auth(handler.sync_workday_identities)
+    )
+
+    # FEAT-330 — Store sub-structure (Store → Site → Location)
+    app.router.add_get(
+        f"{bp}/org/stores/{{store_id}}/sites", _wrap_auth(handler.list_sites)
+    )
+    app.router.add_post(
+        f"{bp}/org/stores/{{store_id}}/sites", _wrap_auth(handler.create_site)
+    )
+    app.router.add_get(
+        f"{bp}/org/sites/{{site_id}}/locations",
+        _wrap_auth(handler.list_locations),
+    )
+    app.router.add_post(
+        f"{bp}/org/sites/{{site_id}}/locations",
+        _wrap_auth(handler.create_location),
+    )
+    app.router.add_get(
+        f"{bp}/org/locations/{{location_id}}", _wrap_auth(handler.get_location)
     )
 
     # FEAT-241 M6: Wire is_public toggle → auth exclude list.
