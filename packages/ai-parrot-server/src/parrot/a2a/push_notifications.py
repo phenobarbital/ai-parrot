@@ -65,10 +65,22 @@ class PushNotificationStore:
         if parsed.scheme not in ("https", "http"):
             raise ValueError(f"Invalid scheme: {parsed.scheme}")
         hostname = parsed.hostname
-        if hostname:
-            try:
-                ip = ipaddress.ip_address(hostname)
-            except ValueError:
-                return  # hostname, not a literal IP — allow
-            if ip.is_private or ip.is_loopback or ip.is_link_local:
-                raise ValueError(f"Private/loopback IP not allowed: {hostname}")
+        if not hostname:
+            raise ValueError("Webhook URL has no host")
+        try:
+            ip = ipaddress.ip_address(hostname)
+        except ValueError:
+            return  # hostname, not a literal IP — allow (DNS rebinding is out of scope)
+        # Reject every non-globally-routable class: loopback (127.0.0.0/8, ::1),
+        # private (RFC1918, fc00::/7), link-local (169.254/16 incl. the cloud
+        # metadata endpoint 169.254.169.254, fe80::/10), unspecified (0.0.0.0, ::),
+        # reserved, and multicast.
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_unspecified
+            or ip.is_reserved
+            or ip.is_multicast
+        ):
+            raise ValueError(f"Private/loopback IP not allowed: {hostname}")

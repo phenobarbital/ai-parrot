@@ -128,3 +128,16 @@ class TestV1Routes:
         assert "text/event-stream" in resp.content_type
         body = await resp.text()
         assert "TASK_STATE_COMPLETED" in body
+
+    async def test_streaming_unsupported_version_returns_400(self, aiohttp_client, a2a_app):
+        # Version negotiation must happen BEFORE the SSE stream is prepared,
+        # otherwise a 400 can never be returned once headers are flushed.
+        client = await aiohttp_client(a2a_app)
+        resp = await client.post(
+            "/a2a/message:stream",
+            headers={"A2A-Version": "99.0"},
+            json={"message": {"messageId": "m1", "role": "ROLE_USER",
+                              "parts": [{"kind": "text", "text": "Hi"}]}},
+        )
+        assert resp.status == 400
+        assert (await resp.json())["error"]["code"] == -32009

@@ -161,6 +161,9 @@ class A2AServer:
         self._app: Optional[web.Application] = None
         self._url: Optional[str] = None
         self._agent_card: Optional[AgentCard] = None
+        # Strong references to fire-and-forget background tasks (returnImmediately)
+        # so the event loop does not garbage-collect them mid-execution.
+        self._background_tasks: set = set()
 
         # Push notification config store (FEAT-272 / TASK-1716). Auto-create an
         # in-memory store when the agent advertises push_notifications.
@@ -1005,6 +1008,17 @@ class A2AServer:
             "error": {"code": code, "message": message},
         })
 
+    def _spawn_background(self, coro) -> "asyncio.Task":
+        """Schedule a fire-and-forget coroutine, keeping a strong reference.
+
+        Without holding a reference the event loop may garbage-collect the task
+        before it finishes (see ``asyncio.create_task`` docs).
+        """
+        task = asyncio.ensure_future(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
+
     # ─────────────────────────────────────────────────────────────
     # HTTP Handlers
     # ─────────────────────────────────────────────────────────────
@@ -1029,7 +1043,7 @@ class A2AServer:
                 task = Task.create(context_id=message.context_id)
                 task.history.append(message)
                 self._tasks[task.id] = task
-                asyncio.create_task(self.process_message(message, task=task))
+                self._spawn_background(self.process_message(message, task=task))
             else:
                 task = await self.process_message(message)
 
@@ -1057,6 +1071,11 @@ class A2AServer:
 
     async def _handle_stream_message(self, request: web.Request) -> web.StreamResponse:
         """POST /a2a/message/stream - SSE streaming response."""
+        # Negotiate the version BEFORE preparing the response: an unsupported
+        # A2A-Version must return HTTP 400 (-32009), which is impossible once
+        # the SSE stream headers have been flushed.
+        version = self._get_request_version(request)
+
         response = web.StreamResponse(
             headers={
                 "Content-Type": "text/event-stream",
@@ -1065,7 +1084,6 @@ class A2AServer:
             }
         )
         await response.prepare(request)
-        version = self._get_request_version(request)
 
         try:
             data = await request.json()
@@ -1513,7 +1531,7 @@ class A2AServer:
             task = Task.create(context_id=message.context_id)
             task.history.append(message)
             self._tasks[task.id] = task
-            asyncio.create_task(self.process_message(message, task=task))
+            self._spawn_background(self.process_message(message, task=task))
         else:
             task = await self.process_message(message)
         result = task.to_dict(version)

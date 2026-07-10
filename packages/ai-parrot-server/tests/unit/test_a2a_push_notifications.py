@@ -52,6 +52,25 @@ class TestPushNotificationStore:
         with pytest.raises(ValueError, match="Invalid scheme"):
             await store.create(config)
 
+    @pytest.mark.parametrize("host", [
+        "0.0.0.0",                 # unspecified
+        "169.254.169.254",         # cloud metadata endpoint (link-local)
+        "10.0.0.5",                # RFC1918 private
+        "[::1]",                   # IPv6 loopback
+        "224.0.0.1",               # multicast
+    ])
+    async def test_reject_ssrf_ranges(self, store, host):
+        config = TaskPushNotificationConfig(
+            id="", task_id="task-1", url=f"http://{host}/hook")
+        with pytest.raises(ValueError):
+            await store.create(config)
+
+    async def test_allow_public_ip(self, store):
+        config = TaskPushNotificationConfig(
+            id="", task_id="task-1", url="https://8.8.8.8/hook")
+        result = await store.create(config)
+        assert result.id != ""
+
 
 @pytest.fixture
 def mock_agent():
