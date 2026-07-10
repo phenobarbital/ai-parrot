@@ -134,7 +134,7 @@
       "feature_id": "FEAT-272",
       "feature": "a2a-protocol-compatibility",
       "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Modifies mesh.py and router.py — separate files but depends on AgentCard restructuring",
       "assigned_to": null,
       "started_at": "2026-07-09T17:24:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1718-a2a-v1-mesh-router.md"
+      "completed_at": "2026-07-10T00:32:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1718-a2a-v1-mesh-router.md"
     },
     {
       "id": "TASK-1719",
