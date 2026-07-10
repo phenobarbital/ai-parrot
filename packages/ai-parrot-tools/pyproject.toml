@@ -33,7 +33,7 @@ dependencies = [
 [project.optional-dependencies]
 # Per-tool extras — users install only what they need
 pdf = [
-    "weasyprint==68.0",
+    "weasyprint==69.0",
     "fpdf==1.7.2",
     "markdown>=3.5",
     "markdownify>=1.2.2",

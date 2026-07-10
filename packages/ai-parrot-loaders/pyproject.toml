@@ -61,7 +61,7 @@ audio = [
 #         pyannote-database==6.1.1 pyannote-metrics==4.0.0 \
 #         pyannote-pipeline==4.0.0
 pdf = [
-    "weasyprint==68.0",
+    "weasyprint==69.0",
     "fpdf==1.7.2",
     "markdownify>=1.2.2",
     "markitdown[docx,pdf,pptx,xlsx]>=0.1.2",
