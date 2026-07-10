@@ -113,7 +113,7 @@
       "feature_id": "FEAT-272",
       "feature": "a2a-protocol-compatibility",
       "spec": "sdd/specs/a2a-protocol-compatibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Modifies client.py (separate from server.py) but depends on model changes being stable",
       "assigned_to": null,
       "started_at": "2026-07-09T17:24:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1717-a2a-v1-client-upgrade.md"
+      "completed_at": "2026-07-10T00:25:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1717-a2a-v1-client-upgrade.md"
     },
     {
       "id": "TASK-1718",
