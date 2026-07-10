@@ -55,7 +55,7 @@ dependencies = [
     # break the circular import (loaders depends on core).
     "semantic-text-splitter>=0.30,<1.0",
     # Navigator stack (core)
-    "navconfig[default]>=2.1.3",
+    "navconfig[default]>=2.2.2",
     # navigator-auth<=0.20.9 passes a `PolicyEffect` enum (not a str) to the
     # rs_pep Rust engine's `default_effect` arg, causing every ABAC/PBAC
     # evaluation to fail-closed with a PyO3 TypeError. Require >0.20.9.
