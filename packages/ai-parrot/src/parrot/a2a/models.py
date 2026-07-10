@@ -1044,3 +1044,5 @@ class RegisteredAgent:
     card: AgentCard
     last_seen: datetime = field(default_factory=datetime.utcnow)
     healthy: bool = True
+    # A2A protocol version the discovered agent speaks (FEAT-272 / TASK-1718).
+    protocol_version: str = "0.3"

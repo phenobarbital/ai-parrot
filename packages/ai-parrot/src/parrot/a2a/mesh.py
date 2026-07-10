@@ -590,6 +590,9 @@ class A2AMeshDiscovery:
                 timeout=endpoint.timeout,
             ) as client:
                 card = await client.discover()
+                # Record the A2A protocol version the agent speaks (v1.0 cards
+                # expose `supportedInterfaces`; v0.3 cards use the flat `url`).
+                proto_version = client._server_version or "0.3"
 
             # Merge local tags with agent's tags
             if endpoint.tags:
@@ -601,6 +604,7 @@ class A2AMeshDiscovery:
                 card=card,
                 last_seen=datetime.now(timezone.utc),
                 healthy=True,
+                protocol_version=proto_version,
             )
 
             # Store in registry
