@@ -282,7 +282,7 @@
       "feature_id": "FEAT-273",
       "feature": "a2ui-implementation",
       "spec": "sdd/specs/a2ui-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -292,8 +292,8 @@
       "parallelism_notes": "Modifies parrot/notifications/__init__.py — shared with TASK-1734; keep sequential.",
       "assigned_to": null,
       "started_at": "2026-07-11T00:48:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1733-delivery-bridge-slack-url.md"
+      "completed_at": "2026-07-11T02:07:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1733-delivery-bridge-slack-url.md"
     },
     {
       "id": "TASK-1734",

@@ -256,8 +256,28 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Created `parrot/outputs/a2ui/delivery.py` — `deliver_artifact(owner, artifact,
+*, recipients, provider, message, subject, artifact_store, user_id, agent_id,
+session_id)`. EMAIL/TELEGRAM/TEAMS materialize inline `content` to a temp file (cleaned
+in `finally`; a pre-existing `artifact.path` is never deleted) and deliver via a
+`_DeliveryReport.files` object that hits the mixin's `report.files` PRIORITY-1
+extraction — no new provider dispatch. SLACK computes `ArtifactStore.get_public_url`
+(when the artifact is persisted + context supplied) and passes it as an
+`a2ui_artifact_url` kwarg; `_send_slack` (notifications/__init__.py) was modified to pop
+that kwarg, append a public-URL line to the message, and log a degraded-delivery warning
+(mirrors `_send_teams` text enrichment). Every degraded path (Slack URL, Slack text-only,
+Teams filenames) logs a greppable warning — never silent. 7 tests pass; delivery.py ruff
+clean; no exec/eval; zero new core deps.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The bridge does NOT import `NotificationProvider` from
+`parrot.notifications` (the task's contract listed that import). Reason: under the
+monorepo's many editable installs, importing `parrot.notifications` at a2ui-module load
+resolves `parrot` as a namespace package inconsistently under pytest ("unknown location"
+collection error), and it also better honors G8 (a2ui core must not import the
+notifications subsystem). The provider is accepted as a string matching the
+`NotificationProvider` enum *values* (`email`/`slack`/`telegram`/`teams`) and forwarded
+verbatim to `owner.send_notification`. Pre-existing `F401` lint in
+`notifications/__init__.py` (unused `TeamsCard`, present on dev) was left untouched
+(no-scope-creep); my `_send_slack` change is lint-clean.
