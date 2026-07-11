@@ -384,7 +384,7 @@
       "feature_id": "FEAT-273",
       "feature": "a2ui-implementation",
       "spec": "sdd/specs/a2ui-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -396,8 +396,8 @@
       "parallelism_notes": "Touches shared hot files (models/outputs.py, models/responses.py, bots/base.py, handlers/agent.py).",
       "assigned_to": null,
       "started_at": "2026-07-11T00:48:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1738-emission-wiring.md"
+      "completed_at": "2026-07-11T01:55:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1738-emission-wiring.md"
     },
     {
       "id": "TASK-1739",

@@ -247,8 +247,27 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Added `OutputMode.A2UI = "a2ui"` (outputs.py) and
+`AIMessage.a2ui_envelope: Optional[Dict[str, Any]] = None` (responses.py). In
+`bots/base.py`, added an A2UI branch BEFORE both `self.formatter.format(...)` call
+sites (:484 ask path, :1431 second path) that calls `finalize_a2ui_response(response)`
+and never enters the formatter. In `handlers/agent.py`: the chunked-stream final dict
+gains `a2ui_envelope` via `getattr(ai_message, 'a2ui_envelope', None)` (defensive; only
+added when non-null) with the `X-Parrot-Stream: chunked-aimessage` header and `b'\n\x00'`
+separator untouched; the non-stream `_format_response` gains an `OutputMode.A2UI` branch
+returning the envelope as JSON. 80 core a2ui tests pass (incl. new emission-wiring unit
+tests); 4 server contract tests pass; ruff clean on changed files.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) The pure routing helper lives in a new core module
+`parrot/outputs/a2ui/emission.py` (`finalize_a2ui_response`) rather than as a private
+function inside `bots/base.py`. Reason: `bots/base.py` transitively imports a Cython
+extension (`parrot.utils.types`) that is not built in the SDD worktree, so a helper
+defined there is not unit-testable in isolation. Keeping the pure logic in the a2ui
+package makes it directly testable and is arguably cleaner (a2ui logic in the a2ui
+package); `bots/base.py` still owns the routing branch and imports the helper.
+(2) The server stream integration test uses `pytest.importorskip` for the heavy
+`parrot.handlers.agent` import (unbuilt Cython in the worktree) plus source-level
+wire-contract regression assertions that run everywhere — the real handler import runs
+in a built environment (CI).
