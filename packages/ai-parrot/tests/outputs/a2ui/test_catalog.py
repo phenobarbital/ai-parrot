@@ -116,10 +116,10 @@ class TestEnvelopeValidation:
         validate_envelope(_surface("ToolForm"), origin=ProducerOrigin.TOOL)
 
     def test_valid_display_envelope_passes(self, cleanup_catalog):
-        @register_component("Card")
-        class Card:
+        @register_component("DisplayOnlyDummy")
+        class DisplayOnlyDummy:
             def lower(self, component, data_model):
                 return BasicNode(component="Column")
 
-        cleanup_catalog.append("Card")
-        validate_envelope(_surface("Card"), origin=ProducerOrigin.LLM)
+        cleanup_catalog.append("DisplayOnlyDummy")
+        validate_envelope(_surface("DisplayOnlyDummy"), origin=ProducerOrigin.LLM)
