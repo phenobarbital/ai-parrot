@@ -745,6 +745,41 @@ class AbstractBot(
         # Model: explicit arg > parsed > config > class default
         config.model = model or config.model or getattr(self, 'default_model', None)
 
+        # Defensive guard: ``model`` must be a bare model name. Tolerate two
+        # common misconfigurations rather than shipping them to the provider API
+        # (which fails with an opaque 404 on ``models/<garbage>``):
+        #   1. A one-element tuple/list from a stray trailing comma in a class
+        #      attribute (``model = 'gemini-3.5-flash',``) — unwrap it.
+        #   2. A redundant ``provider:`` prefix in the model value
+        #      (``google:gemini-3.5-flash``) when the prefix matches the
+        #      resolved provider or a known provider — strip it. The provider
+        #      belongs in ``llm``; ``_parse_llm_string`` only splits it off the
+        #      ``llm`` field, never off ``model``, so it would reach the API
+        #      verbatim. Matching on a known-provider prefix keeps model IDs
+        #      that legitimately contain ':' (e.g. Bedrock ``...-v2:0``) intact.
+        if isinstance(config.model, (tuple, list)) and len(config.model) == 1:
+            self.logger.warning(
+                "LLM model was a %s (likely a stray trailing comma); "
+                "unwrapping to %r.",
+                type(config.model).__name__,
+                config.model[0],
+            )
+            config.model = config.model[0]
+        if isinstance(config.model, str) and ':' in config.model:
+            from ..clients.factory import SUPPORTED_CLIENTS
+
+            prefix, _, remainder = config.model.partition(':')
+            prefix_l = prefix.strip().lower()
+            provider_l = (config.provider or '').lower()
+            if remainder and (prefix_l == provider_l or prefix_l in SUPPORTED_CLIENTS):
+                self.logger.warning(
+                    "Stripping redundant provider prefix %r from model %r "
+                    "(the provider belongs in ``llm``, not ``model``).",
+                    prefix,
+                    config.model,
+                )
+                config.model = remainder.strip()
+
         # Apply preset/kwargs (won't override model_config params if already set)
         return self._apply_llm_params(config, preset, **kwargs)
 
