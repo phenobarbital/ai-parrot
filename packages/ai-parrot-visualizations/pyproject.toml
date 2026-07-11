@@ -52,7 +52,7 @@ a2ui = [
 ]
 a2ui-pdf = [
     "ai-parrot-visualizations[a2ui]",
-    "weasyprint>=60",
+    "weasyprint>=68.0",
 ]
 all = [
     "ai-parrot-visualizations[charts,map,infographic,jinja2,streamlit,panel,messaging,a2ui]",
