@@ -26,13 +26,13 @@ def _envelope(*components: Component, data_model=None) -> CreateSurface:
 
 
 class TestSSRHTMLRenderer:
-    def test_capabilities_declared(self):
+    async def test_capabilities_declared(self):
         caps = SSRHTMLRenderer.capabilities
         assert caps.interactive is False
         assert caps.supports_actions is False
         assert caps.output == "text/html"
 
-    def test_resolves_via_registry(self):
+    async def test_resolves_via_registry(self):
         assert get_a2ui_renderer("ssr_html") is SSRHTMLRenderer
 
     async def test_renders_lowered_basic_tree(self):

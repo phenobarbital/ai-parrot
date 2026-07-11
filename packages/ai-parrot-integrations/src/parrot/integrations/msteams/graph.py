@@ -400,7 +400,7 @@ class GraphClient:
 
         path = Path(file_path)
         try:
-            data = path.read_bytes()
+            data = await asyncio.to_thread(path.read_bytes)
         except OSError:
             self.logger.exception("Graph upload: cannot read local file %s", file_path)
             return None

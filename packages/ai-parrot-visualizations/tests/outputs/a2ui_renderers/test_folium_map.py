@@ -33,13 +33,13 @@ def _map_envelope() -> CreateSurface:
 
 
 class TestFoliumMapRenderer:
-    def test_capabilities_declared(self):
+    async def test_capabilities_declared(self):
         caps = fm.FoliumMapRenderer.capabilities
         assert caps.interactive is False
         assert caps.supports_actions is False
         assert caps.output == "text/html"
 
-    def test_resolves_via_registry(self):
+    async def test_resolves_via_registry(self):
         assert get_a2ui_renderer("folium_map") is fm.FoliumMapRenderer
 
     async def test_map_built_from_component_data_only(self):
@@ -56,7 +56,7 @@ class TestFoliumMapRenderer:
         assert doc1.count("L.marker") == doc2.count("L.marker")
         assert "40.4" in doc1 and "40.4" in doc2
 
-    def test_missing_folium_actionable_error(self, monkeypatch):
+    async def test_missing_folium_actionable_error(self, monkeypatch):
         def _boom():
             raise ImportError("no folium")
 

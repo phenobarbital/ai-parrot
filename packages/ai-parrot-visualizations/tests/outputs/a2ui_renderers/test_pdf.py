@@ -30,13 +30,13 @@ def _envelope() -> CreateSurface:
 
 
 class TestPDFRenderer:
-    def test_capabilities_declared(self):
+    async def test_capabilities_declared(self):
         caps = pdf_mod.PDFRenderer.capabilities
         assert caps.interactive is False
         assert caps.supports_actions is False
         assert caps.output == "application/pdf"
 
-    def test_resolves_via_registry(self):
+    async def test_resolves_via_registry(self):
         assert get_a2ui_renderer("pdf") is pdf_mod.PDFRenderer
 
     async def test_renders_baked_ssr_html_to_pdf(self):
@@ -50,7 +50,7 @@ class TestPDFRenderer:
         assert "<svg" in doc
         assert "<script" not in doc  # no JS-dependent chart content
 
-    def test_missing_backend_actionable_error(self, monkeypatch):
+    async def test_missing_backend_actionable_error(self, monkeypatch):
         def _boom():
             raise ImportError("no weasyprint")
 

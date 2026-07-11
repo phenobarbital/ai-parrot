@@ -26,13 +26,13 @@ def _chart_envelope(title="Sales", data_binding=True) -> CreateSurface:
 
 
 class TestEChartsRenderer:
-    def test_capabilities_declared(self):
+    async def test_capabilities_declared(self):
         caps = EChartsRenderer.capabilities
         assert caps.interactive is False
         assert caps.supports_actions is False
         assert caps.output == "application/json"
 
-    def test_resolves_via_registry(self):
+    async def test_resolves_via_registry(self):
         assert get_a2ui_renderer("echarts") is EChartsRenderer
 
     async def test_option_payload_deterministic(self):

@@ -64,8 +64,11 @@ def serialize(message: A2UIMessageBase) -> dict[str, Any]:
 def deserialize(data: dict[str, Any] | str | bytes) -> A2UIMessageBase:
     """Deserialize wire JSON into the correct concrete A2UI message.
 
-    The ``version`` field, if present, is validated and stripped before model
-    validation so that it never leaks onto a model instance.
+    The ``version`` field, if present, is type-checked (must be a string) and stripped
+    before model validation so that it never leaks onto a model instance. Its *value* is
+    intentionally NOT asserted equal to :data:`A2UI_VERSION` — forward/backward
+    compatibility (absorbing a future protocol revision) is owned by this single module,
+    so accepting a differing version string here is deliberate.
 
     Args:
         data: A JSON dict, or a JSON string/bytes payload.

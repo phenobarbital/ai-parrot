@@ -30,13 +30,13 @@ def _envelope(*components, data_model=None) -> CreateSurface:
 
 
 class TestAdaptiveCardsRenderer:
-    def test_capabilities_declared(self):
+    async def test_capabilities_declared(self):
         caps = AdaptiveCardsRenderer.capabilities
         assert caps.interactive is False
         assert caps.supports_actions is False
         assert caps.output == "application/vnd.microsoft.card.adaptive"
 
-    def test_resolves_via_registry(self):
+    async def test_resolves_via_registry(self):
         assert get_a2ui_renderer("adaptive_cards") is AdaptiveCardsRenderer
 
     async def test_lowered_tree_maps_to_card_deterministic(self):
