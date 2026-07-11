@@ -26,6 +26,7 @@ See ``sdd/specs/bedrock-client-llm.spec.md`` (Module 7) for the full design.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import time
 import uuid
@@ -356,9 +357,19 @@ class NovaSonicClient(AbstractClient):
 
                 audio_output = event.get("audioOutput")
                 if audio_output:
+                    # Code-review fix: audioOutputConfiguration declares
+                    # "encoding": "base64" (see stream_voice()'s promptStart
+                    # event above), so "content" arrives as a base64 *text*
+                    # string, not raw bytes — decode it before handing off
+                    # as LiveVoiceResponse.audio_data (typed Optional[bytes]).
+                    raw_content = audio_output.get("content")
+                    audio_bytes = (
+                        base64.b64decode(raw_content)
+                        if isinstance(raw_content, str) else raw_content
+                    )
                     yield LiveVoiceResponse(
                         text="",
-                        audio_data=audio_output.get("content"),
+                        audio_data=audio_bytes,
                         audio_format=f"audio/pcm;rate={self.OUTPUT_SAMPLE_RATE_HZ}",
                         is_complete=False,
                         session_id=session_id,
@@ -452,10 +463,16 @@ class NovaSonicClient(AbstractClient):
                             "promptName": prompt_name, "contentName": content_name,
                         }}})
                     continue
+                # Code-review fix: audioInputConfiguration declares
+                # "encoding": "base64" (see stream_voice()'s contentStart
+                # event above), so raw PCM bytes must be base64-text-encoded
+                # before being embedded in the JSON event frame — sending
+                # raw bytes verbatim would both violate the declared wire
+                # format and fail JSON serialization outright.
                 await self._send_event(stream, {"event": {"audioInput": {
                     "promptName": prompt_name,
                     "contentName": content_name,
-                    "content": chunk,
+                    "content": base64.b64encode(chunk).decode("ascii"),
                 }}})
                 chunks_sent += 1
         except asyncio.CancelledError:

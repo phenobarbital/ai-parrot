@@ -14,6 +14,8 @@ Bidirectional-stream calls are mocked via the client's thin wrappers
 (``_open_stream`` / ``_send_event`` / ``_iter_events``), mirroring how
 ``BedrockConverseClient`` tests mock ``_sdk_create`` / ``_sdk_stream``.
 """
+import asyncio
+import base64
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -60,6 +62,19 @@ async def _fake_audio_iterator():
     yield None
 
 
+async def _empty_events():
+    """An event stream that yields nothing (used when a test only cares
+    about what the sender task sends, not the receiver output).
+
+    Sleeps briefly before returning so the concurrently-scheduled
+    ``_audio_sender`` task gets scheduling slices to fully drain the audio
+    iterator before ``stream_voice()``'s ``finally`` block cancels it.
+    """
+    await asyncio.sleep(0.05)
+    return
+    yield  # pragma: no cover — makes this an async generator
+
+
 class TestStreamVoice:
     @pytest.mark.asyncio
     async def test_stream_voice_yields_text_and_audio(self, nova_client):
@@ -82,9 +97,68 @@ class TestStreamVoice:
 
         text_responses = [r for r in responses if r.text]
         audio_responses = [r for r in responses if r.audio_data]
+        # (This fixture's audioOutput content is raw bytes, not base64 text
+        # — see test_stream_voice_audio_output_decodes_base64 below for the
+        # real wire-format path.)
         assert text_responses[0].text == "Hello"
         assert audio_responses[0].audio_data == b"\x01\x02"
         assert responses[-1].is_complete is True
+
+    @pytest.mark.asyncio
+    async def test_stream_voice_audio_output_decodes_base64(self, nova_client):
+        """Code-review regression test: audioOutputConfiguration declares
+        "encoding": "base64" (stream_voice()'s promptStart event), so
+        audioOutput.content arrives as a base64 *text* string over the wire
+        — it must be decoded to raw bytes before reaching
+        LiveVoiceResponse.audio_data (typed Optional[bytes])."""
+        raw_pcm = b"\x11\x22\x33\x44"
+        b64_content = base64.b64encode(raw_pcm).decode("ascii")
+        events = [
+            {"audioOutput": {"content": b64_content}},
+            {"completionEnd": {}},
+        ]
+
+        async def fake_events():
+            for e in events:
+                yield e
+
+        with patch.object(nova_client, '_open_stream', return_value=AsyncMock()), \
+             patch.object(nova_client, '_send_event', new=AsyncMock()), \
+             patch.object(nova_client, '_iter_events', return_value=fake_events()):
+            responses = [
+                r async for r in nova_client.stream_voice(_fake_audio_iterator())
+            ]
+
+        audio_responses = [r for r in responses if r.audio_data]
+        assert audio_responses[0].audio_data == raw_pcm
+
+    @pytest.mark.asyncio
+    async def test_audio_sender_base64_encodes_pcm_chunks(self, nova_client):
+        """Code-review regression test: audioInputConfiguration declares
+        "encoding": "base64" (stream_voice()'s contentStart event), so
+        outbound PCM chunks must be base64-text-encoded before being
+        embedded in the JSON audioInput event frame."""
+        raw_pcm = b"\x00\x01" * 8
+        sent_events = []
+
+        async def capture_send(_stream, event):
+            sent_events.append(event)
+
+        async def audio_iterator():
+            yield raw_pcm
+            yield None
+
+        with patch.object(nova_client, '_open_stream', return_value=AsyncMock()), \
+             patch.object(nova_client, '_send_event', new=capture_send), \
+             patch.object(nova_client, '_iter_events', return_value=_empty_events()):
+            async for _ in nova_client.stream_voice(audio_iterator()):
+                pass
+
+        audio_input_events = [e for e in sent_events if "audioInput" in e.get("event", {})]
+        assert len(audio_input_events) == 1
+        sent_content = audio_input_events[0]["event"]["audioInput"]["content"]
+        assert isinstance(sent_content, str)
+        assert base64.b64decode(sent_content) == raw_pcm
 
     @pytest.mark.asyncio
     async def test_stream_voice_tool_use(self, nova_client):
