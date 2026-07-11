@@ -219,6 +219,14 @@ class AIMessage(BaseModel):
             "field. (FEAT-197)"
         ),
     )
+    a2ui_envelope: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "A2UI v1.0 declarative envelope (a serialized CreateSurface) for "
+            "OutputMode.A2UI responses. Carried separately from `output` so legacy "
+            "consumers are unaffected (FEAT-273)."
+        ),
+    )
 
     # Allow arbitrary types for output field (pandas DataFrames, etc.)
     model_config = ConfigDict(arbitrary_types_allowed=True)

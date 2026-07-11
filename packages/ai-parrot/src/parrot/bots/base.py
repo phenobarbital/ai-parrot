@@ -18,6 +18,7 @@ from ..memory import (
 )
 from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
 from ..models.outputs import OutputMode
+from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273 (TASK-1738)
 from ..utils.helpers import RequestContext, _current_ctx
 from ..security import PromptInjectionException
 from ..security.redaction import OutputScrubber, ScrubPolicy  # FEAT-252 (TASK-1612)
@@ -478,7 +479,10 @@ class BaseBot(AbstractBot):
 
                     # Determine output mode
                     format_kwargs = format_kwargs or {}
-                    if output_mode != OutputMode.DEFAULT:
+                    if output_mode == OutputMode.A2UI:
+                        # FEAT-273: A2UI envelopes bypass the legacy formatter entirely.
+                        finalize_a2ui_response(response)
+                    elif output_mode != OutputMode.DEFAULT:
                         # Check if data is empty and try to extract it from output
                         extracted_data = None
                         if not response.data:
@@ -1421,6 +1425,10 @@ class BaseBot(AbstractBot):
                             response.output, tool_name=self.name
                         )
                     response.output_mode = output_mode
+
+                elif output_mode == OutputMode.A2UI:
+                    # FEAT-273: A2UI envelopes bypass the legacy formatter entirely.
+                    finalize_a2ui_response(response)
 
                 elif output_mode != OutputMode.DEFAULT:
                     # Check if data is empty and try to extract it from output
