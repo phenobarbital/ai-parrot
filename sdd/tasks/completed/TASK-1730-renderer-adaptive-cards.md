@@ -249,8 +249,21 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Implemented `AdaptiveCardsRenderer` (satellite) subclassing the core
+`AbstractA2UIRenderer`, registered as `adaptive_cards` with capabilities all-False and
+output `application/vnd.microsoft.card.adaptive`. Bakes first, lowers each component to
+its Basic tree, then maps the Basic vocabulary → AC elements (Text→TextBlock with
+title/heading styling, Column/Card→Container, Row→ColumnSet, Image→Image). Card carries
+`$schema` = adaptivecards.io and pinned `version` "1.5" (matching msteams/hitl_cards.py).
+No `Action.*` element is ever emitted; deep links render as display TextBlocks (not
+Action.OpenUrl); Form degrades to its lowered "not available" notice; unmappable
+elements fall back to a TextBlock with a warning log. Output is `json.dumps(sort_keys=True)`
+(deterministic); no data-model section. 8 tests pass; ruff clean; no exec/eval; msteams
+integration code never imported.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `render()` adds optional `deep_links` kwarg (as in
+TASK-1729). The "reject with structured error when neither degradation applies" branch
+is not reachable in practice because Form's lowering always supplies a visible notice —
+so degradation never fails; documented here rather than adding dead code.
