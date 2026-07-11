@@ -239,7 +239,7 @@
       "feature_id": "FEAT-273",
       "feature": "a2ui-implementation",
       "spec": "sdd/specs/a2ui-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -251,8 +251,8 @@
       "parallelism_notes": "Disjoint satellite modules; parallel with other renderer tasks.",
       "assigned_to": null,
       "started_at": "2026-07-11T00:48:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1731-renderers-folium-echarts.md"
+      "completed_at": "2026-07-11T01:36:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1731-renderers-folium-echarts.md"
     },
     {
       "id": "TASK-1732",

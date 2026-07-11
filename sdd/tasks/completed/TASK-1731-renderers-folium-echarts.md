@@ -284,8 +284,23 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Implemented `EChartsRenderer` (registered `echarts`, output
+`application/json`) and `FoliumMapRenderer` (registered `folium_map`, output
+`text/html`), both subclassing the core `AbstractA2UIRenderer` and baking first.
+`EChartsRenderer` builds a deterministic ECharts option dict from the baked Chart
+component data (xAxis/yAxis/series by y-columns; area→areaStyle; pie drops axes); a
+`wrap_html=True` mode inlines the vendored `formats/assets/echarts.min.js` (never a
+CDN) and neutralizes `<` in the embedded option JSON + escapes the title.
+`FoliumMapRenderer` builds a `folium.Map` purely via folium's Python API from the baked
+Map component's viewport + point data (no code strings, no exec); folium imported
+lazily with actionable ImportError naming `ai-parrot-visualizations[a2ui,map]`. 13
+tests pass; ruff clean; no exec/eval; legacy `map.py`/`echarts.py`/`BaseChart` never
+imported.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `EChartsRenderer.render` adds an optional `wrap_html` kwarg
+(the task's specified HTML-wrap mode). Both renderers target display-only Chart/Map
+components (`requires_actions=False`), so the "degrade/reject requires_actions" policy
+is not exercised — these renderers select their target component and raise `ValueError`
+if it is absent.
