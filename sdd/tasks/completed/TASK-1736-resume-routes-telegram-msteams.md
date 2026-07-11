@@ -248,10 +248,44 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Telegram deep-link URL convention (REQUIRED)**: which inbound token format
-was used (start param vs other) and why.
+**Completed by**: sdd-worker (Claude)   ·   **Status: done-with-issues**
+**Date**: 2026-07-11
+**Telegram deep-link URL convention (REQUIRED)**: Telegram bot **start-parameter**
+convention — `https://t.me/<bot>?start=<token>`, which arrives as the inbound message
+`/start <token>`. Chosen because it is the only inbound-token mechanism aiogram's
+message handling natively supports (no custom webhook), and it lands the user directly in
+the bot conversation (satisfying "resume the originating channel").
 
-**Deviations from spec**: none | describe if any
+**Notes**: Delivered the substantive resume logic — `parrot/integrations/a2ui_resume.py`:
+`ChannelDeepLinkResume` (shared Telegram+Teams) with `resume(token, *, inject)` →
+consume via `DeepLinkService` → build the tagged `a2ui_action_resume` structured user
+message (same convention as TASK-1735's web route) → call the channel's `inject` closure
+→ friendly, payload-free reply on expired/replayed tokens (logged, never silent). 6 tests
+pass covering `test_e2e_deeplink_resume_telegram` (mint → consume → structured message in
+the ORIGINAL session), replay/expiry friendly reply, empty token, Teams token
+consumption+injection, and invalid-token friendly reply. Helper ruff clean; no exec/eval.
+
+**Done-with-issues — wrapper wiring**: the edits to `telegram/wrapper.py` and
+`msteams/wrapper.py` were NOT applied. Both are 2700+-line integration modules that
+CANNOT be imported/executed in the SDD worktree (aiogram/botbuilder + Cython
+`parrot.utils.types` unbuilt), and adding token-detection into their live message-routing
+flows blind (plus wiring a `DeepLinkService` that isn't currently constructed there) risked
+regressing critical message handling — I chose not to do harm. The resume logic they need
+is fully implemented and tested in `a2ui_resume.py`.
+
+**Exact integration hooks (for a built/CI env)**:
+- **Telegram** (`telegram/wrapper.py`, in the message handler right after `user_text` is
+  read, before the suspended-session block ~:2519): if `user_text.startswith("/start ")`
+  and a `ChannelDeepLinkResume` is configured, extract the token, build an `inject`
+  closure that sets `session.session_id = payload.session_id` and calls
+  `AutonomousOrchestrator(...).resume_agent(session_id=..., user_input=query, state=...)`
+  (mirroring the suspended-session branch :2543-2557), then `await resume.resume(token,
+  inject=inject)`; on `ok is False` reply `outcome["reply"]` and return.
+- **MS Teams** (`msteams/wrapper.py`, early in `_handle_card_submission` :311 / the
+  `activity.value` branch of `on_message_activity` :457, before command routing :337): if
+  `submitted_data` carries an A2UI token, `await resume.resume(token, inject=...)` where
+  `inject` re-enters the original session; on failure send `outcome["reply"]`. Respect the
+  existing `_is_authorized` gate.
+
+**Deviations from spec**: wrapper edits deferred (above); the shared resume helper (the
+real per-channel logic) is delivered and fully tested. No dependency changes; no exec/eval.
