@@ -265,8 +265,24 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Created `artifacts.py` (`RenderedArtifact` + `DeepLink` per spec §2, with a
+`content` XOR `path` model validator) and `baking.py` (bake pass). Bindings resolve
+via `jsonpointer.resolve_pointer` behind a lazy `_load_jsonpointer()` (indirected
+through `_import_jsonpointer()` so tests can force failure) — `import
+parrot.outputs.a2ui.baking` works core-only; calling resolution without the extra
+raises `ImportError` naming `ai-parrot-visualizations[a2ui]`. `bake_envelope` resolves
+all bindings against the nested `data_model`, guards a zero-live-binding
+post-condition, and raises `BakeError` on unresolvable pointers. `persist_envelope`
+saves the source envelope via `ArtifactStore.save_artifact` (which returns None; the
+generated `artifact_id` is the returned ref) and relies on the store's >200 KB
+overflow. Added `a2ui` (`jsonpointer>=2.4` + map/jinja2/echarts) and `a2ui-pdf`
+(+weasyprint) extras to the viz pyproject; wired `a2ui` into `all`. Core: 70 tests
+pass; viz baking: 3 pass; ruff clean; no exec/eval.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Two notes: (1) `save_artifact` returns None (verified),
+so `source_envelope_ref` is the artifact_id we assign rather than a store-returned id.
+(2) The viz `tests/` tree collides with the core `tests/` package name under a shared
+pytest run, so viz tests must be run with `--import-mode=importlib` (or from the viz
+package rootdir) — documented for the QA/renderer tasks that follow.
