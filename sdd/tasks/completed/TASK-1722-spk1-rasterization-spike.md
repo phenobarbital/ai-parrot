@@ -158,8 +158,30 @@ When you pick up this task:
 
 *(Agent fills this in when done — MUST include the rasterization backend decision and the headline numbers)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: Backend decision (weasyprint default confirmed / split per artifact class), headline size/latency/determinism numbers, ECharts pre-render implication.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Backend decision**: **weasyprint confirmed as the default for ALL static artifact
+classes.** playwright is NOT adopted as a per-artifact-class split in v1 (kept as a
+documented fallback for any future JS-only artifact class).
 
-**Deviations from spec**: none | describe if any
+**Headline numbers** (3 runs each, same materialized HTML, static-SVG chart):
+- weasyprint 69.0 → PDF **8,447 bytes**, ~100–140 ms, **byte-identical across 3 runs**.
+- playwright 1.52.0 (chromium headless-shell 136) → PDF **30,299 bytes**, ~7–8 ms per
+  `page.pdf()` (excludes one-time browser launch), **byte-identical across 3 runs in
+  this environment**.
+- Decision drivers: weasyprint is intrinsically deterministic (no JS/browser/font
+  variance), ~3.6× smaller output, and needs no ~100 MB browser in the deploy image.
+
+**ECharts pre-render implication**: weasyprint runs no JS, so chart content must
+pre-render to **static SVG** for the PDF path (fixture used a hand-authored SVG bar
+chart and rasterized cleanly). Carried into TASK-1732: rasterize the SSR-HTML output
+with charts as static SVG.
+
+Evidence: `artifacts/spikes/spk1-rasterization/` (fixture, both spike scripts, 6 PDFs +
+email HTML, `outputs/checksums.sha256`, `results.md`). Spec §8 SPK-1 checkbox marked
+resolved. Both backends actually executed (chromium installed via `playwright install
+chromium`). Existing a2ui suite green (70 passed).
+
+**Deviations from spec**: spike evidence lives under `artifacts/` which is globally
+gitignored, so it was committed with `git add -f` (a stray `__pycache__/*.pyc` that
+slipped in was subsequently untracked). No package `src/` code or dependencies changed.

@@ -52,7 +52,7 @@
       "feature_id": "FEAT-273",
       "feature": "a2ui-implementation",
       "spec": "sdd/specs/a2ui-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Throwaway spike under artifacts/spikes/ — shares no production files.",
       "assigned_to": null,
       "started_at": "2026-07-11T00:48:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1722-spk1-rasterization-spike.md"
+      "completed_at": "2026-07-11T01:41:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1722-spk1-rasterization-spike.md"
     },
     {
       "id": "TASK-1723",
