@@ -292,9 +292,30 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-Record the retry budget actually wired (SPK-3 number or documented fallback).
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Retry budget wired**: `DEFAULT_MAX_ATTEMPTS = 3` (1 initial + 2 catalog-validate
+retries) — the SPK-3 (TASK-1727) recommendation. SPK-3 could not measure live validity
+in this environment (model 404s), so the number is grounded in the `OutputFormatter`
+`max_retries=2` precedent and documented in `producer.py`.
 
-**Deviations from spec**: none | describe if any
+**Notes**: Created `parrot/outputs/a2ui/producer.py` — `generate_envelope(client, prompt,
+*, catalog, max_attempts, model, system_prompt) -> ProducerResult`. Uses the EXISTING
+`client.ask(..., structured_output=StructuredOutputConfig(output_type=CreateSurface))`
+path (no new client methods, client passed as arg — no module-level client import, G8).
+Loop: extract envelope (CreateSurface instance / dict-via-serialization-layer /
+raw-text→failure) → `validate_envelope(origin=LLM)` (rejects unknown + `requires_actions`
+components, D10b) → on failure build a repair prompt carrying the validation errors +
+rejected fragment and re-ask, bounded by `max_attempts`. On exhaustion returns a
+`ProducerResult` with `degraded=True` + plain-text (`text`) + `failure_reason` — the
+invalid envelope is NEVER returned (G1 on the failure path). Composes the producer system
+prompt from `catalog_instructions()`. 7 tests pass (first-attempt success, retry-with-error
+-context, bounded-then-degrade, requires_actions rejection, raw-text-counts-as-attempt,
+dict-output, budget=3). Full a2ui core suite: 100 passed / 4 skipped; ruff clean; no
+exec/eval; no module-level LLM/agent import.
+
+**Deviations from spec**: spec §2 sketches the signature as `-> CreateSurface`, but the
+degradation path cannot return a `CreateSurface`; I return a typed `ProducerResult`
+wrapper (envelope | plain-text + reason) exactly as the task body requires ("a typed
+result carrying the text and the failure reason"). The `catalog` param is accepted but
+reserved (the global catalog registry is used today) — documented in the docstring.

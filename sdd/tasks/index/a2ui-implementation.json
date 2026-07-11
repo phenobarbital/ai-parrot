@@ -362,7 +362,7 @@
       "feature_id": "FEAT-273",
       "feature": "a2ui-implementation",
       "spec": "sdd/specs/a2ui-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -374,8 +374,8 @@
       "parallelism_notes": "Own module; retry budget comes from SPK-3 (TASK-1727).",
       "assigned_to": null,
       "started_at": "2026-07-11T00:48:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1737-llm-producer-retry.md"
+      "completed_at": "2026-07-11T02:27:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1737-llm-producer-retry.md"
     },
     {
       "id": "TASK-1738",
