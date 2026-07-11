@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from parrot.outputs.a2ui.catalog import get_component, register_component
-from parrot.outputs.a2ui.catalog.base import BasicNode, BasicTree
+from parrot.outputs.a2ui.catalog.base import BasicNode, BasicTree, CatalogValidationError
 from parrot.outputs.a2ui.models import Component
 
 INFOGRAPHIC_SCHEMA: dict[str, Any] = {
@@ -64,7 +64,13 @@ def _lower_child(
 ) -> BasicNode:
     """Lower a nested catalog child through its registered ``lower()`` (pure)."""
     name = descriptor["component"]
-    entry = get_component(name)
+    try:
+        entry = get_component(name)
+    except KeyError as exc:
+        raise CatalogValidationError(
+            f"Unknown nested component {name!r} in composite",
+            unknown_components=[name],
+        ) from exc
     child = Component(
         id=child_id,
         component=name,

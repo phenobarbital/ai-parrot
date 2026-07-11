@@ -3,12 +3,19 @@
 import json
 from pathlib import Path
 
-from parrot.outputs.a2ui.catalog import get_component
+import pytest
+
+from parrot.outputs.a2ui.catalog import (
+    CatalogValidationError,
+    ProducerOrigin,
+    get_component,
+    validate_envelope,
+)
 from parrot.outputs.a2ui.catalog.components import infographic, report
 
 # Ensure nested children (KPICard/Chart/DataTable) are registered for delegation.
 from parrot.outputs.a2ui.catalog import components as _all_components  # noqa: F401
-from parrot.outputs.a2ui.models import Component
+from parrot.outputs.a2ui.models import Component, CreateSurface
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
 
@@ -101,6 +108,46 @@ class TestReportComponent:
         blob = json.dumps(tree.model_dump())
         for survivor in ("Intro", "Welcome.", "Results", "Numbers up.", "A good year."):
             assert survivor in blob
+
+
+class TestNestedComponentValidation:
+    def _surface_with_nested(self, nested_component: str) -> CreateSurface:
+        return CreateSurface(
+            surfaceId="main",
+            catalogId="https://parrot.dev/catalogs/v1",
+            components=[
+                Component(
+                    id="blk-0",
+                    component="Infographic",
+                    properties={
+                        "title": "T",
+                        "sections": [
+                            {"heading": "H", "components": [
+                                {"component": nested_component, "properties": {}}
+                            ]}
+                        ],
+                    },
+                )
+            ],
+        )
+
+    def test_nested_unknown_component_rejected(self):
+        with pytest.raises(CatalogValidationError) as exc:
+            validate_envelope(self._surface_with_nested("TotallyBogus"))
+        assert "TotallyBogus" in exc.value.unknown_components
+
+    def test_nested_requires_actions_rejected_for_llm(self):
+        with pytest.raises(CatalogValidationError) as exc:
+            validate_envelope(self._surface_with_nested("Form"), origin=ProducerOrigin.LLM)
+        assert "Form" in exc.value.action_components
+
+    def test_nested_known_display_component_passes(self):
+        validate_envelope(self._surface_with_nested("KPICard"), origin=ProducerOrigin.LLM)
+
+    def test_lower_child_raises_structured_error_on_unknown(self):
+        comp = self._surface_with_nested("NopeComponent").components[0]
+        with pytest.raises(CatalogValidationError):
+            infographic.InfographicComponent().lower(comp, {})
 
 
 class TestCompositeDelegation:

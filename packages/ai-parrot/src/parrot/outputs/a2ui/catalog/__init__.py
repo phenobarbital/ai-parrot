@@ -135,6 +135,33 @@ def catalog_instructions() -> str:
     return "\n".join(lines)
 
 
+def _iter_nested_component_names(value: object) -> "list[str]":
+    """Recursively collect nested catalog-component names from a property value.
+
+    Composite components (Infographic/Report) embed child components as inline
+    ``{"component": <name>, "properties": {...}}`` descriptors inside their
+    properties (e.g. ``sections[].components[]``). Those names must also pass the
+    allowlist, or a hallucinated nested name would only surface as a render-time
+    ``KeyError`` — bypassing the producer's bounded-retry/degrade guarantee.
+    """
+    found: list[str] = []
+    if isinstance(value, dict):
+        name = value.get("component")
+        if isinstance(name, str):
+            found.append(name)
+            found.extend(_iter_nested_component_names(value.get("properties")))
+            for key, item in value.items():
+                if key not in ("component", "properties"):
+                    found.extend(_iter_nested_component_names(item))
+        else:
+            for item in value.values():
+                found.extend(_iter_nested_component_names(item))
+    elif isinstance(value, list):
+        for item in value:
+            found.extend(_iter_nested_component_names(item))
+    return found
+
+
 def validate_envelope(
     envelope: CreateSurface,
     *,
@@ -142,8 +169,9 @@ def validate_envelope(
 ) -> None:
     """Validate an envelope against the catalog allowlist and the action gate.
 
-    Walks the envelope's component adjacency list. Reports ALL problems (not just
-    the first) so Module 9's retry loop can re-prompt with full error context.
+    Walks the envelope's top-level component adjacency list AND every nested
+    composite child descriptor. Reports ALL problems (not just the first) so
+    Module 9's retry loop can re-prompt with full error context.
 
     Args:
         envelope: The :class:`CreateSurface` envelope to validate.
@@ -151,18 +179,23 @@ def validate_envelope(
             :attr:`ProducerOrigin.LLM` envelopes.
 
     Raises:
-        CatalogValidationError: If any component is unknown, or (for LLM origin)
-            any component is action-bearing.
+        CatalogValidationError: If any component (top-level or nested) is unknown,
+            or (for LLM origin) any component is action-bearing.
     """
+    names: list[str] = []
+    for comp in envelope.components:
+        names.append(comp.component)
+        names.extend(_iter_nested_component_names(comp.properties))
+
     unknown: list[str] = []
     action_bearing: list[str] = []
-    for comp in envelope.components:
-        entry = _CATALOG.get(comp.component)
+    for name in names:
+        entry = _CATALOG.get(name)
         if entry is None:
-            unknown.append(comp.component)
+            unknown.append(name)
             continue
         if origin is ProducerOrigin.LLM and entry.definition.requires_actions:
-            action_bearing.append(comp.component)
+            action_bearing.append(name)
 
     problems: list[str] = []
     if unknown:
