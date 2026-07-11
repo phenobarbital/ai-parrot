@@ -149,11 +149,20 @@ class DeepLinkService:
             DeepLinkExpiredError: If the token is missing, expired, or already used.
         """
         key = self._key(token)
-        raw = await self.redis.get(key)
+        # Prefer an ATOMIC read-and-delete (Redis >= 6.2 GETDEL) so two concurrent
+        # consumes cannot both observe the token before it is deleted (single-use /
+        # replay protection is TOCTOU-safe). Fall back to get-then-delete for clients
+        # without GETDEL.
+        getdel = getattr(self.redis, "getdel", None)
+        if callable(getdel):
+            raw = await getdel(key)
+        else:
+            raw = await self.redis.get(key)
+            if raw is not None:
+                await self.redis.delete(key)
         if not raw:
             # Expiry and replay are indistinguishable here by design (no oracle).
             raise DeepLinkExpiredError("This link has expired or was already used.")
-        await self.redis.delete(key)  # one-shot
         if isinstance(raw, bytes):
             raw = raw.decode("utf-8")
         return ResumePayload(**json.loads(raw))
