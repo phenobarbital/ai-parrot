@@ -258,8 +258,31 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)   ·   **Status: done-with-issues**
+**Date**: 2026-07-11
+**Notes**: Delivered the substantive D1a core — `parrot/outputs/a2ui/builders.py`: typed,
+deterministic, zero-LLM, zero-HTML envelope builders (`build_chart`, `build_kpicard`,
+`build_card`, `build_datatable`, `build_infographic`, plus a generic `build_surface`).
+Every builder produces a catalog-validated `CreateSurface` and enforces display-only
+(rejects `requires_actions` + unknown components via LLM-origin validation). 6 builder
+tests pass (catalog-valid, deterministic/byte-identical, requires_actions rejection,
+unknown rejection, no-LLM-import, binding pass-through); ruff clean; no exec/eval; zero
+new core deps. Added `DeprecationWarning` (naming the A2UI builder replacement) to BOTH
+legacy raw-HTML LLM enhance lanes — `InfographicToolkit._maybe_enhance` and
+`InteractiveToolkit._maybe_enhance` (the arbitrary-HTML channel FEAT-273 replaces) — a
+safe additive edit; `return_direct=True` preserved on both. 5 toolkit-migration tests pass.
 
-**Deviations from spec**: none | describe if any
+**Done-with-issues — what remains**: the FULL toolkit render-flow migration (making
+`render`/`render_template` emit the builder envelope as their PRIMARY output behind an
+`emit_a2ui` flag) was NOT applied. `InfographicToolkit`/`InteractiveToolkit` are large,
+strict Pydantic `AbstractToolkit` subclasses that CANNOT be executed in the SDD worktree
+(transitive Cython extension `parrot.utils.types` is unbuilt, and `parrot.tools` resolves
+inconsistently under pytest). Rewriting their render flows blind risked silent regressions
+(violating "do no harm"), so I limited changes to the safe, high-value legacy-deprecation
+signals + the fully-tested builders. Follow-up (in a built/CI env): add the `emit_a2ui`
+opt-in lane that returns `builders.build_infographic(...)` / interactive-equivalent as the
+`AIMessage.a2ui_envelope` (TASK-1738 carrier) with `OutputMode.A2UI`, keeping legacy default.
+
+**Deviations from spec**: primary-lane envelope emission deferred (above); builders +
+deprecation signals delivered. Pre-existing `F401` (unused `json`) in both toolkits left
+untouched (no-scope-creep; unchanged count vs dev).
