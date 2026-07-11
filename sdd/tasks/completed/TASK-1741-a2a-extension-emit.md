@@ -239,8 +239,25 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Precondition**: FEAT-272 (a2a-protocol-compatibility) is **merged to dev**
+(index `completed_at` set; completion commits present). Contract anchors re-verified:
+`Part` :129, `Part.from_data` :144, `Artifact` :336, `from_response` :345,
+`to_dict` :361 — all stable post-FEAT-272 (no drift; matched the "current dev" values).
 
-**Deviations from spec**: none | describe if any
+**Notes**: Added to `a2a/models.py`: single-owner extension constants
+`A2UI_EXTENSION_URI = "https://a2ui.org/extensions/a2a/display/v1"` and
+`A2UI_MEDIA_TYPE = "application/vnd.a2ui.envelope+json"`, plus
+`Artifact.from_a2ui_envelope(envelope, ...)` which wraps a display `createSurface`
+envelope verbatim into a data `Part` (metadata carries extensionUri + mediaType; the
+A2A layer never re-shapes the envelope, honoring the serialization single-owner rule).
+`Artifact.from_response` gained an additive branch: responses carrying `a2ui_envelope`
+route to `from_a2ui_envelope`; legacy text responses are byte-identical to before.
+Display-only enforced: non-`createSurface` envelopes and envelopes with action-bearing
+(`requires_actions`) components are rejected with `ValueError`. 6 tests pass; ruff clean.
+
+**Deviations from spec**: The official A2UI-A2A extension URI/media-type strings were
+not fetchable offline, so I defined plausible, clearly-documented identifiers in ONE
+place (`A2UI_EXTENSION_URI`/`A2UI_MEDIA_TYPE`) — trivially updatable when the official
+extension text is confirmed, consistent with the spec's single-owner discipline.

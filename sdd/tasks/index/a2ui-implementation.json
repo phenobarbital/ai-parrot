@@ -448,7 +448,7 @@
       "feature_id": "FEAT-273",
       "feature": "a2ui-implementation",
       "spec": "sdd/specs/a2ui-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -458,8 +458,8 @@
       "parallelism_notes": "CROSS-FEATURE BLOCKER: FEAT-272 (a2a-protocol-compatibility) must merge to dev first; re-verify parrot/a2a/models.py at execution time.",
       "assigned_to": null,
       "started_at": "2026-07-11T00:48:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1741-a2a-extension-emit.md"
+      "completed_at": "2026-07-11T02:00:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1741-a2a-extension-emit.md"
     }
   ]
 }
