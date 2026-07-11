@@ -45,7 +45,9 @@ class TestRenderedArtifactNotificationBridge:
         kwargs = owner.send_notification.await_args.kwargs
         report = kwargs["report"]
         assert len(report.files) == 1  # routed via report.files PRIORITY-1
-        # Temp file was cleaned after send (mock doesn't read it).
+        # The delivered file PRESERVES the artifact's filename (not a random temp name).
+        assert report.files[0].name == "report.pdf"
+        # Temp dir was cleaned after send (mock doesn't read it).
         assert not report.files[0].exists()
 
     async def test_telegram_attachment_flows_as_document(self):
@@ -83,15 +85,15 @@ class TestRenderedArtifactNotificationBridge:
         assert "a2ui_artifact_url" not in kwargs
         assert any("text-only" in r.message.lower() for r in caplog.records)
 
-    async def test_teams_logs_degradation(self, caplog):
+    async def test_teams_routes_via_report_files(self):
+        # Teams delivery routes the artifact through report.files; the Graph-upload
+        # -vs-downgrade decision + logging now lives in _send_teams (not the bridge),
+        # so the bridge emits no misleading "pending"/"filenames" warning.
         owner = _owner()
-        with caplog.at_level(logging.WARNING):
-            await deliver_artifact(
-                owner, _artifact(), recipients="chan", provider="teams",
-                message="hi",
-            )
+        await deliver_artifact(
+            owner, _artifact(), recipients="chan", provider="teams", message="hi",
+        )
         assert owner.send_notification.await_args.kwargs["report"].files
-        assert any("teams" in r.message.lower() for r in caplog.records)
 
     async def test_inline_content_materialized_and_cleaned(self):
         owner = _owner()
@@ -112,8 +114,10 @@ class TestRenderedArtifactNotificationBridge:
         )
         assert captured["existed_during_send"] is True
         assert captured["bytes"] == b"%PDF-data"
-        # Temp file cleaned up after send.
+        assert captured["path"].name == "report.pdf"  # filename preserved
+        # Temp file + its dir cleaned up after send.
         assert not captured["path"].exists()
+        assert not captured["path"].parent.exists()
 
     async def test_existing_path_not_deleted(self, tmp_path):
         owner = _owner()

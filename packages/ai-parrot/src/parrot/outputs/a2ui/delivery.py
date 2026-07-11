@@ -18,9 +18,9 @@ nor the notifications subsystem — the provider is passed as a string (matching
 
 from __future__ import annotations
 
-import contextlib
+import asyncio
 import logging
-import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
@@ -53,20 +53,34 @@ class _DeliveryReport:
         self.documents = None
 
 
-def _ensure_path(artifact: RenderedArtifact) -> tuple[Path, bool]:
+def _write_inline_to_temp(artifact: RenderedArtifact) -> Path:
+    """Materialize inline content to a temp file that PRESERVES the delivery filename.
+
+    The bytes are written into a per-request temp *directory* using the artifact's own
+    ``filename`` as the basename, so email attachments / Telegram documents / Teams Graph
+    uploads display the intended name (not a random ``mkstemp`` name). The caller cleans
+    up the whole directory after send. (Blocking file I/O — call via ``asyncio.to_thread``.)
+    """
+    tmp_dir = Path(tempfile.mkdtemp(prefix="a2ui-"))
+    # Basename only — never honour path separators from the artifact filename.
+    filename = Path(artifact.filename).name or "artifact"
+    dest = tmp_dir / filename
+    dest.write_bytes(artifact.content or b"")
+    return dest
+
+
+async def _ensure_path(artifact: RenderedArtifact) -> tuple[Path, bool]:
     """Return a filesystem path for the artifact, materializing inline content.
 
     Returns:
-        ``(path, is_temp)`` — ``is_temp`` is ``True`` when a temp file was created
-        (and must be cleaned up by the caller after send).
+        ``(path, is_temp)`` — ``is_temp`` is ``True`` when a temp file was created (its
+        parent directory must be removed by the caller after send).
     """
     if artifact.path is not None:
         return artifact.path, False
-    suffix = Path(artifact.filename).suffix or ""
-    fd, tmp = tempfile.mkstemp(prefix="a2ui-", suffix=suffix)
-    with os.fdopen(fd, "wb") as fh:
-        fh.write(artifact.content or b"")
-    return Path(tmp), True
+    # Off the event loop — blocking file write.
+    path = await asyncio.to_thread(_write_inline_to_temp, artifact)
+    return path, True
 
 
 async def deliver_artifact(
@@ -128,20 +142,15 @@ async def deliver_artifact(
             message, recipients, provider=provider, subject=subject
         )
 
-    # EMAIL / TELEGRAM / TEAMS → attachment via report.files precedence.
-    path, is_temp = _ensure_path(artifact)
+    # EMAIL / TELEGRAM / TEAMS → attachment via report.files precedence. (Teams'
+    # own Graph-upload-vs-downgrade decision + logging lives in _send_teams.)
+    path, is_temp = await _ensure_path(artifact)
     try:
-        if provider_name == _TEAMS:
-            log.warning(
-                "A2UI degraded delivery: Teams lists filenames in text for artifact %s "
-                "(Graph upload pending TASK-1734).",
-                artifact.artifact_id,
-            )
         report = _DeliveryReport(files=[path])
         return await owner.send_notification(
             message, recipients, provider=provider, subject=subject, report=report
         )
     finally:
         if is_temp:
-            with contextlib.suppress(OSError):
-                path.unlink()
+            # Remove the per-request temp directory (contains the named file).
+            await asyncio.to_thread(shutil.rmtree, path.parent, True)
