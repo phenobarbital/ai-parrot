@@ -9,6 +9,8 @@ from parrot.outputs.a2ui.catalog.components import card  # noqa: F401
 from parrot.outputs.a2ui.catalog.components import chart  # noqa: F401
 from parrot.outputs.a2ui.catalog.components import datatable  # noqa: F401
 from parrot.outputs.a2ui.catalog.components import form  # noqa: F401
+from parrot.outputs.a2ui.catalog.components import infographic  # noqa: F401
 from parrot.outputs.a2ui.catalog.components import kpicard  # noqa: F401
 from parrot.outputs.a2ui.catalog.components import map  # noqa: F401
+from parrot.outputs.a2ui.catalog.components import report  # noqa: F401
 from parrot.outputs.a2ui.catalog.components import timeline  # noqa: F401
