@@ -162,4 +162,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `packages/ai-parrot/tests/clients/test_bedrock_integration.py` (7
+tests) covering: factory→client→ask→AIMessage roundtrip, a 3-round
+multi-tool-use loop, extended thinking combined with tool-use (signature
+preserved into the follow-up payload), streaming chunk validation
+(concatenation + usage on the sentinel), all 4 non-`tool_use` `stopReason`
+values terminating the loop after one round (parametrized), and `tool_use`
+continuing the loop.
+
+Created `packages/ai-parrot/tests/clients/test_bedrock_errors.py` (9 tests)
+covering: `ImportError` when `aioboto3` is unavailable (via
+`sys.modules` patching), `ThrottlingException` → fallback-model retry,
+`ValidationException` → unmodified propagation (no retry), a mid-stream
+error propagating out of `ask_stream()`'s async generator (not swallowed),
+an unrecognized model ID passing through with a logged warning (not a hard
+failure — existing `bedrock_models.translate()` behavior from TASK-1744),
+empty content blocks → empty string output, a reasoning-only response (no
+text block) not crashing, multiple text blocks concatenating in order, and
+a 200 KB tool result flowing through the loop intact.
+
+Found and fixed a test-design issue while writing the fallback-retry test:
+`AbstractClient.__init__` (base.py) always sets
+`self._fallback_model = kwargs.get('fallback_model', None)`, which shadows
+`BedrockConverseClient`'s class-level `_fallback_model = "claude-haiku-4-5"`
+default unless a caller explicitly passes `fallback_model=` — this is
+pre-existing base-class behavior (verified it identically affects
+`AnthropicClient`, whose class-level `_fallback_model` is shadowed to
+`None` the same way), not something introduced by this feature. The test
+now passes `fallback_model="claude-haiku-4-5"` explicitly, matching how
+real callers must configure it. Flagging here since it's a subtle
+footgun — the class-level `_fallback_model` docstrings/defaults across all
+providers read as if they're active by default, but they are not unless
+explicitly passed as a constructor kwarg.
+
+All 18 new tests pass. `ruff check` clean. Full re-run across all FEAT-302
+test files (`test_bedrock_usage.py`, `test_bedrock_models.py` (both the
+new one and the pre-existing TASK-1514 one), `test_bedrock_tool_format.py`,
+`test_bedrock_converse.py`, `test_bedrock_advanced.py`,
+`test_factory_bedrock.py`, plus these two new files) shows 109 tests
+passing; the only failures in the broader `tests/clients/` directory are
+the 2 pre-existing, unrelated `test_google_computer_use.py` failures
+confirmed via `git stash` in TASK-1745.

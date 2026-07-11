@@ -60,12 +60,22 @@ from parrot.models.bedrock_models import translate  # verified: parrot/models/be
 
 ### Existing Signatures to Use
 ```python
-# parrot/clients/live.py:156
+# parrot/clients/live.py:156 (@dataclass — CORRECTED, was stale: field is
+# `is_complete`, not `is_final`; also carries tool_calls/usage/turn_metadata/
+# session_id/turn_id/user_id, all defaulted)
 class LiveVoiceResponse:
-    audio_data: Optional[bytes]
-    text: Optional[str]
-    is_final: bool
-    metadata: Dict[str, Any]
+    text: str = ""
+    audio_data: Optional[bytes] = None
+    audio_format: str = "audio/pcm;rate=24000"
+    is_complete: bool = False
+    is_interrupted: bool = False
+    tool_calls: List[LiveToolCall] = field(default_factory=list)
+    usage: Optional[LiveCompletionUsage] = None
+    turn_metadata: Optional[VoiceTurnMetadata] = None
+    session_id: Optional[str] = None
+    turn_id: Optional[str] = None
+    user_id: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 # parrot/clients/live.py:467
 class GeminiLiveClient(AbstractClient):
@@ -184,4 +194,89 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Package location — resolved by user decision.** The spec (§8, "Resolved
+(from proposal phase)") says Nova Sonic should live in
+`ai-parrot-integrations[voice]`, contradicting this task's explicit
+instruction to create `packages/ai-parrot/src/parrot/clients/nova_sonic.py`
+(core package). Flagged this contradiction to the user before implementing
+(a genuine "task contradicts spec" STOP condition); the user explicitly
+confirmed: **"clients need to be settled on core
+`packages/ai-parrot/src/parrot/clients/nova_sonic.py` not on
+integrations."** Implemented accordingly — this task's file path stands
+as the resolved decision going forward.
+
+**Codebase Contract correction**: `LiveVoiceResponse`'s field is
+`is_complete` (not `is_final` as the task's stale contract stated) — fixed
+the contract in this task file before implementing, per the
+anti-hallucination protocol. Also documented the dataclass's actual full
+field set (previously abbreviated to 4 fields).
+
+Created `packages/ai-parrot/src/parrot/clients/nova_sonic.py` with
+`NovaSonicClient(AbstractClient)`:
+- `client_type`/`client_name = "nova-sonic"`, `_default_model =
+  "amazon.nova-2-sonic-v1:0"`.
+- `__init__` performs an eager `import aws_sdk_bedrock_runtime` presence
+  check (raises `ImportError` with an install hint immediately at
+  construction, not deferred to `get_client()`/`stream_voice()` — matches
+  the task's own test spec, which wraps construction itself in
+  `pytest.raises(ImportError)`).
+- `get_client()` / `_open_stream()` / `_send_event()` / `_iter_events()`:
+  three thin wrappers isolate every raw Pre-Alpha SDK call (mirrors
+  `BedrockConverseClient._sdk_create`/`_sdk_stream`), so only these need
+  updating if `aws_sdk_bedrock_runtime`'s API changes before GA — the SDK's
+  exact bidirectional-stream event shapes are not independently verified
+  (no stable public API reference exists for this Pre-Alpha package); the
+  event names/structure follow the task's Implementation Notes and the
+  spec's Module 7 description (`sessionStart`/`promptStart`/`audioInput`/
+  `toolUse`/`toolResult`/`completionEnd`) as the closest available contract.
+- `stream_voice()`: sender/receiver task architecture per
+  `GeminiLiveClient.stream_voice()` (live.py:708) — background
+  `_audio_sender()` task forwards PCM chunks as `audioInput` events (a
+  `None` sentinel signals end-of-turn, mirroring `GeminiLiveClient`'s
+  multi-turn convention), while the main coroutine iterates output events
+  and yields `LiveVoiceResponse` for text/audio/tool-use/interruption/
+  turn-complete. Barge-in and tool-use-mid-conversation are handled.
+- **8-minute connection lifecycle**: tracks `time.monotonic()` since stream
+  open; when within a 15s safety margin of the ~8-minute limit, yields a
+  `metadata={"reconnect_required": True}` frame and breaks — actual
+  reconnection (opening a new stream + replaying context) is left to the
+  caller, since Nova Sonic doesn't expose a resumable-session concept in
+  the available documentation; this is the "architecture right" scope the
+  task calls out rather than a full auto-reconnect implementation.
+- `ask()`/`ask_stream()`/`invoke()` delegate to a lazily-constructed,
+  cached internal `BedrockConverseClient` (per Scope: "text-only fallback
+  (delegates to BedrockConverseClient)"), sharing region/profile/guardrail
+  config. `resume()` raises `NotImplementedError` (mirrors
+  `GeminiLiveClient.resume()`'s precedent — no suspend/resume concept for
+  voice sessions).
+- `_apply_pii_guardrail()`: delegates to the internal `BedrockConverseClient
+  .apply_guardrail_text(text, source="INPUT")` (TASK-1746) — implements the
+  spec's Module 7 responsibility ("`_apply_pii_guardrail()` for
+  transcription PII filtering"), not explicitly listed in this task's own
+  Scope bullets but present in the spec and low-cost to wire up.
+
+Created `packages/ai-parrot/tests/clients/test_nova_sonic.py` (15 tests):
+client_type/default_model/PCM constants, `ImportError` when the SDK is
+missing, `stream_voice()` text+audio/tool-use/barge-in/8-minute-reconnect,
+`ask()`/`ask_stream()`/`invoke()` delegation to a real (mocked-at-the-SDK-
+boundary) `BedrockConverseClient`, `resume()` raising `NotImplementedError`,
+internal client reuse, and PII guardrail delegation (both configured and
+unconfigured).
+
+**Test-design note**: initially wrapped every `from parrot.clients.nova_sonic
+import NovaSonicClient` inside a `patch.dict('sys.modules',
+{'aws_sdk_bedrock_runtime': MagicMock()})` block per the task's own test
+scaffold — this triggered a flaky `KeyError: 'pydantic.root_model'` in
+`mcp.types`' pydantic generic-model caching (triggered via
+`parrot.clients.live`'s `google.genai` import chain) on the *second* such
+import in the same test session. Root-caused: `nova_sonic.py`'s only
+module-level dependency is `.live` (for `LiveVoiceResponse` et al.), which
+does NOT require `aws_sdk_bedrock_runtime` — only `__init__` does. Fixed by
+importing the module/class once at collection time and scoping the
+`sys.modules` patch to only the constructor calls that need it. Pre-existing
+environment fragility in the `google.genai`/`mcp`/pydantic import chain,
+unrelated to this feature — not introduced by this task.
+
+All 15 tests pass. `ruff check` clean. Full `tests/clients/` re-run: 96
+passed, only the 2 pre-existing unrelated `test_google_computer_use.py`
+failures remain.

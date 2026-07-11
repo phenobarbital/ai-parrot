@@ -157,13 +157,35 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         **kwargs
     ):
         """
-        Override to always return GeminiLiveClient configuration.
+        Resolve the voice-provider LLM configuration.
 
-        VoiceBot requires GeminiLiveClient for voice interactions,
-        regardless of what llm provider is specified.
+        VoiceBot is provider-aware via ``self.voice_config.provider``
+        (FEAT-302): ``"google_live"`` (default) resolves to
+        ``GeminiLiveClient``; ``"nova_sonic"`` (experimental) resolves to
+        ``NovaSonicClient``. The provider selection is independent of
+        whatever ``llm``/text-only provider string was passed to the bot —
+        voice interactions always go through one of the two voice clients.
         """
         from ..clients.models import LLMConfig
 
+        provider = getattr(self.voice_config, 'provider', 'google_live')
+
+        if provider == 'nova_sonic':
+            from ..clients.nova_sonic import NovaSonicClient
+            return LLMConfig(
+                provider='nova_sonic',
+                client_class=NovaSonicClient,
+                model=model or self.voice_config.model,
+                temperature=kwargs.get('temperature', self.voice_config.temperature),
+                max_tokens=kwargs.get('max_tokens', self.voice_config.max_tokens),
+                extra={
+                    'voice_id': kwargs.get('voice_id', self.voice_config.voice_name),
+                    **{k: v for k, v in self._client_config.items() if v is not None},
+                    **kwargs
+                }
+            )
+
+        # Default (existing behavior, unchanged): GeminiLiveClient.
         config = LLMConfig(
             provider='gemini_live',
             client_class=GeminiLiveClient,
@@ -183,19 +205,34 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         self,
         config,
         conversation_memory=None
-    ) -> GeminiLiveClient:
+    ) -> AbstractClient:
         """
-        Override to create GeminiLiveClient with voice-specific parameters.
+        Create the voice-provider client (GeminiLiveClient or, per FEAT-302,
+        NovaSonicClient) with voice-specific parameters.
 
         This integrates with the standard configure() flow in AbstractBot,
-        ensuring self._llm is a properly configured GeminiLiveClient.
+        ensuring self._llm is a properly configured voice client matching
+        ``config.provider`` (as set by :meth:`_resolve_llm_config`).
         """
         # Get all tools from tool_manager (includes dynamically registered tools)
         current_tools = []
         if self.tool_manager:
             current_tools = list(self.tool_manager.get_all_tools())
+        use_tools = bool(current_tools or (self.tool_manager and self.tool_manager.tool_count() > 0))
 
-        # Create GeminiLiveClient with voice config + tools
+        if config.provider == 'nova_sonic':
+            from ..clients.nova_sonic import NovaSonicClient
+            return NovaSonicClient(
+                model=config.model,
+                voice_id=config.extra.get('voice_id', 'matthew'),
+                tools=current_tools,
+                use_tools=use_tools,
+                tool_manager=self.tool_manager,
+                conversation_memory=conversation_memory,
+                **{k: v for k, v in config.extra.items() if k != 'voice_id'}
+            )
+
+        # Default (existing behavior, unchanged): GeminiLiveClient.
         client = GeminiLiveClient(
             model=config.model,
             voice_name=config.extra.get('voice_name', self.voice_config.voice_name),
@@ -204,7 +241,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             max_tokens=config.max_tokens,
             # Tools from tool_manager
             tools=current_tools,
-            use_tools=bool(current_tools or (self.tool_manager and self.tool_manager.tool_count() > 0)),
+            use_tools=use_tools,
             tool_manager=self.tool_manager,
             conversation_memory=conversation_memory,
             # Credentials and extra config (exclude already-passed args)

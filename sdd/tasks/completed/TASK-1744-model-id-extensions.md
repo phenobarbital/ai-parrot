@@ -130,4 +130,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added Nova Sonic (`nova-sonic`, `nova-2-sonic`) and Nova text
+(`nova-pro`, `nova-lite`, `nova-micro`) entries to `PUBLIC_TO_BEDROCK`, and
+updated `_is_bedrock_id()` to recognize the `amazon.` substring as
+already-Bedrock-shaped (pass-through), mirroring the existing `anthropic.`
+check. Updated the module docstring to mention Amazon IDs alongside
+Anthropic ones for consistency.
+
+Created `packages/ai-parrot/tests/models/test_bedrock_models.py` (distinct
+from the pre-existing `packages/ai-parrot/tests/test_bedrock_models.py` from
+TASK-1514, which covers only the Claude/Anthropic translation paths) with
+the task's 5 scaffolded tests plus 3 extra for the additional Nova text
+models. All 19 tests pass (8 new + 11 pre-existing, no regressions).
+`ruff check` clean on both touched files.

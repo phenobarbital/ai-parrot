@@ -158,4 +158,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `_lazy_bedrock_converse()` (same pattern as `_lazy_gemma4()`) and a
+`"bedrock-converse": _lazy_bedrock_converse` entry to `SUPPORTED_CLIENTS`
+in `factory.py`, immediately after the existing `"bedrock": AnthropicClient`
+entry (left untouched — verified via `test_bedrock_legacy_preserved`). No
+`PROVIDER_BACKEND` entry was added: that dict only exists to inject a
+`backend=` kwarg into `AnthropicClient`'s constructor for the shared-class
+`"bedrock"`/`"anthropic-aws"` keys — `BedrockConverseClient` is a distinct
+class with no such backend-selection concept, so nothing needed there.
+
+Added an `aioboto3` extra to `packages/ai-parrot/pyproject.toml`.
+
+**Naming discrepancy flagged for review**: the spec (§3 Module 6, §5
+Acceptance Criteria) names this extra `bedrock-native`, but this task's own
+Scope/Implementation Notes/Acceptance Criteria all explicitly say
+`bedrock-converse` with `aioboto3>=13.0.0`. Followed the task file's
+explicit instructions (the literal governing document for this unit of
+work) — extra is named `bedrock-converse`, matching the acceptance
+criterion "`pyproject.toml` has `bedrock-converse` extra with
+`aioboto3>=13.0.0`" in this task file verbatim. If the `bedrock-native`
+name from the spec is required for consistency with the rest of the FEAT-302
+acceptance criteria, a follow-up rename (or an additional alias extra) may
+be needed — noted here rather than guessing.
+
+Created `packages/ai-parrot/tests/clients/test_factory_bedrock.py` — the
+task's 3 scaffolded tests plus one additional end-to-end test
+(`test_create_via_llm_factory`) that resolves `"bedrock-converse:claude-sonnet-4-5"`
+through `LLMFactory.create()` and asserts a real `BedrockConverseClient`
+instance is returned. All 4 pass; `ruff check` clean;
+`packages/ai-parrot/pyproject.toml` parses correctly via `tomllib`; full
+`tests/clients/` suite re-run shows only the 2 pre-existing, unrelated
+`test_google_computer_use.py` failures — no regressions.

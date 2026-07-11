@@ -173,4 +173,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `ToolFormat.BEDROCK = "bedrock"` and `ToolSchemaAdapter._clean_for_bedrock()`
+(manager.py) exactly per the spec's reference implementation, wired into
+`clean_schema_for_provider()` via a new `elif provider == ToolFormat.BEDROCK`
+branch. Created `packages/ai-parrot/tests/tools/test_bedrock_tool_format.py`
+(package-scoped test root, same convention as TASK-1742) with the 3 tests
+from the task's scaffold — all pass. `ruff check` on `manager.py` shows one
+pre-existing, unrelated `F821` (undefined `AbstractToolkit` forward-ref at
+`register_toolkit`, line ~726) confirmed present before this change via
+`git stash` diff — not introduced by this task.

@@ -220,4 +220,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `CompletionUsage.from_bedrock()` (basic.py, following `from_claude()`
+pattern) and `AIMessageFactory.from_bedrock()` (responses.py, following the
+spec's exact reference implementation). Extended `from_bedrock()` beyond the
+spec snippet to auto-extract `ToolCall` objects from `toolUse` content blocks
+when no explicit `tool_calls` param is passed (per acceptance criterion
+"converts toolUse blocks to ToolCall objects"), while still honoring an
+explicit `tool_calls` override for parity with `from_claude()`'s signature.
+
+Created `packages/ai-parrot/tests/models/test_bedrock_usage.py` (the task's
+listed path `tests/models/test_bedrock_usage.py` was adjusted to the
+package-scoped test root, matching the existing convention of sibling files
+in `packages/ai-parrot/tests/models/`). Added one extra test
+(`test_tool_use_response_auto_extraction`) beyond the task's scaffold to
+cover the auto-extraction behavior.
+
+All 6 tests pass (`pytest tests/models/test_bedrock_usage.py -v`). `ruff
+check` clean on all 3 touched files. No regressions in
+`packages/ai-parrot/tests/models/` (1 pre-existing, unrelated failure in
+`test_dataset_models.py` not touched by this task).

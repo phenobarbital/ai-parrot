@@ -138,6 +138,27 @@ class CompletionUsage(BaseModel):
         )
 
     @classmethod
+    def from_bedrock(cls, usage: Dict[str, Any]) -> "CompletionUsage":
+        """Create from AWS Bedrock Converse API usage dict.
+
+        Bedrock Converse returns camelCase usage fields (``inputTokens`` /
+        ``outputTokens``), plus optional prompt-cache token counts
+        (``cacheReadInputTokens`` / ``cacheWriteInputTokens``) which are
+        preserved in ``extra_usage`` for observability.
+        """
+        input_tokens = usage.get("inputTokens", 0)
+        output_tokens = usage.get("outputTokens", 0)
+        return cls(
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
+            extra_usage={
+                "cacheReadInputTokens": usage.get("cacheReadInputTokens", 0),
+                "cacheWriteInputTokens": usage.get("cacheWriteInputTokens", 0),
+            }
+        )
+
+    @classmethod
     def from_gemini(cls, usage: Dict[str, Any]) -> "CompletionUsage":
         """Create from Gemini/Vertex AI usage dict."""
         # Handle both Gemini API format and Vertex AI format
