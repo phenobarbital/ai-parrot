@@ -190,8 +190,24 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Created `parrot.outputs.a2ui.catalog` (`base.py` + `__init__.py`).
+`base.py` defines `ComponentDefinition` (with `schema_`/wire-alias `schema`,
+`catalog_id` defaulting to `https://parrot.dev/catalogs/v1`, `requires_actions`),
+the `BasicNode`/`BasicTree` lowering-return contract (minimal, fleshed out in
+Module 3), `ProducerOrigin` enum, `RegisteredComponent`, and structured errors
+(`CatalogError`, `ComponentContractError`, `CatalogValidationError` carrying
+`unknown_components`/`action_components`). `__init__.py` implements
+`@register_component` (mirrors `formats.register_renderer`) with registration-time
+enforcement of a callable `lower()`, plus `get_component`/`list_components`/
+`catalog_instructions`/`unregister_component` and `validate_envelope` (reports ALL
+unknown components; LLM-origin rejects `requires_actions` components, tool-origin
+allows them). 28 tests pass (10 new); ruff clean; no exec/eval; no new core deps.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Convention established for Module 3: components
+expose class attributes `SCHEMA` (dict) and `INSTRUCTIONS` (str), which the
+decorator folds into the `ComponentDefinition` (the spec's `register_component`
+signature carries only `name`/`requires_actions`, so schema+instructions come from
+the class). jsonschema is not a core dep, so payload validation is structural
+(allowlist) only — full JSON-Schema validation deferred.
