@@ -352,6 +352,13 @@ bedrock = [
     "anthropic[aiohttp,aws]>=0.109.0,<1.0.0",
 ]
 
+# FEAT-302: native Bedrock Converse API client (BedrockConverseClient) —
+# opt-in extra pulling aioboto3, distinct from the `bedrock` extra above
+# (anthropic[aws], used by AnthropicClient's Bedrock backend, FEAT-232).
+bedrock-converse = [
+    "aioboto3>=13.0.0",
+]
+
 claude-agent = [
     "claude-agent-sdk>=0.1.68",
 ]
