@@ -60,12 +60,22 @@ from parrot.models.bedrock_models import translate  # verified: parrot/models/be
 
 ### Existing Signatures to Use
 ```python
-# parrot/clients/live.py:156
+# parrot/clients/live.py:156 (@dataclass — CORRECTED, was stale: field is
+# `is_complete`, not `is_final`; also carries tool_calls/usage/turn_metadata/
+# session_id/turn_id/user_id, all defaulted)
 class LiveVoiceResponse:
-    audio_data: Optional[bytes]
-    text: Optional[str]
-    is_final: bool
-    metadata: Dict[str, Any]
+    text: str = ""
+    audio_data: Optional[bytes] = None
+    audio_format: str = "audio/pcm;rate=24000"
+    is_complete: bool = False
+    is_interrupted: bool = False
+    tool_calls: List[LiveToolCall] = field(default_factory=list)
+    usage: Optional[LiveCompletionUsage] = None
+    turn_metadata: Optional[VoiceTurnMetadata] = None
+    session_id: Optional[str] = None
+    turn_id: Optional[str] = None
+    user_id: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 # parrot/clients/live.py:467
 class GeminiLiveClient(AbstractClient):
