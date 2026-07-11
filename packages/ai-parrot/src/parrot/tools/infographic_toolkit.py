@@ -888,6 +888,19 @@ class InfographicToolkit(AbstractToolkit):
         if mode != "enhance":
             return skeleton, False
 
+        # FEAT-273 (Module 11 / G7): the raw-HTML LLM enhance lane is deprecated in
+        # favour of deterministic A2UI envelope builders
+        # (parrot.outputs.a2ui.builders). Legacy behaviour is preserved.
+        import warnings  # noqa: PLC0415
+
+        warnings.warn(
+            "InfographicToolkit raw-HTML enhance lane is deprecated (FEAT-273): "
+            "emit an A2UI envelope via parrot.outputs.a2ui.builders.build_infographic "
+            "with OutputMode.A2UI instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         if not brief:
             self.logger.warning(
                 "enhance requested without a brief — falling back to skeleton."

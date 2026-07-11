@@ -387,6 +387,18 @@ class InteractiveToolkit(AbstractToolkit):
         if mode != "enhance":
             return deterministic, False
 
+        # FEAT-273 (Module 11 / G7): the LLM raw-HTML authoring lane
+        # (INTERACTIVE_SYSTEM_PROMPT_ADDON / INTERACTIVE_ENHANCE_PROMPT) is the
+        # arbitrary-HTML channel A2UI replaces. Deprecated; legacy behaviour preserved.
+        import warnings  # noqa: PLC0415
+
+        warnings.warn(
+            "InteractiveToolkit raw-HTML enhance lane is deprecated (FEAT-273): emit an "
+            "A2UI envelope via parrot.outputs.a2ui.builders with OutputMode.A2UI instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         if not brief:
             raise InteractiveValidationError(
                 "ENHANCE_BRIEF_MISSING",
