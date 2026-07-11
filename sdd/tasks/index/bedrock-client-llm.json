@@ -32,7 +32,7 @@
       "feature_id": "FEAT-302",
       "feature": "bedrock-client-llm",
       "spec": "sdd/specs/bedrock-client-llm.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Modifies only parrot/tools/manager.py; no overlap with TASK-1742 or TASK-1744",
       "assigned_to": null,
       "started_at": "2026-07-11T00:46:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1743-tool-schema-adapter.md"
+      "completed_at": "2026-07-11T01:15:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1743-tool-schema-adapter.md"
     },
     {
       "id": "TASK-1744",
