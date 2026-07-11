@@ -194,8 +194,21 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Created `parrot.outputs.a2ui` package with `models.py` (complete v1.0
+message set as a Pydantic v2 discriminated union on `messageType`: CreateSurface,
+UpdateComponents, UpdateDataModel, Action, ActionResponse, CallFunction, plus the
+`Component` adjacency node), `serialization.py` (sole owner of `version`; JSON/JSONL
+serialize + deserialize via a `TypeAdapter`), and `__init__.py` re-exports.
+Light binding-syntax validation implemented as a JSON-Pointer regex (`is_valid_pointer`)
+plus recursive `{"$bind": "/pointer"}` scanning in `Component.properties`; full
+pointer resolution deferred to the bake pass (Module 6). 18 unit tests pass; ruff
+clean; no `exec(`/`eval(`; zero new core deps. `version` appears only in
+`serialization.py` (models/__init__ references are docstrings only).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Wire field names (`messageType`, `surfaceId`,
+`catalogId`, `dataModel`, etc.) follow A2UI v1.0 conventions cross-checked against
+the sibling `infographic-theme-catalog-a2ui.spec.md` translation contract, since the
+a2ui.org spec URL was not fetchable offline. Binding sigil chosen as `$bind` (a
+mapping key) — documented in `models.BINDING_KEY` for downstream tasks.
