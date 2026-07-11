@@ -268,8 +268,21 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Read SPK-1 (TASK-1722): **weasyprint confirmed, no per-class split** — so
+this renderer ships weasyprint only (no playwright path). `PDFRenderer` (registered
+`pdf`, output `application/pdf`) composes the baked SSR-HTML (TASK-1729), pre-renders
+each Chart component to a deterministic static SVG (weasyprint runs no JS), injects the
+SVGs before `</body>`, then rasterizes via `weasyprint.HTML(string=...).write_pdf()`.
+The blocking `write_pdf` runs off the event loop via `asyncio.to_thread` (test asserts
+it executes on a non-main thread). weasyprint imported lazily with an actionable
+ImportError naming `ai-parrot-visualizations[a2ui-pdf]`. Returns a `RenderedArtifact`
+with inline PDF `content` (%PDF- magic verified). `a2ui-pdf` extra pin aligned to
+`weasyprint>=68.0`. 7 tests pass (incl. e2e envelope→PDF→email-attachment seam with a
+mocked provider); ruff clean; no exec/eval; `BaseRenderer` never imported.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `render()` accepts an optional `deep_links` kwarg (as in the
+sibling renderers). The e2e test mocks the provider and validates the `report.files`
+attachment-precedence seam directly rather than instantiating a full `BasicAgent`
+(the full `send_notification` wiring is TASK-1733's scope); documented inline.
