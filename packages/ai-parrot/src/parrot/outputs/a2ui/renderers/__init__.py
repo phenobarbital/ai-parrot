@@ -37,8 +37,12 @@ _RENDERER_NAMESPACE = "parrot.outputs.a2ui_renderers"
 #: Pip extra that ships the renderers.
 _A2UI_EXTRA = "ai-parrot-visualizations[a2ui]"
 
-#: Renderer that additionally needs the PDF extra.
-_PDF_RENDERERS = {"pdf"}
+def _extra_for(name: str) -> str:
+    """Return the pip extra that ships the renderer ``name``.
+
+    Any renderer whose name contains ``"pdf"`` needs the heavier ``a2ui-pdf`` extra.
+    """
+    return "ai-parrot-visualizations[a2ui-pdf]" if "pdf" in name else _A2UI_EXTRA
 
 
 class RendererCapabilities(BaseModel):
@@ -140,7 +144,7 @@ def get_a2ui_renderer(name: str) -> type[AbstractA2UIRenderer]:
         return _RENDERERS[name]
 
     module_path = f"{_RENDERER_NAMESPACE}.{name}"
-    extra = "ai-parrot-visualizations[a2ui-pdf]" if name in _PDF_RENDERERS else _A2UI_EXTRA
+    extra = _extra_for(name)
     try:
         importlib.import_module(module_path)
     except ImportError as exc:
