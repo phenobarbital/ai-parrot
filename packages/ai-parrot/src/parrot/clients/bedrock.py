@@ -9,14 +9,17 @@ which routes through the Anthropic SDK's ``AsyncAnthropicBedrock`` transport
 
 This module implements Spec Module 4 ("BedrockConverseClient — Core"):
 session/client management, the Converse API tool-use loop, streaming,
-``resume()``, and a lightweight ``invoke()``. Extended thinking, prompt
-caching, Bedrock-native structured output, and guardrail enforcement are
-added in Module 5 (TASK-1746); factory registration in Module 6 (TASK-1747).
+``resume()``, and a lightweight ``invoke()``. Module 5 ("Advanced
+Features", TASK-1746) adds extended thinking, prompt caching, schema-based
+structured output, guardrails (``apply_guardrail_text()``), and the
+``_invoke_native()`` fallback for models without ARN-versioned IDs.
+Factory registration is Module 6 (TASK-1747).
 
 See ``sdd/specs/bedrock-client-llm.spec.md`` for the full design.
 """
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from pathlib import Path
@@ -338,6 +341,129 @@ class BedrockConverseClient(AbstractClient):
         self.logger.debug("Prepared %d Bedrock tool specs", len(tool_specs))
         return tool_specs
 
+    def _parse_json_schema_output(self, text: str) -> Any:
+        """Parse a raw-JSON-Schema structured-output response (Module 5).
+
+        Used for the ``output_schema`` param (a plain JSON Schema dict, as
+        opposed to ``structured_output``/``output_type`` which target a
+        Pydantic/dataclass type via
+        :class:`~parrot.models.outputs.StructuredOutputConfig`). Falls back
+        to markdown-code-block extraction, then to the raw text, if direct
+        JSON parsing fails.
+
+        Args:
+            text: The assistant's response text, expected to contain a JSON
+                document per the schema instruction injected into the
+                system prompt.
+
+        Returns:
+            The parsed JSON value (usually a ``dict``), or the original
+            text unchanged if it could not be parsed as JSON.
+        """
+        try:
+            return self._json.loads(text)
+        except Exception:
+            pass
+        try:
+            candidate = self._extract_json_from_response(text)
+            return self._json.loads(candidate)
+        except Exception:
+            return text
+
+    # ------------------------------------------------------------------
+    # Guardrails (Module 5)
+    # ------------------------------------------------------------------
+
+    async def apply_guardrail_text(self, text: str, source: str = "OUTPUT") -> str:
+        """Apply the configured Bedrock guardrail to standalone text.
+
+        Calls Bedrock's ``apply_guardrail()`` API directly (not via
+        ``converse()``) — useful for filtering text that did not originate
+        from a Converse call (e.g. transcriptions, as used by
+        :class:`~parrot.integrations.bedrock.nova_sonic.NovaSonicClient`,
+        TASK-1748).
+
+        Args:
+            text: The text to filter.
+            source: Guardrail content source — ``"INPUT"`` or ``"OUTPUT"``
+                (default).
+
+        Returns:
+            The guardrail-processed text, or the original *text* unchanged
+            if no guardrail is configured on this client (``guardrail_id``/
+            ``guardrail_version`` were not passed to ``__init__``).
+        """
+        if not self._guardrail_id or not self._guardrail_version:
+            return text
+
+        await self._ensure_client()
+        response = await self.client.apply_guardrail(
+            guardrailIdentifier=self._guardrail_id,
+            guardrailVersion=self._guardrail_version,
+            source=source,
+            content=[{"text": {"text": text}}],
+        )
+        output_blocks = response.get("outputs", [])
+        processed_text = "".join(
+            block.get("text", "") for block in output_blocks if "text" in block
+        )
+        return processed_text or text
+
+    # ------------------------------------------------------------------
+    # invoke_model fallback for non-ARN-versioned model IDs (Module 5)
+    # ------------------------------------------------------------------
+
+    async def _invoke_native(
+        self,
+        messages: List[Dict[str, Any]],
+        model: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+        system_prompt: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Fallback to ``invoke_model()`` for models without ARN-versioned IDs.
+
+        Some Bedrock-hosted models (e.g. Opus 4.8, Fable 5) are not yet
+        available via the Converse envelope and must be called through
+        ``invoke_model()`` using the Anthropic-native request/response
+        payload format directly (``anthropic_version`` +
+        ``messages``/``content`` blocks with ``"type"`` keys — the same
+        shape :class:`~parrot.clients.claude.AnthropicClient` sends).
+
+        Args:
+            messages: Anthropic-native messages (``{"role", "content":
+                [{"type": "text", "text": ...}]}``).
+            model: Bedrock model ID (already translated). Falls back to
+                ``self.model`` translated via :meth:`_translate_model`.
+            max_tokens: Maximum completion tokens.
+            temperature: Sampling temperature.
+            system_prompt: Optional system prompt string.
+
+        Returns:
+            The decoded Anthropic-native response body (``dict``) — NOT the
+            Converse envelope shape.
+        """
+        await self._ensure_client()
+        resolved_model = model or self._translate_model(self.model)
+
+        body: Dict[str, Any] = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": messages,
+        }
+        if system_prompt:
+            body["system"] = system_prompt
+
+        response = await self.client.invoke_model(
+            modelId=resolved_model,
+            body=json.dumps(body),
+            contentType="application/json",
+            accept="application/json",
+        )
+        response_body = await response["body"].read()
+        return json.loads(response_body)
+
     # ------------------------------------------------------------------
     # Public API: ask / ask_stream / resume / invoke
     # ------------------------------------------------------------------
@@ -358,6 +484,11 @@ class BedrockConverseClient(AbstractClient):
         deep_research: bool = False,
         background: bool = False,
         lazy_loading: bool = False,
+        thinking_budget: Optional[int] = None,
+        output_schema: Optional[Dict[str, Any]] = None,
+        prompt_cache: bool = False,
+        guardrail_id: Optional[str] = None,
+        guardrail_version: Optional[str] = None,
     ) -> AIMessage:
         """Ask Bedrock a question via the Converse API, with tool-use loop.
 
@@ -367,6 +498,33 @@ class BedrockConverseClient(AbstractClient):
             background: Not yet supported for Bedrock — logged and ignored.
             lazy_loading: Not yet supported for Bedrock — falls back to
                 eager tool preparation.
+            thinking_budget: When set, enables extended thinking via
+                ``additionalModelRequestFields.thinking`` (Module 5). Only
+                supported by specific models (Claude Sonnet 4 family, etc.);
+                the resulting ``reasoningContent`` blocks (text + opaque
+                ``signature``) are preserved verbatim across tool-use
+                rounds and are available on the returned ``AIMessage`` via
+                ``raw_response`` (no dedicated field — see spec §6).
+            output_schema: Optional raw JSON Schema dict. When provided, a
+                schema-in-system-prompt instruction is injected (Module 5)
+                and the final response text is parsed as JSON into
+                ``AIMessage.structured_output`` (``is_structured=True``).
+                Distinct from ``structured_output`` (which targets a
+                Pydantic/dataclass type via
+                :class:`~parrot.models.outputs.StructuredOutputConfig`) —
+                use this when you only have a raw JSON Schema, not a type.
+            prompt_cache: When ``True``, marks the system prompt as a cache
+                point (Module 5) via ``system=[{"text": ...},
+                {"cachePoint": {"type": "default"}}]`` and
+                ``additionalModelRequestFields.promptCaching``. Cache hit/miss
+                metrics arrive via ``cacheReadInputTokens`` /
+                ``cacheWriteInputTokens`` in ``CompletionUsage.extra_usage``
+                (already surfaced by ``CompletionUsage.from_bedrock()``,
+                TASK-1742).
+            guardrail_id: Per-call guardrail identifier override. Falls back
+                to the identifier passed to ``__init__``.
+            guardrail_version: Per-call guardrail version override. Falls
+                back to the version passed to ``__init__``.
         """
         await self._ensure_client()
 
@@ -408,6 +566,17 @@ class BedrockConverseClient(AbstractClient):
                 f"{resolved_system_prompt}\n\n{schema_instruction}"
                 if resolved_system_prompt else schema_instruction
             )
+        elif output_schema:
+            # Module 5: schema-in-system-prompt structured output from a raw
+            # JSON Schema dict (no Pydantic/dataclass type available).
+            schema_instruction = (
+                "Respond with valid JSON matching this schema: "
+                f"{json.dumps(output_schema)}"
+            )
+            resolved_system_prompt = (
+                f"{resolved_system_prompt}\n\n{schema_instruction}"
+                if resolved_system_prompt else schema_instruction
+            )
 
         payload: Dict[str, Any] = {
             "modelId": resolved_model,
@@ -418,7 +587,32 @@ class BedrockConverseClient(AbstractClient):
             },
         }
         if resolved_system_prompt:
-            payload["system"] = [{"text": resolved_system_prompt}]
+            if prompt_cache:
+                payload["system"] = [
+                    {"text": resolved_system_prompt},
+                    {"cachePoint": {"type": "default"}},
+                ]
+            else:
+                payload["system"] = [{"text": resolved_system_prompt}]
+
+        additional_fields: Dict[str, Any] = {}
+        if thinking_budget:
+            additional_fields["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": thinking_budget,
+            }
+        if prompt_cache:
+            additional_fields["promptCaching"] = {"cachePoint": {"type": "default"}}
+        if additional_fields:
+            payload["additionalModelRequestFields"] = additional_fields
+
+        resolved_guardrail_id = guardrail_id or self._guardrail_id
+        resolved_guardrail_version = guardrail_version or self._guardrail_version
+        if resolved_guardrail_id and resolved_guardrail_version:
+            payload["guardrailConfig"] = {
+                "guardrailIdentifier": resolved_guardrail_id,
+                "guardrailVersion": resolved_guardrail_version,
+            }
 
         if _use_tools and tools and isinstance(tools, list):
             for tool in tools:
@@ -522,6 +716,8 @@ class BedrockConverseClient(AbstractClient):
                     )
             except Exception:
                 final_output = assistant_response_text
+        elif output_schema:
+            final_output = self._parse_json_schema_output(assistant_response_text)
 
         tools_used = [tc.name for tc in all_tool_calls]
         await self._update_conversation_memory(
@@ -572,6 +768,9 @@ class BedrockConverseClient(AbstractClient):
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
         lazy_loading: bool = False,
+        thinking_budget: Optional[int] = None,
+        guardrail_id: Optional[str] = None,
+        guardrail_version: Optional[str] = None,
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream a Bedrock Converse response.
 
@@ -579,6 +778,14 @@ class BedrockConverseClient(AbstractClient):
         events), then a single final :class:`AIMessage` sentinel — the same
         streaming convention followed by every other client
         (:meth:`AnthropicClient.ask_stream`, etc.).
+
+        Args:
+            thinking_budget: See :meth:`ask` — enables extended thinking via
+                ``additionalModelRequestFields.thinking`` (Module 5).
+            guardrail_id: Per-call guardrail identifier override. Falls back
+                to the identifier passed to ``__init__``.
+            guardrail_version: Per-call guardrail version override. Falls
+                back to the version passed to ``__init__``.
 
         Note:
             Tool-use is not resumed mid-stream in this Core implementation —
@@ -621,6 +828,19 @@ class BedrockConverseClient(AbstractClient):
         }
         if resolved_system_prompt:
             payload["system"] = [{"text": resolved_system_prompt}]
+
+        if thinking_budget:
+            payload["additionalModelRequestFields"] = {
+                "thinking": {"type": "enabled", "budget_tokens": thinking_budget}
+            }
+
+        resolved_guardrail_id = guardrail_id or self._guardrail_id
+        resolved_guardrail_version = guardrail_version or self._guardrail_version
+        if resolved_guardrail_id and resolved_guardrail_version:
+            payload["guardrailConfig"] = {
+                "guardrailIdentifier": resolved_guardrail_id,
+                "guardrailVersion": resolved_guardrail_version,
+            }
 
         if tools and isinstance(tools, list):
             for tool in tools:
