@@ -183,8 +183,15 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Created `parrot.outputs.a2ui.renderers` with `RendererCapabilities`
+(interactive/supports_actions/supports_updates/output), the `AbstractA2UIRenderer`
+ABC (async `render(envelope, *, bake=True) -> Any|str`, forward-refs Module 6's
+`RenderedArtifact`), `register_a2ui_renderer(name, capabilities)` decorator, and
+`get_a2ui_renderer(name)` which copies the `EmbeddingRegistry` importlib dispatch:
+registry lookup → `importlib.import_module("parrot.outputs.a2ui_renderers.{name}")`
+→ actionable ImportError naming `ai-parrot-visualizations[a2ui]` (or `[a2ui-pdf]`
+for the `pdf` renderer). 35 tests pass (7 new); ruff clean; no exec/eval; no new deps.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
