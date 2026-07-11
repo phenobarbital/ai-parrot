@@ -181,8 +181,27 @@ When you pick up this task:
 
 *(Agent fills this in when done — MUST include per-client validity % and the retry-budget number handed to TASK-1737)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: Measured validity rates (Claude / Gemini), dominant failure classes, retry budget recommendation.
+**Completed by**: sdd-worker (Claude)   ·   **Status: done-with-issues**
+**Date**: 2026-07-11
+**Measured validity rates**: **NOT measured** — both `AnthropicClient` and
+`GoogleGenAIClient` returned HTTP **404 model-not-found** for every call in this build
+environment (`claude-3-5-sonnet-latest` and `gemini-1.5-pro` are not accessible to the
+available credentials). `runs.jsonl` holds 22 `call_error` rows per client and zero
+genuine fidelity samples. Per the task's explicit instruction I did **not** fabricate
+numbers.
+**Retry-budget number handed to TASK-1737**: **`max_attempts = 3` (1 initial + 2
+catalog-validate retries)** — grounded in the in-repo `OutputFormatter` `max_retries=2`
+precedent (evidence-pending; revisit once live numbers exist). Recorded in `results.md`
+and spec §8 (checkbox checked with the pending-evidence note).
 
-**Deviations from spec**: none | describe if any
+**Notes**: Committed the reproducible 22-prompt set (6 display-UI categories), the
+throwaway harness (`spike_fidelity.py`) using the verified structured-output path +
+catalog LLM-origin classification taxonomy, `runs.jsonl` (the honest 404 outcomes), and
+`results.md`. No client code changed; no secrets committed; no dependency changes. The
+a2ui core suite remains green.
+
+**Deviations from spec**: live validity measurement not obtainable in this environment
+(model access unavailable → 404); harness + prompts + taxonomy + a precedent-grounded
+retry budget are delivered so TASK-1737 is unblocked. Re-run `spike_fidelity.py` with
+valid Anthropic + Google GenAI credentials (and accessible model IDs) to fill in the
+numbers.

@@ -153,7 +153,7 @@
       "feature_id": "FEAT-273",
       "feature": "a2ui-implementation",
       "spec": "sdd/specs/a2ui-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -164,8 +164,8 @@
       "parallelism_notes": "Throwaway spike; needs a real registered component set to measure against. Output = retry budget for TASK-1737.",
       "assigned_to": null,
       "started_at": "2026-07-11T00:48:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1727-spk3-envelope-fidelity-spike.md"
+      "completed_at": "2026-07-11T02:25:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1727-spk3-envelope-fidelity-spike.md"
     },
     {
       "id": "TASK-1728",
