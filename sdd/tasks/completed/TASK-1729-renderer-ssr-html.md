@@ -262,8 +262,23 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Created the satellite `a2ui_renderers/` package (regular `__init__.py`) and
+`SSRHTMLRenderer` subclassing the core `AbstractA2UIRenderer` (never `BaseRenderer`),
+registered as `ssr_html` with capabilities interactive/supports_actions/supports_updates
+=False, output="text/html". `render()` always bakes (via `bake_envelope` → zero live
+bindings), lowers each catalog component to its Basic tree via the registry, and walks
+the Basic tree to escaped, self-contained HTML (all CSS inline). Every data value goes
+through `html.escape`; images with external URLs are emitted as a `data-image-url` data
+attribute (never a loading `src`) to preserve self-containment. Form-like components
+degrade to their lowered "not available" notice; when `DeepLink`s are supplied they
+render as anchors (the only external hrefs). 8 tests pass (incl. e2e
+tool→validate→render, script-injection, self-containment, zero-bindings); ruff clean;
+no exec/eval.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `render()` adds an optional `deep_links` keyword beyond the
+ABC's `(envelope, *, bake=True)` signature so degraded actions can be rendered as
+anchors (the task requires rendering DeepLinks "already attached to the render
+request"); this is an additive optional param, ABC-compatible. Viz tests run with
+`--import-mode=importlib` (shared `tests` package name, per TASK-1728 note).
