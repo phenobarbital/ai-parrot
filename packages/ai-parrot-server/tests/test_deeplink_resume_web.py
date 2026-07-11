@@ -83,6 +83,28 @@ class TestDeepLinkResumeWeb:
         assert "action" not in json.dumps(body2)
         assert "sess" not in json.dumps(body2)
 
+    async def test_landing_does_not_consume_token(self):
+        # GET landing (rendered for link prescanners) must NOT burn the single-use token.
+        service = DeepLinkService(FakeRedis(), base_url="https://app.example")
+        handler = DeepLinkResumeHandler(service, lambda **k: _ok())
+        dl = await service.mint(
+            session_id="s", user_id="u", agent_id="a", channel="web",
+            action_payload={"action": "x", "label": "Approve"},
+        )
+        landing = handler.render_landing(dl.token_id)
+        assert "<form method='post'" in landing
+        assert dl.token_id in landing
+        # Token still consumable after the landing render (not burned by GET/prefetch).
+        body, status = await handler.handle(dl.token_id)
+        assert status == 200 and body["status"] == "resumed"
+
+    async def test_landing_escapes_token(self):
+        service = DeepLinkService(FakeRedis(), base_url="https://app.example")
+        handler = DeepLinkResumeHandler(service, lambda **k: _ok())
+        landing = handler.render_landing('"><script>alert(1)</script>')
+        assert "<script>alert(1)</script>" not in landing
+        assert "&lt;script&gt;" in landing
+
     async def test_build_structured_message_shape(self):
         from parrot.outputs.a2ui.deeplink import ResumePayload
 
