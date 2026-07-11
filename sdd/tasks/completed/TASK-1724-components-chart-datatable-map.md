@@ -280,8 +280,18 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Implemented Chart, DataTable, Map catalog components under
+`catalog/components/` (one module each), each with a JSON Schema derived from the
+`StructuredChartConfig`/`StructuredTableConfig`/`StructuredMapConfig` vocabulary
+(adapted, not imported), embedded `INSTRUCTIONS`, `requires_actions=False`, and a
+pure deterministic `lower()` producing Basic Catalog primitives only (Card/Column/
+Row/Text). Data-model bindings (`{"$bind": "/pointer"}`) pass through lowering
+unresolved. `components/__init__.py` imports the three modules to trigger
+registration. Golden files committed under `tests/outputs/a2ui/golden/`; tests
+assert two-run byte-identity + committed-golden equality, binding pass-through, and
+no ECharts option leakage. 44 tests pass (9 new); ruff clean; no exec/eval.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Golden files were generated from the lowering
+implementation and committed as the regression lock (standard golden-test practice).
