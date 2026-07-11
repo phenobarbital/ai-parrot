@@ -274,10 +274,37 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**navigator_auth mint verdict (REQUIRED)**: usable mint API found? which path
-was implemented (IdP mint vs Redis opaque fallback) and why.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**navigator_auth mint verdict (REQUIRED)**: A usable mint API **DOES exist** —
+`navigator_auth/backends/idp/__init__.py:272` `create_token(data, issuer, expiration,
+audience) -> (jwt, refresh, exp, scheme)` (JWT mint), complementing the proven
+`decode_token` at `stream.py:288`. **However I implemented the pre-approved Redis
+opaque one-shot fallback instead**, for two reasons: (1) the mint lives on a
+navigator_auth IdP instance reachable only server-side — binding core
+`parrot.outputs.a2ui.deeplink` to it would violate the G8 one-way import rule (core
+gains zero deps, imports no auth/server code); (2) the spec keeps the Redis consume
+record for single-use/replay enforcement regardless of mint source, and an opaque token
+(no payload in the URL) is the strongest privacy posture. The URL embeds only a
+`secrets.token_urlsafe(32)` id; the ResumePayload lives in Redis with a TTL and is
+deleted on first consume.
 
-**Deviations from spec**: none | describe if any
+**Notes**: `DeepLinkService.mint/consume` + `ResumePayload` in core `deeplink.py`
+(Redis injected via constructor, mirrors `oauth2_base`). Web resume handler in
+`ai-parrot-server/handlers/deeplink.py`: `DeepLinkResumeHandler.handle(token)` consumes
+the token, builds a structured `a2ui_action_resume` user message, and forwards it via an
+injected resume invoker (wraps the AgentTalk POST `agent_name`/`query`/`session_id`/
+`user_id` contract); `setup_deeplink_routes(app, service, invoker)` registers
+`GET /api/v1/a2ui/resume/web`. Expiry/replay → friendly 410 with no payload echo. Single
+use, expiry, and web round-trip all proven. 4 core + 3 server tests pass; ruff clean;
+zero new core deps; no exec/eval.
+
+**Route registration**: AgentTalk is defined at `handlers/agent.py:102` but its app
+route registration is done dynamically by the server bootstrap (no static `add_view`
+for it found via grep). To avoid destabilizing the bootstrap, I shipped
+`setup_deeplink_routes(app, service, invoker)` as the registration entry point rather
+than editing the app factory; it should be called alongside AgentTalk setup.
+
+**Deviations from spec**: Redis-opaque path chosen over navigator_auth mint (justified
+above — mint is available but coupling core to it breaks G8). Route registration exposed
+as a `setup_*` helper rather than wired into the app bootstrap (documented above).
