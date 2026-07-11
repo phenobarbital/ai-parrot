@@ -221,8 +221,20 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Added `_A2UI_REPLACEMENTS` (single-source-of-truth dict of replaced mode →
+A2UI replacement hint) and `_warn_if_deprecated(mode)` to `formats/__init__.py`, called
+at the top of `get_renderer` (one `DeprecationWarning` per call, naming the A2UI
+replacement). Kept modes are absent from the dict → silent. `get_infographic_html_renderer`
+warns for the HTML path only; `get_renderer(OutputMode.INFOGRAPHIC)` (JSON path) stays
+silent. Zero behavior change (same classes returned, same ValueError on unregistered
+modes). Added docs note `docs/migration/feat-273-a2ui-deprecations.md`. 24 tests pass
+(replaced-mode matrix, kept-mode silence, infographic-HTML-only, unregistered-mode
+ValueError unchanged).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: A pre-existing `E402` lint error in `formats/__init__.py`
+(the `from .base import RenderResult, RenderError` at the file bottom) predates this
+change — confirmed present on `dev`. Per the no-scope-creep rule I did NOT fix it
+(moving it risks a circular import). All MY additions are ruff-clean; no new lint
+introduced.
