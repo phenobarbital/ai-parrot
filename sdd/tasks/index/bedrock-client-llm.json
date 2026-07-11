@@ -90,7 +90,7 @@
       "feature_id": "FEAT-302",
       "feature": "bedrock-client-llm",
       "spec": "sdd/specs/bedrock-client-llm.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "Modifies bedrock.py created by TASK-1745",
       "assigned_to": null,
       "started_at": "2026-07-11T00:46:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1746-advanced-features.md"
+      "completed_at": "2026-07-11T01:32:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1746-advanced-features.md"
     },
     {
       "id": "TASK-1747",
