@@ -111,6 +111,18 @@ class BedrockConverseClient(AbstractClient):
         self._aws_access_key = aws_access_key or AWS_ACCESS_KEY
         self._aws_secret_key = aws_secret_key or AWS_SECRET_KEY
         self._aws_session_token = aws_session_token or AWS_SESSION_TOKEN
+        # Code-review fix (FEAT-302): AbstractClient.__init__ unconditionally
+        # does ``self._fallback_model = kwargs.get('fallback_model', None)``,
+        # which shadows this class's ``_fallback_model`` class attribute with
+        # an instance attribute of ``None`` unless a caller explicitly passes
+        # ``fallback_model=``. Without this, ``_should_use_fallback()`` (and
+        # therefore the capacity-error retry path in ``ask()``) silently
+        # never fires for a normally-constructed client. Pre-existing
+        # base-class behavior (identically affects AnthropicClient) — worked
+        # around here rather than in base.py to stay within this feature's
+        # scope; callers can still override via an explicit ``fallback_model=``
+        # kwarg, which ``setdefault`` will not clobber.
+        kwargs.setdefault('fallback_model', self._fallback_model)
         super().__init__(**kwargs)
 
     # ------------------------------------------------------------------
@@ -913,7 +925,13 @@ class BedrockConverseClient(AbstractClient):
         """
         await self._ensure_client()
 
-        bedrock_messages: List[Dict[str, Any]] = state["messages"]
+        # Code-review fix (FEAT-302): copy rather than alias state["messages"]
+        # — this method appends to bedrock_messages below (and again inside
+        # the tool loop), so binding by reference would mutate the caller's
+        # stored state in place. A retried resume() call against the same
+        # saved state would otherwise accumulate stray entries from the
+        # first attempt. Same pattern pre-exists in AnthropicClient.resume().
+        bedrock_messages: List[Dict[str, Any]] = list(state["messages"])
         tool_call_id = state["tool_call_id"]
         resolved_model = self._translate_model(
             state.get("agent_name", self.model or self.default_model)

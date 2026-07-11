@@ -28,11 +28,15 @@ class TestBedrockErrors:
 
         Note: ``AbstractClient.__init__`` always sets
         ``self._fallback_model = kwargs.get('fallback_model', None)``, which
-        shadows the class-level default (``"claude-haiku-4-5"``) unless a
-        caller explicitly passes ``fallback_model=`` — this is pre-existing
-        base-class behavior (also affects ``AnthropicClient``), not
-        Bedrock-specific, so the test opts in explicitly to exercise the
-        fallback path the way real callers must.
+        would otherwise shadow the class-level default
+        (``"claude-haiku-4-5"``) with ``None`` for a normally-constructed
+        client — pre-existing base-class behavior (also affects
+        ``AnthropicClient``). Fixed locally (code review follow-up) via
+        ``kwargs.setdefault('fallback_model', self._fallback_model)`` in
+        ``BedrockConverseClient.__init__`` — see
+        ``test_bedrock_converse.py::test_fallback_model_defaults_without_explicit_kwarg``.
+        The explicit ``fallback_model=`` kwarg below is now redundant (kept
+        for clarity/documentation of intent) rather than required.
         """
 
         class ThrottlingException(Exception):

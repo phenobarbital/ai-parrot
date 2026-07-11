@@ -37,6 +37,22 @@ class TestBedrockConverseClient:
         client = BedrockConverseClient(model="claude-sonnet-4-5", region="eu-west-1")
         assert client._region == "eu-west-1"
 
+    def test_fallback_model_defaults_without_explicit_kwarg(self):
+        """Code-review regression test: AbstractClient.__init__ unconditionally
+        sets self._fallback_model = kwargs.get('fallback_model', None), which
+        would otherwise shadow the class-level default with None for every
+        normally-constructed client (identically affects AnthropicClient).
+        BedrockConverseClient.__init__ works around this via
+        kwargs.setdefault('fallback_model', self._fallback_model)."""
+        client = BedrockConverseClient(model="claude-sonnet-4-5")
+        assert client._fallback_model == "claude-haiku-4-5"
+
+    def test_fallback_model_explicit_override_respected(self):
+        client = BedrockConverseClient(
+            model="claude-sonnet-4-5", fallback_model="custom-fallback"
+        )
+        assert client._fallback_model == "custom-fallback"
+
     @pytest.mark.asyncio
     async def test_ask_basic(self, mock_bedrock_response):
         client = BedrockConverseClient(model="claude-sonnet-4-5")
@@ -150,6 +166,25 @@ class TestBedrockConverseClient:
             result = await client.resume("session-1", "Sunny, 25C", state)
             assert result.output == "Done."
             assert result.session_id == "session-1"
+
+    @pytest.mark.asyncio
+    async def test_resume_does_not_mutate_caller_state(self):
+        """Code-review regression test: resume() must copy state["messages"]
+        rather than alias it — appending in place would corrupt the
+        caller's stored state, breaking a retried resume() against the same
+        saved state (same pattern pre-exists in AnthropicClient.resume())."""
+        final_response = {
+            "output": {"message": {"role": "assistant", "content": [{"text": "Done."}]}},
+            "stopReason": "end_turn",
+            "usage": {"inputTokens": 15, "outputTokens": 5}
+        }
+        client = BedrockConverseClient(model="claude-sonnet-4-5")
+        original_messages = [{"role": "user", "content": [{"text": "What's the weather?"}]}]
+        state = {"messages": original_messages, "tool_call_id": "tu_1"}
+        with patch.object(client, '_sdk_create', return_value=final_response):
+            await client.resume("session-1", "Sunny, 25C", state)
+        assert len(original_messages) == 1
+        assert state["messages"] is original_messages
 
     @pytest.mark.asyncio
     async def test_invoke(self, mock_bedrock_response):
