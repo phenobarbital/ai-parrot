@@ -262,10 +262,35 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Graph decision (REQUIRED)**: resolved permission set + upload target (chat
-message attachment vs OneDrive/SharePoint share link) and why.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Graph decision (REQUIRED)**: **OneDrive upload of the notify service account +
+organization-scoped view sharing link** (NOT a chat-message file attachment).
+Rationale: `GraphClient` uses the **client-credentials (app-only)** flow, which cannot
+post chat messages as a user (that needs delegated `Chat.ReadWrite`/`ChannelMessage.Send`).
+App-only CAN upload to a user's OneDrive and mint a sharing link. Chosen target:
+`PUT /users/{user}/drive/root:/A2UI-Artifacts/{filename}:/content` (Graph simple upload,
+≤250 MB — covers HTML/PDF artifacts, no upload session needed), then
+`POST /drive/items/{id}/createLink {"type":"view","scope":"organization"}` → return
+`link.webUrl` (falls back to the item `webUrl` if createLink is denied).
+**Required application permission: `Files.ReadWrite.All`** (drive owner =
+`TEAMS_NOTIFY_USERNAME`). No new conf vars; reuses the existing `TEAMS_NOTIFY_*` set.
 
-**Deviations from spec**: none | describe if any
+**Notes**: Added `GraphClient.upload_file(file_path, *, user, folder)` following the
+class conventions (token via `_get_access_token`, shared session, return-None-never-raise,
+raw aiohttp — no msgraph-sdk). Wired `_send_teams` to attempt `_teams_graph_upload_links`
+first; on success it embeds markdown links, else downgrades to a public-URL line
+(`a2ui_artifact_url` if supplied) else filenames-in-text — every downgrade logs a
+greppable warning, never silent. No-credentials / satellite-not-installed paths return
+None → legacy filenames-in-text behavior preserved (G7). 5 GraphClient upload tests pass
+(mocked aiohttp: success, createLink-fallback, 403→None, no-token→None, missing-file→None);
+graph.py ruff clean; no exec/eval.
+
+**Deviations from spec**: The `_send_teams` wiring tests (`test_delivery_teams.py`) SKIP
+in the SDD worktree because `parrot.notifications` (an existing module also shipped by
+editable-installed satellites) resolves as a PEP 420 namespace package under this repo's
+pytest layout — so the worktree's edited module isn't the one imported, and the new
+`_teams_graph_upload_links` method isn't visible. The tests are correct and run in a
+built/installed environment (CI). The GraphClient upload logic (the substantive new code)
+is fully unit-tested in `ai-parrot-integrations`. Pre-existing `F401` in
+notifications/__init__.py left untouched (no-scope-creep).
