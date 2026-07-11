@@ -113,4 +113,45 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `NOVA_SONIC = "nova_sonic"` to `VoiceProvider`
+(`packages/ai-parrot-integrations/src/parrot/voice/models.py`). Noted (and
+did not need to act on) that `AudioFormat.PCM_16K` /
+`AudioFormat.PCM_24K` already match Nova Sonic's 16kHz-in/24kHz-out
+exactly — no new `AudioFormat` entries were needed for the "audio format
+compatibility" acceptance criterion.
+
+**Codebase reality check before implementing**: `VoiceChatHandler`
+(`voice/handler.py`) is transport-only (WebSocket) and has never had any
+`VoiceProvider`-based branching — voice-client construction is hardcoded
+to `GeminiLiveClient` inside `VoiceBot._resolve_llm_config()` in CORE
+`parrot/bots/voice.py` (not ai-parrot-integrations, and not in this task's
+Files-to-Modify list). Since the task explicitly restricts scope to
+`voice/models.py` + `voice/handler.py` + tests (excluding `VoiceBot`'s core
+resolution path and "full end-to-end voice pipeline testing"), I added a
+new, purely additive module-level function `resolve_voice_client_class(provider)`
+in `handler.py` plus a `VoiceChatHandler.resolve_provider_client()`
+staticmethod wrapping it — this satisfies the literal acceptance criterion
+("Provider resolution in VoiceChatHandler recognizes NOVA_SONIC") without
+touching any existing method, `VoiceBot`, or the WebSocket session
+pipeline. `NOVA_SONIC` resolves to `NovaSonicClient` (lazily imported);
+every other currently-declared provider resolves to the existing
+`GeminiLiveClient` default. Wiring this into `VoiceBot`'s actual runtime
+selection (so a real end-to-end Nova Sonic voice session can be started)
+is a natural follow-up but is out of this task's scope as written.
+
+Fixed a stale detail in the task's own Codebase Contract: `VoiceProvider`
+is declared as `class VoiceProvider(Enum):`, not `class VoiceProvider(str, Enum):`
+as the contract stated — corrected in this note rather than the task file
+since it's a one-line inconsistency that doesn't affect any implementation
+choice (`.value` access works identically either way).
+
+Created `packages/ai-parrot-integrations/tests/voice/test_nova_sonic_provider.py`
+(7 tests): the task's 2 scaffolded enum tests, plus 5 more covering
+`resolve_voice_client_class()` for both providers, the `ImportError` when
+`aws_sdk_bedrock_runtime` is missing (deferred to `NovaSonicClient()`
+construction, not class resolution), and `VoiceChatHandler.resolve_provider_client()`
+recognizing `NOVA_SONIC` while leaving `GOOGLE_LIVE` unchanged. All 7 pass;
+`ruff check` clean (required adding a `TYPE_CHECKING`-guarded import for the
+`VoiceProvider` forward-reference type hint to satisfy F821). Full
+`tests/voice/` suite re-run: 107 passed, 1 skipped (pre-existing skip,
+unrelated) — no regressions.
