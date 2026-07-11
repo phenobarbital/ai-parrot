@@ -523,7 +523,21 @@ class NotificationMixin:
         return result
 
     async def _send_slack(self, notify_args: Dict[str, Any]) -> Any:
-        """Send Slack notification."""
+        """Send Slack notification.
+
+        FEAT-273: Slack has no file upload (spec Non-Goal). When an A2UI delivery
+        supplies a public artifact URL via the ``a2ui_artifact_url`` arg, it is appended
+        to the message text as a downgrade, with a degraded-delivery warning logged.
+        """
+        # FEAT-273: pop the A2UI public-URL hint (never forward it to Slack's send()).
+        a2ui_url = notify_args.pop("a2ui_artifact_url", None)
+        if a2ui_url:
+            base = notify_args.get("message", "") or ""
+            notify_args["message"] = f"{base}\n\nView the full artifact: {a2ui_url}".lstrip()
+            self.logger.warning(
+                "A2UI degraded delivery: Slack downgraded to public-URL line (%s).",
+                a2ui_url,
+            )
         from notify.providers.slack import Slack
         slack = Slack()
         async with slack as conn:
