@@ -238,4 +238,68 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `packages/ai-parrot/src/parrot/clients/bedrock.py` with
+`BedrockConverseClient(AbstractClient)` implementing all 5 abstract methods
+(`get_client`, `ask`, `ask_stream`, `resume`, `invoke`) plus the
+Scope-listed helpers (`_sdk_create`/`_sdk_stream` thin wrappers,
+`_prepare_messages`/`_to_bedrock_messages` conversion, `_prepare_tools`
+override using `ToolFormat.BEDROCK`, `_is_capacity_error` override,
+`_translate_model` via `bedrock_models.translate()`).
+
+Design notes / deviations worth flagging for review:
+- `AbstractClient._prepare_conversation_context()` (inherited, unmodified)
+  produces Anthropic-shaped content blocks (`{"type": "text", ...}`) and — a
+  pre-existing base-class quirk — duplicates the current prompt as a second
+  user message when there's no conversation history. Rather than touching
+  shared base-class code (out of scope), `ask()`/`ask_stream()` run the
+  resulting messages through a new `_to_bedrock_messages()` normalizer that
+  maps every block to Bedrock Converse shape (`{"text": ...}` /
+  `{"toolUse": ...}` / `{"toolResult": ...}`) and drops unsupported `"file"`
+  blocks (with a warning) before sending to `converse()`.
+- `_prepare_messages(prompt, files)` is overridden with the same signature
+  as the base method (since `_prepare_conversation_context()` calls it
+  internally) but now returns Bedrock-shaped output directly.
+- File/image attachments are explicitly NOT supported yet in this Core
+  implementation — a warning is logged and files are skipped. Not covered
+  by acceptance criteria or scope; flagged here rather than guessing an
+  encoding.
+- `ask_stream()` does not resume tool-use mid-stream (the spec's acceptance
+  criteria only requires "str chunks then AIMessage sentinel," which is
+  satisfied); a docstring note flags `ask()` as the tool-use-capable path.
+- `reasoningContent` blocks are preserved by re-appending the full
+  `output.message.content` verbatim in the assistant turn during the tool
+  loop (never reconstructed) — verified by a dedicated test
+  (`test_ask_reasoning_content_preserved`) asserting the `signature` field
+  survives into the second `converse()` payload.
+- `invoke()` supports `output_type`/`structured_output` via the inherited
+  base fallback (schema-in-system-prompt) — Bedrock-native
+  `outputConfig.textFormat` is deferred to TASK-1746 per the spec's Module 5
+  scope.
+- Constructor accepts `guardrail_id`/`guardrail_version` per the spec's
+  public interface (stored on `self`, not yet applied to requests) since
+  TASK-1746 extends this same file/class with guardrail behavior.
+
+Verified `aioboto3` (13.2.0) and `botocore` (1.35.36) are already installed
+in this venv even though not yet declared in `pyproject.toml` (TASK-1747
+adds the formal `bedrock-native` extra) — `get_client()` builds a real
+(but never network-called, since `_sdk_create`/`_sdk_stream` are mocked in
+tests) aioboto3 bedrock-runtime client without requiring valid AWS
+credentials.
+
+Created `packages/ai-parrot/tests/clients/test_bedrock_converse.py` — 13
+tests covering client_type/region resolution, `ask()` basic + tool-use loop
++ reasoningContent preservation, `ask_stream()` chunk/sentinel contract,
+`resume()`, `invoke()`, model-ID translation end-to-end, and
+`_is_capacity_error()` (both ThrottlingException-by-name and
+botocore ClientError `.response["Error"]["Code"]` shapes). All 13 pass;
+`ruff check` clean; no regressions in `tests/clients/` (2 pre-existing,
+unrelated failures in `test_google_computer_use.py` confirmed via
+`git stash` diff — not introduced by this task).
+
+Also fixed a bookkeeping bug from TASK-1742/1743/1744: those "sdd: complete
+TASK-XXXX" commits added the `completed/` file but never staged the
+deletion of the `active/` path (moved via bash `mv`, never `git add`'d) —
+so the active/ file remained tracked in git despite being physically
+removed. Fixed in a follow-up commit using proper `git add` on the deleted
+paths; used `git mv` for this task's own move to avoid repeating the
+mistake.
