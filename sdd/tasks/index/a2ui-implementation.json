@@ -113,7 +113,7 @@
       "feature_id": "FEAT-273",
       "feature": "a2ui-implementation",
       "spec": "sdd/specs/a2ui-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "File-disjoint component modules; parallel with TASK-1724/1726.",
       "assigned_to": null,
       "started_at": "2026-07-11T00:48:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1725-components-card-kpicard-timeline-form.md"
+      "completed_at": "2026-07-11T01:23:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1725-components-card-kpicard-timeline-form.md"
     },
     {
       "id": "TASK-1726",

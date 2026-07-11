@@ -270,10 +270,23 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-Record here whether Form shipped a degraded `lower()` (registry-mandated) or
-registered schema-only.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Implemented Card, KPICard, Timeline (display-only, `requires_actions=False`)
+and Form (`requires_actions=True`) under `catalog/components/`, each with JSON Schema,
+`INSTRUCTIONS`, and a pure deterministic `lower()` to Basic Catalog primitives. Timeline
+preserves input event order (never re-sorted). Form's instructions explicitly state it
+is unavailable on display-only surfaces in v1. Golden files committed; determinism +
+committed-golden equality asserted. 55 tests pass; ruff clean; no exec/eval.
 
-**Deviations from spec**: none | describe if any
+**Form lowering decision**: TASK-1721's registry enforces the mandatory `lower()`
+contract literally (a class without a callable `lower()` cannot register), so Form
+SHIPS a degraded read-only `lower()` — a Column of field-label Texts plus a
+"form not available on this surface" notice (spec §7) — with a committed golden file.
+
+**Deviations from spec**: Also renamed a colliding dummy component `"Card"` →
+`"DisplayOnlyDummy"` in `test_catalog.py` (TASK-1721's test file). That test's
+`cleanup_catalog` teardown called `unregister_component("Card")`, which removed the
+real Card component registered by this task and broke `test_card_registered_in_catalog`
+under full-suite ordering. The rename is a test-isolation fix only (no production code
+touched).
