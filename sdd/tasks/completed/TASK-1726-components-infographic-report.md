@@ -265,12 +265,42 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-11
+**Notes**: Implemented Infographic and Report composite components under
+`catalog/components/`, each with JSON Schema (title/subtitle/theme/sections for
+Infographic; title/metadata/summary/sections for Report), `INSTRUCTIONS`,
+`requires_actions=False`, and a pure deterministic `lower()`. Sections carry a
+`components` list of `{component, properties}` descriptors; lowering delegates each
+nested child to its registered `lower()` via the catalog registry (`get_component`),
+never inlining sibling logic. Section order preserved; data-model bindings pass
+through unresolved. Golden files committed; 64 tests pass; ruff clean; no exec/eval.
 
-**OQ-C fidelity criteria (REQUIRED — spec §8)**: propose the golden-file
-review criteria for minimum acceptable Infographic/Report lowering
-degradation here.
+**OQ-C fidelity criteria (spec §8) — PROPOSED**: A lowered Infographic/Report tree
+is acceptable iff, comparing against the source envelope:
+1. **Title survival** — the top-level `title` (and `subtitle`, if present) appears as
+   a `Text` node with the corresponding `role`.
+2. **Section completeness** — every source section produces exactly one `Column`
+   node with `role="section"`; count(sections_in) == count(section columns_out).
+3. **Section ordering** — section `Column` nodes appear in authored order, tagged
+   with a monotonic `index` (0..n-1). Never re-sorted.
+4. **Heading & text survival** — each section's `heading` and `text` survive as
+   `Text` nodes (`role="heading"`/`role="body"`).
+5. **Nested-child survival** — every nested catalog child yields a lowered subtree
+   (delegated); count(children_in) == count(lowered child subtrees_out) per section.
+6. **No silent data drop** — every KPI value, chart axis label, and table column
+   title present in the source appears somewhere in the lowered tree (Text or
+   preserved binding); the Report `summary` survives as a `role="summary"` Text.
+7. **Binding preservation** — `{"$bind": "/pointer"}` expressions are copied verbatim
+   (bake pass resolves them later); none are dropped or pre-resolved.
+8. **Basic-primitive purity** — lowered nodes use only Basic Catalog component names
+   (Card/Column/Row/Text/Image); no renderer-specific payloads (ECharts option, folium
+   markup) appear.
+A golden-file diff that violates any of 1–8 must be rejected in review. These
+criteria are phrased to graduate directly into the spec §5 catalog-authoring docs.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Nested children are modeled as inline
+`{component, properties}` descriptors inside `sections[].components` (rather than
+wire-level id references) so that `lower(component, data_model)` stays a
+self-contained pure function — consistent with the composite delegation the task
+requires.

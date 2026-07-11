@@ -133,7 +133,7 @@
       "feature_id": "FEAT-273",
       "feature": "a2ui-implementation",
       "spec": "sdd/specs/a2ui-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "File-disjoint component modules; parallel with TASK-1724/1725. Proposes OQ-C fidelity criteria.",
       "assigned_to": null,
       "started_at": "2026-07-11T00:48:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1726-components-infographic-report.md"
+      "completed_at": "2026-07-11T01:25:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1726-components-infographic-report.md"
     },
     {
       "id": "TASK-1727",
