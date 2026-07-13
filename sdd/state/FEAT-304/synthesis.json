@@ -39,9 +39,9 @@
     "rationale": "Localization and patterns are high-confidence and the scope is a well-bounded port; a spec can lock down the toolkit-vs-single-tool choice and the return contract."
   },
   "unknowns": [
-    { "id": "U1", "question": "Expose as a LeadIQToolkit with three tools (search_company/employees/flat) or a single LeadIQTool with a search_type arg?", "resolves_claims": ["C6"] },
-    { "id": "U2", "question": "Return contract: structured dict/JSON records (recommended, LLM-friendly) vs list-of-records mirroring the flowtask DataFrame rows?", "resolves_claims": ["C5"] },
-    { "id": "U3", "question": "Is LEADIQ_API_KEY expected to be pre-Base64-encoded for the 'Basic' header (flowtask passes it raw), or should the tool encode 'apiKey:' itself?", "resolves_claims": ["C4"] }
+    { "id": "U1", "question": "Expose as a LeadIQToolkit with three tools (search_company/employees/flat) or a single LeadIQTool with a search_type arg?", "resolves_claims": ["C6"], "user_answer": "Toolkit (LeadIQToolkit with three @tool_schema methods)." },
+    { "id": "U2", "question": "Return contract: structured dict/JSON records (recommended, LLM-friendly) vs list-of-records mirroring the flowtask DataFrame rows?", "resolves_claims": ["C5"], "user_answer": "Return a structured ToolResult." },
+    { "id": "U3", "question": "Is LEADIQ_API_KEY expected to be pre-Base64-encoded for the 'Basic' header (flowtask passes it raw), or should the tool encode 'apiKey:' itself?", "resolves_claims": ["C4"], "user_answer": "Already Base64-encoded; inject verbatim as 'Basic {LEADIQ_API_KEY}'. Stored in .env." }
   ],
   "claims": [
     { "id": "C1", "text": "Source is a GraphQL client with 3 query types over api.leadiq.com/graphql", "evidence": ["F001"], "confidence": "high" },

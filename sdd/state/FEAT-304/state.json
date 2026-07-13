@@ -45,9 +45,9 @@
       "claims_low": 0
     },
     "qa": {
-      "status": "pending",
+      "status": "complete",
       "questions_total": 3,
-      "questions_answered": 0
+      "questions_answered": 3
     },
     "output": {
       "proposal_path": "sdd/proposals/leadiqtool.proposal.md",

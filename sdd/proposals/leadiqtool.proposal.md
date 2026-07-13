@@ -4,7 +4,7 @@ title: Port flowtask's LeadIQ GraphQL component into ai-parrot-tools as a LeadIQ
 slug: leadiqtool
 type: feature
 mode: enrichment
-status: discussion
+status: review
 source:
   kind: inline
   jira_key: null
@@ -159,12 +159,12 @@ effort.
 | C1 | Source is a GraphQL client with 3 query types over `api.leadiq.com/graphql` | F001 | high | direct read of query consts + `_execute_query` |
 | C2 | `AbstractToolkit` + `@tool_schema` is the right host pattern | F004 | high | `CompanyInfoToolkit` is a direct analog |
 | C3 | `HTTPService.session` ports the POST transport verbatim | F005, F001 | high | identical signature already called by source |
-| C4 | Auth is `Basic {LEADIQ_API_KEY}` + `apollo-require-preflight` | F001 | medium | read from source; encoding semantics unverified (U3) |
-| C5 | Return contract must change from DataFrame to structured data | F001, F003 | high | tool convention vs flow convention |
-| C6 | Toolkit-with-3-tools preferable to a single tool | F004 | medium | design judgment; user said "LeadIQTool" (singular) |
+| C4 | Auth is `Basic {LEADIQ_API_KEY}` (key already Base64) + `apollo-require-preflight` | F001 | high | encoding confirmed by user (U3 resolved) |
+| C5 | Return contract is a structured `ToolResult` (no DataFrame) | F001, F003 | high | user-confirmed (U2 resolved) |
+| C6 | `LeadIQToolkit` with 3 tools (not a single tool) | F004 | high | user-confirmed (U1 resolved) |
 | C7 | No existing LeadIQ **API** client; only a scraping variant | F006 | high | exhaustive grep of `src/` |
 
-Distribution: **5** high, **2** medium, **0** low.
+Distribution: **7** high, **0** medium, **0** low.
 
 ---
 
@@ -172,35 +172,32 @@ Distribution: **5** high, **2** medium, **0** low.
 
 ### Resolved (during proposal phase)
 
-- *(none — proposal generated non-interactively; questions deferred to the spec gate.)*
+- [x] **U1 — Tool shape.** — *Resolved*: **Toolkit.** Build
+  `LeadIQToolkit(AbstractToolkit)` with three `@tool_schema` async tools
+  (`search_company` / `search_employees` / `search_flat`).
+  *Resolves*: C6
+- [x] **U2 — Return contract.** — *Resolved*: **Structured `ToolResult`.**
+  Each tool returns a `ToolResult` wrapping the homogenized dict (company) /
+  list[dict] (people) — no pandas DataFrame.
+  *Resolves*: C5
+- [x] **U3 — Auth encoding.** — *Resolved*: **`LEADIQ_API_KEY` is already
+  Base64-encoded**; inject it verbatim as `Authorization: Basic
+  {LEADIQ_API_KEY}` (match flowtask). Key stored in the repo `.env`
+  (gitignored) and read via `navconfig` `config.get("LEADIQ_API_KEY")`.
+  *Resolves*: C4
 
 ### Unresolved (defer to spec / implementation)
 
-- [ ] **U1 — Tool shape: `LeadIQToolkit` (3 tools) vs a single `LeadIQTool`
-  with a `search_type` arg?** — *Owner*: tbd · *Blocks*: C6
-  *Plausible answers*: a) toolkit with `search_company`/`search_employees`/`search_flat`
-  (recommended — clearer tool descriptions for the LLM) · b) one `AbstractTool`
-  with `search_type: Literal["company","employees","flat"]` (matches the literal
-  "LeadIQTool" wording and the source's `type` param).
-- [ ] **U2 — Return contract: structured dict/JSON vs list-of-records mirroring
-  the DataFrame rows?** — *Owner*: tbd · *Blocks*: C5
-  *Plausible answers*: a) `ToolResult` wrapping a homogenized dict (company) /
-  list[dict] (people) · b) raw list of record dicts · c) both, via a
-  `return_json`/format flag like `CompanyInput`.
-- [ ] **U3 — Is `LEADIQ_API_KEY` pre-Base64-encoded for the `Basic` header, or
-  should the tool encode `apiKey:` itself?** — *Owner*: tbd · *Blocks*: C4
-  *Plausible answers*: a) env holds the already-encoded token (match flowtask
-  verbatim) · b) env holds the raw key → tool does `base64(f"{key}:")`.
+- *(none — all open questions resolved.)*
 
 ---
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-304`** — *Rationale*: localization, host pattern, and
-transport are all high-confidence (C1–C3, C5, C7); the port is well-bounded.
-A spec can lock the two design forks (U1 tool shape, U2 return contract) and
-the auth detail (U3) into acceptance criteria, then decompose into 2–3 tasks
-(module + models, registry wiring, tests).
+**`/sdd-spec FEAT-304`** — *Rationale*: all claims are now high-confidence and
+all three design forks are resolved (U1 toolkit, U2 `ToolResult`, U3 Base64
+auth). The spec just needs to encode the settled decisions as acceptance
+criteria and decompose into 2–3 tasks (module + models, registry wiring, tests).
 
 ### Alternatives
 
