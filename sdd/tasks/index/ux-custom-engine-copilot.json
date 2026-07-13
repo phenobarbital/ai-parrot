@@ -14,7 +14,7 @@
       "feature_id": "FEAT-303",
       "feature": "ux-custom-engine-copilot",
       "spec": "sdd/specs/ux-custom-engine-copilot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation module — every other task imports it; nothing to parallelize against.",
       "assigned_to": null,
       "started_at": "2026-07-13T22:53:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1751-semantic-ui-model.md"
+      "completed_at": "2026-07-13T23:26:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1751-semantic-ui-model.md"
     },
     {
       "id": "TASK-1752",
