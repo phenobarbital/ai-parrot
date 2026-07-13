@@ -1,5 +1,5 @@
 {
-  "feat_id": "FEAT-303",
+  "feat_id": "FEAT-305",
   "mode": "enrichment",
   "summary_oneline": "Port flowtask's CompanyScraper into an ai-parrot CompanyResearch toolkit: agent sends a company name, gets a structured CompanyProfile scraped from LeadIQ/RocketReach/SICCode/VisualVisitor/ZoomInfo/Explorium",
   "overall_confidence": "medium",
@@ -79,7 +79,7 @@
     {"id": "C10", "claim": "Selector-coupled parsers may already be stale vs live site markup", "evidence": ["F003"], "confidence": "low", "reasoning": "cannot verify without live requests; treat ported selectors as best-effort"}
   ],
   "recommended_next_command": {
-    "command": "/sdd-spec FEAT-303",
+    "command": "/sdd-spec FEAT-305",
     "rationale": "Localization and constraints are high-confidence and the architecture has no real fork (port + adapt onto existing HTTPService/AbstractToolkit); the three unknowns are product defaults resolvable in Q&A, not architectural explorations."
   },
   "budget_status": {"truncated": false, "files_read": 14, "grep_calls": 9, "git_calls": 1, "queries_skipped": 1, "note": "Q012 stub_credentialed_tool.py skipped — WorkIQTool already covers the credentialed-tool pattern"}

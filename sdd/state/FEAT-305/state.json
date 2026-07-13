@@ -1,5 +1,5 @@
 {
-  "feat_id": "FEAT-303",
+  "feat_id": "FEAT-305",
   "slug": "companyresearch-tool",
   "phase": "committed",
   "mode": "enrichment",
@@ -10,7 +10,7 @@
   "source": {
     "kind": "inline",
     "jira_key": null,
-    "path": "sdd/state/FEAT-303/source.md",
+    "path": "sdd/state/FEAT-305/source.md",
     "summary_oneline": "CompanyResearchTool — agent tool to extract structured company info from LeadIQ, RocketReach, SICCode, VisualVisitor, ZoomInfo, Explorium; port of flowtask CompanyScraper."
   },
   "budget": {
@@ -37,6 +37,6 @@
   "errors": [],
   "resume_hint": {
     "next_phase": "committed",
-    "next_action": "Run /sdd-spec FEAT-303"
+    "next_action": "Run /sdd-spec FEAT-305"
   }
 }

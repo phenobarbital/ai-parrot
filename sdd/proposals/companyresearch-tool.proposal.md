@@ -1,5 +1,5 @@
 ---
-id: FEAT-303
+id: FEAT-305
 title: CompanyResearchToolkit — structured company info from LeadIQ/RocketReach/SICCode/VisualVisitor/ZoomInfo/Explorium (port of flowtask CompanyScraper)
 slug: companyresearch-tool
 type: feature
@@ -13,24 +13,24 @@ source:
   summary_oneline: CompanyResearchTool — agent tool to extract structured company info from six public sources; port of flowtask CompanyScraper.
 overall_confidence: medium
 base_branch: dev
-research_state: sdd/state/FEAT-303/
+research_state: sdd/state/FEAT-305/
 created: 2026-07-13
 updated: 2026-07-13
 ---
 
-# FEAT-303 — CompanyResearchToolkit (port of flowtask CompanyScraper)
+# FEAT-305 — CompanyResearchToolkit (port of flowtask CompanyScraper)
 
 > **Mode**: enrichment
 > **Confidence**: medium
 > **Source**: `inline`
-> **Audit**: [`sdd/state/FEAT-303/`](../state/FEAT-303/)
+> **Audit**: [`sdd/state/FEAT-305/`](../state/FEAT-305/)
 
 ---
 
 ## 0. Origin
 
 The original request, preserved verbatim. Full source at
-`sdd/state/FEAT-303/source.md`.
+`sdd/state/FEAT-305/source.md`.
 
 > Create a CompanyResearchTool allow us to extract company information from
 > several sources as RocketReach or ZoomInfo, using the code from flowtask as
@@ -68,7 +68,7 @@ for ZoomInfo's anti-bot wall.
 
 ## 2. Codebase Findings
 
-> Grounded in `sdd/state/FEAT-303/findings/`. No fabricated paths or symbols.
+> Grounded in `sdd/state/FEAT-305/findings/`. No fabricated paths or symbols.
 
 ### 2.1 Localization
 
@@ -226,17 +226,17 @@ Distribution: **6** high, **3** medium, **1** low.
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-303`** — *Rationale*: localization and constraints are
+**`/sdd-spec FEAT-305`** — *Rationale*: localization and constraints are
 high-confidence, all product forks (U1–U3) are resolved, and the architecture
 has no real alternative to explore: port + adapt onto existing
 `HTTPService`/`AbstractToolkit`.
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-303`** — only if you want to explore paid-API-based
+- **`/sdd-brainstorm FEAT-305`** — only if you want to explore paid-API-based
   sources (official RocketReach/ZoomInfo APIs + credential broker) as an
   alternative architecture to scraping.
-- **`/sdd-task FEAT-303`** — not recommended; multi-file feature (toolkit +
+- **`/sdd-task FEAT-305`** — not recommended; multi-file feature (toolkit +
   model + 6 extractors + browser fetcher + fixtures) warrants a spec.
 
 ---
@@ -245,11 +245,11 @@ has no real alternative to explore: port + adapt onto existing
 
 | Artifact | Path |
 |----------|------|
-| State checkpoints | `sdd/state/FEAT-303/state.json` |
-| Source (raw) | `sdd/state/FEAT-303/source.md` |
-| Research plan | `sdd/state/FEAT-303/research_plan.json` |
-| Findings (digests) | `sdd/state/FEAT-303/findings/F001-*.md` … `F008-*.md` |
-| Synthesis (JSON) | `sdd/state/FEAT-303/synthesis.json` |
+| State checkpoints | `sdd/state/FEAT-305/state.json` |
+| Source (raw) | `sdd/state/FEAT-305/source.md` |
+| Research plan | `sdd/state/FEAT-305/research_plan.json` |
+| Findings (digests) | `sdd/state/FEAT-305/findings/F001-*.md` … `F008-*.md` |
+| Synthesis (JSON) | `sdd/state/FEAT-305/synthesis.json` |
 
 **Budget consumed** (profile: default):
 - Files read: 14 / 40
