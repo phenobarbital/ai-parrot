@@ -1,7 +1,7 @@
 {
   "feat_id": "FEAT-303",
   "slug": "companyresearch-tool",
-  "phase": "synthesis_complete",
+  "phase": "committed",
   "mode": "enrichment",
   "type": "feature",
   "base_branch": "dev",
@@ -32,7 +32,7 @@
     "research": { "status": "done", "findings": 8, "queries_skipped": 1, "truncated": false },
     "synthesis": { "status": "done", "claims_high": 6, "claims_medium": 3, "claims_low": 1, "unknowns": 3, "lint": "pass" },
     "qa": { "status": "done", "questions_total": 3, "questions_answered": 3 },
-    "output": { "proposal_path": "sdd/proposals/companyresearch-tool.proposal.md" }
+    "output": { "proposal_path": "sdd/proposals/companyresearch-tool.proposal.md", "commit_sha": "8cf6c1e32" }
   },
   "errors": [],
   "resume_hint": {
