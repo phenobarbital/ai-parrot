@@ -115,9 +115,17 @@ Standard flow: verify TASK-1756 is completed → implement → run `ruff` → mo
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude, Sonnet 5)
+**Date**: 2026-07-13
+**Notes**: Created `packages/ai-parrot-tools/src/parrot_tools/leadiq/__init__.py`
+exporting `LeadIQToolkit` and `LeadIQSearchInput` via `__all__` (mirrors
+`company_info/__init__.py`). Added a single manual `TOOL_REGISTRY` entry
+`"leadiq": "parrot_tools.leadiq.tool.LeadIQToolkit"` next to `"company_info"`
+in `parrot_tools/__init__.py`; `git diff` on that file shows only the one
+added line, no other entries touched or reordered. Verified: `ruff check`
+clean on both files (pre-existing F401 warnings on `parrot_tools/__init__.py`
+line 10 predate this change — confirmed via `git stash` — out of scope,
+left untouched); manual smoke test confirms `TOOL_REGISTRY["leadiq"]`
+resolves via `importlib` and `from parrot_tools.leadiq import LeadIQToolkit,
+LeadIQSearchInput` succeeds.
+**Deviations from spec**: none.

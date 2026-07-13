@@ -32,7 +32,7 @@
       "feature_id": "FEAT-304",
       "feature": "leadiqtool",
       "spec": "sdd/specs/leadiqtool.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Imports LeadIQToolkit from TASK-1756 and edits the shared package __init__.py; must follow TASK-1756.",
       "assigned_to": null,
       "started_at": "2026-07-13T23:35:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1757-leadiq-package-wiring.md"
+      "completed_at": "2026-07-13T23:41:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1757-leadiq-package-wiring.md"
     },
     {
       "id": "TASK-1758",
