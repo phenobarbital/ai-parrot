@@ -14,7 +14,7 @@
       "feature_id": "FEAT-304",
       "feature": "leadiqtool",
       "spec": "sdd/specs/leadiqtool.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundational module; TASK-1757 and TASK-1758 both import from it. Nothing else in the feature can start first.",
       "assigned_to": null,
       "started_at": "2026-07-13T23:35:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1756-leadiq-toolkit-core.md"
+      "completed_at": "2026-07-13T23:41:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1756-leadiq-toolkit-core.md"
     },
     {
       "id": "TASK-1757",

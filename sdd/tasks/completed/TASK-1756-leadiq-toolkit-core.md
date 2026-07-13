@@ -207,9 +207,29 @@ Completion Note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude, Sonnet 5)
+**Date**: 2026-07-13
+**Notes**: Implemented `LeadIQToolkit` and `LeadIQSearchInput` in
+`packages/ai-parrot-tools/src/parrot_tools/leadiq/tool.py`, porting the three
+GraphQL query constants and the three `_process_*_response` transforms
+verbatim from `flowtask/components/LeadIQ.py`, adapting only
+`self._logger` → `self.logger` and dropping `self._counter`. Composed
+`self.http = HTTPService(base_url=self.base_url, **kwargs)` (no
+`HTTPService` inheritance). `_build_headers()` injects `LEADIQ_API_KEY`
+verbatim (no re-encoding) with `apollo-require-preflight: true`.
+`_execute_query` unpacks `(result, error)` from `self.http.session(...)`.
+Each of the three tools checks for a missing API key up front and wraps
+`_execute_query`/processing in `try/except` so no unhandled exception can
+escape a tool call — every path returns a `ToolResult`. Verified via
+`ruff check` (clean) and a manual import/`get_tools()` smoke test
+confirming exactly `leadiq_search_company`, `leadiq_search_employees`,
+`leadiq_search_flat` are exposed. Full pytest suite deferred to TASK-1758.
+**Deviations from spec**: none. One implementation judgment call not
+fully specified by the spec: when `_process_employee_response` /
+`_process_flat_response` return `None` (flowtask's ported logic conflates
+"no companies/people found" with "unexpected response structure" — both
+log a warning and return `None`), this toolkit maps that case to
+`ToolResult(success=True, result=[], metadata={"count": 0, ...})` rather
+than an error, treating it as "no results" rather than failure. This is
+not contradicted by any acceptance criterion but is worth flagging for
+review.
