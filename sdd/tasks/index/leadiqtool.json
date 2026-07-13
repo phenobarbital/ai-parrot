@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-13T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-13T23:44:31+00:00",
   "tasks": [
     {
       "id": "TASK-1756",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-304",
       "feature": "leadiqtool",
       "spec": "sdd/specs/leadiqtool.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Tests both the toolkit (TASK-1756) and the registry entry (TASK-1757); runs last.",
       "assigned_to": null,
       "started_at": "2026-07-13T23:35:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1758-leadiq-tests.md"
+      "completed_at": "2026-07-13T23:44:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1758-leadiq-tests.md"
     }
   ]
 }
