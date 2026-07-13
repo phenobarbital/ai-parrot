@@ -389,9 +389,16 @@ class GoogleGeneration:
             elif speaker.role == "interviewee":
                 interviewee = speaker
 
-        if not interviewer or not interviewee:
-            raise ValueError("Must have exactly one interviewer and one interviewee.")
-        system_instruction = report_data.system_instruction or f"""
+        # The interviewer/interviewee requirement only applies to the
+        # auto-generated two-person template below. A caller-supplied
+        # system_instruction (e.g. a single-narrator monologue prompt) fully
+        # determines the script format on its own, so it's exempt.
+        if report_data.system_instruction:
+            system_instruction = report_data.system_instruction
+        else:
+            if not interviewer or not interviewee:
+                raise ValueError("Must have exactly one interviewer and one interviewee.")
+            system_instruction = f"""
 You are a scriptwriter. Your task is {system_prompt} for a conversation between {interviewer.name} and {interviewee.name}. "
 
 **Source Report:**"
