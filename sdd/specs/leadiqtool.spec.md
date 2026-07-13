@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-304
 **Date**: 2026-07-13
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 > **Prior exploration**: [`sdd/proposals/leadiqtool.proposal.md`](../proposals/leadiqtool.proposal.md)
