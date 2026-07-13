@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-305
 **Date**: 2026-07-13
 **Author**: Jesus Lara (research + Q&A via /sdd-proposal, /sdd-spec)
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-tools next minor
 
 > **Prior exploration**: `sdd/proposals/companyresearch-tool.proposal.md`
