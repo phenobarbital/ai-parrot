@@ -71,11 +71,11 @@ dev = [
 ]
 
 [tool.uv]
-# Project is Linux-only (see classifiers). Restricting the lock to Linux/macOS
-# avoids Windows-specific resolution splits that pull incompatible dep combos.
+# Project is Linux-only (see classifiers). Restricting the lock to Linux
+# avoids non-Linux resolution splits that pull incompatible dep combos
+# (e.g. async-notify[all]>=1.5.2 ships no macOS wheels).
 environments = [
     "sys_platform == 'linux'",
-    "sys_platform == 'darwin'",
 ]
 
 # `gemma4` pins transformers>=5.0 (and huggingface_hub>=1.0), which is
@@ -156,6 +156,11 @@ override-dependencies = [
     # The intersection is the 2.33 series, so pin requests there to let arxiv and
     # flowtask co-resolve cleanly without forcing arxiv's ceiling open.
     "requests>=2.33,<2.34",
+    # flowtask 5.12.3+ pins zeep[async]==4.3.2, but the agents extra pins
+    # ==4.3.3. Both are exact pins, and the `all` extra co-resolves agents +
+    # flowtask in one split, so they collide. Patch-level diff; force a single
+    # version (4.3.3, matching agents) so both extras resolve.
+    "zeep[async]==4.3.3",
 ]
 constraint-dependencies = [
     # Narrow the otel instrumentation search space. openlit pulls 15+ otel
