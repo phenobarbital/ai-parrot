@@ -32,7 +32,7 @@
       "feature_id": "FEAT-303",
       "feature": "ux-custom-engine-copilot",
       "spec": "sdd/specs/ux-custom-engine-copilot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Imports semantic.py from TASK-1751; sequential.",
       "assigned_to": null,
       "started_at": "2026-07-13T22:53:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1752-adaptive-card-renderer.md"
+      "completed_at": "2026-07-13T23:53:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1752-adaptive-card-renderer.md"
     },
     {
       "id": "TASK-1753",
