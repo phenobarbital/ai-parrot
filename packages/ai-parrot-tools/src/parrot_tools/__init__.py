@@ -17,6 +17,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "msteams": "parrot_tools.msteams.MSTeamsToolkit",
     "zoom": "parrot_tools.zoomtoolkit.ZoomUsToolkit",
     "company_info": "parrot_tools.company_info.tool.CompanyInfoToolkit",
+    "leadiq": "parrot_tools.leadiq.tool.LeadIQToolkit",
     "troc": "parrot_tools.troc.tool.TROCOperationsToolkit",
     "navigator": "parrot_tools.navigator.toolkit.NavigatorToolkit",
     "bestbuy": "parrot_tools.retail.bby.BestBuyToolkit",
