@@ -229,6 +229,71 @@ async def test_speech_report(mock_agent_deps):
 
 
 @pytest.mark.asyncio
+async def test_speech_report_forwards_script_and_tts_model(mock_agent_deps):
+    """script_model/tts_model, when provided, are forwarded as `model=` to
+    create_conversation_script()/generate_speech() respectively."""
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    agent.open_prompt = AsyncMock(return_value="Podcast Instructions")
+    mock_agent_deps.__aenter__.return_value = mock_agent_deps
+
+    mock_script_response = MagicMock()
+    mock_script_response.output.prompt = "Script Content"
+    mock_agent_deps.create_conversation_script.return_value = mock_script_response
+
+    mock_speech_result = MagicMock()
+    mock_speech_result.files = ["/tmp/podcast.wav"]
+    mock_agent_deps.generate_speech.return_value = mock_speech_result
+
+    mock_file_handle = AsyncMock()
+    mock_ctx_manager = MagicMock()
+    mock_ctx_manager.__aenter__.return_value = mock_file_handle
+    mock_ctx_manager.__aexit__.return_value = None
+
+    with patch("parrot.bots.agent.aiofiles.open", return_value=mock_ctx_manager):
+        await agent.speech_report(
+            report="Analysis Text",
+            podcast_instructions="instructions.txt",
+            script_model="gemini-3.5-flash",
+            tts_model="gemini-3.1-flash-tts-preview",
+        )
+
+    assert mock_agent_deps.create_conversation_script.call_args.kwargs["model"] == "gemini-3.5-flash"
+    assert mock_agent_deps.generate_speech.call_args.kwargs["model"] == "gemini-3.1-flash-tts-preview"
+
+
+@pytest.mark.asyncio
+async def test_speech_report_omits_model_kwargs_by_default(mock_agent_deps):
+    """Without script_model/tts_model, no `model=` override is passed through —
+    create_conversation_script()/generate_speech() use their own defaults."""
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    agent.open_prompt = AsyncMock(return_value="Podcast Instructions")
+    mock_agent_deps.__aenter__.return_value = mock_agent_deps
+
+    mock_script_response = MagicMock()
+    mock_script_response.output.prompt = "Script Content"
+    mock_agent_deps.create_conversation_script.return_value = mock_script_response
+
+    mock_speech_result = MagicMock()
+    mock_speech_result.files = ["/tmp/podcast.wav"]
+    mock_agent_deps.generate_speech.return_value = mock_speech_result
+
+    mock_file_handle = AsyncMock()
+    mock_ctx_manager = MagicMock()
+    mock_ctx_manager.__aenter__.return_value = mock_file_handle
+    mock_ctx_manager.__aexit__.return_value = None
+
+    with patch("parrot.bots.agent.aiofiles.open", return_value=mock_ctx_manager):
+        await agent.speech_report(report="Analysis Text", podcast_instructions="instructions.txt")
+
+    assert "model" not in mock_agent_deps.create_conversation_script.call_args.kwargs
+    assert "model" not in mock_agent_deps.generate_speech.call_args.kwargs
+
+
+@pytest.mark.asyncio
 async def test_report_workflow(mock_agent_deps):
     """Test high-level report() method which orchestrates everything."""
     from parrot.bots.agent import BasicAgent
