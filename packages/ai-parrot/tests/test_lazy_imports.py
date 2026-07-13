@@ -10,11 +10,28 @@ Tests cover:
 
 import builtins
 import importlib
+import importlib.util
+import sys
 from unittest.mock import patch
 
 import pytest
 
-from parrot._imports import lazy_import, require_extra
+from parrot._imports import (
+    _ensure_torchcodec_optional,
+    lazy_import,
+    require_extra,
+)
+
+
+@pytest.fixture
+def clean_torchcodec():
+    """Remove any real/stub torchcodec modules before and after a test."""
+    def _purge():
+        for name in [m for m in sys.modules if m == "torchcodec" or m.startswith("torchcodec.")]:
+            del sys.modules[name]
+    _purge()
+    yield
+    _purge()
 
 
 class TestLazyImport:
@@ -85,6 +102,100 @@ class TestLazyImport:
             lazy_import("nonexistent_pkg_xyz_12345", extra="db")
         assert exc_info.value.__cause__ is not None
         assert isinstance(exc_info.value.__cause__, ImportError)
+
+
+class TestTorchcodecOptional:
+    """Tests for _ensure_torchcodec_optional() — resilience to broken FFmpeg.
+
+    ``sentence_transformers`` eagerly imports ``torchcodec`` at package import
+    time; a missing/incomplete FFmpeg makes torchcodec raise ``RuntimeError``
+    while loading its C extension, which would otherwise crash agent startup.
+    """
+
+    def test_broken_torchcodec_is_stubbed(self, clean_torchcodec):
+        """A torchcodec that fails to load (RuntimeError) is replaced by stubs."""
+        original = importlib.import_module
+
+        def fake(name, *args, **kwargs):
+            if name == "torchcodec":
+                raise RuntimeError("Could not load libtorchcodec (simulated)")
+            return original(name, *args, **kwargs)
+
+        with patch("parrot._imports.importlib.import_module", side_effect=fake):
+            _ensure_torchcodec_optional()
+
+        # Stub is registered and the guarded downstream import resolves to None.
+        assert "torchcodec" in sys.modules
+        from torchcodec.decoders import AudioDecoder, VideoDecoder
+        assert AudioDecoder is None
+        assert VideoDecoder is None
+
+    def test_stub_has_valid_spec(self, clean_torchcodec):
+        """The stub exposes a non-None __spec__ so find_spec() does not raise.
+
+        ``transformers`` probes availability with importlib.util.find_spec,
+        which raises ValueError on a live module whose __spec__ is None.
+        """
+        original = importlib.import_module
+
+        def fake(name, *args, **kwargs):
+            if name == "torchcodec":
+                raise OSError("libavdevice.so.60: cannot open shared object file")
+            return original(name, *args, **kwargs)
+
+        with patch("parrot._imports.importlib.import_module", side_effect=fake):
+            _ensure_torchcodec_optional()
+
+        # Must not raise ValueError("torchcodec.__spec__ is None")
+        assert importlib.util.find_spec("torchcodec") is not None
+
+    def test_missing_torchcodec_is_not_stubbed(self, clean_torchcodec):
+        """When torchcodec is not installed at all, no stub is registered."""
+        original = importlib.import_module
+
+        def fake(name, *args, **kwargs):
+            if name == "torchcodec":
+                raise ModuleNotFoundError("No module named 'torchcodec'")
+            return original(name, *args, **kwargs)
+
+        with patch("parrot._imports.importlib.import_module", side_effect=fake):
+            _ensure_torchcodec_optional()
+
+        assert "torchcodec" not in sys.modules
+
+    def test_already_loaded_is_noop(self, clean_torchcodec):
+        """If torchcodec is already in sys.modules, nothing is re-imported."""
+        sentinel = object()
+        sys.modules["torchcodec"] = sentinel  # type: ignore[assignment]
+
+        called = {"n": 0}
+        original = importlib.import_module
+
+        def fake(name, *args, **kwargs):
+            if name == "torchcodec":
+                called["n"] += 1
+            return original(name, *args, **kwargs)
+
+        with patch("parrot._imports.importlib.import_module", side_effect=fake):
+            _ensure_torchcodec_optional()
+
+        assert sys.modules["torchcodec"] is sentinel
+        assert called["n"] == 0
+
+    def test_lazy_import_of_host_triggers_neutralizer(self, clean_torchcodec):
+        """lazy_import of a torchcodec-hosting module invokes the neutralizer."""
+        with patch("parrot._imports._ensure_torchcodec_optional") as neutralizer:
+            # json stands in for the host so we don't import the heavy real one;
+            # the branch keys on the top-level module name in _TORCHCODEC_HOSTS.
+            with patch("parrot._imports._TORCHCODEC_HOSTS", ("json",)):
+                lazy_import("json")
+            neutralizer.assert_called_once()
+
+    def test_lazy_import_non_host_skips_neutralizer(self):
+        """lazy_import of an unrelated module does not touch torchcodec."""
+        with patch("parrot._imports._ensure_torchcodec_optional") as neutralizer:
+            lazy_import("os.path")
+            neutralizer.assert_not_called()
 
 
 class TestRequireExtra:
