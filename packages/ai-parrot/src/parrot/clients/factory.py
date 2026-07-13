@@ -17,6 +17,22 @@ def _lazy_gemma4():
     return Gemma4Client
 
 
+def _lazy_bedrock_converse():
+    """Lazy loader for :class:`BedrockConverseClient` (FEAT-302).
+
+    Importing :mod:`parrot.clients.bedrock` is cheap — it only imports
+    ``aioboto3`` lazily inside ``get_client()`` — but this loader keeps the
+    same pattern as :func:`_lazy_gemma4` / :func:`_lazy_claude_agent` for
+    consistency and to defer the import until the client is actually
+    requested via the factory.
+
+    Returns:
+        The :class:`BedrockConverseClient` class.
+    """
+    from .bedrock import BedrockConverseClient
+    return BedrockConverseClient
+
+
 def _lazy_claude_agent():
     """Lazy loader for :class:`ClaudeAgentClient`.
 
@@ -52,6 +68,9 @@ SUPPORTED_CLIENTS = {
     # AnthropicClient; the `backend` kwarg is injected via PROVIDER_BACKEND below.
     "bedrock": AnthropicClient,
     "anthropic-aws": AnthropicClient,
+    # FEAT-302: native Bedrock Converse API client — distinct key, coexists
+    # with "bedrock" above (AnthropicClient's Bedrock backend, FEAT-232).
+    "bedrock-converse": _lazy_bedrock_converse,
     "google": GoogleGenAIClient,
     "openai": OpenAIClient,
     "groq": GroqClient,

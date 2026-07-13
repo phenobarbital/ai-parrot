@@ -67,6 +67,7 @@ class OutputMode(str, Enum):
     STRUCTURED_CHART = "structured_chart"  # Library-agnostic chart config (AppChartConfig mirror)
     STRUCTURED_TABLE = "structured_table"  # Framework-agnostic table config (FEAT-218)
     STRUCTURED_MAP = "structured_map"      # Framework-agnostic map config (FEAT-221)
+    A2UI = "a2ui"                          # A2UI v1.0 declarative envelope (FEAT-273)
 
 @dataclass
 class StructuredOutputConfig:

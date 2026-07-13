@@ -523,7 +523,21 @@ class NotificationMixin:
         return result
 
     async def _send_slack(self, notify_args: Dict[str, Any]) -> Any:
-        """Send Slack notification."""
+        """Send Slack notification.
+
+        FEAT-273: Slack has no file upload (spec Non-Goal). When an A2UI delivery
+        supplies a public artifact URL via the ``a2ui_artifact_url`` arg, it is appended
+        to the message text as a downgrade, with a degraded-delivery warning logged.
+        """
+        # FEAT-273: pop the A2UI public-URL hint (never forward it to Slack's send()).
+        a2ui_url = notify_args.pop("a2ui_artifact_url", None)
+        if a2ui_url:
+            base = notify_args.get("message", "") or ""
+            notify_args["message"] = f"{base}\n\nView the full artifact: {a2ui_url}".lstrip()
+            self.logger.warning(
+                "A2UI degraded delivery: Slack downgraded to public-URL line (%s).",
+                a2ui_url,
+            )
         from notify.providers.slack import Slack
         slack = Slack()
         async with slack as conn:
@@ -679,26 +693,94 @@ class NotificationMixin:
             password=TEAMS_NOTIFY_PASSWORD
         )
 
+        # FEAT-273: a bridge may pass a public-URL downgrade hint; consume it here.
+        a2ui_url = notify_args.pop("a2ui_artifact_url", None)
+
         # If files provided, we can add them as attachments or links in the card
         if files and len(files) > 0:
-            # Create a Teams card with file information
             message_text = notify_args.get("message", "")
 
-            # Add file list to message
-            file_list = "\n".join([f"- {f.name}" for f in files])
-            enhanced_message = f"{message_text}\n\n**Attached Files:**\n{file_list}"
-
-            notify_args["message"] = enhanced_message
-
-            # Note: Teams API has limitations on direct file uploads
-            # For full file upload support, would need to use Graph API file upload
-            self.logger.info(
-                f"Teams notification with {len(files)} files (file list added to message)"
-            )
+            # FEAT-273: attempt real Graph-API upload → org-view share links.
+            share_links = await self._teams_graph_upload_links(files)
+            if share_links:
+                links_md = "\n".join(
+                    f"- [{f.name}]({url})" for f, url in zip(files, share_links)
+                )
+                notify_args["message"] = f"{message_text}\n\n**Attached Files:**\n{links_md}"
+                self.logger.info(
+                    "Teams notification with %d Graph-uploaded file link(s)", len(share_links)
+                )
+            elif a2ui_url:
+                notify_args["message"] = (
+                    f"{message_text}\n\nView the full artifact: {a2ui_url}"
+                )
+                self.logger.warning(
+                    "A2UI degraded delivery: Teams Graph upload unavailable; sending "
+                    "public URL for %d file(s).",
+                    len(files),
+                )
+            else:
+                file_list = "\n".join([f"- {f.name}" for f in files])
+                notify_args["message"] = (
+                    f"{message_text}\n\n**Attached Files:**\n{file_list}"
+                )
+                self.logger.warning(
+                    "A2UI degraded delivery: Teams Graph upload unavailable; listing "
+                    "%d filename(s) in message text.",
+                    len(files),
+                )
 
         async with teams as conn:
             result = await conn.send(**notify_args)
         return result
+
+    async def _teams_graph_upload_links(
+        self, files: List[Path]
+    ) -> Optional[List[str]]:
+        """Upload files to Teams via Graph, returning share links (FEAT-273).
+
+        Returns ``None`` when Graph credentials are absent, the integrations satellite
+        is not installed, or any upload fails — the caller then downgrades. Never raises.
+        """
+        from ..conf import (
+            TEAMS_NOTIFY_TENANT_ID,
+            TEAMS_NOTIFY_CLIENT_ID,
+            TEAMS_NOTIFY_CLIENT_SECRET,
+            TEAMS_NOTIFY_USERNAME,
+        )
+
+        if not (
+            TEAMS_NOTIFY_TENANT_ID
+            and TEAMS_NOTIFY_CLIENT_ID
+            and TEAMS_NOTIFY_CLIENT_SECRET
+            and TEAMS_NOTIFY_USERNAME
+        ):
+            return None
+        try:
+            from parrot.integrations.msteams.graph import GraphClient
+        except ImportError:
+            self.logger.warning(
+                "A2UI degraded delivery: msteams integration not installed; cannot "
+                "Graph-upload Teams files."
+            )
+            return None
+
+        client = GraphClient(
+            client_id=TEAMS_NOTIFY_CLIENT_ID,
+            client_secret=TEAMS_NOTIFY_CLIENT_SECRET,
+            tenant_id=TEAMS_NOTIFY_TENANT_ID,
+            logger=self.logger,
+        )
+        try:
+            links: List[str] = []
+            for file_path in files:
+                url = await client.upload_file(file_path, user=TEAMS_NOTIFY_USERNAME)
+                if not url:
+                    return None  # any failure → whole-batch downgrade
+                links.append(url)
+            return links
+        finally:
+            await client.close()
 
     # Convenience methods for specific providers
 

@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-302
 **Date**: 2026-07-11
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x (next minor)
 
 ---
@@ -584,7 +584,7 @@ class VoiceProvider(Enum):  # line 24
 ### Unresolved (defer to implementation)
 
 - [ ] **Should guardrail config be per-client or per-call?** — *Owner*: tbd. Plausible: both (default at init, override per call).
-- [ ] **Which non-Anthropic models at launch?** — *Owner*: tbd. Plausible: Claude-only initially, with Nova model IDs in the translator for future use.
+- [ ] **Which non-Anthropic models at launch?** — *Owner*: All Nova models.
 - [ ] **Nova Sonic packaging within integrations** — *Owner*: tbd. Plausible: `parrot/integrations/bedrock/nova_sonic.py` or `parrot/voice/nova_sonic.py`.
 
 ---

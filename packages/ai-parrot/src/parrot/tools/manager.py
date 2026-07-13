@@ -48,6 +48,7 @@ class ToolFormat(Enum):
     GROQ = "groq"
     VERTEX = "vertex"
     GENERIC = "generic"
+    BEDROCK = "bedrock"
 
 
 class ToolSchemaAdapter:
@@ -84,6 +85,9 @@ class ToolSchemaAdapter:
         elif provider in [ToolFormat.OPENAI, ToolFormat.ANTHROPIC]:
             # OpenAI/Anthropic specific cleaning
             return ToolSchemaAdapter._clean_for_openai(cleaned_schema)
+        elif provider == ToolFormat.BEDROCK:
+            # AWS Bedrock Converse API specific cleaning
+            return ToolSchemaAdapter._clean_for_bedrock(cleaned_schema)
         else:
             # Generic cleaning
             return ToolSchemaAdapter._clean_generic(cleaned_schema)
@@ -200,6 +204,26 @@ class ToolSchemaAdapter:
             }
 
         return cleaned
+
+    @staticmethod
+    def _clean_for_bedrock(schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Adapt tool schema to the AWS Bedrock Converse API envelope.
+
+        Bedrock Converse expects tools wrapped as:
+        ``{"toolSpec": {"name", "description", "inputSchema": {"json": {...}}}}``
+        while ai-parrot tools produce the generic
+        ``{"name", "description", "parameters": {...}}`` shape.
+        """
+        cleaned = schema.copy()
+        cleaned.pop('_tool_instance', None)
+        parameters = cleaned.pop("parameters", cleaned.pop("input_schema", {}))
+        return {
+            "toolSpec": {
+                "name": cleaned["name"],
+                "description": cleaned.get("description", ""),
+                "inputSchema": {"json": parameters}
+            }
+        }
 
 
 class ToolManager(MCPToolManagerMixin):

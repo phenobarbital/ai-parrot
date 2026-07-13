@@ -26,10 +26,18 @@ from typing import (
     Dict,
     List,
     Optional,
+    TYPE_CHECKING,
     Union,
 )
 from aiohttp import web, WSMsgType
 from navconfig.logging import logging
+
+if TYPE_CHECKING:
+    # Type-check-only import — VoiceProvider itself has no optional runtime
+    # dependencies, but this keeps the module-scope import list minimal and
+    # matches the lazy-import style used for NovaSonicClient/GeminiLiveClient
+    # in resolve_voice_client_class() below.
+    from parrot.voice.models import VoiceProvider
 
 # Type hints for optional imports
 try:
@@ -49,6 +57,49 @@ except ImportError:
 # service can authenticate without pulling in the VoiceBot / Gemini Live stack.
 # Re-exported here for backward compatibility.
 from parrot.core.ws_auth import AuthenticatedUser, TokenValidator  # noqa: E402,F401
+
+
+# =============================================================================
+# Provider Resolution (FEAT-302, TASK-1749)
+# =============================================================================
+# VoiceChatHandler is transport-only (WebSocket) — voice-provider client
+# construction has historically been hardcoded to GeminiLiveClient inside
+# VoiceBot._resolve_llm_config() (parrot.bots.voice, core ai-parrot). This
+# helper is additive: it lets callers resolve the AbstractClient subclass
+# for a given VoiceProvider without requiring changes to VoiceBot's
+# existing (GeminiLiveClient-only) resolution path. Full end-to-end
+# provider-aware VoiceBot wiring is out of scope here — see spec Module 8.
+
+def resolve_voice_client_class(provider: "VoiceProvider"):
+    """Resolve the ``AbstractClient`` subclass for a given ``VoiceProvider``.
+
+    Recognizes ``VoiceProvider.NOVA_SONIC`` and returns
+    :class:`~parrot.clients.nova_sonic.NovaSonicClient` (lazily imported —
+    the Pre-Alpha ``aws_sdk_bedrock_runtime`` extra is optional). Every
+    other currently-declared provider resolves to
+    :class:`~parrot.clients.live.GeminiLiveClient`, the only fully-wired
+    voice client at this time (``OPENAI_REALTIME`` / ``WHISPER_TTS`` are
+    declared in the enum but not yet backed by dedicated client classes).
+
+    Args:
+        provider: The ``VoiceProvider`` enum member to resolve.
+
+    Returns:
+        The ``AbstractClient`` subclass to instantiate for *provider*.
+
+    Raises:
+        ImportError: When ``NOVA_SONIC`` is requested but
+            ``aws_sdk_bedrock_runtime`` (Pre-Alpha, Python >= 3.12 only) is
+            not installed.
+    """
+    from parrot.voice.models import VoiceProvider as _VoiceProvider
+
+    if provider == _VoiceProvider.NOVA_SONIC:
+        from parrot.clients.nova_sonic import NovaSonicClient
+        return NovaSonicClient
+
+    from parrot.clients.live import GeminiLiveClient
+    return GeminiLiveClient
 
 
 # =============================================================================
@@ -270,6 +321,17 @@ class VoiceChatHandler:
         if create_voice_bot is None:
             raise ImportError("VoiceBot not available")
         return create_voice_bot(**config.as_dict())
+
+    @staticmethod
+    def resolve_provider_client(provider: "VoiceProvider"):
+        """Resolve the ``AbstractClient`` subclass for *provider* (FEAT-302).
+
+        Thin wrapper around the module-level
+        :func:`resolve_voice_client_class` — recognizes
+        ``VoiceProvider.NOVA_SONIC`` and returns
+        :class:`~parrot.clients.nova_sonic.NovaSonicClient`.
+        """
+        return resolve_voice_client_class(provider)
 
     # =========================================================================
     # Route Setup
