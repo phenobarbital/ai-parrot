@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-303
 **Date**: 2026-07-14
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-integrations 0.26.0 (next minor)
 **Brainstorm**: `sdd/proposals/ux-custom-engine-copilot.brainstorm.md` (Option A)
 
@@ -575,14 +575,14 @@ async def ask(self, question: str, session_id: Optional[str] = None,
 
 > Questions that must be resolved before or during implementation.
 
-- [ ] Verify against a live M365 Copilot test tenant whether the
+- [x] Verify against a live M365 Copilot test tenant whether the
   `msteams messageBack` Action.Submit payload is honored in Copilot chat
   (not just Teams), or whether `Action.Execute` (Universal Actions) is
   required. Design ships both paths, so this determines validation emphasis,
-  not architecture. — *Owner: Jesus*
-- [ ] Confirm Adaptive Card 1.4 feature support in the current M365 Copilot
+  not architecture. — *Owner: Jesus*: agree
+- [x] Confirm Adaptive Card 1.4 feature support in the current M365 Copilot
   custom-engine-agent rendering matrix (spec pins 1.4, matching existing
-  cards; revisit only if the tenant test shows gaps). — *Owner: Jesus*
+  cards; revisit only if the tenant test shows gaps). — *Owner: Jesus*: confirmed
 - [x] Truncation defaults — *Resolved at spec time*: `max_table_rows=15`,
   `max_card_bytes=25_000` (under Teams' ~28 KB limit), both configurable via
   `MSAgentSDKConfig`.
