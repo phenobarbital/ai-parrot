@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-14T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-14T02:26:50+00:00",
   "tasks": [
     {
       "id": "TASK-1775",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-308",
       "feature": "agentcrew-node-infographic",
       "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Requires all modules integrated; exercises the full flow.",
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1780-infographic-integration-tests.md"
+      "completed_at": "2026-07-14T02:26:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1780-infographic-integration-tests.md"
     }
   ]
 }
