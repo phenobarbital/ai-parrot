@@ -48,6 +48,7 @@ import json
 import re
 import time
 from typing import Dict, List, Any, Optional, Union
+from urllib.parse import urlparse
 import backoff
 from bs4 import BeautifulSoup as bs
 from ddgs import DDGS
@@ -327,6 +328,16 @@ class CompanyInfoToolkit(AbstractToolkit):
                 "driver_context/Playwright fetch layer."
             )
 
+        if browser == 'undetected':
+            self.logger.warning(
+                "CompanyInfoToolkit(browser='undetected') has no Playwright "
+                "equivalent: DriverConfig.browser is passed through as a "
+                "Playwright `browser_type`, and 'undetected' is not a valid "
+                "value, so every _fetch_page call will fail (degrading to "
+                "scrape_status='error'/'no_data'). Use browser='chrome' "
+                "(mapped to Chromium) or another supported value instead."
+            )
+
         # Browser configuration mapped onto the scraping stack's DriverConfig
         # (replaces the legacy SeleniumSetup-based `browser_config` dict).
         self._driver_config = DriverConfig(
@@ -481,7 +492,8 @@ class CompanyInfoToolkit(AbstractToolkit):
         title: str,
         url: str,
         company_name: str,
-        keywords: List[str]
+        keywords: List[str],
+        site: Optional[str] = None
     ) -> bool:
         """
         Validate a search hit before it is accepted for scraping.
@@ -492,18 +504,34 @@ class CompanyInfoToolkit(AbstractToolkit):
         `company_name` via exact match, first-token match, or `rapidfuzz`
         fuzzy ratio (accepted when strictly greater than 85).
 
+        Before any title/name comparison, `url`'s host is checked against
+        `site` (when provided): a hit whose title happens to match but that
+        points at a host outside the expected source domain is rejected.
+        This closes a gap where a DDG/Google CSE result could otherwise
+        pass keyword+fuzzy validation while pointing at an arbitrary,
+        untrusted host that Playwright would then navigate to and fetch.
+
         Args:
             title: Search-result title.
-            url: Search-result URL (not used for validation; kept for
-                symmetry/logging by callers).
+            url: Search-result URL. Its host must match `site` (or a
+                subdomain of it) when `site` is given.
             company_name: The company name being searched for.
             keywords: Title keywords for the source being validated.
+            site: Expected site domain for this source (e.g. 'leadiq.com').
+                When omitted, no domain check is performed (back-compat for
+                direct callers that already trust `url`).
 
         Returns:
             True if the hit is considered a valid match for `company_name`.
         """
-        if not title or not keywords:
+        if not title or not keywords or not url:
             return False
+
+        if site:
+            host = (urlparse(url).netloc or '').lower().split('@')[-1].split(':')[0]
+            expected = site.lower()
+            if host != expected and not host.endswith('.' + expected):
+                return False
 
         pattern = r'\b(' + '|'.join(re.escape(kw) for kw in keywords) + r')\b'
         match = re.search(pattern, title, re.IGNORECASE)
@@ -563,7 +591,8 @@ class CompanyInfoToolkit(AbstractToolkit):
                 if not hit_url:
                     continue
                 if self._validate_search_hit(
-                    title, hit_url, company_name, site_config.title_keywords
+                    title, hit_url, company_name, site_config.title_keywords,
+                    site=site_config.site
                 ):
                     return self._clean_search_url(hit_url)
         except Exception as e:
@@ -582,7 +611,8 @@ class CompanyInfoToolkit(AbstractToolkit):
                 search_result.title or '',
                 search_result.url,
                 company_name,
-                site_config.title_keywords
+                site_config.title_keywords,
+                site=site_config.site
             ):
                 return self._clean_search_url(search_result.url)
         except Exception as e:
@@ -626,7 +656,11 @@ class CompanyInfoToolkit(AbstractToolkit):
             self.logger.error(f"Error fetching page {url}: {e}")
             return None
 
-    async def _fetch_page_with_selenium(self, url: str) -> Optional[bs]:
+    async def _fetch_page_with_selenium(
+        self,
+        url: str,
+        custom_user_agent: Optional[str] = None
+    ) -> Optional[bs]:
         """
         Legacy alias for `_fetch_page` (back-compat).
 
@@ -636,11 +670,14 @@ class CompanyInfoToolkit(AbstractToolkit):
 
         Args:
             url: URL to fetch.
+            custom_user_agent: Optional per-call User-Agent override,
+                forwarded to `_fetch_page` (e.g. ZoomInfo's
+                headless-hardening; see `scrape_zoominfo`).
 
         Returns:
             BeautifulSoup object, or None if the fetch failed.
         """
-        return await self._fetch_page(url)
+        return await self._fetch_page(url, custom_user_agent=custom_user_agent)
 
     def _parse_address(self, address_text: str) -> Dict[str, Optional[str]]:
         """
@@ -757,8 +794,11 @@ class CompanyInfoToolkit(AbstractToolkit):
 
             result.search_url = url
 
-            # 2. Fetch page with Selenium
-            document = await self._fetch_page_with_selenium(url)
+            # 2. Fetch page (Playwright; keeps headless-hardening custom UA
+            #    override for ZoomInfo per spec Module 2)
+            document = await self._fetch_page_with_selenium(
+                url, custom_user_agent=self._driver_config.custom_user_agent
+            )
 
             if not document:
                 result.scrape_status = 'error'
@@ -1542,8 +1582,9 @@ class CompanyInfoToolkit(AbstractToolkit):
             company_name: Name of the company to research.
             sources: Optional subset/order of source names to try (must be
                 a subset of leadiq, rocketreach, explorium, siccode,
-                visualvisitor, zoominfo). Defaults to the full priority
-                order.
+                visualvisitor, zoominfo). `None` (default) uses the full
+                priority order; an explicit empty list (`[]`) tries no
+                sources and returns a `no_data` result immediately.
             return_json: If True, return a JSON string instead of a
                 `CompanyInfo` object.
 
@@ -1551,7 +1592,10 @@ class CompanyInfoToolkit(AbstractToolkit):
             CompanyInfo object (or JSON string) for the first successful
             source, or a `no_data`/`error` CompanyInfo if none succeeded.
         """
-        order = sources or DEFAULT_SOURCE_PRIORITY
+        # `sources is None` -> full default priority order. An explicit
+        # empty list is a deliberate "try nothing" request (distinct from
+        # "unset"), not a fallback to the default order.
+        order = DEFAULT_SOURCE_PRIORITY if sources is None else sources
 
         unknown = [name for name in order if name not in COMPANY_SOURCES]
         if unknown:

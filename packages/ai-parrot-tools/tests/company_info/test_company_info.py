@@ -47,7 +47,8 @@ class TestSearchLayer:
         """Exact company-name match (case-insensitive) is accepted."""
         keywords = COMPANY_SOURCES["leadiq"].title_keywords
         assert toolkit._validate_search_hit(
-            "Acme Corp Company Overview", "https://leadiq.com/c/acme", "Acme Corp", keywords
+            "Acme Corp Company Overview", "https://leadiq.com/c/acme", "Acme Corp", keywords,
+            site="leadiq.com"
         ) is True
 
     def test_validate_hit_fuzzy(self, toolkit):
@@ -55,7 +56,7 @@ class TestSearchLayer:
         keywords = COMPANY_SOURCES["leadiq"].title_keywords
         assert toolkit._validate_search_hit(
             "Acme Corporation Company Overview", "https://leadiq.com/c/acme",
-            "Acme Corp", keywords
+            "Acme Corp", keywords, site="leadiq.com"
         ) is True
 
     def test_validate_hit_reject(self, toolkit):
@@ -63,7 +64,7 @@ class TestSearchLayer:
         keywords = COMPANY_SOURCES["leadiq"].title_keywords
         assert toolkit._validate_search_hit(
             "Totally Different Co Company Overview", "https://leadiq.com/c/other",
-            "Acme Corp", keywords
+            "Acme Corp", keywords, site="leadiq.com"
         ) is False
 
     def test_validate_hit_no_keyword_match(self, toolkit):
@@ -71,8 +72,37 @@ class TestSearchLayer:
         keywords = COMPANY_SOURCES["leadiq"].title_keywords
         assert toolkit._validate_search_hit(
             "Acme Corp — Random Unrelated Page Title", "https://leadiq.com/c/acme",
-            "Acme Corp", keywords
+            "Acme Corp", keywords, site="leadiq.com"
         ) is False
+
+    def test_validate_hit_wrong_domain_rejected(self, toolkit):
+        """A title/company match on an untrusted host is rejected (SSRF-adjacent guard).
+
+        Regression test for the code-review finding that `_validate_search_hit`
+        only checked the title, allowing any host whose title happened to match
+        to be accepted and handed to Playwright for navigation.
+        """
+        keywords = COMPANY_SOURCES["leadiq"].title_keywords
+        assert toolkit._validate_search_hit(
+            "Acme Corp Company Overview", "https://evil.example.com/c/acme",
+            "Acme Corp", keywords, site="leadiq.com"
+        ) is False
+
+    def test_validate_hit_subdomain_accepted(self, toolkit):
+        """A subdomain of the expected site (e.g. `www.`) is still accepted."""
+        keywords = COMPANY_SOURCES["leadiq"].title_keywords
+        assert toolkit._validate_search_hit(
+            "Acme Corp Company Overview", "https://www.leadiq.com/c/acme",
+            "Acme Corp", keywords, site="leadiq.com"
+        ) is True
+
+    def test_validate_hit_no_site_skips_domain_check(self, toolkit):
+        """Omitting `site` preserves back-compat: no domain check performed."""
+        keywords = COMPANY_SOURCES["leadiq"].title_keywords
+        assert toolkit._validate_search_hit(
+            "Acme Corp Company Overview", "https://anything.example.com/c/acme",
+            "Acme Corp", keywords
+        ) is True
 
     async def test_search_ddg_first_google_fallback(self, toolkit):
         """DDG rate-limited -> falls back to `_google_site_search`."""
@@ -213,6 +243,29 @@ class TestEachSourceFixture:
         assert result.company_name == "Acme Corp"
         toolkit._search_company_url.assert_awaited_once()
 
+    async def test_zoominfo_forwards_custom_user_agent(
+        self, toolkit, mock_search, mock_driver, zoominfo_html
+    ):
+        """ZoomInfo keeps the constructor's headless-hardening custom UA
+        override (spec Module 2), forwarded explicitly on each fetch.
+
+        Regression test for the code-review finding that `_fetch_page`'s
+        `custom_user_agent` parameter was defined but never actually passed
+        by any `scrape_*` call site.
+        """
+        toolkit._driver_config = toolkit._driver_config.merge(
+            {"custom_user_agent": "Mozilla/5.0 (custom-hardened-ua)"}
+        )
+        mock_search(toolkit, "https://zoominfo.com/c/acme")
+        fetch_mock = mock_driver(toolkit, zoominfo_html)
+
+        await toolkit.scrape_zoominfo("Acme Corp")
+
+        fetch_mock.assert_awaited_once_with(
+            "https://zoominfo.com/c/acme",
+            custom_user_agent="Mozilla/5.0 (custom-hardened-ua)"
+        )
+
     async def test_explorium_fixture(self, toolkit, mock_search, mock_driver, explorium_html):
         mock_search(toolkit, "https://explorium.ai/c/acme")
         mock_driver(toolkit, explorium_html)
@@ -297,6 +350,23 @@ class TestResearchCompany:
         assert result2.scrape_status == "error"
         assert "not-a-real-source" in result2.error_message
 
+    async def test_research_company_empty_sources_tries_nothing(self, toolkit):
+        """`sources=[]` is a deliberate "try nothing" request, distinct from
+        `sources=None` (which uses the full default priority order).
+
+        Regression test for the code-review finding that `sources or
+        DEFAULT_SOURCE_PRIORITY` silently treated an explicit empty list the
+        same as unset, due to Python's falsy-empty-list semantics.
+        """
+        toolkit.scrape_leadiq = AsyncMock()
+        toolkit.scrape_rocketreach = AsyncMock()
+
+        result = await toolkit.research_company("Acme Corp", sources=[])
+
+        assert result.scrape_status == "no_data"
+        toolkit.scrape_leadiq.assert_not_called()
+        toolkit.scrape_rocketreach.assert_not_called()
+
     async def test_research_company_all_fail(self, toolkit):
         for name in COMPANY_SOURCES:
             setattr(
@@ -351,6 +421,22 @@ class TestToolkitExposure:
         CompanyInfoToolkit(
             google_api_key="k", google_cse_id="c",
             browser="chrome", use_undetected=True,
+        )
+
+    def test_construction_browser_undetected_warns(self, caplog):
+        """`browser='undetected'` has no Playwright equivalent and must warn.
+
+        Regression test for the code-review finding that this documented
+        legacy value silently degraded every `_fetch_page` call to a 100%
+        failure mode with no deprecation warning (unlike `use_undetected=True`,
+        which already warned).
+        """
+        with caplog.at_level("WARNING"):
+            CompanyInfoToolkit(
+                google_api_key="k", google_cse_id="c", browser="undetected",
+            )
+        assert any(
+            "browser='undetected'" in record.message for record in caplog.records
         )
 
     @pytest.mark.live
