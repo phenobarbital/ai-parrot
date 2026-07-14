@@ -32,7 +32,7 @@
       "feature_id": "FEAT-306",
       "feature": "crew-per-agent-result-persistence",
       "spec": "sdd/specs/crew-per-agent-result-persistence.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches only core/storage/backends/* + backend test files; shares no files with TASK-1765. Parallelizable in principle, but the spec's Worktree Strategy is per-spec sequential — run in the single feature worktree.",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1766-resultstorage-fetch-backends.md"
+      "completed_at": "2026-07-14T00:54:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1766-resultstorage-fetch-backends.md"
     },
     {
       "id": "TASK-1767",
