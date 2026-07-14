@@ -181,6 +181,20 @@ async def test_toolkit_exposes_three_tools(toolkit):
     }
 
 
+def test_composed_http_service_accepts_json(toolkit):
+    """Regression test: the composed HTTPService must request/parse JSON.
+
+    ``HTTPService.session`` branches on ``self.accept`` (not the response's
+    actual Content-Type) to decide whether to parse the body as JSON or
+    plain text. Without ``accept="application/json"`` explicitly set on the
+    composed member, real (non-mocked) LeadIQ API calls would come back as
+    a raw string and every ``_process_*_response`` call would blow up with
+    a ``TypeError`` on ``result["data"]`` — invisible to tests that mock
+    ``toolkit.http.session`` directly.
+    """
+    assert toolkit.http.accept == "application/json"
+
+
 @pytest.mark.asyncio
 async def test_headers_use_basic_auth_verbatim(toolkit, company_payload):
     mock_session = AsyncMock(return_value=(company_payload, None))

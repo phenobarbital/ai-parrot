@@ -321,7 +321,9 @@ class LeadIQToolkit(AbstractToolkit):
         """
         super().__init__(**kwargs)
         self._api_key = api_key
-        self.http = HTTPService(base_url=self.base_url, **kwargs)
+        self.http = HTTPService(
+            base_url=self.base_url, accept="application/json", **kwargs
+        )
 
     # ===========================
     # Internal helpers
@@ -551,6 +553,10 @@ class LeadIQToolkit(AbstractToolkit):
 
         try:
             result = await self._execute_query(payload, company_name)
+            if result is not None:
+                processed = self._process_company_response(result, company_name)
+            else:
+                processed = None
         except Exception as e:  # noqa: BLE001 - never raise unhandled from a tool
             self.logger.error(
                 "Error in company search for %s: %s", company_name, e
@@ -567,7 +573,6 @@ class LeadIQToolkit(AbstractToolkit):
                 error=f"LeadIQ company search failed for {company_name}",
             )
 
-        processed = self._process_company_response(result, company_name)
         if processed is None:
             return ToolResult(
                 success=False,
@@ -613,6 +618,10 @@ class LeadIQToolkit(AbstractToolkit):
 
         try:
             result = await self._execute_query(payload, company_name)
+            if result is not None:
+                processed = self._process_employee_response(result, company_name)
+            else:
+                processed = None
         except Exception as e:  # noqa: BLE001 - never raise unhandled from a tool
             self.logger.error(
                 "Error in employee search for %s: %s", company_name, e
@@ -629,7 +638,6 @@ class LeadIQToolkit(AbstractToolkit):
                 error=f"LeadIQ employee search failed for {company_name}",
             )
 
-        processed = self._process_employee_response(result, company_name)
         rows = processed if processed is not None else []
         return ToolResult(
             success=True,
@@ -667,6 +675,10 @@ class LeadIQToolkit(AbstractToolkit):
 
         try:
             result = await self._execute_query(payload, company_name)
+            if result is not None:
+                processed = self._process_flat_response(result, company_name)
+            else:
+                processed = None
         except Exception as e:  # noqa: BLE001 - never raise unhandled from a tool
             self.logger.error(
                 "Error in flat search for %s: %s", company_name, e
@@ -683,7 +695,6 @@ class LeadIQToolkit(AbstractToolkit):
                 error=f"LeadIQ flat search failed for {company_name}",
             )
 
-        processed = self._process_flat_response(result, company_name)
         rows = processed if processed is not None else []
         return ToolResult(
             success=True,
