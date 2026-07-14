@@ -233,10 +233,38 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-14
+**Notes**: Added `generate_infographic: bool = False` /
+`result_agent_name: str = "result-agent"` to `AgentCrew.__init__`, plus
+`_finalize_infographic(result)` (right after `_fire_hooks` in source order)
+and one call-site — `await self._finalize_infographic(result)` — inserted
+immediately before each of the 4 identical `await self._fire_hooks(result)`
+lines (run_sequential ~L1562, run_loop ~L2032, run_parallel ~L2359,
+run_flow ~L2600), confirmed via grep before editing. Corrected a critical
+stale contract: `agent_registry.get(name)` does not exist on
+`AgentRegistry` — the verified lookup API is
+`get_metadata(name) -> Optional[BotMetadata]`, `.factory` holding the
+class (registry.py:513-514). Used **lazy, function-local imports** for
+`parrot.bots.flows.result_agent` (registration side-effect),
+`agent_registry`, and `build_deterministic_tabs` inside
+`_finalize_infographic` — this both (a) guarantees the built-in
+"result-agent" is registered regardless of app load order without a
+crew.py-level import of result_agent.py (which would otherwise risk a
+subtle circular import: crew.py -> result_agent.py ->
+crew.result_infographic, while crew/__init__.py is still mid-executing
+its own `from .crew import AgentCrew`), and (b) keeps this opt-in
+feature's dependency footprint out of crew.py's module-level import graph.
+The whole finalize block is wrapped in one try/except (per spec: never a
+partial try per step) so any exception — unknown agent name, LLM failure,
+render failure — logs and leaves `result.infographic` at its default
+`None`, never touching `result.status`. Corrected the task's own test spec
+too: patches now target `agent_registry.get_metadata`. Ran the existing
+`tests/test_crew_hooks.py` + `tests/unit/test_agentcrew_from_definition.py`
++ `tests/bots/flows/core/storage/test_agentcrew_lifecycle.py` suites as a
+regression check: 38 passed, 4 pre-existing failures confirmed unrelated
+(stale `parrot.bots.orchestration` import, a module removed in FEAT-196,
+untouched by this task). 6 new unit tests pass, ruff clean.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (contract corrections documented above; no
+behavioral deviation from Module 4's scope)
