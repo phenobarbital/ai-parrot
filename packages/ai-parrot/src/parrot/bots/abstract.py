@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 import os
 import re
 import uuid
+import threading
 import contextlib
 from contextlib import asynccontextmanager
 from string import Template
@@ -59,6 +60,40 @@ from ..models.outputs import OutputMode
 from ..outputs import OutputFormatter
 import importlib.util
 PYTECTOR_ENABLED = importlib.util.find_spec("pytector") is not None
+
+# Process-wide singleton for the pytector prompt-injection detector.
+#
+# Constructing ``pytector.PromptInjectionDetector(model_name_or_url="deberta")``
+# loads a deBERTa model (transformers + torch, and pulls in TensorFlow). Doing
+# that once per bot is wasteful — N bots meant N full model loads, N copies of
+# the weights in memory, and N sets of native worker threads that leak at
+# shutdown. The detector is stateless for detection (``detect_injection`` only
+# tokenizes the input and runs a read-only forward pass), so a single shared
+# instance is safe to reuse across every bot in the process.
+_SHARED_INJECTION_DETECTOR = None
+_SHARED_INJECTION_DETECTOR_LOCK = threading.Lock()
+
+
+def _get_shared_injection_detector():
+    """Return the process-wide pytector detector, loading it lazily once.
+
+    The heavy model is loaded on first call (typically the first bot's
+    ``__init__``) and reused thereafter. Thread-safe via a module lock so
+    concurrent bot construction can never trigger two parallel model loads.
+
+    Returns:
+        A shared ``pytector.PromptInjectionDetector`` instance.
+    """
+    global _SHARED_INJECTION_DETECTOR
+    if _SHARED_INJECTION_DETECTOR is None:
+        with _SHARED_INJECTION_DETECTOR_LOCK:
+            if _SHARED_INJECTION_DETECTOR is None:
+                from pytector import PromptInjectionDetector  # pylint: disable=E0611
+                _SHARED_INJECTION_DETECTOR = PromptInjectionDetector(
+                    model_name_or_url="deberta",
+                    enable_keyword_blocking=True,
+                )
+    return _SHARED_INJECTION_DETECTOR
 from ..mcp import MCPEnabledMixin
 from ..security import (
     SecurityEventLogger,
@@ -619,11 +654,11 @@ class AbstractBot(
             logger=self.logger,
         )
         if PYTECTOR_ENABLED:
-            from pytector import PromptInjectionDetector  # pylint: disable=E0611
-            self._injection_detector = PromptInjectionDetector(
-                model_name_or_url="deberta",
-                enable_keyword_blocking=True
-            )
+            # Reuse the process-wide detector instead of loading the deBERTa
+            # model once per bot. The detector is stateless for detection, so
+            # sharing it saves memory and avoids leaking a fresh set of native
+            # worker threads for every bot instance.
+            self._injection_detector = _get_shared_injection_detector()
         else:
             self._injection_detector = _ParrotPromptInjectionDetector(
                 logger=self.logger,
