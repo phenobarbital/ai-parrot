@@ -50,7 +50,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "Independent models file, but sequential per per-spec isolation",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1767-pydantic-request-response-models.md"
+      "completed_at": "2026-07-14T01:00:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1767-pydantic-request-response-models.md"
     },
     {
       "id": "TASK-1768",
