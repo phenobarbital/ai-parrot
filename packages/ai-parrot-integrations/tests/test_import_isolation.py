@@ -168,3 +168,96 @@ def test_hitl_adapter_imports_botbuilder() -> None:
     assert hasattr(mod, "HitlCloudAdapter"), (
         "HitlCloudAdapter not found in parrot.integrations.msteams.hitl_adapter"
     )
+
+
+# ---------------------------------------------------------------------------
+# FEAT-303 — Semantic UI Model / Adaptive Card renderer import isolation
+# ---------------------------------------------------------------------------
+
+
+def _evict_and_restore(monkeypatch, *prefixes: str) -> None:
+    """Evict sys.modules entries matching prefixes, restored at teardown.
+
+    Unlike `_clean_modules` (a permanent, unrestored deletion — fine for the
+    isolation tests above since nothing downstream re-imports `aiogram`/
+    `botbuilder`/`pywa` with `isinstance` checks against their types), the
+    FEAT-303 tests below evict and re-import `parrot.integrations.msagentsdk`
+    submodules that define Pydantic model classes (`SemanticUIResult`,
+    `StatusPayload`, etc.) consumed via `isinstance` elsewhere in the suite
+    (`agent.py`'s card seam, `cards.py`'s renderers). A permanent eviction
+    would leave a *second*, distinct copy of those classes in `sys.modules`
+    for the rest of the pytest session — any test file that imported them
+    at collection time keeps referencing the *original* classes, while
+    anything that re-imports afterwards gets the *new* ones, breaking
+    `isinstance` across test files (observed as spurious failures in
+    `test_msagent_semantic_bridge.py` when the full suite ran in one
+    session). Using `monkeypatch.delitem` instead means pytest restores the
+    original module objects at this test's teardown, so no state leaks to
+    later tests.
+
+    Args:
+        monkeypatch: The pytest `MonkeyPatch` fixture for this test.
+        *prefixes: Module name prefixes to evict for the duration of the test.
+    """
+    to_remove = [
+        key
+        for key in list(sys.modules)
+        if any(key == p or key.startswith(p + ".") for p in prefixes)
+    ]
+    for key in to_remove:
+        monkeypatch.delitem(sys.modules, key)
+
+
+def test_msagentsdk_semantic_and_cards_import_without_microsoft_agents(
+    monkeypatch,
+) -> None:
+    """`semantic.py` / `cards.py` must import with `microsoft_agents` blocked.
+
+    Even if `microsoft-agents-*` is installed in this environment, these two
+    modules must never actually import it — they are pure Pydantic /
+    plain-dict modules (FEAT-303 spec §7). Blocking the import via
+    `builtins.__import__` (same technique as
+    `test_integration_manager_does_not_import_aiogram_or_pywa`) proves the
+    modules do not depend on it, regardless of what happens to be installed.
+    """
+    import builtins
+
+    _evict_and_restore(
+        monkeypatch,
+        "parrot.integrations.msagentsdk.semantic",
+        "parrot.integrations.msagentsdk.cards",
+        "microsoft_agents",
+    )
+
+    real_import = builtins.__import__
+
+    def _blocked_import(name, *args, **kwargs):
+        if name == "microsoft_agents" or name.startswith("microsoft_agents."):
+            raise ModuleNotFoundError(f"No module named '{name}'", name=name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _blocked_import)
+    semantic_mod = importlib.import_module("parrot.integrations.msagentsdk.semantic")
+    cards_mod = importlib.import_module("parrot.integrations.msagentsdk.cards")
+    # monkeypatch fixture automatically restores builtins.__import__ and the
+    # evicted sys.modules entries at test teardown.
+
+    assert "microsoft_agents" not in sys.modules, (
+        "Importing semantic.py/cards.py pulled microsoft_agents into "
+        "sys.modules — these modules must stay SDK-independent."
+    )
+    assert hasattr(semantic_mod, "SemanticUIResult")
+    assert hasattr(cards_mod, "render_card")
+    assert hasattr(cards_mod, "render_text")
+
+
+def test_msagentsdk_lazy_exports_resolve_semantic_ui_names(monkeypatch) -> None:
+    """`msagentsdk.__getattr__` resolves the new FEAT-303 public names."""
+    _evict_and_restore(monkeypatch, "parrot.integrations.msagentsdk")
+
+    import parrot.integrations.msagentsdk as msagentsdk_pkg
+
+    assert msagentsdk_pkg.SemanticUIResult is not None
+    assert msagentsdk_pkg.UIAction is not None
+    assert callable(msagentsdk_pkg.render_card)
+    assert callable(msagentsdk_pkg.render_text)
