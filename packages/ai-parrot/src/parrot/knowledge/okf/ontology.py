@@ -63,6 +63,12 @@ class ConceptType(str, Enum):
     WIKI_SYNTHESIS = "Wiki Synthesis"
     WIKI_OVERVIEW = "Wiki Overview"
 
+    # --- Open-vocabulary fallback (FEAT-216) ---
+    # bundle.py maps unknown foreign OKF ``type`` values here on import;
+    # the member was documented since FEAT-216 but never added, so any
+    # foreign-typed bundle import raised AttributeError.
+    OTHER = "Other"
+
 
 class RelationType(str, Enum):
     """Typed edge vocabulary (OKF-superset).
