@@ -407,18 +407,34 @@ class InMemoryWikiStore(BaseWikiStore):
         pages: list[WikiPageRecord],
         edges: Optional[list[tuple[str, str, str]]] = None,
     ) -> dict[str, Any]:
-        """Atomically replace all pages/edges derived from one source."""
+        """Atomically replace all pages/edges derived from one source.
+
+        Incoming edges from other sources are preserved when the
+        replacement re-inserts the same stable ``concept_id`` (matching
+        the SQLite backend's contract).
+        """
         await self._ensure_loaded()
         old_ids = [
             cid
             for cid, page in self._pages.items()
             if page.get("source_id") == source_id
         ]
+        old_set = set(old_ids)
+        new_ids = {page.concept_id for page in pages}
+        preserved = [
+            (src, cid, rel)
+            for cid in old_ids
+            if cid in new_ids
+            for src, rel in self._in_edges.get(cid, [])
+            if src not in old_set
+        ]
         for cid in old_ids:
             await self.delete_page(cid)
         written = await self.upsert_pages(pages)
         if edges:
             await self.add_edges(edges)
+        if preserved:
+            await self.add_edges(preserved)
         return {
             "pages_deleted": len(old_ids),
             "pages_written": written,
