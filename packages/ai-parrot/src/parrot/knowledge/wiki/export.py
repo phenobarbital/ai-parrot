@@ -30,7 +30,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.okf.utils import flatten_concept_id_for_filename
-from parrot.knowledge.wiki.store import WikiStore
+from parrot.knowledge.wiki.store import BaseWikiStore
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,11 @@ CATEGORY_TO_OKF_TYPE: dict[str, str] = {
     "synthesis": "Wiki Synthesis",
     "overview": "Wiki Overview",
     "concept": "Concept",
+}
+
+# Inverse map for consumers that read bundles back (file_store backend).
+OKF_TYPE_TO_CATEGORY: dict[str, str] = {
+    v: k for k, v in CATEGORY_TO_OKF_TYPE.items()
 }
 
 
@@ -63,12 +68,12 @@ class WikiExportReport(BaseModel):
     categories: dict[str, int] = Field(default_factory=dict)
 
 
-def _okf_type(category: str) -> str:
+def okf_type(category: str) -> str:
     """Map a wiki category to an OKF ``type`` string."""
     return CATEGORY_TO_OKF_TYPE.get(category, category.title() or "Other")
 
 
-def _category_dir(category: str) -> str:
+def category_dir(category: str) -> str:
     """Directory name for a category (naive English plural, lowercase)."""
     cat = (category or "concept").lower()
     if cat.endswith("s"):
@@ -78,13 +83,13 @@ def _category_dir(category: str) -> str:
     return f"{cat}s"
 
 
-def _page_frontmatter(
+def page_frontmatter(
     page: dict[str, Any],
     relates_to: list[dict[str, str]],
 ) -> str:
     """Render OKF frontmatter for one page (deterministic key order)."""
     data: dict[str, Any] = {
-        "type": _okf_type(str(page.get("category") or "concept")),
+        "type": okf_type(str(page.get("category") or "concept")),
         "title": page.get("title") or page["concept_id"],
         "id": page["concept_id"],
         "tags": [str(page.get("category") or "concept")],
@@ -101,7 +106,7 @@ def _page_frontmatter(
     return f"---\n{rendered}---\n"
 
 
-def _generate_index(wiki_name: str, entries: list[tuple[str, str, str]]) -> str:
+def generate_index(wiki_name: str, entries: list[tuple[str, str, str]]) -> str:
     """Render the root ``index.md`` (title, relative path, summary)."""
     lines = [
         f"# {wiki_name}",
@@ -118,14 +123,18 @@ def _generate_index(wiki_name: str, entries: list[tuple[str, str, str]]) -> str:
 
 
 async def export_okf_bundle(
-    store: WikiStore,
+    store: BaseWikiStore,
     output_dir: Path,
     wiki_name: str = "",
 ) -> WikiExportReport:
-    """Project the WikiStore plane into an OKF v0.1 markdown bundle.
+    """Project a wiki store into an OKF v0.1 markdown bundle.
+
+    Works with any :class:`BaseWikiStore` backend via ``dump_pages`` /
+    ``dump_edges`` (for the file backend this re-projects the live
+    bundle into ``output_dir``).
 
     Args:
-        store: Source :class:`WikiStore`.
+        store: Source store (any backend).
         output_dir: Bundle root (created if missing).
         wiki_name: Name used in the bundle index header.
 
@@ -155,11 +164,11 @@ async def export_okf_bundle(
 
     for page in pages:
         category = str(page.get("category") or "concept")
-        cat_dir = _category_dir(category)
+        cat_dir = category_dir(category)
         filename = f"{flatten_concept_id_for_filename(page['concept_id'])}.md"
         rel_path = f"{cat_dir}/{filename}"
 
-        frontmatter = _page_frontmatter(
+        frontmatter = page_frontmatter(
             page, relates_by_src.get(page["concept_id"], [])
         )
         body = page.get("body") or page.get("summary") or ""
@@ -192,7 +201,7 @@ async def export_okf_bundle(
     await asyncio.to_thread(
         _write,
         output_dir / "index.md",
-        _generate_index(wiki_name or "wiki", index_entries),
+        generate_index(wiki_name or "wiki", index_entries),
     )
     report.index_generated = True
 

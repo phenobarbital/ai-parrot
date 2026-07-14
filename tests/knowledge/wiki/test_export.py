@@ -7,8 +7,8 @@ import yaml
 
 from parrot.knowledge.wiki.export import (
     WikiExportReport,
-    _category_dir,
-    _okf_type,
+    category_dir,
+    okf_type,
     export_okf_bundle,
 )
 from parrot.knowledge.wiki.store import WikiPageRecord, WikiStore
@@ -54,19 +54,19 @@ def _parse_front(path: Path) -> dict:
 
 class TestHelpers:
     def test_okf_type_known_categories(self):
-        assert _okf_type("summary") == "Wiki Summary"
-        assert _okf_type("entity") == "Wiki Entity"
-        assert _okf_type("concept") == "Concept"
+        assert okf_type("summary") == "Wiki Summary"
+        assert okf_type("entity") == "Wiki Entity"
+        assert okf_type("concept") == "Concept"
 
     def test_okf_type_open_fallback(self):
-        assert _okf_type("answer") == "Answer"
-        assert _okf_type("custom-thing") == "Custom-Thing"
+        assert okf_type("answer") == "Answer"
+        assert okf_type("custom-thing") == "Custom-Thing"
 
     def test_category_dir(self):
-        assert _category_dir("summary") == "summaries"
-        assert _category_dir("entity") == "entities"
-        assert _category_dir("concept") == "concepts"
-        assert _category_dir("synthesis") == "synthesis"
+        assert category_dir("summary") == "summaries"
+        assert category_dir("entity") == "entities"
+        assert category_dir("concept") == "concepts"
+        assert category_dir("synthesis") == "synthesis"
 
 
 class TestExportBundle:

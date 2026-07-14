@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import re
 import struct
+from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -202,7 +203,199 @@ class WikiPageRecord(BaseModel):
     token_count: int = Field(default=0, ge=0)
 
 
-class WikiStore:
+def rank_by_cosine(
+    embedding: list[float],
+    candidates: list[tuple[dict[str, Any], list[float]]],
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Rank candidate stubs by cosine similarity to a query vector.
+
+    Shared by every backend — brute-force in-process scan, appropriate
+    at wiki scale (10³–10⁴ pages).  Candidates whose vector dimension
+    does not match the query are skipped.
+
+    Args:
+        embedding: Query vector.
+        candidates: ``(stub_dict, vector)`` pairs.
+        limit: Maximum results.
+
+    Returns:
+        Stub dicts with a ``score`` key in [-1, 1], best first.
+    """
+    if not candidates:
+        return []
+
+    import numpy as np
+
+    query_vec = np.asarray(embedding, dtype=np.float32)
+    q_norm = float(np.linalg.norm(query_vec))
+    if q_norm == 0.0:
+        return []
+
+    scored: list[dict[str, Any]] = []
+    for stub, vector in candidates:
+        vec = np.asarray(vector, dtype=np.float32)
+        if vec.shape != query_vec.shape:
+            continue
+        denom = q_norm * float(np.linalg.norm(vec))
+        score = float(np.dot(query_vec, vec) / denom) if denom else 0.0
+        item = dict(stub)
+        item["score"] = score
+        scored.append(item)
+    scored.sort(key=lambda r: r["score"], reverse=True)
+    return scored[:limit]
+
+
+class BaseWikiStore(ABC):
+    """Contract for wiki retrieval-plane backends.
+
+    Every consumer (``wiki/search.py``, ``wiki/ingest.py``,
+    ``wiki/toolkit.py``, ``wiki/export.py``) talks only to this
+    surface, so backends are interchangeable via
+    :func:`create_wiki_store`:
+
+    - :class:`SQLiteWikiStore` — single-file ``wiki.db`` (FTS5/BM25).
+    - :class:`InMemoryWikiStore` — RAM indexes persisted as an OKF
+      markdown bundle directory (``wiki/file_store.py``).
+
+    ``search_fts`` is the lexical-search entry point on all backends
+    (the name predates the second backend; semantics are
+    backend-defined lexical ranking, not necessarily SQLite FTS).
+    """
+
+    # -- write -----------------------------------------------------------
+    @abstractmethod
+    async def upsert_pages(self, pages: list[WikiPageRecord]) -> int: ...
+
+    @abstractmethod
+    async def add_edges(self, edges: list[tuple[str, str, str]]) -> int: ...
+
+    @abstractmethod
+    async def replace_source_slice(
+        self,
+        source_id: str,
+        pages: list[WikiPageRecord],
+        edges: Optional[list[tuple[str, str, str]]] = None,
+    ) -> dict[str, Any]: ...
+
+    @abstractmethod
+    async def delete_page(self, concept_id: str) -> bool: ...
+
+    @abstractmethod
+    async def upsert_embedding(
+        self, concept_id: str, vector: list[float], model: str = ""
+    ) -> None: ...
+
+    # -- read ------------------------------------------------------------
+    @abstractmethod
+    async def get_page(
+        self, concept_id: str, include_body: bool = True
+    ) -> Optional[dict[str, Any]]: ...
+
+    @abstractmethod
+    async def list_pages(
+        self, category: Optional[str] = None, limit: int = 100
+    ) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    async def search_fts(
+        self, query: str, category: Optional[str] = None, limit: int = 10
+    ) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    async def search_vector(
+        self, embedding: list[float], limit: int = 10
+    ) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    async def neighbors(
+        self,
+        concept_id: str,
+        rel: Optional[str] = None,
+        direction: str = "both",
+    ) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    async def dump_pages(self) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    async def dump_edges(self) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    async def stats(self) -> dict[str, Any]: ...
+
+    # -- lint --------------------------------------------------------------
+    @abstractmethod
+    async def orphan_sources(self) -> list[str]: ...
+
+    @abstractmethod
+    async def broken_edges(self) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    async def missing_bodies(self) -> list[str]: ...
+
+    # -- shared concrete behaviour ----------------------------------------
+
+    async def rebuild_from_tree(
+        self,
+        tree: dict[str, Any],
+        content_loader: Optional[Callable[[str], Optional[str]]] = None,
+        source_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Rebuild page rows from a PageIndex tree (derived-plane refresh).
+
+        Backend-agnostic: walks every node once and calls
+        :meth:`upsert_pages`.  Page identity prefers ``concept_id``
+        (assigned by ``splice_subtree``) and falls back to ``node_id``.
+        Bodies are loaded through ``content_loader`` (typically
+        ``NodeContentStore.loader_for(tree_name)``).
+
+        Args:
+            tree: PageIndex tree dict (``{"structure": [...]}``).
+            content_loader: ``node_id -> markdown`` callable, or ``None``
+                to store summary-only rows.
+            source_id: Optional source id stamped on every rebuilt page.
+
+        Returns:
+            ``{"pages_written": N}``
+        """
+        from parrot.knowledge.pageindex.utils import get_nodes
+
+        structure = tree.get("structure", tree)
+        nodes = get_nodes(structure)
+        pages: list[WikiPageRecord] = []
+        for node in nodes:
+            node_id = str(node.get("node_id") or "")
+            concept_id = str(node.get("concept_id") or node_id)
+            if not concept_id:
+                continue
+            body = ""
+            if content_loader is not None:
+                for key in (concept_id, node_id):
+                    if not key:
+                        continue
+                    loaded = content_loader(key)
+                    if loaded:
+                        body = loaded
+                        break
+            summary = str(node.get("summary") or "")
+            pages.append(
+                WikiPageRecord(
+                    concept_id=concept_id,
+                    node_id=node_id or None,
+                    title=str(node.get("title") or concept_id),
+                    category=str(node.get("category") or node.get("type") or "concept").lower(),
+                    summary=summary,
+                    body=body,
+                    source_id=source_id,
+                    token_count=estimate_tokens(body or summary),
+                )
+            )
+        written = await self.upsert_pages(pages)
+        return {"pages_written": written}
+
+
+class SQLiteWikiStore(BaseWikiStore):
     """Async single-file SQLite retrieval plane for one wiki.
 
     Args:
@@ -577,24 +770,10 @@ class WikiStore:
                 " FROM embeddings e JOIN pages p ON p.concept_id = e.concept_id"
             ) as cur:
                 rows = await cur.fetchall()
-        if not rows:
-            return []
 
-        import numpy as np
-
-        query_vec = np.asarray(embedding, dtype=np.float32)
-        q_norm = float(np.linalg.norm(query_vec))
-        if q_norm == 0.0:
-            return []
-
-        scored: list[dict[str, Any]] = []
+        candidates: list[tuple[dict[str, Any], list[float]]] = []
         for row in rows:
-            vec = np.frombuffer(row["vector"], dtype=np.float32)
-            if vec.shape != query_vec.shape:
-                continue
-            denom = q_norm * float(np.linalg.norm(vec))
-            score = float(np.dot(query_vec, vec) / denom) if denom else 0.0
-            item = {
+            stub = {
                 k: row[k]
                 for k in (
                     "concept_id",
@@ -606,10 +785,8 @@ class WikiStore:
                     "token_count",
                 )
             }
-            item["score"] = score
-            scored.append(item)
-        scored.sort(key=lambda r: r["score"], reverse=True)
-        return scored[:limit]
+            candidates.append((stub, _unpack_vector(row["vector"])))
+        return rank_by_cosine(embedding, candidates, limit=limit)
 
     async def neighbors(
         self,
@@ -735,63 +912,45 @@ class WikiStore:
             ) as cur:
                 return [row["concept_id"] for row in await cur.fetchall()]
 
-    # ------------------------------------------------------------------
-    # Rebuild
-    # ------------------------------------------------------------------
 
-    async def rebuild_from_tree(
-        self,
-        tree: dict[str, Any],
-        content_loader: Optional[Callable[[str], Optional[str]]] = None,
-        source_id: Optional[str] = None,
-    ) -> dict[str, Any]:
-        """Rebuild page rows from a PageIndex tree (derived-plane refresh).
+# Backwards-compatible alias — the SQLite plane was the only backend
+# before the pluggable-store refactor.
+WikiStore = SQLiteWikiStore
 
-        Walks every node once; page identity prefers ``concept_id``
-        (assigned by ``splice_subtree``) and falls back to ``node_id``.
-        Bodies are loaded through ``content_loader`` (typically
-        ``NodeContentStore.loader_for(tree_name)``).
 
-        Args:
-            tree: PageIndex tree dict (``{"structure": [...]}``).
-            content_loader: ``node_id -> markdown`` callable, or ``None``
-                to store summary-only rows.
-            source_id: Optional source id stamped on every rebuilt page.
+def create_wiki_store(
+    storage_dir: str | Path,
+    wiki_name: str = "",
+    backend: str = "sqlite",
+) -> BaseWikiStore:
+    """Instantiate the configured wiki retrieval-plane backend.
 
-        Returns:
-            ``{"pages_written": N}``
-        """
-        from parrot.knowledge.pageindex.utils import get_nodes
+    Selection is explicit (``WikiConfig.storage_backend``) — there is no
+    silent fallback: a broken/unavailable backend is a hard error.
 
-        structure = tree.get("structure", tree)
-        nodes = get_nodes(structure)
-        pages: list[WikiPageRecord] = []
-        for node in nodes:
-            node_id = str(node.get("node_id") or "")
-            concept_id = str(node.get("concept_id") or node_id)
-            if not concept_id:
-                continue
-            body = ""
-            if content_loader is not None:
-                for key in (concept_id, node_id):
-                    if not key:
-                        continue
-                    loaded = content_loader(key)
-                    if loaded:
-                        body = loaded
-                        break
-            summary = str(node.get("summary") or "")
-            pages.append(
-                WikiPageRecord(
-                    concept_id=concept_id,
-                    node_id=node_id or None,
-                    title=str(node.get("title") or concept_id),
-                    category=str(node.get("category") or node.get("type") or "concept").lower(),
-                    summary=summary,
-                    body=body,
-                    source_id=source_id,
-                    token_count=estimate_tokens(body or summary),
-                )
-            )
-        written = await self.upsert_pages(pages)
-        return {"pages_written": written}
+    Args:
+        storage_dir: Wiki storage root.  ``sqlite`` uses
+            ``{storage_dir}/wiki.db``; ``memory`` uses the OKF bundle
+            directory ``{storage_dir}/pages/``.
+        wiki_name: Wiki name recorded by the backend.
+        backend: ``"sqlite"`` (single-file SQLite plane) or
+            ``"memory"`` (in-memory indexes + OKF markdown directory).
+
+    Returns:
+        A :class:`BaseWikiStore` implementation.
+
+    Raises:
+        ValueError: For an unknown ``backend`` value.
+    """
+    storage_dir = Path(storage_dir)
+    if backend == "sqlite":
+        return SQLiteWikiStore(storage_dir / "wiki.db", wiki_name=wiki_name)
+    if backend == "memory":
+        # Imported lazily — file_store imports export helpers which
+        # import this module.
+        from parrot.knowledge.wiki.file_store import InMemoryWikiStore
+
+        return InMemoryWikiStore(storage_dir / "pages", wiki_name=wiki_name)
+    raise ValueError(
+        f"Unknown wiki storage backend {backend!r} — expected 'sqlite' or 'memory'"
+    )
