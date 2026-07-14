@@ -29,9 +29,13 @@ async def test_documentdb_save_uses_async_with(mock_documentdb):
     await backend.save("crew_executions", {"crew_name": "x"})
 
     mock_documentdb.__aenter__.assert_awaited_once()
-    mock_documentdb.write.assert_awaited_once_with(
-        "crew_executions", {"crew_name": "x"}
-    )
+    mock_documentdb.write.assert_awaited_once()
+    # FEAT-307: save() now stamps a generated `record_id` onto the document
+    # (find_documents() strips Mongo's own `_id`, so callers need a stable id).
+    written_collection, written_doc = mock_documentdb.write.await_args.args
+    assert written_collection == "crew_executions"
+    assert written_doc["crew_name"] == "x"
+    assert "record_id" in written_doc
     mock_documentdb.__aexit__.assert_awaited_once()
 
 

@@ -79,9 +79,12 @@ async def test_postgres_wraps_bare_string_result(mock_asyncdb):
         for c in mock_asyncdb.execute.await_args_list
         if "INSERT INTO" in c.args[0]
     )
-    # payload is the 7th positional arg (index 7 = args[7]) — execution_id
-    # was inserted as a named column before timestamp/payload (TASK-1766).
-    payload_arg = insert_call.args[7]
+    # payload is the last positional arg. Column order:
+    # crew_name, method, user_id, session_id, execution_id, timestamp,
+    # tenant, prompt, payload — args[0] is the query string, so payload
+    # (the 9th column) lands at args[9]. Shifted twice: once by FEAT-306's
+    # execution_id column, once by FEAT-307's tenant/prompt columns.
+    payload_arg = insert_call.args[9]
     payload = json.loads(payload_arg)
     assert payload["result"] == {"raw": "raw-string"}
 
@@ -164,7 +167,10 @@ async def test_postgres_save_extracts_execution_id_to_column(mock_asyncdb):
         if "INSERT INTO" in c.args[0]
     )
     assert insert_call.args[5] == "E1"  # execution_id positional column
-    payload = json.loads(insert_call.args[7])
+    # payload is now at args[9] — shifted by FEAT-307's tenant/prompt columns
+    # (inserted between execution_id/timestamp and payload). See the merge
+    # note on test_postgres_wraps_bare_string_result above.
+    payload = json.loads(insert_call.args[9])
     assert "execution_id" not in payload
 
 

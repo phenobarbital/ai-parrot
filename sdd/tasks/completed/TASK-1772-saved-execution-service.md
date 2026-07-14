@@ -81,12 +81,17 @@ async def add_schedule(
     scheduler_type='default', callbacks=None
 ) -> AgentSchedule: ...  # manager.py:932
 
-# BotManager crew access (from handler patterns):
-# bot_manager.get_crew(identifier, tenant=tenant) -> tuple[AgentCrew, CrewDefinition] or None
-# bot_manager.get_crew(crew_id, as_new=True, tenant=tenant) -> tuple for execution
+# BotManager crew access (VERIFIED at packages/ai-parrot-server/src/parrot/manager/manager.py:2191 —
+# corrected from the original contract, which omitted `await` and said
+# "or None"; get_crew() is async and ALWAYS returns a 2-tuple, using
+# (None, None) for "not found", never a bare None):
+# async def get_crew(self, identifier: str, as_new: bool = False, tenant: Optional[str] = None)
+#     -> Optional[Tuple[AgentCrew, CrewDefinition]]
+# crew, crew_def = await bot_manager.get_crew(crew_id, as_new=True, tenant=tenant)
+# if not crew or not crew_def: ...  # "not found" case
 
-# CrewExecutionHandler replay pattern (from execution_handler.py):
-# crew, crew_def = bot_manager.get_crew(crew_id, as_new=True, tenant=tenant)
+# CrewExecutionHandler replay pattern (from execution_handler.py:571):
+# crew, crew_def = await self.bot_manager.get_crew(...)
 # method = getattr(crew, method_name)
 # result = await method(prompt, ...)
 ```
@@ -95,6 +100,8 @@ async def add_schedule(
 - ~~`SavedExecutionService`~~ — does not exist yet; this task creates it
 - ~~`ResultStorage.replay()`~~ — no replay method on storage; service coordinates this
 - ~~`ResultStorage.schedule()`~~ — no schedule method on storage
+- ~~`bot_manager.get_crew(...)` returning bare `None`~~ — CORRECTED: always
+  returns a 2-tuple; "not found" is `(None, None)`, not `None`.
 
 ---
 
@@ -150,17 +157,28 @@ class SavedExecutionService:
 - `run_parallel` expects `tasks` not `prompt` — need method-specific parameter mapping
 
 ### Method-to-Parameter Mapping for Replay
+
+CORRECTED against the verified `AgentCrew` signatures (TASK-1771 fixed the
+same two stale entries in that task's contract): `run_loop`'s parameter is
+`initial_task`, not `query`; `run`'s parameter is `task`, not `prompt`.
+
 ```python
 METHOD_PARAM_MAP = {
     "run_sequential": "query",
-    "run_loop": "query",
+    "run_loop": "initial_task",   # corrected; also see _UNSUPPORTED_REPLAY_METHODS below
     "run_flow": "initial_task",
     "run_parallel": "tasks",  # needs special handling
-    "run": "prompt",
+    "run": "task",   # corrected
+    "ask": "question",
 }
 ```
 
-For `run_parallel`, the saved prompt may be a JSON-serialized task list.
+For `run_parallel`, the saved `prompt` is a single string (the first task's
+query at save time — TASK-1771), not the original multi-agent task list;
+best-effort replay broadcasts the saved prompt to every agent currently on
+the crew. `run_loop` additionally requires a `condition: str` positional
+argument that is never persisted with the execution — replay of `run_loop`
+executions is therefore unsupported and raises `ValueError`.
 
 ---
 
@@ -241,10 +259,40 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Created `SavedExecutionService` with all five methods (`list_executions`,
+`get_execution`, `replay_execution`, `schedule_execution`, `delete_execution`).
+Corrected two stale contract entries before implementing (per anti-hallucination
+protocol, same class of issue found in TASK-1771): `bot_manager.get_crew()` is
+`async` and always returns a 2-tuple (`(None, None)` for "not found", never a bare
+`None`) — verified at `manager.py:2191`; and the `METHOD_PARAM_MAP` had the same
+two stale param names TASK-1771 already fixed (`run_loop` → `initial_task`, not
+`query`; `run` → `task`, not `prompt`). Both corrections recorded in the task
+file's contract/notes sections. Used `.model_dump(exclude_none=True)` (Pydantic v2)
+instead of the task's `.dict()` snippet, and `AgentSchedule.to_dict()` (python-
+datamodel `Model`, verified at `scheduler/manager.py:1317`) for the schedule
+serialisation. `get_execution()`/`delete_execution()` verify tenant/user_id
+ownership in the service layer via `_belongs_to()` — consistent with the deviation
+already documented in TASK-1768 (storage-layer `get()`/`delete()` only take
+`record_id`, no tenant/user_id params). Created
+`tests/unit/test_saved_execution_service.py` covering all 7 scenarios from the
+task's Test Specification plus 6 additional edge-case tests (wrong-tenant
+ownership check, execution-not-found, run_loop-unsupported, run_parallel
+broadcast, no-scheduler-manager, delete-not-found). 13/13 pass. `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+1. `replay_execution()` for `run_parallel` cannot reconstruct the original
+   multi-agent task list from the persisted `prompt` (a single string — the first
+   task's query at save time, per TASK-1771's `prompt=original_query`). Best-effort:
+   broadcasts the saved prompt to every agent currently on the crew
+   (`tasks=[{"agent_id": aid, "query": prompt} for aid in crew.agents]`).
+2. `replay_execution()` for `run_loop` raises `ValueError` — `run_loop` requires a
+   `condition: str` positional argument that is never persisted with the execution
+   document, so it cannot be replayed with the current storage schema. Flagging for
+   spec review: either accept this limitation permanently, or extend the saved
+   document schema with a `condition` field in a follow-up feature.
+3. Added a generated `job_id` (`uuid.uuid4()`) to `replay_execution()`'s return
+   dict, on top of the task's own `{"crew_name", "method", "status"}` example —
+   needed to satisfy the spec's public-interface docstring ("Returns a new job
+   dict with job_id"), which the task's own code snippet didn't include.
