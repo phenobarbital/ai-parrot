@@ -226,10 +226,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Implemented all 8 models exactly per spec §2 in
+`semantic.py` (UIAction with prompt-xor-url validator, UIField, UIMetric,
+TablePayload, MetricsPayload, DetailPayload, StatusPayload,
+SemanticUIResult with discriminated union). 9/9 unit tests pass; ruff
+clean; zero `microsoft_agents`/`navconfig` imports confirmed via grep.
+Direct `python -c` import from an arbitrary cwd resolves to the main
+repo's editable install (shared `.venv` across worktrees) rather than
+this worktree's copy — a pre-existing environment characteristic of the
+worktree workflow, not a code defect. Verified SDK-independence instead
+via `pytest` (which correctly resolves the worktree's `src/` first) and
+via an explicit `PYTHONPATH` prefix; both confirm the module imports
+cleanly with no `microsoft_agents.*` dependency.
 
 **Deviations from spec**: none

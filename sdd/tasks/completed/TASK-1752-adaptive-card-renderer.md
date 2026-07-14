@@ -273,10 +273,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Implemented `render_card()` dispatching on `result_type` to
+private per-type template functions (table/metrics/detail/status), all
+using only TextBlock/ColumnSet/Column/FactSet/Container elements plus
+Action.Submit/Action.OpenUrl. Table truncation with "showing N of M" note,
+size guard via `CardRenderError`, empty-payload "no results" Container for
+table/metrics/detail, `render_text()` total fallback wrapped in a
+try/except so it can never raise, `build_card_attachment()`, and
+`_build_action()` producing the `messageBack` + duplicated
+`feat303_prompt` payload shape specified for the invoke shim. Missing
+`prompt_template` params degrade to literal `{key}` via a
+`_DefaultFormatDict`. 17/17 unit tests pass; ruff clean; zero
+`microsoft_agents`/`navconfig` imports confirmed via grep.
 
 **Deviations from spec**: none

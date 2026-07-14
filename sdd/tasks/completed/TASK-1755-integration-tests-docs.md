@@ -206,10 +206,78 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Added `test_msagent_card_e2e.py` driving `on_turn()` end-to-end
+(not private helpers): message → card with a Submit + OpenUrl action pair
+→ simulated messageBack click (prompt pulled straight from the rendered
+card JSON) → second `ask()`; same flow again via the `adaptiveCard/action`
+invoke path; plus a plain-bot-unaffected regression check. Extended
+(not sibling-created) `tests/test_import_isolation.py` with two FEAT-303
+tests following its existing `_clean_modules`/`builtins.__import__`-blocking
+patterns.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Cross-test-pollution bug found and fixed (in test code only, no
+production code touched)**: my first draft of the two import-isolation
+tests used the existing `_clean_modules()` helper (permanent, unrestored
+`sys.modules` eviction) on `parrot.integrations.msagentsdk` and its
+submodules. Because `semantic.py`/`cards.py` define Pydantic classes
+consumed via `isinstance` elsewhere (`agent.py`'s card seam,
+`cards.py`'s own renderers), permanently evicting and re-importing them
+created a *second*, distinct copy of those classes in `sys.modules` for
+the rest of the pytest session. Test files that had already imported the
+original classes at collection time (`test_msagent_semantic_bridge.py`)
+kept using the old classes, while anything re-imported afterward got the
+new ones — breaking `isinstance` checks and causing 2 spurious failures
+in `test_msagent_semantic_bridge.py` when the full suite ran together
+(they passed fine standalone). Root-caused via traceback diffing
+(`render_text()` silently falling into its "Unsupported result" branch
+because the freshly-reimported `cards.py`'s own `StatusPayload` no longer
+matched the payload instance's class) and fixed by switching both new
+tests to `monkeypatch.delitem`/`monkeypatch.setattr` (auto-restored at
+test teardown) via a new `_evict_and_restore()` helper, instead of the
+permanent `_clean_modules()` eviction. Verified the fix by re-running the
+package-wide suite (minus voice/liveavatar/msteams/telegram — see below)
+before and after: the two spurious failures disappeared with no other
+change.
 
-**Deviations from spec**: none
+**Docs**: created `docs/integrations/msagentsdk-semantic-cards.md`
+(agent-developer guide: what the model is, all four result types with a
+JSON example each, both structured-output/`.data` carriers, the action
+round-trip and both delivery paths, the three config knobs, and the
+fallback guarantees) and linked it from `docs/chapters/integrations.md`
+"Read next" — the closest existing integrations index (no
+`docs/integrations/` index file exists; this chapter file is the de
+facto entry point, alongside the existing Office 365 OAuth doc link).
+
+**Full-suite regression — result**: all 70 msagentsdk-related tests
+(`tests/unit/*msagent*` + `tests/test_import_isolation.py`) pass
+(70/70), ruff clean, no production code modified in this task. Attempted
+`pytest packages/ai-parrot-integrations/tests/ -v` (1441 tests) per the
+acceptance criterion but it does not complete in this sandbox: (1)
+`tests/integrations/telegram/test_telegram_voice.py::
+test_handle_voice_downloads_and_transcribes` hangs indefinitely even run
+completely alone (2-minute timeout, no output) — almost certainly a
+missing model/network dependency in this environment, unrelated to
+FEAT-303 (that directory is never touched by this feature). (2) Running
+the suite with `voice/`, `integrations/liveavatar/`,
+`integrations/telegram/`, `integrations/msteams/` excluded (549 tests)
+surfaced 17 pre-existing failures entirely outside FEAT-303's scope
+(jira oauth, telegram photo attachments, telegram wrapper send, matrix
+hook, slack integration, telegram enrich-question) — verified
+pre-existing and unrelated by running each of those 6 files completely
+alone (no msagentsdk code loaded at all): identical failures reproduce
+every time, proving they are baseline breakage independent of this
+feature and of test ordering. No `msagentsdk`/FEAT-303 test failed in
+any of these runs. Recommend a follow-up spec/task (outside FEAT-303) to
+investigate the hanging voice test and the 17 pre-existing failures.
+
+**Deviations from spec**: none in production code or the two new test
+files as scoped. One test-code deviation, disclosed above: the import
+isolation tests use `monkeypatch`-based eviction (`_evict_and_restore`)
+rather than the existing file's plain `_clean_modules()` helper, because
+the latter would leak duplicate class definitions across the test
+session for these specific classes — this is a necessary correction, not
+a scope change (still modifies only
+`packages/ai-parrot-integrations/tests/test_import_isolation.py`, the
+file listed for this task).

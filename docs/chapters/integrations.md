@@ -52,6 +52,7 @@ threads. This is what your frontend talks to.
 - [Telegram](../telegram_integration.md), [MS Teams](../msteams.md),
   [WhatsApp Orchestrator](../WHATSAPP_AUTONOMOUS_ORCHESTRATOR.md)
 - [Office 365 OAuth](../integrations/office365-oauth2.md)
+- [M365 Copilot Semantic UI Model → Adaptive Cards](../integrations/msagentsdk-semantic-cards.md)
 
 ## API reference
 
