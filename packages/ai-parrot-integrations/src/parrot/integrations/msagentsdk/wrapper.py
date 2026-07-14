@@ -153,6 +153,9 @@ class MSAgentSDKWrapper:
             audit_ledger=audit_ledger,
             broker=broker,
             identity_mapper=identity_mapper,
+            enable_semantic_cards=getattr(config, "enable_semantic_cards", True),
+            max_table_rows=getattr(config, "max_table_rows", 15),
+            max_card_bytes=getattr(config, "max_card_bytes", 25_000),
         )
 
         # Create CloudAdapter with auth configuration (lazy SDK import).
