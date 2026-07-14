@@ -168,10 +168,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-14
+**Notes**: Added `infographic: Optional["InfographicRenderResult"] = None` as
+the last dataclass field, using a `TYPE_CHECKING`-guarded import to avoid a
+hard import cycle. `to_dict()` now serialises it via `.model_dump()` when set,
+`None` otherwise. Corrected a stale Codebase Contract detail: the task doc
+claimed `InfographicRenderResult.artifact_id`/`.html_url` are
+`Optional[str] = None`; verified at `infographic_toolkit.py:97-98` both are
+REQUIRED (`str`, no default) — tests construct the model with those fields
+populated. 5 unit tests pass, ruff clean.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (Codebase Contract correction noted above, no
+behavioral deviation)

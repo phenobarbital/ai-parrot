@@ -32,7 +32,7 @@
       "feature_id": "FEAT-308",
       "feature": "agentcrew-node-infographic",
       "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches only core/result.py — no shared files with TASK-1775.",
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1776-flowresult-infographic-field.md"
+      "completed_at": "2026-07-14T01:24:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1776-flowresult-infographic-field.md"
     },
     {
       "id": "TASK-1777",
