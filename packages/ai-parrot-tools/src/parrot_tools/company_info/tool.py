@@ -9,14 +9,18 @@ This toolkit extends AbstractToolkit and provides methods to scrape company data
 - zoominfo.com
 
 Each public async method becomes a tool that:
-1. Performs a Google site search for the company
-2. Fetches the first result using Selenium
+1. Searches for the company (DDG-first, Google CSE fallback; see
+   `_search_company_url`)
+2. Fetches the first validated result via the Playwright driver stack
+   (`driver_context` + `DriverConfig(driver_type="playwright")`)
 3. Parses the page with BeautifulSoup
 4. Extracts company information
 5. Returns structured data (CompanyInfo model or JSON)
 
 Dependencies:
-    - selenium
+    - playwright (fetch layer; scraping extra)
+    - rapidfuzz (fuzzy company-name validation; scraping extra)
+    - ddgs (DDG-first search)
     - beautifulsoup4
     - pydantic
     - google-api-python-client
@@ -53,23 +57,11 @@ from pydantic import BaseModel, Field
 from googleapiclient.discovery import build
 from navconfig import config
 from navconfig.logging import logging
-try:
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.common.exceptions import (
-        TimeoutException,
-        NoSuchElementException,
-        WebDriverException
-    )
-except ImportError as e:
-    raise ImportError("Please install selenium: pip install selenium") from e
 
 from ..toolkit import AbstractToolkit
 from ..decorators import tool_schema
-from ..scraping.driver import SeleniumSetup
+from ..scraping.driver_context import driver_context
+from ..scraping.toolkit_models import DriverConfig
 
 
 # ===========================
@@ -262,6 +254,7 @@ class CompanyInfoToolkit(AbstractToolkit):
         mobile: bool = False,
         mobile_device: Optional[str] = None,
         use_undetected: bool = False,
+        custom_user_agent: Optional[str] = None,
         **kwargs
     ):
         """
@@ -270,14 +263,27 @@ class CompanyInfoToolkit(AbstractToolkit):
         Args:
             google_api_key: Google Custom Search API key
             google_cse_id: Google Custom Search Engine ID
-            browser: Browser type ('chrome', 'firefox', 'edge', 'safari', 'undetected')
-            headless: Run browser in headless mode
-            timeout: Default timeout for page loads (seconds)
-            auto_install: Auto-install webdriver if not found
-            mobile: Enable mobile emulation (Chrome only)
-            mobile_device: Specific mobile device to emulate
-            use_undetected: Use undetected-chromedriver (requires package)
-            **kwargs: Additional arguments passed to AbstractToolkit and SeleniumSetup
+            browser: Browser type ('chrome', 'firefox', 'edge', 'safari',
+                'undetected', 'webkit'). Mapped onto `DriverConfig.browser`
+                for the Playwright fetch layer ('undetected' has no
+                Playwright equivalent; see `use_undetected`).
+            headless: Run browser in headless mode. Mapped onto
+                `DriverConfig.headless`.
+            timeout: Default timeout for page loads (seconds). Mapped onto
+                `DriverConfig.default_timeout`.
+            auto_install: Auto-install webdriver if not found. Mapped onto
+                `DriverConfig.auto_install`.
+            mobile: Enable mobile emulation. Mapped onto `DriverConfig.mobile`.
+            mobile_device: Specific mobile device to emulate. Mapped onto
+                `DriverConfig.mobile_device`.
+            use_undetected: Deprecated. Legacy Selenium-only
+                undetected-chromedriver flag, kept for back-compat; it has
+                no effect on the Playwright fetch layer (logs a deprecation
+                warning instead of being applied).
+            custom_user_agent: Optional custom User-Agent string used for
+                headless-hardening (e.g. ZoomInfo). Mapped onto
+                `DriverConfig.custom_user_agent`.
+            **kwargs: Additional arguments passed to `AbstractToolkit`.
         """
         super().__init__(**kwargs)
 
@@ -287,60 +293,44 @@ class CompanyInfoToolkit(AbstractToolkit):
         # Service Selection:
         self.service = build("customsearch", "v1", developerKey=self.google_api_key)
 
-        # Browser configuration for SeleniumSetup
-        self.browser_config = {
-            'browser': 'undetected' if use_undetected else browser,
-            'headless': headless,
-            'auto_install': auto_install,
-            'mobile': mobile,
-            'mobile_device': mobile_device,
-            'timeout': timeout,
-            **kwargs  # Pass through any additional kwargs
-        }
-        # Selenium setup instance and driver
-        self._selenium_setup: Optional[SeleniumSetup] = None
-
-        # Current driver instance
-        self._driver = None
-
         # Logger
         self.logger = logging.getLogger(self.__class__.__name__)
+
+        if use_undetected:
+            self.logger.warning(
+                "CompanyInfoToolkit(use_undetected=True) is deprecated: it "
+                "was a Selenium-only undetected-chromedriver flag with no "
+                "Playwright equivalent and has no effect on the current "
+                "driver_context/Playwright fetch layer."
+            )
+
+        # Browser configuration mapped onto the scraping stack's DriverConfig
+        # (replaces the legacy SeleniumSetup-based `browser_config` dict).
+        self._driver_config = DriverConfig(
+            driver_type="playwright",
+            browser=browser,
+            headless=headless,
+            mobile=mobile,
+            mobile_device=mobile_device,
+            auto_install=auto_install,
+            default_timeout=timeout,
+            custom_user_agent=custom_user_agent,
+        )
 
     # ===========================
     # Core Utility Methods
     # ===========================
-    async def _get_driver(self) -> webdriver.Chrome:
-        """Get or create Selenium WebDriver instance using SeleniumSetup."""
-        if self._driver is None:
-            if SeleniumSetup is None:
-                raise ImportError(
-                    "SeleniumSetup not available. Please ensure parrot.tools.scraping.driver is installed."
-                )
+    async def _close_driver(self) -> None:
+        """
+        No-op kept for back-compat.
 
-            self.logger.info("Initializing Selenium WebDriver...")
-
-            # Create SeleniumSetup instance
-            self._selenium_setup = SeleniumSetup(**self.browser_config)
-
-            # Get driver using SeleniumSetup's async method
-            self._driver = await self._selenium_setup.get_driver()
-
-            self.logger.info("Selenium WebDriver initialized successfully")
-
-        return self._driver
-
-    async def _close_driver(self):
-        """Close the Selenium driver if open."""
-        if self._driver is not None:
-            try:
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, self._driver.quit)
-                self.logger.info("Selenium WebDriver closed")
-            except Exception as e:
-                self.logger.warning(f"Error closing driver: {e}")
-            finally:
-                self._driver = None
-                self._selenium_setup = None
+        The Playwright fetch layer (`_fetch_page`) creates and tears down a
+        fresh browser per call via `driver_context`, so there is no
+        persistent driver instance to close anymore. Existing
+        `finally: await self._close_driver()` call sites keep working
+        unchanged.
+        """
+        return None
 
     async def _google_site_search(
         self,
@@ -577,42 +567,57 @@ class CompanyInfoToolkit(AbstractToolkit):
 
         return None
 
-    async def _fetch_page_with_selenium(self, url: str) -> Optional[bs]:
+    async def _fetch_page(
+        self,
+        url: str,
+        custom_user_agent: Optional[str] = None
+    ) -> Optional[bs]:
         """
-        Fetch a page using Selenium and return BeautifulSoup object.
+        Fetch a page via the Playwright driver stack and parse it with BeautifulSoup.
+
+        Uses the shared scraping-stack lifecycle (`driver_context` +
+        `DriverConfig(driver_type="playwright")`), replacing the previous
+        direct Selenium usage. A fresh browser instance is created and torn
+        down per fetch (mirrors `scraping/toolkit.py:750`).
 
         Args:
-            url: URL to fetch
+            url: URL to fetch.
+            custom_user_agent: Optional per-call User-Agent override (e.g.
+                ZoomInfo's headless-hardening). Defaults to the toolkit's
+                `_driver_config.custom_user_agent` when not provided.
 
         Returns:
-            BeautifulSoup object or None if failed
+            BeautifulSoup object, or None if the fetch failed.
         """
-        driver = await self._get_driver()
+        driver_config = self._driver_config
+        if custom_user_agent:
+            driver_config = driver_config.merge({"custom_user_agent": custom_user_agent})
 
         try:
-            self.logger.info(f"Fetching URL: {url}")
-
-            # Navigate to URL
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, driver.get, url)
-
-            # Wait for page to load
-            await asyncio.sleep(2)
-
-            # Get page source
-            page_source = await loop.run_in_executor(
-                None,
-                lambda: driver.page_source
-            )
-            # Parse with BeautifulSoup
+            self.logger.info(f"Fetching URL via Playwright: {url}")
+            async with driver_context(driver_config) as drv:
+                await drv.navigate(url, timeout=driver_config.default_timeout)
+                page_source = await drv.get_page_source()
             return bs(page_source, 'html.parser')
-
-        except TimeoutException:
-            self.logger.error(f"Timeout fetching: {url}")
-            return None
         except Exception as e:
-            self.logger.error(f"Error fetching page: {e}")
+            self.logger.error(f"Error fetching page {url}: {e}")
             return None
+
+    async def _fetch_page_with_selenium(self, url: str) -> Optional[bs]:
+        """
+        Legacy alias for `_fetch_page` (back-compat).
+
+        Deprecated: kept temporarily so existing internal callers keep
+        working; delegates entirely to the new Playwright-based
+        `_fetch_page`. No Selenium is used here despite the method name.
+
+        Args:
+            url: URL to fetch.
+
+        Returns:
+            BeautifulSoup object, or None if the fetch failed.
+        """
+        return await self._fetch_page(url)
 
     def _parse_address(self, address_text: str) -> Dict[str, Optional[str]]:
         """
