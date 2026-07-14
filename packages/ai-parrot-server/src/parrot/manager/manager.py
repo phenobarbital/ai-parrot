@@ -69,6 +69,7 @@ from ..bots.flows.crew import AgentCrew
 from ..models.crew_definition import CrewDefinition
 from ..handlers.crew.handler import CrewHandler
 from ..handlers.crew.execution_handler import CrewExecutionHandler
+from ..handlers.crew.tool_catalog import CrewToolCatalogHandler
 from ..handlers.crew.redis_persistence import CrewRedis
 from ..openapi.config import setup_swagger
 from ..conf import (
@@ -1897,6 +1898,7 @@ class BotManager:
         self.app['stream_handler'] = st
         # Crew Configuration
         if ENABLE_CREWS:
+            router.add_view('/api/v1/crew/tools', CrewToolCatalogHandler)
             CrewHandler.configure(self.app, '/api/v1/crew')
             CrewExecutionHandler.configure(self.app, '/api/v1/crews')
         # Agent Config CRUD
