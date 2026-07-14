@@ -311,6 +311,17 @@ class CrewExecutionDocument:
         agent_results = [embedded[nid] for nid in all_ids]
 
         if crew_doc:
+            # to_dict() flattens the "_flow_extra" metadata bucket (nodes/
+            # agents/responses/execution_log) into top-level keys (see
+            # to_dict() above) — re-nest them so a round-tripped to_dict()
+            # reproduces the same superset shape as from_memory().
+            metadata = dict(crew_doc.get("metadata", {}))
+            metadata["_flow_extra"] = {
+                "nodes": crew_doc.get("nodes", []),
+                "agents": crew_doc.get("agents", []),
+                "responses": crew_doc.get("responses", {}),
+                "execution_log": crew_doc.get("execution_log", []),
+            }
             return cls(
                 execution_id=execution_id,
                 crew_name=crew_doc.get("crew_name", "unknown"),
@@ -325,7 +336,7 @@ class CrewExecutionDocument:
                 timestamp=crew_doc.get("timestamp", time.time()),
                 user_id=crew_doc.get("user_id"),
                 session_id=crew_doc.get("session_id"),
-                metadata=crew_doc.get("metadata", {}),
+                metadata=metadata,
             )
 
         # Crash-interrupted run: no consolidated doc — build a minimal

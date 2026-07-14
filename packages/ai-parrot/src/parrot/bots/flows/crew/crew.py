@@ -223,6 +223,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         self._summary = None
         self.last_crew_result: Optional[FlowResult] = None
         self._last_execution_id: Optional[str] = None
+        self._last_user_id: Optional[str] = None
+        self._last_session_id: Optional[str] = None
         self.agent_execution_timeout = agent_execution_timeout
         
         # Status Tracking
@@ -276,12 +278,21 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         """
         if self.last_crew_result is None:
             return None
+        # metadata['mode'] holds the short form ('sequential', 'loop',
+        # 'parallel', 'flow'); the persisted document's `method` field uses
+        # the full run_* name (e.g. 'run_sequential') — normalise so
+        # build_execution_document() matches CrewExecutionDocument.from_storage()
+        # for the same run (TASK-1770 e2e equality requirement).
+        _mode = self.last_crew_result.metadata.get('mode', 'unknown')
+        _method = _mode if _mode.startswith('run_') else f'run_{_mode}'
         return CrewExecutionDocument.from_memory(
             execution_id=self._last_execution_id,
             crew_name=self.name,
-            method=self.last_crew_result.metadata.get('mode', 'unknown'),
+            method=_method,
             memory=self.execution_memory,
             result=self.last_crew_result,
+            user_id=self._last_user_id,
+            session_id=self._last_session_id,
         )
 
     # ── Lifecycle hooks (FEAT-157) ────────────────────────────────────────
@@ -1590,6 +1601,8 @@ Current task: {current_input}"""
         # Track last run's result + execution id for build_execution_document() (FEAT-306)
         self.last_crew_result = result
         self._last_execution_id = execution_id
+        self._last_user_id = user_id
+        self._last_session_id = session_id
 
         # Save consolidated execution document (fire-and-forget, tracked for lifecycle cleanup)
         document = CrewExecutionDocument.from_memory(
@@ -2087,6 +2100,8 @@ Current task: {current_input}"""
         # Track last run's result + execution id for build_execution_document() (FEAT-306)
         self.last_crew_result = result
         self._last_execution_id = crew_execution_id
+        self._last_user_id = user_id
+        self._last_session_id = session_id
 
         # Save consolidated execution document (fire-and-forget, tracked for lifecycle cleanup)
         document = CrewExecutionDocument.from_memory(
@@ -2435,6 +2450,8 @@ Current task: {current_input}"""
         # Track last run's result + execution id for build_execution_document() (FEAT-306)
         self.last_crew_result = result
         self._last_execution_id = execution_id
+        self._last_user_id = user_id
+        self._last_session_id = session_id
 
         # Save consolidated execution document (fire-and-forget, tracked for lifecycle cleanup)
         document = CrewExecutionDocument.from_memory(
@@ -2692,6 +2709,8 @@ Current task: {current_input}"""
         # Track last run's result + execution id for build_execution_document() (FEAT-306)
         self.last_crew_result = result
         self._last_execution_id = execution_id
+        self._last_user_id = user_id
+        self._last_session_id = session_id
 
         # Save consolidated execution document (fire-and-forget, tracked for lifecycle cleanup)
         document = CrewExecutionDocument.from_memory(

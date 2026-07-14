@@ -319,3 +319,150 @@ draft = await crew.run_loop(
 The shared `CrewResult`, the FSM lifecycle and the persistence backend
 keep the surface uniform; the choice of mode is purely a *coordination
 strategy* on top of the same agent roster.
+
+## 7.7 Per-agent result persistence & deterministic execution documents (FEAT-306)
+
+Section 7.4 described the crew-level persist: one `FlowResult` written
+to `crew_executions` at the end of a run. FEAT-306 adds a **second,
+finer-grained plane** — every individual agent result is also persisted
+as it completes, and the two planes are joined by a new crew-level
+`execution_id` so the full run can be reconstructed later, even from a
+different process.
+
+### Two-plane persistence model
+
+```
+AgentCrew.run_*()
+   │  execution_id = uuid4()               (generated once per run, all 4 modes)
+   ├─ per agent finished ──→ ExecutionMemory.add_result(NodeResult)      [unchanged, in-memory]
+   │                     └─→ PersistenceMixin._save_agent_result(...)  ──→ ResultStorage.save("crew_agent_results", doc)
+   │
+   └─ run end ──→ CrewExecutionDocument.from_memory(...)
+                       └─→ PersistenceMixin._save_result(doc, ...)     ──→ ResultStorage.save("crew_executions", doc)
+```
+
+- **`crew_agent_results`** — one document per agent, written
+  incrementally (fire-and-forget) the moment each `NodeResult` is added
+  to `ExecutionMemory`. Linked to the run via `execution_id` and, for
+  Redis, keyed as `{collection}:{execution_id}:{node_execution_id}`.
+- **`crew_executions`** — unchanged collection name, but the persisted
+  document is now a `CrewExecutionDocument.to_dict()` (a superset of the
+  previous `FlowResult.to_dict()` shape) instead of the bare
+  `FlowResult`. It embeds `execution_id`, the full ordered
+  `agent_results` list, and `execution_order`.
+
+Both writes follow the same fire-and-forget + `self._persist_tasks`
+tracking pattern as the original crew-level persist, so `aclose()`
+drains both planes before releasing the storage backend.
+
+### Opt-outs
+
+```python
+crew = AgentCrew(
+    name="ResearchCrew",
+    agents=[researcher, analyzer],
+    persist_results=True,           # master switch — False disables BOTH planes
+    persist_agent_results=False,    # granular — disables ONLY the per-agent writes
+)
+```
+
+`persist_agent_results` has no effect when `persist_results=False` — the
+per-agent plane is already gated by the master switch first.
+
+### Read API — `ResultStorage.fetch()`
+
+All three built-in backends (`DocumentDbResultStorage`,
+`RedisResultStorage`, `PostgresResultStorage`) implement:
+
+```python
+async def fetch(self, collection: str, execution_id: str) -> list[dict]:
+    """Return every document in *collection* whose execution_id matches."""
+```
+
+Backend notes:
+
+- **Redis** — `fetch()` uses cursor-based `SCAN` (never `KEYS`) with
+  pattern `{collection}:{execution_id}:*`, then `GET`s each matched key.
+  Only documents written with the new key scheme (i.e. carrying an
+  `execution_id`) are fetchable this way; pre-FEAT-306 documents keep
+  the legacy `{collection}:{crew_name}:{timestamp_ms}` key and are not
+  retrievable by `execution_id`.
+- **Postgres** — the DDL gained an `execution_id text` column + index,
+  added via an idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` so
+  existing tables pick it up automatically on first write after
+  upgrading. `fetch()` issues a `SELECT ... WHERE execution_id = $1`.
+- **DocumentDB** — `fetch()` is a straightforward query filtered on the
+  `execution_id` field.
+- The base `ResultStorage.fetch()` raises `NotImplementedError` by
+  default (non-abstract), so third-party backends written before
+  FEAT-306 remain importable and usable for `save()`-only workloads.
+
+### `CrewExecutionDocument` — deterministic, LLM-free reconstruction
+
+`CrewExecutionDocument` (`parrot.bots.flows.core.storage`) assembles
+every agent's result + the final crew output + the (already-generated)
+summary into one consistent record. Both `to_dict()` and `to_markdown()`
+are pure data transformations — **zero LLM calls**, deterministic
+(identical output on repeated calls for the same instance).
+
+Two ways to obtain one:
+
+```python
+# 1. In-process — from the crew's own state after (or during) a run.
+doc = crew.build_execution_document()   # None if no run has completed yet
+
+# 2. From storage — reconstructs from ANY process, using only the
+#    execution_id (e.g. looked up from a job queue or a webhook payload).
+doc = await CrewExecutionDocument.from_storage(
+    crew._result_storage, execution_id,
+)
+```
+
+`from_storage()` treats the consolidated `crew_executions` document as
+the primary source for `agent_results`; standalone `crew_agent_results`
+documents fill in any agent missing from it (e.g. a crash-interrupted
+run that finished writing per-agent docs but never reached the final
+consolidated write). Agents are ordered by the consolidated doc's
+`execution_order`, falling back to per-agent timestamps for stragglers.
+It returns `None` only when *both* collections come up empty for the
+given `execution_id`.
+
+`to_markdown()` renders a self-contained report — abridged example:
+
+```
+# Crew Execution Report — ResearchCrew
+
+| Field | Value |
+|---|---|
+| Execution ID | 3f9c2e11-... |
+| Method | run_sequential |
+| Status | completed |
+| Total Time | 4.812s |
+| Timestamp | 2026-07-14T01:22:14+00:00 |
+
+## Agent: researcher
+
+**Task:** Summarise Q1 anomalies
+...
+
+## Final Result
+
+...
+
+## Summary
+
+...
+```
+
+### Backward compatibility
+
+- All four `run_*()` methods still return a plain `FlowResult` — no
+  signature change. `result.output`, `result.summary`, `result.status`
+  behave exactly as before; `result.metadata["execution_id"]` is the
+  only new field.
+- A `ResultStorage` subclass written before FEAT-306 (implementing only
+  `save()` / `close()`, no `fetch()`) continues to work unchanged for
+  writes; it simply can't back `CrewExecutionDocument.from_storage()`.
+- Persistence failures — on either plane — never propagate to the
+  caller; they are logged as warnings only, matching the existing
+  `_save_result` contract.
