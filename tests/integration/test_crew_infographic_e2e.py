@@ -86,6 +86,26 @@ def _stub_result_agent_llm(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _stub_google_genai_client(monkeypatch):
+    """Prevent real ``GoogleGenAIClient`` construction (resource-leak guard).
+
+    ``BasicAgent.__init__`` unconditionally does ``self.client =
+    GoogleGenAIClient()`` (agent.py:105) regardless of the ``llm=`` kwarg —
+    every ``ResultAgent()`` built by ``_finalize_infographic`` (once per
+    ``run_*()`` call) therefore constructs a REAL client whose underlying
+    SDK opens background gRPC/thread-pool resources that are never closed
+    by this short-lived test fixture, hanging the pytest process at exit
+    (observed: 53 lingering non-daemon threads, all
+    ``hrtimer_nanosleep``/``futex_do_wait``, keeping the interpreter alive
+    well after all tests had already passed). Scoped to this module only.
+    """
+    monkeypatch.setattr(
+        "parrot.bots.agent.GoogleGenAIClient",
+        lambda *a, **kw: MagicMock(),
+    )
+
+
 def _make_crew(stub_agents, fake_llm, **kwargs) -> AgentCrew:
     return AgentCrew(
         name="test-crew",
