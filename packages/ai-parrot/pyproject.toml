@@ -104,6 +104,8 @@ dependencies = [
 
 [project.scripts]
 parrot = "parrot.cli:cli"
+# GraphIndex CLI — build an interactive knowledge graph from a code repo.
+parrot-graphindex = "parrot.knowledge.graphindex.cli:main"
 # parrot-fs moved to ai-parrot-server in FEAT-203
 
 [project.optional-dependencies]

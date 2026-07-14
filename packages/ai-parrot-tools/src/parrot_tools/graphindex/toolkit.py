@@ -26,7 +26,7 @@ Tool surface:
   find_node, find_references, get_neighborhood, traverse,
   search_hybrid, find_central_nodes, shortest_path, explain,
   relevance, neighborhood_by_relevance, list_communities,
-  find_community
+  find_community, export_graph_html
 
   # WRITE
   create_concept, create_node, link_nodes, unlink_nodes,
@@ -399,6 +399,61 @@ class GraphIndexToolkit(AbstractToolkit):
 
         result.sort(key=lambda x: x["centrality_score"], reverse=True)
         return result[:top_k]
+
+    async def export_graph_html(
+        self, output_dir: str, top_k_god_nodes: int = 15
+    ) -> dict:
+        """Export an interactive ``graph.html`` map plus ``graph.json``.
+
+        Renders the current in-memory graph as a self-contained, clickable
+        force-directed page: nodes are concepts, colour is the detected
+        community, node size scales with centrality (god nodes are highlighted),
+        and clicking a node opens a detail panel. The page inlines the ECharts
+        runtime so it works fully offline. A sibling ``graph.json`` carries the
+        serialized graph for programmatic reuse.
+
+        Args:
+            output_dir: Directory where ``graph.html`` and ``graph.json`` are
+                written (created if missing).
+            top_k_god_nodes: Number of most-central "god" nodes to highlight.
+
+        Returns:
+            Dict with ``graph_html``, ``graph_json``, ``node_count``,
+            ``edge_count`` and ``community_count`` — or an ``error`` dict when
+            the export module is unavailable.
+        """
+        try:
+            from parrot.knowledge.graphindex.export_html import export_graph
+        except ImportError as exc:
+            return {"error": f"HTML export unavailable: {exc}"}
+
+        if self.graph.num_nodes() == 0:
+            return {"error": "Graph is empty; nothing to export."}
+
+        communities = self._get_or_compute_communities()
+        analytics = self._get_or_compute_analytics()
+        try:
+            html_path, json_path = export_graph(
+                self.graph,
+                output_dir,
+                communities=communities,
+                analytics=analytics,
+                god_top_k=top_k_god_nodes,
+            )
+        except Exception as exc:
+            logger.error("export_graph_html failed: %s", exc)
+            return {"error": str(exc)}
+
+        community_count = (
+            len(communities.communities) if communities is not None else 0
+        )
+        return {
+            "graph_html": str(html_path),
+            "graph_json": str(json_path),
+            "node_count": self.graph.num_nodes(),
+            "edge_count": self.graph.num_edges(),
+            "community_count": community_count,
+        }
 
     async def shortest_path(self, from_id: str, to_id: str) -> list[dict]:
         """Find the shortest path between two nodes.
