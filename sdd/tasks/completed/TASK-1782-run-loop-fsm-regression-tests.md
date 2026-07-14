@@ -227,18 +227,22 @@ async def test_run_loop_fsm_is_fresh_each_iteration():
 
 ## Acceptance Criteria
 
-- [ ] `test_run_loop_single_agent_single_iteration` passes.
-- [ ] `test_run_loop_multiple_agents_multiple_iterations` passes.
-- [ ] `test_run_loop_fsm_is_fresh_each_iteration` passes and genuinely
+- [x] `test_run_loop_single_agent_single_iteration` passes.
+- [x] `test_run_loop_multiple_agents_multiple_iterations` passes.
+- [x] `test_run_loop_fsm_is_fresh_each_iteration` passes and genuinely
   proves object-identity change across iterations (not just "no exception").
-- [ ] `test_run_flow_sequential_parallel_unaffected` passes, confirming no
+- [x] `test_run_flow_sequential_parallel_unaffected` passes, confirming no
   regression to the other three execution modes.
-- [ ] All tests pass: `pytest tests/unit/test_run_loop_fsm_reset.py -v`
-- [ ] No linting errors: `ruff check tests/unit/test_run_loop_fsm_reset.py`
-- [ ] Existing regression suites for `run_flow`/`run_sequential`/`run_parallel`
+- [x] All tests pass: `pytest tests/unit/test_run_loop_fsm_reset.py -v`
+- [x] No linting errors: `ruff check tests/unit/test_run_loop_fsm_reset.py`
+- [~] Existing regression suites for `run_flow`/`run_sequential`/`run_parallel`
   (`packages/ai-parrot/tests/test_crew_flow_regression.py`,
   `test_crew_sequential_regression.py`, `test_crew_parallel_regression.py`)
-  still pass unmodified.
+  still pass unmodified. — Could not execute directly in this worktree
+  (pre-existing environment limitation, unrelated to this fix; see
+  Completion Note). Unaffected-ness confirmed logically instead via
+  `grep` (only one `node.fsm` reassignment site exists, and it's the one
+  fixed) plus this task's own `test_run_flow_sequential_parallel_unaffected`.
 
 ---
 
@@ -272,10 +276,39 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-14
+**Notes**: Created `tests/unit/test_run_loop_fsm_reset.py` with 6 tests
+(expanded from the spec's 4 minimum): single-agent, multi-agent, and
+zero-agent `run_loop()` sanity checks (no `ValidationError`), FSM
+object-identity-changes-across-iterations, FSM-reaches-terminal-state, and
+a smoke-level "other three modes unaffected" guard. Corrected the task's
+own Codebase Contract: `from tests.integration.conftest import DummyAgent`
+does **not** resolve — verified `tests/__init__.py` does not exist, so the
+top-level `tests` directory is not a regular importable package (despite
+`tests/integration/__init__.py` and `tests/unit/__init__.py` both
+existing) and pytest fixtures don't cross conftest.py directory boundaries
+via import anyway. Fell back to an inline `DummyAgent`/`_DummyToolManager`/
+`fake_llm` (mirroring `tests/integration/conftest.py`'s shapes exactly),
+per the task's own documented fallback guidance. All 6 new tests pass;
+ruff clean. Confirmed via `grep -rn "node.fsm" packages/ai-parrot/src/parrot/bots/flows/`
+that the fixed reassignment was the *only* such call site — every other
+`node.fsm` reference (in `crew.py`'s other `run_*` methods and
+`flow/flow.py`) is a nested-mutation call (`.schedule()`, `.start()`,
+`.succeed()`, `.fail()`, or a read), confirming G3 (other modes
+unaffected) logically, not just by inspection of one file.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Could NOT literally execute
+`packages/ai-parrot/tests/test_crew_{flow,sequential,parallel}_regression.py`
+in this worktree — pre-existing environment limitation (same one hit
+during FEAT-308): `packages/ai-parrot/tests/` doesn't inherit the
+top-level `conftest.py`'s Cython-stub shims (`parrot.utils.types` etc.),
+so those suites fail to even collect here, unrelated to this fix. Relying
+on the logical `grep`-based confirmation above plus this task's own new
+`test_run_flow_sequential_parallel_unaffected` (which DOES run cleanly
+from the top-level `tests/` tree) as acceptance evidence in lieu of literally
+running the packages/-level suites.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Codebase Contract correction documented above
+(no behavioral deviation); could not execute the packages/ai-parrot/tests/
+regression suites due to a pre-existing, unrelated environment limitation.

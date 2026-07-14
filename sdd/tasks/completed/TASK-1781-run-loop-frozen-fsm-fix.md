@@ -214,10 +214,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-14
+**Notes**: Verified line numbers against current worktree state (unchanged
+since spec authoring: `run_loop()` at L1722, FSM reset at L1844-1849).
+Applied the exact one-line fix specified: replaced `node.fsm =
+AgentTaskMachine(...)` with `object.__setattr__(node, "fsm",
+AgentTaskMachine(agent_name=node.agent.name))`, matching the established
+escape hatch already documented in `core/node.py:222-227`. Ran an ad-hoc
+sanity check (3 stub agents, `run_loop("start", condition="never true",
+max_iterations=2)`) — confirmed the fix resolves the
+`pydantic_core.ValidationError: Instance is frozen` crash; test passed,
+then the throwaway sanity file was deleted (not committed, per the task's
+own Test Specification guidance — TASK-1782 owns the real regression
+suite). ruff clean. Only `crew.py` touched — no unrelated changes.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
