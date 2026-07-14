@@ -44,18 +44,25 @@ class TestCredentialRequired:
     """Tests for the CredentialRequired exception."""
 
     def test_credential_required_attributes(self):
-        """CredentialRequired carries tool and connection_name."""
-        from parrot.integrations.msagentsdk.auth import CredentialRequired
+        """CredentialRequired carries provider, auth_url, and auth_kind."""
+        # FEAT-264: the canonical exception lives in parrot.auth.credentials and
+        # is surface-neutral (provider/auth_url/auth_kind), not the old
+        # msagentsdk-local tool/connection_name shape.
+        from parrot.auth.credentials import CredentialRequired
 
-        exc = CredentialRequired(tool="o365", connection_name="graph_sso")
-        assert exc.tool == "o365"
-        assert exc.connection_name == "graph_sso"
-        assert "o365" in str(exc)
+        exc = CredentialRequired(
+            provider="graph_sso",
+            auth_url="https://login.example/consent",
+            auth_kind="oauth2",
+        )
+        assert exc.provider == "graph_sso"
+        assert exc.auth_url == "https://login.example/consent"
+        assert exc.auth_kind == "oauth2"
         assert "graph_sso" in str(exc)
 
     def test_credential_required_is_exception(self):
         """CredentialRequired is a subclass of Exception."""
-        from parrot.integrations.msagentsdk.auth import CredentialRequired
+        from parrot.auth.credentials import CredentialRequired
 
         assert issubclass(CredentialRequired, Exception)
 
@@ -78,12 +85,14 @@ class TestBFTokenServiceResolver:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_resolver_no_token_raises_credential_required(self):
-        """Raises CredentialRequired when token service has no token."""
-        from parrot.integrations.msagentsdk.auth import (
-            BFTokenServiceResolver,
-            CredentialRequired,
-        )
+    async def test_resolver_no_token_returns_none(self):
+        """Returns None when the token service has no token.
+
+        FEAT-264: resolve() no longer raises CredentialRequired directly — it
+        returns None and the broker converts that to a NeedsAuth signal (which
+        surfaces the canonical CredentialRequired upstream).
+        """
+        from parrot.integrations.msagentsdk.auth import BFTokenServiceResolver
 
         resolver = BFTokenServiceResolver(
             oauth_connections={"o365": "graph_sso"},
@@ -91,12 +100,10 @@ class TestBFTokenServiceResolver:
         )
         mock_ctx = MockTurnContextNoToken()
 
-        with pytest.raises(CredentialRequired) as exc_info:
-            await resolver.resolve(
-                "msagentsdk", "user-1", tool="o365", turn_context=mock_ctx
-            )
-        assert exc_info.value.connection_name == "graph_sso"
-        assert exc_info.value.tool == "o365"
+        result = await resolver.resolve(
+            "msagentsdk", "user-1", tool="o365", turn_context=mock_ctx
+        )
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_resolver_returns_token(self):
@@ -132,11 +139,12 @@ class TestBFTokenServiceResolver:
             "msagentsdk", "user-1", tool="o365", turn_context=mock_ctx
         )
         assert result == "fake-token-abc"
-        assert len(ledger.entries()) == 1
-        entry = ledger.entries()[0]
-        assert entry.action == "resolve"
-        assert entry.tool == "o365"
-        assert entry.connection == "graph_sso"
+        assert ledger.entry_count == 1
+        entry = next(iter(ledger._entries.values()))
+        # _record_audit records the action in the tool label ("<tool>:<action>")
+        # and the OAuth connection name as the provider.
+        assert entry.tool == "o365:resolve"
+        assert entry.provider == "graph_sso"
         assert entry.user_id == "user-1"
         # Fingerprint must be SHA-256 hex, not the token itself
         assert len(entry.key_fingerprint) == 64
@@ -161,25 +169,27 @@ class TestBFTokenServiceResolver:
         await resolver.resolve(
             "msagentsdk", "user-1", tool="o365", turn_context=mock_ctx
         )
-        assert ledger.entries()[0].key_fingerprint == expected_fp
+        entry = next(iter(ledger._entries.values()))
+        assert entry.key_fingerprint == expected_fp
 
     @pytest.mark.asyncio
-    async def test_resolver_no_turn_context_returns_credential_required(self):
-        """With no turn_context and a configured connection, raises CredentialRequired."""
-        from parrot.integrations.msagentsdk.auth import (
-            BFTokenServiceResolver,
-            CredentialRequired,
-        )
+    async def test_resolver_no_turn_context_returns_none(self):
+        """With no turn_context and a configured connection, resolve() returns None.
+
+        FEAT-264: a missing token (here because there is no turn_context to
+        fetch one) yields None; the broker turns that into NeedsAuth upstream.
+        """
+        from parrot.integrations.msagentsdk.auth import BFTokenServiceResolver
 
         resolver = BFTokenServiceResolver(
             oauth_connections={"o365": "graph_sso"},
             obo_scopes={},
         )
 
-        with pytest.raises(CredentialRequired):
-            await resolver.resolve(
-                "msagentsdk", "user-1", tool="o365", turn_context=None
-            )
+        result = await resolver.resolve(
+            "msagentsdk", "user-1", tool="o365", turn_context=None
+        )
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_resolver_get_auth_url_raises(self):
@@ -194,8 +204,13 @@ class TestBFTokenServiceResolver:
             await resolver.get_auth_url("msagentsdk", "user-1")
 
     @pytest.mark.asyncio
-    async def test_resolver_obo_exchange_passthrough(self):
-        """OBO exchange returns original token (best-effort no-op for now)."""
+    async def test_resolver_obo_scopes_passthrough(self):
+        """Configuring OBO scopes does not alter the returned token.
+
+        OBO exchange is not yet performed by resolve() — the fetched token is
+        returned verbatim and the audit entry records the plain "resolve"
+        action even when obo_scopes is configured for the tool.
+        """
         from parrot.integrations.msagentsdk.auth import BFTokenServiceResolver
         from parrot.security.audit_ledger import AuditLedger
 
@@ -212,5 +227,5 @@ class TestBFTokenServiceResolver:
         )
         # OBO is a pass-through for now; token is preserved
         assert result == "entra-token-xyz"
-        # When OBO scopes are configured, the audit action reflects the exchange
-        assert ledger.entries()[0].action == "obo_exchange"
+        entry = next(iter(ledger._entries.values()))
+        assert entry.tool == "o365:resolve"

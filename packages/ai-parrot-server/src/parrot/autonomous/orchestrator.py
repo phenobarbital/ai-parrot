@@ -1138,10 +1138,13 @@ class AutonomousOrchestrator:
             )
         
         crew_data = await self.bot_manager.get_crew(crew_id)
-        
-        if not crew_data:
+
+        # get_crew() returns the truthy tuple (None, None) on a miss, so a
+        # plain `not crew_data` check misses it and `crew.agents` below would
+        # raise. Validate the resolved instance/definition explicitly.
+        if not crew_data or crew_data[0] is None or crew_data[1] is None:
             raise ValueError(f"Crew '{crew_id}' not found")
-        
+
         crew, crew_def = crew_data
         
         # Auto-configure agents in crew

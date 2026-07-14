@@ -25,6 +25,15 @@ def _fake_agent(name: str = "agent1") -> MagicMock:
 
 def _crew_with_fake_agent(**kwargs) -> AgentCrew:
     agent = _fake_agent()
+    # persist_agent_results=False: FEAT-306's per-agent incremental
+    # persistence (_save_agent_result(), fire-and-forget) is independent of
+    # _save_result() and isn't mocked by these tests — left enabled, a real
+    # run_sequential()/run_flow() call attempts a genuine MongoDB connection
+    # (the default ResultStorage backend) to localhost:27017, which can hang
+    # for a long time when nothing is listening there. Callers that
+    # specifically want to exercise per-agent persistence can override this
+    # via **kwargs.
+    kwargs.setdefault("persist_agent_results", False)
     return AgentCrew(name="TestCrew", agents=[agent], **kwargs)
 
 
@@ -175,9 +184,14 @@ class TestAgentCrewPromptPassthrough:
 
     @pytest.mark.asyncio
     async def test_tenant_default_global(self, monkeypatch):
-        """tenant defaults to 'global' when not set on crew."""
+        """tenant defaults to 'global' when not set on crew.
+
+        Note: as of FEAT-307's tenant-wiring fix, `self._tenant` is always
+        set by `__init__` (defaulting to "global") — it's no longer *absent*
+        for crews built without an explicit tenant, just equal to "global".
+        """
         crew = _crew_with_fake_agent()
-        assert not hasattr(crew, "_tenant")
+        assert crew._tenant == "global"
         spy = AsyncMock()
         monkeypatch.setattr(crew, "_save_result", spy)
 

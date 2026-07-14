@@ -16,7 +16,7 @@ composed ``HTTPService`` member, and every tool returns a structured
 ``ToolResult``.
 """
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from navconfig import config
 from pydantic import Field
 from parrot.interfaces.http import HTTPService
@@ -321,9 +321,11 @@ class LeadIQToolkit(AbstractToolkit):
         """
         super().__init__(**kwargs)
         self._api_key = api_key
-        self.http = HTTPService(
-            base_url=self.base_url, accept="application/json", **kwargs
-        )
+        # NOTE: HTTPService itself has no concept of `base_url` (it never
+        # reads that kwarg) — the toolkit builds full URLs from its own
+        # `self.base_url` class attribute in `_execute_query`. Only
+        # `accept` and any HTTPService-specific kwargs are meaningful here.
+        self.http = HTTPService(accept="application/json", **kwargs)
 
     # ===========================
     # Internal helpers
@@ -537,12 +539,47 @@ class LeadIQToolkit(AbstractToolkit):
         return None
 
     # ===========================
-    # Tools
+    # Shared search pipeline
     # ===========================
 
-    @tool_schema(LeadIQSearchInput)
-    async def search_company(self, company_name: str, **kwargs) -> ToolResult:
-        """Search LeadIQ for a company and return structured company information."""
+    async def _run_search(
+        self,
+        *,
+        search_type: str,
+        query: str,
+        variables: Dict[str, Any],
+        company_name: str,
+        process_fn: Callable[[dict, str], Any],
+        result_kind: str,
+    ) -> ToolResult:
+        """Shared execute-query -> process -> ``ToolResult`` pipeline.
+
+        Used by all three ``search_*`` tools so the API-key guard,
+        transport-error handling, and exception-to-``ToolResult`` mapping
+        live in exactly one place.
+
+        Args:
+            search_type: Value recorded in ``metadata["search_type"]``
+                (``"company"``, ``"employees"``, or ``"flat"``).
+            query: The GraphQL query constant to send.
+            variables: The GraphQL ``variables`` payload for this query.
+            company_name: Original search term, for logging/error messages.
+            process_fn: One of ``_process_company_response``,
+                ``_process_employee_response``, ``_process_flat_response`` —
+                flattens the raw GraphQL dict, or returns ``None`` on an
+                unexpected/empty shape (see ``result_kind`` handling below).
+            result_kind: ``"single"`` for ``search_company`` (result is a
+                dict, or an error ``ToolResult`` when ``process_fn`` returns
+                ``None``), or ``"list"`` for ``search_employees``/
+                ``search_flat`` (result is always a list — ``None`` from
+                ``process_fn`` becomes an empty list flagged
+                ``metadata["ambiguous_empty"]``, ported verbatim from
+                flowtask, which conflates "nothing found" with "unexpected
+                response shape").
+
+        Returns:
+            A structured ``ToolResult`` — never raises.
+        """
         api_key = self._resolve_api_key()
         if not api_key:
             return ToolResult(
@@ -552,25 +589,16 @@ class LeadIQToolkit(AbstractToolkit):
                 error="LEADIQ_API_KEY not configured",
             )
 
-        variables = {
-            "input": {
-                "name": company_name
-            }
-        }
-        payload = {
-            "query": self.COMPANY_SEARCH_QUERY,
-            "variables": variables,
-        }
+        payload = {"query": query, "variables": variables}
 
         try:
             result = await self._execute_query(payload, company_name)
-            if result is not None:
-                processed = self._process_company_response(result, company_name)
-            else:
-                processed = None
+            processed = (
+                process_fn(result, company_name) if result is not None else None
+            )
         except Exception as e:  # noqa: BLE001 - never raise unhandled from a tool
             self.logger.error(
-                "Error in company search for %s: %s", company_name, e
+                "Error in %s search for %s: %s", search_type, company_name, e
             )
             return ToolResult(
                 success=False, status="error", result=None, error=str(e)
@@ -581,23 +609,66 @@ class LeadIQToolkit(AbstractToolkit):
                 success=False,
                 status="error",
                 result=None,
-                error=f"LeadIQ company search failed for {company_name}",
+                error=f"LeadIQ {search_type} search failed for {company_name}",
             )
 
-        if processed is None:
+        if result_kind == "single":
+            if processed is None:
+                return ToolResult(
+                    success=False,
+                    status="error",
+                    result=None,
+                    error=f"Unexpected LeadIQ response structure for {company_name}",
+                )
+            count = 1 if processed.get("found") else 0
             return ToolResult(
-                success=False,
-                status="error",
-                result=None,
-                error=f"Unexpected LeadIQ response structure for {company_name}",
+                success=True,
+                status="success",
+                result=processed,
+                metadata={
+                    "search_type": search_type,
+                    "count": count,
+                    "source": "LeadIQ",
+                },
             )
 
-        count = 1 if processed.get("found") else 0
+        # result_kind == "list"
+        rows = processed if processed is not None else []
+        metadata = {
+            "search_type": search_type,
+            "count": len(rows),
+            "source": "LeadIQ",
+        }
+        if processed is None:
+            # `_process_employee_response`/`_process_flat_response` return
+            # None both when LeadIQ genuinely found nothing and when the
+            # response shape was unexpected (ported verbatim from flowtask,
+            # which conflates the two). Flag it so downstream
+            # consumers/observability can tell an empty result apart from a
+            # possible upstream contract break, without treating it as a
+            # hard error.
+            metadata["ambiguous_empty"] = True
         return ToolResult(
             success=True,
             status="success",
-            result=processed,
-            metadata={"search_type": "company", "count": count, "source": "LeadIQ"},
+            result=rows,
+            metadata=metadata,
+        )
+
+    # ===========================
+    # Tools
+    # ===========================
+
+    @tool_schema(LeadIQSearchInput)
+    async def search_company(self, company_name: str, **kwargs) -> ToolResult:
+        """Search LeadIQ for a company and return structured company information."""
+        return await self._run_search(
+            search_type="company",
+            query=self.COMPANY_SEARCH_QUERY,
+            variables={"input": {"name": company_name}},
+            company_name=company_name,
+            process_fn=self._process_company_response,
+            result_kind="single",
         )
 
     @tool_schema(LeadIQSearchInput)
@@ -605,65 +676,18 @@ class LeadIQToolkit(AbstractToolkit):
         self, company_name: str, limit: int = 100, **kwargs
     ) -> ToolResult:
         """Search LeadIQ for employees grouped under a company."""
-        api_key = self._resolve_api_key()
-        if not api_key:
-            return ToolResult(
-                success=False,
-                status="error",
-                result=None,
-                error="LEADIQ_API_KEY not configured",
-            )
-
-        variables = {
-            "input": {
-                "companyFilter": {
-                    "names": company_name
-                },
-                "limit": limit
-            }
-        }
-        payload = {
-            "query": self.EMPLOYEE_SEARCH_QUERY,
-            "variables": variables,
-        }
-
-        try:
-            result = await self._execute_query(payload, company_name)
-            if result is not None:
-                processed = self._process_employee_response(result, company_name)
-            else:
-                processed = None
-        except Exception as e:  # noqa: BLE001 - never raise unhandled from a tool
-            self.logger.error(
-                "Error in employee search for %s: %s", company_name, e
-            )
-            return ToolResult(
-                success=False, status="error", result=None, error=str(e)
-            )
-
-        if result is None:
-            return ToolResult(
-                success=False,
-                status="error",
-                result=None,
-                error=f"LeadIQ employee search failed for {company_name}",
-            )
-
-        rows = processed if processed is not None else []
-        metadata = {"search_type": "employees", "count": len(rows), "source": "LeadIQ"}
-        if processed is None:
-            # `_process_employee_response` returns None both when LeadIQ
-            # genuinely found no companies and when the response shape was
-            # unexpected (ported verbatim from flowtask, which conflates
-            # the two). Flag it so downstream consumers/observability can
-            # tell an empty result apart from a possible upstream contract
-            # break, without treating it as a hard error.
-            metadata["ambiguous_empty"] = True
-        return ToolResult(
-            success=True,
-            status="success",
-            result=rows,
-            metadata=metadata,
+        return await self._run_search(
+            search_type="employees",
+            query=self.EMPLOYEE_SEARCH_QUERY,
+            variables={
+                "input": {
+                    "companyFilter": {"names": company_name},
+                    "limit": limit,
+                }
+            },
+            company_name=company_name,
+            process_fn=self._process_employee_response,
+            result_kind="list",
         )
 
     @tool_schema(LeadIQSearchInput)
@@ -671,60 +695,16 @@ class LeadIQToolkit(AbstractToolkit):
         self, company_name: str, limit: int = 100, **kwargs
     ) -> ToolResult:
         """Flat search LeadIQ for people at a company (one record per person)."""
-        api_key = self._resolve_api_key()
-        if not api_key:
-            return ToolResult(
-                success=False,
-                status="error",
-                result=None,
-                error="LEADIQ_API_KEY not configured",
-            )
-
-        variables = {
-            "input": {
-                "companyFilter": {
-                    "names": company_name
-                },
-                "limit": limit
-            }
-        }
-        payload = {
-            "query": self.FLAT_SEARCH_QUERY,
-            "variables": variables,
-        }
-
-        try:
-            result = await self._execute_query(payload, company_name)
-            if result is not None:
-                processed = self._process_flat_response(result, company_name)
-            else:
-                processed = None
-        except Exception as e:  # noqa: BLE001 - never raise unhandled from a tool
-            self.logger.error(
-                "Error in flat search for %s: %s", company_name, e
-            )
-            return ToolResult(
-                success=False, status="error", result=None, error=str(e)
-            )
-
-        if result is None:
-            return ToolResult(
-                success=False,
-                status="error",
-                result=None,
-                error=f"LeadIQ flat search failed for {company_name}",
-            )
-
-        rows = processed if processed is not None else []
-        metadata = {"search_type": "flat", "count": len(rows), "source": "LeadIQ"}
-        if processed is None:
-            # See the matching comment in search_employees: `_process_flat_response`
-            # (ported verbatim) conflates "no people found" with "unexpected
-            # response structure" — flag it rather than silently reporting 0.
-            metadata["ambiguous_empty"] = True
-        return ToolResult(
-            success=True,
-            status="success",
-            result=rows,
-            metadata=metadata,
+        return await self._run_search(
+            search_type="flat",
+            query=self.FLAT_SEARCH_QUERY,
+            variables={
+                "input": {
+                    "companyFilter": {"names": company_name},
+                    "limit": limit,
+                }
+            },
+            company_name=company_name,
+            process_fn=self._process_flat_response,
+            result_kind="list",
         )
