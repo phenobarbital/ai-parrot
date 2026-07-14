@@ -50,7 +50,7 @@
       "feature_id": "FEAT-308",
       "feature": "agentcrew-node-infographic",
       "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Imports crew_report template from TASK-1775; creates new file so no file conflict, but logical dependency.",
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1777-tab-assembly-helper.md"
+      "completed_at": "2026-07-14T01:29:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1777-tab-assembly-helper.md"
     },
     {
       "id": "TASK-1778",
