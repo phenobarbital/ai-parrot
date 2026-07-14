@@ -251,3 +251,47 @@ async def test_ask_non_retryable_exec_error_surfaces_as_failure_response(
     assert "non-retryable" in msg.output.explanation.lower()
     assert "permission denied" in msg.output.explanation
     assert msg.output.query == "SELECT bogus FROM nowhere"
+
+
+# ---------------------------------------------------------------------------
+# cleanup() — resource teardown + base-cleanup chaining
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_cleanup_stops_toolkits_closes_cache_and_chains_super(
+    monkeypatch, fake_postgres_toolkit
+):
+    """cleanup() stops toolkits, closes the cache manager, and chains
+    super().cleanup() so base-agent resources (LLM, store, KBs, MCP) are
+    released too."""
+    agent = DatabaseAgent(toolkits=[fake_postgres_toolkit])
+
+    fake_postgres_toolkit.stop = AsyncMock()  # type: ignore[method-assign]
+    agent.cache_manager.close = AsyncMock()  # type: ignore[method-assign]
+
+    base_cleanup = AsyncMock()
+    monkeypatch.setattr(BasicAgent, "cleanup", base_cleanup, raising=False)
+
+    await agent.cleanup()
+
+    fake_postgres_toolkit.stop.assert_awaited_once()
+    agent.cache_manager.close.assert_awaited_once()
+    base_cleanup.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_isolates_toolkit_failure(monkeypatch, fake_postgres_toolkit):
+    """A toolkit.stop() failure must not prevent cache close or super cleanup."""
+    agent = DatabaseAgent(toolkits=[fake_postgres_toolkit])
+
+    fake_postgres_toolkit.stop = AsyncMock(  # type: ignore[method-assign]
+        side_effect=RuntimeError("boom")
+    )
+    agent.cache_manager.close = AsyncMock()  # type: ignore[method-assign]
+    base_cleanup = AsyncMock()
+    monkeypatch.setattr(BasicAgent, "cleanup", base_cleanup, raising=False)
+
+    await agent.cleanup()  # must not raise
+
+    agent.cache_manager.close.assert_awaited_once()
+    base_cleanup.assert_awaited_once()

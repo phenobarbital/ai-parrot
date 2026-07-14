@@ -1,0 +1,86 @@
+{
+  "feat_id": "FEAT-305",
+  "mode": "enrichment",
+  "summary_oneline": "Port flowtask's CompanyScraper into an ai-parrot CompanyResearch toolkit: agent sends a company name, gets a structured CompanyProfile scraped from LeadIQ/RocketReach/SICCode/VisualVisitor/ZoomInfo/Explorium",
+  "overall_confidence": "medium",
+  "localization": [
+    {"path": "/home/jesuslara/proyectos/flowtask/flowtask/components/CompanyScraper/scrapper.py", "symbol": "CompanyScraper", "lines": "28-1067", "role": "source component to port: search→validate→fetch→parse pipeline", "evidence": ["F001"], "confidence": "high"},
+    {"path": "/home/jesuslara/proyectos/flowtask/flowtask/components/CompanyScraper/parsers/base.py", "symbol": "ScrapperBase", "lines": "8-102", "role": "per-source extractor contract to re-model in parrot", "evidence": ["F002"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/interfaces/http.py", "symbol": "HTTPService", "lines": "126-1600", "role": "existing parrot mixin providing _get, _search_duckduckgo, _search_google, proxy rotation — the reuse target", "evidence": ["F005"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/tools/toolkit.py", "symbol": "AbstractToolkit", "lines": "207-296", "role": "base class the new toolkit inherits; auto tool generation from async methods", "evidence": ["F004"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/tools/workiq_tool.py", "symbol": "WorkIQTool", "lines": "44-110", "role": "house-style exemplar for args schema + tool docs", "evidence": ["F008"], "confidence": "high"}
+  ],
+  "constraints": [
+    {"statement": "Parrot already ships HTTPService with DuckDuckGo/Google-CSE search and proxylists rotation; the port must reuse it instead of copying flowtask interfaces", "evidence": ["F005"], "confidence": "high"},
+    {"statement": "No SeleniumService exists in parrot; ZoomInfo's undetected-chromedriver get() and the Selenium Google-CSE fallback cannot be ported as-is (selenium/undetected-chromedriver ARE available in the 'agents' extra)", "evidence": ["F005", "F007"], "confidence": "high"},
+    {"statement": "fuzzywuzzy is not a parrot dependency; company-name validation needs rapidfuzz/thefuzz or difflib", "evidence": ["F007"], "confidence": "high"},
+    {"statement": "DataFrame/tqdm batch semantics are flowtask-specific and must be dropped for a per-company async tool call; structured output should be a Pydantic model per CLAUDE.md", "evidence": ["F001"], "confidence": "high"},
+    {"statement": "VisualVisitor parser is a copy of RocketReach's and mislabels source_platform='rocketreach' — fix during port", "evidence": ["F003"], "confidence": "high"},
+    {"statement": "No existing company-research code in parrot/tools — greenfield placement, no collisions with recent tools/ work", "evidence": ["F006", "F008"], "confidence": "high"}
+  ],
+  "scope": {
+    "whats_new": [
+      "parrot/tools/company_research/ package: CompanyResearchToolkit(AbstractToolkit) exposing a research_company(company_name, sources?) tool",
+      "CompanyProfile Pydantic model (name, website, address fields, phone, stock_symbol, naics/sic codes, employee_count, revenue_range, industry, description, similar_companies, executives, source_platform, status)",
+      "Extractor base (CompanyExtractor) + six extractors ported from flowtask parsers (LeadIQ, RocketReach, SICCode, VisualVisitor, ZoomInfo, Explorium)",
+      "Unit tests with fixture HTML pages per source (no live scraping in CI)"
+    ],
+    "what_changes": [
+      {"path": "packages/ai-parrot/pyproject.toml", "change": "add fuzzy-match dependency (or use difflib)", "evidence": ["F007"]}
+    ],
+    "non_goals": [
+      "No DataFrame/batch API (flowtask keeps that role)",
+      "No paid API integrations (RocketReach/ZoomInfo official APIs) — this ports the public-page scraping approach",
+      "No changes to parrot/interfaces/http.py beyond consuming it"
+    ],
+    "patterns_to_follow": [
+      {"pattern": "AbstractToolkit auto-tool generation + tool_prefix, docstring-driven descriptions", "evidence": ["F004"]},
+      {"pattern": "Args schema style from WorkIQTool (_WorkIQArgs)", "evidence": ["F008"]},
+      {"pattern": "search→title-keyword validation→fuzzy name check→fetch→parse pipeline from CompanyScraper._search_company", "evidence": ["F001"]}
+    ],
+    "integration_risks": [
+      {"risk": "Anti-bot walls (ZoomInfo especially) make live scraping flaky without Selenium/undetected-chrome; DDG rate limits already handled via RatelimitException in flowtask", "evidence": ["F003", "F001"]},
+      {"risk": "Site markup drift: all six parsers are selector-coupled to current HTML; tests must use recorded fixtures", "evidence": ["F003"]}
+    ]
+  },
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Aggregation strategy: should research_company return the FIRST successful source (flowtask behavior) or query ALL requested sources and merge into one profile with per-field provenance?",
+      "resolves_claims": ["C7"],
+      "plausible_answers": ["a) first-success in priority order (fast, flowtask parity)", "b) query all sources and merge (richer, slower)", "c) parameter: sources list + merge flag, default first-success"],
+      "user_answer": "First-success in priority order (flowtask parity); sources param still lets callers pick"
+    },
+    {
+      "id": "U2",
+      "question": "ZoomInfo requires undetected-chromedriver (no SeleniumService in parrot). Ship ZoomInfo in v1 behind the 'agents' extra with a minimal Selenium helper, port it to Playwright, or defer ZoomInfo to a follow-up?",
+      "resolves_claims": ["C8"],
+      "plausible_answers": ["a) defer ZoomInfo (v1 = 5 HTTP-only sources)", "b) minimal undetected-chromedriver helper inside the toolkit, optional import", "c) Playwright-based fetcher"],
+      "user_answer": "Playwright fetcher — port the browser path to playwright (already in the agents extra); ZoomInfo stays in v1 scope"
+    },
+    {
+      "id": "U3",
+      "question": "Tool surface: one aggregate tool (research_company) only, or also expose per-source tools (company_from_rocketreach, etc.) for the LLM to pick?",
+      "resolves_claims": ["C9"],
+      "plausible_answers": ["a) single research_company tool with optional sources param", "b) single aggregate + per-source tools", "c) per-source tools only"],
+      "user_answer": "Single research_company(company_name, sources?) tool"
+    }
+  ],
+  "confidence_map": [
+    {"id": "C1", "claim": "Flowtask pipeline is search(DDG→Google CSE)→validate title→fetch page→BS4 parse, per source", "evidence": ["F001"], "confidence": "high", "reasoning": "direct read of scrapper.py"},
+    {"id": "C2", "claim": "Per-source contract is ScrapperBase: domain, site: search template, keywords, define_search_term(), async scrapping()", "evidence": ["F002", "F003"], "confidence": "high", "reasoning": "direct read of base + 6 parsers"},
+    {"id": "C3", "claim": "parrot HTTPService already provides _get/_search_duckduckgo/_search_google/proxies — port reuses it", "evidence": ["F005"], "confidence": "high", "reasoning": "direct read of interfaces/http.py"},
+    {"id": "C4", "claim": "AbstractToolkit turns public async methods into tools; new toolkit follows OpenAPIToolkit/WorkIQ style", "evidence": ["F004", "F006", "F008"], "confidence": "high", "reasoning": "direct read + grep of 16 toolkits"},
+    {"id": "C5", "claim": "All deps except fuzzy matching already in pyproject (bs4, backoff, duckduckgo-search core/extras; selenium in agents extra)", "evidence": ["F007"], "confidence": "high", "reasoning": "grep of pyproject"},
+    {"id": "C6", "claim": "No existing company-research capability in parrot — greenfield", "evidence": ["F006"], "confidence": "high", "reasoning": "absence grep"},
+    {"id": "C7", "claim": "Flowtask returns first successful source per company; the right default for an agent tool is undecided", "evidence": ["F001"], "confidence": "medium", "reasoning": "behavior read from code; product default is a user decision (U1)"},
+    {"id": "C8", "claim": "ZoomInfo cannot work HTTP-only (anti-bot); it needs a browser-based fetcher", "evidence": ["F003"], "confidence": "medium", "reasoning": "inferred from ZoomInfoScrapper's forced undetected-chrome get(); not re-verified live (U2)"},
+    {"id": "C9", "claim": "A single toolkit under parrot/tools/company_research/ is the right placement", "evidence": ["F006"], "confidence": "medium", "reasoning": "matches conventions; final surface shape pending U3"},
+    {"id": "C10", "claim": "Selector-coupled parsers may already be stale vs live site markup", "evidence": ["F003"], "confidence": "low", "reasoning": "cannot verify without live requests; treat ported selectors as best-effort"}
+  ],
+  "recommended_next_command": {
+    "command": "/sdd-spec FEAT-305",
+    "rationale": "Localization and constraints are high-confidence and the architecture has no real fork (port + adapt onto existing HTTPService/AbstractToolkit); the three unknowns are product defaults resolvable in Q&A, not architectural explorations."
+  },
+  "budget_status": {"truncated": false, "files_read": 14, "grep_calls": 9, "git_calls": 1, "queries_skipped": 1, "note": "Q012 stub_credentialed_tool.py skipped — WorkIQTool already covers the credentialed-tool pattern"}
+}
