@@ -329,13 +329,24 @@ class LeadIQToolkit(AbstractToolkit):
     # Internal helpers
     # ===========================
 
+    def _resolve_api_key(self) -> Optional[str]:
+        """Resolve the LeadIQ API key.
+
+        Prefers the key passed explicitly to ``__init__``; falls back to
+        ``navconfig`` ``config.get("LEADIQ_API_KEY")``. Centralized so the
+        key is looked up consistently (and only via this single path) by
+        both the up-front "is it configured" check in each tool method and
+        by ``_build_headers()``.
+        """
+        return self._api_key or config.get("LEADIQ_API_KEY")
+
     def _build_headers(self) -> Dict[str, str]:
         """Build the LeadIQ auth/content headers.
 
         The API key is already Base64-encoded — it is injected verbatim
         into the ``Authorization`` header, never re-encoded.
         """
-        api_key = self._api_key or config.get("LEADIQ_API_KEY")
+        api_key = self._resolve_api_key()
         return {
             "Authorization": f"Basic {api_key}",
             "Content-Type": "application/json",
@@ -532,7 +543,7 @@ class LeadIQToolkit(AbstractToolkit):
     @tool_schema(LeadIQSearchInput)
     async def search_company(self, company_name: str, **kwargs) -> ToolResult:
         """Search LeadIQ for a company and return structured company information."""
-        api_key = self._api_key or config.get("LEADIQ_API_KEY")
+        api_key = self._resolve_api_key()
         if not api_key:
             return ToolResult(
                 success=False,
@@ -594,7 +605,7 @@ class LeadIQToolkit(AbstractToolkit):
         self, company_name: str, limit: int = 100, **kwargs
     ) -> ToolResult:
         """Search LeadIQ for employees grouped under a company."""
-        api_key = self._api_key or config.get("LEADIQ_API_KEY")
+        api_key = self._resolve_api_key()
         if not api_key:
             return ToolResult(
                 success=False,
@@ -639,11 +650,20 @@ class LeadIQToolkit(AbstractToolkit):
             )
 
         rows = processed if processed is not None else []
+        metadata = {"search_type": "employees", "count": len(rows), "source": "LeadIQ"}
+        if processed is None:
+            # `_process_employee_response` returns None both when LeadIQ
+            # genuinely found no companies and when the response shape was
+            # unexpected (ported verbatim from flowtask, which conflates
+            # the two). Flag it so downstream consumers/observability can
+            # tell an empty result apart from a possible upstream contract
+            # break, without treating it as a hard error.
+            metadata["ambiguous_empty"] = True
         return ToolResult(
             success=True,
             status="success",
             result=rows,
-            metadata={"search_type": "employees", "count": len(rows), "source": "LeadIQ"},
+            metadata=metadata,
         )
 
     @tool_schema(LeadIQSearchInput)
@@ -651,7 +671,7 @@ class LeadIQToolkit(AbstractToolkit):
         self, company_name: str, limit: int = 100, **kwargs
     ) -> ToolResult:
         """Flat search LeadIQ for people at a company (one record per person)."""
-        api_key = self._api_key or config.get("LEADIQ_API_KEY")
+        api_key = self._resolve_api_key()
         if not api_key:
             return ToolResult(
                 success=False,
@@ -696,9 +716,15 @@ class LeadIQToolkit(AbstractToolkit):
             )
 
         rows = processed if processed is not None else []
+        metadata = {"search_type": "flat", "count": len(rows), "source": "LeadIQ"}
+        if processed is None:
+            # See the matching comment in search_employees: `_process_flat_response`
+            # (ported verbatim) conflates "no people found" with "unexpected
+            # response structure" — flag it rather than silently reporting 0.
+            metadata["ambiguous_empty"] = True
         return ToolResult(
             success=True,
             status="success",
             result=rows,
-            metadata={"search_type": "flat", "count": len(rows), "source": "LeadIQ"},
+            metadata=metadata,
         )

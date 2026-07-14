@@ -38,7 +38,8 @@ structured results the LLM can consume directly.
   agent-usable toolkit.
 - Support the three LeadIQ search types: `company`, `employees`, `flat`.
 - Return structured `ToolResult` payloads (no pandas DataFrame).
-- Reuse the in-repo async `HTTPService` (aiohttp) — no `requests`/`httpx`.
+- Reuse the in-repo async `HTTPService` (internally `httpx.AsyncClient`-based)
+  — no direct `requests`/`httpx` imports in the new module.
 - Register the toolkit in `TOOL_REGISTRY` for lazy discovery.
 
 ### Non-Goals (explicitly out of scope)
@@ -214,7 +215,9 @@ def company_payload():
 - [ ] `LEADIQ_API_KEY` is read via `navconfig` `config.get("LEADIQ_API_KEY")`;
   a missing key yields `ToolResult(success=False, status="error", ...)` — not
   an unhandled exception.
-- [ ] GraphQL calls go through `HTTPService.session(...)` (aiohttp); no
+- [ ] GraphQL calls go through `HTTPService.session(...)` (internally
+  `httpx.AsyncClient`-based — verified in `parrot/interfaces/http.py:359`,
+  not aiohttp); the new `leadiq/tool.py` module itself has no direct
   `requests`/`httpx` imports.
 - [ ] The three GraphQL query constants and the three `_process_*_response`
   transforms match the flowtask source semantics.

@@ -291,6 +291,57 @@ async def test_no_results_company(toolkit, empty_company_payload):
     assert result.result["total_results"] == 0
 
 
+@pytest.mark.asyncio
+async def test_search_employees_flags_ambiguous_empty_on_unexpected_structure(
+    toolkit,
+):
+    """`_process_employee_response` (ported verbatim) returns ``None`` both
+    for "no companies found" and for a malformed/unexpected response shape.
+    Rather than silently reporting an empty list identically to a genuine
+    zero-results search, the tool must flag this case via
+    ``metadata["ambiguous_empty"]`` so callers/observability can tell the
+    difference from a real "0 employees" result.
+    """
+    malformed_payload = {"data": {"unexpectedKey": {}}}
+    with patch.object(
+        toolkit.http, "session", new=AsyncMock(return_value=(malformed_payload, None))
+    ):
+        result = await toolkit.search_employees(company_name="PetSmart")
+
+    assert isinstance(result, ToolResult)
+    assert result.success is True
+    assert result.result == []
+    assert result.metadata["ambiguous_empty"] is True
+
+
+@pytest.mark.asyncio
+async def test_search_employees_no_ambiguous_flag_on_normal_results(
+    toolkit, employee_payload
+):
+    """A well-formed, non-empty response must NOT carry the ambiguous flag."""
+    with patch.object(
+        toolkit.http, "session", new=AsyncMock(return_value=(employee_payload, None))
+    ):
+        result = await toolkit.search_employees(company_name="PetSmart")
+
+    assert "ambiguous_empty" not in result.metadata
+
+
+@pytest.mark.asyncio
+async def test_search_flat_flags_ambiguous_empty_on_unexpected_structure(toolkit):
+    """Same ``ambiguous_empty`` contract as employees, for the flat search."""
+    malformed_payload = {"data": {"unexpectedKey": {}}}
+    with patch.object(
+        toolkit.http, "session", new=AsyncMock(return_value=(malformed_payload, None))
+    ):
+        result = await toolkit.search_flat(company_name="PetSmart")
+
+    assert isinstance(result, ToolResult)
+    assert result.success is True
+    assert result.result == []
+    assert result.metadata["ambiguous_empty"] is True
+
+
 def test_registry_entry_resolves():
     assert TOOL_REGISTRY["leadiq"] == "parrot_tools.leadiq.tool.LeadIQToolkit"
     mod_path, _, cls = TOOL_REGISTRY["leadiq"].rpartition(".")
