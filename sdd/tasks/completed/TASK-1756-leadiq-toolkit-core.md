@@ -233,3 +233,19 @@ log a warning and return `None`), this toolkit maps that case to
 than an error, treating it as "no results" rather than failure. This is
 not contradicted by any acceptance criterion but is worth flagging for
 review.
+
+**Post-review fix (2026-07-14)**: `code-reviewer` found a blocking bug —
+the composed `self.http = HTTPService(base_url=self.base_url, **kwargs)`
+never set `accept="application/json"`. `HTTPService.session()` branches
+on `self.accept` (not the response's actual `Content-Type`) to decide
+whether to parse JSON or return raw text, so every real (non-mocked)
+LeadIQ API call would come back as a string and `_process_*_response`
+would raise `TypeError` on `result["data"]` — invisible to the unit
+suite because it mocks `toolkit.http.session` directly, bypassing that
+branch. Fixed by adding `accept="application/json"` to the composed
+`HTTPService` constructor call, moved the `_process_*_response` call
+inside the existing `try/except` around `_execute_query` in all three
+tool methods for consistent tool-scoped error messages, and added a
+regression test (`test_composed_http_service_accepts_json` in
+`test_leadiq.py`) asserting `toolkit.http.accept == "application/json"`.
+See commit `102af3fa0`.
