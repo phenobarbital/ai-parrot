@@ -93,7 +93,7 @@
       "feature_id": "FEAT-305",
       "feature": "companyresearch-tool",
       "spec": "sdd/specs/companyresearch-tool.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,8 +105,8 @@
       "parallelism_notes": "Aggregates all per-source methods and repoints existing scrapers; edits shared tool.py; needs all prior impl tasks.",
       "assigned_to": null,
       "started_at": "2026-07-13T23:59:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1763-research-company-aggregate-wiring.md"
+      "completed_at": "2026-07-14T00:20:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1763-research-company-aggregate-wiring.md"
     },
     {
       "id": "TASK-1764",

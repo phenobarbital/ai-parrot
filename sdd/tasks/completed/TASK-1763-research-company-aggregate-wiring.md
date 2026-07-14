@@ -74,17 +74,19 @@ class CompanyInfo(BaseModel):                        # line 83
     scrape_status: str = "pending"                   # line 92  (compare == "success")
     error_message: ...                               # (aggregate failures here)
     def to_json(self, **kwargs) -> str               # line 139
-class CompanyInfoToolkit(AbstractToolkit):           # line 163
-    async def scrape_zoominfo(self, company_name, return_json=False)     # line 429
-    async def scrape_explorium(...)                  # line 554
-    async def scrape_leadiq(...)                     # line 676
-    async def scrape_rocketreach(...)                # line 836
-    async def scrape_siccode(...)                    # line 966
-    async def scrape_all_sources(self, company_name, return_json=False)  # line 1091 (KEEP)
-    async def _google_site_search(...)               # line 266 (calls to REPLACE with _search_company_url)
-# NEW from sibling tasks:
-    def _search_company_url(self, company_name, site_config) -> Optional[str]  # TASK-1760
-    async def scrape_visualvisitor(self, company_name, return_json=False)      # TASK-1762
+class CompanyInfoToolkit(AbstractToolkit):           # as landed by TASK-1759..1762 in this worktree
+    async def scrape_zoominfo(self, company_name, return_json=False)     # calls _google_site_search directly today (site="zoominfo.com", additional_terms="Overview") — REPOINT
+    async def scrape_explorium(...)                  # calls _google_site_search directly — REPOINT
+    async def scrape_leadiq(...)                     # calls _google_site_search directly — REPOINT
+    async def scrape_rocketreach(...)                # calls _google_site_search directly (additional_terms=" Information - RocketReach") — REPOINT
+    async def scrape_siccode(...)                    # calls _google_site_search directly — REPOINT
+    async def scrape_all_sources(self, company_name, return_json=False)  # KEEP as-is (asyncio.gather over the 5 legacy scrape_* — back-compat; NOT wired to research_company)
+    async def _google_site_search(...)               # KEPT — now only the fallback inside _search_company_url
+# NEW from sibling tasks (verified present in this worktree):
+    async def _search_company_url(self, company_name: str, site_config: SourceConfig) -> Optional[str]  # TASK-1760 — ASYNC, must be awaited
+    async def scrape_visualvisitor(self, company_name, return_json=False)      # TASK-1762 — already uses _search_company_url + COMPANY_SOURCES["visualvisitor"]
+# Module-level registry (NOT `self._sources` as originally drafted — corrected):
+COMPANY_SOURCES: Dict[str, SourceConfig]             # module-level dict; keys are the 6 source names
 
 # tool exposure inherited:
 #   parrot/tools/toolkit.py:207  AbstractToolkit.get_tools()  (public async methods -> tools)
@@ -173,9 +175,47 @@ async def research_company(self, company_name, sources=None, return_json=False):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-07-14
+**Notes**: Corrected the Codebase Contract before implementing (module-level
+`COMPANY_SOURCES` not `self._sources`; `_search_company_url` is `async def`;
+current line numbers had drifted after TASK-1760/1761/1762 landed). Added
+`ResearchCompanyInput` (company_name/sources/return_json) next to
+`CompanyInput`, and `DEFAULT_SOURCE_PRIORITY` next to `COMPANY_SOURCES`.
+Added `research_company` (`@tool_schema(ResearchCompanyInput)`) at the end
+of the class: validates `sources` against `COMPANY_SOURCES` keys (unknown
+→ `scrape_status="error"` with the list of valid names, no raise), loops
+`getattr(self, f"scrape_{name}")` in order, short-circuits on the first
+`scrape_status == "success"`, and aggregates all per-source
+`scrape_status` values into `error_message` on total failure
+(`scrape_status="no_data"`). Wrapped each per-source call in try/except so
+even an unexpected exception from a `scrape_*` method can't escape
+`research_company`. Repointed the 5 existing scrapers
+(`scrape_zoominfo`, `scrape_explorium`, `scrape_leadiq`,
+`scrape_rocketreach`, `scrape_siccode`) from calling `_google_site_search`
+directly to `await self._search_company_url(company_name, COMPANY_SOURCES[...])`
+— `scrape_leadiq` preserves its pre-existing `_standardize_name()` call
+(now applied before `_search_company_url` too, matching its previous
+Google-search behavior). Fetch calls (`_fetch_page_with_selenium`) were
+left untouched per scope (already Playwright-backed via TASK-1761's thin
+delegate) — only the search step was repointed, per this task's explicit
+scope. `_google_site_search` is unchanged and now serves solely as
+`_search_company_url`'s fallback. `scrape_all_sources` untouched
+(back-compat preserved; it composes the now-repointed 5 scrapers so its
+search strategy is transparently upgraded too). Verified: `get_tools()`
+lists 8 tools (`research_company`, `scrape_visualvisitor`, and the 5
+original `scrape_*` + `scrape_all_sources`); ad-hoc smoke tests confirmed
+first-success short-circuit (later source's mock never called), unknown
+`sources` entries produce a clean error without raising, and an all-fail
+run returns `scrape_status="no_data"` with a `error_message` listing every
+source's status. Also spot-checked `scrape_siccode` end-to-end with a
+mocked `_search_company_url`/`_fetch_page_with_selenium` to confirm the
+new search wiring is exercised with the correct `SourceConfig`. `ruff
+check` clean.
+**Deviations from spec**: none. One incidental behavior change, called out
+for visibility: the 5 repointed scrapers no longer append their old
+ad-hoc `additional_terms` (e.g. "Overview", "+NAICS") to the search query,
+since `_search_company_url` uses `SourceConfig.search_template` — which is
+the flowtask-ported template (TASK-1760) and is the source of truth per
+spec Module 1/4. This is the intended effect of "wiring existing scrapers
+to new search," not a regression.
