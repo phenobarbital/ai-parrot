@@ -1489,7 +1489,9 @@ Current task: {current_input}"""
                 result,
                 'run_sequential',
                 user_id=user_id,
-                session_id=session_id
+                session_id=session_id,
+                prompt=query,
+                tenant=getattr(self, '_tenant', 'global'),
             )
         )
         self._persist_tasks.add(_persist_task)
@@ -1955,7 +1957,9 @@ Current task: {current_input}"""
                 result,
                 'run_loop',
                 user_id=user_id,
-                session_id=session_id
+                session_id=session_id,
+                prompt=initial_task,
+                tenant=getattr(self, '_tenant', 'global'),
             )
         )
         self._persist_tasks.add(_persist_task)
@@ -2278,7 +2282,9 @@ Current task: {current_input}"""
                 result,
                 'run_parallel',
                 user_id=user_id,
-                session_id=session_id
+                session_id=session_id,
+                prompt=original_query,
+                tenant=getattr(self, '_tenant', 'global'),
             )
         )
         self._persist_tasks.add(_persist_task)
@@ -2515,7 +2521,9 @@ Current task: {current_input}"""
                 result,
                 'run_flow',
                 user_id=user_id,
-                session_id=session_id
+                session_id=session_id,
+                prompt=initial_task,
+                tenant=getattr(self, '_tenant', 'global'),
             )
         )
         self._persist_tasks.add(_persist_task)
@@ -2773,7 +2781,9 @@ Create a clear, well-structured response."""
                 synthesis_response,
                 'run',
                 user_id=user_id,
-                session_id=session_id
+                session_id=session_id,
+                prompt=task if isinstance(task, str) else str(task),
+                tenant=getattr(self, '_tenant', 'global'),
             )
         )
         self._persist_tasks.add(_persist_task)
@@ -3283,7 +3293,9 @@ analyze, and present information in the most helpful way for the user.
                 response,
                 'ask',
                 user_id=user_id,
-                session_id=session_id
+                session_id=session_id,
+                prompt=question,
+                tenant=getattr(self, '_tenant', 'global'),
             )
         )
         self._persist_tasks.add(_persist_task)
