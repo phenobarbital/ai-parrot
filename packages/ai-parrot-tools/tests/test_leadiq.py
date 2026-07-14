@@ -209,6 +209,58 @@ async def test_headers_use_basic_auth_verbatim(toolkit, company_payload):
 
 
 @pytest.mark.asyncio
+async def test_auth_headers_reach_the_real_outgoing_request(toolkit, company_payload):
+    """End-to-end regression test for the FEAT-304 header-drop bug.
+
+    Every other test in this module mocks ``toolkit.http.session`` directly,
+    which only proves LeadIQToolkit *calls* session() with the right
+    headers — it can't catch a bug inside session() itself that silently
+    discards those headers before building the real HTTP request (as
+    happened previously: ``HTTPService.session()`` reassigned its local
+    ``headers`` variable to ``self.headers`` before ever reading the
+    caller-supplied dict). This test instead patches ``httpx.AsyncClient``
+    — one layer below ``session()`` — so it exercises the real header-merge
+    logic end-to-end.
+    """
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"Content-Type": "application/json"}
+        text = "{}"
+
+    class _FakeAsyncClient:
+        captured = {}
+
+        def __init__(self, **kwargs):
+            _FakeAsyncClient.captured["init_kwargs"] = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def request(self, **kwargs):
+            return _FakeResponse()
+
+    from parrot.interfaces.http import HTTPService
+
+    with patch("httpx.AsyncClient", _FakeAsyncClient):
+        with patch.object(
+            HTTPService,
+            "process_response",
+            AsyncMock(return_value=(company_payload, None)),
+        ):
+            result = await toolkit.search_company(company_name="PetSmart")
+
+    sent_headers = _FakeAsyncClient.captured["init_kwargs"]["headers"]
+    assert sent_headers["Authorization"] == "Basic Zm9vOg=="
+    assert sent_headers["Content-Type"] == "application/json"
+    assert sent_headers["apollo-require-preflight"] == "true"
+    assert result.success is True
+
+
+@pytest.mark.asyncio
 async def test_missing_api_key_returns_error_toolresult():
     tk = LeadIQToolkit(api_key=None)
     with patch("parrot_tools.leadiq.tool.config.get", return_value=None):
