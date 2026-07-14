@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-14T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-14T06:49:01+00:00",
   "tasks": [
     {
       "id": "TASK-1775",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-308",
       "feature": "agentcrew-node-infographic",
       "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Standalone template registration in infographic_templates.py — no shared files with TASK-1776.",
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1775-crew-report-template.md"
+      "completed_at": "2026-07-14T06:49:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1775-crew-report-template.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1776",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-308",
       "feature": "agentcrew-node-infographic",
       "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Touches only core/result.py — no shared files with TASK-1775.",
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1776-flowresult-infographic-field.md"
+      "completed_at": "2026-07-14T06:49:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1776-flowresult-infographic-field.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1777",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-308",
       "feature": "agentcrew-node-infographic",
       "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +62,9 @@
       "parallelism_notes": "Imports crew_report template from TASK-1775; creates new file so no file conflict, but logical dependency.",
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1777-tab-assembly-helper.md"
+      "completed_at": "2026-07-14T06:49:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1777-tab-assembly-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1778",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-308",
       "feature": "agentcrew-node-infographic",
       "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +83,9 @@
       "parallelism_notes": "Depends on crew_report template (TASK-1775); imports merge_tab1_blocks from TASK-1777 at runtime. Could technically parallel with 1777 but logical coupling is high.",
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1778-result-agent.md"
+      "completed_at": "2026-07-14T06:49:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1778-result-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1779",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-308",
       "feature": "agentcrew-node-infographic",
       "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +106,9 @@
       "parallelism_notes": "Central integration point — modifies crew.py which depends on all prior modules.",
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1779-agentcrew-finalize-infographic.md"
+      "completed_at": "2026-07-14T06:49:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1779-agentcrew-finalize-infographic.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1780",
@@ -112,7 +117,7 @@
       "feature_id": "FEAT-308",
       "feature": "agentcrew-node-infographic",
       "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -122,8 +127,9 @@
       "parallelism_notes": "Requires all modules integrated; exercises the full flow.",
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1780-infographic-integration-tests.md"
+      "completed_at": "2026-07-14T06:49:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1780-infographic-integration-tests.md",
+      "verification": "verified"
     }
   ]
 }
