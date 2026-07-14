@@ -172,12 +172,17 @@ class TestWikiIngestOrchestrator:
     @pytest.mark.asyncio
     async def test_ingest_creates_graph_node(
         self,
-        orchestrator: WikiIngestOrchestrator,
+        mock_pi,
         mock_gi,
+        source_manager: SourceCollectionManager,
+        bookkeeper: WikiBookkeeper,
         sample_source: Path,
         wiki_config: WikiConfig,
     ):
-        """create_node is called on GraphIndexToolkit."""
+        """With sync_graph=True, create_node is called on GraphIndexToolkit."""
+        orchestrator = WikiIngestOrchestrator(
+            mock_pi, mock_gi, source_manager, bookkeeper, sync_graph=True
+        )
         await orchestrator.ingest(str(sample_source), wiki_config)
         mock_gi.create_node.assert_called_once()
         call_kwargs = mock_gi.create_node.call_args[1] if mock_gi.create_node.call_args[1] else {}
@@ -189,13 +194,33 @@ class TestWikiIngestOrchestrator:
     @pytest.mark.asyncio
     async def test_ingest_graph_nodes_created(
         self,
-        orchestrator: WikiIngestOrchestrator,
+        mock_pi,
+        mock_gi,
+        source_manager: SourceCollectionManager,
+        bookkeeper: WikiBookkeeper,
         sample_source: Path,
         wiki_config: WikiConfig,
     ):
-        """graph_nodes_created >= 1 after successful ingest."""
+        """graph_nodes_created >= 1 when sync_graph=True."""
+        orchestrator = WikiIngestOrchestrator(
+            mock_pi, mock_gi, source_manager, bookkeeper, sync_graph=True
+        )
         report = await orchestrator.ingest(str(sample_source), wiki_config)
         assert report.graph_nodes_created >= 1
+
+    @pytest.mark.asyncio
+    async def test_ingest_graph_sync_off_by_default(
+        self,
+        orchestrator: WikiIngestOrchestrator,
+        mock_gi,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        """GraphIndex is NOT touched by default — WikiStore is the plane."""
+        report = await orchestrator.ingest(str(sample_source), wiki_config)
+        assert report.status == "ok"
+        assert report.graph_nodes_created == 0
+        mock_gi.create_node.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_ingest_updates_manifest(
@@ -276,7 +301,9 @@ class TestWikiIngestOrchestrator:
         gi = MagicMock()
         gi.create_node = AsyncMock(side_effect=RuntimeError("GI down"))
 
-        orch = WikiIngestOrchestrator(pi, gi, source_manager, bookkeeper)
+        orch = WikiIngestOrchestrator(
+            pi, gi, source_manager, bookkeeper, sync_graph=True
+        )
         report = await orch.ingest(str(sample_source), wiki_config)
         assert report.status == "ok"
         assert report.graph_nodes_created == 0  # failed, but not fatal
@@ -291,3 +318,68 @@ class TestWikiIngestOrchestrator:
         """duration_ms is a positive float after ingest."""
         report = await orchestrator.ingest(str(sample_source), wiki_config)
         assert report.duration_ms >= 0.0
+
+
+class TestIngestWikiStoreSync:
+    """Ingest writes pages + provenance edges into the WikiStore plane."""
+
+    @pytest.fixture
+    def store(self, tmp_path: Path):
+        from parrot.knowledge.wiki.store import WikiStore
+
+        return WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
+
+    @pytest.fixture
+    def store_orchestrator(
+        self, mock_pi, mock_gi, source_manager, bookkeeper, store
+    ) -> WikiIngestOrchestrator:
+        return WikiIngestOrchestrator(
+            mock_pi, mock_gi, source_manager, bookkeeper, store=store
+        )
+
+    @pytest.mark.asyncio
+    async def test_ingest_upserts_pages_into_store(
+        self,
+        store_orchestrator: WikiIngestOrchestrator,
+        store,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        report = await store_orchestrator.ingest(str(sample_source), wiki_config)
+        assert report.status == "ok"
+        stats = await store.stats()
+        assert stats["pages"] == 3  # one per new_node_id from the mock
+
+    @pytest.mark.asyncio
+    async def test_ingest_records_summarizes_edges(
+        self,
+        store_orchestrator: WikiIngestOrchestrator,
+        store,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        report = await store_orchestrator.ingest(str(sample_source), wiki_config)
+        page = await store.get_page("0001")
+        assert page is not None
+        out = await store.neighbors("0001", rel="summarizes", direction="out")
+        assert len(out) == 1
+        assert out[0]["concept_id"] == report.source_id
+
+    @pytest.mark.asyncio
+    async def test_reingest_does_not_duplicate_pages(
+        self,
+        store_orchestrator: WikiIngestOrchestrator,
+        store,
+        source_manager: SourceCollectionManager,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        """G9 regression: re-ingest replaces the source slice atomically."""
+        report = await store_orchestrator.ingest(str(sample_source), wiki_config)
+        # Force staleness so the second ingest is not skipped
+        sample_source.write_text(sample_source.read_text() + "\nMore.")
+        report2 = await store_orchestrator.ingest(str(sample_source), wiki_config)
+        assert report2.status == "ok"
+        assert report.source_id == report2.source_id
+        stats = await store.stats()
+        assert stats["pages"] == 3  # replaced, not accumulated

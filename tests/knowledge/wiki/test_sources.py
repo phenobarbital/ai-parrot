@@ -119,13 +119,40 @@ class TestSourceCollectionManager:
         assert len(sources) == 1
         assert sources[0].source_uri == str(sample_source.resolve())
 
-    def test_manifest_file_exists_after_add(
+    def test_registry_db_exists_after_add(
         self, sources_dir: Path, sample_source: Path
     ):
-        """A .manifest.json file is created after the first add_source."""
+        """The shared wiki.db registry is created after the first add_source."""
         mgr = SourceCollectionManager(sources_dir)
         mgr.add_source(sample_source)
-        assert (sources_dir / ".manifest.json").exists()
+        assert mgr.db_path.exists()
+        assert mgr.db_path == sources_dir.parent / "wiki.db"
+
+    def test_legacy_json_manifest_migrated(
+        self, sources_dir: Path, sample_source: Path
+    ):
+        """A legacy .manifest.json is imported into SQLite and renamed."""
+        import json
+
+        sources_dir.mkdir(parents=True, exist_ok=True)
+        legacy_entry = {
+            "src-legacy000001": {
+                "source_id": "src-legacy000001",
+                "source_uri": str(sample_source),
+                "file_hash": "deadbeef" * 5,
+                "mtime": 1.0,
+                "ingested_at": "2026-01-01T00:00:00Z",
+                "pages_generated": ["0001"],
+                "status": "ingested",
+            }
+        }
+        (sources_dir / ".manifest.json").write_text(json.dumps(legacy_entry))
+        mgr = SourceCollectionManager(sources_dir)
+        entry = mgr.get_source("src-legacy000001")
+        assert entry is not None
+        assert entry.pages_generated == ["0001"]
+        assert not (sources_dir / ".manifest.json").exists()
+        assert (sources_dir / ".manifest.json.bak").exists()
 
     def test_mark_ingested_updates_pages(
         self, sources_dir: Path, sample_source: Path

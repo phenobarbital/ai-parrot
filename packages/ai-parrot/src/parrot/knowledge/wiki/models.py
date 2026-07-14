@@ -62,6 +62,9 @@ class WikiConfig(BaseModel):
             when ``None``.
         model: Optional model identifier for the heavyweight generation
             step of TwoStepIngester.
+        sync_graph: When ``True``, wiki writes also mirror pages into
+            GraphIndex.  Off by default — the WikiStore SQLite plane is
+            the wiki's retrieval backend.
     """
 
     wiki_name: str = Field(..., description="Unique wiki name / identifier")
@@ -85,6 +88,13 @@ class WikiConfig(BaseModel):
     model: Optional[str] = Field(
         default=None,
         description="LLM model for heavyweight generation step",
+    )
+    sync_graph: bool = Field(
+        default=False,
+        description=(
+            "Mirror wiki pages into GraphIndex on write. Off by default — "
+            "the WikiStore SQLite plane is the retrieval backend."
+        ),
     )
 
     @field_validator("search_weights")

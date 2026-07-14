@@ -29,6 +29,11 @@ from parrot.knowledge.wiki.models import (
 )
 from parrot.knowledge.wiki.search import WikiCombinedSearch
 from parrot.knowledge.wiki.sources import SourceCollectionManager
+from parrot.knowledge.wiki.store import (
+    WikiPageRecord,
+    WikiStore,
+    estimate_tokens,
+)
 from parrot.tools.toolkit import AbstractToolkit
 
 
@@ -84,9 +89,16 @@ class LLMWikiToolkit(AbstractToolkit):
         self._okf = okf_toolkit
         self._config = config
 
-        # Initialise helper components
+        # Initialise helper components.  The WikiStore SQLite plane
+        # (storage_dir/wiki.db) is the retrieval backend; the sources
+        # registry shares the same database file.
+        self._store = WikiStore(
+            config.storage_dir / "wiki.db", wiki_name=config.wiki_name
+        )
         sources_dir = config.storage_dir / "sources"
-        self._sources = SourceCollectionManager(sources_dir)
+        self._sources = SourceCollectionManager(
+            sources_dir, db_path=self._store.db_path
+        )
         self._bookkeeper = WikiBookkeeper()
         self._search = WikiCombinedSearch(
             pageindex_toolkit,
@@ -98,6 +110,8 @@ class LLMWikiToolkit(AbstractToolkit):
             graphindex_toolkit,
             self._sources,
             self._bookkeeper,
+            store=self._store,
+            sync_graph=config.sync_graph,
         )
         self.logger: logging.Logger = logging.getLogger(__name__)
 
@@ -260,13 +274,12 @@ class LLMWikiToolkit(AbstractToolkit):
 
             {storage_dir}/
             ├── sources/         # raw source documents
-            ├── wiki/            # wiki markdown pages (by category)
-            │   ├── entities/
-            │   ├── concepts/
-            │   ├── summaries/
-            │   └── comparisons/
+            ├── wiki.db          # SQLite retrieval plane (pages/edges/FTS)
             ├── index.md         # auto-generated content catalog
             └── log.md           # append-only operation log
+
+        Page content lives in ``wiki.db`` (machine plane), not in
+        per-category markdown directories.
 
         Args:
             wiki_name: Human-readable wiki name.
@@ -278,10 +291,6 @@ class LLMWikiToolkit(AbstractToolkit):
         storage_dir = self._config.storage_dir
         directories = [
             storage_dir / "sources",
-            storage_dir / "wiki" / "entities",
-            storage_dir / "wiki" / "concepts",
-            storage_dir / "wiki" / "summaries",
-            storage_dir / "wiki" / "comparisons",
         ]
         created: list[str] = []
         for d in directories:
@@ -454,7 +463,9 @@ class LLMWikiToolkit(AbstractToolkit):
         Returns:
             Dict with keys: page_id, title, category, status.
         """
-        # Build markdown with YAML-like frontmatter comment
+        # Markdown kept for the PageIndex authoring plane; the category
+        # lives as a real column in the WikiStore (the HTML comment is
+        # retained only for backwards compatibility of stored markdown).
         markdown = f"# {title}\n\n<!-- category: {category} -->\n\n{content}"
 
         page_id: Optional[str] = None
@@ -470,18 +481,42 @@ class LLMWikiToolkit(AbstractToolkit):
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("create_page PageIndex insert failed: %s", exc)
 
-        # Sync to GraphIndex
+        if not page_id:
+            page_id = f"page-{title[:40].lower().replace(' ', '-')}"
+
+        # Write to the WikiStore retrieval plane: category as a column,
+        # body in the DB, related_pages as typed edges.
         try:
-            gi_result = await self._gi.create_node(
-                kind="wiki_page",
+            record = WikiPageRecord(
+                concept_id=page_id,
+                node_id=page_id,
                 title=title,
+                category=category,
                 summary=content[:300],
-                domain_tags={"wiki": wiki_name, "category": category},
+                body=content,
+                token_count=estimate_tokens(content),
             )
-            if isinstance(gi_result, dict) and not page_id:
-                page_id = gi_result.get("node_id")
+            await self._store.upsert_pages([record])
+            if related_pages:
+                await self._store.add_edges(
+                    [(page_id, str(rp), "references") for rp in related_pages]
+                )
         except Exception as exc:  # noqa: BLE001
-            self.logger.warning("create_page GraphIndex create_node failed: %s", exc)
+            self.logger.warning("create_page WikiStore upsert failed: %s", exc)
+
+        # Optional GraphIndex mirror (off by default).
+        if self._config.sync_graph:
+            try:
+                await self._gi.create_node(
+                    kind="wiki_page",
+                    title=title,
+                    summary=content[:300],
+                    domain_tags={"wiki": wiki_name, "category": category},
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "create_page GraphIndex create_node failed: %s", exc
+                )
 
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
@@ -490,9 +525,10 @@ class LLMWikiToolkit(AbstractToolkit):
             f"title: {title!r}, category: {category}",
         )
         return {
-            "page_id": page_id or f"page-{title[:20].lower().replace(' ', '-')}",
+            "page_id": page_id,
             "title": title,
             "category": category,
+            "related_pages": list(related_pages or []),
             "status": "created",
         }
 

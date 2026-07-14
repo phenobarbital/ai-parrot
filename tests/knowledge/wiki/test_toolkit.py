@@ -103,10 +103,13 @@ class TestLLMWikiToolkitCreateWiki:
         wiki_toolkit: LLMWikiToolkit,
         wiki_config: WikiConfig,
     ):
-        """create_wiki creates the expected directory structure."""
+        """create_wiki creates the sources dir and the wiki.db plane."""
         await wiki_toolkit.create_wiki("my-wiki")
         assert (wiki_config.storage_dir / "sources").exists()
-        assert (wiki_config.storage_dir / "wiki").exists()
+        # Page content lives in the SQLite retrieval plane, not in
+        # per-category markdown directories.
+        assert (wiki_config.storage_dir / "wiki.db").exists()
+        assert not (wiki_config.storage_dir / "wiki").exists()
 
     @pytest.mark.asyncio
     async def test_create_wiki_writes_index(
