@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from parrot.models.crew_definition import (  # noqa: F401
     ExecutionMode,
     AgentDefinition,
+    ToolNodeDefinition,
     FlowRelation,
     CrewDefinition,
 )

@@ -40,7 +40,7 @@ from ....clients.factory import SUPPORTED_CLIENTS
 from ....clients.google import GoogleGenAIClient
 from ....tools.manager import ToolManager
 from ....tools.agent import AgentTool
-from ....tools.abstract import AbstractTool
+from ....tools.abstract import AbstractTool, ToolResult
 from ....models.responses import (
     AIMessage,
     AgentResponse
@@ -73,6 +73,7 @@ from ..core.types import (
 from ..core.fsm import AgentTaskMachine
 from ..tools import ResultRetrievalTool
 from .nodes import CrewAgentNode
+from .tool_node import ToolNode, extract_tool_output
 
 __all__ = [
     "AgentCrew",
@@ -485,6 +486,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             return
 
         for agent_id, agent in self.agents.items():
+            if isinstance(agent, ToolNode):
+                # Deterministic tool nodes are not agents — nothing to wrap.
+                continue
             try:
                 agent_tool = agent.as_tool(
                     tool_name=f"agent_{agent_id}",
@@ -564,6 +568,27 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             for tool_name in crew_def.shared_tools:
                 if tool := tool_resolver(tool_name):
                     crew.add_shared_tool(tool, tool_name)
+
+        # Deterministic tool nodes (ToolNodeDefinition) — added before
+        # flow_relations so relations can reference them by node_id.
+        # Unlike shared tools, an unresolvable tool node raises: it is a
+        # structural DAG member and skipping it silently would produce a
+        # broken/stuck workflow.
+        for tool_node_def in getattr(crew_def, "tool_nodes", None) or []:
+            tool = tool_resolver(tool_node_def.tool) if tool_resolver else None
+            if tool is None:
+                raise ValueError(
+                    f"Cannot resolve tool '{tool_node_def.tool}' for tool "
+                    f"node '{tool_node_def.node_id}'. A tool_resolver that "
+                    "knows this tool is required."
+                )
+            crew.add_tool_node(
+                tool,
+                tool_node_def.node_id,
+                args=tool_node_def.args,
+                kwargs=tool_node_def.kwargs,
+                description=tool_node_def.description,
+            )
 
         if crew_def.execution_mode == ExecutionMode.FLOW and crew_def.flow_relations:
             for relation in crew_def.flow_relations:
@@ -665,10 +690,73 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
         self.logger.info(f"Agents added and tracking initialized for '{agent_id}'")
 
+    def add_tool_node(
+        self,
+        tool: AbstractTool,
+        node_id: str,
+        *,
+        args: Optional[List[Any]] = None,
+        kwargs: Optional[Dict[str, Any]] = None,
+        description: Optional[str] = None,
+    ) -> ToolNode:
+        """Add a deterministic tool-execution node as a crew member.
+
+        The node calls ``tool`` directly with the declared ``args``/``kwargs``
+        (template placeholders ``{input}`` and ``{nodes.<name>.output}`` are
+        resolved from prior results at execution time) — no LLM tokens are
+        spent. The result is wrapped so it behaves like any agent execution
+        result throughout the crew flow.
+
+        Registered into BOTH ``self.agents`` (so sequential/parallel/loop
+        modes pick it up — ``_execute_agent`` dispatches on isinstance) and
+        ``self.workflow_graph`` (flow mode: the ToolNode is its own graph
+        node). Agent-only machinery is skipped: shared-tool distribution,
+        AgentTool wrapping, LLM tool registration and event listeners.
+
+        Args:
+            tool: The ``AbstractTool`` instance to execute.
+            node_id: Unique identifier for the node within the crew.
+            args: Positional arguments passed through to the tool.
+            kwargs: Keyword arguments passed through to the tool.
+            description: Optional human-readable description.
+
+        Returns:
+            The created ``ToolNode``.
+
+        Raises:
+            ValueError: If ``node_id`` already exists in the crew.
+        """
+        if node_id in self.agents or node_id in self.workflow_graph:
+            raise ValueError(
+                f"Crew member '{node_id}' already exists"
+            )
+        node = ToolNode(
+            tool=tool,
+            node_id=node_id,
+            args=list(args or []),
+            kwargs=dict(kwargs or {}),
+            description=description or f"Deterministic call of tool '{tool.name}'",
+        )
+        self.agents[node_id] = node
+        self.workflow_graph[node_id] = node
+        self._agent_statuses[node_id] = {
+            "status": AgentStatus.IDLE.value,
+            "last_active": datetime.now(),
+            "task": None,
+            "result": None,
+            "error": None
+        }
+        self.logger.info(
+            f"Added tool node '{node_id}' (tool '{tool.name}') to crew"
+        )
+        return node
+
     def remove_agent(self, agent_id: str) -> bool:
-        """Remove an agent from the crew."""
+        """Remove an agent (or tool node) from the crew."""
         if agent_id in self.agents:
             del self.agents[agent_id]
+            self.workflow_graph.pop(agent_id, None)
+            self._agent_statuses.pop(agent_id, None)
             self.logger.info(
                 f"Removed agent '{agent_id}' from crew"
             )
@@ -679,8 +767,10 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         """Add a tool shared across all agents."""
         self.shared_tool_manager.add_tool(tool, tool_name)
 
-        # Add to all existing agents
+        # Add to all existing agents (tool nodes have no tool_manager)
         for agent in self.agents.values():
+            if not hasattr(agent, 'tool_manager'):
+                continue
             if not agent.tool_manager.get_tool(tool_name or tool.name):
                 agent.tool_manager.add_tool(tool, tool_name)
 
@@ -1148,6 +1238,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         index: int,
         model: Optional[str] = None,
         max_tokens: Optional[int] = None,
+        flow_context: Optional[FlowContext] = None,
         **kwargs,
     ) -> Any:
         """Execute a single agent with proper rate limiting and error handling.
@@ -1165,14 +1256,30 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 build a unique sub-session ID).
             model: Optional model override forwarded to the agent.
             max_tokens: Optional token limit forwarded to the agent.
+            flow_context: Optional ``FlowContext`` of the current run — used
+                by ``ToolNode`` members to resolve ``{nodes.<name>.output}``
+                template placeholders from prior results.
             **kwargs: Arbitrary additional keyword arguments forwarded to the
                 agent call (replaces the former ``AgentContext.shared_data``
                 spread).
 
         Returns:
             The raw response from the agent (``AIMessage``, ``AgentResponse``,
-            or other type depending on the agent implementation).
+            or other type depending on the agent implementation), or a
+            ``ToolResult`` for ``ToolNode`` members.
         """
+        # Deterministic tool node: no LLM, no configuration — resolve the
+        # declared args/kwargs (templates included) and call the tool
+        # directly. Session/model kwargs deliberately do NOT reach the tool.
+        if isinstance(agent, ToolNode):
+            async with self.semaphore:
+                return await agent.call_tool(
+                    input_text=query,
+                    results=(
+                        flow_context.results if flow_context is not None else {}
+                    ),
+                    timeout=self.agent_execution_timeout,
+                )
         await self._ensure_agent_ready(agent)
         async with self.semaphore:
             if hasattr(agent, 'ask'):
@@ -1210,6 +1317,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
     def _extract_result(self, response: Any) -> str:
         """Extract result string from response."""
+        if isinstance(response, ToolResult):
+            return extract_tool_output(response)
         if isinstance(response, (AIMessage, AgentResponse)) or hasattr(
             response, 'content'
         ):
@@ -1506,6 +1615,7 @@ Current task: {current_input}"""
                 response: AIMessage = await self._execute_agent(
                     agent, agent_input, session_id, user_id, i,
                     model=model, max_tokens=max_tokens,
+                    flow_context=context,
                     **_agent_kwargs
                 )
 
@@ -1976,6 +2086,7 @@ Current task: {current_input}"""
                         agent_position,
                         model=model,
                         max_tokens=max_tokens,
+                        flow_context=context,
                         **_agent_kwargs
                     )
 
@@ -2339,7 +2450,7 @@ Current task: {current_input}"""
 
             async def _run_with_hooks(
                 _agent=agent, _query=query, _idx=i, _node=node,
-                _kwargs=_agent_kwargs,
+                _kwargs=_agent_kwargs, _ctx=context,
             ):
                 """Wrap _execute_agent with pre/post action hooks."""
                 if _node:
@@ -2347,6 +2458,7 @@ Current task: {current_input}"""
                 resp = await self._execute_agent(
                     _agent, _query, session_id, user_id, _idx,
                     max_tokens=max_tokens,
+                    flow_context=_ctx,
                     **_kwargs
                 )
                 if _node:

@@ -136,6 +136,24 @@ class CrewHandler(BaseView):
             if tool := self.bot_manager.get_tool(tool_name):
                 crew.add_shared_tool(tool, tool_name)
 
+        # Add deterministic tool nodes (must precede flow relations so
+        # relations can reference them by node_id). Unresolvable tools
+        # raise: a tool node is a structural DAG member.
+        for tool_node_def in crew_def.tool_nodes:
+            tool = self.bot_manager.get_tool(tool_node_def.tool)
+            if not tool:
+                raise ValueError(
+                    f"Tool '{tool_node_def.tool}' not found for tool node "
+                    f"'{tool_node_def.node_id}'"
+                )
+            crew.add_tool_node(
+                tool,
+                tool_node_def.node_id,
+                args=tool_node_def.args,
+                kwargs=tool_node_def.kwargs,
+                description=tool_node_def.description,
+            )
+
         # Setup flow relations if in flow mode
         if crew_def.execution_mode == ExecutionMode.FLOW and crew_def.flow_relations:
             for relation in crew_def.flow_relations:
@@ -158,23 +176,13 @@ class CrewHandler(BaseView):
         return crew
 
     def _get_agents_by_ids(self, crew: AgentCrew, agent_ids: list) -> list:
-        """Helper to get agent instances by their IDs/names."""
-        # This helper might also be missing, implementing a simple version based on context
-        # Assumes agent name matches what was set during creation (name or agent_id)
-        # But wait, User snippet used self._get_agents_by_ids so I should check if that exists or add it.
-        # Since I am adding it here, I should implement it.
-        found = []
-        for aid in agent_ids:
-            # Logic to find agent in crew.agents list
-            # The agent.name was set to agent_def.name or agent_def.agent_id
-            # This might be tricky if names are not unique or if we don't know the exact mapping.
-            # Ideally AgentCrew has a method to get agent by valid identifier?
-            # For now, let's iterate.
-            for agent in crew.agents:
-                if agent.name == aid: # weak match?
-                    found.append(agent)
-                    break
-        return found
+        """Resolve crew members (agents or tool nodes) by their id/name.
+
+        ``crew.agents`` is a dict keyed by agent name/node_id, so resolution
+        delegates to ``AgentCrew._resolve_agents_by_ids`` (the same helper
+        ``AgentCrew.from_definition`` uses). Missing ids are skipped.
+        """
+        return AgentCrew._resolve_agents_by_ids(crew.agents, agent_ids)
 
     async def upload(self):
         """
