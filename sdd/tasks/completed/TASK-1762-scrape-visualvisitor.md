@@ -67,13 +67,16 @@ class CompanyInfo(BaseModel):                        # line 83  (fields 88-137)
     scrape_status: str = "pending"                   # line 92
     source_platform: str                             # set to "visualvisitor"
     def to_json(self, **kwargs) -> str               # line 139
-class CompanyInfoToolkit(AbstractToolkit):           # line 163
-    async def scrape_zoominfo(self, company_name, return_json=False)  # line 429, @tool_schema(CompanyInput) at 428  (COPY THIS SHAPE)
-    def _parse_address(self, address_text) -> Dict   # line 371 (reuse for address parsing)
-    def _standardize_name(self, name) -> str         # line 405 (reuse)
-# NEW from sibling tasks (must exist before this task runs):
-    def _search_company_url(self, company_name, site_config) -> Optional[str]   # TASK-1760
-    async def _fetch_page(self, url) -> Optional[BeautifulSoup]                  # TASK-1761
+class CompanyInfoToolkit(AbstractToolkit):           # line 163 (as landed by TASK-1760/1761)
+    async def scrape_zoominfo(self, company_name, return_json=False)  # @tool_schema(CompanyInput)  (COPY THIS SHAPE)
+    def _parse_address(self, address_text) -> Dict   # reuse for address parsing
+    def _standardize_name(self, name) -> str         # reuse
+# NEW from sibling tasks (verified present in this worktree — TASK-1760/1761 landed):
+    async def _search_company_url(self, company_name: str, site_config: SourceConfig) -> Optional[str]   # TASK-1760 (ASYNC — contract corrected; must be awaited)
+    async def _fetch_page(self, url: str, custom_user_agent: Optional[str] = None) -> Optional[bs]        # TASK-1761
+# Module-level registry (NOT an instance attribute `self._sources` as originally drafted —
+# contract corrected to match actual TASK-1760 implementation):
+COMPANY_SOURCES: Dict[str, SourceConfig]             # module-level dict, keyed by source name incl. "visualvisitor"
 
 # flowtask reference (READ-ONLY):
 #   /home/jesuslara/proyectos/flowtask/flowtask/components/CompanyScraper/parsers/visualvisitor.py
@@ -152,9 +155,29 @@ async def scrape_visualvisitor(self, company_name: str, return_json: bool = Fals
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-07-14
+**Notes**: Corrected the Codebase Contract before implementing: TASK-1760's
+registry landed as a module-level `COMPANY_SOURCES: Dict[str, SourceConfig]`
+(not an instance attribute `self._sources` as originally drafted), and
+`_search_company_url` is `async def` (must be awaited) — updated the
+contract section above to match. Added `_extract_codes` (shared NAICS/SIC
+helper, ported from flowtask's `rocket.py`/`visualvisitor.py` — both
+sources use the identical regex) as a new toolkit method near
+`_standardize_name`. Added `scrape_visualvisitor` right before
+`scrape_all_sources`, using `COMPANY_SOURCES["visualvisitor"]` +
+`_search_company_url` (TASK-1760) + `_fetch_page` (TASK-1761). Selectors
+(`.company-header`, `.headline-summary table` walk) ported from flowtask
+`parsers/visualvisitor.py:32-125`, which is byte-for-byte identical to
+`parsers/rocket.py` (already ported into this file's `scrape_rocketreach`)
+— confirming the spec's note that flowtask's VisualVisitor parser was a
+rocket.py copy-paste. Set `source_platform="visualvisitor"` (NOT
+flowtask's mislabeled `"rocketreach"` at visualvisitor.py:42). Verified
+with an ad-hoc fixture-HTML smoke test (mocking `_search_company_url` and
+`_fetch_page`): populated `CompanyInfo` has `source_platform ==
+"visualvisitor"`, `scrape_status == "success"`, and correctly extracts
+company_name/website/phone/naics_code/sic_code/employee_count/
+headquarters; also verified the no-hit path returns `scrape_status ==
+"no_data"` without raising. `ruff check` clean; `get_tools()` now lists
+7 tools including `scrape_visualvisitor`.
+**Deviations from spec**: none
