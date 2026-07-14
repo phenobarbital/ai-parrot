@@ -1,6 +1,6 @@
 # TASK-1771: AgentCrew run_* Prompt Passthrough
 
-**Feature**: FEAT-306 — AgentCrew Saved Crews (Execution Persistence & Replay)
+**Feature**: FEAT-307 — AgentCrew Saved Crews (Execution Persistence & Replay)
 **Spec**: `sdd/specs/agentcrew-saved-crews.spec.md`
 **Status**: pending
 **Priority**: high
