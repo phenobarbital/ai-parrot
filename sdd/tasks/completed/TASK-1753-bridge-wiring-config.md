@@ -292,10 +292,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Added `_extract_semantic_result()` (checks `structured_output`
+then `data`, `isinstance` only) and `_send_semantic_card()` helpers to
+`agent.py`; the seam replaces only the success-path `_send_text` call at
+the former line 298, wrapped in a full try/except/except fallback chain
+(render error → `_send_text(render_text(result))` → last-resort
+`_send_text(str(response.content))`). `CredentialRequired` except-branch
+and `finally` block untouched (verified by diff). Added three constructor
+kwargs (`enable_semantic_cards`, `max_table_rows`, `max_card_bytes`)
+stored as `self._cards_enabled`/`_max_table_rows`/`_max_card_bytes`.
+`models.py` gained the matching `MSAgentSDKConfig` fields with the same
+defaults. `wrapper.py` threads them into the bridge construction via
+`getattr(config, ..., default)` for backward compatibility with older
+configs. `__init__.py` `_LAZY_EXPORTS`/`TYPE_CHECKING` gained
+`SemanticUIResult`, `UIAction`, `render_card`, `render_text`. Full
+existing package suite green (55/55 including the 5 new bridge tests);
+ruff clean. New bridge tests use `monkeypatch.setitem(sys.modules, ...)`
+rather than `patch.dict(sys.modules, ...)` — the latter snapshots and
+restores the *entire* `sys.modules` dict on exit, which evicted real
+heavy imports (e.g. `numpy`, pulled in transitively via
+`parrot.auth.permission`) performed inside the `with` block and broke
+later tests with "cannot load module more than once per process";
+`monkeypatch.setitem` only touches the specific stubbed keys.
 
 **Deviations from spec**: none
