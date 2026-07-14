@@ -196,10 +196,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-14
+**Notes**: Implemented `ResultAgent(Agent)` in
+`parrot/bots/flows/result_agent.py`, registered via
+`@register_agent(name="result-agent")` (corrected from the spec/task's
+positional `@register_agent("result-agent")` — the decorator is
+keyword-only per `registry.py:1205-1216`). `agent_tools()` returns
+`InfographicToolkit(artifact_store=...).get_tools()`. Since
+`InfographicToolkit` requires a real `ArtifactStore` at construction time
+(no zero-arg default) but building one is async while `agent_tools()` runs
+synchronously inside `BasicAgent.__init__`, added `_LazyArtifactStore` — a
+duck-typed proxy that defers `build_conversation_backend()` +
+`.initialize()` + `build_overflow_store()` to the first actual
+`save_artifact()` call (inside the async `render()` path). No hardcoded
+Gemini model-id needed: `BasicAgent.__init__` already falls back to
+`GoogleGenAIClient()` (`_default_model=GEMINI_FLASH_LATEST`) when no `llm`
+is supplied — resolves spec §8's open question without guessing a literal.
+`generate_infographic()` LLM-authors Tab 1 via `self.ask(..., use_tools=False)`
+(reusing the crew's existing `summary`, no second synthesis), merges via
+`merge_tab1_blocks` (TASK-1777), and renders via
+`toolkit.render(template_name="crew_report", ...)`; falls back to the raw
+summary text on any LLM exception (graceful degradation, per G7). Corrected
+the task's own test spec: `agent_registry.get(name)` does not exist — the
+verified API is `get_metadata(name).factory`. 5 unit tests pass, ruff clean.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (contract corrections documented above; no
+behavioral deviation from Module 3's scope)

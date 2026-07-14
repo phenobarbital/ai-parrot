@@ -70,7 +70,7 @@
       "feature_id": "FEAT-308",
       "feature": "agentcrew-node-infographic",
       "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Depends on crew_report template (TASK-1775); imports merge_tab1_blocks from TASK-1777 at runtime. Could technically parallel with 1777 but logical coupling is high.",
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1778-result-agent.md"
+      "completed_at": "2026-07-14T01:35:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1778-result-agent.md"
     },
     {
       "id": "TASK-1779",
