@@ -21,6 +21,67 @@ if TYPE_CHECKING:
     from .resume import MsaConversationRefStore
 
 
+def render_reply_text(response: Any) -> str:
+    """Produce human-readable reply text from an ``AIMessage``.
+
+    ``parrot_agent.ask()`` returns an :class:`~parrot.models.responses.AIMessage`
+    whose ``content``/``output`` is a *structured Pydantic model* whenever the
+    bot is configured with a ``structured_output`` schema. ``str()`` of such a
+    model yields its field-by-field repr — e.g.
+    ``explanation='...' data=None code=None metadata=None`` — which leaks into
+    the channel as garbled pseudo-JSON instead of a clean message. This helper
+    resolves the model's natural-language text instead, in priority order:
+
+    1. ``AIMessage.response`` — the plain-text response the model produced
+       before any structured reformatting (``AIMessageFactory`` sets this from
+       the raw ``text_response``).
+    2. A text-ish field pulled from the structured payload
+       (``structured_output`` first, then ``output``) when (1) is empty — covers
+       arbitrary downstream schemas that carry their prose in a named field
+       (``explanation``, ``answer``, ``text`` …).
+    3. ``AIMessage.to_text`` — handles plain-str / dict / DataFrame outputs.
+    4. ``str()`` of the payload as an absolute last resort.
+
+    Args:
+        response: The object returned by ``parrot_agent.ask()`` (normally an
+            ``AIMessage``); may be any object or ``None``.
+
+    Returns:
+        A display string safe to send verbatim to the channel. Returns an empty
+        string only when *response* itself is falsy.
+    """
+    if not response:
+        return ""
+
+    # 1. Prefer the plain-text response field.
+    text = getattr(response, "response", None)
+    if isinstance(text, str) and text.strip():
+        return text
+
+    # 2. Pull a human-text field out of a structured Pydantic payload.
+    from pydantic import BaseModel  # local import: keep module import-light
+
+    payload = getattr(response, "structured_output", None)
+    if payload is None:
+        payload = getattr(response, "output", None)
+    if isinstance(payload, BaseModel):
+        for field_name in (
+            "explanation", "answer", "text", "message",
+            "response", "content", "summary", "output",
+        ):
+            value = getattr(payload, field_name, None)
+            if isinstance(value, str) and value.strip():
+                return value
+
+    # 3. Fall back to AIMessage.to_text (str / dict / DataFrame outputs).
+    to_text = getattr(response, "to_text", None)
+    if isinstance(to_text, str) and to_text.strip():
+        return to_text
+
+    # 4. Absolute last resort — never send an empty message.
+    return str(payload if payload is not None else response)
+
+
 class ParrotM365Agent:
     """Bridges ai-parrot AbstractBot to the Microsoft 365 Agent protocol.
 
@@ -316,7 +377,7 @@ class ParrotM365Agent:
             )
             semantic_result = self._extract_semantic_result(response)
             if semantic_result is None or not self._cards_enabled:
-                await self._send_text(context, str(response.content))
+                await self._send_text(context, render_reply_text(response))
             else:
                 await self._send_semantic_card(context, semantic_result, response)
         except Exception as exc:  # noqa: BLE001
@@ -415,7 +476,7 @@ class ParrotM365Agent:
 
         Any exception in the render/send path is logged and degrades to
         `_send_text(render_text(result))`; if even that somehow raises, a
-        final fallback sends `str(response.content)`. No exception may
+        final fallback sends `render_reply_text(response)`. No exception may
         escape this method.
 
         Args:
@@ -458,7 +519,7 @@ class ParrotM365Agent:
                     "render_text() fallback also failed — sending raw content",
                     exc_info=True,
                 )
-                await self._send_text(context, str(response.content))
+                await self._send_text(context, render_reply_text(response))
 
     # ------------------------------------------------------------------
     # Invoke handlers (sign-in round-trip)

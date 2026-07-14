@@ -2180,7 +2180,15 @@ Available documentation UIs:
         # Add to memory
         self._crews[crew_key] = (crew, crew_def)
 
-        # Persist to Redis
+        # Persist to Redis (only when Redis-backed persistence is enabled)
+        if self.crew_redis is None:
+            self.logger.debug(
+                "Crew persistence disabled (ENABLE_CREWS is False); "
+                "crew '%s' registered in memory only",
+                name,
+            )
+            return
+
         try:
             await self.crew_redis.save_crew(crew_def)
             self.logger.info(
@@ -2241,7 +2249,10 @@ Available documentation UIs:
             else:
                 return (cached_crew, crew_def)
 
-        # 3. If not in memory, try Redis
+        # 3. If not in memory, try Redis (when persistence is enabled)
+        if self.crew_redis is None:
+            return (None, None)
+
         try:
             # Try to load by name first
             crew_def = await self.crew_redis.load_crew(identifier, tenant)
@@ -2330,7 +2341,13 @@ Available documentation UIs:
                     break
 
         if crew_name and crew_def:
-            # Remove from Redis
+            # Remove from Redis (when persistence is enabled)
+            if self.crew_redis is None:
+                self.logger.debug(
+                    "Crew persistence disabled; crew '%s' removed from memory only",
+                    crew_name,
+                )
+                return True
             try:
                 await self.crew_redis.delete_crew(crew_def.name, crew_def.tenant)
                 self.logger.info(
@@ -2386,6 +2403,12 @@ Available documentation UIs:
         This method is called during application startup to restore
         all previously saved crews from Redis into memory.
         """
+        if self.crew_redis is None:
+            self.logger.debug(
+                "Crew persistence disabled (ENABLE_CREWS is False); "
+                "skipping crew loading from Redis"
+            )
+            return
         try:
             # Check Redis connection
             if not await self.crew_redis.ping():
@@ -2439,6 +2462,9 @@ Available documentation UIs:
         1. Loading new crews added by other workers
         2. Removing crews deleted by other workers
         """
+        if self.crew_redis is None:
+            # Redis-backed persistence disabled; nothing to sync (in-memory only)
+            return
         try:
             # Get all crew names from Redis
             remote_entries = await self.crew_redis.list_all_crews()

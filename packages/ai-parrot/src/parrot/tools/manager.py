@@ -699,15 +699,35 @@ class ToolManager(MCPToolManagerMixin):
         """
         Load a tool by name.
 
+        Resolution order:
+
+        1. An already-registered tool with this name (no-op success).
+        2. The discovered ``TOOL_REGISTRY`` (from ``ai-parrot-tools`` and
+           ``plugins.tools``), matched case-insensitively against the
+           canonical tool name. This covers every individual tool shipped by
+           ``parrot_tools`` — e.g. ``ibisworld``, ``yfinance``,
+           ``web_scraping_tool`` — which the legacy import path below cannot
+           resolve.
+        3. The legacy ``parrot.tools.<name>`` module import, kept for
+           backward compatibility with historically-named tools.
+
         Args:
-            tool_name: Name of the tool to load
+            tool_name: Name of the tool to load.
+            **kwargs: Arguments forwarded to the tool/toolkit constructor.
 
         Returns:
-            Tool instance or None if not found
+            ``True`` if a tool (or toolkit) was registered, ``False`` otherwise.
         """
         if tool_name in self._tools:
-            return self._tools[tool_name]
+            return True
 
+        # Preferred path: resolve against the discovered TOOL_REGISTRY so that
+        # individual parrot_tools tools are loadable by their canonical name.
+        if self._load_tool_from_registry(tool_name, **kwargs):
+            return True
+
+        # Legacy fallback: parrot.tools.<name> (the meta-path finder redirects
+        # this to parrot_tools.<name> when a matching submodule exists).
         tool_file = tool_name.lower().replace('tool', '')
         try:
             module = __import__(f"parrot.tools.{tool_file}", fromlist=[tool_name])
@@ -718,6 +738,54 @@ class ToolManager(MCPToolManagerMixin):
         except (ImportError, AttributeError) as e:
             self.logger.error(
                 f"Error loading tool {tool_name}: {e}"
+            )
+            return False
+
+    def _load_tool_from_registry(self, tool_name: str, **kwargs) -> bool:
+        """Resolve ``tool_name`` against the discovered ``TOOL_REGISTRY``.
+
+        Matches the name case-insensitively against the canonical registry
+        keys. Registry entries may point at either an individual
+        :class:`AbstractTool` or an :class:`AbstractToolkit`; toolkits are
+        expanded through :meth:`register_toolkit`, tools are instantiated and
+        registered directly.
+
+        Args:
+            tool_name: Candidate tool/toolkit name.
+            **kwargs: Arguments forwarded to the constructor.
+
+        Returns:
+            ``True`` when a tool/toolkit was registered, ``False`` when the
+            name is not present in the registry or resolution fails.
+        """
+        from .discovery import discover_from_registry, resolve_class
+        from .toolkit import AbstractToolkit
+
+        registry = discover_from_registry()
+        dotted_path = registry.get(tool_name)
+        if dotted_path is None:
+            lowered = {key.lower(): value for key, value in registry.items()}
+            dotted_path = lowered.get(tool_name.lower())
+        if dotted_path is None:
+            return False
+
+        try:
+            cls = resolve_class(dotted_path)
+        except (ImportError, AttributeError) as e:
+            self.logger.error(
+                "Error resolving tool %r (%s): %s", tool_name, dotted_path, e
+            )
+            return False
+
+        try:
+            if isinstance(cls, type) and issubclass(cls, AbstractToolkit):
+                self.register_toolkit(cls, **kwargs)
+            else:
+                self.register_tool(cls(**kwargs))
+            return True
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(
+                "Error instantiating tool %r (%s): %s", tool_name, dotted_path, e
             )
             return False
 

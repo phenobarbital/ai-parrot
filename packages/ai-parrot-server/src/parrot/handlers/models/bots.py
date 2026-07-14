@@ -187,6 +187,27 @@ class BotModel(Model):
         ),
     )
 
+    # --- Legacy LLM-tuning columns (schema drift) ---------------------------
+    # The canonical home for all LLM tuning is ``model_config`` (JSONB) and the
+    # embedding model lives at ``vector_store_config['embedding_model']``. Older
+    # ``navigator.ai_bots`` tables still carry these as standalone columns.
+    # They are declared here (nullable, no default) purely so that
+    # ``Meta.strict = True`` row hydration does not raise
+    # ``unexpected keyword argument``. ``__post_init__`` folds any non-null
+    # value into the canonical JSONB (without overwriting an existing key), so
+    # downstream code can keep reading only ``model_config`` /
+    # ``vector_store_config``. Run
+    # ``sdd/migrations/FEAT-fold-legacy-llm-columns.sql`` (LLM tuning) and
+    # ``sdd/migrations/FEAT-fold-embedding-model-into-vector-store-config.sql``
+    # (embedding_model) to drop these columns once every environment is
+    # backfilled.
+    model_name: Optional[str] = Field(required=False, default=None)
+    temperature: Optional[float] = Field(required=False, default=None)
+    max_tokens: Optional[int] = Field(required=False, default=None)
+    top_k: Optional[int] = Field(required=False, default=None)
+    top_p: Optional[float] = Field(required=False, default=None)
+    embedding_model: Optional[dict] = Field(required=False, default=None)
+
     # Tool and agent configuration
     tools_enabled: bool = Field(default=True, required=False, ui_help="Whether the bot’s tools are enabled or not.")
     auto_tool_detection: bool = Field(default=True, required=False, ui_help="Whether the bot’s auto tool detection is enabled or not.")
@@ -314,6 +335,34 @@ class BotModel(Model):
 
     def __post_init__(self) -> None:
         super(BotModel, self).__post_init__()
+
+        # Fold legacy standalone LLM-tuning columns into the canonical
+        # ``model_config`` JSONB (see the field declarations above). Only fill
+        # keys that are missing so an explicit ``model_config`` value always
+        # wins over the legacy column. ``model_name`` is stored under both the
+        # 'model' and 'model_name' keys since callers read either.
+        if self.model_config is None:
+            self.model_config = {}
+        _legacy_llm = {
+            'model_name': self.model_name,
+            'temperature': self.temperature,
+            'max_tokens': self.max_tokens,
+            'top_k': self.top_k,
+            'top_p': self.top_p,
+        }
+        for _key, _val in _legacy_llm.items():
+            if _val is not None and _key not in self.model_config:
+                self.model_config[_key] = _val
+        if self.model_name and 'model' not in self.model_config:
+            self.model_config['model'] = self.model_name
+
+        # Fold the legacy ``embedding_model`` column into vector_store_config.
+        if self.embedding_model:
+            if self.vector_store_config is None:
+                self.vector_store_config = {}
+            self.vector_store_config.setdefault(
+                'embedding_model', self.embedding_model
+            )
 
         # Validate operation_mode
         valid_modes = ['conversational', 'agentic', 'adaptive']

@@ -322,7 +322,10 @@ class CrewHandler(BaseView):
             # if crew_id is provided, then is an update
             if url_crew_id:
                 existing_crew = await self.bot_manager.get_crew(url_crew_id, tenant=tenant)
-                if not existing_crew:
+                # get_crew() returns the truthy tuple (None, None) on a miss,
+                # so guard against a None definition before reading
+                # existing_def.crew_id.
+                if not existing_crew or existing_crew[1] is None:
                     return self.error(
                         response={
                             "message": f"Crew '{url_crew_id}' not found for update"
@@ -419,7 +422,13 @@ class CrewHandler(BaseView):
                 identifier = crew_name or crew_id
                 crew_data = await self.bot_manager.get_crew(identifier, tenant=tenant)
 
-                if not crew_data:
+                # get_crew() returns the truthy tuple (None, None) when the
+                # crew isn't found (e.g. it was deleted but is still
+                # referenced by a saved execution), so a plain `not crew_data`
+                # check misses it and `crew_def.crew_id` below raises
+                # 'NoneType' object has no attribute 'crew_id'. Validate the
+                # resolved definition explicitly.
+                if not crew_data or crew_data[1] is None:
                     return self.error(
                         response={
                             "message": f"Crew '{identifier}' not found"
@@ -452,6 +461,9 @@ class CrewHandler(BaseView):
             crews = self.bot_manager.list_crews(tenant=tenant)
             crew_list = []
 
+            # Skip any entry whose definition is None so one malformed crew
+            # can't crash the whole listing with 'NoneType' object has no
+            # attribute 'crew_id'.
             crew_list.extend(
                 {
                     "crew_id": crew_def.crew_id,
@@ -463,6 +475,7 @@ class CrewHandler(BaseView):
                     "created_at": crew_def.created_at.isoformat(),
                 }
                 for name, (crew, crew_def) in crews.items()
+                if crew_def is not None
             )
 
             return self.json_response({
@@ -512,9 +525,11 @@ class CrewHandler(BaseView):
 
             identifier = crew_name or crew_id
             
-            # Check if exists first
+            # Check if exists first. get_crew() returns the truthy tuple
+            # (None, None) on a miss, so validate the resolved definition
+            # rather than relying on `not crew_data`.
             crew_data = await self.bot_manager.get_crew(identifier, tenant=tenant)
-            if not crew_data:
+            if not crew_data or crew_data[1] is None:
                 return self.error(
                     response={"message": f"Crew '{identifier}' not found"},
                     status=404
