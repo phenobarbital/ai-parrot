@@ -301,3 +301,43 @@ class TestSavedExecutionsFlow:
         )
 
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_execution_wrong_tenant_returns_none(self, service, mock_storage):
+        """get_execution returns None when tenant doesn't match the record's
+        owner, even though the record genuinely exists — the sole enforcement
+        point for ownership at the service layer (ResultStorage.get() has no
+        SQL-level tenant/user_id scoping — see TASK-1768's Completion Note)."""
+        execution_id = await _seed_execution(mock_storage, tenant="acme", user_id="user-001")
+
+        result = await service.get_execution(
+            tenant="other-tenant", user_id="user-001", execution_id=execution_id
+        )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_execution_wrong_user_returns_none(self, service, mock_storage):
+        """get_execution returns None when user_id doesn't match, same tenant."""
+        execution_id = await _seed_execution(mock_storage, tenant="acme", user_id="user-001")
+
+        result = await service.get_execution(
+            tenant="acme", user_id="someone-else", execution_id=execution_id
+        )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_delete_execution_wrong_tenant_leaves_record_intact(
+        self, service, mock_storage
+    ):
+        """delete_execution refuses to delete a record belonging to a
+        different tenant — verifies the record still exists afterward."""
+        execution_id = await _seed_execution(mock_storage, tenant="acme", user_id="user-001")
+
+        deleted = await service.delete_execution(
+            tenant="other-tenant", user_id="user-001", execution_id=execution_id
+        )
+
+        assert deleted is False
+        assert execution_id in mock_storage.records["crew_executions"]

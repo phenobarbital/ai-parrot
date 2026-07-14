@@ -20,7 +20,13 @@ from navconfig.logging import logging
 
 from parrot.bots.flows.core.storage.backends import get_result_storage
 from parrot.handlers.crew.models import ExecutionFilter, ScheduleRequest
-from parrot.handlers.crew.saved_execution_service import SavedExecutionService
+from parrot.handlers.crew.saved_execution_service import (
+    CrewNotFoundError,
+    ExecutionNotFoundError,
+    ReplayValidationError,
+    SavedExecutionService,
+    SchedulerUnavailableError,
+)
 
 
 class CrewExecutionHistoryHandler(BaseView):
@@ -80,24 +86,62 @@ class CrewExecutionHistoryHandler(BaseView):
     # Request context helpers
     # ------------------------------------------------------------------
 
-    def _get_tenant_user(self, source: Dict[str, Any]) -> tuple[str, Optional[str]]:
-        """Extract ``(tenant, user_id)`` from query args or JSON body.
+    async def _get_authenticated_user_id(self) -> Optional[str]:
+        """Best-effort authenticated user id from the session, if any.
+
+        Uses ``BaseView``'s own ``session()``/``get_userid()`` (navigator's
+        session middleware) — the same mechanism used elsewhere in the
+        codebase (e.g. ``handlers/agents/abstract.py``). Both raise an
+        ``HTTPException`` when no session middleware is configured or no
+        valid session exists; that's caught here and treated as "no
+        authenticated identity available" rather than propagated, so this
+        handler degrades gracefully when session infrastructure isn't set
+        up (falling back to an explicit ``user_id`` from the request).
+
+        Returns:
+            The authenticated user id, or ``None`` if unavailable.
+        """
+        try:
+            session = await self.session()
+            if not session:
+                return None
+            return await self.get_userid(session)
+        except Exception:
+            return None
+
+    async def _get_tenant_user(
+        self,
+        source: Dict[str, Any],
+        *,
+        require_tenant: bool = False,
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Extract ``(tenant, user_id)`` from an authenticated session and/or
+        query args or JSON body.
 
         Args:
             source: Either query args (``self.get_arguments()``) or a parsed
                 JSON body dict.
+            require_tenant: When ``False`` (GET/list — read-only), ``tenant``
+                defaults to ``"global"`` (matching ``CrewHandler.get()``'s
+                convention). When ``True`` (POST replay/schedule, DELETE —
+                mutating actions), ``tenant`` is returned as-is (possibly
+                ``None``/empty) — callers MUST reject the request with 400
+                if it's falsy, matching ``CrewExecutionHandler
+                .execute_crew()``'s stricter "tenant is required" convention
+                for state-changing calls.
 
         Returns:
-            A ``(tenant, user_id)`` tuple. ``tenant`` defaults to ``"global"``
-            (matching ``CrewHandler.get()``'s convention) — unlike
-            ``CrewExecutionHandler.execute_crew()``, which requires an
-            explicit tenant on POST /crews. Saved-execution history is a
-            read/replay surface, not a fresh-execution surface, so
-            defaulting to "global" is safe and consistent with the
-            storage layer's own COALESCE(tenant, 'global') fallback.
+            A ``(tenant, user_id)`` tuple. ``user_id`` prefers the
+            authenticated session's user id over a client-supplied value —
+            the client-supplied ``user_id`` is only used as a fallback (no
+            session middleware configured), never to silently override a
+            real authenticated identity.
         """
-        tenant = source.get('tenant') or 'global'
-        user_id = source.get('user_id')
+        session_user_id = await self._get_authenticated_user_id()
+        user_id = session_user_id or source.get('user_id')
+        tenant = source.get('tenant')
+        if not require_tenant:
+            tenant = tenant or 'global'
         return tenant, user_id
 
     # ------------------------------------------------------------------
@@ -109,7 +153,7 @@ class CrewExecutionHistoryHandler(BaseView):
         match_params = self.match_parameters(self.request)
         execution_id = match_params.get('execution_id')
         qs = self.get_arguments(self.request)
-        tenant, user_id = self._get_tenant_user(qs)
+        tenant, user_id = await self._get_tenant_user(qs)
 
         if execution_id:
             return await self._get_detail(tenant, user_id, execution_id)
@@ -131,7 +175,13 @@ class CrewExecutionHistoryHandler(BaseView):
             data = await self.request.json()
         except Exception:
             data = {}
-        tenant, user_id = self._get_tenant_user(data)
+        # Mutating action — tenant must be explicit (never silently "global"),
+        # matching CrewExecutionHandler.execute_crew()'s convention.
+        tenant, user_id = await self._get_tenant_user(data, require_tenant=True)
+        if not tenant:
+            return self.error(
+                response={"message": "tenant is required"}, status=400
+            )
 
         if action == 'replay':
             return await self._replay(tenant, user_id, execution_id)
@@ -152,7 +202,12 @@ class CrewExecutionHistoryHandler(BaseView):
             )
 
         qs = self.get_arguments(self.request)
-        tenant, user_id = self._get_tenant_user(qs)
+        # Mutating action — tenant must be explicit, same as post().
+        tenant, user_id = await self._get_tenant_user(qs, require_tenant=True)
+        if not tenant:
+            return self.error(
+                response={"message": "tenant is required"}, status=400
+            )
 
         deleted = await self.service.delete_execution(tenant, user_id, execution_id)
         if not deleted:
@@ -218,10 +273,10 @@ class CrewExecutionHistoryHandler(BaseView):
         try:
             result = await self.service.replay_execution(tenant, user_id, execution_id)
             return self.json_response(result)
-        except ValueError as exc:
-            message = str(exc)
-            status = 404 if 'not found' in message or 'no longer exists' in message else 400
-            return self.error(response={"message": message}, status=status)
+        except (ExecutionNotFoundError, CrewNotFoundError) as exc:
+            return self.error(response={"message": str(exc)}, status=404)
+        except ReplayValidationError as exc:
+            return self.error(response={"message": str(exc)}, status=400)
         except Exception as exc:
             self.logger.error("Error replaying execution %s: %s", execution_id, exc)
             return self.error(response={"message": str(exc)}, status=500)
@@ -248,10 +303,13 @@ class CrewExecutionHistoryHandler(BaseView):
                 tenant, user_id, execution_id, schedule_request
             )
             return self.json_response(schedule)
-        except ValueError as exc:
-            message = str(exc)
-            status = 404 if 'not found' in message else 400
-            return self.error(response={"message": message}, status=status)
+        except (ExecutionNotFoundError, CrewNotFoundError) as exc:
+            return self.error(response={"message": str(exc)}, status=404)
+        except ReplayValidationError as exc:
+            return self.error(response={"message": str(exc)}, status=400)
+        except SchedulerUnavailableError as exc:
+            self.logger.error("Scheduler unavailable: %s", exc)
+            return self.error(response={"message": str(exc)}, status=500)
         except Exception as exc:
             self.logger.error("Error scheduling execution %s: %s", execution_id, exc)
             return self.error(response={"message": str(exc)}, status=500)

@@ -36,6 +36,37 @@ METHOD_PARAM_MAP: dict[str, str] = {
 _UNSUPPORTED_REPLAY_METHODS = frozenset(("run_loop",))
 
 
+class SavedExecutionError(ValueError):
+    """Base exception for SavedExecutionService errors.
+
+    Subclasses ``ValueError`` for backward compatibility with existing
+    ``except ValueError`` callers/tests, while giving the HTTP handler a
+    typed hierarchy to map to status codes instead of fragile substring
+    matching on the exception message.
+    """
+
+
+class ExecutionNotFoundError(SavedExecutionError):
+    """The requested execution record doesn't exist (or isn't owned by the
+    caller — ownership failures are indistinguishable from "not found" by
+    design, to avoid leaking the existence of other tenants'/users' records).
+    """
+
+
+class CrewNotFoundError(SavedExecutionError):
+    """The crew referenced by a saved execution no longer exists (or no
+    ``bot_manager`` is configured to resolve it)."""
+
+
+class ReplayValidationError(SavedExecutionError):
+    """The replay/schedule request fails validation for reasons other than
+    "not found" (missing prompt, unsupported method, unknown method)."""
+
+
+class SchedulerUnavailableError(SavedExecutionError):
+    """No ``scheduler_manager`` is configured on the service."""
+
+
 class SavedExecutionService:
     """Orchestration layer for execution history, replay, and scheduling.
 
@@ -147,41 +178,45 @@ class SavedExecutionService:
             A job dict: ``{"job_id", "crew_name", "method", "status", "result"}``.
 
         Raises:
-            ValueError: If the execution is not found, the original prompt is
-                unavailable, the crew no longer exists, or the saved method
-                cannot be replayed (see ``_UNSUPPORTED_REPLAY_METHODS``).
+            ExecutionNotFoundError: If the execution is not found (or not
+                owned by ``tenant``/``user_id``).
+            ReplayValidationError: If the original prompt is unavailable or
+                the saved method cannot be replayed (see
+                ``_UNSUPPORTED_REPLAY_METHODS``).
+            CrewNotFoundError: If the crew no longer exists (or no
+                ``bot_manager`` is configured).
         """
         record = await self.get_execution(tenant, user_id, execution_id)
         if not record:
-            raise ValueError(f"Execution {execution_id} not found")
+            raise ExecutionNotFoundError(f"Execution {execution_id} not found")
 
         prompt = record.get("prompt")
         if not prompt:
-            raise ValueError("Cannot replay: original prompt not available")
+            raise ReplayValidationError("Cannot replay: original prompt not available")
 
         crew_name = record["crew_name"]
         method_name = record.get("method") or "run_sequential"
 
         if method_name in _UNSUPPORTED_REPLAY_METHODS:
-            raise ValueError(
+            raise ReplayValidationError(
                 f"Cannot replay method '{method_name}': required parameters "
                 "for this method are not persisted with the execution"
             )
         if method_name not in METHOD_PARAM_MAP:
-            raise ValueError(f"Unknown replay method '{method_name}'")
+            raise ReplayValidationError(f"Unknown replay method '{method_name}'")
 
         if self.bot_manager is None:
-            raise ValueError(f"Crew '{crew_name}' no longer exists")
+            raise CrewNotFoundError(f"Crew '{crew_name}' no longer exists")
 
         crew, crew_def = await self.bot_manager.get_crew(
             crew_name, as_new=True, tenant=tenant
         )
         if not crew or not crew_def:
-            raise ValueError(f"Crew '{crew_name}' no longer exists")
+            raise CrewNotFoundError(f"Crew '{crew_name}' no longer exists")
 
         method = getattr(crew, method_name, None)
         if method is None:
-            raise ValueError(
+            raise CrewNotFoundError(
                 f"Crew '{crew_name}' no longer supports method '{method_name}'"
             )
 
@@ -228,19 +263,21 @@ class SavedExecutionService:
             The created ``AgentSchedule`` serialised via ``.to_dict()``.
 
         Raises:
-            ValueError: If the execution is not found, the original prompt is
-                unavailable, or no scheduler manager is configured.
+            ExecutionNotFoundError: If the execution is not found (or not
+                owned by ``tenant``/``user_id``).
+            ReplayValidationError: If the original prompt is unavailable.
+            SchedulerUnavailableError: If no scheduler manager is configured.
         """
         record = await self.get_execution(tenant, user_id, execution_id)
         if not record:
-            raise ValueError(f"Execution {execution_id} not found")
+            raise ExecutionNotFoundError(f"Execution {execution_id} not found")
 
         prompt = record.get("prompt")
         if not prompt:
-            raise ValueError("Cannot schedule: original prompt not available")
+            raise ReplayValidationError("Cannot schedule: original prompt not available")
 
         if self.scheduler_manager is None:
-            raise ValueError("No scheduler manager configured")
+            raise SchedulerUnavailableError("No scheduler manager configured")
 
         crew_name = record["crew_name"]
         method_name = record.get("method") or "run_sequential"

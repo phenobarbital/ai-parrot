@@ -141,13 +141,15 @@ class TestCrewExecutionHistoryHandler:
     @pytest.mark.asyncio
     async def test_replay_crew_not_found(self):
         """POST /{id}/replay returns 404 for deleted crew."""
+        from parrot.handlers.crew.saved_execution_service import CrewNotFoundError
+
         service = AsyncMock()
-        service.replay_execution.side_effect = ValueError("Crew 'x' no longer exists")
+        service.replay_execution.side_effect = CrewNotFoundError("Crew 'x' no longer exists")
         handler = _make_handler(
             method="POST",
             path="/api/v1/crew/executions/abc/replay",
             match_info={"execution_id": "abc", "action": "replay"},
-            json_body={},
+            json_body={"tenant": "acme"},
             service=service,
         )
 
@@ -158,13 +160,17 @@ class TestCrewExecutionHistoryHandler:
     @pytest.mark.asyncio
     async def test_replay_no_prompt(self):
         """POST /{id}/replay returns 400 for missing prompt."""
+        from parrot.handlers.crew.saved_execution_service import ReplayValidationError
+
         service = AsyncMock()
-        service.replay_execution.side_effect = ValueError("Cannot replay: original prompt not available")
+        service.replay_execution.side_effect = ReplayValidationError(
+            "Cannot replay: original prompt not available"
+        )
         handler = _make_handler(
             method="POST",
             path="/api/v1/crew/executions/abc/replay",
             match_info={"execution_id": "abc", "action": "replay"},
-            json_body={},
+            json_body={"tenant": "acme"},
             service=service,
         )
 
@@ -182,6 +188,7 @@ class TestCrewExecutionHistoryHandler:
             path="/api/v1/crew/executions/abc/schedule",
             match_info={"execution_id": "abc", "action": "schedule"},
             json_body={
+                "tenant": "acme",
                 "schedule_type": "DAILY",
                 "schedule_config": {"hour": 9, "minute": 0},
             },
@@ -203,7 +210,7 @@ class TestCrewExecutionHistoryHandler:
             method="POST",
             path="/api/v1/crew/executions/abc/schedule",
             match_info={"execution_id": "abc", "action": "schedule"},
-            json_body={},
+            json_body={"tenant": "acme"},
             service=service,
         )
 
@@ -211,6 +218,27 @@ class TestCrewExecutionHistoryHandler:
 
         assert resp.status == 400
         service.schedule_execution.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_post_missing_tenant_returns_400(self):
+        """POST /{id}/{replay|schedule} rejects requests with no tenant (FEAT-307
+        security fix: mutating actions must not silently default to 'global',
+        matching CrewExecutionHandler.execute_crew()'s convention)."""
+        service = AsyncMock()
+        handler = _make_handler(
+            method="POST",
+            path="/api/v1/crew/executions/abc/replay",
+            match_info={"execution_id": "abc", "action": "replay"},
+            json_body={},
+            service=service,
+        )
+
+        resp = await _call(handler.post())
+        data = _parse_body(resp)
+
+        assert resp.status == 400
+        assert "tenant" in data["message"].lower()
+        service.replay_execution.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_delete_success(self):
@@ -221,6 +249,7 @@ class TestCrewExecutionHistoryHandler:
             method="DELETE",
             path="/api/v1/crew/executions/abc",
             match_info={"execution_id": "abc"},
+            query={"tenant": "acme"},
             service=service,
         )
 
@@ -229,7 +258,7 @@ class TestCrewExecutionHistoryHandler:
 
         assert resp.status == 200
         assert data["deleted"] is True
-        service.delete_execution.assert_awaited_once_with("global", None, "abc")
+        service.delete_execution.assert_awaited_once_with("acme", None, "abc")
 
     @pytest.mark.asyncio
     async def test_delete_not_found(self):
@@ -240,12 +269,29 @@ class TestCrewExecutionHistoryHandler:
             method="DELETE",
             path="/api/v1/crew/executions/missing",
             match_info={"execution_id": "missing"},
+            query={"tenant": "acme"},
             service=service,
         )
 
         resp = await _call(handler.delete())
 
         assert resp.status == 404
+
+    @pytest.mark.asyncio
+    async def test_delete_missing_tenant_returns_400(self):
+        """DELETE /{id} rejects requests with no tenant (same fix as POST)."""
+        service = AsyncMock()
+        handler = _make_handler(
+            method="DELETE",
+            path="/api/v1/crew/executions/abc",
+            match_info={"execution_id": "abc"},
+            service=service,
+        )
+
+        resp = await _call(handler.delete())
+
+        assert resp.status == 400
+        service.delete_execution.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_post_unknown_action_returns_400(self):
@@ -255,10 +301,48 @@ class TestCrewExecutionHistoryHandler:
             method="POST",
             path="/api/v1/crew/executions/abc/bogus",
             match_info={"execution_id": "abc", "action": "bogus"},
-            json_body={},
+            json_body={"tenant": "acme"},
             service=service,
         )
 
         resp = await _call(handler.post())
 
         assert resp.status == 400
+
+    @pytest.mark.asyncio
+    async def test_session_user_id_overrides_body_supplied_user_id(self, monkeypatch):
+        """When an authenticated session is present, its user id is used
+        instead of a client-supplied user_id — closes the IDOR gap where any
+        caller could assert an arbitrary identity via the request body."""
+        service = AsyncMock()
+        service.list_executions.return_value = ([], 0)
+        handler = _make_handler(
+            method="GET",
+            query={"tenant": "acme", "user_id": "attacker-supplied"},
+            service=service,
+        )
+        monkeypatch.setattr(handler, "session", AsyncMock(return_value={"user_id": "real-session-user"}))
+        monkeypatch.setattr(handler, "get_userid", AsyncMock(return_value="real-session-user"))
+
+        await _call(handler.get())
+
+        args = service.list_executions.await_args.args
+        assert args[1] == "real-session-user"
+
+    @pytest.mark.asyncio
+    async def test_no_session_falls_back_to_body_user_id(self, monkeypatch):
+        """When no session is available (no middleware configured / anonymous
+        caller), the explicit user_id from the request is used as a fallback."""
+        service = AsyncMock()
+        service.list_executions.return_value = ([], 0)
+        handler = _make_handler(
+            method="GET",
+            query={"tenant": "acme", "user_id": "explicit-user"},
+            service=service,
+        )
+        monkeypatch.setattr(handler, "session", AsyncMock(return_value=None))
+
+        await _call(handler.get())
+
+        args = service.list_executions.await_args.args
+        assert args[1] == "explicit-user"

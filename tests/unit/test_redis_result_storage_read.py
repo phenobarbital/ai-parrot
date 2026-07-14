@@ -122,9 +122,27 @@ class TestRedisResultStorageRead:
         _scan_and_mget(mock_asyncdb, {}, {})
 
         backend = RedisResultStorage(ttl=0)
-        result = await backend.get("crew_executions", "missing-key")
+        # Prefixed with the collection so this exercises the "no value in
+        # Redis" path, not the collection-ownership check below.
+        result = await backend.get("crew_executions", "crew_executions:missing:999")
 
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_rejects_key_outside_collection(self, mock_asyncdb):
+        """get() refuses a record_id that doesn't belong to the given collection.
+
+        Security regression test: without this check, a caller could pass an
+        arbitrary Redis key (e.g. from a different collection, or an
+        unrelated cache/session key) and read it back through this backend.
+        """
+        from parrot.bots.flows.core.storage.backends import RedisResultStorage
+
+        backend = RedisResultStorage(ttl=0)
+        result = await backend.get("crew_executions", "some_other_collection:x:1")
+
+        assert result is None
+        mock_asyncdb.execute.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_delete_success(self, mock_asyncdb):
@@ -146,9 +164,20 @@ class TestRedisResultStorageRead:
         _scan_and_mget(mock_asyncdb, {}, {})
 
         backend = RedisResultStorage(ttl=0)
-        result = await backend.delete("crew_executions", "missing-key")
+        result = await backend.delete("crew_executions", "crew_executions:missing:999")
 
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_delete_rejects_key_outside_collection(self, mock_asyncdb):
+        """delete() refuses a record_id that doesn't belong to the given collection."""
+        from parrot.bots.flows.core.storage.backends import RedisResultStorage
+
+        backend = RedisResultStorage(ttl=0)
+        result = await backend.delete("crew_executions", "some_other_collection:x:1")
+
+        assert result is False
+        mock_asyncdb.execute.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_count_matches_filter(self, mock_asyncdb):
@@ -190,7 +219,7 @@ class TestRedisResultStorageRead:
         mock_asyncdb.execute.side_effect = RuntimeError("redis down")
         backend = RedisResultStorage(ttl=0)
 
-        result = await backend.get("crew_executions", "some-key")
+        result = await backend.get("crew_executions", "crew_executions:some-key")
 
         assert result is None
         assert "RedisResultStorage get failed" in caplog.text
@@ -203,7 +232,7 @@ class TestRedisResultStorageRead:
         mock_asyncdb.execute.side_effect = RuntimeError("redis down")
         backend = RedisResultStorage(ttl=0)
 
-        result = await backend.delete("crew_executions", "some-key")
+        result = await backend.delete("crew_executions", "crew_executions:some-key")
 
         assert result is False
         assert "RedisResultStorage delete failed" in caplog.text

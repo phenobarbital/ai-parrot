@@ -256,8 +256,19 @@ class RedisResultStorage(ResultStorage):
                 by ``list()``'s ``"id"`` field).
 
         Returns:
-            The execution document, or ``None`` if not found or on error.
+            The execution document, or ``None`` if not found, on error, or
+            when ``record_id`` doesn't belong to ``collection`` (security:
+            without this check a caller could GET an arbitrary Redis key
+            outside this collection's namespace).
         """
+        if not record_id.startswith(f"{collection}:"):
+            self.logger.warning(
+                "RedisResultStorage get refused: id=%s does not belong to "
+                "collection=%s",
+                record_id,
+                collection,
+            )
+            return None
         try:
             conn = await self._ensure()
             value = await conn.execute("GET", record_id)
@@ -288,8 +299,17 @@ class RedisResultStorage(ResultStorage):
 
         Returns:
             ``True`` if a key was deleted, ``False`` otherwise (including on
-            error).
+            error, or when ``record_id`` doesn't belong to ``collection`` —
+            see :meth:`get` for why this check exists).
         """
+        if not record_id.startswith(f"{collection}:"):
+            self.logger.warning(
+                "RedisResultStorage delete refused: id=%s does not belong to "
+                "collection=%s",
+                record_id,
+                collection,
+            )
+            return False
         try:
             conn = await self._ensure()
             result = await conn.execute("DEL", record_id)

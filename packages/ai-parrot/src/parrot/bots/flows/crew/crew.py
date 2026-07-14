@@ -154,6 +154,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         persist_results: bool = True,
         result_storage: Union[str, "ResultStorage", None] = None,
         persist_agent_results: bool = True,
+        tenant: Optional[str] = None,
         **kwargs
     ):
         """
@@ -169,6 +170,12 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             persist_agent_results: Granular opt-out for per-agent incremental
                 persistence only (FEAT-306); has no effect when
                 ``persist_results`` is already ``False``.
+            tenant: Tenant identifier for multi-tenant isolation (FEAT-307).
+                Persisted on every saved execution (see ``_save_result()``
+                call sites in ``run_*``). Defaults to ``"global"`` when not
+                provided — matching ``CrewDefinition.tenant``'s own default.
+                ``from_definition()`` wires this automatically from the
+                definition's ``tenant`` field.
         """
         self.name = name or 'AgentCrew'
         self.agents: Dict[str, Union[BasicAgent, AbstractBot]] = {}
@@ -239,6 +246,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         self._persist_tasks: set[asyncio.Task] = set()
         # Granular per-agent persistence opt-out (FEAT-306)
         self._persist_agent_results: bool = persist_agent_results
+        # Tenant identifier for multi-tenant isolation (FEAT-307)
+        self._tenant: str = tenant or "global"
 
         # Lifecycle hooks (FEAT-157)
         self._on_complete_hooks: List[CrewHookCallback] = []
@@ -464,14 +473,16 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 agent.system_prompt = agent_def.system_prompt
             agents.append(agent)
 
-        # Allow callers to override max_parallel_tasks via kwargs.
+        # Allow callers to override max_parallel_tasks/tenant via kwargs.
         max_parallel_tasks = kwargs.pop(
             "max_parallel_tasks", crew_def.max_parallel_tasks
         )
+        tenant = kwargs.pop("tenant", crew_def.tenant)
         crew = cls(
             name=crew_def.name,
             agents=agents,
             max_parallel_tasks=max_parallel_tasks,
+            tenant=tenant,
             **kwargs,
         )
 

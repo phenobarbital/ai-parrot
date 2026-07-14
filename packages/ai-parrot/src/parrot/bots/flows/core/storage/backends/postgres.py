@@ -62,12 +62,15 @@ class PostgresResultStorage(ResultStorage):
             conn: Open asyncdb connection.
             table: Validated table name.
         """
-        if table in self._initialised:
-            return
+        # Validate before the cache check (defense-in-depth): every call site
+        # builds SQL by f-string-interpolating `table`, so this must hold
+        # regardless of whether DDL has already run for this table name.
         if not _TABLE_RE.match(table):
             raise ValueError(
                 f"Refusing to issue DDL for unsafe table name: {table!r}"
             )
+        if table in self._initialised:
+            return
         await conn.execute(
             f"CREATE TABLE IF NOT EXISTS {table} ("
             f"  id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),"
@@ -179,9 +182,11 @@ class PostgresResultStorage(ResultStorage):
         try:
             conn = await self._ensure()
             await self._ensure_table(conn, collection)
+            # FEAT-307: include tenant/prompt so fetch() and list()/get() never
+            # diverge in the document shape they return for the same table.
             rows = await conn.execute(
                 f"SELECT crew_name, method, user_id, session_id, "
-                f"execution_id, timestamp, payload FROM {collection} "
+                f"execution_id, timestamp, tenant, prompt, payload FROM {collection} "
                 "WHERE execution_id = $1",
                 execution_id,
             )
