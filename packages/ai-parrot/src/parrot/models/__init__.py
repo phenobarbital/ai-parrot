@@ -93,6 +93,7 @@ from .zai import ZaiModel
 from .crew_definition import (
     ExecutionMode,
     AgentDefinition,
+    ToolNodeDefinition,
     FlowRelation,
     CrewDefinition,
 )
@@ -186,6 +187,7 @@ __all__ = (
     # Crew definition models
     "ExecutionMode",
     "AgentDefinition",
+    "ToolNodeDefinition",
     "FlowRelation",
     "CrewDefinition",
     # Conference models (FEAT-223)

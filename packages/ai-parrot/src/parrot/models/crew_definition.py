@@ -67,6 +67,59 @@ class AgentDefinition(BaseModel):
     )
 
 
+class ToolNodeDefinition(BaseModel):
+    """Definition of a deterministic tool-execution node in a crew.
+
+    A tool node is NOT an LLM agent: it invokes the referenced tool
+    directly with the declared ``args``/``kwargs`` (pass-through) and wraps
+    the result as an agent-execution result, so it participates in every
+    crew execution mode without spending LLM tokens.
+
+    String values inside ``args``/``kwargs`` may contain template
+    placeholders resolved deterministically at execution time:
+
+    - ``{input}`` — the node's input (previous output / initial task).
+    - ``{nodes.<node_name>.output}`` — a previously completed node's output.
+
+    Avoid dots in ``node_id``: they are ambiguous inside the
+    ``{nodes.<node_name>.output}`` placeholder syntax.
+
+    Attributes:
+        node_id: Unique identifier for the tool node within this crew.
+        tool: Tool name/slug resolved via the tool resolver.
+        name: Human-readable display name (defaults to ``node_id``).
+        description: Optional description of the node's purpose.
+        args: Positional arguments passed through to the tool.
+        kwargs: Keyword arguments passed through to the tool.
+    """
+
+    node_id: str = Field(
+        description="Unique identifier for the tool node within the crew"
+    )
+    tool: str = Field(
+        description="Tool name/slug resolved via the tool resolver"
+    )
+    name: Optional[str] = Field(
+        default=None,
+        description="Human-readable display name (defaults to node_id)"
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Description of the tool node's purpose"
+    )
+    args: List[Any] = Field(
+        default_factory=list,
+        description="Positional arguments passed through to the tool"
+    )
+    kwargs: Dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Keyword arguments passed through to the tool. String values "
+            "may embed {input} or {nodes.<node_name>.output} placeholders."
+        )
+    )
+
+
 class FlowRelation(BaseModel):
     """Defines a dependency relationship between agents in flow mode.
 
@@ -97,6 +150,8 @@ class CrewDefinition(BaseModel):
         description: Optional human-readable description of the crew's purpose.
         execution_mode: How the crew should execute its agents.
         agents: Ordered list of agent definitions.
+        tool_nodes: Deterministic tool-execution nodes (no LLM) that
+            participate in the crew alongside agents.
         flow_relations: Directed dependency edges used when ``execution_mode``
             is ``FLOW``. Ignored for other modes.
         shared_tools: Tool names that are shared across all agents.
@@ -125,6 +180,13 @@ class CrewDefinition(BaseModel):
     )
     agents: List[AgentDefinition] = Field(
         description="List of agent definitions in the crew"
+    )
+    tool_nodes: List[ToolNodeDefinition] = Field(
+        default_factory=list,
+        description=(
+            "Deterministic tool-execution nodes (no LLM) that participate "
+            "in the crew alongside agents"
+        )
     )
     flow_relations: List[FlowRelation] = Field(
         default_factory=list,
@@ -159,6 +221,7 @@ class CrewDefinition(BaseModel):
 __all__ = [
     "ExecutionMode",
     "AgentDefinition",
+    "ToolNodeDefinition",
     "FlowRelation",
     "CrewDefinition",
 ]
