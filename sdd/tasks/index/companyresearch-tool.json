@@ -32,7 +32,7 @@
       "feature_id": "FEAT-305",
       "feature": "companyresearch-tool",
       "spec": "sdd/specs/companyresearch-tool.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Edits company_info/tool.py — shared file with all other impl tasks; sequential per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-07-13T23:59:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1760-search-layer-ddg-first-validation.md"
+      "completed_at": "2026-07-14T00:07:42+00:00",
+      "file": "sdd/tasks/completed/TASK-1760-search-layer-ddg-first-validation.md"
     },
     {
       "id": "TASK-1761",

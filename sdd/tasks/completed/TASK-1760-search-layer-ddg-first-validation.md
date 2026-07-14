@@ -162,9 +162,22 @@ async def _ddg_search(self, query: str, max_results: int = 5) -> list[dict]:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-07-14
+**Notes**: Added `SourceConfig` (Pydantic, not a tool schema) and the
+`COMPANY_SOURCES` registry with all 6 sources (site/search_template/
+title_keywords ported verbatim from flowtask's per-source parsers). Added
+`_ddg_search` (backoff-wrapped, run_in_executor, mirrors `ddgo.py`),
+`_clean_search_url` (suffix strip for `/employee-directory` and
+`/email-format`, mirrors `scrapper.py:919-922`), `_validate_search_hit`
+(keyword-anchored title match + exact/first-token/`rapidfuzz` fuzzy>85,
+mirrors `_check_company_name` scrapper.py:741-770), and
+`_search_company_url` (DDG-first, Google CSE fallback via the existing
+`_google_site_search`, INFO log on fallback). `_google_site_search` left
+unchanged. Verified with ad-hoc smoke scripts (exact/fuzzy/reject
+validation, URL cleanup, DDG-success-no-fallback and
+DDG-ratelimit-triggers-fallback paths) — full pytest suite lands in
+TASK-1764. `ruff check` shows the same 6 pre-existing F401 selenium-import
+errors as before this change (unrelated to this task; TASK-1761 removes
+the selenium imports).
+**Deviations from spec**: none
