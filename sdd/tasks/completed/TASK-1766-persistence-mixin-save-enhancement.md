@@ -203,10 +203,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: `_save_result()` now does `data.setdefault("tenant", "global")`; `prompt`
+flows through unchanged via `**kwargs` (no default needed — absent key reads as
+`None` downstream). `_NAMED_COLUMNS` in `postgres.py` extended with `"tenant"` and
+`"prompt"`. `_ensure_table()` issues idempotent `ALTER TABLE ... ADD COLUMN IF NOT
+EXISTS` for both columns plus `CREATE INDEX IF NOT EXISTS {table}_tenant_user_idx
+ON {table} (tenant, user_id)`, applied after `CREATE TABLE IF NOT EXISTS` so it
+covers both brand-new and pre-existing tables. `save()` now extracts `tenant`
+(default `"global"`) and `prompt` and includes them in the `INSERT` column list
+ahead of `payload`. Created `tests/unit/test_persistence_mixin_save.py` per the
+task's Test Specification (5 tests, reusing the `_FakeStorage`/`_Host` pattern
+from `tests/bots/flows/core/storage/test_persistence_mixin.py`).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: One necessary collateral fix — the pre-existing
+`tests/bots/flows/core/storage/test_postgres_backend.py::test_postgres_wraps_bare_string_result`
+hardcoded the `payload` arg's positional index in the `INSERT` call
+(`insert_call.args[6]`). Adding `tenant`/`prompt` to the column list shifted
+`payload` to `args[8]`; updated the index and added a comment. No behavioral
+change to the test's intent, and all 26 relevant tests pass (unit + persistence
++ postgres backend + ABC).

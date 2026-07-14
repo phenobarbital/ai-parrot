@@ -32,7 +32,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "No file overlap with TASK-1765, but sequential for safety (shared postgres.py)",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1766-persistence-mixin-save-enhancement.md"
+      "completed_at": "2026-07-14T00:59:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1766-persistence-mixin-save-enhancement.md"
     },
     {
       "id": "TASK-1767",
