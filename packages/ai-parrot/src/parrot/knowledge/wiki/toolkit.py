@@ -845,6 +845,45 @@ class LLMWikiToolkit(AbstractToolkit):
         return await self._search.find_related(page_id, depth=depth)
 
     # ------------------------------------------------------------------
+    # OKF export boundary
+    # ------------------------------------------------------------------
+
+    async def export_okf(
+        self,
+        wiki_name: str,
+        output_dir: str,
+    ) -> dict[str, Any]:
+        """Export the wiki as an OKF v0.1 markdown bundle (interchange).
+
+        The wiki's internal store is machine-first SQLite; this tool
+        lazily projects it into Open Knowledge Format — one markdown
+        file per page with YAML frontmatter (``type`` from the page
+        category, ``relates_to`` from the edges table), grouped in
+        category directories with a root ``index.md``.
+
+        Args:
+            wiki_name: Wiki to export.
+            output_dir: Destination directory for the bundle.
+
+        Returns:
+            Export report dict: files_written, categories,
+            index_generated, output_dir.
+        """
+        from parrot.knowledge.wiki.export import export_okf_bundle
+
+        self._config_for(wiki_name)
+        report = await export_okf_bundle(
+            self._store, Path(output_dir), wiki_name=wiki_name
+        )
+        await asyncio.to_thread(
+            self._bookkeeper.log_operation,
+            self._config.storage_dir,
+            "EXPORT_OKF",
+            f"output_dir: {output_dir}, files: {report.files_written}",
+        )
+        return report.model_dump()
+
+    # ------------------------------------------------------------------
     # Bookkeeping
     # ------------------------------------------------------------------
 

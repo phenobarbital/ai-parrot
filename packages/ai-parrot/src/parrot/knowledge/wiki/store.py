@@ -654,6 +654,28 @@ class WikiStore:
                         results.append(item)
         return results
 
+    async def dump_pages(self) -> list[dict[str, Any]]:
+        """Return every page row WITH bodies (bulk export path).
+
+        Returns:
+            Full page dicts ordered by ``concept_id``.
+        """
+        async with self._connect() as conn:
+            async with conn.execute(
+                "SELECT concept_id, node_id, title, category, summary, body,"
+                " source_id, token_count, created_at, updated_at"
+                " FROM pages ORDER BY concept_id"
+            ) as cur:
+                return [dict(row) for row in await cur.fetchall()]
+
+    async def dump_edges(self) -> list[dict[str, Any]]:
+        """Return every edge row (bulk export path)."""
+        async with self._connect() as conn:
+            async with conn.execute(
+                "SELECT src, dst, rel FROM edges ORDER BY src, dst, rel"
+            ) as cur:
+                return [dict(row) for row in await cur.fetchall()]
+
     async def stats(self) -> dict[str, Any]:
         """Aggregate counters for the wiki (single fast query set).
 
