@@ -9,6 +9,7 @@ Verifies that:
 from parrot.models.crew_definition import (
     ExecutionMode,
     AgentDefinition,
+    ToolNodeDefinition,
     FlowRelation,
     CrewDefinition,
 )
@@ -71,6 +72,55 @@ class TestModelRelocation:
         assert cd.flow_relations == []
         assert cd.max_parallel_tasks == 10
         assert cd.tenant == "global"
+        # FEAT: deterministic tool nodes default to empty (backward compat)
+        assert cd.tool_nodes == []
+
+
+class TestToolNodeDefinition:
+    """Test the deterministic ToolNodeDefinition model."""
+
+    def test_defaults(self):
+        """ToolNodeDefinition must have sensible defaults."""
+        tn = ToolNodeDefinition(node_id="fetch", tool="yfinance")
+        assert tn.node_id == "fetch"
+        assert tn.tool == "yfinance"
+        assert tn.name is None
+        assert tn.description is None
+        assert tn.args == []
+        assert tn.kwargs == {}
+
+    def test_roundtrip_preserves_placeholders(self):
+        """Template placeholders survive a dump/reload round-trip verbatim."""
+        tn = ToolNodeDefinition(
+            node_id="fetch",
+            tool="yfinance",
+            args=["{input}"],
+            kwargs={"symbol": "{nodes.researcher.output}", "period": "1mo"},
+        )
+        tn2 = ToolNodeDefinition(**tn.model_dump())
+        assert tn2.args == ["{input}"]
+        assert tn2.kwargs["symbol"] == "{nodes.researcher.output}"
+
+    def test_crew_definition_with_tool_nodes_roundtrip(self):
+        """CrewDefinition carrying tool_nodes must round-trip."""
+        cd = CrewDefinition(
+            name="crew-with-tools",
+            agents=[AgentDefinition(agent_id="a1")],
+            tool_nodes=[ToolNodeDefinition(node_id="fetch", tool="yfinance")],
+        )
+        cd2 = CrewDefinition(**cd.model_dump())
+        assert len(cd2.tool_nodes) == 1
+        assert cd2.tool_nodes[0].node_id == "fetch"
+
+    def test_backward_compat_reexport(self):
+        """parrot.handlers.crew.models re-exports ToolNodeDefinition."""
+        from parrot.handlers.crew.models import ToolNodeDefinition as TND
+        assert TND is ToolNodeDefinition
+
+    def test_parrot_models_init_export(self):
+        """parrot.models package must export ToolNodeDefinition."""
+        from parrot.models import ToolNodeDefinition as TND
+        assert TND is ToolNodeDefinition
 
 
 class TestFlowRelation:
