@@ -1,21 +1,26 @@
 """Source collection manager for the LLM Wiki feature (FEAT-260).
 
 Implements the "Raw Sources" layer of Karpathy's 3-layer architecture.
-Tracks ingested source documents in the ``sources`` table of the wiki's
-single-file SQLite retrieval plane (``wiki.db`` — see
-:mod:`parrot.knowledge.wiki.store`), replacing the legacy
-``.manifest.json`` file.  A legacy manifest found on first open is
-migrated into the database automatically and renamed to
-``.manifest.json.bak``.
+Tracks ingested source documents in one of two backends, matching the
+wiki's ``storage_backend``:
+
+- ``"sqlite"`` (default) — the ``sources`` table of the wiki's
+  single-file SQLite retrieval plane (``wiki.db`` — see
+  :mod:`parrot.knowledge.wiki.store`).  A legacy ``.manifest.json``
+  found on first open is migrated into the database automatically and
+  renamed to ``.manifest.json.bak``.
+- ``"json"`` — a plain ``.manifest.json`` file in ``sources_dir``
+  (atomic tmp-file writes), used with the SQLite-free
+  ``InMemoryWikiStore`` backend.
 
 Staleness detection reuses the same mtime + SHA-1 pattern as
 ``SQLitePersistence.is_stale()`` in ``graphindex/persist_sqlite.py``.
 
 The public API is synchronous (callers off-load to a thread pool via
-``asyncio.to_thread``), so this module uses the stdlib ``sqlite3``
-driver with short-lived per-call connections — WAL mode makes this safe
-alongside the async :class:`~parrot.knowledge.wiki.store.WikiStore`
-connections on the same file.
+``asyncio.to_thread``); the sqlite mode uses short-lived per-call
+``sqlite3`` connections — WAL mode makes this safe alongside the async
+:class:`~parrot.knowledge.wiki.store.WikiStore` connections on the same
+file.
 """
 
 from __future__ import annotations
@@ -27,10 +32,9 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from parrot.knowledge.wiki.models import SourceManifestEntry
-from parrot.knowledge.wiki.store import WIKI_SCHEMA_SQL
 
 
 class SourceCollectionManager:
@@ -38,8 +42,11 @@ class SourceCollectionManager:
 
     Attributes:
         sources_dir: Directory where raw source files live.
-        db_path: Path of the shared ``wiki.db`` SQLite file.
-        manifest_path: Legacy ``.manifest.json`` location (migration only).
+        backend: ``"sqlite"`` (sources table in ``wiki.db``) or
+            ``"json"`` (``.manifest.json`` in ``sources_dir``).
+        db_path: Path of the shared ``wiki.db`` file (sqlite mode).
+        manifest_path: ``.manifest.json`` location (json-mode storage;
+            sqlite-mode legacy migration source).
         logger: Standard Python logger.
 
     Example::
@@ -58,27 +65,44 @@ class SourceCollectionManager:
         self,
         sources_dir: Path,
         db_path: Optional[Path] = None,
+        backend: Literal["sqlite", "json"] = "sqlite",
     ) -> None:
-        """Initialise the manager, the schema, and migrate legacy data.
+        """Initialise the manager's chosen persistence backend.
 
         Args:
             sources_dir: Root directory for raw source documents.
                 Created automatically if it does not exist.
-            db_path: Optional explicit path of the wiki database.  When
-                omitted, defaults to ``<sources_dir>/../wiki.db`` — the
-                same file used by :class:`WikiStore`.
+            db_path: Optional explicit path of the wiki database
+                (sqlite mode only).  When omitted, defaults to
+                ``<sources_dir>/../wiki.db`` — the same file used by
+                :class:`SQLiteWikiStore`.
+            backend: ``"sqlite"`` (default) or ``"json"``.
+
+        Raises:
+            ValueError: For an unknown ``backend`` value.
         """
+        if backend not in ("sqlite", "json"):
+            raise ValueError(
+                f"Unknown sources backend {backend!r} — expected 'sqlite' or 'json'"
+            )
         self.sources_dir: Path = Path(sources_dir)
         self.sources_dir.mkdir(parents=True, exist_ok=True)
+        self.backend: str = backend
         self.db_path: Path = (
             Path(db_path) if db_path else self.sources_dir.parent / "wiki.db"
         )
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.manifest_path: Path = self.sources_dir / self._MANIFEST_FILENAME
         self.logger: logging.Logger = logging.getLogger(__name__)
-        with self._connect() as conn:
-            conn.executescript(WIKI_SCHEMA_SQL)
-        self._migrate_json_manifest()
+        self._manifest: dict[str, SourceManifestEntry] = {}
+        if backend == "sqlite":
+            from parrot.knowledge.wiki.store import WIKI_SCHEMA_SQL
+
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._connect() as conn:
+                conn.executescript(WIKI_SCHEMA_SQL)
+            self._migrate_json_manifest()
+        else:
+            self._load_manifest()
 
     # ------------------------------------------------------------------
     # Public API
@@ -131,8 +155,10 @@ class SourceCollectionManager:
 
         Returns:
             A list of :class:`SourceManifestEntry` objects, one per
-            registered source, in insertion (rowid) order.
+            registered source, in insertion order.
         """
+        if self.backend == "json":
+            return list(self._manifest.values())
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM sources ORDER BY rowid"
@@ -149,6 +175,8 @@ class SourceCollectionManager:
         Returns:
             The :class:`SourceManifestEntry`, or ``None`` if not found.
         """
+        if self.backend == "json":
+            return self._manifest.get(source_id)
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM sources WHERE source_id = ?", (source_id,)
@@ -247,6 +275,13 @@ class SourceCollectionManager:
             ``True`` if the entry existed and was removed; ``False`` if
             ``source_id`` was not present.
         """
+        if self.backend == "json":
+            if source_id not in self._manifest:
+                return False
+            del self._manifest[source_id]
+            self._save_manifest()
+            self.logger.debug("Source removed: source_id=%s", source_id)
+            return True
         with self._connect() as conn:
             cur = conn.execute(
                 "DELETE FROM sources WHERE source_id = ?", (source_id,)
@@ -284,7 +319,11 @@ class SourceCollectionManager:
         return conn
 
     def _upsert(self, entry: SourceManifestEntry) -> None:
-        """Insert or replace one sources row from a manifest entry."""
+        """Insert or replace one source entry in the active backend."""
+        if self.backend == "json":
+            self._manifest[entry.source_id] = entry
+            self._save_manifest()
+            return
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO sources"
@@ -357,6 +396,11 @@ class SourceCollectionManager:
 
     def _find_id_by_uri(self, source_uri: str) -> Optional[str]:
         """Look up an existing source ID by URI (internal implementation)."""
+        if self.backend == "json":
+            for sid, entry in self._manifest.items():
+                if entry.source_uri == source_uri:
+                    return sid
+            return None
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT source_id FROM sources WHERE source_uri = ?",
@@ -399,3 +443,58 @@ class SourceCollectionManager:
                 self.manifest_path,
                 exc,
             )
+
+    # ------------------------------------------------------------------
+    # JSON-backend persistence (storage_backend="memory" wikis)
+    # ------------------------------------------------------------------
+
+    def _load_manifest(self) -> None:
+        """Load the JSON manifest from disk into ``self._manifest``.
+
+        Silently initialises an empty manifest when the file does not
+        exist or contains invalid JSON.
+        """
+        if not self.manifest_path.exists():
+            self.logger.debug(
+                "No existing manifest at %s; starting fresh", self.manifest_path
+            )
+            return
+        try:
+            raw: dict = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+            self._manifest = {
+                sid: SourceManifestEntry(**data) for sid, data in raw.items()
+            }
+            self.logger.debug(
+                "Loaded manifest with %d source(s) from %s",
+                len(self._manifest),
+                self.manifest_path,
+            )
+        except (json.JSONDecodeError, KeyError, ValueError) as exc:
+            self.logger.warning(
+                "Could not parse manifest at %s: %s — starting fresh",
+                self.manifest_path,
+                exc,
+            )
+            self._manifest = {}
+
+    def _save_manifest(self) -> None:
+        """Persist the in-memory manifest to the JSON file.
+
+        Serialises each :class:`SourceManifestEntry` via
+        ``model_dump()``.  The file is written atomically via a
+        temporary sibling to avoid partial writes.
+        """
+        data = {
+            sid: entry.model_dump() for sid, entry in self._manifest.items()
+        }
+        tmp_path = self.manifest_path.with_suffix(".json.tmp")
+        tmp_path.write_text(
+            json.dumps(data, indent=2, default=str),
+            encoding="utf-8",
+        )
+        tmp_path.replace(self.manifest_path)
+        self.logger.debug(
+            "Saved manifest with %d source(s) to %s",
+            len(data),
+            self.manifest_path,
+        )

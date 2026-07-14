@@ -205,3 +205,46 @@ class TestSourceCollectionManager:
         assert not new_dir.exists()
         SourceCollectionManager(new_dir)
         assert new_dir.exists()
+
+
+class TestJsonBackend:
+    """SourceCollectionManager with backend='json' (memory-backend wikis)."""
+
+    def test_manifest_file_exists_after_add(
+        self, sources_dir: Path, sample_source: Path
+    ):
+        mgr = SourceCollectionManager(sources_dir, backend="json")
+        mgr.add_source(sample_source)
+        assert (sources_dir / ".manifest.json").exists()
+        assert not mgr.db_path.exists()  # no wiki.db in json mode
+
+    def test_persistence_across_managers(
+        self, sources_dir: Path, sample_source: Path
+    ):
+        first = SourceCollectionManager(sources_dir, backend="json")
+        entry = first.add_source(sample_source)
+        first.mark_ingested(entry.source_id, pages_generated=["0001"])
+
+        second = SourceCollectionManager(sources_dir, backend="json")
+        reloaded = second.get_source(entry.source_id)
+        assert reloaded is not None
+        assert reloaded.pages_generated == ["0001"]
+        assert second.find_by_uri(entry.source_uri) == entry.source_id
+
+    def test_remove_source(self, sources_dir: Path, sample_source: Path):
+        mgr = SourceCollectionManager(sources_dir, backend="json")
+        entry = mgr.add_source(sample_source)
+        assert mgr.remove_source(entry.source_id) is True
+        assert mgr.get_source(entry.source_id) is None
+        assert mgr.remove_source("nope") is False
+
+    def test_is_stale_json_mode(self, sources_dir: Path, sample_source: Path):
+        mgr = SourceCollectionManager(sources_dir, backend="json")
+        entry = mgr.add_source(sample_source)
+        assert mgr.is_stale(entry.source_id) is False
+        sample_source.write_text("changed content")
+        assert mgr.is_stale(entry.source_id) is True
+
+    def test_unknown_backend_rejected(self, sources_dir: Path):
+        with pytest.raises(ValueError, match="Unknown sources backend"):
+            SourceCollectionManager(sources_dir, backend="parquet")

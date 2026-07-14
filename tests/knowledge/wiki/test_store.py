@@ -1,7 +1,12 @@
-"""Tests for WikiStore — the SQLite retrieval plane (machine-first wiki).
+"""Tests for the wiki retrieval plane — run against EVERY backend.
 
-All tests use a real on-disk SQLite database under ``tmp_path`` — no
-mocks: the retrieval plane is fast enough to test for real.
+The ``store`` fixture is parametrized over both `BaseWikiStore`
+implementations (SQLite plane and in-memory + OKF file directory), so
+the whole behavioural contract — CRUD, lexical/vector search, edges,
+source-slice replacement, lint queries, tree rebuild — is pinned
+identically for each.  All tests use real on-disk state under
+``tmp_path`` — no mocks: the retrieval plane is fast enough to test
+for real.
 """
 
 from pathlib import Path
@@ -9,17 +14,20 @@ from pathlib import Path
 import pytest
 
 from parrot.knowledge.wiki.store import (
+    BaseWikiStore,
     WikiPageRecord,
-    WikiStore,
+    create_wiki_store,
     estimate_tokens,
     _fts_query,
 )
 
 
-@pytest.fixture
-def store(tmp_path: Path) -> WikiStore:
-    """Fresh WikiStore backed by a tmp_path wiki.db."""
-    return WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
+@pytest.fixture(params=["sqlite", "memory"])
+def store(tmp_path: Path, request: pytest.FixtureRequest) -> BaseWikiStore:
+    """Fresh store of each backend, rooted at tmp_path."""
+    return create_wiki_store(
+        tmp_path, wiki_name="test-wiki", backend=request.param
+    )
 
 
 def _page(cid: str, **kw) -> WikiPageRecord:
@@ -60,7 +68,7 @@ class TestPagesCrud:
     """Page upsert / get / list / delete round-trips."""
 
     @pytest.mark.asyncio
-    async def test_upsert_and_get(self, store: WikiStore):
+    async def test_upsert_and_get(self, store: BaseWikiStore):
         await store.upsert_pages([_page("intro", node_id="0001")])
         page = await store.get_page("intro")
         assert page is not None
@@ -69,23 +77,23 @@ class TestPagesCrud:
         assert page["token_count"] > 0  # auto-computed
 
     @pytest.mark.asyncio
-    async def test_get_by_node_id_fallback(self, store: WikiStore):
+    async def test_get_by_node_id_fallback(self, store: BaseWikiStore):
         await store.upsert_pages([_page("intro", node_id="0001")])
         page = await store.get_page("0001")
         assert page is not None and page["concept_id"] == "intro"
 
     @pytest.mark.asyncio
-    async def test_get_without_body(self, store: WikiStore):
+    async def test_get_without_body(self, store: BaseWikiStore):
         await store.upsert_pages([_page("intro")])
         page = await store.get_page("intro", include_body=False)
         assert page is not None and "body" not in page
 
     @pytest.mark.asyncio
-    async def test_get_missing(self, store: WikiStore):
+    async def test_get_missing(self, store: BaseWikiStore):
         assert await store.get_page("nope") is None
 
     @pytest.mark.asyncio
-    async def test_upsert_is_idempotent(self, store: WikiStore):
+    async def test_upsert_is_idempotent(self, store: BaseWikiStore):
         await store.upsert_pages([_page("intro")])
         await store.upsert_pages([_page("intro", title="Updated")])
         page = await store.get_page("intro")
@@ -94,7 +102,7 @@ class TestPagesCrud:
         assert stats["pages"] == 1
 
     @pytest.mark.asyncio
-    async def test_list_pages_category_filter(self, store: WikiStore):
+    async def test_list_pages_category_filter(self, store: BaseWikiStore):
         await store.upsert_pages(
             [_page("a", category="entity"), _page("b", category="summary")]
         )
@@ -103,7 +111,7 @@ class TestPagesCrud:
         assert "body" not in entities[0]  # stubs only
 
     @pytest.mark.asyncio
-    async def test_delete_page_cleans_everything(self, store: WikiStore):
+    async def test_delete_page_cleans_everything(self, store: BaseWikiStore):
         await store.upsert_pages([_page("a"), _page("b")])
         await store.add_edges([("a", "b", "references")])
         await store.upsert_embedding("a", [0.1, 0.2], model="m")
@@ -115,7 +123,7 @@ class TestPagesCrud:
         assert all(h["concept_id"] != "a" for h in hits)
 
     @pytest.mark.asyncio
-    async def test_delete_missing_returns_false(self, store: WikiStore):
+    async def test_delete_missing_returns_false(self, store: BaseWikiStore):
         assert await store.delete_page("nope") is False
 
 
@@ -123,7 +131,7 @@ class TestSearchFts:
     """BM25 lexical search behavior."""
 
     @pytest.mark.asyncio
-    async def test_search_finds_relevant_page(self, store: WikiStore):
+    async def test_search_finds_relevant_page(self, store: BaseWikiStore):
         await store.upsert_pages(
             [
                 _page("nn", title="Neural Networks",
@@ -137,7 +145,7 @@ class TestSearchFts:
         assert "score" in hits[0]
 
     @pytest.mark.asyncio
-    async def test_search_category_prefilter(self, store: WikiStore):
+    async def test_search_category_prefilter(self, store: BaseWikiStore):
         await store.upsert_pages(
             [
                 _page("nn-sum", category="summary", body="neural networks summary"),
@@ -148,11 +156,11 @@ class TestSearchFts:
         assert [h["concept_id"] for h in hits] == ["nn-ent"]
 
     @pytest.mark.asyncio
-    async def test_search_empty_query(self, store: WikiStore):
+    async def test_search_empty_query(self, store: BaseWikiStore):
         assert await store.search_fts("***") == []
 
     @pytest.mark.asyncio
-    async def test_search_injection_safe(self, store: WikiStore):
+    async def test_search_injection_safe(self, store: BaseWikiStore):
         await store.upsert_pages([_page("a")])
         # Must not raise despite FTS syntax in the query
         assert isinstance(await store.search_fts('"; DROP TABLE pages; --'), list)
@@ -162,7 +170,7 @@ class TestVectorSearch:
     """Cosine search over the embeddings table."""
 
     @pytest.mark.asyncio
-    async def test_vector_ranking(self, store: WikiStore):
+    async def test_vector_ranking(self, store: BaseWikiStore):
         await store.upsert_pages([_page("a"), _page("b")])
         await store.upsert_embedding("a", [1.0, 0.0], model="m")
         await store.upsert_embedding("b", [0.0, 1.0], model="m")
@@ -171,11 +179,11 @@ class TestVectorSearch:
         assert hits[0]["score"] > hits[1]["score"]
 
     @pytest.mark.asyncio
-    async def test_vector_empty_store(self, store: WikiStore):
+    async def test_vector_empty_store(self, store: BaseWikiStore):
         assert await store.search_vector([1.0, 0.0]) == []
 
     @pytest.mark.asyncio
-    async def test_vector_dimension_mismatch_skipped(self, store: WikiStore):
+    async def test_vector_dimension_mismatch_skipped(self, store: BaseWikiStore):
         await store.upsert_pages([_page("a")])
         await store.upsert_embedding("a", [1.0, 0.0, 0.0], model="m")
         assert await store.search_vector([1.0, 0.0]) == []
@@ -185,7 +193,7 @@ class TestEdgesAndNeighbors:
     """Typed edges with open-string relations."""
 
     @pytest.mark.asyncio
-    async def test_neighbors_out_in_both(self, store: WikiStore):
+    async def test_neighbors_out_in_both(self, store: BaseWikiStore):
         await store.upsert_pages([_page("a"), _page("b")])
         await store.add_edges([("a", "b", "summarizes")])
         out = await store.neighbors("a", direction="out")
@@ -197,7 +205,7 @@ class TestEdgesAndNeighbors:
         assert len(both) == 1
 
     @pytest.mark.asyncio
-    async def test_neighbors_rel_filter(self, store: WikiStore):
+    async def test_neighbors_rel_filter(self, store: BaseWikiStore):
         await store.upsert_pages([_page("a"), _page("b"), _page("c")])
         await store.add_edges(
             [("a", "b", "summarizes"), ("a", "c", "references")]
@@ -206,7 +214,7 @@ class TestEdgesAndNeighbors:
         assert [h["concept_id"] for h in hits] == ["c"]
 
     @pytest.mark.asyncio
-    async def test_open_string_relation(self, store: WikiStore):
+    async def test_open_string_relation(self, store: BaseWikiStore):
         """rel is an open string — no enum gate in the machine plane."""
         await store.upsert_pages([_page("a"), _page("b")])
         await store.add_edges([("a", "b", "totally-custom-rel")])
@@ -218,7 +226,7 @@ class TestReplaceSourceSlice:
     """Re-ingest must never accumulate duplicates (fixes G9)."""
 
     @pytest.mark.asyncio
-    async def test_replace_deletes_old_slice(self, store: WikiStore):
+    async def test_replace_deletes_old_slice(self, store: BaseWikiStore):
         p1 = [_page("old-1", source_id="src-1"), _page("old-2", source_id="src-1")]
         await store.replace_source_slice("src-1", p1, [("old-1", "old-2", "references")])
         p2 = [_page("new-1", source_id="src-1")]
@@ -232,7 +240,7 @@ class TestReplaceSourceSlice:
         assert stats["edges"] == 0  # old edges cleaned up
 
     @pytest.mark.asyncio
-    async def test_replace_is_idempotent(self, store: WikiStore):
+    async def test_replace_is_idempotent(self, store: BaseWikiStore):
         pages = [_page("p-1", source_id="src-1")]
         await store.replace_source_slice("src-1", pages)
         await store.replace_source_slice("src-1", pages)
@@ -240,7 +248,7 @@ class TestReplaceSourceSlice:
         assert stats["pages"] == 1
 
     @pytest.mark.asyncio
-    async def test_replace_leaves_other_sources_alone(self, store: WikiStore):
+    async def test_replace_leaves_other_sources_alone(self, store: BaseWikiStore):
         await store.replace_source_slice("src-1", [_page("a", source_id="src-1")])
         await store.replace_source_slice("src-2", [_page("b", source_id="src-2")])
         await store.replace_source_slice("src-1", [_page("a2", source_id="src-1")])
@@ -251,19 +259,19 @@ class TestLintQueries:
     """Fast SQL lint checks."""
 
     @pytest.mark.asyncio
-    async def test_broken_edges(self, store: WikiStore):
+    async def test_broken_edges(self, store: BaseWikiStore):
         await store.upsert_pages([_page("a")])
         await store.add_edges([("a", "ghost", "references")])
         broken = await store.broken_edges()
         assert len(broken) == 1 and broken[0]["dst"] == "ghost"
 
     @pytest.mark.asyncio
-    async def test_missing_bodies(self, store: WikiStore):
+    async def test_missing_bodies(self, store: BaseWikiStore):
         await store.upsert_pages([_page("a", body=""), _page("b")])
         assert await store.missing_bodies() == ["a"]
 
     @pytest.mark.asyncio
-    async def test_stats(self, store: WikiStore):
+    async def test_stats(self, store: BaseWikiStore):
         await store.upsert_pages([_page("a", category="entity"), _page("b")])
         stats = await store.stats()
         assert stats["pages"] == 2
@@ -275,7 +283,7 @@ class TestRebuildFromTree:
     """Derived-plane rebuild from a PageIndex tree."""
 
     @pytest.mark.asyncio
-    async def test_rebuild(self, store: WikiStore):
+    async def test_rebuild(self, store: BaseWikiStore):
         tree = {
             "structure": [
                 {
@@ -308,7 +316,7 @@ class TestRebuildFromTree:
         assert child["source_id"] == "src-1"
 
     @pytest.mark.asyncio
-    async def test_rebuild_without_loader(self, store: WikiStore):
+    async def test_rebuild_without_loader(self, store: BaseWikiStore):
         tree = {"structure": [{"node_id": "0000", "title": "T", "summary": "s", "nodes": []}]}
         report = await store.rebuild_from_tree(tree)
         assert report["pages_written"] == 1

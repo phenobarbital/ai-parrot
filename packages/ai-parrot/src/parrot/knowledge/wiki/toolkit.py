@@ -37,7 +37,7 @@ from parrot.knowledge.wiki.search import WikiCombinedSearch
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import (
     WikiPageRecord,
-    WikiStore,
+    create_wiki_store,
     estimate_tokens,
 )
 from parrot.tools.toolkit import AbstractToolkit
@@ -95,16 +95,23 @@ class LLMWikiToolkit(AbstractToolkit):
         self._okf = okf_toolkit
         self._config = config
 
-        # Initialise helper components.  The WikiStore SQLite plane
-        # (storage_dir/wiki.db) is the retrieval backend; the sources
-        # registry shares the same database file.
-        self._store = WikiStore(
-            config.storage_dir / "wiki.db", wiki_name=config.wiki_name
+        # Initialise helper components.  The WikiStore plane is the
+        # retrieval backend — SQLite (storage_dir/wiki.db) or the
+        # in-memory + OKF-bundle-directory backend, per config.
+        self._store = create_wiki_store(
+            config.storage_dir,
+            wiki_name=config.wiki_name,
+            backend=config.storage_backend,
         )
         sources_dir = config.storage_dir / "sources"
-        self._sources = SourceCollectionManager(
-            sources_dir, db_path=self._store.db_path
-        )
+        if config.storage_backend == "sqlite":
+            self._sources = SourceCollectionManager(
+                sources_dir, db_path=config.storage_dir / "wiki.db"
+            )
+        else:
+            self._sources = SourceCollectionManager(
+                sources_dir, backend="json"
+            )
         self._bookkeeper = WikiBookkeeper()
         self._search = WikiCombinedSearch(
             pageindex_toolkit,

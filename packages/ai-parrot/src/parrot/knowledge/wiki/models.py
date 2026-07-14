@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -63,8 +63,11 @@ class WikiConfig(BaseModel):
         model: Optional model identifier for the heavyweight generation
             step of TwoStepIngester.
         sync_graph: When ``True``, wiki writes also mirror pages into
-            GraphIndex.  Off by default — the WikiStore SQLite plane is
-            the wiki's retrieval backend.
+            GraphIndex.  Off by default — the WikiStore plane is the
+            wiki's retrieval backend.
+        storage_backend: ``"sqlite"`` (default; single-file ``wiki.db``)
+            or ``"memory"`` (in-memory indexes + OKF markdown bundle
+            directory — no SQLite dependency).
     """
 
     wiki_name: str = Field(..., description="Unique wiki name / identifier")
@@ -93,7 +96,16 @@ class WikiConfig(BaseModel):
         default=False,
         description=(
             "Mirror wiki pages into GraphIndex on write. Off by default — "
-            "the WikiStore SQLite plane is the retrieval backend."
+            "the WikiStore plane is the retrieval backend."
+        ),
+    )
+    storage_backend: Literal["sqlite", "memory"] = Field(
+        default="sqlite",
+        description=(
+            "Retrieval-plane backend: 'sqlite' (single-file wiki.db, "
+            "FTS5/BM25) or 'memory' (in-memory indexes persisted as an "
+            "OKF markdown bundle under {storage_dir}/pages/). Explicit "
+            "selection only — no auto-fallback."
         ),
     )
 

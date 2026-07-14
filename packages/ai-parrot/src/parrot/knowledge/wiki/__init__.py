@@ -45,9 +45,16 @@ from parrot.knowledge.wiki.models import (
     WikiPageCategory,
     WikiSearchResult,
 )
+from parrot.knowledge.wiki.file_store import InMemoryWikiStore
 from parrot.knowledge.wiki.search import WikiCombinedSearch
 from parrot.knowledge.wiki.sources import SourceCollectionManager
-from parrot.knowledge.wiki.store import WikiPageRecord, WikiStore
+from parrot.knowledge.wiki.store import (
+    BaseWikiStore,
+    SQLiteWikiStore,
+    WikiPageRecord,
+    WikiStore,
+    create_wiki_store,
+)
 from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
 
 __all__ = [
@@ -69,8 +76,12 @@ __all__ = [
     "IngestReport",
     # Lint
     "WikiLintReport",
-    # Retrieval plane (machine-first)
+    # Retrieval plane (machine-first, pluggable backends)
+    "BaseWikiStore",
     "WikiStore",
+    "SQLiteWikiStore",
+    "InMemoryWikiStore",
+    "create_wiki_store",
     "WikiPageRecord",
     # Context packing
     "PackedContext",
