@@ -17,7 +17,9 @@ from .base import ResultStorage
 
 
 _TABLE_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
-_NAMED_COLUMNS = frozenset(("crew_name", "method", "user_id", "session_id", "timestamp"))
+_NAMED_COLUMNS = frozenset(
+    ("crew_name", "method", "user_id", "session_id", "timestamp", "tenant", "prompt")
+)
 
 
 class PostgresResultStorage(ResultStorage):
@@ -80,6 +82,17 @@ class PostgresResultStorage(ResultStorage):
         await conn.execute(
             f"CREATE INDEX IF NOT EXISTS {table}_session_id_idx ON {table} (session_id)"
         )
+        # FEAT-307: idempotent DDL to add tenant/prompt columns + composite index
+        # to tables created before this feature shipped.
+        await conn.execute(
+            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'global'"
+        )
+        await conn.execute(
+            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS prompt TEXT"
+        )
+        await conn.execute(
+            f"CREATE INDEX IF NOT EXISTS {table}_tenant_user_idx ON {table} (tenant, user_id)"
+        )
         self._initialised.add(table)
 
     async def save(self, collection: str, document: dict[str, Any]) -> None:
@@ -97,6 +110,8 @@ class PostgresResultStorage(ResultStorage):
             method = document.get("method", "unknown")
             user_id = document.get("user_id")
             session_id = document.get("session_id")
+            tenant = document.get("tenant", "global")
+            prompt = document.get("prompt")
             ts_raw = document.get("timestamp")
             timestamp = (
                 datetime.fromtimestamp(ts_raw, tz=timezone.utc)
@@ -112,13 +127,15 @@ class PostgresResultStorage(ResultStorage):
 
             await conn.execute(
                 f"INSERT INTO {collection} "
-                "(crew_name, method, user_id, session_id, timestamp, payload) "
-                "VALUES ($1, $2, $3, $4, $5, $6)",
+                "(crew_name, method, user_id, session_id, timestamp, tenant, prompt, payload) "
+                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
                 crew_name,
                 method,
                 user_id,
                 session_id,
                 timestamp,
+                tenant,
+                prompt,
                 payload,
             )
         except Exception as exc:

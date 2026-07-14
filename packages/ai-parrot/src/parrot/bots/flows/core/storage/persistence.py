@@ -81,7 +81,7 @@ class PersistenceMixin:
             method: Execution method name (e.g. ``"run_flow"``).
             collection: Target collection / table name.
             **kwargs: Extra fields merged into the persisted document
-                (e.g. ``user_id``, ``session_id``).
+                (e.g. ``user_id``, ``session_id``, ``prompt``, ``tenant``).
         """
         if not getattr(self, "_persist_results", True):
             return
@@ -99,6 +99,8 @@ class PersistenceMixin:
                 **kwargs,
             }
             data.setdefault("user_id", "unknown")
+            data.setdefault("tenant", "global")
+            # prompt comes from kwargs if caller provides it; no default needed (None is fine)
             await storage.save(collection, data)
         except Exception as exc:
             logger.warning(

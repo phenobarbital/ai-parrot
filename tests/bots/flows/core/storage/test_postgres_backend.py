@@ -79,8 +79,9 @@ async def test_postgres_wraps_bare_string_result(mock_asyncdb):
         for c in mock_asyncdb.execute.await_args_list
         if "INSERT INTO" in c.args[0]
     )
-    # payload is the 6th positional arg (index 6 = args[6])
-    payload_arg = insert_call.args[6]
+    # payload is the last positional arg (index 8 = args[8]); FEAT-307 added
+    # tenant/prompt columns before payload in the INSERT column order.
+    payload_arg = insert_call.args[8]
     payload = json.loads(payload_arg)
     assert payload["result"] == {"raw": "raw-string"}
 
