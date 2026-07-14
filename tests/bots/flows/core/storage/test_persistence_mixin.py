@@ -4,8 +4,13 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+from parrot.bots.flows.core.result import NodeResult
 from parrot.bots.flows.core.storage import PersistenceMixin
 from parrot.bots.flows.core.storage.backends import ResultStorage
+
+
+def _node(node_id: str) -> NodeResult:
+    return NodeResult(node_id=node_id, node_name=f"Agent {node_id}", task="do x", result="ok")
 
 
 class _FakeStorage(ResultStorage):
@@ -107,6 +112,104 @@ async def test_save_falls_back_to_str_when_no_to_dict():
     await host._save_result("plain string result", "run_flow")
 
     assert fake.saves[0][1]["result"] == "plain string result"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# _save_agent_result behaviour (TASK-1767 / FEAT-306)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_save_agent_result_skips_when_globally_disabled():
+    """_save_agent_result returns immediately when _persist_results=False."""
+    host = _Host(persist=False)
+    await host._save_agent_result(_node("a1"), execution_id="E1", method="run_sequential")
+    assert host._result_storage is None  # backend never resolved
+
+
+@pytest.mark.asyncio
+async def test_save_agent_result_skips_when_granularly_disabled():
+    """_save_agent_result returns immediately when _persist_agent_results=False."""
+    fake = _FakeStorage()
+    host = _Host(persist=True, storage=fake)
+    host._persist_agent_results = False
+
+    await host._save_agent_result(_node("a1"), execution_id="E1", method="run_sequential")
+
+    assert fake.saves == []
+
+
+@pytest.mark.asyncio
+async def test_save_agent_result_document_shape():
+    """Persisted doc matches the §2 per-agent shape."""
+    fake = _FakeStorage()
+    host = _Host(persist=True, storage=fake)
+    node = _node("a1")
+
+    await host._save_agent_result(
+        node, execution_id="E1", method="run_sequential", user_id="u1", session_id="s1"
+    )
+
+    assert len(fake.saves) == 1
+    collection, doc = fake.saves[0]
+    assert collection == "crew_agent_results"
+    assert doc["execution_id"] == "E1"
+    assert doc["crew_name"] == "TestCrew"
+    assert doc["method"] == "run_sequential"
+    assert doc["node_id"] == "a1"
+    assert doc["node_execution_id"] == node.execution_id
+    assert doc["result"] == node.to_dict()
+    assert doc["user_id"] == "u1"
+    assert doc["session_id"] == "s1"
+
+
+@pytest.mark.asyncio
+async def test_save_agent_result_defaults_user_id_when_missing():
+    """user_id defaults to 'unknown' when not passed in kwargs."""
+    fake = _FakeStorage()
+    host = _Host(persist=True, storage=fake)
+
+    await host._save_agent_result(_node("a1"), execution_id="E1", method="run_sequential")
+
+    assert fake.saves[0][1]["user_id"] == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_save_agent_result_host_without_granular_attr_behaves_enabled():
+    """A host without _persist_agent_results behaves as if it were True."""
+    fake = _FakeStorage()
+    host = _Host(persist=True, storage=fake)
+    assert not hasattr(host, "_persist_agent_results")
+
+    await host._save_agent_result(_node("a1"), execution_id="E1", method="run_sequential")
+
+    assert len(fake.saves) == 1
+
+
+@pytest.mark.asyncio
+async def test_save_agent_result_swallows_backend_exceptions(caplog):
+    """Exceptions from the backend are logged at WARNING and not propagated."""
+    failing = MagicMock(spec=ResultStorage)
+    failing.save = AsyncMock(side_effect=RuntimeError("boom"))
+    failing.close = AsyncMock()
+    host = _Host(persist=True, storage=failing)
+
+    # Must not raise
+    await host._save_agent_result(_node("a1"), execution_id="E1", method="run_sequential")
+    assert "Failed to save agent result" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_save_agent_result_falls_back_to_str_when_no_to_dict():
+    """_save_agent_result falls back to str(node_result) when to_dict is absent."""
+    fake = _FakeStorage()
+    host = _Host(persist=True, storage=fake)
+
+    await host._save_agent_result(
+        "plain agent result", execution_id="E1", method="run_sequential"
+    )
+
+    assert fake.saves[0][1]["result"] == "plain agent result"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
