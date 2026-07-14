@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
@@ -104,6 +105,7 @@ class LLMWikiToolkit(AbstractToolkit):
             pageindex_toolkit,
             graphindex_toolkit,
             config.search_weights,
+            store=self._store,
         )
         self._ingest_orch = WikiIngestOrchestrator(
             pageindex_toolkit,
@@ -231,23 +233,50 @@ class LLMWikiToolkit(AbstractToolkit):
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("OKF lint failed: %s", exc)
 
-        # Wiki-specific checks
+        # Wiki-specific checks — answered from the SQLite plane.
+        # Orphans: sources with zero derived pages (SQL join); falls back
+        # to the registry's pages_generated when the pages table is empty
+        # for that source but ids were recorded (e.g. store sync skipped).
         all_sources = self._sources.list_sources()
+        recorded = {
+            s.source_id for s in all_sources if s.pages_generated
+        }
         orphan_sources = [
-            s.source_id for s in all_sources if not s.pages_generated
+            sid
+            for sid in await self._store.orphan_sources()
+            if sid not in recorded
         ]
         # is_stale does file I/O (stat + optional hash) — offload to thread pool
         stale_sources: list[str] = []
         for s in all_sources:
             if await asyncio.to_thread(self._sources.is_stale, s.source_id):
                 stale_sources.append(s.source_id)
-        uncovered_sources: list[str] = []  # future: scan source_dir for new files
+
+        # Uncovered: files present in source_dir but never registered.
+        uncovered_sources: list[str] = []
+        source_dir = self._config.source_dir
+        if source_dir and Path(source_dir).is_dir():
+            tracked_uris = {s.source_uri for s in all_sources}
+            for candidate in sorted(Path(source_dir).rglob("*")):
+                if candidate.is_file() and str(candidate.resolve()) not in tracked_uris:
+                    uncovered_sources.append(str(candidate))
+
+        # Cross-reference issues: broken edges + pages without bodies.
+        cross_ref_issues: list[dict[str, Any]] = [
+            {"kind": "broken_edge", **edge}
+            for edge in await self._store.broken_edges()
+        ]
+        cross_ref_issues.extend(
+            {"kind": "missing_body", "concept_id": cid}
+            for cid in await self._store.missing_bodies()
+        )
 
         report = WikiLintReport(
             okf_report=okf_result,
             orphan_sources=orphan_sources,
             stale_sources=stale_sources,
             uncovered_sources=uncovered_sources,
+            cross_ref_issues=cross_ref_issues,
         )
 
         await asyncio.to_thread(
@@ -401,16 +430,19 @@ class LLMWikiToolkit(AbstractToolkit):
 
         Args:
             wiki_name: Wiki name to browse.
-            category: Optional WikiPageCategory value to filter by.
-            search: Optional search query to filter results.
+            category: Optional category value to filter by (exact match).
+            search: Optional search query — when given, results come
+                from FTS ranking instead of the recency listing.
 
         Returns:
-            List of page summary dicts from PageIndex search.
+            List of page stub dicts (no bodies — use ``read_page``).
         """
-        query = search or (category or wiki_name)
         try:
-            raw = await self._pi.search(wiki_name, query, top_k=20)
-            return raw if isinstance(raw, list) else []
+            if search:
+                return await self._store.search_fts(
+                    search, category=category, limit=20
+                )
+            return await self._store.list_pages(category=category, limit=20)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("browse_pages failed: %s", exc)
             return []
@@ -424,20 +456,27 @@ class LLMWikiToolkit(AbstractToolkit):
 
         Args:
             wiki_name: Wiki name containing the page.
-            page_id: Node ID of the page to read.
+            page_id: Stable ``concept_id`` of the page (a volatile
+                PageIndex ``node_id`` is also accepted).
 
         Returns:
-            Dict with keys: page_id, content, metadata.  Returns
-            ``{"error": "not_found"}`` when the page does not exist.
+            Dict with keys: page_id, title, category, summary, content,
+            token_count, source_id.  Returns ``{"error": "not_found"}``
+            when the page does not exist.
         """
-        # PageIndex node content retrieval via search is the available API
+        page = await self._store.get_page(page_id)
+        if page is None:
+            return {"error": "not_found", "page_id": page_id}
         return {
-            "page_id": page_id,
+            "page_id": page["concept_id"],
+            "node_id": page.get("node_id"),
             "wiki_name": wiki_name,
-            "note": (
-                "Full page content retrieval requires PageIndex node reader; "
-                "use search() to locate pages by content."
-            ),
+            "title": page.get("title", ""),
+            "category": page.get("category", ""),
+            "summary": page.get("summary", ""),
+            "content": page.get("body", ""),
+            "token_count": page.get("token_count", 0),
+            "source_id": page.get("source_id"),
         }
 
     async def create_page(
@@ -570,23 +609,50 @@ class LLMWikiToolkit(AbstractToolkit):
     ) -> dict[str, Any]:
         """Delete a wiki page.
 
+        Deletes the page from the WikiStore retrieval plane (row, FTS
+        entry, embeddings, and edges) and best-effort removes the
+        corresponding node from the PageIndex tree.
+
         Args:
             wiki_name: Wiki name containing the page.
-            page_id: Node ID of the page to delete.
+            page_id: Stable ``concept_id`` (or PageIndex ``node_id``).
 
         Returns:
-            Dict with keys: page_id, status, message.
+            Dict with keys: page_id, status, message.  ``status`` is
+            ``"not_found"`` when the page does not exist.
         """
+        page = await self._store.get_page(page_id, include_body=False)
+        if page is None:
+            return {
+                "page_id": page_id,
+                "status": "not_found",
+                "message": "No such page in the wiki store.",
+            }
+
+        deleted = await self._store.delete_page(page["concept_id"])
+
+        # Best-effort removal from the PageIndex authoring plane.
+        node_id = page.get("node_id")
+        if node_id:
+            try:
+                await self._pi.delete_node(wiki_name, node_id)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "delete_page: PageIndex delete_node(%s) failed: %s",
+                    node_id,
+                    exc,
+                )
+
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
             self._config_for(wiki_name).storage_dir,
             "DELETE_PAGE",
-            f"page_id: {page_id}",
+            f"page_id: {page['concept_id']}",
         )
         return {
-            "page_id": page_id,
-            "status": "deleted",
-            "message": "Page marked for deletion (physical removal pending).",
+            "page_id": page["concept_id"],
+            "status": "deleted" if deleted else "not_found",
+            "message": "Page removed from wiki store.",
         }
 
     # ------------------------------------------------------------------

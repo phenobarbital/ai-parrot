@@ -208,16 +208,17 @@ class TestEndToEnd:
         assert "sources" in query_result
         assert query_result["question"] == "What is a neural network?"
 
-        # The synthesised answer is built from snippet content returned by search;
-        # the mock returns "A neural network is a computational model." as the snippet.
+        # The synthesised answer is built from snippets served by the
+        # WikiStore plane, which recorded the ingested pages' summaries.
         answer = query_result["answer"]
         assert "neural network" in answer.lower() or "computational model" in answer.lower(), (
             f"Answer did not reference source content: {answer!r}"
         )
 
-        # Verify that both backends were called (combined mode)
-        pi.search.assert_called_once()
-        gi.search_hybrid.assert_called_once()
+        # Retrieval is answered from wiki.db — the toolkits are NOT
+        # fanned out to at query time.
+        pi.search.assert_not_called()
+        gi.search_hybrid.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_ingest_reingest_cycle(
@@ -370,24 +371,19 @@ class TestEndToEnd:
         # --- Assert: results non-empty ---
         assert len(search_results) > 0, "Combined search returned no results"
 
-        # --- Assert: results come from both backends ---
+        # --- Assert: results are served by the WikiStore plane ---
         sources_seen = {r["source"] for r in search_results}
-        assert "pageindex" in sources_seen, (
-            f"No pageindex results in combined search: {sources_seen}"
+        assert sources_seen <= {"lexical", "vector"}, (
+            f"Unexpected result sources: {sources_seen}"
         )
-        assert "graphindex" in sources_seen, (
-            f"No graphindex results in combined search: {sources_seen}"
-        )
+        pi.search.assert_not_called()
+        gi.search_hybrid.assert_not_called()
 
         # --- Assert: results are sorted descending by score ---
         scores = [r["score"] for r in search_results]
         assert scores == sorted(scores, reverse=True), (
             f"Results are not sorted by score (desc): {scores}"
         )
-
-        # --- Assert: both backends were actually called ---
-        pi.search.assert_called()
-        gi.search_hybrid.assert_called()
 
     @pytest.mark.asyncio
     async def test_lint_reports_issues(

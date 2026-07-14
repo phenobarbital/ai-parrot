@@ -208,12 +208,19 @@ class TestLLMWikiToolkitSearch:
         assert isinstance(results, list)
 
     @pytest.mark.asyncio
-    async def test_search_calls_backends(
+    async def test_search_answered_from_store(
         self, wiki_toolkit: LLMWikiToolkit, mock_pi, mock_gi
     ):
-        """search (combined mode) queries both PageIndex and GraphIndex."""
-        await wiki_toolkit.search("test-wiki", "deep learning", mode="combined")
-        assert mock_pi.search.called or mock_gi.search_hybrid.called
+        """search is answered by the WikiStore plane — no toolkit fan-out."""
+        await wiki_toolkit.create_page(
+            "test-wiki", "Deep Learning", "Deep learning extends neural nets."
+        )
+        results = await wiki_toolkit.search(
+            "test-wiki", "deep learning", mode="combined"
+        )
+        assert results and results[0]["source"] == "lexical"
+        mock_pi.search.assert_not_called()
+        mock_gi.search_hybrid.assert_not_called()
 
 
 class TestLLMWikiToolkitSources:
