@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TAGS: set[str] = {"NOTE", "WHY", "HACK", "TODO", "FIXME", "XXX"}
 # Regex for tagged comments: # TAG: text  or  # TAG text
 _TAG_RE = re.compile(r"#\s*({tags}):?\s*(.*)", re.IGNORECASE)
+# Design-reference citations in comments/docstrings, e.g. "ADR-12",
+# "RFC 4180", "ADR/007". Captured as first-class Rationale nodes and linked
+# to the code that cites them.
+_CITATION_RE = re.compile(r"\b(ADR|RFC)[\s\-/]?(\d{1,5})\b", re.IGNORECASE)
 
 
 def _make_node_id(source_uri: str, symbol: str) -> str:
@@ -167,6 +171,13 @@ class CodeExtractor:
         )
         nodes.extend(rationale_nodes)
         edges.extend(rationale_edges)
+
+        # Extract ADR/RFC design-reference citations as first-class nodes.
+        citation_nodes, citation_edges = self._extract_citations(
+            root, file_path, source_bytes, nodes
+        )
+        nodes.extend(citation_nodes)
+        edges.extend(citation_edges)
 
         return nodes, edges
 
@@ -549,3 +560,108 @@ class CodeExtractor:
             if n.kind == NodeKind.SYMBOL and n.domain_tags.get("symbol_type") == "module":
                 return n.node_id
         return None
+
+    def _extract_citations(
+        self,
+        root,
+        file_path: str,
+        source_bytes: bytes,
+        existing_nodes: list[UniversalNode],
+    ) -> tuple[list[UniversalNode], list[UniversalEdge]]:
+        """Extract ADR/RFC design-reference citations as first-class nodes.
+
+        Scans both comments (linked to the nearest enclosing symbol) and
+        symbol docstrings (linked to their owning symbol) for references such
+        as ``ADR-12`` or ``RFC 4180``. Identical citations within a file
+        collapse into a single ``Rationale`` node (``domain_tags['tag'] ==
+        "CITATION"``); each citing symbol gets a ``REFERENCES`` edge to it.
+
+        Args:
+            root: AST root node.
+            file_path: Source URI.
+            source_bytes: Raw source bytes.
+            existing_nodes: Already-created nodes (symbols + rationale) used
+                for symbol lookup and docstring scanning.
+
+        Returns:
+            Tuple of ``(citation_nodes, reference_edges)``.
+        """
+        citation_nodes: list[UniversalNode] = []
+        citation_edges: list[UniversalEdge] = []
+        seen_nodes: dict[str, str] = {}          # normalized ref -> node_id
+        seen_edges: set[tuple[str, str]] = set()  # (symbol_id, normalized ref)
+
+        def _register(raw_kind: str, number: str, link_target: Optional[str]) -> None:
+            norm = f"{raw_kind.upper()}-{int(number)}"
+            cid = seen_nodes.get(norm)
+            if cid is None:
+                cid = _make_node_id(file_path, f"__citation__{norm}")
+                citation_nodes.append(
+                    UniversalNode(
+                        node_id=cid,
+                        kind=NodeKind.RATIONALE,
+                        title=norm,
+                        source_uri=file_path,
+                        summary=f"Design reference {norm} cited in {Path(file_path).name}",
+                        domain_tags={
+                            "tag": "CITATION",
+                            "citation_kind": raw_kind.upper(),
+                            "citation_ref": norm,
+                        },
+                    )
+                )
+                seen_nodes[norm] = cid
+            if link_target and (link_target, norm) not in seen_edges:
+                citation_edges.append(
+                    UniversalEdge(
+                        source_id=link_target,
+                        target_id=cid,
+                        kind=EdgeKind.REFERENCES,
+                    )
+                )
+                seen_edges.add((link_target, norm))
+
+        # 1) Citations inside comments — link to the nearest enclosing symbol.
+        self._walk_for_citations(
+            root, file_path, source_bytes, existing_nodes, _register
+        )
+        # 2) Citations inside docstrings captured as symbol summaries.
+        for node in existing_nodes:
+            if node.kind == NodeKind.SYMBOL and node.summary:
+                for match in _CITATION_RE.finditer(node.summary):
+                    _register(match.group(1), match.group(2), node.node_id)
+
+        return citation_nodes, citation_edges
+
+    def _walk_for_citations(
+        self,
+        node,
+        file_path: str,
+        source_bytes: bytes,
+        existing_nodes: list[UniversalNode],
+        register,
+    ) -> None:
+        """Recursively walk the AST, registering ADR/RFC refs in comments.
+
+        Args:
+            node: Current AST node.
+            file_path: Source URI.
+            source_bytes: Raw source bytes.
+            existing_nodes: Already-created nodes for nearest-symbol lookup.
+            register: Callback ``(kind, number, link_target)`` from
+                :meth:`_extract_citations`.
+        """
+        if node.type == "comment":
+            text = _get_node_text(node, source_bytes)
+            matches = list(_CITATION_RE.finditer(text))
+            if matches:
+                target = self._find_nearest_symbol(
+                    node, file_path, source_bytes, existing_nodes
+                )
+                for match in matches:
+                    register(match.group(1), match.group(2), target)
+
+        for child in node.children:
+            self._walk_for_citations(
+                child, file_path, source_bytes, existing_nodes, register
+            )

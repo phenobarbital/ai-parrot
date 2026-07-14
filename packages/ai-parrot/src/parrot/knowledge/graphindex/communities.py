@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
+from collections import Counter
 from typing import TYPE_CHECKING, Iterable, Optional
 
 import networkx as nx
@@ -53,6 +55,10 @@ class Community(BaseModel):
         modularity_contribution: This community's contribution to the
             global modularity Q. The full Q is the sum of these.
         top_titles: Titles of the first ≤ 5 members in display order.
+        label: Deterministic, LLM-free label summarising the community,
+            derived from the most frequent salient keywords across member
+            titles (see :func:`derive_community_label`). Empty string when
+            no salient keyword could be extracted.
     """
 
     community_id: str
@@ -62,6 +68,7 @@ class Community(BaseModel):
     cohesion: float
     modularity_contribution: float
     top_titles: list[str]
+    label: str = ""
 
     model_config = ConfigDict(frozen=True)
 
@@ -82,6 +89,75 @@ class CommunitiesResult(BaseModel):
 # ---------------------------------------------------------------------------
 # Stable IDs
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# LLM-free community labels
+# ---------------------------------------------------------------------------
+
+#: Generic tokens that carry no discriminative signal for a label.
+_LABEL_STOPWORDS: frozenset[str] = frozenset({
+    "the", "and", "for", "with", "from", "this", "that", "into", "over",
+    "get", "set", "new", "old", "def", "class", "func", "function", "method",
+    "module", "self", "value", "values", "data", "item", "items", "list",
+    "dict", "str", "int", "bool", "none", "true", "false", "test", "tests",
+    "init", "main", "util", "utils", "helper", "helpers", "base", "abstract",
+    "type", "types", "kind", "node", "edge", "graph", "id", "ids", "name",
+    "names", "obj", "object", "args", "kwargs", "return", "returns", "param",
+    "params", "note", "todo", "why", "hack", "fixme", "xxx", "add", "remove",
+})
+
+#: Splits identifiers into word tokens (camelCase, snake_case, punctuation).
+_LABEL_SPLIT_RE = re.compile(r"[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])")
+
+
+def _tokenize_title(title: str) -> list[str]:
+    """Split a title/identifier into lower-cased salient word tokens.
+
+    Handles ``snake_case``, ``camelCase`` and punctuation-separated words,
+    dropping stopwords, pure numbers and 1-2 char fragments.
+
+    Args:
+        title: The node title to tokenize.
+
+    Returns:
+        A list of salient lower-case tokens (possibly empty).
+    """
+    tokens: list[str] = []
+    for raw in _LABEL_SPLIT_RE.split(title or ""):
+        tok = raw.lower()
+        if len(tok) < 3 or tok.isdigit() or tok in _LABEL_STOPWORDS:
+            continue
+        tokens.append(tok)
+    return tokens
+
+
+def derive_community_label(titles: Iterable[str], max_terms: int = 3) -> str:
+    """Derive a deterministic, LLM-free label from member titles.
+
+    Counts salient keyword frequency across the supplied titles and joins the
+    most common terms. Ties are broken alphabetically so the result is stable
+    across runs. Returns an empty string when no salient keyword survives
+    stopword filtering.
+
+    Args:
+        titles: Member node titles to summarise.
+        max_terms: Maximum number of keywords to include in the label.
+
+    Returns:
+        A capitalised label such as ``"Payment Gateway"``, or ``""``.
+    """
+    counter: Counter[str] = Counter()
+    for title in titles:
+        # Count each token once per title so a repeated word in one title
+        # does not dominate the community label.
+        for tok in set(_tokenize_title(title)):
+            counter[tok] += 1
+    if not counter:
+        return ""
+    ranked = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+    top = [term for term, _ in ranked[:max_terms]]
+    return " ".join(term.capitalize() for term in top)
 
 
 def _stable_community_id(member_node_ids: Iterable[str]) -> str:
@@ -346,9 +422,9 @@ def detect_communities(
         contribution = _community_modularity_contribution(
             nx_graph, member_set, total_weight, resolution,
         )
-        top_titles = [
-            title_lookup.get(nid, nid) for nid in ordered_members[:5]
-        ]
+        member_titles = [title_lookup.get(nid, nid) for nid in ordered_members]
+        top_titles = member_titles[:5]
+        label = derive_community_label(member_titles)
         community = Community(
             community_id=cid,
             size=len(ordered_members),
@@ -357,6 +433,7 @@ def detect_communities(
             cohesion=cohesion,
             modularity_contribution=contribution,
             top_titles=top_titles,
+            label=label,
         )
         communities.append(community)
         for nid in ordered_members:

@@ -94,6 +94,12 @@ class GraphIndexBuilder:
         code_extractor_class: The ``CodeExtractor`` subclass to use for
             Python source files (FEAT-240). Defaults to ``CodeExtractor``.
             Pass ``OdooCodeExtractor`` to enable Odoo model extraction.
+        export_html_enabled: When True and ``output_dir`` is set, emit an
+            interactive ``graph.html`` map plus a serialized ``graph.json``
+            after analytics. Communities colour the nodes and god nodes are
+            sized/highlighted, so pairing this with
+            ``detect_communities_enabled=True`` yields the richest map.
+            Default False — opt-in.
     """
 
     def __init__(
@@ -108,6 +114,7 @@ class GraphIndexBuilder:
         detect_communities_enabled: bool = False,
         community_resolution: float = 1.0,
         code_extractor_class: Type = CodeExtractor,
+        export_html_enabled: bool = False,
     ) -> None:
         self.persistence = persistence
         self.embedder = embedder
@@ -118,6 +125,7 @@ class GraphIndexBuilder:
         self.signal_config = signal_config
         self.detect_communities_enabled = detect_communities_enabled
         self.community_resolution = community_resolution
+        self.export_html_enabled = export_html_enabled
         self.last_community_result: Optional[CommunitiesResult] = None
         self.logger = logging.getLogger(__name__)
         self._ignore_spec: Optional[pathspec.PathSpec] = self._load_ignore(ignore_file)
@@ -271,6 +279,31 @@ class GraphIndexBuilder:
                 logger.error("Projection stage failed: %s", exc)
                 errors.append(f"Projection failed: {exc}")
 
+        # Stage 6.6: Interactive HTML map — emit graph.html + graph.json.
+        graph_html_path: Optional[Path] = None
+        graph_json_path: Optional[Path] = None
+        if self.export_html_enabled and self.output_dir is not None:
+            try:
+                # Deferred import: export_html is optional and keeps the
+                # builder importable when its (light) deps are absent.
+                from parrot.knowledge.graphindex.export_html import (  # noqa: PLC0415
+                    export_graph,
+                )
+
+                graph_html_path, graph_json_path = export_graph(
+                    assembler.graph,
+                    self.output_dir,
+                    communities=self.last_community_result,
+                    analytics=analytics,
+                )
+                logger.info(
+                    "Stage 6.6 complete: interactive map written to %s",
+                    graph_html_path,
+                )
+            except Exception as exc:
+                logger.error("HTML export stage failed: %s", exc)
+                errors.append(f"HTML export failed: {exc}")
+
         inferred_count = sum(
             1 for e in all_edges if e.provenance == Provenance.INFERRED
         )
@@ -282,6 +315,8 @@ class GraphIndexBuilder:
             report_path=report_path,
             errors=errors,
             projection_report=projection_report,
+            graph_html_path=graph_html_path,
+            graph_json_path=graph_json_path,
         )
 
     async def ingest_document(self, uri: str, ctx: TenantContext) -> IngestResult:
