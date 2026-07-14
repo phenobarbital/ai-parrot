@@ -26,3 +26,24 @@ class ResultStorage(ABC):
     @abstractmethod
     async def close(self) -> None:
         """Release any underlying connection/pool. Safe to call multiple times."""
+
+    async def fetch(self, collection: str, execution_id: str) -> list[dict[str, Any]]:
+        """Return all documents in *collection* matching *execution_id*.
+
+        Non-abstract on purpose: existing third-party ``ResultStorage``
+        subclasses that predate the read API keep working (they simply
+        don't support ``fetch()`` until they opt in).
+
+        Args:
+            collection: Target collection or table name.
+            execution_id: Crew-level execution id to match documents against.
+
+        Returns:
+            List of persisted documents whose ``execution_id`` matches.
+
+        Raises:
+            NotImplementedError: Always, unless overridden by a subclass.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement fetch()"
+        )
