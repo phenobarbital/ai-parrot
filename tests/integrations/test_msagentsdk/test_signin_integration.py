@@ -79,10 +79,14 @@ class TestSigninRoundTrip:
     async def test_credential_required_to_oauth_card(self):
         """Message that raises CredentialRequired emits OAuthCard (not error text)."""
         from parrot.integrations.msagentsdk.agent import ParrotM365Agent
-        from parrot.integrations.msagentsdk.auth import CredentialRequired
+        from parrot.auth.credentials import CredentialRequired
 
         async def ask_raises(**kwargs):
-            raise CredentialRequired(tool="o365", connection_name="graph_sso")
+            raise CredentialRequired(
+                provider="graph_sso",
+                auth_url="https://login.example/consent",
+                auth_kind="oauth2",
+            )
 
         mock_bot = AsyncMock()
         mock_bot.ask = ask_raises

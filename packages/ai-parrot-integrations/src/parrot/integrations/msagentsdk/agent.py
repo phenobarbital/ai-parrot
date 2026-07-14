@@ -35,12 +35,15 @@ def render_reply_text(response: Any) -> str:
     1. ``AIMessage.response`` — the plain-text response the model produced
        before any structured reformatting (``AIMessageFactory`` sets this from
        the raw ``text_response``).
-    2. A text-ish field pulled from the structured payload
-       (``structured_output`` first, then ``output``) when (1) is empty — covers
-       arbitrary downstream schemas that carry their prose in a named field
+    2. ``AIMessage.content`` when it is already a plain string — the common
+       no-structured-output case (``content`` aliases ``output``).
+    3. A text-ish field pulled from the structured payload
+       (``structured_output`` first, then ``output``) — covers arbitrary
+       downstream schemas that carry their prose in a named field
        (``explanation``, ``answer``, ``text`` …).
-    3. ``AIMessage.to_text`` — handles plain-str / dict / DataFrame outputs.
-    4. ``str()`` of the payload as an absolute last resort.
+    4. ``AIMessage.to_text`` — handles dict / DataFrame outputs.
+    5. ``str(response.content)`` as an absolute last resort (preserves the
+       legacy behaviour for any non-string, non-model content).
 
     Args:
         response: The object returned by ``parrot_agent.ask()`` (normally an
@@ -58,11 +61,16 @@ def render_reply_text(response: Any) -> str:
     if isinstance(text, str) and text.strip():
         return text
 
-    # 2. Pull a human-text field out of a structured Pydantic payload.
+    # 2. content/output already a plain string (no structured output).
+    content = getattr(response, "content", None)
+    if isinstance(content, str) and content.strip():
+        return content
+
+    # 3. Pull a human-text field out of a structured Pydantic payload.
     from pydantic import BaseModel  # local import: keep module import-light
 
     payload = getattr(response, "structured_output", None)
-    if payload is None:
+    if payload is None or not isinstance(payload, BaseModel):
         payload = getattr(response, "output", None)
     if isinstance(payload, BaseModel):
         for field_name in (
@@ -73,13 +81,13 @@ def render_reply_text(response: Any) -> str:
             if isinstance(value, str) and value.strip():
                 return value
 
-    # 3. Fall back to AIMessage.to_text (str / dict / DataFrame outputs).
+    # 4. Fall back to AIMessage.to_text (dict / DataFrame outputs).
     to_text = getattr(response, "to_text", None)
     if isinstance(to_text, str) and to_text.strip():
         return to_text
 
-    # 4. Absolute last resort — never send an empty message.
-    return str(payload if payload is not None else response)
+    # 5. Absolute last resort — stringify content (never send empty).
+    return str(content if content is not None else response)
 
 
 class ParrotM365Agent:

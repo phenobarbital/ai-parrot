@@ -156,6 +156,13 @@ class CrewDefinition(BaseModel):
             is ``FLOW``. Ignored for other modes.
         shared_tools: Tool names that are shared across all agents.
         max_parallel_tasks: Semaphore limit for concurrent agent executions.
+        generate_infographic: Opt-in flag (FEAT-308) that, when ``True``, has
+            the crew build an end-of-run multi-tab infographic artifact and
+            attach it to ``FlowResult.infographic``. Wired through to
+            ``AgentCrew`` by ``from_definition``.
+        result_agent_name: Registered name of the ResultAgent used to author
+            the infographic's executive-summary tab. Only relevant when
+            ``generate_infographic`` is ``True``.
         metadata: Arbitrary extra data attached to the definition.
         created_at: Timestamp when this definition was created.
         updated_at: Timestamp of the most recent update.
@@ -199,6 +206,20 @@ class CrewDefinition(BaseModel):
     max_parallel_tasks: int = Field(
         default=10,
         description="Maximum number of parallel tasks"
+    )
+    generate_infographic: bool = Field(
+        default=False,
+        description=(
+            "When True, the crew builds an end-of-run multi-tab infographic "
+            "artifact and attaches it to the result (FEAT-308)"
+        )
+    )
+    result_agent_name: str = Field(
+        default="result-agent",
+        description=(
+            "Registered ResultAgent name used to author the infographic's "
+            "executive-summary tab (only used when generate_infographic=True)"
+        )
     )
     metadata: Dict[str, Any] = Field(
         default_factory=dict,

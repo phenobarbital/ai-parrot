@@ -163,10 +163,14 @@ class TestCredentialContextBridge:
         """_pctx_var is reset even when CredentialRequired is raised."""
         from parrot.integrations.msagentsdk.agent import ParrotM365Agent
         from parrot.auth.context import _pctx_var
-        from parrot.integrations.msagentsdk.auth import CredentialRequired
+        from parrot.auth.credentials import CredentialRequired
 
         async def ask_raises(**kwargs):
-            raise CredentialRequired(tool="o365", connection_name="graph_sso")
+            raise CredentialRequired(
+                provider="graph_sso",
+                auth_url="https://login.example/consent",
+                auth_kind="oauth2",
+            )
 
         mock_bot = AsyncMock()
         mock_bot.ask = ask_raises
@@ -208,10 +212,14 @@ class TestSigninCardEmission:
     async def test_credential_required_emits_oauth_card(self):
         """CredentialRequired exception triggers OAuthCard emission."""
         from parrot.integrations.msagentsdk.agent import ParrotM365Agent
-        from parrot.integrations.msagentsdk.auth import CredentialRequired
+        from parrot.auth.credentials import CredentialRequired
 
         async def ask_raises(**kwargs):
-            raise CredentialRequired(tool="o365", connection_name="graph_sso")
+            raise CredentialRequired(
+                provider="graph_sso",
+                auth_url="https://login.example/consent",
+                auth_kind="oauth2",
+            )
 
         mock_bot = AsyncMock()
         mock_bot.ask = ask_raises
@@ -239,10 +247,14 @@ class TestSigninCardEmission:
     async def test_no_service_fallback_on_credential_required(self):
         """CredentialRequired never sends a text answer (no service fallback)."""
         from parrot.integrations.msagentsdk.agent import ParrotM365Agent
-        from parrot.integrations.msagentsdk.auth import CredentialRequired
+        from parrot.auth.credentials import CredentialRequired
 
         async def ask_raises(**kwargs):
-            raise CredentialRequired(tool="o365", connection_name="graph_sso")
+            raise CredentialRequired(
+                provider="graph_sso",
+                auth_url="https://login.example/consent",
+                auth_kind="oauth2",
+            )
 
         mock_bot = AsyncMock()
         mock_bot.ask = ask_raises

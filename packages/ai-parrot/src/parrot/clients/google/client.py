@@ -625,6 +625,53 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return False
         return super()._should_use_fallback(model, error)
 
+    # Gemini function-name contract: start with a letter or underscore, then
+    # only [a-zA-Z0-9_.:-], max length 128. Names that violate this trigger a
+    # 400 INVALID_ARGUMENT that fails the *entire* request, so we normalise
+    # every declaration name and keep a reverse map for the call round-trip.
+    _INVALID_FUNCTION_NAME_CHARS = re.compile(r"[^a-zA-Z0-9_.:-]")
+    _VALID_FUNCTION_NAME_START = re.compile(r"[a-zA-Z_]")
+
+    @classmethod
+    def _sanitize_function_name(cls, name: str) -> str:
+        """Coerce an arbitrary tool name into a Gemini-valid function name.
+
+        Args:
+            name: The raw tool name (``tool.name``).
+
+        Returns:
+            A name matching ``[a-zA-Z_][a-zA-Z0-9_.:-]{0,127}``. Names that are
+            already valid are returned unchanged.
+        """
+        sanitized = cls._INVALID_FUNCTION_NAME_CHARS.sub("_", name or "")
+        if not sanitized or not cls._VALID_FUNCTION_NAME_START.match(sanitized):
+            sanitized = f"_{sanitized}"
+        return sanitized[:128]
+
+    def _register_sanitized_name(self, original: str) -> str:
+        """Return a unique Gemini-valid alias for ``original`` and remember it.
+
+        Populates ``self._sanitized_name_map`` (sanitized → original) so that
+        ``_execute_tool`` can translate the model's call back to the real tool.
+        If two distinct originals collapse to the same sanitized string, a
+        numeric suffix disambiguates them.
+        """
+        name_map = self.__dict__.setdefault("_sanitized_name_map", {})
+        safe = self._sanitize_function_name(original)
+        if safe == original:
+            # Still record identity so lookups are uniform and O(1).
+            name_map[safe] = original
+            return safe
+        candidate = safe
+        suffix = 1
+        # Avoid clobbering a different original that already claimed this alias.
+        while candidate in name_map and name_map[candidate] != original:
+            tail = f"_{suffix}"
+            candidate = f"{safe[:128 - len(tail)]}{tail}"
+            suffix += 1
+        name_map[candidate] = original
+        return candidate
+
     def _fix_tool_schema(self, schema: dict):
         """Recursively converts schema type values to uppercase for GenAI compatibility."""
         if isinstance(schema, dict):
@@ -1111,8 +1158,18 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             )
                         except Exception:
                             pass
+                    # Gemini rejects non-identifier function names with a 400
+                    # that fails the whole request. Alias to a valid name and
+                    # keep the reverse map so tool calls resolve back correctly.
+                    safe_name = self._register_sanitized_name(tool_name)
+                    if safe_name != tool_name:
+                        self.logger.debug(
+                            "Sanitized tool name for Gemini: %r -> %r",
+                            tool_name,
+                            safe_name,
+                        )
                     declaration = types.FunctionDeclaration(
-                        name=tool_name, description=tool_description, parameters=fixed_schema
+                        name=safe_name, description=tool_description, parameters=fixed_schema
                     )
                     declarations_by_category[category].append(declaration)
                 except Exception as e:
@@ -1541,6 +1598,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         in the overlay, fall through to the base implementation which
         dispatches via ``self.tool_manager``.
         """
+        # Translate any Gemini-sanitized alias back to the real tool name so
+        # request-scoped and ToolManager lookups (keyed by the original name)
+        # succeed. Identity entries make this a no-op for already-valid names.
+        name_map = getattr(self, "_sanitized_name_map", None)
+        if name_map:
+            tool_name = name_map.get(tool_name, tool_name)
+
         # Translate native computer-use predefined function calls (click_at,
         # type_text_at, …) to the prefixed ComputerInteractionToolkit tools
         # (computer_click_at, …) that are actually registered. Only applied
@@ -3484,8 +3548,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 schema = {"type": "object", "properties": {}, "required": []}
 
             try:
+                safe_name = self._register_sanitized_name(tool_name)
                 declaration = types.FunctionDeclaration(
-                    name=tool_name, description=tool_description, parameters=self._fix_tool_schema(schema)
+                    name=safe_name, description=tool_description, parameters=self._fix_tool_schema(schema)
                 )
                 function_declarations.append(declaration)
             except Exception as e:

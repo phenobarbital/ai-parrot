@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 from ....models.crew_definition import ExecutionMode
 import contextlib
 import asyncio
+import re
 import uuid
 from tqdm.asyncio import tqdm as async_tqdm
 from navconfig.logging import logging
@@ -478,6 +479,111 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             )
             # result.infographic remains at its default (None) — crew result intact.
 
+    @staticmethod
+    def _temporal_grounding_text() -> str:
+        """Build a 'today's date' grounding block for agent system prompts.
+
+        The literal date is baked in at crew-build time (crews are constructed
+        fresh per execution), so it is always the real current date and does
+        not depend on ``$current_date`` dynamic-value resolution timing. It
+        also instructs the agent to fetch current information via tools rather
+        than answering from potentially stale training knowledge.
+        """
+        from datetime import date
+
+        today = date.today()
+        return (
+            "<temporal_context>\n"
+            f"Today's date is {today.isoformat()} — the current year is "
+            f"{today.year}. This is the real, present-day date.\n"
+            "When the request concerns recent, latest, current, upcoming or "
+            "otherwise time-sensitive information (prices, reviews, "
+            "competitors, product releases, news, availability), you MUST use "
+            "your web-search / tool capabilities to retrieve up-to-date data. "
+            "Do NOT answer from prior or training knowledge, which may be stale "
+            "or refer to earlier years.\n"
+            "</temporal_context>"
+        )
+
+    @classmethod
+    def _apply_definition_prompt(
+        cls, agent: Any, system_prompt: Optional[str]
+    ) -> None:
+        """Apply a definition's ``system_prompt`` plus temporal grounding.
+
+        Agents built by :meth:`from_definition` default to a composable
+        ``PromptBuilder`` (``_prompt_builder``). Assigning ``agent.system_prompt``
+        only sets the legacy ``_system_prompt_template``, which the builder path
+        ignores — so a definition's custom instructions were silently dropped.
+        This helper injects the custom prompt into the builder's identity slot
+        (mirroring ``PromptBuilder.from_system_prompt``) and always adds a
+        temporal-grounding layer so the agent knows the current date. Agents
+        without a builder fall back to the legacy template.
+
+        Args:
+            agent: The freshly constructed agent instance.
+            system_prompt: The definition's system prompt (may be ``None``).
+        """
+        temporal = cls._temporal_grounding_text()
+        builder = getattr(agent, "_prompt_builder", None)
+        if builder is not None:
+            from ...prompts.layers import (
+                PromptLayer,
+                LayerPriority,
+                RenderPhase,
+            )
+
+            if system_prompt:
+                # Custom instructions take over the identity slot, exactly as
+                # PromptBuilder.from_system_prompt() does — the rest of the
+                # default agent stack (security, tools, behavior, …) is kept.
+                builder.add(
+                    PromptLayer(
+                        name="identity",
+                        priority=LayerPriority.IDENTITY,
+                        phase=RenderPhase.CONFIGURE,
+                        template=system_prompt,
+                    )
+                )
+            builder.add(
+                PromptLayer(
+                    name="temporal_context",
+                    priority=LayerPriority.IDENTITY + 1,
+                    phase=RenderPhase.CONFIGURE,
+                    template=temporal,
+                )
+            )
+            return
+        # Legacy template path (agent has no composable builder).
+        if system_prompt:
+            agent.system_prompt = system_prompt
+        base = agent.system_prompt or ""
+        agent.system_prompt = f"{base}\n\n{temporal}" if base else temporal
+
+    @staticmethod
+    def _sanitize_tool_name(name: str) -> str:
+        """Coerce an arbitrary string into a provider-valid function name.
+
+        LLM providers (notably Google Gemini) reject function/tool names that
+        are not identifier-like. Gemini requires a name that starts with a
+        letter or underscore and contains only ``[a-zA-Z0-9_.:-]`` with a max
+        length of 128. Crew agent ids come from the UI/definition and may
+        contain spaces or other characters, so we normalise them here.
+
+        Args:
+            name: The raw candidate tool name.
+
+        Returns:
+            A sanitised name safe to send as a function declaration.
+        """
+        # Replace every disallowed character with an underscore.
+        sanitized = re.sub(r"[^a-zA-Z0-9_.:-]", "_", name)
+        # Must start with a letter or underscore.
+        if not sanitized or not re.match(r"[a-zA-Z_]", sanitized):
+            sanitized = f"_{sanitized}"
+        # Enforce the 128 character ceiling.
+        return sanitized[:128]
+
     def _register_agents_as_tools(self):
         """
         Register each agent as a tool in the LLM's tool manager.
@@ -490,8 +596,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 # Deterministic tool nodes are not agents — nothing to wrap.
                 continue
             try:
+                tool_name = self._sanitize_tool_name(f"agent_{agent_id}")
                 agent_tool = agent.as_tool(
-                    tool_name=f"agent_{agent_id}",
+                    tool_name=tool_name,
                     tool_description=(
                         f"Agent {agent.name}: {agent.description} "
                         f"Re-execute to gather additional information. "
@@ -547,8 +654,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 tools=list(agent_def.tools),
                 **agent_def.config,
             )
-            if agent_def.system_prompt:
-                agent.system_prompt = agent_def.system_prompt
+            cls._apply_definition_prompt(agent, agent_def.system_prompt)
             agents.append(agent)
 
         # Allow callers to override max_parallel_tasks/tenant via kwargs.
@@ -556,11 +662,24 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             "max_parallel_tasks", crew_def.max_parallel_tasks
         )
         tenant = kwargs.pop("tenant", crew_def.tenant)
+        # Infographic wiring (FEAT-308): read from the definition, allow a
+        # call-time override via kwargs. Without this, crews built from a
+        # definition (e.g. every API-executed crew) could never opt in.
+        generate_infographic = kwargs.pop(
+            "generate_infographic",
+            getattr(crew_def, "generate_infographic", False),
+        )
+        result_agent_name = kwargs.pop(
+            "result_agent_name",
+            getattr(crew_def, "result_agent_name", "result-agent"),
+        )
         crew = cls(
             name=crew_def.name,
             agents=agents,
             max_parallel_tasks=max_parallel_tasks,
             tenant=tenant,
+            generate_infographic=generate_infographic,
+            result_agent_name=result_agent_name,
             **kwargs,
         )
 
@@ -674,9 +793,16 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             "error": None
         }
 
-        # Subscribe to agent events
+        # Subscribe to agent events.
+        #
+        # FEAT-176 routes EVENT_STATUS_CHANGED through the _LegacyEventBridge,
+        # which invokes listeners as ``cb(old=<name>, new=<name>)`` — without
+        # the positional ``event_name`` / ``agent_name`` kwargs the legacy
+        # ``_trigger_event`` path supplied. So status changes need a dedicated
+        # bridge-compatible handler, while the task events below still flow
+        # through ``_trigger_event`` and match ``_handle_agent_event``.
         agent.add_event_listener(
-            agent.EVENT_STATUS_CHANGED, self._handle_agent_event
+            agent.EVENT_STATUS_CHANGED, self._make_status_listener(agent_id)
         )
         agent.add_event_listener(
             agent.EVENT_TASK_STARTED, self._handle_agent_event
@@ -774,8 +900,48 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             if not agent.tool_manager.get_tool(tool_name or tool.name):
                 agent.tool_manager.add_tool(tool, tool_name)
 
+    def _make_status_listener(self, agent_id: str) -> Callable:
+        """Build an EVENT_STATUS_CHANGED listener for a specific crew member.
+
+        FEAT-176's ``_LegacyEventBridge`` invokes status-change callbacks as
+        ``cb(old=<enum name>, new=<enum name>)`` — it does not forward the
+        ``event_name`` or ``agent_name`` that the legacy ``_trigger_event``
+        path used. The returned closure captures ``agent_id`` so the update
+        still maps to the right crew member, and accepts the bridge's
+        keyword-only signature (tolerating extra kwargs defensively).
+
+        Args:
+            agent_id: The crew member whose status this listener updates.
+
+        Returns:
+            An async callback compatible with ``_LegacyEventBridge._on_status``.
+        """
+
+        async def _on_status(
+            *, old: Any = None, new: Any = None, **_: Any
+        ) -> None:
+            info = self._agent_statuses.get(agent_id)
+            if info is None:
+                return
+            info["last_active"] = datetime.now()
+            if new:
+                # Bridge passes the enum *name* (e.g. "WORKING"); normalise to
+                # the stored enum *value* ("working") when possible.
+                try:
+                    info["status"] = AgentStatus[new].value
+                except (KeyError, TypeError):
+                    info["status"] = new
+
+        return _on_status
+
     async def _handle_agent_event(self, event_name: str, **kwargs) -> None:
-        """Handle events from agents to update internal status tracking."""
+        """Handle task events from agents to update internal status tracking.
+
+        Handles the ``EVENT_TASK_STARTED`` / ``EVENT_TASK_COMPLETED`` /
+        ``EVENT_TASK_FAILED`` events, which still flow through the legacy
+        ``_trigger_event(event_name, **kwargs)`` path. ``EVENT_STATUS_CHANGED``
+        is handled separately by ``_make_status_listener`` (see FEAT-176).
+        """
         agent_name = kwargs.get("agent_name")
         # Map agent name to ID if needed, but we used ID as key.
         # Assuming agent.name matches key, or we need to find key by agent name?
@@ -819,12 +985,6 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             status_info["error"] = kwargs.get("error")
             status_info["completed_at"] = datetime.now()
             self.logger.error(f"Agent {target_id} failed: {kwargs.get('error')}")
-
-        elif event_name == "status_changed":
-            new_status = kwargs.get("status")
-            if new_status:
-                # Map string status to enum if needed, or just store
-                status_info["status"] = new_status
 
     def get_agent_statuses(self) -> List[dict]:
         """Get current status of all agents."""
@@ -3380,6 +3540,29 @@ analyze, and present information in the most helpful way for the user.
 
         return base_prompt.strip()
 
+    @staticmethod
+    def _coerce_prompt_text(value: Any) -> str:
+        """Render an arbitrary prompt fragment as a single string.
+
+        ``crew_result.output`` (and other context fields) may be a list, dict,
+        or other non-string value depending on the crew's final node. The
+        prompt builder joins ``prompt_parts`` with ``"\\n".join`` and therefore
+        requires every element to be a ``str`` — a raw list would raise
+        ``TypeError: sequence item N: expected str instance, list found``.
+
+        Args:
+            value: The fragment to render (any type).
+
+        Returns:
+            ``value`` when it is already a string; a newline-joined rendering of
+            each item when it is a list/tuple; otherwise ``str(value)``.
+        """
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (list, tuple)):
+            return "\n".join(AgentCrew._coerce_prompt_text(v) for v in value)
+        return str(value)
+
     def _build_ask_user_prompt(self, question: str, context: Dict[str, Any]) -> str:
         """Construye el user prompt con la pregunta y contexto recuperado."""
         prompt_parts = [
@@ -3405,7 +3588,7 @@ analyze, and present information in the most helpful way for the user.
                     "",
                     "**Relevant Content**:",
                     "```",
-                    match['relevant_content'],
+                    self._coerce_prompt_text(match['relevant_content']),
                     "```",
                     ""
                 ])
@@ -3423,7 +3606,7 @@ analyze, and present information in the most helpful way for the user.
                 "---",
                 "",
                 "# Final Crew Output",
-                crew_summary['final_output'],
+                self._coerce_prompt_text(crew_summary['final_output']),
                 ""
             ])
 

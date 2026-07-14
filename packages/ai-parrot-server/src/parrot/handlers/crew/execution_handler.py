@@ -121,7 +121,15 @@ class CrewExecutionHandler(BaseView):
                     # Return specific agent result
                     result = crew.get_agent_result(agent_id)
                     if result:
-                        return self.json_response(result.dict())
+                        # ``get_agent_result`` returns a ``NodeResult`` dataclass,
+                        # which exposes ``to_dict()`` (NOT ``dict()``). Route it
+                        # through the safe serializer so DataFrame/object results
+                        # never blow up the response.
+                        return self.json_response(
+                            self._safe_serialize_result(
+                                result, path="agent_result"
+                            )
+                        )
                     else:
                         # Check if agent exists anywhere and has result in status
                         if agent_id in crew.agents:
@@ -141,7 +149,7 @@ class CrewExecutionHandler(BaseView):
                        )
                 else:
                     # Return all agent statuses
-                    statuses = crew.get_agents_status()
+                    statuses = crew.get_agent_statuses()
                     return self.json_response(statuses)
 
             except Exception as e:
@@ -294,9 +302,17 @@ class CrewExecutionHandler(BaseView):
 
             # Add result if completed
             if job.status == JobStatus.COMPLETED:
-                response_data["result"] = self._safe_serialize_result(
+                serialized_result = self._safe_serialize_result(
                     job.result,
                     path="response_data.result",
+                )
+                response_data["result"] = serialized_result
+                # Surface the end-of-run infographic (FEAT-308) at the top
+                # level so clients don't have to dig into the nested result.
+                # It lives inside ``FlowResult.to_dict()['infographic']`` and is
+                # ``None`` unless the crew ran with ``generate_infographic=True``.
+                response_data["infographic"] = self._extract_infographic(
+                    serialized_result
                 )
                 response_data["completed_at"] = job.completed_at.isoformat()
                 # Do NOT remove from active_crews yet, so user can fetch agent details.
@@ -473,6 +489,20 @@ class CrewExecutionHandler(BaseView):
         finally:
             if visited and 'obj_id' in locals() and obj_id in visited:
                 visited.remove(obj_id)
+
+    @staticmethod
+    def _extract_infographic(serialized_result: Any) -> Optional[Any]:
+        """Pull the ``infographic`` payload out of a serialized crew result.
+
+        The crew's ``FlowResult.to_dict()`` places the (already
+        ``model_dump``-ed) infographic under the ``"infographic"`` key.
+        Returns ``None`` when the result is not a dict or carries no
+        infographic (e.g. the crew ran with ``generate_infographic=False``
+        or generation failed and degraded gracefully).
+        """
+        if isinstance(serialized_result, dict):
+            return serialized_result.get("infographic")
+        return None
 
     async def put(self):
         """
