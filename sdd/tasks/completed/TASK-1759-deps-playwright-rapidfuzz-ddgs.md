@@ -115,9 +115,17 @@ python -c "import rapidfuzz; from ddgs import DDGS; import playwright; print('de
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-07-14
+**Notes**: Added `ddgs>=9.5.2` to the base `dependencies` list (it was already
+imported unconditionally in `ddgo.py` and now also in `company_info/tool.py`'s
+search layer, but only arrived transitively via `ai-parrot`'s own
+`ddgs>=9.5.2` pin — now pinned explicitly in the satellite too). Added
+`playwright>=1.52` and `rapidfuzz>=3.0` to the `scraping` extra (alongside
+`selenium`/`undetected-chromedriver`/`webdriver-manager`, since that's the
+extra tied to `CompanyInfoToolkit`'s browser deps). Verified via
+`uv pip install -e packages/ai-parrot-tools[scraping]` and
+`python -c "import rapidfuzz; from ddgs import DDGS; import playwright"` —
+both succeeded. Chromium browser binary was already present in the venv
+(`playwright.sync_api` launch smoke test passed).
+**Deviations from spec**: none

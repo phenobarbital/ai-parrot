@@ -170,9 +170,37 @@ async def _fetch_page(self, url: str) -> Optional[BeautifulSoup]:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-07-14
+**Notes**: Removed the `try: from selenium import ...` block and the
+`from ..scraping.driver import SeleniumSetup` import entirely (they had no
+remaining callers once the fetch layer was replaced). Added
+`_fetch_page(self, url, custom_user_agent=None)` — the new canonical fetch
+entry point using `async with driver_context(driver_config) as drv:
+await drv.navigate(...); await drv.get_page_source()` →
+`BeautifulSoup`, with `DriverConfig(driver_type="playwright", ...)` built
+in `__init__` from the legacy ctor kwargs (browser/headless/timeout→
+default_timeout/auto_install/mobile/mobile_device/custom_user_agent).
+`use_undetected=True` now only logs a deprecation warning (no Playwright
+"undetected" equivalent exists) instead of being applied. Kept
+`_fetch_page_with_selenium` as a thin delegate to `_fetch_page` per the
+task's explicit option, since its 5 call sites in the existing `scrape_*`
+methods are out of scope for this task (repointing belongs to TASK-1763);
+its docstring makes clear no Selenium is used despite the name. Removed
+`_get_driver` entirely (no callers remained); turned `_close_driver` into
+a documented no-op so its 5 existing `finally: await
+self._close_driver()` call sites keep working unchanged (there's no
+persistent driver anymore — `driver_context` tears down a fresh browser
+per fetch). Verified: `CompanyInfoToolkit()` and
+`CompanyInfoToolkit(browser="chrome", use_undetected=True)` both
+construct; `_fetch_page` smoke-tested with a mocked `driver_context`
+(success returns parsed BeautifulSoup, failure returns `None`, and the
+`DriverConfig.driver_type == "playwright"` passed to `driver_context` was
+asserted). `ruff check` is now fully clean (0 errors — this also resolved
+the 6 pre-existing F401 selenium-import errors as a side effect of
+removing the now-dead import block). `get_tools()` still exposes all 6
+existing tools.
+**Deviations from spec**: none — the "keep a thin `_fetch_page_with_selenium`
+delegating to `_fetch_page`" option explicitly offered by the task was
+chosen over repointing the 5 internal call sites, to avoid scope creep
+into TASK-1763's wiring responsibility.

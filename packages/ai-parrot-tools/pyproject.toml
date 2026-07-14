@@ -28,6 +28,7 @@ classifiers = [
 dependencies = [
     "ai-parrot>=0.25.18",
     "PyGithub>=2.1",
+    "ddgs>=9.5.2",
 ]
 
 [project.optional-dependencies]
@@ -60,7 +61,7 @@ pulumi = ["pulumi>=3.0"]
 kubernetes = ["kubernetes-asyncio>=24.2", "pyyaml>=6.0"]
 sitesearch = ["beautifulsoup4>=4.12", "html2text>=2024.0", "markitdown>=0.1.2"]
 office365 = ["msgraph-sdk>=1.8", "azure-identity>=1.18", "microsoft-kiota-authentication-azure>=1.2"]
-scraping = ["selenium>=4.35", "undetected-chromedriver>=3.5", "webdriver-manager>=4.0"]
+scraping = ["selenium>=4.35", "undetected-chromedriver>=3.5", "webdriver-manager>=4.0", "playwright>=1.52", "rapidfuzz>=3.0"]
 finance = ["ta-lib>=0.4.32", "pandas-datareader>=0.10.0", "yfinance>=0.2.54", "alpaca-py>=0.43"]
 db = ["querysource>=4.1.11", "psycopg-binary>=3.2"]
 # 5.12.3 relaxes its requests pin (==2.32.4 -> >=2.33.0), compatible with
