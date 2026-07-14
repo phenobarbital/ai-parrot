@@ -67,9 +67,17 @@ def _make_pi_mock(
         ]
     )
     pi.insert_content = AsyncMock(
-        return_value=insert_content_result or {"nodes_added": 3, "tree_name": "test-wiki"}
+        return_value=insert_content_result
+        or {
+            "tree_name": "test-wiki",
+            "new_node_ids": ["0001", "0002", "0003"],
+            "title": "Neural Networks",
+            "summary": "A neural network is a computational model.",
+        }
     )
-    pi.insert_markdown = AsyncMock(return_value={"node_id": "pi-page-1", "status": "ok"})
+    pi.insert_markdown = AsyncMock(
+        return_value={"tree_name": "test-wiki", "new_node_ids": ["pi-page-1"]}
+    )
     pi.create_tree = AsyncMock(return_value={"tree_name": "test-wiki"})
     pi.delete_tree = AsyncMock(return_value={"status": "deleted"})
     return pi

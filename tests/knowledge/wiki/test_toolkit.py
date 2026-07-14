@@ -26,8 +26,12 @@ def mock_pi():
     pi.search = AsyncMock(return_value=[
         {"node_id": "n1", "title": "Page 1", "score": 0.9, "summary": "Snippet 1"},
     ])
-    pi.insert_markdown = AsyncMock(return_value={"node_id": "m1", "status": "ok"})
-    pi.insert_content = AsyncMock(return_value={"nodes_added": 2, "tree_name": "test-wiki"})
+    pi.insert_markdown = AsyncMock(
+        return_value={"tree_name": "test-wiki", "new_node_ids": ["m1"]}
+    )
+    pi.insert_content = AsyncMock(
+        return_value={"tree_name": "test-wiki", "new_node_ids": ["0001", "0002"]}
+    )
     pi.create_tree = AsyncMock(return_value={"tree_name": "test-wiki"})
     return pi
 

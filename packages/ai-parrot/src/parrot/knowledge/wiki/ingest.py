@@ -182,13 +182,11 @@ class WikiIngestOrchestrator:
 
         try:
             pi_result = await self._create_wiki_pages(content, tree_name)
-            pages_created = pi_result.get("nodes_added", 0)
-            # Collect node IDs from the result
-            inserted_ids = pi_result.get("node_ids", [])
-            if isinstance(inserted_ids, list):
-                page_ids = [str(nid) for nid in inserted_ids]
-            elif pi_result.get("node_id"):
-                page_ids = [str(pi_result["node_id"])]
+            # PageIndexToolkit.insert_content() contract:
+            # {"tree_name", "new_node_ids", "title", "summary"}
+            inserted_ids = pi_result.get("new_node_ids") or []
+            page_ids = [str(nid) for nid in inserted_ids]
+            pages_created = len(page_ids)
         except Exception as exc:  # noqa: BLE001
             self.logger.error("PageIndex insert failed for %s: %s", source_uri, exc)
             return self._error_report(source_id, source_uri, t0, str(exc))

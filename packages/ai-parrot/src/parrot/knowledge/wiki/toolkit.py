@@ -463,9 +463,10 @@ class LLMWikiToolkit(AbstractToolkit):
                 wiki_name, markdown, doc_name=title
             )
             if isinstance(pi_result, dict):
-                page_id = str(
-                    pi_result.get("node_id") or pi_result.get("id") or ""
-                )
+                # PageIndexToolkit.insert_markdown() contract:
+                # {"tree_name", "new_node_ids"}
+                new_ids = pi_result.get("new_node_ids") or []
+                page_id = str(new_ids[0]) if new_ids else None
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("create_page PageIndex insert failed: %s", exc)
 

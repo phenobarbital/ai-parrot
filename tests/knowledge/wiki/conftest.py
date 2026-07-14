@@ -91,8 +91,19 @@ def mock_pi():
         {"node_id": "n1", "title": "Neural Networks", "score": 0.9, "summary": "A neural network is..."},
         {"node_id": "n2", "title": "Deep Learning", "score": 0.7, "summary": "Deep learning extends..."},
     ])
-    pi.insert_markdown = AsyncMock(return_value={"node_id": "m1", "status": "ok"})
-    pi.insert_content = AsyncMock(return_value={"nodes_added": 3, "tree_name": "test-wiki"})
+    # Real PageIndexToolkit contract: insert_markdown returns
+    # {"tree_name", "new_node_ids"}; insert_content adds "title"/"summary".
+    pi.insert_markdown = AsyncMock(
+        return_value={"tree_name": "test-wiki", "new_node_ids": ["m1"]}
+    )
+    pi.insert_content = AsyncMock(
+        return_value={
+            "tree_name": "test-wiki",
+            "new_node_ids": ["n1", "n2", "n3"],
+            "title": "Neural Networks",
+            "summary": "A neural network is a computational model.",
+        }
+    )
     pi.create_tree = AsyncMock(return_value={"tree_name": "test-wiki"})
     pi.delete_tree = AsyncMock(return_value={"status": "deleted"})
     return pi

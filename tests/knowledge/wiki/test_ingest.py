@@ -33,8 +33,15 @@ def sample_source(tmp_path: Path) -> Path:
 def mock_pi():
     """Mock PageIndexToolkit."""
     pi = MagicMock()
+    # Real PageIndexToolkit.insert_content contract (FEAT-238):
+    # {"tree_name", "new_node_ids", "title", "summary"}
     pi.insert_content = AsyncMock(
-        return_value={"nodes_added": 3, "tree_name": "test-wiki"}
+        return_value={
+            "tree_name": "test-wiki",
+            "new_node_ids": ["0001", "0002", "0003"],
+            "title": "Neural Networks",
+            "summary": "A neural network is a computational model.",
+        }
     )
     pi.create_tree = AsyncMock(return_value={"tree_name": "test-wiki"})
     return pi
@@ -129,6 +136,24 @@ class TestWikiIngestOrchestrator:
         """Successful ingest produces status='ok'."""
         report = await orchestrator.ingest(str(sample_source), wiki_config)
         assert report.status == "ok"
+
+    @pytest.mark.asyncio
+    async def test_ingest_records_generated_page_ids(
+        self,
+        orchestrator: WikiIngestOrchestrator,
+        source_manager: SourceCollectionManager,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        """Regression (G1): the real insert_content contract returns
+        ``new_node_ids`` — ingest must count them as pages_created and
+        record them in the manifest so sources do not lint as orphans."""
+        report = await orchestrator.ingest(str(sample_source), wiki_config)
+        assert report.pages_created == 3
+        entry = source_manager.get_source(report.source_id)
+        assert entry is not None
+        # PageIndex node ids MUST be present (graph node id may be appended)
+        assert {"0001", "0002", "0003"}.issubset(set(entry.pages_generated))
 
     @pytest.mark.asyncio
     async def test_ingest_calls_insert_content(
@@ -246,7 +271,7 @@ class TestWikiIngestOrchestrator:
         """GraphIndex failure is logged but ingest still succeeds."""
         pi = MagicMock()
         pi.insert_content = AsyncMock(
-            return_value={"nodes_added": 2, "tree_name": "test-wiki"}
+            return_value={"tree_name": "test-wiki", "new_node_ids": ["0001", "0002"]}
         )
         gi = MagicMock()
         gi.create_node = AsyncMock(side_effect=RuntimeError("GI down"))
