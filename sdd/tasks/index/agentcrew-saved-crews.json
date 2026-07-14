@@ -170,7 +170,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -181,8 +181,8 @@
       "parallelism_notes": "Depends on service layer and models",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1773-execution-history-handler.md"
+      "completed_at": "2026-07-14T01:37:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1773-execution-history-handler.md"
     },
     {
       "id": "TASK-1774",
