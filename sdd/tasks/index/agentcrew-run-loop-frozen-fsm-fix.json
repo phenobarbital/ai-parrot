@@ -14,7 +14,7 @@
       "feature_id": "FEAT-309",
       "feature": "agentcrew-run-loop-frozen-fsm-fix",
       "spec": "sdd/specs/agentcrew-run-loop-frozen-fsm-fix.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Single mechanical one-line fix in crew.py; TASK-1782 depends on it directly so no meaningful parallel worktree benefit.",
       "assigned_to": null,
       "started_at": "2026-07-14T07:12:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1781-run-loop-frozen-fsm-fix.md"
+      "completed_at": "2026-07-14T07:14:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1781-run-loop-frozen-fsm-fix.md"
     },
     {
       "id": "TASK-1782",
