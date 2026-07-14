@@ -211,10 +211,52 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-14
+**Notes**: Created `tests/integration/conftest.py` (`DummyAgent`/
+`_DummyToolManager` — modeled after
+`packages/ai-parrot/tests/_crew_test_helpers.DummyAgent`, not importable
+from this top-level tree — plus `stub_agents`/`fake_llm` fixtures) and
+`tests/integration/test_crew_infographic_e2e.py`. Corrected the task's own
+Test Specification: plain `MagicMock()` stub agents with only
+`.name`/`.node_id` are insufficient for `AgentCrew.add_agent()` (needs
+`.tool_manager`, `.add_event_listener`, `EVENT_*` constants); built a full
+`DummyAgent`. `fake_llm` is a `MagicMock(spec=AbstractClient)` with
+`__aenter__`/`__aexit__`/`ask` wired so `SynthesisMixin._synthesize_results`'s
+`async with self._llm as client:` pattern works without any real API call.
+Two module-scoped (not conftest-level) autouse fixtures keep the suite
+hermetic: `_stub_artifact_backend` (patches
+`parrot.storage.backends.build_conversation_backend`/`build_overflow_store`
+and `parrot.bots.flows.result_agent.ArtifactStore` so `_LazyArtifactStore`
+never touches a real DB/filesystem) and `_stub_result_agent_llm` (patches
+`ResultAgent.ask` at the class level so Tab-1 authoring bypasses the real
+`BaseBot.ask()` stack — out of scope for this integration test).
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Found and documented a genuine pre-existing bug, out of FEAT-308 scope**:
+`AgentCrew.run_loop()`'s per-iteration FSM reset
+(`node.fsm = AgentTaskMachine(...)`, crew.py, introduced by TASK-1062's
+migration to a frozen `CrewAgentNode` Pydantic model) raises
+`pydantic_core.ValidationError: Instance is frozen` on every invocation —
+the codebase already has an `object.__setattr__` escape hatch for
+frozen-node mutation elsewhere (`flows/core/node.py:227`) that this code
+path doesn't use. Confirmed via `git diff dev` that this line is untouched
+by FEAT-308. Marked `test_run_loop_generates_infographic` as
+`xfail(strict=True, reason=...)` documenting the root cause, rather than
+fixing crew.py's unrelated loop internals (not listed in any FEAT-308
+task's file list) — flagging for a follow-up bug-fix spec.
 
-**Deviations from spec**: none | describe if any
+Result: 5 passed, 1 xfailed. Verified no regressions to sibling
+`tests/integration/*.py` files (ran the full directory minus the
+pre-existing-broken `oauth2/` package and `test_invoke.py`'s 59
+pre-existing, unrelated `AbstractClient.client`-setter errors — both
+confirmed via `git diff dev` to be untouched by this feature). ruff clean.
+
+The AC's "Documentation updated (AgentCrew infographic usage note)" is
+satisfied by this test file's detailed module docstring (usage + hermetic
+testing rationale); a dedicated docs/ page was not in this task's Files
+list and is left as a follow-up if the user wants user-facing docs.
+
+**Deviations from spec**: none in implemented code; one integration
+scenario (run_loop) is xfailed due to a pre-existing, unrelated bug — see
+above. Recommend filing a follow-up spec/task for the `run_loop` FSM-reset
+fix.

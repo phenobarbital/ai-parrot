@@ -155,6 +155,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         result_storage: Union[str, "ResultStorage", None] = None,
         persist_agent_results: bool = True,
         tenant: Optional[str] = None,
+        generate_infographic: bool = False,
+        result_agent_name: str = "result-agent",
         **kwargs
     ):
         """
@@ -252,6 +254,11 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         # Lifecycle hooks (FEAT-157)
         self._on_complete_hooks: List[CrewHookCallback] = []
         self._on_error_hooks: List[CrewHookCallback] = []
+
+        # End-of-flow multi-tab infographic (FEAT-308) — opt-in, non-breaking
+        # when left at its default (False).
+        self.generate_infographic: bool = generate_infographic
+        self.result_agent_name: str = result_agent_name
 
         # Add agents if provided
         if agents:
@@ -402,6 +409,73 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         )
         self._persist_tasks.add(_agent_task)
         _agent_task.add_done_callback(self._persist_tasks.discard)
+
+    async def _finalize_infographic(self, result: FlowResult) -> None:
+        """Populate ``result.infographic``; swallow+log on failure (FEAT-308).
+
+        Called by all ``run_*()`` methods after synthesis, before
+        ``_fire_hooks()``. No-op when ``generate_infographic`` is ``False``
+        (the default) — existing crew behaviour is byte-for-byte unchanged.
+
+        Resolves the ``ResultAgent`` from ``AgentRegistry`` by
+        ``result_agent_name``, builds the deterministic tab blocks from
+        ``self.execution_memory`` (excluding the ResultAgent's own id), has
+        the ResultAgent LLM-author the Tab 1 (Executive Summary & Insights)
+        blocks from the crew's existing ``result.summary`` (no second
+        synthesis pass), and renders the merged block list through the
+        ``crew_report`` template.
+
+        Any exception anywhere in this pipeline (unknown agent name, LLM
+        failure, render failure) is logged and leaves
+        ``result.infographic`` at its default (``None``) — the crew's real
+        result and ``result.status`` are never affected.
+
+        Args:
+            result: The ``FlowResult`` produced by the current run.
+        """
+        if not self.generate_infographic:
+            return
+        try:
+            # Local imports:
+            #   1. Guarantees the built-in "result-agent" is registered
+            #      regardless of application load order, without adding a
+            #      crew.py -> result_agent.py module-level import (avoids
+            #      any risk of a circular import through
+            #      parrot.bots.flows.crew.result_infographic).
+            #   2. Keeps this opt-in feature's dependencies out of crew.py's
+            #      module-level import graph when generate_infographic is
+            #      never used.
+            from parrot.bots.flows import result_agent as _result_agent_module  # noqa: F401
+            from parrot.registry import agent_registry
+            from parrot.bots.flows.crew.result_infographic import build_deterministic_tabs
+
+            metadata = agent_registry.get_metadata(self.result_agent_name)
+            if metadata is None:
+                self.logger.warning(
+                    "ResultAgent '%s' not found in registry; skipping infographic.",
+                    self.result_agent_name,
+                )
+                return
+
+            agent_cls = metadata.factory
+            result_agent = agent_cls(name=self.result_agent_name, llm=self._llm)
+
+            det_blocks = build_deterministic_tabs(
+                self.execution_memory,
+                final_output=result.output,
+                exclude_node_id=self.result_agent_name,
+            )
+            render_result = await result_agent.generate_infographic(
+                summary=result.summary,
+                deterministic_blocks=det_blocks,
+                crew_name=self.name,
+            )
+            result.infographic = render_result
+        except Exception as exc:  # noqa: BLE001 — graceful degradation (spec G7)
+            self.logger.error(
+                "Infographic generation failed: %s", exc, exc_info=True
+            )
+            # result.infographic remains at its default (None) — crew result intact.
 
     def _register_agents_as_tools(self):
         """
@@ -1606,6 +1680,10 @@ Current task: {current_input}"""
                     }
                 )
 
+        # End-of-flow multi-tab infographic (FEAT-308) — opt-in, no-op unless
+        # generate_infographic=True.
+        await self._finalize_infographic(result)
+
         # Fire lifecycle hooks (FEAT-157)
         await self._fire_hooks(result)
 
@@ -2107,6 +2185,10 @@ Current task: {current_input}"""
                     }
                 )
 
+        # End-of-flow multi-tab infographic (FEAT-308) — opt-in, no-op unless
+        # generate_infographic=True.
+        await self._finalize_infographic(result)
+
         # Fire lifecycle hooks (FEAT-157)
         await self._fire_hooks(result)
 
@@ -2459,6 +2541,10 @@ Current task: {current_input}"""
                     }
                 )
 
+        # End-of-flow multi-tab infographic (FEAT-308) — opt-in, no-op unless
+        # generate_infographic=True.
+        await self._finalize_infographic(result)
+
         # Fire lifecycle hooks (FEAT-157)
         await self._fire_hooks(result)
 
@@ -2719,6 +2805,10 @@ Current task: {current_input}"""
                         'synthesis_prompt': synthesis_prompt,
                     }
                 )
+
+        # End-of-flow multi-tab infographic (FEAT-308) — opt-in, no-op unless
+        # generate_infographic=True.
+        await self._finalize_infographic(result)
 
         # Fire lifecycle hooks (FEAT-157)
         await self._fire_hooks(result)

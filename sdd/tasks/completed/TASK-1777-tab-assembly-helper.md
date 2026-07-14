@@ -231,10 +231,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-14
+**Notes**: Implemented `build_deterministic_tabs` and `merge_tab1_blocks` in
+`parrot/bots/flows/crew/result_infographic.py`. Verified and corrected three
+stale contract details against the real block schema
+(`parrot/models/infographic.py`, `InfographicToolkit._validate_blocks`):
+(1) block dicts discriminate on `"type"`, not `"block_type"`; (2) `TitleBlock`
+uses a `title` field, not `content`; (3) `TabPane` requires an `id`. Content
+blocks use `SummaryBlock` (`type="summary"`), whose own hard
+`max_length=2000` is enforced regardless of `_INLINE_THRESHOLD` (50_000,
+which gates the page-level `html_inline` decision, not per-block length).
+`ArtifactStore.save_artifact()` requires `user_id`/`session_id`/backends this
+helper doesn't have — `artifact_store` is a duck-typed `publish(key, text)`
+placeholder (falls back to truncate+note when absent), per the task's own
+fallback guidance; TODO for TASK-1779 to wire real session context if needed.
+Confirmed via an ad-hoc pytest sanity check that `merge_tab1_blocks`'s output
+validates cleanly through the real `InfographicResponse`/`TabViewBlock`
+models (`TabPane` requires >= 2 tabs; since Tab 1 is always merged in before
+the crew's Final-Result tab, the real minimum is always >= 2 — resolves an
+apparent tension with spec G5's "minimum 1" language, which refers to the
+deterministic-tabs-only count before merging). 10 unit tests pass, ruff
+clean.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (contract corrections documented above; no
+behavioral deviation from Module 2's scope)
