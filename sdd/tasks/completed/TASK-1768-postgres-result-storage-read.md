@@ -219,10 +219,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Implemented `list()`, `get()`, `delete()`, `count()` on `PostgresResultStorage`.
+Added two private helpers: `_build_where(filters)` (shared parameterized `WHERE` clause
+builder for `list()`/`count()`, with `COALESCE(tenant, 'global')` handling for legacy
+NULL-tenant rows) and `_row_to_document(row)` (parses the `payload` jsonb column into a
+dict whether the driver returns it as a JSON string or an already-decoded dict, and
+stringifies `id`). `delete()` parses the asyncpg-style `"DELETE N"` command-status
+string returned by `conn.execute()` to determine whether a row was removed (same pattern
+as `parrot/storage/backends/postgres.py::delete_thread_cascade`). All methods wrap
+backend errors in `try/except`, log via `self.logger.warning`, and return the ABC's
+documented "nothing happened" default (`[]` / `None` / `False` / `0`). Created
+`tests/unit/test_postgres_result_storage_read.py` covering all 9 scenarios from the
+task's Test Specification plus 4 additional exception-handling tests for parity with
+`test_postgres_backend.py`'s coverage style. 21/21 new+existing postgres tests pass;
+50/50 pass across the full storage test slice touched by TASK-1765/1766/1768. `ruff
+check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The ABC's `get(self, collection, record_id)` and
+`delete(self, collection, record_id)` signatures (fixed by TASK-1765, matching the
+spec's own Codebase Contract) take no `tenant`/`user_id` parameters, so this task's
+scope note ("SELECT/DELETE by id with tenant + user_id scoping") could not be
+implemented at the SQL level for `get()`/`delete()` without inventing a signature the
+ABC doesn't have. `list()` and `count()` DO enforce tenant/user_id scoping via the
+`filters` dict exactly as specified. Per-record `get()`/`delete()` scope only by
+`record_id`; ownership/tenant verification for those two operations is deferred to the
+service layer (TASK-1772 `SavedExecutionService`), which already receives `tenant`
+and `user_id` on every call and can check them against the fetched row before
+returning/deleting. Flagging for spec review — if per-record scoping in SQL is
+required, the ABC signature would need `tenant`/`user_id` params added in a follow-up.
