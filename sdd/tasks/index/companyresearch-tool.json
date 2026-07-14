@@ -14,7 +14,7 @@
       "feature_id": "FEAT-305",
       "feature": "companyresearch-tool",
       "spec": "sdd/specs/companyresearch-tool.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Root dependency task; every impl task imports rapidfuzz/ddgs and needs playwright at runtime. Must land first.",
       "assigned_to": null,
       "started_at": "2026-07-13T23:59:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1759-deps-playwright-rapidfuzz-ddgs.md"
+      "completed_at": "2026-07-14T00:03:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1759-deps-playwright-rapidfuzz-ddgs.md"
     },
     {
       "id": "TASK-1760",
