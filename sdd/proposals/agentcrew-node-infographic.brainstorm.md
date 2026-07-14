@@ -52,7 +52,7 @@ blocks are all present and unassembled.
 - **Hybrid rendering**: the Executive-Summary/Insights tab is LLM-authored; the
   final-result tab and per-agent tabs are built **deterministically** from
   `ExecutionMemory` into `tab_view` blocks, then rendered via the toolkit's
-  `multi_tab` template.
+  `crew_report` template (a bound-relaxed derivative of the built-in `multi_tab`).
 - **Insights reuse existing synthesis**: feed the crew's own
   `SynthesisMixin` output into Tab 1 rather than running a second synthesis pass.
 - **Registry-resolved**: the ResultAgent is registered once
@@ -65,8 +65,20 @@ blocks are all present and unassembled.
   per-agent tabs and from synthesis/`execution_memory` accounting to avoid
   self-referential recursion.
 - Async-first, Pydantic models, `self.logger` — per project rules.
-- The `multi_tab` template requires **3–7 tabs** — must handle the edge cases of
-  <3 and >7 research agents.
+- **Dynamic tab count — NOT enforced**: the number of tabs is driven by the run,
+  **minimum one** (a single result with no per-agent breakdown) and **maximum =
+  number of research agents** (plus the fixed Executive-Summary and Final-Result
+  tabs). The built-in `multi_tab` template hard-codes `min_items=3, max_items=7`
+  on its `tab_view` block, so this feature **cannot use `multi_tab` as-is** — it
+  must register a bound-relaxed template variant (e.g. `crew_report`) that
+  removes the 3–7 constraint.
+- **Large / non-text per-agent results**: **summarize**, or **link out** when the
+  content can be published to the `ArtifactStore` and yields a URL — never dump
+  an unbounded payload into a tab.
+- **ResultAgent location & default LLM**: the `ResultAgent` lives under
+  `parrot/bots/flows/`, and its default LLM is **Gemini 3.5 Flash** (via the
+  `google` client) when the crew supplies no `_llm`. *(Confirm the exact model
+  identifier string at spec time.)*
 
 ---
 
@@ -87,7 +99,7 @@ blocks are all present and unassembled.
    per-agent results), **excluding** the ResultAgent itself.
 3. Passes the crew's `summary` (SynthesisMixin output) + the assembled tab
    structure to the ResultAgent, which LLM-authors Tab 1 and calls
-   `infographic_render(template_name="multi_tab", …)`.
+   `infographic_render(template_name="crew_report", …)`.
 4. Attaches the rendered artifact to a **new `FlowResult.infographic` field**;
    on any exception, logs and leaves it `None`.
 
@@ -228,7 +240,8 @@ decisions taken during discovery simultaneously:
   `run_*()`, all converging on `ExecutionMemory`, avoiding Option B's dual code
   path and the graph-mutation fallout at `final_agents` (L699).
 - *Hybrid render* → deterministic per-agent/final tabs (faithful, testable) +
-  LLM-authored insights tab, rendered through the built-in `multi_tab` template.
+  LLM-authored insights tab, rendered through the bound-relaxed `crew_report`
+  template (derived from `multi_tab`, no 3–7 tab clamp).
 - *Reuse `SynthesisMixin`* → Tab 1 is seeded by the crew's existing `summary`,
   no second synthesis pass.
 - *Registry by configurable name* → `@register_agent("result-agent")`, resolved
@@ -260,22 +273,25 @@ result.infographic.html_url     # persisted artifact URL (ArtifactStore)
 result.infographic.html_inline  # inline HTML when < 50 KB
 ```
 
-The produced HTML is a single self-contained multi-tab document:
+The produced HTML is a single self-contained multi-tab document whose tab count
+is **dynamic** (minimum one, maximum = number of research agents plus the two
+fixed tabs — no 3–7 enforcement):
 - **Tab 1 — Executive Summary & Insights**: LLM-authored narrative seeded from
   the crew's synthesis.
 - **Tab 2 — Final Result**: the crew's `FlowResult.output`.
 - **Tabs 3…N — Per-Agent Results**: one tab per research agent (label = agent
-  name), body = that agent's `NodeResult`.
+  name), body = that agent's `NodeResult` (summarized, or linked out to a
+  published `ArtifactStore` URL when the result is large/non-text).
 
 When the flag is off (default), `run_*()` behaves exactly as today and
 `result.infographic` is `None`.
 
 ### Internal Behavior
 
-1. **Registration** — a new `ResultAgent(Agent)` in `parrot/agents/` (or
-   `parrot/bots/`) decorated `@register_agent("result-agent")`, whose
-   `agent_tools()` returns an `InfographicToolkit`. Registered at import so any
-   crew can resolve it.
+1. **Registration** — a new `ResultAgent(Agent)` under `parrot/bots/flows/`
+   decorated `@register_agent("result-agent")`, whose `agent_tools()` returns an
+   `InfographicToolkit`, defaulting to the **Gemini 3.5 Flash** (`google`) client
+   when the crew has no `_llm`. Registered at import so any crew can resolve it.
 2. **Trigger** — each `run_*()` calls `await self._finalize_infographic(result)`
    after synthesis, before `_fire_hooks`. Guarded by `self.generate_infographic`.
 3. **Deterministic assembly** — a helper reads `self.execution_memory`
@@ -284,22 +300,24 @@ When the flag is off (default), `run_*()` behaves exactly as today and
    **excluding** the ResultAgent's own `node_id`.
 4. **LLM insights** — the ResultAgent receives the crew `summary` + assembled
    tabs and authors the Tab-1 blocks, then calls
-   `infographic_render(template_name="multi_tab", …)`.
+   `infographic_render(template_name="crew_report", …)` (the bound-relaxed
+   variant — see Edge Cases).
 5. **Surface** — the returned `InfographicRenderResult`/`InfographicResponse` is
    attached to `result.infographic`. `_fire_hooks` and `return` proceed as normal.
 
 ### Edge Cases & Error Handling
 
-- **Fewer than 3 research agents**: `multi_tab` requires ≥3 tabs. With Tab 1 +
-  Tab 2 always present, a single research agent already yields 3 tabs. With
-  **zero** research agents, pad to the 3-tab minimum (e.g., an "Overview" +
-  "Final Result" + a "Details"/empty-state tab) or fall back to the
-  `executive` template — decide in spec (Open Question).
-- **More than 5 research agents**: `multi_tab` caps at 7 tabs (Tab 1 + Tab 2 +
-  ≤5 agents). Beyond that, group/paginate agents or spill overflow into an
-  accordion within the last tab — decide in spec (Open Question).
-- **Large / non-text agent results** (DataFrame, dict, HTML): reuse
-  `NodeResult.to_text()`; truncate very large payloads for tab display.
+- **Dynamic tab count (NOT enforced)**: tabs scale with the run — **minimum one**
+  (a single result with no per-agent breakdown), **maximum = number of research
+  agents** (plus the fixed Executive-Summary and Final-Result tabs). The built-in
+  `multi_tab` template hard-codes `min_items=3, max_items=7` on `tab_view`, so
+  the feature registers a **bound-relaxed template variant `crew_report`**
+  (same `tab_view` block, no min/max) via `infographic_registry.register(...)`.
+  This is the mechanism that makes 1-tab and 10-tab reports both valid.
+- **Large / non-text agent results** (DataFrame, dict, HTML): **summarize**, or
+  **link out** when the content can be published to the `ArtifactStore` and
+  yields a URL — never dump an unbounded payload into a tab. `NodeResult.to_text()`
+  provides the base rendering for small text results.
 - **Synthesis unavailable** (no `_llm` / synthesis returned `None`): Tab 1 falls
   back to a deterministic overview built from the per-agent list.
 - **Render/validation/LLM failure**: caught in `_finalize_infographic`; logged;
@@ -316,9 +334,13 @@ When the flag is off (default), `run_*()` behaves exactly as today and
 
 ### New Capabilities
 - `agentcrew-node-infographic`: opt-in end-of-flow ResultAgent that renders a
-  multi-tab HTML infographic from an `AgentCrew` run's `ExecutionMemory`.
-- `result-agent`: a registry-discoverable `Agent` bundling `InfographicToolkit`,
-  resolvable by name and overridable per crew.
+  multi-tab HTML infographic from an `AgentCrew` run's `ExecutionMemory`, with a
+  dynamic (1..N) tab count.
+- `result-agent`: a registry-discoverable `Agent` (under `parrot/bots/flows/`)
+  bundling `InfographicToolkit`, defaulting to Gemini 3.5 Flash, resolvable by
+  name and overridable per crew.
+- `crew-report-template`: a bound-relaxed `crew_report` infographic template
+  variant (no 3–7 tab clamp) registered on `infographic_registry`.
 
 ### Modified Capabilities
 - `AgentCrew` execution (`crew.py`): new `generate_infographic` /
@@ -334,12 +356,12 @@ When the flag is off (default), `run_*()` behaves exactly as today and
 |---|---|---|
 | `parrot/bots/flows/crew/crew.py` | modifies | New `__init__` params; `_finalize_infographic()`; call-site in each `run_*()` before `_fire_hooks`. |
 | `parrot/bots/flows/core/result.py` | extends | Add optional `infographic` field to `FlowResult` (shared type — verify no positional-arg construction breaks). |
-| `parrot/agents/` (new file) | creates | `ResultAgent` + `@register_agent("result-agent")`. |
-| `parrot/tools/infographic_toolkit.py` | depends on | Reuse `render`/`multi_tab`; no changes expected. |
+| `parrot/bots/flows/` (new file) | creates | `ResultAgent` + `@register_agent("result-agent")`, default LLM Gemini 3.5 Flash. |
+| `parrot/tools/infographic_toolkit.py` | depends on | Reuse `render`; no changes expected. |
 | `parrot/bots/flows/core/storage/memory.py` | depends on | Read via `get_snapshot()`/`get_results_by_agent()`; no changes. |
-| `parrot/models/infographic_templates.py` | depends on | Reuse `TEMPLATE_MULTI_TAB`; possibly register a crew-specific variant if padding logic needs it. |
+| `parrot/models/infographic_templates.py` | modifies | Register a **new bound-relaxed `crew_report` template variant** (like `multi_tab` but no `min_items=3/max_items=7` on `tab_view`) to allow 1..N dynamic tabs. |
 | `parrot/registry/` | depends on | Resolve ResultAgent by name; no API change. |
-| Tests | creates | Unit tests for deterministic assembly, tab bounds (0/1/6+ agents), graceful degrade, and the opt-in default-off contract. |
+| Tests | creates | Unit tests for deterministic assembly, **dynamic tab count (1 / N agents, no 3–7 clamp)**, large-result summarize/link-out, graceful degrade, and the opt-in default-off contract. |
 
 ---
 
@@ -430,7 +452,7 @@ from parrot.bots.flows.core.storage.memory import ExecutionMemory   # L19
 - `AgentCrew._on_complete_hooks` (crew.py, FEAT-157) + `on_complete()` (L252)
 - `InfographicToolkit.return_direct` → `True` (infographic_toolkit.py:129)
 - `_INLINE_THRESHOLD` → `50_000` bytes, inline-HTML cutoff (infographic_toolkit.py)
-- `TEMPLATE_MULTI_TAB` tab bounds → `min_items=3, max_items=7`
+- `TEMPLATE_MULTI_TAB` tab bounds → `min_items=3, max_items=7` **(the hard clamp this feature must relax via a `crew_report` variant)**
 - `register_agent` → `agent_registry.register_bot_decorator` (registry/__init__.py)
 
 ### Does NOT Exist (Anti-Hallucination)
@@ -438,6 +460,7 @@ from parrot.bots.flows.core.storage.memory import ExecutionMemory   # L19
 - ~~`AgentCrew.generate_infographic` / `AgentCrew.result_agent_name`~~ — new params, not present today.
 - ~~`AgentCrew._finalize_infographic()`~~ — new method, does not exist.
 - ~~`ResultAgent`~~ — no such class/registered agent named `"result-agent"` exists yet.
+- ~~`crew_report` template~~ — does not exist yet; the built-in `multi_tab` clamps to 3–7 tabs, so this feature registers a bound-relaxed `crew_report` variant.
 - ~~`InfographicNode` / a crew node subclass for infographics~~ — does not exist (only `CrewAgentNode` in crew/nodes.py).
 - ~~`ExecutionMemory.get_all_results()`~~ — not a method; use `get_snapshot()` or iterate `results` / `get_results_by_agent()`.
 - ~~`crew.render_infographic()`~~ — the post-run-method approach was rejected; no such method.
@@ -467,12 +490,12 @@ from parrot.bots.flows.core.storage.memory import ExecutionMemory   # L19
 ## Open Questions
 
 - [x] How is the ResultAgent attached to run "at end of flow"? — *Owner: Jesus*: Opt-in flag on `AgentCrew` → uniform internal post-run step in every `run_*()` (not a DAG node).
-- [x] How is the infographic HTML produced? — *Owner: Jesus*: Hybrid — LLM authors Tab 1 (insights); Tab 2 + per-agent tabs built deterministically from `ExecutionMemory`, rendered via `multi_tab`.
+- [x] How is the infographic HTML produced? — *Owner: Jesus*: Hybrid — LLM authors Tab 1 (insights); Tab 2 + per-agent tabs built deterministically from `ExecutionMemory`, rendered via the bound-relaxed `crew_report` template.
 - [x] Which execution modes must be supported? — *Owner: Jesus*: All four (flow, sequential, parallel, loop).
 - [x] Where do the executive-summary insights come from? — *Owner: Jesus*: Reuse the crew's `SynthesisMixin` output (seed Tab 1); no second synthesis pass.
 - [x] Should ResultAgent appear in `FlowResult.agents`/`execution_memory`, and where is the artifact exposed? — *Owner: Jesus*: Excluded from tabs/synthesis; artifact on a new `FlowResult.infographic` field.
 - [x] How does the crew obtain the ResultAgent? — *Owner: Jesus*: Resolve from `AgentRegistry` by a configurable name (default `"result-agent"`).
 - [x] Failure behavior? — *Owner: Jesus*: Graceful degrade — log, `infographic=None`, crew result intact.
-- [ ] Tab-count edge cases: how to satisfy `multi_tab`'s **3-tab minimum** when there are **0 research agents**, and how to handle the **7-tab maximum** with **>5 agents** (group/paginate vs accordion overflow vs fall back to `executive` template)? — *Owner: Jesus*
-- [ ] Should very large / non-text per-agent results be truncated, summarized, or linked out (and at what byte threshold)? — *Owner: Jesus*
-- [ ] Where should `ResultAgent` live — `parrot/agents/` (auto-discovered dir) vs `parrot/bots/` — and which default LLM should it use when the crew has no `_llm`? — *Owner: Jesus*
+- [x] Tab-count bounds? — *Owner: Jesus*: **No enforcement.** Tab count is dynamic — minimum one (single result, no per-agent breakdown), maximum = number of research agents (plus the two fixed tabs). Since the built-in `multi_tab` clamps to 3–7, register a bound-relaxed `crew_report` template variant.
+- [x] Large / non-text per-agent results? — *Owner: Jesus*: **Summarize**, or **link out** when the content can be published to `ArtifactStore` and yields a URL — never dump an unbounded payload into a tab.
+- [x] ResultAgent location & default LLM? — *Owner: Jesus*: Lives under `parrot/bots/flows/`; default LLM is **Gemini 3.5 Flash** (`google` client). *(Confirm the exact model id string at spec time.)*
