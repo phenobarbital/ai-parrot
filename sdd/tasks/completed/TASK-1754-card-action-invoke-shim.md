@@ -222,10 +222,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Added an `elif name == "adaptiveCard/action":` branch to
+`on_turn()`'s invoke dispatch (before the `else`), calling the new
+`_handle_adaptive_card_action()` handler. The handler acknowledges first
+via `_send_invoke_response(context, status_code=200)`, then extracts the
+prompt from `activity.value["action"]["data"]` using the same
+dict-or-getattr defensive pattern as `_handle_signin_verify`, preferring
+`feat303_prompt` and falling back to `data["msteams"]["text"]`. Missing
+prompt → WARNING log + return (no `ask()` call, no exception). On a
+found prompt, sets `activity.text` and delegates to `_handle_message()`
+wholesale. `_handle_signin_verify`/`_handle_signin_exchange` untouched
+(verified via diff). 4/4 new shim tests pass; full package suite green
+(59/59); ruff clean.
 
 **Deviations from spec**: none

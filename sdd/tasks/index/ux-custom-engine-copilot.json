@@ -72,7 +72,7 @@
       "feature_id": "FEAT-303",
       "feature": "ux-custom-engine-copilot",
       "spec": "sdd/specs/ux-custom-engine-copilot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Edits the same file (agent.py) as TASK-1753 and reuses its card seam; must be sequential.",
       "assigned_to": null,
       "started_at": "2026-07-13T22:53:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1754-card-action-invoke-shim.md"
+      "completed_at": "2026-07-14T00:07:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1754-card-action-invoke-shim.md"
     },
     {
       "id": "TASK-1755",
