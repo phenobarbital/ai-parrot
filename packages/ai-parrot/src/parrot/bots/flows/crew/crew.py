@@ -1846,7 +1846,13 @@ Current task: {current_input}"""
             for agent_id in agent_sequence:
                 node = self.workflow_graph.get(agent_id)
                 if node:
-                    node.fsm = AgentTaskMachine(agent_name=node.agent.name)
+                    # object.__setattr__ is the frozen-Pydantic escape hatch
+                    # (CrewAgentNode/AgentNode are frozen BaseModel subclasses,
+                    # see core/node.py:222-227 for the established pattern);
+                    # direct `node.fsm = ...` raises ValidationError (FEAT-309).
+                    object.__setattr__(
+                        node, "fsm", AgentTaskMachine(agent_name=node.agent.name)
+                    )
 
             context = FlowContext(
                 initial_task=initial_task,
