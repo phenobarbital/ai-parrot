@@ -76,13 +76,15 @@ import pytest
 ### Existing Signatures to Use
 ```python
 # packages/ai-parrot-tools/src/parrot_tools/company_info/tool.py
-class CompanyInfoToolkit(AbstractToolkit):           # line 163
-    async def research_company(...)                  # TASK-1763
-    async def scrape_visualvisitor(...)              # TASK-1762
-    async def scrape_zoominfo/explorium/leadiq/rocketreach/siccode(...)  # existing
-    def _validate_search_hit(...)                    # TASK-1760
-    def _search_company_url(...)                     # TASK-1760
-    async def _fetch_page(...)                       # TASK-1761
+class CompanyInfoToolkit(AbstractToolkit):           # as landed by TASK-1759..1763 in this worktree
+    async def research_company(company_name, sources=None, return_json=False)  # TASK-1763, @tool_schema(ResearchCompanyInput)
+    async def scrape_visualvisitor(company_name, return_json=False)      # TASK-1762
+    async def scrape_zoominfo/explorium/leadiq/rocketreach/siccode(...)  # existing, now call _search_company_url
+    def _validate_search_hit(self, title, url, company_name, keywords) -> bool           # TASK-1760 (sync)
+    async def _search_company_url(self, company_name, site_config) -> Optional[str]      # TASK-1760 — ASYNC (contract corrected), must be awaited
+    async def _fetch_page(self, url, custom_user_agent=None) -> Optional[BeautifulSoup]  # TASK-1761
+COMPANY_SOURCES: Dict[str, SourceConfig]             # module-level registry (NOT self._sources)
+DEFAULT_SOURCE_PRIORITY: List[str]                   # module-level default priority order (TASK-1763)
 # tool exposure: AbstractToolkit.get_tools()  ->  parrot/tools/toolkit.py:207
 ```
 
@@ -176,9 +178,46 @@ class TestToolkitExposure:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-07-14
+**Notes**: Corrected the Codebase Contract (module-level `COMPANY_SOURCES`/
+`DEFAULT_SOURCE_PRIORITY`, `_search_company_url` is async) before writing
+tests. Created `packages/ai-parrot-tools/tests/company_info/` with
+`__init__.py`, `conftest.py` (6 HTML fixtures loaders — leadiq/rocketreach/
+explorium/siccode/visualvisitor/zoominfo — plus a `toolkit` factory fixture
+and `mock_driver`/`mock_search` monkeypatch helpers that replace
+`_fetch_page`/`_fetch_page_with_selenium` and `_search_company_url`
+respectively, so no test ever launches a browser or hits the network),
+`fixtures/*.html` (6 minimal hand-built HTML fixtures, each verified
+directly against the real BeautifulSoup selectors in `tool.py` before
+being wired into a test), and `test_company_info.py` implementing every
+§4 row plus a few extra edge-case tests (keyword-mismatch rejection, DDG
+success without fallback, fetch-failure returns `None`,
+`research_company` never raises on an unexpected `scrape_*` exception,
+`scrape_visualvisitor` no-hit path, ctor back-compat). Did NOT modify
+`pyproject.toml`/`pytest.ini` to register the `live` marker — it was
+already registered in the repo-root `pytest.ini` (verified: `markers =
+... live: ...`), so no satellite-level change was needed. Added a
+`pytest_collection_modifyitems` hook in `conftest.py` that skips
+`live`-marked tests unless `-m live` is explicitly passed (mirrors the
+`real_llm` skip-by-default pattern already used in
+`packages/ai-parrot/tests/conftest.py`) — this was necessary because,
+without it, `test_live_smoke` was observed to actually run and pass
+against the real internet in this sandboxed environment on a plain
+`pytest packages/ai-parrot-tools/tests/company_info/ -v`, which would
+violate goal G6 ("no live scraping in CI") wherever network access isn't
+available or isn't desired. Verified all acceptance criteria: `pytest
+packages/ai-parrot-tools/tests/company_info/ -v` → 23 passed, 1 skipped
+(the live test); `pytest ... -m live` → 1 passed, 23 deselected (real
+`research_company("PetSmart")` call succeeded in this environment,
+confirming current selectors are still valid against the live site as of
+this run); `ruff check packages/ai-parrot-tools/tests/company_info/` →
+clean.
+**Deviations from spec**: none — the pyproject/pytest.ini marker
+registration bullet in "Files to Create/Modify" turned out to be a no-op
+given the marker was already globally registered; the
+`pytest_collection_modifyitems` skip-by-default hook was added to
+`conftest.py` (not listed in the original Files table) to actually
+satisfy the "default run skips it" acceptance criterion, since a bare
+`@pytest.mark.live` alone does not skip by default in pytest — only
+selects/deselects when `-m` is passed.
