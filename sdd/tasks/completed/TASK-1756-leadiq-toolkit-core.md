@@ -249,3 +249,24 @@ tool methods for consistent tool-scoped error messages, and added a
 regression test (`test_composed_http_service_accepts_json` in
 `test_leadiq.py`) asserting `toolkit.http.accept == "application/json"`.
 See commit `102af3fa0`.
+
+**Post-review cleanup (2026-07-14, commit `26ec43ab7`)**: addressed the
+review's non-blocking findings too:
+- Added a `_resolve_api_key()` helper so `self._api_key or
+  config.get("LEADIQ_API_KEY")` is looked up in exactly one place instead
+  of being duplicated across `_build_headers()` and all three `search_*`
+  methods.
+- The `None` vs `[]` ambiguity flagged above is now surfaced instead of
+  silently hidden: `search_employees`/`search_flat` set
+  `metadata["ambiguous_empty"] = True` when the ported transform returns
+  `None` (structure/no-match ambiguity), while a normal non-empty result
+  omits the key entirely. The ported `_process_employee_response`/
+  `_process_flat_response` functions themselves were left untouched
+  (still verbatim) — only the wrapper's handling of their `None` return
+  changed.
+- Corrected `sdd/specs/leadiqtool.spec.md` (§1 Goals, §5 AC) — it said
+  `HTTPService` was aiohttp-based; it's actually `httpx.AsyncClient`-based
+  internally (`parrot/interfaces/http.py:359`). The AC's real intent (no
+  direct `requests`/`httpx` import in the new module) is unchanged and
+  still satisfied.
+- Added 3 more tests (13 total) covering the `ambiguous_empty` flag.
