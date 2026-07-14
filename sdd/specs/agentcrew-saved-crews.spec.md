@@ -8,7 +8,7 @@ base_branch: dev
 
 # Feature Specification: AgentCrew Saved Crews (Execution Persistence & Replay)
 
-**Feature ID**: FEAT-306
+**Feature ID**: FEAT-307
 **Date**: 2026-07-14
 **Author**: Jesus Lara
 **Status**: approved
