@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-306
 **Date**: 2026-07-14
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot 0.26.0 (next minor)
 
 ---
@@ -564,13 +564,13 @@ CREW_RESULT_STORAGE_REDIS_TTL (int, default 604800)                             
       by `execution_id`, implemented in DocumentDB, Redis, and Postgres.
 - [x] Document format — *Resolved by user (2026-07-14)*: structured dict/JSON via `to_dict()`
       PLUS deterministic template-based `to_markdown()` — no LLM in either path.
-- [ ] Should `AgentsFlow` (flows/flow/flow.py, also a `PersistenceMixin` host) adopt
-      `_save_agent_result` in a follow-up feature? — *Owner: Jesus Lara*
-- [ ] Should `crew_agent_results` get its own Redis TTL setting, or is sharing
+- [x] Should `AgentsFlow` (flows/flow/flow.py, also a `PersistenceMixin` host) adopt
+      `_save_agent_result` in a follow-up feature? — *Owner: Jesus Lara*: yes
+- [x] Should `crew_agent_results` get its own Redis TTL setting, or is sharing
       `CREW_RESULT_STORAGE_REDIS_TTL` acceptable long-term? — *Owner: Jesus Lara* (implementation
-      defaults to sharing; decide during review)
-- [ ] Expose `from_storage()` reconstruction via an HTTP handler in `ai-parrot-server`
-      (e.g. alongside `handlers/crew/`)? — deferred; not required for this feature. — *Owner: Jesus Lara*
+      defaults to sharing; decide during review): defaults to sharing
+- [x] Expose `from_storage()` reconstruction via an HTTP handler in `ai-parrot-server`
+      (e.g. alongside `handlers/crew/`)?: — *Owner: Jesus Lara*: Yes, Exposed
 
 ---
 
