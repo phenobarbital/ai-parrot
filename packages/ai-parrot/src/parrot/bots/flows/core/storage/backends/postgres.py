@@ -153,3 +153,224 @@ class PostgresResultStorage(ResultStorage):
             finally:
                 self._conn = None
                 self._initialised.clear()
+
+    # ──────────────────────────────────────────────────────────────────
+    # Read methods (FEAT-307)
+    # ──────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _build_where(filters: Optional[dict[str, Any]]) -> tuple[list[str], list[Any]]:
+        """Build a parameterized ``WHERE`` clause from a plain-dict filter set.
+
+        Legacy rows with ``tenant IS NULL`` are matched via
+        ``COALESCE(tenant, 'global')`` so pre-FEAT-307 records remain visible
+        under the ``"global"`` tenant.
+
+        Args:
+            filters: Optional filters: ``tenant``, ``user_id``, ``crew_name``,
+                ``method``, ``date_from``, ``date_to``.
+
+        Returns:
+            A tuple of ``(conditions, params)`` where ``conditions`` is a list
+            of SQL condition fragments using ``$N`` placeholders and ``params``
+            is the ordered list of bound values.
+        """
+        conditions: list[str] = []
+        params: list[Any] = []
+        idx = 1
+
+        filters = filters or {}
+        if filters.get("tenant"):
+            conditions.append(f"COALESCE(tenant, 'global') = ${idx}")
+            params.append(filters["tenant"])
+            idx += 1
+        if filters.get("user_id"):
+            conditions.append(f"user_id = ${idx}")
+            params.append(filters["user_id"])
+            idx += 1
+        if filters.get("crew_name"):
+            conditions.append(f"crew_name = ${idx}")
+            params.append(filters["crew_name"])
+            idx += 1
+        if filters.get("method"):
+            conditions.append(f"method = ${idx}")
+            params.append(filters["method"])
+            idx += 1
+        if filters.get("date_from"):
+            conditions.append(f"timestamp >= ${idx}")
+            params.append(filters["date_from"])
+            idx += 1
+        if filters.get("date_to"):
+            conditions.append(f"timestamp <= ${idx}")
+            params.append(filters["date_to"])
+            idx += 1
+
+        return conditions, params
+
+    @staticmethod
+    def _row_to_document(row: Any) -> dict[str, Any]:
+        """Convert a fetched row into an execution document.
+
+        The ``payload`` jsonb column is parsed into a plain dict (drivers may
+        return it as a JSON-encoded string or as an already-decoded dict).
+
+        Args:
+            row: A dict-like row as returned by ``conn.fetch``/``conn.fetchrow``.
+
+        Returns:
+            A plain dict with ``id`` stringified and ``payload`` parsed.
+        """
+        doc = dict(row)
+        raw_payload = doc.get("payload")
+        if isinstance(raw_payload, str):
+            doc["payload"] = json.loads(raw_payload) if raw_payload else {}
+        elif not isinstance(raw_payload, dict):
+            doc["payload"] = {}
+        if "id" in doc and doc["id"] is not None and not isinstance(doc["id"], str):
+            doc["id"] = str(doc["id"])
+        return doc
+
+    async def list(
+        self,
+        collection: str,
+        filters: Optional[dict[str, Any]] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List execution documents ordered by ``timestamp DESC``.
+
+        Args:
+            collection: Table name (validated against safe-name regex).
+            filters: Optional filters — see :meth:`_build_where`.
+            limit: Maximum number of rows to return.
+            offset: Number of rows to skip (pagination).
+
+        Returns:
+            A list of execution documents, newest first. Empty list on error
+            or when no rows match.
+        """
+        try:
+            conn = await self._ensure()
+            await self._ensure_table(conn, collection)
+
+            conditions, params = self._build_where(filters)
+            where = " AND ".join(conditions) if conditions else "TRUE"
+            idx = len(params) + 1
+
+            rows = await conn.fetch(
+                f"SELECT * FROM {collection} WHERE {where} "
+                f"ORDER BY timestamp DESC LIMIT ${idx} OFFSET ${idx + 1}",
+                *params,
+                limit,
+                offset,
+            )
+            return [self._row_to_document(row) for row in rows] if rows else []
+        except Exception as exc:
+            self.logger.warning(
+                "PostgresResultStorage list failed for collection=%s: %s",
+                collection,
+                exc,
+            )
+            return []
+
+    async def get(
+        self,
+        collection: str,
+        record_id: str,
+    ) -> Optional[dict[str, Any]]:
+        """Retrieve a single execution document by its record id.
+
+        Args:
+            collection: Table name (validated against safe-name regex).
+            record_id: UUID of the record, as a string.
+
+        Returns:
+            The execution document, or ``None`` if not found or on error.
+        """
+        try:
+            conn = await self._ensure()
+            await self._ensure_table(conn, collection)
+
+            row = await conn.fetchrow(
+                f"SELECT * FROM {collection} WHERE id = $1",
+                record_id,
+            )
+            return self._row_to_document(row) if row else None
+        except Exception as exc:
+            self.logger.warning(
+                "PostgresResultStorage get failed for collection=%s, id=%s: %s",
+                collection,
+                record_id,
+                exc,
+            )
+            return None
+
+    async def delete(
+        self,
+        collection: str,
+        record_id: str,
+    ) -> bool:
+        """Delete a single execution document by its record id.
+
+        Args:
+            collection: Table name (validated against safe-name regex).
+            record_id: UUID of the record, as a string.
+
+        Returns:
+            ``True`` if a row was deleted, ``False`` otherwise (including on
+            error, so callers see a uniform "nothing happened" signal).
+        """
+        try:
+            conn = await self._ensure()
+            await self._ensure_table(conn, collection)
+
+            result = await conn.execute(
+                f"DELETE FROM {collection} WHERE id = $1",
+                record_id,
+            )
+            # asyncpg-style command status strings look like "DELETE 1".
+            if isinstance(result, str) and result.split():
+                return int(result.split()[-1]) > 0
+            return False
+        except Exception as exc:
+            self.logger.warning(
+                "PostgresResultStorage delete failed for collection=%s, id=%s: %s",
+                collection,
+                record_id,
+                exc,
+            )
+            return False
+
+    async def count(
+        self,
+        collection: str,
+        filters: Optional[dict[str, Any]] = None,
+    ) -> int:
+        """Count execution documents matching the given filters.
+
+        Args:
+            collection: Table name (validated against safe-name regex).
+            filters: Optional filters — see :meth:`_build_where`.
+
+        Returns:
+            The number of matching rows, or ``0`` on error.
+        """
+        try:
+            conn = await self._ensure()
+            await self._ensure_table(conn, collection)
+
+            conditions, params = self._build_where(filters)
+            where = " AND ".join(conditions) if conditions else "TRUE"
+
+            result = await conn.fetchval(
+                f"SELECT COUNT(*) FROM {collection} WHERE {where}",
+                *params,
+            )
+            return int(result) if result is not None else 0
+        except Exception as exc:
+            self.logger.warning(
+                "PostgresResultStorage count failed for collection=%s: %s",
+                collection,
+                exc,
+            )
+            return 0
