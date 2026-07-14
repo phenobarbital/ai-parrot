@@ -1,14 +1,18 @@
 """parrot.knowledge.wiki — LLM Wiki: Persistent Knowledge Base (FEAT-260).
 
-Implements Karpathy's 3-layer LLM Wiki architecture on top of
-AI-Parrot's existing PageIndex and GraphIndex modules:
+Implements Karpathy's 3-layer LLM Wiki architecture, optimised for
+machine retrieval (tools and LLMs) rather than human-readable storage:
 
 - **Raw Sources** — :class:`SourceCollectionManager` tracks ingested
-  documents with SHA-1 hash + mtime staleness detection.
-- **Wiki Pages** — LLM-generated Markdown pages stored in PageIndex trees
-  and synchronised to GraphIndex as ``WIKI_PAGE`` nodes.
-- **Schema** — OKF ontology extensions (wiki ConceptType values,
-  SUMMARIZES / CONTRADICTS relation types).
+  documents with SHA-1 hash + mtime staleness detection (persisted in
+  the wiki's SQLite plane).
+- **Wiki Pages** — structured by PageIndex at ingest time, then served
+  from :class:`WikiStore` — a single-file SQLite retrieval plane
+  (FTS5/BM25 + optional embedding cosine + typed edges) — with
+  token-budgeted context packing (:func:`pack_results`) and
+  progressive disclosure.
+- **Schema** — open-string categories/relations in the machine plane;
+  OKF ontology extensions retained at the export boundary.
 
 Public API::
 
@@ -24,10 +28,15 @@ Public API::
         WikiCombinedSearch,
         WikiIngestOrchestrator,
         IngestReport,
+        WikiStore,
+        WikiPageRecord,
+        PackedContext,
+        pack_results,
     )
 """
 
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+from parrot.knowledge.wiki.context import PackedContext, pack_results
 from parrot.knowledge.wiki.ingest import IngestReport, WikiIngestOrchestrator
 from parrot.knowledge.wiki.models import (
     SourceManifestEntry,
@@ -38,6 +47,7 @@ from parrot.knowledge.wiki.models import (
 )
 from parrot.knowledge.wiki.search import WikiCombinedSearch
 from parrot.knowledge.wiki.sources import SourceCollectionManager
+from parrot.knowledge.wiki.store import WikiPageRecord, WikiStore
 from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
 
 __all__ = [
@@ -59,4 +69,10 @@ __all__ = [
     "IngestReport",
     # Lint
     "WikiLintReport",
+    # Retrieval plane (machine-first)
+    "WikiStore",
+    "WikiPageRecord",
+    # Context packing
+    "PackedContext",
+    "pack_results",
 ]

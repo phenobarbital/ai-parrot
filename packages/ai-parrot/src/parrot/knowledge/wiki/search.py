@@ -221,6 +221,7 @@ class WikiCombinedSearch:
             category = WikiPageCategory(raw_category) if raw_category else None
         except ValueError:
             category = None
+        token_count = row.get("token_count")
         return WikiSearchResult(
             node_id=str(row.get("concept_id") or row.get("node_id") or ""),
             title=str(row.get("title") or ""),
@@ -228,6 +229,7 @@ class WikiCombinedSearch:
             source=source,
             snippet=str(row.get("summary") or ""),
             category=category,
+            token_count=int(token_count) if token_count is not None else None,
         )
 
     async def find_related(
@@ -490,14 +492,5 @@ class WikiCombinedSearch:
                 normalised = 1.0
 
             weighted_score = min(max(normalised * weight, 0.0), 1.0)
-            weighted.append(
-                WikiSearchResult(
-                    node_id=r.node_id,
-                    title=r.title,
-                    score=weighted_score,
-                    source=r.source,
-                    snippet=r.snippet,
-                    category=r.category,
-                )
-            )
+            weighted.append(r.model_copy(update={"score": weighted_score}))
         return weighted

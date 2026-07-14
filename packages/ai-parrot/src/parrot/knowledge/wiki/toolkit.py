@@ -22,6 +22,11 @@ from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+from parrot.knowledge.wiki.context import (
+    DEFAULT_BUDGET_TOKENS,
+    pack_results,
+    truncate_to_tokens,
+)
 from parrot.knowledge.wiki.ingest import IngestReport, WikiIngestOrchestrator
 from parrot.knowledge.wiki.models import (
     WikiConfig,
@@ -179,8 +184,8 @@ class LLMWikiToolkit(AbstractToolkit):
         results = await self._search.search(
             question, mode=mode, top_k=10, tree_name=wiki_name
         )
-        context_snippets = [r.snippet for r in results if r.snippet]
-        answer = self._synthesise_answer(question, context_snippets)
+        packed = pack_results(results, budget_tokens=DEFAULT_BUDGET_TOKENS)
+        answer = self._synthesise_answer(question, packed.text)
 
         filed_page_id: Optional[str] = None
         if file_answer:
@@ -451,22 +456,32 @@ class LLMWikiToolkit(AbstractToolkit):
         self,
         wiki_name: str,
         page_id: str,
+        max_tokens: Optional[int] = None,
     ) -> dict[str, Any]:
         """Read the full content of a wiki page by its ID.
+
+        Progressive disclosure: search returns compact stubs with each
+        page's token cost; call this only for pages worth their tokens,
+        optionally capping the spend with ``max_tokens``.
 
         Args:
             wiki_name: Wiki name containing the page.
             page_id: Stable ``concept_id`` of the page (a volatile
                 PageIndex ``node_id`` is also accepted).
+            max_tokens: Optional ceiling on returned content tokens —
+                the body is deterministically truncated when over.
 
         Returns:
             Dict with keys: page_id, title, category, summary, content,
-            token_count, source_id.  Returns ``{"error": "not_found"}``
-            when the page does not exist.
+            token_count, truncated, source_id.  Returns
+            ``{"error": "not_found"}`` when the page does not exist.
         """
         page = await self._store.get_page(page_id)
         if page is None:
             return {"error": "not_found", "page_id": page_id}
+        content, truncated = truncate_to_tokens(
+            page.get("body", ""), max_tokens
+        )
         return {
             "page_id": page["concept_id"],
             "node_id": page.get("node_id"),
@@ -474,8 +489,9 @@ class LLMWikiToolkit(AbstractToolkit):
             "title": page.get("title", ""),
             "category": page.get("category", ""),
             "summary": page.get("summary", ""),
-            "content": page.get("body", ""),
+            "content": content,
             "token_count": page.get("token_count", 0),
+            "truncated": truncated,
             "source_id": page.get("source_id"),
         }
 
@@ -742,6 +758,74 @@ class LLMWikiToolkit(AbstractToolkit):
         )
         return [r.model_dump() for r in results]
 
+    async def search_compact(
+        self,
+        wiki_name: str,
+        query: str,
+        budget_tokens: int = DEFAULT_BUDGET_TOKENS,
+        mode: str = "combined",
+    ) -> dict[str, Any]:
+        """Search and return token-budgeted compact stubs (preferred).
+
+        Each stub carries the page id, title, lead sentence, score, and
+        the token cost of reading the full page — so the caller can
+        decide what to ``read_page`` next without paying for bodies
+        up front.
+
+        Args:
+            wiki_name: Wiki name to search.
+            query: Natural-language search query.
+            budget_tokens: Hard token ceiling for the packed context.
+            mode: ``"combined"``, ``"lexical"``, or ``"vector"``.
+
+        Returns:
+            Dict with keys: context (packed text), stubs, tokens_used,
+            results_packed, total_available, truncated.
+        """
+        results = await self._search.search(
+            query, mode=mode, top_k=25, tree_name=wiki_name
+        )
+        packed = pack_results(results, budget_tokens=budget_tokens)
+        return {
+            "context": packed.text,
+            "stubs": packed.stubs,
+            "tokens_used": packed.tokens_used,
+            "results_packed": packed.results_packed,
+            "total_available": packed.total_available,
+            "truncated": packed.truncated,
+        }
+
+    async def expand(
+        self,
+        wiki_name: str,
+        page_id: str,
+        rel: Optional[str] = None,
+        budget_tokens: int = DEFAULT_BUDGET_TOKENS,
+    ) -> dict[str, Any]:
+        """Progressively disclose a page's graph neighbourhood as stubs.
+
+        Args:
+            wiki_name: Wiki name.
+            page_id: Seed page ``concept_id``.
+            rel: Optional exact relation filter (e.g. ``"summarizes"``,
+                ``"references"``).
+            budget_tokens: Token ceiling for the packed stubs.
+
+        Returns:
+            Dict with keys: page_id, context, stubs, tokens_used,
+            total_available, truncated.
+        """
+        neighbours = await self._store.neighbors(page_id, rel=rel)
+        packed = pack_results(neighbours, budget_tokens=budget_tokens)
+        return {
+            "page_id": page_id,
+            "context": packed.text,
+            "stubs": packed.stubs,
+            "tokens_used": packed.tokens_used,
+            "total_available": packed.total_available,
+            "truncated": packed.truncated,
+        }
+
     async def find_related(
         self,
         wiki_name: str,
@@ -856,25 +940,25 @@ class LLMWikiToolkit(AbstractToolkit):
     def _synthesise_answer(
         self,
         question: str,
-        snippets: list[str],
+        packed_context: str,
     ) -> str:
-        """Synthesise an answer from search result snippets.
+        """Synthesise an answer from token-budgeted packed context.
 
-        This is a lightweight placeholder: it concatenates the top
-        snippets with attribution markers.  In production, replace with an
-        LLM completion call using the bot's configured adapter.
+        This is a lightweight placeholder: it returns the packed stub
+        block with an attribution header.  In production, replace with
+        an LLM completion call using the bot's configured adapter — the
+        packed context is already budgeted for direct prompt inclusion.
 
         Args:
             question: The original question.
-            snippets: List of content snippets from search results.
+            packed_context: Compact stub block from :func:`pack_results`.
 
         Returns:
             A synthesised answer string.
         """
-        if not snippets:
+        if not packed_context:
             return (
                 f"No relevant wiki pages found for: {question!r}. "
                 "Try ingesting more sources first."
             )
-        joined = "\n\n".join(snippets[:5])
-        return f"Based on the wiki knowledge base:\n\n{joined}"
+        return f"Based on the wiki knowledge base:\n\n{packed_context}"

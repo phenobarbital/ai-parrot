@@ -158,16 +158,20 @@ class SourceManifestEntry(BaseModel):
 
 
 class WikiSearchResult(BaseModel):
-    """Unified search result returned by combined (PageIndex + GraphIndex) search.
+    """Unified wiki search result.
 
     Attributes:
-        node_id: Stable node/page identifier in the underlying index.
+        node_id: Stable page identifier (``concept_id`` on the WikiStore
+            path; index node id on the legacy path).
         title: Human-readable page or node title.
         score: Normalised relevance score in [0, 1] after weight application.
-        source: Which backend produced this result — ``"pageindex"`` or
-            ``"graphindex"``.
+        source: Which search leg produced this result — ``"lexical"`` /
+            ``"vector"`` (WikiStore plane) or ``"pageindex"`` /
+            ``"graphindex"`` (legacy toolkit path).
         snippet: Short excerpt or summary extracted from the page content.
         category: Optional WikiPageCategory if the page has one.
+        token_count: Token cost of reading the full page body — used by
+            context packing to budget progressive disclosure.
     """
 
     node_id: str = Field(..., description="Stable node/page identifier")
@@ -180,7 +184,15 @@ class WikiSearchResult(BaseModel):
     )
     source: str = Field(
         ...,
-        description="Search backend: 'pageindex' or 'graphindex'",
+        description=(
+            "Search leg: 'lexical'/'vector' (WikiStore) or "
+            "'pageindex'/'graphindex' (legacy)"
+        ),
+    )
+    token_count: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Token cost of the full page body (for budgeting)",
     )
     snippet: str = Field(
         default="",
