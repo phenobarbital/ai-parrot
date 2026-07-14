@@ -207,9 +207,66 @@ Completion Note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude, Sonnet 5)
+**Date**: 2026-07-13
+**Notes**: Implemented `LeadIQToolkit` and `LeadIQSearchInput` in
+`packages/ai-parrot-tools/src/parrot_tools/leadiq/tool.py`, porting the three
+GraphQL query constants and the three `_process_*_response` transforms
+verbatim from `flowtask/components/LeadIQ.py`, adapting only
+`self._logger` → `self.logger` and dropping `self._counter`. Composed
+`self.http = HTTPService(base_url=self.base_url, **kwargs)` (no
+`HTTPService` inheritance). `_build_headers()` injects `LEADIQ_API_KEY`
+verbatim (no re-encoding) with `apollo-require-preflight: true`.
+`_execute_query` unpacks `(result, error)` from `self.http.session(...)`.
+Each of the three tools checks for a missing API key up front and wraps
+`_execute_query`/processing in `try/except` so no unhandled exception can
+escape a tool call — every path returns a `ToolResult`. Verified via
+`ruff check` (clean) and a manual import/`get_tools()` smoke test
+confirming exactly `leadiq_search_company`, `leadiq_search_employees`,
+`leadiq_search_flat` are exposed. Full pytest suite deferred to TASK-1758.
+**Deviations from spec**: none. One implementation judgment call not
+fully specified by the spec: when `_process_employee_response` /
+`_process_flat_response` return `None` (flowtask's ported logic conflates
+"no companies/people found" with "unexpected response structure" — both
+log a warning and return `None`), this toolkit maps that case to
+`ToolResult(success=True, result=[], metadata={"count": 0, ...})` rather
+than an error, treating it as "no results" rather than failure. This is
+not contradicted by any acceptance criterion but is worth flagging for
+review.
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Post-review fix (2026-07-14)**: `code-reviewer` found a blocking bug —
+the composed `self.http = HTTPService(base_url=self.base_url, **kwargs)`
+never set `accept="application/json"`. `HTTPService.session()` branches
+on `self.accept` (not the response's actual `Content-Type`) to decide
+whether to parse JSON or return raw text, so every real (non-mocked)
+LeadIQ API call would come back as a string and `_process_*_response`
+would raise `TypeError` on `result["data"]` — invisible to the unit
+suite because it mocks `toolkit.http.session` directly, bypassing that
+branch. Fixed by adding `accept="application/json"` to the composed
+`HTTPService` constructor call, moved the `_process_*_response` call
+inside the existing `try/except` around `_execute_query` in all three
+tool methods for consistent tool-scoped error messages, and added a
+regression test (`test_composed_http_service_accepts_json` in
+`test_leadiq.py`) asserting `toolkit.http.accept == "application/json"`.
+See commit `102af3fa0`.
+
+**Post-review cleanup (2026-07-14, commit `26ec43ab7`)**: addressed the
+review's non-blocking findings too:
+- Added a `_resolve_api_key()` helper so `self._api_key or
+  config.get("LEADIQ_API_KEY")` is looked up in exactly one place instead
+  of being duplicated across `_build_headers()` and all three `search_*`
+  methods.
+- The `None` vs `[]` ambiguity flagged above is now surfaced instead of
+  silently hidden: `search_employees`/`search_flat` set
+  `metadata["ambiguous_empty"] = True` when the ported transform returns
+  `None` (structure/no-match ambiguity), while a normal non-empty result
+  omits the key entirely. The ported `_process_employee_response`/
+  `_process_flat_response` functions themselves were left untouched
+  (still verbatim) — only the wrapper's handling of their `None` return
+  changed.
+- Corrected `sdd/specs/leadiqtool.spec.md` (§1 Goals, §5 AC) — it said
+  `HTTPService` was aiohttp-based; it's actually `httpx.AsyncClient`-based
+  internally (`parrot/interfaces/http.py:359`). The AC's real intent (no
+  direct `requests`/`httpx` import in the new module) is unchanged and
+  still satisfied.
+- Added 3 more tests (13 total) covering the `ambiguous_empty` flag.

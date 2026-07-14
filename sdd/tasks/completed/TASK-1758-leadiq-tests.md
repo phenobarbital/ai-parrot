@@ -141,9 +141,29 @@ Standard flow: verify TASK-1756 & TASK-1757 completed → implement tests →
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude, Sonnet 5)
+**Date**: 2026-07-13
+**Notes**: Created `packages/ai-parrot-tools/tests/test_leadiq.py` covering
+all Spec §4 / Acceptance Criteria rows: `test_toolkit_exposes_three_tools`,
+`test_headers_use_basic_auth_verbatim`, `test_missing_api_key_returns_error_toolresult`,
+`test_search_company_flattens_response`, `test_search_employees_returns_person_rows`,
+`test_search_flat_returns_person_rows`, `test_no_results_company`,
+`test_registry_entry_resolves`, plus one extra
+`test_search_input_schema_defaults_and_limit_bounds` covering
+`LeadIQSearchInput`'s default/`ge`/`le` bounds. All mocking is via
+`patch.object(toolkit.http, "session", new=AsyncMock(...))` (composed
+member, per the "does NOT exist: toolkit.session" contract note) —
+no real network calls. For the missing-key test,
+`parrot_tools.leadiq.tool.config.get` is patched directly (rather than only
+`monkeypatch.setenv`/`delenv`) because this host's ambient `.env` may or may
+not define `LEADIQ_API_KEY`; patching `config.get` makes the test
+hermetic/host-independent — a stale assumption in the task's Implementation
+Notes ("Clear/set LEADIQ_API_KEY via monkeypatch/env") that I corrected
+while implementing. `tool_schema` was verified (via
+`packages/ai-parrot/src/parrot/tools/decorators.py:37`) to only set
+attributes on the function and return it unwrapped, so tools are called
+directly (`await toolkit.search_company(...)`), no `__wrapped__` needed.
+`pytest packages/ai-parrot-tools/tests/test_leadiq.py -v` → 9 passed;
+`ruff check` clean.
+**Deviations from spec**: none (see the hermetic-mocking note above for the
+one Implementation Notes correction).
