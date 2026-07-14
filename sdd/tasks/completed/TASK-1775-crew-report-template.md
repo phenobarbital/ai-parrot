@@ -174,10 +174,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-14
+**Notes**: Added `TEMPLATE_CREW_REPORT` (title required + unbounded tab_view)
+and registered it in `_register_builtins()`. `multi_tab` left untouched
+(verified min_items=3/max_items=7 still intact via test). 5 unit tests pass,
+ruff clean.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

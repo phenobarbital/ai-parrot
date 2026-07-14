@@ -14,7 +14,7 @@
       "feature_id": "FEAT-308",
       "feature": "agentcrew-node-infographic",
       "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Standalone template registration in infographic_templates.py — no shared files with TASK-1776.",
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1775-crew-report-template.md"
+      "completed_at": "2026-07-14T01:21:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1775-crew-report-template.md"
     },
     {
       "id": "TASK-1776",
