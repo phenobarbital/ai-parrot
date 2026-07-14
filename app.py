@@ -38,6 +38,10 @@ from parrot.handlers.lyria_music import LyriaMusicHandler
 from parrot.handlers.understanding import UnderstandingHandler
 from parrot.handlers.mediagen import MediaGen
 from parrot.handlers.stores import VectorStoreHandler
+from parrot.handlers.crew import (
+    CrewHandler,
+    CrewExecutionHandler,
+)
 ## Jira Integration:
 from parrot.auth.jira_oauth import JiraOAuthManager
 from parrot.integrations.telegram.combined_callback import setup_combined_auth_routes
@@ -213,6 +217,11 @@ class Main(AppHandler):
         VideoReelHandler.setup(self.app)
         ## Vector Store Handler API:
         VectorStoreHandler.setup(self.app)
+        # AgentCrew Handlers:
+        # - CrewHandler: CRUD over crew definitions (/api/v1/crew)
+        # - CrewExecutionHandler: run/monitor crew jobs (/api/v1/crews)
+        CrewHandler.configure(self.app, '/api/v1/crew')
+        CrewExecutionHandler.configure(self.app, '/api/v1/crews')
         # Lyria:
         self.app.router.add_view(
             "/api/v1/google/generation/music", LyriaMusicHandler

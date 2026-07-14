@@ -1,0 +1,129 @@
+{
+  "feature": "agentcrew-node-infographic",
+  "feature_id": "FEAT-308",
+  "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-14T00:00:00Z",
+  "completed_at": "2026-07-14T02:26:50+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1775",
+      "slug": "crew-report-template",
+      "title": "Register crew_report infographic template variant",
+      "feature_id": "FEAT-308",
+      "feature": "agentcrew-node-infographic",
+      "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Standalone template registration in infographic_templates.py — no shared files with TASK-1776.",
+      "assigned_to": null,
+      "started_at": "2026-07-14T01:19:18+00:00",
+      "completed_at": "2026-07-14T01:21:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1775-crew-report-template.md"
+    },
+    {
+      "id": "TASK-1776",
+      "slug": "flowresult-infographic-field",
+      "title": "Add infographic field to FlowResult",
+      "feature_id": "FEAT-308",
+      "feature": "agentcrew-node-infographic",
+      "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only core/result.py — no shared files with TASK-1775.",
+      "assigned_to": null,
+      "started_at": "2026-07-14T01:19:18+00:00",
+      "completed_at": "2026-07-14T01:24:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1776-flowresult-infographic-field.md"
+    },
+    {
+      "id": "TASK-1777",
+      "slug": "tab-assembly-helper",
+      "title": "Deterministic tab-assembly helper for crew infographic",
+      "feature_id": "FEAT-308",
+      "feature": "agentcrew-node-infographic",
+      "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1775"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports crew_report template from TASK-1775; creates new file so no file conflict, but logical dependency.",
+      "assigned_to": null,
+      "started_at": "2026-07-14T01:19:18+00:00",
+      "completed_at": "2026-07-14T01:29:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1777-tab-assembly-helper.md"
+    },
+    {
+      "id": "TASK-1778",
+      "slug": "result-agent",
+      "title": "ResultAgent — registered agent for infographic rendering",
+      "feature_id": "FEAT-308",
+      "feature": "agentcrew-node-infographic",
+      "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1775"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on crew_report template (TASK-1775); imports merge_tab1_blocks from TASK-1777 at runtime. Could technically parallel with 1777 but logical coupling is high.",
+      "assigned_to": null,
+      "started_at": "2026-07-14T01:19:18+00:00",
+      "completed_at": "2026-07-14T01:35:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1778-result-agent.md"
+    },
+    {
+      "id": "TASK-1779",
+      "slug": "agentcrew-finalize-infographic",
+      "title": "AgentCrew._finalize_infographic integration",
+      "feature_id": "FEAT-308",
+      "feature": "agentcrew-node-infographic",
+      "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1776",
+        "TASK-1777",
+        "TASK-1778"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Central integration point — modifies crew.py which depends on all prior modules.",
+      "assigned_to": null,
+      "started_at": "2026-07-14T01:19:18+00:00",
+      "completed_at": "2026-07-14T01:39:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1779-agentcrew-finalize-infographic.md"
+    },
+    {
+      "id": "TASK-1780",
+      "slug": "infographic-integration-tests",
+      "title": "End-to-end integration tests for crew infographic",
+      "feature_id": "FEAT-308",
+      "feature": "agentcrew-node-infographic",
+      "spec": "sdd/specs/agentcrew-node-infographic.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1779"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Requires all modules integrated; exercises the full flow.",
+      "assigned_to": null,
+      "started_at": "2026-07-14T01:19:18+00:00",
+      "completed_at": "2026-07-14T02:26:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1780-infographic-integration-tests.md"
+    }
+  ]
+}

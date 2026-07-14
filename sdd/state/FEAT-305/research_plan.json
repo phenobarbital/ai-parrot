@@ -1,0 +1,95 @@
+{
+  "feat_id": "FEAT-305",
+  "mode_detected": "enrichment",
+  "created_at": "2026-07-13T22:37:03+00:00",
+  "queries": [
+    {
+      "id": "Q001",
+      "type": "read",
+      "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/CompanyScraper/scrapper.py",
+      "intent": "Understand the base component: orchestration of extractors, HTTP strategy, proxies, retries, output shape",
+      "priority": 1
+    },
+    {
+      "id": "Q002",
+      "type": "read",
+      "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/CompanyScraper/parsers/base.py",
+      "intent": "Extractor base class contract (interface each source implements)",
+      "priority": 1
+    },
+    {
+      "id": "Q003",
+      "type": "read",
+      "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/CompanyScraper/parsers/{leadiq,rocket,zoominfo,explorium,siccode,visualvisitor}.py",
+      "intent": "Per-source extraction logic, selectors/APIs used, fields produced, flowtask-specific coupling to strip",
+      "priority": 1
+    },
+    {
+      "id": "Q004",
+      "type": "read",
+      "target": "packages/ai-parrot/src/parrot/tools/abstract.py",
+      "intent": "AbstractTool/AbstractToolkit contract to inherit",
+      "priority": 1
+    },
+    {
+      "id": "Q005",
+      "type": "read",
+      "target": "packages/ai-parrot/src/parrot/tools/workiq_tool.py",
+      "intent": "Exemplar of an external-API research toolkit in parrot (closest analog)",
+      "priority": 2
+    },
+    {
+      "id": "Q006",
+      "type": "grep",
+      "target": "playwright|selenium|BeautifulSoup|bs4|scrap|proxy",
+      "scope": "packages/ai-parrot/src/parrot/tools/",
+      "intent": "Existing scraping/anti-bot infrastructure in parrot tools",
+      "priority": 2
+    },
+    {
+      "id": "Q007",
+      "type": "grep",
+      "target": "class .*Toolkit\\(AbstractToolkit\\)",
+      "scope": "packages/ai-parrot/src/parrot/",
+      "intent": "Toolkit registration + naming conventions",
+      "priority": 2
+    },
+    {
+      "id": "Q008",
+      "type": "read",
+      "target": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+      "intent": "AbstractToolkit implementation: how tools are derived from methods, docstring→schema",
+      "priority": 1
+    },
+    {
+      "id": "Q009",
+      "type": "grep",
+      "target": "navconfig|Network credentials|API_KEY",
+      "scope": "flowtask CompanyScraper sources",
+      "intent": "Credential/config coupling that must be replaced by parrot-style env config",
+      "priority": 2
+    },
+    {
+      "id": "Q010",
+      "type": "git_log",
+      "target": "packages/ai-parrot/src/parrot/tools/",
+      "intent": "Recent tool-area activity to avoid collisions",
+      "priority": 3
+    },
+    {
+      "id": "Q011",
+      "type": "grep",
+      "target": "google search|googlesearch|serp|duckduckgo|search_engine",
+      "scope": "flowtask scrapper.py + parrot",
+      "intent": "How CompanyScraper discovers source URLs (search-engine dependency) and whether parrot has an equivalent",
+      "priority": 2
+    },
+    {
+      "id": "Q012",
+      "type": "read",
+      "target": "packages/ai-parrot/src/parrot/tools/stub_credentialed_tool.py",
+      "intent": "Pattern for credentialed tools (API keys per user/tenant)",
+      "priority": 3
+    }
+  ]
+}

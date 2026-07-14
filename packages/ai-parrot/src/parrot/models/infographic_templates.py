@@ -478,6 +478,33 @@ TEMPLATE_MULTI_TAB = InfographicTemplate(
 )
 
 
+TEMPLATE_CREW_REPORT = InfographicTemplate(
+    name="crew_report",
+    description=(
+        "Crew execution report: exec summary + final result + per-agent tabs. "
+        "Bound-relaxed variant of 'multi_tab' with a dynamic tab count (no "
+        "3-7 clamp) to accommodate any number of research agents."
+    ),
+    default_theme="light",
+    block_specs=[
+        BlockSpec(
+            block_type=BlockType.TITLE,
+            description="Report title",
+            required=True,
+        ),
+        BlockSpec(
+            block_type=BlockType.TAB_VIEW,
+            description=(
+                "1..N tabs: Exec Summary, Final Result, then one per "
+                "research agent."
+            ),
+            required=True,
+            # NO min_items / max_items — dynamic count (min 1, max = #agents + 2)
+        ),
+    ],
+)
+
+
 # ──────────────────────────────────────────────
 # Template Registry
 # ──────────────────────────────────────────────
@@ -503,6 +530,7 @@ class InfographicTemplateRegistry:
             TEMPLATE_MINIMAL,
             TEMPLATE_MULTI_TAB,
             TEMPLATE_FINANCIAL_VARIANCE,
+            TEMPLATE_CREW_REPORT,
         ):
             self._templates[tpl.name] = tpl
 

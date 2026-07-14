@@ -418,7 +418,10 @@ eda = [
 ]
 
 security = [
-    "pytector[gguf]==0.2.0",
+    # `gguf` extra dropped: it pulls llama-cpp-python (native compile) only to
+    # load GGUF models via llama.cpp, but we only use the deBERTa detector
+    # (torch/transformers). See abstract.py PromptInjectionDetector("deberta").
+    "pytector==0.2.0",
 ]
 
 xai = [

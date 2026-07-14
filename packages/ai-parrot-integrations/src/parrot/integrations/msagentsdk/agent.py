@@ -8,6 +8,9 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from navconfig.logging import logging
 
+from parrot.integrations.msagentsdk import cards
+from parrot.integrations.msagentsdk.semantic import SemanticUIResult
+
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
     from parrot.auth.context import UserContext
@@ -55,6 +58,9 @@ class ParrotM365Agent:
         conv_ref_store: Optional["MsaConversationRefStore"] = None,
         adapter: Optional[Any] = None,
         agent_app_id: Optional[str] = None,
+        enable_semantic_cards: bool = True,
+        max_table_rows: int = 15,
+        max_card_bytes: int = 25_000,
     ) -> None:
         """Initialise the bridge.
 
@@ -92,6 +98,13 @@ class ParrotM365Agent:
                 ``agent_app_id`` and the stores for resume to function.
             agent_app_id: Microsoft App ID (``client_id``) required by
                 ``adapter.continue_conversation()`` for proactive delivery.
+            enable_semantic_cards: If True (default), a ``SemanticUIResult``
+                on the agent's response (FEAT-303) is rendered as an
+                Adaptive Card; if False, the plain-text path is always used.
+            max_table_rows: Maximum table rows rendered in a Semantic UI
+                table card before truncating with a "showing N of M" note.
+            max_card_bytes: Maximum serialized Semantic UI card size in
+                bytes; exceeding it triggers the plain-text fallback.
         """
         self.parrot_agent = parrot_agent
         self.welcome_message = welcome_message or "Hello! I'm ready to help."
@@ -103,6 +116,9 @@ class ParrotM365Agent:
         self._conv_ref_store: Optional["MsaConversationRefStore"] = conv_ref_store
         self._adapter: Optional[Any] = adapter
         self._agent_app_id: Optional[str] = agent_app_id
+        self._cards_enabled: bool = enable_semantic_cards
+        self._max_table_rows: int = max_table_rows
+        self._max_card_bytes: int = max_card_bytes
         self.logger = logging.getLogger(
             f"ParrotM365Agent.{type(parrot_agent).__name__}"
         )
@@ -120,8 +136,9 @@ class ParrotM365Agent:
         Routes activities by type:
         - ``message`` → ``_handle_message()``
         - ``conversationUpdate`` → ``_handle_conversation_update()``
-        - ``invoke`` → ``_handle_signin_verify()`` or
-          ``_handle_signin_exchange()`` depending on the invoke name.
+        - ``invoke`` → ``_handle_signin_verify()``, ``_handle_signin_exchange()``,
+          or ``_handle_adaptive_card_action()`` (FEAT-303) depending on the
+          invoke name.
         - Other types → logged at DEBUG and ignored.
 
         Args:
@@ -143,6 +160,8 @@ class ParrotM365Agent:
                 await self._handle_signin_verify(context)
             elif name == "signin/tokenExchange":
                 await self._handle_signin_exchange(context)
+            elif name == "adaptiveCard/action":
+                await self._handle_adaptive_card_action(context)
             else:
                 self.logger.debug("Ignoring invoke type: %s", name)
         else:
@@ -295,7 +314,11 @@ class ParrotM365Agent:
                 ctx=request_ctx,
                 permission_context=pctx,
             )
-            await self._send_text(context, str(response.content))
+            semantic_result = self._extract_semantic_result(response)
+            if semantic_result is None or not self._cards_enabled:
+                await self._send_text(context, str(response.content))
+            else:
+                await self._send_semantic_card(context, semantic_result, response)
         except Exception as exc:  # noqa: BLE001
             # Canonical CredentialRequired (FEAT-264 / TASK-1667).
             # Raised by AbstractTool.execute() seam when broker returns NeedsAuth.
@@ -351,6 +374,91 @@ class ParrotM365Agent:
                 )
         finally:
             _pctx_var.reset(token)
+
+    # ------------------------------------------------------------------
+    # Semantic UI Model card seam (FEAT-303)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_semantic_result(response: Any) -> Optional[SemanticUIResult]:
+        """Extract a `SemanticUIResult` from an `AIMessage` response.
+
+        Checks `response.structured_output` first, then `response.data`, in
+        that priority order. Only an actual `SemanticUIResult` instance is
+        accepted — no dict duck-typing (spec §7).
+
+        Args:
+            response: The `AIMessage` returned by `parrot_agent.ask()`.
+
+        Returns:
+            The `SemanticUIResult` instance, or `None` when neither carrier
+            holds one.
+        """
+        structured_output = getattr(response, "structured_output", None)
+        if isinstance(structured_output, SemanticUIResult):
+            return structured_output
+        data = getattr(response, "data", None)
+        if isinstance(data, SemanticUIResult):
+            return data
+        return None
+
+    async def _send_semantic_card(
+        self, context, result: SemanticUIResult, response: Any
+    ) -> None:
+        """Render `result` as an Adaptive Card and send it, with fallback.
+
+        Renders via `cards.render_card()` and sends a single message
+        Activity carrying the adaptive card attachment plus the plain-text
+        rendering (`cards.render_text()`) as the channel fallback in
+        `Activity.text` — same envelope as `_emit_adaptive_card`
+        (agent.py:729-738).
+
+        Any exception in the render/send path is logged and degrades to
+        `_send_text(render_text(result))`; if even that somehow raises, a
+        final fallback sends `str(response.content)`. No exception may
+        escape this method.
+
+        Args:
+            context: `TurnContext` to send the reply through.
+            result: The `SemanticUIResult` to render.
+            response: The original `AIMessage`, used only for the
+                last-resort text fallback.
+        """
+        from microsoft_agents.activity import Activity, ActivityTypes
+
+        try:
+            card = cards.render_card(
+                result,
+                max_table_rows=self._max_table_rows,
+                max_card_bytes=self._max_card_bytes,
+            )
+            attachment = cards.build_card_attachment(card)
+            fallback_text = cards.render_text(result)
+            reply = Activity(
+                type=ActivityTypes.message,
+                text=fallback_text,
+                attachments=[attachment],
+            )
+            await context.send_activity(reply)
+            self.logger.info(
+                "Semantic UI card sent: result_type=%s actions=%d",
+                result.payload.result_type,
+                len(result.actions),
+            )
+        except Exception as exc:  # noqa: BLE001 - card path must never break the turn
+            self.logger.error(
+                "Semantic UI card render/send failed — falling back to text: %s",
+                exc,
+                exc_info=True,
+            )
+            try:
+                await self._send_text(context, cards.render_text(result))
+            except Exception:  # noqa: BLE001 - belt-and-braces last resort
+                self.logger.error(
+                    "render_text() fallback also failed — sending raw content",
+                    exc_info=True,
+                )
+                await self._send_text(context, str(response.content))
 
     # ------------------------------------------------------------------
     # Invoke handlers (sign-in round-trip)
@@ -418,6 +526,64 @@ class ParrotM365Agent:
         await self._send_invoke_response(context, status_code=200)
         # Proactive resume — look up by user_id (no nonce in signin invoke).
         await self._try_resume_by_user(user_id)
+
+    async def _handle_adaptive_card_action(self, context) -> None:
+        """Handle an ``adaptiveCard/action`` invoke (FEAT-303 compatibility shim).
+
+        Some surfaces (notably M365 Copilot) may deliver a card action click
+        as an ``adaptiveCard/action`` Universal-Action invoke instead of a
+        normal ``messageBack`` message activity. This shim acknowledges the
+        invoke immediately (Bot Framework requires a timely response) and
+        then extracts the natural-language prompt embedded in the action's
+        ``data`` payload (built by
+        :func:`~parrot.integrations.msagentsdk.cards.render_card`'s action
+        builder), feeding it through the normal ``_handle_message()`` path so
+        it reuses identity extraction, permission context, broker wiring,
+        and the Semantic UI card seam wholesale.
+
+        ``messageBack`` clicks (the primary round-trip) need no handling
+        here — Teams/Copilot deliver those as ordinary ``message``
+        activities that already route to ``_handle_message()``.
+
+        Args:
+            context: ``TurnContext`` carrying the ``adaptiveCard/action``
+                invoke Activity.
+        """
+        await self._send_invoke_response(context, status_code=200)
+
+        activity = context.activity
+        value = getattr(activity, "value", None) or {}
+        action = (
+            value.get("action")
+            if isinstance(value, dict)
+            else getattr(value, "action", None)
+        ) or {}
+        data = (
+            action.get("data")
+            if isinstance(action, dict)
+            else getattr(action, "data", None)
+        ) or {}
+
+        prompt: Optional[str] = None
+        if isinstance(data, dict):
+            prompt = data.get("feat303_prompt")
+            if not prompt:
+                msteams = data.get("msteams") or {}
+                prompt = msteams.get("text") if isinstance(msteams, dict) else None
+        else:
+            prompt = getattr(data, "feat303_prompt", None)
+            if not prompt:
+                msteams = getattr(data, "msteams", None)
+                prompt = getattr(msteams, "text", None) if msteams else None
+
+        if not prompt:
+            self.logger.warning(
+                "adaptiveCard/action invoke had no extractable prompt — ignoring"
+            )
+            return
+
+        activity.text = prompt
+        await self._handle_message(context)
 
     # ------------------------------------------------------------------
     # Suspend / resume (FEAT-264 / TASK-1674)

@@ -493,6 +493,8 @@ class BasicAgent(Chatbot, NotificationMixin):
         podcast_instructions: Optional[str] = "for_podcast.txt",
         directory: Optional[Path] = None,
         output_directory: Optional[Path] = None,
+        script_model: Optional[str] = None,
+        tts_model: Optional[str] = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """Generate a Transcript Report and a Podcast based on findings."""
@@ -539,11 +541,14 @@ class BasicAgent(Chatbot, NotificationMixin):
         )
         async with self.client as client:
             # 2. Generate the conversational script
-            response = await client.create_conversation_script(
-                report_data=script_config,
-                max_lines=max_lines,  # Limit to 15 lines for brevity,
-                use_structured_output=True,  # Use structured output for TTS
-            )
+            script_kwargs = {
+                "report_data": script_config,
+                "max_lines": max_lines,  # Limit to 15 lines for brevity,
+                "use_structured_output": True,  # Use structured output for TTS
+            }
+            if script_model is not None:
+                script_kwargs["model"] = script_model
+            response = await client.create_conversation_script(**script_kwargs)
             voice_prompt = response.output
             # 3. Save the script to a File:
             script_output_path = script_output_directory.joinpath(script_name)
@@ -555,10 +560,13 @@ class BasicAgent(Chatbot, NotificationMixin):
             output_directory = STATIC_DIR.joinpath(self.agent_id, "podcasts")
         output_directory.mkdir(parents=True, exist_ok=True)
         async with self.client as client:
-            speech_result = await client.generate_speech(
-                prompt_data=voice_prompt,
-                output_directory=output_directory,
-            )
+            speech_kwargs = {
+                "prompt_data": voice_prompt,
+                "output_directory": output_directory,
+            }
+            if tts_model is not None:
+                speech_kwargs["model"] = tts_model
+            speech_result = await client.generate_speech(**speech_kwargs)
             if speech_result and speech_result.files:
                 print(f"✅ Multi-voice speech saved to: {speech_result.files[0]}")
             # 5 Return the script and audio file paths

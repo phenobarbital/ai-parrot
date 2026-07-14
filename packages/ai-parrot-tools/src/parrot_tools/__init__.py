@@ -17,6 +17,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "msteams": "parrot_tools.msteams.MSTeamsToolkit",
     "zoom": "parrot_tools.zoomtoolkit.ZoomUsToolkit",
     "company_info": "parrot_tools.company_info.tool.CompanyInfoToolkit",
+    "leadiq": "parrot_tools.leadiq.tool.LeadIQToolkit",
     "troc": "parrot_tools.troc.tool.TROCOperationsToolkit",
     "navigator": "parrot_tools.navigator.toolkit.NavigatorToolkit",
     "bestbuy": "parrot_tools.retail.bby.BestBuyToolkit",
@@ -90,6 +91,7 @@ TOOL_REGISTRY: dict[str, str] = {
 
     # --- Individual Tools (Batch 2) ---
     "google_search": "parrot_tools.google.tools.GoogleSearchTool",
+    "google_site_search": "parrot_tools.google.tools.GoogleSiteSearchTool",
     "google_location": "parrot_tools.google.tools.GoogleLocationTool",
     "google_routes": "parrot_tools.google.tools.GoogleRoutesTool",
     "code_interpreter": "parrot_tools.codeinterpreter.tool.CodeInterpreterTool",
@@ -114,6 +116,7 @@ TOOL_REGISTRY: dict[str, str] = {
     # --- Individual Tools (Batch 3 — DB / finance / analysis) ---
     "arangodb_search": "parrot_tools.arangodbsearch.ArangoDBSearchTool",
     "multi_store_search": "parrot_tools.multistoresearch.MultiStoreSearchTool",
+    "ibisworld": "parrot_tools.ibisworld.tool.IBISWorldTool",
     "bloomberg": "parrot_tools.bloomberg.BloombergTool",
     "composite_score": "parrot_tools.composite_score.CompositeScoreTool",
     "correlation_analysis": "parrot_tools.correlationanalysis.CorrelationAnalysisTool",

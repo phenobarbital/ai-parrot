@@ -18,6 +18,10 @@ _LAZY_EXPORTS = {
     "MSAgentSDKConfig": ".models",
     "ParrotM365Agent": ".agent",
     "MSAgentSDKWrapper": ".wrapper",
+    "SemanticUIResult": ".semantic",
+    "UIAction": ".semantic",
+    "render_card": ".cards",
+    "render_text": ".cards",
 }
 
 __all__ = list(_LAZY_EXPORTS.keys())
@@ -41,3 +45,5 @@ if TYPE_CHECKING:
     from .models import MSAgentSDKConfig  # noqa: F401
     from .agent import ParrotM365Agent  # noqa: F401
     from .wrapper import MSAgentSDKWrapper  # noqa: F401
+    from .semantic import SemanticUIResult, UIAction  # noqa: F401
+    from .cards import render_card, render_text  # noqa: F401

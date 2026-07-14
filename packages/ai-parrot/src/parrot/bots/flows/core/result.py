@@ -18,9 +18,15 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, TYPE_CHECKING
 
 from .types import FlowStatus
+
+if TYPE_CHECKING:
+    # Avoid a hard import cycle: infographic_toolkit imports from parrot.models.*,
+    # not from bots.flows.core.result — this is import-safe, but kept lazy/forward
+    # to keep FlowResult's module import light. (FEAT-308)
+    from parrot.tools.infographic_toolkit import InfographicRenderResult
 
 # ResponseType alias — mirrors the one in parrot.models.crew
 try:
@@ -312,6 +318,13 @@ class FlowResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
     """Additional metadata (mode, iterations, etc.)."""
 
+    infographic: Optional["InfographicRenderResult"] = None
+    """Multi-tab infographic artifact populated by
+    ``AgentCrew._finalize_infographic`` when ``generate_infographic=True``
+    (FEAT-308). ``None`` by default and on any render/synthesis failure.
+    Kept as the LAST field to preserve existing positional/keyword
+    construction and ``build_*`` helpers."""
+
     # ── __setattr__ override (preserve summary contract) ─────────────────
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -486,6 +499,11 @@ class FlowResult:
             "errors": self.errors,
             "execution_log": self.execution_log,
             "metadata": self.metadata,
+            "infographic": (
+                self.infographic.model_dump()
+                if self.infographic is not None and hasattr(self.infographic, "model_dump")
+                else self.infographic
+            ),
         }
 
 
