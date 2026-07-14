@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-14T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-14T01:27:19+00:00",
   "tasks": [
     {
       "id": "TASK-1765",
@@ -113,7 +113,7 @@
       "feature_id": "FEAT-306",
       "feature": "crew-per-agent-result-persistence",
       "spec": "sdd/specs/crew-per-agent-result-persistence.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -127,8 +127,8 @@
       "parallelism_notes": "Final validation — requires the complete feature surface.",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1770-integration-tests-docs.md"
+      "completed_at": "2026-07-14T01:27:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1770-integration-tests-docs.md"
     }
   ]
 }
