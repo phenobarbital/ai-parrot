@@ -166,6 +166,14 @@ class WikiBuildConfig:
             (subset of ``{"package", "module", "class", "function", "doc"}``).
         max_body_chars: Hard cap on any page body (keeps token budgets sane).
         backend: Wiki store backend (``"sqlite"`` or ``"memory"``).
+        enrich_llm: Optional ``"provider:model"`` spec (e.g.
+            ``"google:gemini-3-flash"``).  When set, each selected page's
+            docstring-derived ``summary`` is rewritten into an LLM prose
+            summary before the store/OKF/graph artefacts are produced.
+        enrich_kinds: Page kinds whose summaries the LLM pass rewrites.
+        enrich_concurrency: Max concurrent LLM calls during enrichment.
+        enrich_limit: Optional cap on the number of pages enriched (handy
+            for a cheap trial run before committing to the full corpus).
     """
 
     repo: Path
@@ -178,6 +186,12 @@ class WikiBuildConfig:
     graph_node_kinds: frozenset[str] = frozenset({"package", "module"})
     max_body_chars: int = 24_000
     backend: str = "sqlite"
+    enrich_llm: Optional[str] = None
+    enrich_kinds: frozenset[str] = frozenset(
+        {"package", "module", "class", "doc"}
+    )
+    enrich_concurrency: int = 8
+    enrich_limit: Optional[int] = None
 
 
 # ===========================================================================
@@ -821,6 +835,137 @@ def _okf_filename(concept_id: str) -> str:
 
 
 # ===========================================================================
+# Optional LLM enrichment — rewrite page summaries as prose
+# ===========================================================================
+
+_ENRICH_SYSTEM_PROMPT = (
+    "You write concise, factual summaries for a developer knowledge wiki. "
+    "Given a page's source excerpt, describe what it is and does in ONE or "
+    "TWO plain sentences. No preamble, no markdown, no bullet points, no code "
+    "fences — return only the summary prose."
+)
+
+_KIND_LABEL = {
+    "package": "Python package",
+    "module": "Python module",
+    "class": "Python class",
+    "function": "Python function",
+    "doc": "documentation page",
+}
+
+
+def _enrich_prompt(page: PageDraft) -> str:
+    """Build the user prompt asking the model to summarise one page."""
+    label = _KIND_LABEL.get(page.kind, "page")
+    excerpt = page.body[:6000] if page.body else page.summary
+    return (
+        f"{label}: {page.title}\n\n"
+        f"Source excerpt:\n\n{excerpt}\n\n"
+        "Write the summary."
+    )
+
+
+async def enrich_summaries(
+    config: WikiBuildConfig, pages: list[PageDraft]
+) -> dict[str, Any]:
+    """Rewrite selected page summaries into LLM prose (in place).
+
+    Uses the AI-Parrot client factory — ``LLMFactory.create`` resolves a
+    ``"provider:model"`` spec (e.g. ``"google:gemini-3-flash"`` →
+    :class:`GoogleGenAIClient`) and the returned client handles all session /
+    auth / retry boilerplate.  A single canary call runs first so a missing
+    API key or bad model aborts immediately instead of failing thousands of
+    times; the rest run concurrently under a semaphore, and any per-page
+    failure keeps that page's deterministic docstring summary.
+
+    Args:
+        config: Build configuration (holds the ``enrich_*`` fields).
+        pages: All page drafts; those whose ``kind`` is in
+            ``config.enrich_kinds`` are candidates.
+
+    Returns:
+        A stats dict: model, targeted/enriched/failed counts.
+    """
+    # Deferred import: pulls in the client stack only when enrichment is used.
+    from parrot.clients.factory import LLMFactory
+
+    provider, model = LLMFactory.parse_llm_string(config.enrich_llm or "")
+    if not model:
+        raise ValueError(
+            f"--enrich-llm needs an explicit model, e.g. '{provider}:gemini-3-flash'"
+        )
+
+    targets = [p for p in pages if p.kind in config.enrich_kinds]
+    if config.enrich_limit is not None:
+        targets = targets[: config.enrich_limit]
+    if not targets:
+        logger.warning("enrichment: no pages match enrich_kinds — skipping")
+        return {"model": config.enrich_llm, "targeted": 0, "enriched": 0}
+
+    logger.info(
+        "enrichment: rewriting %d summaries via %s (concurrency=%d)",
+        len(targets),
+        config.enrich_llm,
+        config.enrich_concurrency,
+    )
+
+    client = LLMFactory.create(config.enrich_llm, model_args={"temperature": 0.2})
+    enriched = 0
+    failed = 0
+
+    async with client:
+
+        async def _summarise(page: PageDraft) -> Optional[str]:
+            response = await client.ask(
+                prompt=_enrich_prompt(page),
+                model=model,
+                system_prompt=_ENRICH_SYSTEM_PROMPT,
+                max_tokens=160,
+                temperature=0.2,
+            )
+            text = (getattr(response, "output", None) or "").strip()
+            return _WS_RE.sub(" ", text) if text else None
+
+        # Canary — fail fast on auth/model errors before the fan-out.
+        try:
+            first = await _summarise(targets[0])
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                f"enrichment canary call failed ({type(exc).__name__}: {exc}). "
+                "Check the API key and model name."
+            ) from exc
+        if first:
+            targets[0].summary = first
+            enriched += 1
+
+        sem = asyncio.Semaphore(config.enrich_concurrency)
+
+        async def _worker(page: PageDraft) -> bool:
+            async with sem:
+                try:
+                    summary = await _summarise(page)
+                except Exception as exc:  # noqa: BLE001 — keep deterministic
+                    logger.debug("enrich failed for %s: %s", page.concept_id, exc)
+                    return False
+            if summary:
+                page.summary = summary
+                return True
+            return False
+
+        results = await asyncio.gather(*(_worker(p) for p in targets[1:]))
+        enriched += sum(results)
+        failed = len(targets) - enriched
+
+    logger.info("enrichment: %d rewritten, %d fell back", enriched, failed)
+    return {
+        "model": config.enrich_llm,
+        "targeted": len(targets),
+        "enriched": enriched,
+        "failed": failed,
+    }
+
+
+# ===========================================================================
 # Build orchestration
 # ===========================================================================
 
@@ -866,6 +1011,14 @@ async def build_wiki(config: WikiBuildConfig) -> dict[str, Any]:
         "composed %d pages, %d edges", len(composer.pages), len(composer.edges)
     )
 
+    # 5b. Optional LLM enrichment — rewrite summaries as prose in place, so
+    # the store, OKF frontmatter, and graph tooltips all carry it.
+    enrich_stats: Optional[dict[str, Any]] = None
+    if config.enrich_llm:
+        enrich_stats = await enrich_summaries(
+            config, list(composer.pages.values())
+        )
+
     # 6. Populate the retrieval plane.
     store = create_wiki_store(
         config.output, wiki_name=config.wiki_name, backend=config.backend
@@ -905,6 +1058,7 @@ async def build_wiki(config: WikiBuildConfig) -> dict[str, Any]:
         "store": store_stats,
         "okf_files": okf_report.files_written,
         "graph": graph_stats,
+        "enrichment": enrich_stats,
         "duration_ms": round((time.monotonic() - t0) * 1000, 1),
     }
     _write_readme(config, stats)
@@ -1193,6 +1347,29 @@ def parse_args(argv: Optional[list[str]] = None) -> WikiBuildConfig:
         help="Wiki store backend.",
     )
     parser.add_argument(
+        "--enrich-llm",
+        metavar="PROVIDER:MODEL",
+        help="Rewrite page summaries into LLM prose via the parrot client "
+        "factory, e.g. 'google:gemini-3-flash'. Needs the provider's API key.",
+    )
+    parser.add_argument(
+        "--enrich-kinds",
+        default="package,module,class,doc",
+        help="Comma list of page kinds whose summaries the LLM pass rewrites.",
+    )
+    parser.add_argument(
+        "--enrich-concurrency",
+        type=int,
+        default=8,
+        help="Max concurrent LLM calls during enrichment.",
+    )
+    parser.add_argument(
+        "--enrich-limit",
+        type=int,
+        default=None,
+        help="Cap pages enriched (cheap trial run before the full corpus).",
+    )
+    parser.add_argument(
         "-v", "--verbose", action="store_true", help="Debug logging."
     )
     args = parser.parse_args(argv)
@@ -1231,6 +1408,13 @@ def parse_args(argv: Optional[list[str]] = None) -> WikiBuildConfig:
         k.strip() for k in args.graph_kinds.split(",") if k.strip()
     )
     config.backend = args.backend
+    if args.enrich_llm:
+        config.enrich_llm = args.enrich_llm
+        config.enrich_kinds = frozenset(
+            k.strip() for k in args.enrich_kinds.split(",") if k.strip()
+        )
+        config.enrich_concurrency = args.enrich_concurrency
+        config.enrich_limit = args.enrich_limit
     return config
 
 
