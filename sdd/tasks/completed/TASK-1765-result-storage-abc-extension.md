@@ -172,10 +172,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Added `list`, `get`, `delete`, `count` as regular (non-abstract) `async def`
+methods on `ResultStorage`, each raising `NotImplementedError(f"{type(self).__name__} does
+not support X()")` by default, preserving backwards compatibility with `save()`/`close()`
+unchanged. Created `tests/unit/test_result_storage_abc.py` exactly per the task's Test
+Specification (4 tests, all passing). Verified no regressions in
+`tests/bots/flows/core/storage/test_base.py` and `test_persistence_mixin.py` (14/14 passing).
+`ruff check` clean on both touched files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

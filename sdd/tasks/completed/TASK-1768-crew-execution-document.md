@@ -239,10 +239,43 @@ class TestFromStorage:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Created `CrewExecutionDocument` dataclass in the new
+`core/storage/document.py`, re-exported from `core/storage/__init__.py`.
+`to_dict()` stores the `FlowResult`-only fields (`nodes`, `agents`,
+`responses`, `execution_log`) under a private `metadata["_flow_extra"]`
+key populated in `from_memory()`, and unpacks them back to top-level keys
+in `to_dict()` so the output is a verified superset of
+`FlowResult.to_dict()`. `to_markdown()` is pure string templating (backtick
+collision guarded via a `~~~` fallback fence) and is byte-identical across
+repeated calls on the same instance. `from_memory()` orders `agent_results`
+by `memory.execution_order` with stragglers (results absent from
+`execution_order`) appended after, sorted by `NodeResult.timestamp`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+`from_storage()` correctly unwraps the nesting that
+`PersistenceMixin._save_result()` / `._save_agent_result()` apply (both
+nest the passed object's `to_dict()` output under an outer `"result"` key
+— verified by re-reading `persistence.py:92-101` from TASK-1767): the
+consolidated `crew_executions` doc's own `to_dict()` shape is read from
+`crew_raw["result"]` (falling back to the raw doc for storages that saved
+flat), and per-agent `crew_agent_results` docs contribute their
+`NodeResult.to_dict()` from `doc["result"]` to fill any `node_id` missing
+from the consolidated doc's embedded `agent_results` — exactly the
+crash-interrupted-run case from spec §7. Returns `None` only when both
+`fetch()` calls come back empty; catches `NotImplementedError` from
+backends that don't implement `fetch()` yet (treated as empty).
 
-**Deviations from spec**: none
+15 new tests in `tests/bots/flows/core/storage/test_execution_document.py`
+covering ordering, straggler handling, dict superset, enum status
+conversion, markdown determinism/sections/backtick-guard, and all 3
+`from_storage` paths (join, agent-docs-only, gap-filling). All 15 pass;
+full storage suite (67 tests, excluding the 3 pre-existing-broken files
+already flagged in TASK-1766) still green; `ruff check` clean. No import
+of `parrot.clients` or any LLM SDK (asserted by test).
+
+**Deviations from spec**: none — the "nested under `result`" unwrapping
+in `from_storage()` was not explicitly spelled out in this task's Scope
+text but is required by the actual `_save_result`/`_save_agent_result`
+document shapes (verified in TASK-1767); flagging here for visibility
+since TASK-1769's wiring will produce documents in exactly this shape.

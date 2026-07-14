@@ -181,10 +181,75 @@ class TestFeat306EndToEnd:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Added `TestFeat306EndToEnd` to `test_integration.py` (5 tests):
+`test_persist_and_reconstruct_roundtrip` (2-agent sequential run → fetch
+both collections → `from_storage()` equals `crew.build_execution_document()`
+field-by-field, excluding `timestamp` which is inherently a fresh
+wall-clock value on each independent `from_memory()` call),
+`test_aclose_drains_in_flight_agent_persist_tasks`,
+`test_storage_without_fetch_still_saves` (backward-compat with a
+save-only `ResultStorage` subclass), `test_crash_case_agent_docs_only`
+(consolidated doc absent → reconstructed from standalone agent docs
+alone), `test_backward_compat_flowresult_unchanged`. Uses
+`parrot.bots.flows.crew.crew.AgentCrew` (current import path) + local
+stub agents + an in-memory fake `ResultStorage` — no external DB, no LLM.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Updated `docs/architecture/07-agentcrew.md` with new §7.7 covering the
+two-plane persistence model, `persist_agent_results` opt-out, the
+`fetch()` read API per backend (Redis SCAN/key-scheme, Postgres DDL,
+DocumentDB query, base `NotImplementedError` default), and
+`CrewExecutionDocument` usage (`build_execution_document()`,
+`from_storage()`, an abridged `to_markdown()` example) plus a backward
+-compatibility summary.
 
-**Deviations from spec**: none
+Full suite: `pytest tests/bots/flows/core/storage/
+tests/bots/flows/core/test_result_serialisation.py -v` → 98 passed, 15
+pre-existing failures (all `ModuleNotFoundError` for
+`parrot.bots.orchestration.crew` / `parrot.bots.flow.fsm`, legacy modules
+removed by earlier, unrelated refactors — confirmed via `git stash` in
+TASK-1766/1769). Evidence saved to
+`artifacts/logs/feat-306-task-1770-pytest-output.log` (gitignored per
+repo convention, not committed). `ruff check` clean on all touched files.
+Combined with `test_crew_agent_persistence.py`, `test_crew_hooks.py`, and
+`test_agentcrew_from_definition.py`: 132 passed, same 15 pre-existing
+failures.
+
+**Deviations from spec — 2 genuine defects found by this task's own e2e
+test and fixed (both in THIS feature's own new code, not pre-existing
+legacy code, so fixing them is in-scope for satisfying this task's
+explicit acceptance criterion `from_storage(...).to_dict() ==
+crew.build_execution_document().to_dict()`)**:
+
+1. **`packages/ai-parrot/src/parrot/bots/flows/core/storage/document.py`**
+   (`CrewExecutionDocument.from_storage`, created in TASK-1768): the
+   consolidated doc's `nodes`/`agents`/`responses`/`execution_log` fields
+   (flattened out of the private `metadata["_flow_extra"]` bucket by
+   `to_dict()`) were never re-nested back into `metadata["_flow_extra"]`
+   on reconstruction, so a round-tripped `to_dict()` always came back
+   with those 4 fields empty. Fixed by re-building `_flow_extra` from the
+   stored doc's top-level keys before constructing the reconstructed
+   instance.
+2. **`packages/ai-parrot/src/parrot/bots/flows/crew/crew.py`**
+   (`build_execution_document()`, created in TASK-1769): used
+   `self.last_crew_result.metadata.get('mode', 'unknown')` verbatim as
+   the document's `method` (yielding `"sequential"`), while the persisted
+   consolidated doc's `method` is the full `"run_sequential"` form passed
+   at write time — normalised via `mode if mode.startswith('run_') else
+   f'run_{mode}'`. Also added `self._last_user_id` /
+   `self._last_session_id` tracking (set alongside
+   `self._last_execution_id` in all 4 run modes) and threaded them into
+   `build_execution_document()`'s `from_memory()` call — previously it
+   passed neither, so the in-process document's `user_id`/`session_id`
+   were always `None` while the persisted one carried the real values.
+
+**Separately noted, NOT fixed (genuinely pre-existing, unrelated to
+FEAT-306)**: `run_loop`'s "fresh FSM per iteration" line crashes with a
+pydantic `frozen_instance` ValidationError on every invocation
+(`CrewAgentNode` became a frozen Pydantic model in an earlier refactor).
+Verified via `git stash` in TASK-1769 that this pre-dates this feature.
+Flagged again here since it also blocks any live e2e test of `run_loop`
+in this task's own scenarios — the `TestRunLoopWiring` tests (TASK-1769)
+work around it via `crew.workflow_graph = {}`. Recommend a follow-up
+ticket.

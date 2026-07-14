@@ -195,10 +195,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Added all six models (`ExecutionFilter`, `ExecutionSummary`,
+`ExecutionDetail(ExecutionSummary)`, `ReplayRequest`, `ScheduleRequest`,
+`PaginatedResponse`) to `packages/ai-parrot-server/src/parrot/handlers/crew/models.py`,
+following the existing `Field(description=...)` + Google-style docstring
+convention used by `CrewQueryRequest`/`CrewJobResponse`. Created
+`tests/unit/test_execution_models.py` exactly per the task's Test Specification
+(5 tests, all passing). `ruff check` clean; all six models import cleanly.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -232,10 +232,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Created `CrewExecutionHistoryHandler(BaseView)` at
+`/api/v1/crew/executions` following `CrewExecutionHandler`'s structure
+(`configure()` classmethod registering three routes: root for list, `.../{execution_id}/{action:replay|schedule}` for POST actions, `.../{execution_id}` for
+detail/delete). `service` property lazily builds a `SavedExecutionService` from
+`app.get('bot_manager')`, `app.get('scheduler_manager')` (verified convention at
+`scheduler/manager.py:1578`), and `get_result_storage()` (env-var-driven factory,
+no app registration needed). Tenant/user_id extracted via `self.get_arguments()`
+(GET/DELETE, query string) or the JSON body (POST), defaulting tenant to
+`"global"` — matching `CrewHandler.get()`'s convention (deliberately looser than
+`CrewExecutionHandler.execute_crew()`'s strict tenant-required-on-POST rule,
+since this is a read/replay surface over already-tenant-scoped saved data, not a
+fresh-execution surface). Exceptions from the service are mapped: `ValueError`
+containing "not found"/"no longer exists" → 404, other `ValueError` → 400,
+anything else → 500 (logged). Exported `CrewExecutionHistoryHandler` from
+`handlers/crew/__init__.py`. Created
+`tests/unit/test_execution_history_handler.py` covering all 9 scenarios from the
+task's Test Specification plus 2 more (invalid schedule body, unknown POST
+action). 11/11 pass. `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec / notable findings**:
+1. Discovered (not fixed — out of scope) that `BaseView.error()` **raises** the
+   constructed `HTTPException` rather than returning it (`navigator/views/base.py:245`,
+   `raise obj`) — `HTTPException` subclasses are themselves `web.Response`
+   instances, which is aiohttp's own raise-as-response convention. The task's
+   own `execution_handler.py` reference pattern (`return self.error(...)`) relies
+   on this same behavior; the `return` before the call is effectively dead code,
+   harmless under real aiohttp dispatch (which catches the exception and uses it
+   as the response) but requires a test-side `try/except web.HTTPException`
+   wrapper when calling handler methods directly without a running aiohttp app —
+   added as a `_call()` test helper.
+2. Bypassing `BaseView.__init__`/`BaseHandler.__init__` (via `Handler.__new__(...)`,
+   following the existing `tests/handlers/test_scraping_handler.py` pattern) means
+   `_json` (a `JSONContent()` instance used only by `error()`, not
+   `json_response()`) must be set manually in test setup — also discovered that
+   `request` is a read-only property (`aiohttp.abc.AbstractView.request` has no
+   setter); only `_request` is assignable. `test_scraping_handler.py` itself
+   still tries `handler.request = request` and is currently 24/28 failing for
+   this exact reason — a pre-existing, unrelated bug in that test file (not
+   touched here).

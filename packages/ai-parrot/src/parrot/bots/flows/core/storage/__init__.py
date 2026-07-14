@@ -9,7 +9,10 @@ Re-exports:
     PersistenceMixin — DocumentDB persistence mixin.
     SynthesisMixin — LLM-based result synthesis mixin.
     synthesize_results — top-level async util for LLM result synthesis (FEAT-163).
+    CrewExecutionDocument — deterministic, LLM-free consolidated execution
+        record (FEAT-306).
 """
+from .document import CrewExecutionDocument
 from .memory import ExecutionMemory
 from .mixin import VectorStoreMixin
 from .persistence import PersistenceMixin
@@ -21,4 +24,5 @@ __all__ = [
     "PersistenceMixin",
     "SynthesisMixin",
     "synthesize_results",
+    "CrewExecutionDocument",
 ]

@@ -168,10 +168,21 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Created `tests/integration/test_saved_executions_flow.py` with an
+`InMemoryResultStorage` (implements the full `ResultStorage` ABC: save/list/get/
+delete/count, with the same tenant-defaults-to-"global" and newest-first-sort
+semantics as the real backends) so the tests run without any real Postgres/
+Redis/DocumentDB. `test_replay_creates_new_execution` uses a REAL `AgentCrew`
+(wired to the in-memory storage, same fake-agent pattern as TASK-1771) rather
+than a mocked crew, so replay genuinely re-executes and persists a new record
+through `PersistenceMixin._save_result()`'s fire-and-forget path (awaited via
+`asyncio.gather(*crew._persist_tasks)` before asserting). All 8 scenarios from
+the task's Test Specification pass, exercising the full stack: `_save_result()`
+→ `ResultStorage` → `SavedExecutionService` → (for replay) a real `AgentCrew`.
+8/8 pass (15.4s, mostly real `AgentCrew` construction overhead — acceptable per
+"NOT in scope: performance testing"). `ruff check` clean. Full FEAT-307 test
+suite (124 tests across all 10 tasks) passes together with no regressions.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

@@ -193,10 +193,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Implemented `list()`, `get()`, `delete()`, `count()` on `RedisResultStorage`
+using SCAN+MGET (via `_scan_documents()` helper) with in-memory filtering
+(`_matches_filters()`, mirroring the Postgres backend's tenant/user_id/crew_name/
+method/date_from/date_to semantics, including the `tenant` default-to-`"global"`
+COALESCE-equivalent for legacy documents). Since Redis documents have no natural
+`id` field, `_scan_documents()`/`get()` set `doc["id"] = <redis key>` so the
+returned document shape matches Postgres's (both have an `"id"` the service layer
+can rely on). `get()`/`delete()` take the Redis key as `record_id` per the task's
+explicit guidance ("For Redis, use the key itself as the identifier"). `delete()`
+uses `DEL` and returns `True` iff the reported delete count is `>0`. Created
+`tests/unit/test_redis_result_storage_read.py` covering all 8 scenarios from the
+task's Test Specification plus 4 exception-handling tests for parity with the
+Postgres read-methods test suite. 18/18 new+existing redis tests pass; 68/68
+across the full storage test slice touched by TASK-1765/1766/1768/1769. `ruff
+check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none beyond the `id = redis key` convention explicitly
+sanctioned by the task's own Implementation Notes.

@@ -199,10 +199,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Followed the task's own "Recommended" approach: `save()` now does
+`document.setdefault("record_id", str(uuid.uuid4()))` before writing, giving
+`get()`/`delete()` a stable identifier query on (`{"record_id": record_id}`) since
+MongoDB's auto-generated `_id` is stripped by `find_documents()` and `read_one()`
+never exposed it either. Implemented `list()` via `find_documents()` with a
+`_build_query()` helper (tenant/user_id/crew_name/method exact-match + `timestamp`
+`$gte`/`$lte` range for date_from/date_to), sorted `[("timestamp", -1)]`, and
+`limit=limit+offset` sliced in-memory (Motor cursor has no `skip` exposed by this
+wrapper). `get()` uses `read_one()`, `delete()` uses `delete_many()` + checks
+`result.deleted_count > 0` (same pattern as `parrot/storage/backends/mongodb.py`).
+`count()` uses `find_documents()` (unbounded) and counts the result list, since
+`DocumentDb` has no native count method. Created
+`tests/unit/test_documentdb_result_storage_read.py` covering all 8 scenarios from
+the task's Test Specification plus 4 exception-handling tests. 15/15 new tests
+pass; 83/83 across the full storage test slice touched by
+TASK-1765/1766/1768/1769/1770. `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: One necessary collateral fix — the pre-existing
+`tests/bots/flows/core/storage/test_documentdb_backend.py::test_documentdb_save_uses_async_with`
+asserted `write()` was called with the exact original document (no extra keys).
+Since `save()` now stamps `record_id` onto the document in-place, updated the
+assertion to check `write()` was called once with the right collection, that
+`crew_name` is preserved, and that `record_id` is present — rather than exact
+dict equality. No change to the test's intent.

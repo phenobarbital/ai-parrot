@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
       "completed_at": "2026-07-14T01:21:58+00:00",
-      "file": "sdd/tasks/completed/TASK-1775-crew-report-template.md"
+      "file": "sdd/tasks/completed/TASK-1775-crew-report-template.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1776",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
       "completed_at": "2026-07-14T01:24:07+00:00",
-      "file": "sdd/tasks/completed/TASK-1776-flowresult-infographic-field.md"
+      "file": "sdd/tasks/completed/TASK-1776-flowresult-infographic-field.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1777",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
       "completed_at": "2026-07-14T01:29:13+00:00",
-      "file": "sdd/tasks/completed/TASK-1777-tab-assembly-helper.md"
+      "file": "sdd/tasks/completed/TASK-1777-tab-assembly-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1778",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
       "completed_at": "2026-07-14T01:35:08+00:00",
-      "file": "sdd/tasks/completed/TASK-1778-result-agent.md"
+      "file": "sdd/tasks/completed/TASK-1778-result-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1779",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
       "completed_at": "2026-07-14T01:39:44+00:00",
-      "file": "sdd/tasks/completed/TASK-1779-agentcrew-finalize-infographic.md"
+      "file": "sdd/tasks/completed/TASK-1779-agentcrew-finalize-infographic.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1780",
@@ -123,7 +128,8 @@
       "assigned_to": null,
       "started_at": "2026-07-14T01:19:18+00:00",
       "completed_at": "2026-07-14T02:26:25+00:00",
-      "file": "sdd/tasks/completed/TASK-1780-infographic-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-1780-infographic-integration-tests.md",
+      "verification": "verified"
     }
   ]
 }

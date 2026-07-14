@@ -37,6 +37,54 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
+# Serialisation helpers
+# ---------------------------------------------------------------------------
+
+
+def _serialise_result_value(value: Any) -> Any:
+    """Recursively serialise a value into a JSON-safe representation.
+
+    Used by ``NodeResult.to_dict()`` to guarantee the returned dict always
+    survives ``json.dumps(d, default=str)``, regardless of what the node
+    produced (``DataFrame``, arbitrary object, nested dict/list, etc.).
+    This function MUST NOT raise for any input.
+
+    Args:
+        value: Arbitrary value produced by a node's execution.
+
+    Returns:
+        A JSON-safe value: primitives pass through, dict/list are
+        recursively serialised, ``pandas.DataFrame`` becomes a bounded
+        string preview, and everything else falls back to ``str()``.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    if isinstance(value, dict):
+        return {str(k): _serialise_result_value(v) for k, v in value.items()}
+
+    if isinstance(value, list):
+        return [_serialise_result_value(v) for v in value]
+
+    try:
+        from pandas import DataFrame  # noqa: F401  (lazy import)
+
+        if isinstance(value, DataFrame):
+            return (
+                f"DataFrame {value.shape[0]}x{value.shape[1]} "
+                f"cols=[{', '.join(map(str, value.columns))}]\n"
+                f"{value.head(10).to_string()}"
+            )
+    except ImportError:
+        pass
+
+    try:
+        return str(value)
+    except Exception:  # noqa: BLE001 - to_dict() must never raise
+        return "<unserialisable value>"
+
+
+# ---------------------------------------------------------------------------
 # NodeResult (replaces AgentResult for all flow-internal usage)
 # ---------------------------------------------------------------------------
 
@@ -90,6 +138,32 @@ class NodeResult:
         return self.node_name
 
     # ── Vectorization support ────────────────────────────────────────────
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialise to a plain, JSON-safe dictionary.
+
+        Never raises, regardless of what ``result`` holds (``DataFrame``,
+        arbitrary object, dict, list, etc.). ``ai_message`` is deliberately
+        excluded — it is a raw LLM object and not JSON-safe.
+
+        Returns:
+            Dictionary with node identity, task, safely-serialised result,
+            metadata, timing, and correlation ids.
+        """
+        return {
+            "node_id": self.node_id,
+            "node_name": self.node_name,
+            # Backward-compat aliases in output dict
+            "agent_id": self.agent_id,
+            "agent_name": self.agent_name,
+            "task": self.task,
+            "result": _serialise_result_value(self.result),
+            "metadata": _serialise_result_value(self.metadata),
+            "execution_time": self.execution_time,
+            "timestamp": self.timestamp.isoformat(),
+            "parent_execution_id": self.parent_execution_id,
+            "execution_id": self.execution_id,
+        }
 
     def to_text(self) -> str:
         """Convert execution result to rich text for FAISS vectorization.

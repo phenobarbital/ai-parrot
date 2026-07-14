@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-14T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-14T01:40:58+00:00",
   "tasks": [
     {
       "id": "TASK-1765",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all backend tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1765-result-storage-abc-extension.md"
+      "completed_at": "2026-07-14T00:55:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1765-result-storage-abc-extension.md"
     },
     {
       "id": "TASK-1766",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "No file overlap with TASK-1765, but sequential for safety (shared postgres.py)",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1766-persistence-mixin-save-enhancement.md"
+      "completed_at": "2026-07-14T00:59:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1766-persistence-mixin-save-enhancement.md"
     },
     {
       "id": "TASK-1767",
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "Independent models file, but sequential per per-spec isolation",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1767-pydantic-request-response-models.md"
+      "completed_at": "2026-07-14T01:00:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1767-pydantic-request-response-models.md"
     },
     {
       "id": "TASK-1768",
@@ -68,7 +68,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -78,8 +78,8 @@
       "parallelism_notes": "Depends on ABC extension; shares postgres.py with TASK-1766",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1768-postgres-result-storage-read.md"
+      "completed_at": "2026-07-14T01:04:42+00:00",
+      "file": "sdd/tasks/completed/TASK-1768-postgres-result-storage-read.md"
     },
     {
       "id": "TASK-1769",
@@ -88,7 +88,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -98,8 +98,8 @@
       "parallelism_notes": "Depends on ABC extension; sequential per per-spec isolation",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1769-redis-result-storage-read.md"
+      "completed_at": "2026-07-14T01:08:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1769-redis-result-storage-read.md"
     },
     {
       "id": "TASK-1770",
@@ -108,7 +108,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -118,8 +118,8 @@
       "parallelism_notes": "Depends on ABC extension; sequential per per-spec isolation",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1770-documentdb-result-storage-read.md"
+      "completed_at": "2026-07-14T01:11:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1770-documentdb-result-storage-read.md"
     },
     {
       "id": "TASK-1771",
@@ -128,7 +128,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -138,8 +138,8 @@
       "parallelism_notes": "Depends on save path enhancement; touches crew.py",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1771-agentcrew-prompt-passthrough.md"
+      "completed_at": "2026-07-14T01:25:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1771-agentcrew-prompt-passthrough.md"
     },
     {
       "id": "TASK-1772",
@@ -148,7 +148,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -160,8 +160,8 @@
       "parallelism_notes": "Depends on ABC, Postgres backend, and models",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1772-saved-execution-service.md"
+      "completed_at": "2026-07-14T01:29:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1772-saved-execution-service.md"
     },
     {
       "id": "TASK-1773",
@@ -170,7 +170,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -181,8 +181,8 @@
       "parallelism_notes": "Depends on service layer and models",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1773-execution-history-handler.md"
+      "completed_at": "2026-07-14T01:37:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1773-execution-history-handler.md"
     },
     {
       "id": "TASK-1774",
@@ -191,7 +191,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -202,8 +202,8 @@
       "parallelism_notes": "Depends on all previous tasks; exercises full stack",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1774-integration-tests.md"
+      "completed_at": "2026-07-14T01:40:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1774-integration-tests.md"
     }
   ]
 }

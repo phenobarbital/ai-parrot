@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-14T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-14T01:27:19+00:00",
   "tasks": [
     {
       "id": "TASK-1765",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-306",
       "feature": "crew-per-agent-result-persistence",
       "spec": "sdd/specs/crew-per-agent-result-persistence.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only core/result.py + a new test file; shares no files with TASK-1766. Parallelizable in principle, but the spec's Worktree Strategy is per-spec sequential — run in the single feature worktree.",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1765-noderesult-to-dict.md"
+      "completed_at": "2026-07-14T00:48:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1765-noderesult-to-dict.md"
     },
     {
       "id": "TASK-1766",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-306",
       "feature": "crew-per-agent-result-persistence",
       "spec": "sdd/specs/crew-per-agent-result-persistence.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches only core/storage/backends/* + backend test files; shares no files with TASK-1765. Parallelizable in principle, but the spec's Worktree Strategy is per-spec sequential — run in the single feature worktree.",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1766-resultstorage-fetch-backends.md"
+      "completed_at": "2026-07-14T00:54:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1766-resultstorage-fetch-backends.md"
     },
     {
       "id": "TASK-1767",
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-306",
       "feature": "crew-per-agent-result-persistence",
       "spec": "sdd/specs/crew-per-agent-result-persistence.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Uses NodeResult.to_dict() from TASK-1765; modifies persistence.py which TASK-1769 also builds on.",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1767-save-agent-result-mixin.md"
+      "completed_at": "2026-07-14T00:56:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1767-save-agent-result-mixin.md"
     },
     {
       "id": "TASK-1768",
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-306",
       "feature": "crew-per-agent-result-persistence",
       "spec": "sdd/specs/crew-per-agent-result-persistence.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Depends on NodeResult.to_dict() (from_memory) and ResultStorage.fetch() (from_storage); modifies core/storage/__init__.py.",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1768-crew-execution-document.md"
+      "completed_at": "2026-07-14T01:00:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1768-crew-execution-document.md"
     },
     {
       "id": "TASK-1769",
@@ -91,7 +91,7 @@
       "feature_id": "FEAT-306",
       "feature": "crew-per-agent-result-persistence",
       "spec": "sdd/specs/crew-per-agent-result-persistence.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Integration layer — consumes every prior module inside crew/crew.py.",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1769-agentcrew-wiring.md"
+      "completed_at": "2026-07-14T01:19:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1769-agentcrew-wiring.md"
     },
     {
       "id": "TASK-1770",
@@ -113,7 +113,7 @@
       "feature_id": "FEAT-306",
       "feature": "crew-per-agent-result-persistence",
       "spec": "sdd/specs/crew-per-agent-result-persistence.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -127,8 +127,8 @@
       "parallelism_notes": "Final validation — requires the complete feature surface.",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1770-integration-tests-docs.md"
+      "completed_at": "2026-07-14T01:27:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1770-integration-tests-docs.md"
     }
   ]
 }

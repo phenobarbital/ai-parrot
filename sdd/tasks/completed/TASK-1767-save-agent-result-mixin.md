@@ -186,10 +186,16 @@ async def test_save_agent_result_swallows_backend_exceptions(monkeypatch, caplog
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Added `_save_agent_result()` to `PersistenceMixin`, mirroring
+`_save_result()`'s structure exactly (double opt-out via
+`getattr(self, "_persist_results", True)` and
+`getattr(self, "_persist_agent_results", True)`, lazy backend resolution,
+warning-only failure). Updated the module docstring to document the new
+optional `self._persist_agent_results` host attribute. Extended
+`test_persistence_mixin.py` with 7 new tests covering both opt-outs,
+document shape, user_id default, host-without-attr behaviour, exception
+swallowing, and str() fallback. 16/16 tests pass; `ruff check` clean.
 
 **Deviations from spec**: none

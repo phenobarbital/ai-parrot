@@ -252,10 +252,66 @@ async def test_execution_ids_unique_per_run(...):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Wired all 4 run modes in `crew.py` per spec:
+- `__init__` gained `persist_agent_results: bool = True` → `self._persist_agent_results`,
+  plus `self._last_execution_id: Optional[str] = None`.
+- Added `build_execution_document()` public accessor (returns `None` before
+  any run, else `CrewExecutionDocument.from_memory(...)` using
+  `self._last_execution_id` + `self.execution_memory` + `self.last_crew_result`).
+- Factored the fire-and-forget tracked-task pattern into a new private
+  helper `_schedule_agent_persist()` (mirrors `crew.py:1487-1496` exactly)
+  to avoid duplicating the same 6-line block at ~10 call sites — used at
+  every `execution_memory.add_result()` site in `run_sequential`,
+  `run_loop`, `run_parallel`, and inside `_execute_parallel_agents` (the
+  `run_flow` helper).
+- `run_loop` uses local variable name `crew_execution_id` (not
+  `execution_id`) to avoid shadowing the existing per-iteration node id
+  local variable, per the Codebase Contract's explicit warning.
+- `run_flow` threads the crew-level id through
+  `context.shared_data['crew_execution_id']`; `_execute_parallel_agents`
+  reads it via `context.shared_data.get('crew_execution_id')` and skips
+  persistence silently when absent. `_INTERNAL_SHARED_KEYS` extended with
+  `'crew_execution_id'` so it never leaks into agent kwargs.
+- All 4 modes stamp `result.metadata['execution_id']` and swap the final
+  `_save_result(result, ...)` call for
+  `_save_result(CrewExecutionDocument.from_memory(...), ..., execution_id=...)`
+  — `_save_result`'s signature is unchanged; `execution_id` flows through
+  `**kwargs`. `run`/`ask` (lines ~2966/~3476) are untouched — verified via
+  `git diff --stat` showing zero hunks in either method.
+- **Necessary fix beyond the literal Scope text**: `self.last_crew_result`
+  was set to `None` in `__init__` and NEVER assigned anywhere in the
+  pre-existing code (verified by grep) — `build_execution_document()`
+  (and the pre-existing `get_agent_result()` fallback) would have been
+  permanently dead code otherwise. Added `self.last_crew_result = result`
+  alongside `self._last_execution_id = execution_id` in all 4 run modes,
+  right before the final persist block. This is required for the task's
+  own acceptance criterion ("build_execution_document() returns a
+  complete document after a run") to be satisfiable at all.
 
-**Completed by**:
-**Date**:
-**Notes**:
+14 new tests in `test_crew_agent_persistence.py` (execution_id uniqueness,
+one doc per agent for sequential/parallel/flow/loop, consolidated doc
+shape, `persist_agent_results=False` / `persist_results=False` opt-outs,
+`build_execution_document()` round-trip + None-before-run, `aclose()`
+draining). All pass; full `tests/bots/flows/core/storage/` suite (81
+tests, excluding the 3 pre-existing-broken files already flagged in
+TASK-1766) still green; `test_crew_hooks.py` and
+`test_agentcrew_from_definition.py` unaffected. `ruff check` clean.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+- `self.last_crew_result = result` added in all 4 run modes (see above) —
+  not in the literal Scope text but required for `build_execution_document()`
+  to ever return non-`None`; flagging per Cardinal Rule 4.
+- **Pre-existing, out-of-scope bug discovered (NOT fixed)**: `run_loop`'s
+  "fresh FSM per iteration" line (`node.fsm = AgentTaskMachine(...)`)
+  raises a pydantic `ValidationError: Instance is frozen` on EVERY
+  invocation (not just 2nd+ iterations) because `CrewAgentNode` is a
+  frozen Pydantic model (`packages/ai-parrot/src/parrot/bots/flows/core/node.py:98`).
+  Verified via `git stash` that this crash pre-dates FEAT-306 entirely —
+  unrelated to this feature's changes. The `run_loop` wiring added by this
+  task is implemented and correct per spec, but could only be
+  integration-tested by clearing `crew.workflow_graph = {}` first (see
+  `TestRunLoopWiring` docstring in the test file) to bypass the unrelated
+  FSM crash. Recommend a follow-up bug ticket for `run_loop`'s FSM
+  reassignment against the frozen `CrewAgentNode` model.
