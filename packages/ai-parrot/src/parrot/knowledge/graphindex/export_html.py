@@ -435,7 +435,22 @@ def _render_html(payload: GraphExportPayload, echarts_script_tag: str) -> str:
     Returns:
         The complete HTML document as a string.
     """
-    payload_json = json.dumps(payload.model_dump(mode="json"), ensure_ascii=False)
+    # Embed the payload inside an inline <script>. Node summaries can contain
+    # arbitrary source text — including the literal "</script>" (any web or
+    # template repo) — which would otherwise close the script tag early and
+    # dump the rest of the page as raw text. "<", ">" and "&" only ever occur
+    # inside JSON *string* values (JSON structure never uses them), so escaping
+    # them to \uXXXX yields equivalent JSON that JSON.parse restores exactly.
+    # U+2028/U+2029 are valid JSON but break JS string parsing when embedded
+    # raw (ensure_ascii=False leaves them literal), so escape them too.
+    payload_json = (
+        json.dumps(payload.model_dump(mode="json"), ensure_ascii=False)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace(" ", "\\u2028")
+        .replace(" ", "\\u2029")
+    )
     safe_title = html.escape(payload.title)
     node_count = len(payload.nodes)
     edge_count = len(payload.edges)

@@ -184,6 +184,42 @@ class TestWriters:
         assert '"nodes"' in html                    # payload embedded
         assert "echarts.init" in html               # chart bootstrapped
 
+    def test_write_graph_html_escapes_script_in_payload(self, tmp_path):
+        # A node summary containing "</script>" must NOT close the inline
+        # <script> early (regression: page rendered as raw text otherwise).
+        node = UniversalNode(
+            node_id="danger",
+            kind=NodeKind.SYMBOL,
+            title="Renderer",
+            source_uri="x.py",
+            summary="Builds a </script><h1>pwned</h1> tag & more",
+        )
+        asm = GraphAssembler(tenant_id="t")
+        asm.add_nodes([node])
+        p = build_export_payload(asm.graph)
+        html = write_graph_html(p, tmp_path, echarts_js=FAKE_ECHARTS).read_text()
+        # The raw breakout sequence must be gone; the payload occurrence is
+        # escaped to </script...
+        assert "</script><h1>" not in html
+        assert "\\u003c/script" in html
+        # Exactly two real closers: the echarts runtime and the main script.
+        assert html.count("</script>") == 2
+
+    def test_write_graph_html_escapes_line_separators(self, tmp_path):
+        node = UniversalNode(
+            node_id="ls",
+            kind=NodeKind.SYMBOL,
+            title="Sep",
+            source_uri="x.py",
+            summary="line1 line2 line3",
+        )
+        asm = GraphAssembler(tenant_id="t")
+        asm.add_nodes([node])
+        p = build_export_payload(asm.graph)
+        html = write_graph_html(p, tmp_path, echarts_js=FAKE_ECHARTS).read_text()
+        assert " " not in html and " " not in html
+        assert "\\u2028" in html and "\\u2029" in html
+
     def test_write_graph_html_cdn_fallback(self, graph_bundle, tmp_path, monkeypatch):
         asm, nodes, edges, comm, ana = graph_bundle
         p = build_export_payload(asm.graph)
