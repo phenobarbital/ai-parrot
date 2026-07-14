@@ -672,6 +672,27 @@ class CompanyInfoToolkit(AbstractToolkit):
 
         return cleaned.strip()
 
+    def _extract_codes(self, value: Any) -> List[str]:
+        """
+        Extract NAICS/SIC codes from a company-info table cell.
+
+        Ported from flowtask's `_extract_codes` helper (used by both
+        `parsers/rocket.py` and `parsers/visualvisitor.py`): scans the
+        cell's `<a>` tags for the first run of digits in each link's text.
+
+        Args:
+            value: BeautifulSoup tag for the table cell containing the code
+                links.
+
+        Returns:
+            List of extracted code strings (may be empty).
+        """
+        codes: List[str] = []
+        for link in value.find_all("a"):
+            if match := re.search(r"\b\d+\b", link.text):
+                codes.append(match.group())
+        return codes
+
     # ===========================
     # Platform-Specific Methods (Tools)
     # ===========================
@@ -1331,6 +1352,119 @@ class CompanyInfoToolkit(AbstractToolkit):
 
         except Exception as e:
             self.logger.error(f"Error scraping SICCode: {e}")
+            result.scrape_status = 'error'
+            result.error_message = str(e)[:100]
+        finally:
+            await self._close_driver()
+
+        return result.to_json() if return_json else result
+
+    @tool_schema(CompanyInput)
+    async def scrape_visualvisitor(
+        self,
+        company_name: str,
+        return_json: bool = False
+    ) -> Union[CompanyInfo, str]:
+        """
+        Scrape company information from VisualVisitor.
+
+        Args:
+            company_name: Name of the company to search for
+            return_json: If True, return JSON string instead of CompanyInfo object
+
+        Returns:
+            CompanyInfo object or JSON string with company data
+        """
+        site_config = COMPANY_SOURCES["visualvisitor"]
+
+        result = CompanyInfo(
+            search_term=site_config.search_template.format(company_name),
+            source_platform='visualvisitor',
+            scrape_status='pending',
+            timestamp=str(time.time())
+        )
+
+        try:
+            # Search (DDG-first, Google CSE fallback + hit validation)
+            url = await self._search_company_url(company_name, site_config)
+
+            if not url:
+                result.scrape_status = 'no_data'
+                result.error_message = 'No search results found'
+                return result.to_json() if return_json else result
+
+            result.search_url = url
+
+            # Fetch page (Playwright driver stack)
+            document = await self._fetch_page(url)
+
+            if not document:
+                result.scrape_status = 'error'
+                result.error_message = 'Failed to fetch page'
+                return result.to_json() if return_json else result
+
+            # Parse data (selectors ported from flowtask
+            # parsers/visualvisitor.py:32-125 — NOTE: flowtask's version
+            # mislabels source_platform as 'rocketreach' at :42; fixed here)
+            if company_header := document.select_one(".company-header"):
+                img_tag = company_header.select_one(".company-logo")
+                result.logo_url = img_tag["src"] if img_tag else None
+
+                if title_tag := company_header.select_one(".company-title"):
+                    result.company_name = title_tag.text.replace(" Information", "").strip()
+
+            headline_summary = document.select_one(".headline-summary p")
+            result.company_description = headline_summary.text.strip() if headline_summary else None
+
+            info_table = document.select(".headline-summary table tbody tr")
+            for row in info_table:
+                key = row.select_one("td strong")
+                value = row.select_one("td:nth-of-type(2)")
+
+                if key and value:
+                    key_text = key.text.strip().lower()
+                    value_text = value.text.strip()
+
+                    if "website" in key_text:
+                        result.website = value.select_one("a")["href"] if value.select_one("a") else value_text
+                    elif "ticker" in key_text:
+                        result.stock_symbol = value_text
+                    elif "revenue" in key_text:
+                        result.revenue_range = value_text
+                    elif "funding" in key_text:
+                        result.funding = value_text
+                    elif "employees" in key_text:
+                        result.employee_count = value_text.split()[0]
+                        result.number_employees = value_text
+                    elif "founded" in key_text:
+                        result.founded = value_text
+                    elif "address" in key_text:
+                        result.headquarters = value.select_one("a").text.strip() if value.select_one("a") else value_text
+                    elif "phone" in key_text:
+                        result.phone_number = value.select_one("a").text.strip() if value.select_one("a") else value_text
+                    elif "industry" in key_text:
+                        result.industry = [i.strip() for i in value_text.split(",")]
+                    elif "keywords" in key_text:
+                        result.keywords = [i.strip() for i in value_text.split(",")]
+                    elif "sic" in key_text:
+                        codes = self._extract_codes(value)
+                        result.sic_code = ', '.join(codes) if codes else None
+                    elif "naics" in key_text:
+                        codes = self._extract_codes(value)
+                        result.naics_code = ', '.join(codes) if codes else None
+
+            has_data = any([
+                result.company_name,
+                result.logo_url,
+                result.headquarters,
+                result.phone_number,
+                result.website
+            ])
+
+            result.scrape_status = 'success' if has_data else 'no_data'
+
+        except Exception as e:
+            self.logger.error(f"Error scraping VisualVisitor: {e}")
             result.scrape_status = 'error'
             result.error_message = str(e)[:100]
         finally:
