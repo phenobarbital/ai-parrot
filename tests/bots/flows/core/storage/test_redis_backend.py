@@ -110,3 +110,96 @@ async def test_redis_value_is_valid_json(mock_asyncdb):
     value_json = args[2]
     parsed = json.loads(value_json)
     assert parsed["method"] == "run_flow"
+
+
+@pytest.mark.asyncio
+async def test_save_uses_execution_id_key(mock_asyncdb):
+    """A doc with execution_id + node_execution_id uses the new key scheme."""
+    from parrot.bots.flows.core.storage.backends import RedisResultStorage
+
+    conn, _ = mock_asyncdb
+    backend = RedisResultStorage(ttl=0)
+    await backend.save(
+        "crew_agent_results",
+        {"execution_id": "E1", "node_execution_id": "N1", "crew_name": "c"},
+    )
+    key = conn.execute.await_args.args[1]
+    assert key == "crew_agent_results:E1:N1"
+
+
+@pytest.mark.asyncio
+async def test_save_execution_id_without_node_execution_id_uses_crew_suffix(mock_asyncdb):
+    """A doc with execution_id but no node_execution_id uses suffix 'crew'."""
+    from parrot.bots.flows.core.storage.backends import RedisResultStorage
+
+    conn, _ = mock_asyncdb
+    backend = RedisResultStorage(ttl=0)
+    await backend.save("crew_executions", {"execution_id": "E1", "crew_name": "c"})
+    key = conn.execute.await_args.args[1]
+    assert key == "crew_executions:E1:crew"
+
+
+@pytest.mark.asyncio
+async def test_save_without_execution_id_keeps_legacy_key(mock_asyncdb):
+    """A doc without execution_id keeps the legacy {collection}:{crew_name}:{ts} key."""
+    from parrot.bots.flows.core.storage.backends import RedisResultStorage
+
+    conn, _ = mock_asyncdb
+    backend = RedisResultStorage(ttl=0)
+    await backend.save("crew_executions", {"crew_name": "c"})
+    key = conn.execute.await_args.args[1]
+    assert key.startswith("crew_executions:c:")
+
+
+@pytest.mark.asyncio
+async def test_fetch_scans_and_parses(mock_asyncdb):
+    """fetch() iterates the SCAN cursor fully and GETs+parses each key."""
+    from parrot.bots.flows.core.storage.backends import RedisResultStorage
+
+    conn, _ = mock_asyncdb
+    doc1 = json.dumps({"execution_id": "E1", "node_execution_id": "N1"})
+    doc2 = json.dumps({"execution_id": "E1", "node_execution_id": "N2"})
+
+    async def execute_side_effect(cmd, *args):
+        if cmd == "SCAN":
+            cursor = args[0]
+            if cursor == 0:
+                return (5, ["crew_agent_results:E1:N1"])
+            return (0, ["crew_agent_results:E1:N2"])
+        if cmd == "GET":
+            key = args[0]
+            return doc1 if key.endswith("N1") else doc2
+        return None
+
+    conn.execute = AsyncMock(side_effect=execute_side_effect)
+    backend = RedisResultStorage(ttl=0)
+    docs = await backend.fetch("crew_agent_results", "E1")
+
+    assert len(docs) == 2
+    assert {d["node_execution_id"] for d in docs} == {"N1", "N2"}
+
+
+@pytest.mark.asyncio
+async def test_fetch_returns_empty_on_no_match(mock_asyncdb):
+    """fetch() returns [] when SCAN finds no matching keys."""
+    from parrot.bots.flows.core.storage.backends import RedisResultStorage
+
+    conn, _ = mock_asyncdb
+    conn.execute = AsyncMock(return_value=(0, []))
+    backend = RedisResultStorage(ttl=0)
+    docs = await backend.fetch("crew_agent_results", "unknown")
+    assert docs == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_reraises_on_error(mock_asyncdb, caplog):
+    """fetch() logs then re-raises on connection errors (unlike save())."""
+    from parrot.bots.flows.core.storage.backends import RedisResultStorage
+
+    conn, _ = mock_asyncdb
+    conn.execute = AsyncMock(side_effect=RuntimeError("redis down"))
+    backend = RedisResultStorage(ttl=0)
+
+    with pytest.raises(RuntimeError):
+        await backend.fetch("crew_agent_results", "E1")
+    assert "RedisResultStorage fetch failed" in caplog.text

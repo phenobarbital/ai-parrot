@@ -55,7 +55,12 @@ from ..core.result import (
     build_node_metadata,
     determine_run_status,
 )
-from ..core.storage import ExecutionMemory, PersistenceMixin, SynthesisMixin
+from ..core.storage import (
+    CrewExecutionDocument,
+    ExecutionMemory,
+    PersistenceMixin,
+    SynthesisMixin,
+)
 from ..core.storage.backends import ResultStorage
 from ..core.storage.synthesis import SYNTHESIS_PROMPT
 from ..core.context import FlowContext  # noqa: F401 — re-export for backward compat
@@ -87,7 +92,9 @@ AgentNode = CrewAgentNode
 # Keys placed in FlowContext.shared_data for framework bookkeeping.
 # These must NOT be forwarded to agent calls (agent.ask / .conversation / .invoke)
 # because they contain non-serialisable internal objects (ExecutionMemory, dicts, …).
-_INTERNAL_SHARED_KEYS: frozenset = frozenset({'execution_memory', 'shared_state'})
+_INTERNAL_SHARED_KEYS: frozenset = frozenset(
+    {'execution_memory', 'shared_state', 'crew_execution_id'}
+)
 
 
 class AgentCrew(PersistenceMixin, SynthesisMixin):
@@ -146,6 +153,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         agent_execution_timeout: float = 600.0, # Timeout in seconds per agent execution
         persist_results: bool = True,
         result_storage: Union[str, "ResultStorage", None] = None,
+        persist_agent_results: bool = True,
         **kwargs
     ):
         """
@@ -156,6 +164,11 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             agents: List of agents to add to the crew
             shared_tool_manager: Optional shared tool manager for all agents
             max_parallel_tasks: Maximum number of parallel tasks (for rate limiting)
+            persist_results: Opt-out for ALL result persistence (crew + per-agent).
+            result_storage: Backend name/instance for ``ResultStorage`` resolution.
+            persist_agent_results: Granular opt-out for per-agent incremental
+                persistence only (FEAT-306); has no effect when
+                ``persist_results`` is already ``False``.
         """
         self.name = name or 'AgentCrew'
         self.agents: Dict[str, Union[BasicAgent, AbstractBot]] = {}
@@ -209,6 +222,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 )
         self._summary = None
         self.last_crew_result: Optional[FlowResult] = None
+        self._last_execution_id: Optional[str] = None
+        self._last_user_id: Optional[str] = None
+        self._last_session_id: Optional[str] = None
         self.agent_execution_timeout = agent_execution_timeout
         
         # Status Tracking
@@ -221,6 +237,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             result_storage if isinstance(result_storage, ResultStorage) else None
         )
         self._persist_tasks: set[asyncio.Task] = set()
+        # Granular per-agent persistence opt-out (FEAT-306)
+        self._persist_agent_results: bool = persist_agent_results
 
         # Lifecycle hooks (FEAT-157)
         self._on_complete_hooks: List[CrewHookCallback] = []
@@ -246,6 +264,36 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         Get the status of a specific agent.
         """
         return self._agent_statuses.get(agent_id)
+
+    def build_execution_document(self) -> Optional["CrewExecutionDocument"]:
+        """Assemble the document for the LAST run from in-process state (LLM-free).
+
+        Deterministic, LLM-free reconstruction (FEAT-306) built from
+        ``self.execution_memory`` + ``self.last_crew_result`` — no storage
+        round-trip required.
+
+        Returns:
+            The ``CrewExecutionDocument`` for the most recent run, or
+            ``None`` when no run has completed yet.
+        """
+        if self.last_crew_result is None:
+            return None
+        # metadata['mode'] holds the short form ('sequential', 'loop',
+        # 'parallel', 'flow'); the persisted document's `method` field uses
+        # the full run_* name (e.g. 'run_sequential') — normalise so
+        # build_execution_document() matches CrewExecutionDocument.from_storage()
+        # for the same run (TASK-1770 e2e equality requirement).
+        _mode = self.last_crew_result.metadata.get('mode', 'unknown')
+        _method = _mode if _mode.startswith('run_') else f'run_{_mode}'
+        return CrewExecutionDocument.from_memory(
+            execution_id=self._last_execution_id,
+            crew_name=self.name,
+            method=_method,
+            memory=self.execution_memory,
+            result=self.last_crew_result,
+            user_id=self._last_user_id,
+            session_id=self._last_session_id,
+        )
 
     # ── Lifecycle hooks (FEAT-157) ────────────────────────────────────────
 
@@ -310,6 +358,41 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 self.logger.error(
                     "Error in crew lifecycle hook %r: %s", hook, exc
                 )
+
+    def _schedule_agent_persist(
+        self,
+        agent_result: "NodeResult",
+        *,
+        execution_id: str,
+        method: str,
+        user_id: str,
+        session_id: str,
+    ) -> None:
+        """Schedule the incremental per-agent persist as a tracked task (FEAT-306).
+
+        Mirrors the fire-and-forget + ``_persist_tasks`` bookkeeping pattern
+        used for the final crew-level persist, so ``aclose()`` drains both
+        planes of writes.
+
+        Args:
+            agent_result: The ``NodeResult`` that was just added to
+                ``execution_memory``.
+            execution_id: Crew-level execution id for this run.
+            method: Execution method name (e.g. ``"run_sequential"``).
+            user_id: User identifier propagated to the stored document.
+            session_id: Session identifier propagated to the stored document.
+        """
+        _agent_task = asyncio.get_running_loop().create_task(
+            self._save_agent_result(
+                agent_result,
+                execution_id=execution_id,
+                method=method,
+                user_id=user_id,
+                session_id=session_id,
+            )
+        )
+        self._persist_tasks.add(_agent_task)
+        _agent_task.add_done_callback(self._persist_tasks.discard)
 
     def _register_agents_as_tools(self):
         """
@@ -807,6 +890,16 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                         execution_time=0.0
                     )
                     _exec_mem.add_result(agent_result, vectorize=False)
+
+                    # Persist per-agent result incrementally (FEAT-306) — skip
+                    # silently when the helper is used outside a run_flow()
+                    # invocation (no crew_execution_id threaded in shared_data).
+                    _crew_execution_id = context.shared_data.get('crew_execution_id')
+                    if _crew_execution_id:
+                        self._schedule_agent_persist(
+                            agent_result, execution_id=_crew_execution_id,
+                            method='run_flow', user_id=_uid, session_id=_sid,
+                        )
             else:
                 output = result.get('output') if isinstance(result, dict) else result
                 raw_response = result.get('response') if isinstance(result, dict) else result
@@ -871,6 +964,16 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     # Update execution order
                     if agent_name not in _exec_mem.execution_order:
                         _exec_mem.execution_order.append(agent_name)
+
+                    # Persist per-agent result incrementally (FEAT-306) — skip
+                    # silently when the helper is used outside a run_flow()
+                    # invocation (no crew_execution_id threaded in shared_data).
+                    _crew_execution_id = context.shared_data.get('crew_execution_id')
+                    if _crew_execution_id:
+                        self._schedule_agent_persist(
+                            agent_result, execution_id=_crew_execution_id,
+                            method='run_flow', user_id=_uid, session_id=_sid,
+                        )
 
         return execution_results
 
@@ -1233,6 +1336,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         # Setup session identifiers
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or 'crew_user'
+        # Crew-level execution id (FEAT-306) — links this run's per-agent
+        # writes to the consolidated CrewExecutionDocument.
+        execution_id = str(uuid.uuid4())
 
         # Initialize execution memory
         self.execution_memory = ExecutionMemory(
@@ -1377,6 +1483,10 @@ Current task: {current_input}"""
                     agent_result,
                     vectorize=True
                 )
+                self._schedule_agent_persist(
+                    agent_result, execution_id=execution_id, method='run_sequential',
+                    user_id=user_id, session_id=session_id,
+                )
 
                 # FSM: mark node as completed
                 if node and node.fsm:
@@ -1439,6 +1549,10 @@ Current task: {current_input}"""
                     agent_result,
                     vectorize=False
                 )
+                self._schedule_agent_persist(
+                    agent_result, execution_id=execution_id, method='run_sequential',
+                    user_id=user_id, session_id=session_id,
+                )
 
                 failure_count += 1
 
@@ -1456,6 +1570,7 @@ Current task: {current_input}"""
             status=status,
             metadata={'mode': 'sequential', 'agent_sequence': agent_sequence}
         )
+        result.metadata['execution_id'] = execution_id
 
         if generate_summary and not synthesis_prompt:
             synthesis_prompt = SYNTHESIS_PROMPT
@@ -1483,11 +1598,27 @@ Current task: {current_input}"""
         # Fire lifecycle hooks (FEAT-157)
         await self._fire_hooks(result)
 
-        # Save result (fire-and-forget, tracked for lifecycle cleanup)
+        # Track last run's result + execution id for build_execution_document() (FEAT-306)
+        self.last_crew_result = result
+        self._last_execution_id = execution_id
+        self._last_user_id = user_id
+        self._last_session_id = session_id
+
+        # Save consolidated execution document (fire-and-forget, tracked for lifecycle cleanup)
+        document = CrewExecutionDocument.from_memory(
+            execution_id=execution_id,
+            crew_name=self.name,
+            method='run_sequential',
+            memory=self.execution_memory,
+            result=result,
+            user_id=user_id,
+            session_id=session_id,
+        )
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
-                result,
+                document,
                 'run_sequential',
+                execution_id=execution_id,
                 user_id=user_id,
                 session_id=session_id
             )
@@ -1572,6 +1703,10 @@ Current task: {current_input}"""
 
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or 'crew_user'
+        # Crew-level execution id (FEAT-306) — named `crew_execution_id` here
+        # to avoid shadowing the per-iteration `execution_id` local variable
+        # used below (f"{agent_id}#iteration{n}", an ExecutionMemory node key).
+        crew_execution_id = str(uuid.uuid4())
 
         # Initialize execution memory
         self.execution_memory = ExecutionMemory(
@@ -1687,6 +1822,10 @@ Current task: {current_input}"""
                     self.execution_memory.add_result(
                         agent_result,
                         vectorize=False
+                    )
+                    self._schedule_agent_persist(
+                        agent_result, execution_id=crew_execution_id, method='run_loop',
+                        user_id=user_id, session_id=session_id,
                     )
 
                     failure_count += 1
@@ -1809,6 +1948,10 @@ Current task: {current_input}"""
                         agent_result,
                         vectorize=True
                     )
+                    self._schedule_agent_persist(
+                        agent_result, execution_id=crew_execution_id, method='run_loop',
+                        user_id=user_id, session_id=session_id,
+                    )
 
                     success_count += 1
                     # Transition FSM to completed
@@ -1869,6 +2012,10 @@ Current task: {current_input}"""
                         agent_result,
                         vectorize=False
                     )
+                    self._schedule_agent_persist(
+                        agent_result, execution_id=crew_execution_id, method='run_loop',
+                        user_id=user_id, session_id=session_id,
+                    )
 
                     failure_count += 1
                     iteration_success = False
@@ -1922,6 +2069,7 @@ Current task: {current_input}"""
                 'shared_state': shared_state,
             }
         )
+        result.metadata['execution_id'] = crew_execution_id
 
         if generate_summary and not synthesis_prompt:
             synthesis_prompt = SYNTHESIS_PROMPT
@@ -1949,11 +2097,27 @@ Current task: {current_input}"""
         # Fire lifecycle hooks (FEAT-157)
         await self._fire_hooks(result)
 
-        # Save result (fire-and-forget, tracked for lifecycle cleanup)
+        # Track last run's result + execution id for build_execution_document() (FEAT-306)
+        self.last_crew_result = result
+        self._last_execution_id = crew_execution_id
+        self._last_user_id = user_id
+        self._last_session_id = session_id
+
+        # Save consolidated execution document (fire-and-forget, tracked for lifecycle cleanup)
+        document = CrewExecutionDocument.from_memory(
+            execution_id=crew_execution_id,
+            crew_name=self.name,
+            method='run_loop',
+            memory=self.execution_memory,
+            result=result,
+            user_id=user_id,
+            session_id=session_id,
+        )
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
-                result,
+                document,
                 'run_loop',
+                execution_id=crew_execution_id,
                 user_id=user_id,
                 session_id=session_id
             )
@@ -2007,6 +2171,8 @@ Current task: {current_input}"""
         """
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or 'crew_user'
+        # Crew-level execution id (FEAT-306).
+        execution_id = str(uuid.uuid4())
         original_query = tasks[0]['query'] if tasks else ""
 
         # initialize execution log
@@ -2145,6 +2311,10 @@ Current task: {current_input}"""
                     agent_result,
                     vectorize=False
                 )
+                self._schedule_agent_persist(
+                    agent_result, execution_id=execution_id, method='run_parallel',
+                    user_id=user_id, session_id=session_id,
+                )
                 log_entry = {
                     'agent_id': agent_id,
                     'agent_name': agent_name,
@@ -2198,6 +2368,10 @@ Current task: {current_input}"""
                     agent_result,
                     vectorize=True
                 )
+                self._schedule_agent_persist(
+                    agent_result, execution_id=execution_id, method='run_parallel',
+                    user_id=user_id, session_id=session_id,
+                )
 
                 log_entry = {
                     'agent_id': agent_id,
@@ -2247,6 +2421,7 @@ Current task: {current_input}"""
                 'requested_tasks': len(tasks),
             }
         )
+        result.metadata['execution_id'] = execution_id
         if generate_summary and not synthesis_prompt:
             synthesis_prompt = SYNTHESIS_PROMPT
         if generate_summary:
@@ -2272,11 +2447,27 @@ Current task: {current_input}"""
         # Fire lifecycle hooks (FEAT-157)
         await self._fire_hooks(result)
 
-        # Save result (fire-and-forget, tracked for lifecycle cleanup)
+        # Track last run's result + execution id for build_execution_document() (FEAT-306)
+        self.last_crew_result = result
+        self._last_execution_id = execution_id
+        self._last_user_id = user_id
+        self._last_session_id = session_id
+
+        # Save consolidated execution document (fire-and-forget, tracked for lifecycle cleanup)
+        document = CrewExecutionDocument.from_memory(
+            execution_id=execution_id,
+            crew_name=self.name,
+            method='run_parallel',
+            memory=self.execution_memory,
+            result=result,
+            user_id=user_id,
+            session_id=session_id,
+        )
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
-                result,
+                document,
                 'run_parallel',
+                execution_id=execution_id,
                 user_id=user_id,
                 session_id=session_id
             )
@@ -2353,6 +2544,8 @@ Current task: {current_input}"""
         # Setup session identifiers
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or 'crew_user'
+        # Crew-level execution id (FEAT-306).
+        execution_id = str(uuid.uuid4())
 
         # Initialize execution memory
         self.execution_memory = ExecutionMemory(
@@ -2367,12 +2560,15 @@ Current task: {current_input}"""
         # Initialize execution context to track the workflow state.
         # Framework metadata (execution_memory, user_id, session_id) lives in
         # shared_data — consistent with run_sequential / run_loop / run_parallel.
+        # 'crew_execution_id' (FEAT-306) threads the crew-level execution id
+        # into _execute_parallel_agents() for incremental per-agent persistence.
         context = FlowContext(
             initial_task=initial_task,
             shared_data={
                 'execution_memory': self.execution_memory,
                 'user_id': user_id,
                 'session_id': session_id,
+                'crew_execution_id': execution_id,
             },
         )
 
@@ -2484,6 +2680,7 @@ Current task: {current_input}"""
             status=status,
             metadata={'mode': 'flow', 'iterations': iteration}
         )
+        result.metadata['execution_id'] = execution_id
         if generate_summary and not synthesis_prompt:
             synthesis_prompt = SYNTHESIS_PROMPT
         if generate_summary:
@@ -2509,11 +2706,27 @@ Current task: {current_input}"""
         # Fire lifecycle hooks (FEAT-157)
         await self._fire_hooks(result)
 
-        # Save result (fire-and-forget, tracked for lifecycle cleanup)
+        # Track last run's result + execution id for build_execution_document() (FEAT-306)
+        self.last_crew_result = result
+        self._last_execution_id = execution_id
+        self._last_user_id = user_id
+        self._last_session_id = session_id
+
+        # Save consolidated execution document (fire-and-forget, tracked for lifecycle cleanup)
+        document = CrewExecutionDocument.from_memory(
+            execution_id=execution_id,
+            crew_name=self.name,
+            method='run_flow',
+            memory=self.execution_memory,
+            result=result,
+            user_id=user_id,
+            session_id=session_id,
+        )
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
-                result,
+                document,
                 'run_flow',
+                execution_id=execution_id,
                 user_id=user_id,
                 session_id=session_id
             )

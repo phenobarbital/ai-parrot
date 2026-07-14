@@ -187,10 +187,12 @@ class TestNodeResultToDict:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-14
+**Notes**: Added `_serialise_result_value()` module-level helper and
+`NodeResult.to_dict()` in `result.py`, following the `to_text()` lazy
+pandas-import pattern. 8 unit tests added in
+`tests/bots/flows/core/test_result_serialisation.py`, all passing.
+`ruff check` clean.
 
 **Deviations from spec**: none

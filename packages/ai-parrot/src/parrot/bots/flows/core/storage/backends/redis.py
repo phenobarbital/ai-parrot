@@ -59,12 +59,17 @@ class RedisResultStorage(ResultStorage):
         """
         try:
             conn = await self._ensure()
-            crew_name = document.get("crew_name", "unknown")
-            ts_ms = int(time.time() * 1000)
-            # NOTE: Millisecond precision means two concurrent runs of the same crew
-            # in the same millisecond produce the same key. The second write overwrites
-            # the first. This is acceptable under the fire-and-forget semantics.
-            key = f"{collection}:{crew_name}:{ts_ms}"
+            execution_id = document.get("execution_id")
+            if execution_id:
+                suffix = document.get("node_execution_id") or "crew"
+                key = f"{collection}:{execution_id}:{suffix}"
+            else:
+                crew_name = document.get("crew_name", "unknown")
+                ts_ms = int(time.time() * 1000)
+                # NOTE: Millisecond precision means two concurrent runs of the same crew
+                # in the same millisecond produce the same key. The second write overwrites
+                # the first. This is acceptable under the fire-and-forget semantics.
+                key = f"{collection}:{crew_name}:{ts_ms}"
             value = json.dumps(document, default=str)
             if self._ttl > 0:
                 await conn.execute("SET", key, value, "EX", str(self._ttl))
@@ -76,6 +81,48 @@ class RedisResultStorage(ResultStorage):
                 collection,
                 exc,
             )
+
+    async def fetch(self, collection: str, execution_id: str) -> list[dict[str, Any]]:
+        """Return all documents written under *execution_id* in *collection*.
+
+        Uses cursor-based ``SCAN`` (never ``KEYS``) with pattern
+        ``{collection}:{execution_id}:*``, iterating until the cursor
+        returns ``0``, then ``GET``s each matched key.
+
+        Args:
+            collection: Logical collection name used as key prefix.
+            execution_id: Crew-level execution id to match keys against.
+
+        Returns:
+            List of parsed documents; empty list when nothing matches.
+
+        Raises:
+            Exception: Connection errors are logged then re-raised — unlike
+                ``save()``, read failures must not be silently swallowed.
+        """
+        try:
+            conn = await self._ensure()
+            pattern = f"{collection}:{execution_id}:*"
+            documents: list[dict[str, Any]] = []
+            cursor = 0
+            while True:
+                cursor, keys = await conn.execute("SCAN", cursor, "MATCH", pattern)
+                cursor = int(cursor)
+                for key in keys:
+                    value = await conn.execute("GET", key)
+                    if value:
+                        documents.append(json.loads(value))
+                if cursor == 0:
+                    break
+            return documents
+        except Exception as exc:
+            self.logger.warning(
+                "RedisResultStorage fetch failed for collection=%s, execution_id=%s: %s",
+                collection,
+                execution_id,
+                exc,
+            )
+            raise
 
     async def close(self) -> None:
         """Release the Redis connection. Safe to call multiple times."""

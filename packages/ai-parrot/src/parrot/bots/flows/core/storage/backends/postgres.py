@@ -17,7 +17,9 @@ from .base import ResultStorage
 
 
 _TABLE_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
-_NAMED_COLUMNS = frozenset(("crew_name", "method", "user_id", "session_id", "timestamp"))
+_NAMED_COLUMNS = frozenset(
+    ("crew_name", "method", "user_id", "session_id", "timestamp", "execution_id")
+)
 
 
 class PostgresResultStorage(ResultStorage):
@@ -65,20 +67,28 @@ class PostgresResultStorage(ResultStorage):
             )
         await conn.execute(
             f"CREATE TABLE IF NOT EXISTS {table} ("
-            f"  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),"
-            f"  crew_name   text        NOT NULL,"
-            f"  method      text        NOT NULL,"
-            f"  user_id     text,"
-            f"  session_id  text,"
-            f"  timestamp   timestamptz NOT NULL DEFAULT now(),"
-            f"  payload     jsonb       NOT NULL"
+            f"  id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),"
+            f"  crew_name     text        NOT NULL,"
+            f"  method        text        NOT NULL,"
+            f"  user_id       text,"
+            f"  session_id    text,"
+            f"  execution_id  text,"
+            f"  timestamp     timestamptz NOT NULL DEFAULT now(),"
+            f"  payload       jsonb       NOT NULL"
             f")"
+        )
+        # Idempotent — covers tables created before execution_id existed.
+        await conn.execute(
+            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS execution_id text"
         )
         await conn.execute(
             f"CREATE INDEX IF NOT EXISTS {table}_crew_name_idx ON {table} (crew_name)"
         )
         await conn.execute(
             f"CREATE INDEX IF NOT EXISTS {table}_session_id_idx ON {table} (session_id)"
+        )
+        await conn.execute(
+            f"CREATE INDEX IF NOT EXISTS {table}_execution_id_idx ON {table} (execution_id)"
         )
         self._initialised.add(table)
 
@@ -97,6 +107,7 @@ class PostgresResultStorage(ResultStorage):
             method = document.get("method", "unknown")
             user_id = document.get("user_id")
             session_id = document.get("session_id")
+            execution_id = document.get("execution_id")
             ts_raw = document.get("timestamp")
             timestamp = (
                 datetime.fromtimestamp(ts_raw, tz=timezone.utc)
@@ -112,12 +123,13 @@ class PostgresResultStorage(ResultStorage):
 
             await conn.execute(
                 f"INSERT INTO {collection} "
-                "(crew_name, method, user_id, session_id, timestamp, payload) "
-                "VALUES ($1, $2, $3, $4, $5, $6)",
+                "(crew_name, method, user_id, session_id, execution_id, timestamp, payload) "
+                "VALUES ($1, $2, $3, $4, $5, $6, $7)",
                 crew_name,
                 method,
                 user_id,
                 session_id,
+                execution_id,
                 timestamp,
                 payload,
             )
@@ -127,6 +139,50 @@ class PostgresResultStorage(ResultStorage):
                 collection,
                 exc,
             )
+
+    async def fetch(self, collection: str, execution_id: str) -> list[dict[str, Any]]:
+        """Return all rows in *collection* whose ``execution_id`` matches.
+
+        Named columns are merged with the ``payload`` jsonb blob to
+        reconstruct the original document shape.
+
+        Args:
+            collection: Table name (validated against safe-name regex).
+            execution_id: Crew-level execution id to filter by.
+
+        Returns:
+            List of reconstructed documents; empty list when nothing matches.
+
+        Raises:
+            Exception: Connection/query errors are logged then re-raised —
+                unlike ``save()``, read failures must not be silently
+                swallowed into an empty result.
+        """
+        try:
+            conn = await self._ensure()
+            await self._ensure_table(conn, collection)
+            rows = await conn.execute(
+                f"SELECT crew_name, method, user_id, session_id, "
+                f"execution_id, timestamp, payload FROM {collection} "
+                "WHERE execution_id = $1",
+                execution_id,
+            )
+            documents: list[dict[str, Any]] = []
+            for row in rows or []:
+                row_dict = dict(row)
+                payload = row_dict.pop("payload", {}) or {}
+                if isinstance(payload, str):
+                    payload = json.loads(payload)
+                documents.append({**row_dict, **payload})
+            return documents
+        except Exception as exc:
+            self.logger.warning(
+                "PostgresResultStorage fetch failed for collection=%s, execution_id=%s: %s",
+                collection,
+                execution_id,
+                exc,
+            )
+            raise
 
     async def close(self) -> None:
         """Release the Postgres connection. Safe to call multiple times."""

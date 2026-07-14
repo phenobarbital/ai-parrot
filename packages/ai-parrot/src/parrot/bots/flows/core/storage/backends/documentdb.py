@@ -42,6 +42,32 @@ class DocumentDbResultStorage(ResultStorage):
                 exc,
             )
 
+    async def fetch(self, collection: str, execution_id: str) -> list[dict[str, Any]]:
+        """Return all documents in *collection* whose ``execution_id`` matches.
+
+        Args:
+            collection: Target MongoDB collection name.
+            execution_id: Crew-level execution id to filter by.
+
+        Returns:
+            List of matching documents; empty list when nothing matches.
+
+        Raises:
+            Exception: Connection/query errors are logged then re-raised —
+                unlike ``save()``, read failures must not be silently
+                swallowed into an empty result.
+        """
+        try:
+            async with DocumentDb() as db:
+                return await db.read(collection, {"execution_id": execution_id})
+        except Exception as exc:
+            self.logger.warning(
+                "DocumentDbResultStorage fetch failed for collection=%s: %s",
+                collection,
+                exc,
+            )
+            raise
+
     async def close(self) -> None:
         """No-op — connection lifecycle is per-write in this backend."""
         return None
