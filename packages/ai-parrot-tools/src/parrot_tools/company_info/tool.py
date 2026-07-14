@@ -76,6 +76,22 @@ class CompanyInput(BaseModel):
         description="If True, return JSON string instead of CompanyInfo object"
     )
 
+
+class ResearchCompanyInput(BaseModel):
+    """Input model for the `research_company` aggregate tool."""
+    company_name: str = Field(..., description="Name of the company to research")
+    sources: Optional[List[str]] = Field(
+        None,
+        description="Optional subset/order of source names to try (defaults "
+        "to the full priority order: leadiq, rocketreach, explorium, "
+        "siccode, visualvisitor, zoominfo)"
+    )
+    return_json: bool = Field(
+        False,
+        description="If True, return JSON string instead of CompanyInfo object"
+    )
+
+
 class CompanyInfo(BaseModel):
     """
     Structured output model for company information.
@@ -225,6 +241,13 @@ COMPANY_SOURCES: Dict[str, SourceConfig] = {
         title_keywords=[" - Overview, News", "Overview, News"],
     ),
 }
+
+
+# Default priority order for `research_company`'s first-success loop: cheap,
+# HTTP-friendly sources first, browser-heavy ZoomInfo last (spec §2).
+DEFAULT_SOURCE_PRIORITY: List[str] = [
+    "leadiq", "rocketreach", "explorium", "siccode", "visualvisitor", "zoominfo"
+]
 
 
 # ===========================
@@ -713,34 +736,29 @@ class CompanyInfoToolkit(AbstractToolkit):
         Returns:
             CompanyInfo object or JSON string with company data
         """
-        site = "zoominfo.com"
-        search_term = f"site:zoominfo.com {company_name} Overview"
+        site_config = COMPANY_SOURCES["zoominfo"]
 
         # Initialize result
         result = CompanyInfo(
-            search_term=search_term,
+            search_term=site_config.search_template.format(company_name),
             source_platform='zoominfo',
             scrape_status='pending',
             timestamp=str(time.time())
         )
 
         try:
-            # 1. Google site search
-            search_result = await self._google_site_search(
-                company_name=company_name,
-                site=site,
-                additional_terms="Overview"
-            )
+            # 1. Search (DDG-first, Google CSE fallback + hit validation)
+            url = await self._search_company_url(company_name, site_config)
 
-            if not search_result.url:
+            if not url:
                 result.scrape_status = 'no_data'
                 result.error_message = 'No search results found'
                 return result.to_json() if return_json else result
 
-            result.search_url = search_result.url
+            result.search_url = url
 
             # 2. Fetch page with Selenium
-            document = await self._fetch_page_with_selenium(search_result.url)
+            document = await self._fetch_page_with_selenium(url)
 
             if not document:
                 result.scrape_status = 'error'
@@ -838,33 +856,28 @@ class CompanyInfoToolkit(AbstractToolkit):
         Returns:
             CompanyInfo object or JSON string with company data
         """
-        site = "explorium.ai"
-        search_term = f"site:explorium.ai {company_name}"
+        site_config = COMPANY_SOURCES["explorium"]
 
         result = CompanyInfo(
-            search_term=search_term,
+            search_term=site_config.search_template.format(company_name),
             source_platform='explorium',
             scrape_status='pending',
             timestamp=str(time.time())
         )
 
         try:
-            # Google site search
-            search_result = await self._google_site_search(
-                company_name=company_name,
-                site=site,
-                additional_terms="overview - services"
-            )
+            # Search (DDG-first, Google CSE fallback + hit validation)
+            url = await self._search_company_url(company_name, site_config)
 
-            if not search_result.url:
+            if not url:
                 result.scrape_status = 'no_data'
                 result.error_message = 'No search results found'
                 return result.to_json() if return_json else result
 
-            result.search_url = search_result.url
+            result.search_url = url
 
             # Fetch page
-            document = await self._fetch_page_with_selenium(search_result.url)
+            document = await self._fetch_page_with_selenium(url)
 
             if not document:
                 result.scrape_status = 'error'
@@ -960,34 +973,29 @@ class CompanyInfoToolkit(AbstractToolkit):
         Returns:
             CompanyInfo object or JSON string with company data
         """
-        site = "leadiq.com"
+        site_config = COMPANY_SOURCES["leadiq"]
         standardized_name = self._standardize_name(company_name)
-        search_term = f"site:leadiq.com {standardized_name}"
 
         result = CompanyInfo(
-            search_term=search_term,
+            search_term=site_config.search_template.format(standardized_name),
             source_platform='leadiq',
             scrape_status='pending',
             timestamp=str(time.time())
         )
 
         try:
-            # Google site search
-            search_result = await self._google_site_search(
-                company_name=standardized_name,
-                site=site,
-                additional_terms="Company Overview"
-            )
+            # Search (DDG-first, Google CSE fallback + hit validation)
+            url = await self._search_company_url(standardized_name, site_config)
 
-            if not search_result.url:
+            if not url:
                 result.scrape_status = 'no_data'
                 result.error_message = 'No search results found'
                 return result.to_json() if return_json else result
 
-            result.search_url = search_result.url
+            result.search_url = url
 
             # Fetch page
-            document = await self._fetch_page_with_selenium(search_result.url)
+            document = await self._fetch_page_with_selenium(url)
 
             if not document:
                 result.scrape_status = 'error'
@@ -1120,33 +1128,28 @@ class CompanyInfoToolkit(AbstractToolkit):
         Returns:
             CompanyInfo object or JSON string with company data
         """
-        site = "rocketreach.co"
-        search_term = f"site:rocketreach.co '{company_name}'"
+        site_config = COMPANY_SOURCES["rocketreach"]
 
         result = CompanyInfo(
-            search_term=search_term,
+            search_term=site_config.search_template.format(company_name),
             source_platform='rocketreach',
             scrape_status='pending',
             timestamp=str(time.time())
         )
 
         try:
-            # Google site search
-            search_result = await self._google_site_search(
-                company_name=company_name,
-                site=site,
-                additional_terms=" Information - RocketReach"
-            )
+            # Search (DDG-first, Google CSE fallback + hit validation)
+            url = await self._search_company_url(company_name, site_config)
 
-            if not search_result.url:
+            if not url:
                 result.scrape_status = 'no_data'
                 result.error_message = 'No search results found'
                 return result.to_json() if return_json else result
 
-            result.search_url = search_result.url
+            result.search_url = url
 
             # Fetch page
-            document = await self._fetch_page_with_selenium(search_result.url)
+            document = await self._fetch_page_with_selenium(url)
 
             if not document:
                 result.scrape_status = 'error'
@@ -1250,33 +1253,28 @@ class CompanyInfoToolkit(AbstractToolkit):
         Returns:
             CompanyInfo object or JSON string with company data
         """
-        site = "siccode.com"
-        search_term = f"site:siccode.com '{company_name}' +NAICS"
+        site_config = COMPANY_SOURCES["siccode"]
 
         result = CompanyInfo(
-            search_term=search_term,
+            search_term=site_config.search_template.format(company_name),
             source_platform='siccode',
             scrape_status='pending',
             timestamp=str(time.time())
         )
 
         try:
-            # Google site search
-            search_result = await self._google_site_search(
-                company_name=company_name,
-                site=site,
-                additional_terms="+NAICS"
-            )
+            # Search (DDG-first, Google CSE fallback + hit validation)
+            url = await self._search_company_url(company_name, site_config)
 
-            if not search_result.url:
+            if not url:
                 result.scrape_status = 'no_data'
                 result.error_message = 'No search results found'
                 return result.to_json() if return_json else result
 
-            result.search_url = search_result.url
+            result.search_url = url
 
             # Fetch page
-            document = await self._fetch_page_with_selenium(search_result.url)
+            document = await self._fetch_page_with_selenium(url)
 
             if not document:
                 result.scrape_status = 'error'
@@ -1520,3 +1518,73 @@ class CompanyInfoToolkit(AbstractToolkit):
             )
 
         return valid_results
+
+    @tool_schema(ResearchCompanyInput)
+    async def research_company(
+        self,
+        company_name: str,
+        sources: Optional[List[str]] = None,
+        return_json: bool = False
+    ) -> Union[CompanyInfo, str]:
+        """
+        Research a company across sources, returning the first successful profile.
+
+        Tries each source in priority order (default: leadiq, rocketreach,
+        explorium, siccode, visualvisitor, zoominfo — cheap HTTP-friendly
+        sources first, browser-heavy ZoomInfo last) by calling the matching
+        `scrape_<source>` method, and returns the FIRST `CompanyInfo` whose
+        `scrape_status == "success"`. Later sources are never called once a
+        success is found. If every source fails, returns a `CompanyInfo`
+        with `scrape_status="no_data"` and an `error_message` summarizing
+        each source's failure. This method never raises into the agent loop.
+
+        Args:
+            company_name: Name of the company to research.
+            sources: Optional subset/order of source names to try (must be
+                a subset of leadiq, rocketreach, explorium, siccode,
+                visualvisitor, zoominfo). Defaults to the full priority
+                order.
+            return_json: If True, return a JSON string instead of a
+                `CompanyInfo` object.
+
+        Returns:
+            CompanyInfo object (or JSON string) for the first successful
+            source, or a `no_data`/`error` CompanyInfo if none succeeded.
+        """
+        order = sources or DEFAULT_SOURCE_PRIORITY
+
+        unknown = [name for name in order if name not in COMPANY_SOURCES]
+        if unknown:
+            info = CompanyInfo(
+                search_term=company_name,
+                scrape_status='error',
+                error_message=(
+                    f"Unknown source(s) {unknown}; valid sources: "
+                    f"{list(COMPANY_SOURCES.keys())}"
+                ),
+                timestamp=str(time.time())
+            )
+            return info.to_json() if return_json else info
+
+        failures: Dict[str, str] = {}
+        for name in order:
+            scrape_method = getattr(self, f"scrape_{name}")
+            try:
+                result = await scrape_method(company_name, return_json=False)
+            except Exception as e:
+                self.logger.error(f"research_company: {name} raised unexpectedly: {e}")
+                failures[name] = f"error: {e}"
+                continue
+
+            if isinstance(result, CompanyInfo) and result.scrape_status == 'success':
+                return result.to_json() if return_json else result
+
+            failures[name] = result.scrape_status if isinstance(result, CompanyInfo) else 'error'
+
+        info = CompanyInfo(
+            search_term=company_name,
+            scrape_status='no_data',
+            error_message=f"All sources failed: {failures}",
+            timestamp=str(time.time())
+        )
+        return info.to_json() if return_json else info
