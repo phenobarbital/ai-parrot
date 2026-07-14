@@ -52,7 +52,7 @@
       "feature_id": "FEAT-305",
       "feature": "companyresearch-tool",
       "spec": "sdd/specs/companyresearch-tool.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Edits company_info/tool.py — shared file; must be serialized with TASK-1760. Independent of the search layer logically but conflicts on the same file.",
       "assigned_to": null,
       "started_at": "2026-07-13T23:59:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1761-playwright-fetch-layer.md"
+      "completed_at": "2026-07-14T00:12:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1761-playwright-fetch-layer.md"
     },
     {
       "id": "TASK-1762",
