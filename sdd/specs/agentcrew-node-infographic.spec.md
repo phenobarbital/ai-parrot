@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-308
 **Date**: 2026-07-14
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: (next minor)
 
 > Source brainstorm: `sdd/proposals/agentcrew-node-infographic.brainstorm.md`
