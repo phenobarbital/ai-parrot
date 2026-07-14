@@ -70,7 +70,7 @@
       "feature_id": "FEAT-306",
       "feature": "crew-per-agent-result-persistence",
       "spec": "sdd/specs/crew-per-agent-result-persistence.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Depends on NodeResult.to_dict() (from_memory) and ResultStorage.fetch() (from_storage); modifies core/storage/__init__.py.",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1768-crew-execution-document.md"
+      "completed_at": "2026-07-14T01:00:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1768-crew-execution-document.md"
     },
     {
       "id": "TASK-1769",
