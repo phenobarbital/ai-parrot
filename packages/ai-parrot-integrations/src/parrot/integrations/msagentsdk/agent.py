@@ -136,8 +136,9 @@ class ParrotM365Agent:
         Routes activities by type:
         - ``message`` → ``_handle_message()``
         - ``conversationUpdate`` → ``_handle_conversation_update()``
-        - ``invoke`` → ``_handle_signin_verify()`` or
-          ``_handle_signin_exchange()`` depending on the invoke name.
+        - ``invoke`` → ``_handle_signin_verify()``, ``_handle_signin_exchange()``,
+          or ``_handle_adaptive_card_action()`` (FEAT-303) depending on the
+          invoke name.
         - Other types → logged at DEBUG and ignored.
 
         Args:
@@ -159,6 +160,8 @@ class ParrotM365Agent:
                 await self._handle_signin_verify(context)
             elif name == "signin/tokenExchange":
                 await self._handle_signin_exchange(context)
+            elif name == "adaptiveCard/action":
+                await self._handle_adaptive_card_action(context)
             else:
                 self.logger.debug("Ignoring invoke type: %s", name)
         else:
@@ -523,6 +526,64 @@ class ParrotM365Agent:
         await self._send_invoke_response(context, status_code=200)
         # Proactive resume — look up by user_id (no nonce in signin invoke).
         await self._try_resume_by_user(user_id)
+
+    async def _handle_adaptive_card_action(self, context) -> None:
+        """Handle an ``adaptiveCard/action`` invoke (FEAT-303 compatibility shim).
+
+        Some surfaces (notably M365 Copilot) may deliver a card action click
+        as an ``adaptiveCard/action`` Universal-Action invoke instead of a
+        normal ``messageBack`` message activity. This shim acknowledges the
+        invoke immediately (Bot Framework requires a timely response) and
+        then extracts the natural-language prompt embedded in the action's
+        ``data`` payload (built by
+        :func:`~parrot.integrations.msagentsdk.cards.render_card`'s action
+        builder), feeding it through the normal ``_handle_message()`` path so
+        it reuses identity extraction, permission context, broker wiring,
+        and the Semantic UI card seam wholesale.
+
+        ``messageBack`` clicks (the primary round-trip) need no handling
+        here — Teams/Copilot deliver those as ordinary ``message``
+        activities that already route to ``_handle_message()``.
+
+        Args:
+            context: ``TurnContext`` carrying the ``adaptiveCard/action``
+                invoke Activity.
+        """
+        await self._send_invoke_response(context, status_code=200)
+
+        activity = context.activity
+        value = getattr(activity, "value", None) or {}
+        action = (
+            value.get("action")
+            if isinstance(value, dict)
+            else getattr(value, "action", None)
+        ) or {}
+        data = (
+            action.get("data")
+            if isinstance(action, dict)
+            else getattr(action, "data", None)
+        ) or {}
+
+        prompt: Optional[str] = None
+        if isinstance(data, dict):
+            prompt = data.get("feat303_prompt")
+            if not prompt:
+                msteams = data.get("msteams") or {}
+                prompt = msteams.get("text") if isinstance(msteams, dict) else None
+        else:
+            prompt = getattr(data, "feat303_prompt", None)
+            if not prompt:
+                msteams = getattr(data, "msteams", None)
+                prompt = getattr(msteams, "text", None) if msteams else None
+
+        if not prompt:
+            self.logger.warning(
+                "adaptiveCard/action invoke had no extractable prompt — ignoring"
+            )
+            return
+
+        activity.text = prompt
+        await self._handle_message(context)
 
     # ------------------------------------------------------------------
     # Suspend / resume (FEAT-264 / TASK-1674)
