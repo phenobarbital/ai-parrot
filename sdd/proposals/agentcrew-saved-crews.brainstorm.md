@@ -417,11 +417,11 @@ from parrot.conf import CREW_RESULT_STORAGE_PG_DSN  # used by PostgresResultStor
 
 ## Open Questions
 
-- [ ] Should the `crew_executions` table migration be idempotent DDL (like the
-  existing `_ensure_table`) or a formal migration script? — *Owner: Jesus*
-- [ ] Should `RedisResultStorage` and `DocumentDbResultStorage` get real read
-  implementations or just `NotImplementedError`? — *Owner: Jesus*
-- [ ] What is the retention policy for saved executions? Unlimited? Configurable
-  TTL per tenant? — *Owner: Jesus*
-- [ ] Should the schedule endpoint accept all `ScheduleType` values (ONCE, DAILY,
-  WEEKLY, MONTHLY, INTERVAL, CRON, CRONTAB) or a subset? — *Owner: Jesus*
+- [x] Should the `crew_executions` table migration be idempotent DDL (like the
+  existing `_ensure_table`) or a formal migration script? — *Owner: Jesus*: Use idempotent DDL (same pattern as existing `_ensure_table` in `PostgresResultStorage`).
+- [x] Should `RedisResultStorage` and `DocumentDbResultStorage` get real read
+  implementations or just `NotImplementedError`? — *Owner: Jesus*: Get real read implementations for all backends.
+- [x] What is the retention policy for saved executions? Unlimited? Configurable
+  TTL per tenant? — *Owner: Jesus*: Unlimited retention for now.
+- [x] Should the schedule endpoint accept all `ScheduleType` values (ONCE, DAILY,
+  WEEKLY, MONTHLY, INTERVAL, CRON, CRONTAB) or a subset? — *Owner: Jesus*: Accept all schedule types.
