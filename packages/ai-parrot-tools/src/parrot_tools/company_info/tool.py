@@ -44,7 +44,11 @@ import json
 import re
 import time
 from typing import Dict, List, Any, Optional, Union
+import backoff
 from bs4 import BeautifulSoup as bs
+from ddgs import DDGS
+from ddgs.exceptions import RatelimitException
+from rapidfuzz import fuzz
 from pydantic import BaseModel, Field
 from googleapiclient.discovery import build
 from navconfig import config
@@ -154,6 +158,81 @@ class GoogleSearchResult(BaseModel):
     title: Optional[str] = Field(None, description="Result title")
     snippet: Optional[str] = Field(None, description="Result snippet")
     total_results: int = Field(0, description="Total results found")
+
+
+class SourceConfig(BaseModel):
+    """
+    Internal per-source search configuration.
+
+    NOT a tool schema — used by `_search_company_url`/`_validate_search_hit`
+    to know how to search and validate hits for a given source. Templates and
+    title keywords are ported from flowtask's `CompanyScraper` parsers.
+    """
+    name: str = Field(description="Source identifier (e.g. 'leadiq')")
+    site: str = Field(description="Site domain to search within (e.g. 'leadiq.com')")
+    search_template: str = Field(
+        description="DDG/Google search query template with a single '{}' "
+        "placeholder for the (standardized) company name, e.g. 'site:leadiq.com {}'"
+    )
+    title_keywords: List[str] = Field(
+        description="Title keywords used to locate/validate the company-name "
+        "portion of a search-result title for this source"
+    )
+
+
+# Registry of all 6 supported sources, ported from flowtask's per-source
+# parsers (parsers/leadiq.py, rocket.py, explorium.py, siccode.py,
+# visualvisitor.py, zoominfo.py). Keyed by source name; used by
+# `_search_company_url` and (eventually) `research_company`'s priority loop.
+COMPANY_SOURCES: Dict[str, SourceConfig] = {
+    "leadiq": SourceConfig(
+        name="leadiq",
+        site="leadiq.com",
+        search_template="site:leadiq.com {}",
+        title_keywords=[
+            "Email Formats & Email Address",
+            "Company Overview",
+            "Employee Directory",
+            "Contact Details & Competitors",
+            "Email Format",
+        ],
+    ),
+    "rocketreach": SourceConfig(
+        name="rocketreach",
+        site="rocketreach.co",
+        search_template="site:rocketreach.co '{}'",
+        title_keywords=[
+            " Information",
+            " Information - ",
+            " Information - RocketReach",
+            ": Contact Details",
+        ],
+    ),
+    "explorium": SourceConfig(
+        name="explorium",
+        site="explorium.ai",
+        search_template="site:explorium.ai {}",
+        title_keywords=["overview - services"],
+    ),
+    "siccode": SourceConfig(
+        name="siccode",
+        site="siccode.com",
+        search_template="site:siccode.com '{}' +NAICS",
+        title_keywords=[" - ZIP", " - ZIP "],
+    ),
+    "visualvisitor": SourceConfig(
+        name="visualvisitor",
+        site="visualvisitor.com",
+        search_template="site:visualvisitor.com '{}'",
+        title_keywords=[" Phone", " - Phone"],
+    ),
+    "zoominfo": SourceConfig(
+        name="zoominfo",
+        site="zoominfo.com",
+        search_template="site:zoominfo.com {} Overview",
+        title_keywords=[" - Overview, News", "Overview, News"],
+    ),
+}
 
 
 # ===========================
@@ -330,6 +409,173 @@ class CompanyInfoToolkit(AbstractToolkit):
                 site=site,
                 total_results=0
             )
+
+    # ===========================
+    # Search layer: DDG-first + validation (FEAT-305)
+    # ===========================
+
+    @backoff.on_exception(backoff.expo, RatelimitException, max_tries=3)
+    async def _ddg_search(
+        self,
+        query: str,
+        max_results: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Run a DuckDuckGo text search, retrying with backoff on rate limits.
+
+        Mirrors `ddgo.py`'s pattern: the sync `ddgs.DDGS` client is run in an
+        executor so the event loop is never blocked.
+
+        Args:
+            query: Search query string.
+            max_results: Maximum number of results to request.
+
+        Returns:
+            List of raw DDG hit dictionaries (each with `title`/`href`/`body`).
+
+        Raises:
+            RatelimitException: propagated after `max_tries` backoff attempts
+                are exhausted, so the caller can fall back to Google CSE.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: list(DDGS().text(query, max_results=max_results))
+        )
+
+    def _clean_search_url(self, url: str) -> str:
+        """
+        Strip noisy suffixes from a candidate search-result URL.
+
+        Mirrors flowtask's URL cleanup (scrapper.py:919-922): search hits
+        sometimes point at a sub-page (employee directory, email format)
+        instead of the company's main profile page.
+
+        Args:
+            url: Raw candidate URL.
+
+        Returns:
+            The cleaned URL.
+        """
+        if '/employee-directory' in url:
+            url = url.replace('/employee-directory', '')
+        elif '/email-format' in url:
+            url = url.replace('/email-format', '')
+        return url
+
+    def _validate_search_hit(
+        self,
+        title: str,
+        url: str,
+        company_name: str,
+        keywords: List[str]
+    ) -> bool:
+        """
+        Validate a search hit before it is accepted for scraping.
+
+        Mirrors flowtask's `_check_company_name` (scrapper.py:741-770): the
+        result `title` must contain at least one of `keywords`; the portion
+        of the title preceding that keyword match is then compared against
+        `company_name` via exact match, first-token match, or `rapidfuzz`
+        fuzzy ratio (accepted when strictly greater than 85).
+
+        Args:
+            title: Search-result title.
+            url: Search-result URL (not used for validation; kept for
+                symmetry/logging by callers).
+            company_name: The company name being searched for.
+            keywords: Title keywords for the source being validated.
+
+        Returns:
+            True if the hit is considered a valid match for `company_name`.
+        """
+        if not title or not keywords:
+            return False
+
+        pattern = r'\b(' + '|'.join(re.escape(kw) for kw in keywords) + r')\b'
+        match = re.search(pattern, title, re.IGNORECASE)
+        if not match:
+            return False
+
+        candidate = title[:match.start()].strip()
+        if not candidate:
+            return False
+
+        company = company_name.strip()
+
+        # 1. Exact match
+        if company.lower() == candidate.lower():
+            return True
+
+        # 2. First-token match
+        company_tokens = company.split()
+        candidate_tokens = candidate.split()
+        if company_tokens and candidate_tokens:
+            if company_tokens[0].lower() == candidate_tokens[0].lower():
+                return True
+
+        # 3. Fuzzy match (strictly > 85, per flowtask semantics)
+        score = fuzz.ratio(company.lower(), candidate.lower())
+        return score > 85
+
+    async def _search_company_url(
+        self,
+        company_name: str,
+        site_config: SourceConfig
+    ) -> Optional[str]:
+        """
+        Resolve the first validated result URL for a company on a source.
+
+        DDG-first strategy (G3): tries `ddgs.DDGS` first (free, no quota);
+        falls back to the existing `_google_site_search` (quota-billed) when
+        DDG fails or is rate-limited. Every candidate hit — from either
+        engine — is validated via `_validate_search_hit` (G4) before being
+        accepted, and accepted URLs are cleaned via `_clean_search_url`.
+
+        Args:
+            company_name: Company name to search for.
+            site_config: `SourceConfig` describing the target source.
+
+        Returns:
+            The first validated, cleaned candidate URL, or `None` if no
+            validated hit was found via either engine.
+        """
+        query = site_config.search_template.format(company_name)
+
+        try:
+            hits = await self._ddg_search(query, max_results=5)
+            for hit in hits:
+                title = hit.get('title') or ''
+                hit_url = hit.get('href') or hit.get('url') or ''
+                if not hit_url:
+                    continue
+                if self._validate_search_hit(
+                    title, hit_url, company_name, site_config.title_keywords
+                ):
+                    return self._clean_search_url(hit_url)
+        except Exception as e:
+            self.logger.warning(f"DDG search failed for '{query}': {e}")
+
+        # Fallback: Google CSE (costs quota — log at INFO)
+        self.logger.info(
+            f"Falling back to Google CSE for '{query}' (source={site_config.name})"
+        )
+        try:
+            search_result = await self._google_site_search(
+                company_name=company_name,
+                site=site_config.site
+            )
+            if search_result.url and self._validate_search_hit(
+                search_result.title or '',
+                search_result.url,
+                company_name,
+                site_config.title_keywords
+            ):
+                return self._clean_search_url(search_result.url)
+        except Exception as e:
+            self.logger.error(f"Google CSE fallback failed for '{query}': {e}")
+
+        return None
 
     async def _fetch_page_with_selenium(self, url: str) -> Optional[bs]:
         """
