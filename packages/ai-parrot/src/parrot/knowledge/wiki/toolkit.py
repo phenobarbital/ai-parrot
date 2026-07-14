@@ -18,9 +18,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+from parrot.knowledge.wiki.context import (
+    DEFAULT_BUDGET_TOKENS,
+    pack_results,
+    truncate_to_tokens,
+)
 from parrot.knowledge.wiki.ingest import IngestReport, WikiIngestOrchestrator
 from parrot.knowledge.wiki.models import (
     WikiConfig,
@@ -29,6 +35,11 @@ from parrot.knowledge.wiki.models import (
 )
 from parrot.knowledge.wiki.search import WikiCombinedSearch
 from parrot.knowledge.wiki.sources import SourceCollectionManager
+from parrot.knowledge.wiki.store import (
+    WikiPageRecord,
+    create_wiki_store,
+    estimate_tokens,
+)
 from parrot.tools.toolkit import AbstractToolkit
 
 
@@ -84,20 +95,37 @@ class LLMWikiToolkit(AbstractToolkit):
         self._okf = okf_toolkit
         self._config = config
 
-        # Initialise helper components
+        # Initialise helper components.  The WikiStore plane is the
+        # retrieval backend — SQLite (storage_dir/wiki.db) or the
+        # in-memory + OKF-bundle-directory backend, per config.
+        self._store = create_wiki_store(
+            config.storage_dir,
+            wiki_name=config.wiki_name,
+            backend=config.storage_backend,
+        )
         sources_dir = config.storage_dir / "sources"
-        self._sources = SourceCollectionManager(sources_dir)
+        if config.storage_backend == "sqlite":
+            self._sources = SourceCollectionManager(
+                sources_dir, db_path=config.storage_dir / "wiki.db"
+            )
+        else:
+            self._sources = SourceCollectionManager(
+                sources_dir, backend="json"
+            )
         self._bookkeeper = WikiBookkeeper()
         self._search = WikiCombinedSearch(
             pageindex_toolkit,
             graphindex_toolkit,
             config.search_weights,
+            store=self._store,
         )
         self._ingest_orch = WikiIngestOrchestrator(
             pageindex_toolkit,
             graphindex_toolkit,
             self._sources,
             self._bookkeeper,
+            store=self._store,
+            sync_graph=config.sync_graph,
         )
         self.logger: logging.Logger = logging.getLogger(__name__)
 
@@ -163,8 +191,8 @@ class LLMWikiToolkit(AbstractToolkit):
         results = await self._search.search(
             question, mode=mode, top_k=10, tree_name=wiki_name
         )
-        context_snippets = [r.snippet for r in results if r.snippet]
-        answer = self._synthesise_answer(question, context_snippets)
+        packed = pack_results(results, budget_tokens=DEFAULT_BUDGET_TOKENS)
+        answer = self._synthesise_answer(question, packed.text)
 
         filed_page_id: Optional[str] = None
         if file_answer:
@@ -217,23 +245,50 @@ class LLMWikiToolkit(AbstractToolkit):
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("OKF lint failed: %s", exc)
 
-        # Wiki-specific checks
+        # Wiki-specific checks — answered from the SQLite plane.
+        # Orphans: sources with zero derived pages (SQL join); falls back
+        # to the registry's pages_generated when the pages table is empty
+        # for that source but ids were recorded (e.g. store sync skipped).
         all_sources = self._sources.list_sources()
+        recorded = {
+            s.source_id for s in all_sources if s.pages_generated
+        }
         orphan_sources = [
-            s.source_id for s in all_sources if not s.pages_generated
+            sid
+            for sid in await self._store.orphan_sources()
+            if sid not in recorded
         ]
         # is_stale does file I/O (stat + optional hash) — offload to thread pool
         stale_sources: list[str] = []
         for s in all_sources:
             if await asyncio.to_thread(self._sources.is_stale, s.source_id):
                 stale_sources.append(s.source_id)
-        uncovered_sources: list[str] = []  # future: scan source_dir for new files
+
+        # Uncovered: files present in source_dir but never registered.
+        uncovered_sources: list[str] = []
+        source_dir = self._config.source_dir
+        if source_dir and Path(source_dir).is_dir():
+            tracked_uris = {s.source_uri for s in all_sources}
+            for candidate in sorted(Path(source_dir).rglob("*")):
+                if candidate.is_file() and str(candidate.resolve()) not in tracked_uris:
+                    uncovered_sources.append(str(candidate))
+
+        # Cross-reference issues: broken edges + pages without bodies.
+        cross_ref_issues: list[dict[str, Any]] = [
+            {"kind": "broken_edge", **edge}
+            for edge in await self._store.broken_edges()
+        ]
+        cross_ref_issues.extend(
+            {"kind": "missing_body", "concept_id": cid}
+            for cid in await self._store.missing_bodies()
+        )
 
         report = WikiLintReport(
             okf_report=okf_result,
             orphan_sources=orphan_sources,
             stale_sources=stale_sources,
             uncovered_sources=uncovered_sources,
+            cross_ref_issues=cross_ref_issues,
         )
 
         await asyncio.to_thread(
@@ -260,13 +315,12 @@ class LLMWikiToolkit(AbstractToolkit):
 
             {storage_dir}/
             ├── sources/         # raw source documents
-            ├── wiki/            # wiki markdown pages (by category)
-            │   ├── entities/
-            │   ├── concepts/
-            │   ├── summaries/
-            │   └── comparisons/
+            ├── wiki.db          # SQLite retrieval plane (pages/edges/FTS)
             ├── index.md         # auto-generated content catalog
             └── log.md           # append-only operation log
+
+        Page content lives in ``wiki.db`` (machine plane), not in
+        per-category markdown directories.
 
         Args:
             wiki_name: Human-readable wiki name.
@@ -278,10 +332,6 @@ class LLMWikiToolkit(AbstractToolkit):
         storage_dir = self._config.storage_dir
         directories = [
             storage_dir / "sources",
-            storage_dir / "wiki" / "entities",
-            storage_dir / "wiki" / "concepts",
-            storage_dir / "wiki" / "summaries",
-            storage_dir / "wiki" / "comparisons",
         ]
         created: list[str] = []
         for d in directories:
@@ -392,16 +442,19 @@ class LLMWikiToolkit(AbstractToolkit):
 
         Args:
             wiki_name: Wiki name to browse.
-            category: Optional WikiPageCategory value to filter by.
-            search: Optional search query to filter results.
+            category: Optional category value to filter by (exact match).
+            search: Optional search query — when given, results come
+                from FTS ranking instead of the recency listing.
 
         Returns:
-            List of page summary dicts from PageIndex search.
+            List of page stub dicts (no bodies — use ``read_page``).
         """
-        query = search or (category or wiki_name)
         try:
-            raw = await self._pi.search(wiki_name, query, top_k=20)
-            return raw if isinstance(raw, list) else []
+            if search:
+                return await self._store.search_fts(
+                    search, category=category, limit=20
+                )
+            return await self._store.list_pages(category=category, limit=20)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("browse_pages failed: %s", exc)
             return []
@@ -410,25 +463,43 @@ class LLMWikiToolkit(AbstractToolkit):
         self,
         wiki_name: str,
         page_id: str,
+        max_tokens: Optional[int] = None,
     ) -> dict[str, Any]:
         """Read the full content of a wiki page by its ID.
 
+        Progressive disclosure: search returns compact stubs with each
+        page's token cost; call this only for pages worth their tokens,
+        optionally capping the spend with ``max_tokens``.
+
         Args:
             wiki_name: Wiki name containing the page.
-            page_id: Node ID of the page to read.
+            page_id: Stable ``concept_id`` of the page (a volatile
+                PageIndex ``node_id`` is also accepted).
+            max_tokens: Optional ceiling on returned content tokens —
+                the body is deterministically truncated when over.
 
         Returns:
-            Dict with keys: page_id, content, metadata.  Returns
+            Dict with keys: page_id, title, category, summary, content,
+            token_count, truncated, source_id.  Returns
             ``{"error": "not_found"}`` when the page does not exist.
         """
-        # PageIndex node content retrieval via search is the available API
+        page = await self._store.get_page(page_id)
+        if page is None:
+            return {"error": "not_found", "page_id": page_id}
+        content, truncated = truncate_to_tokens(
+            page.get("body", ""), max_tokens
+        )
         return {
-            "page_id": page_id,
+            "page_id": page["concept_id"],
+            "node_id": page.get("node_id"),
             "wiki_name": wiki_name,
-            "note": (
-                "Full page content retrieval requires PageIndex node reader; "
-                "use search() to locate pages by content."
-            ),
+            "title": page.get("title", ""),
+            "category": page.get("category", ""),
+            "summary": page.get("summary", ""),
+            "content": content,
+            "token_count": page.get("token_count", 0),
+            "truncated": truncated,
+            "source_id": page.get("source_id"),
         }
 
     async def create_page(
@@ -454,7 +525,9 @@ class LLMWikiToolkit(AbstractToolkit):
         Returns:
             Dict with keys: page_id, title, category, status.
         """
-        # Build markdown with YAML-like frontmatter comment
+        # Markdown kept for the PageIndex authoring plane; the category
+        # lives as a real column in the WikiStore (the HTML comment is
+        # retained only for backwards compatibility of stored markdown).
         markdown = f"# {title}\n\n<!-- category: {category} -->\n\n{content}"
 
         page_id: Optional[str] = None
@@ -463,24 +536,49 @@ class LLMWikiToolkit(AbstractToolkit):
                 wiki_name, markdown, doc_name=title
             )
             if isinstance(pi_result, dict):
-                page_id = str(
-                    pi_result.get("node_id") or pi_result.get("id") or ""
-                )
+                # PageIndexToolkit.insert_markdown() contract:
+                # {"tree_name", "new_node_ids"}
+                new_ids = pi_result.get("new_node_ids") or []
+                page_id = str(new_ids[0]) if new_ids else None
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("create_page PageIndex insert failed: %s", exc)
 
-        # Sync to GraphIndex
+        if not page_id:
+            page_id = f"page-{title[:40].lower().replace(' ', '-')}"
+
+        # Write to the WikiStore retrieval plane: category as a column,
+        # body in the DB, related_pages as typed edges.
         try:
-            gi_result = await self._gi.create_node(
-                kind="wiki_page",
+            record = WikiPageRecord(
+                concept_id=page_id,
+                node_id=page_id,
                 title=title,
+                category=category,
                 summary=content[:300],
-                domain_tags={"wiki": wiki_name, "category": category},
+                body=content,
+                token_count=estimate_tokens(content),
             )
-            if isinstance(gi_result, dict) and not page_id:
-                page_id = gi_result.get("node_id")
+            await self._store.upsert_pages([record])
+            if related_pages:
+                await self._store.add_edges(
+                    [(page_id, str(rp), "references") for rp in related_pages]
+                )
         except Exception as exc:  # noqa: BLE001
-            self.logger.warning("create_page GraphIndex create_node failed: %s", exc)
+            self.logger.warning("create_page WikiStore upsert failed: %s", exc)
+
+        # Optional GraphIndex mirror (off by default).
+        if self._config.sync_graph:
+            try:
+                await self._gi.create_node(
+                    kind="wiki_page",
+                    title=title,
+                    summary=content[:300],
+                    domain_tags={"wiki": wiki_name, "category": category},
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "create_page GraphIndex create_node failed: %s", exc
+                )
 
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
@@ -489,9 +587,10 @@ class LLMWikiToolkit(AbstractToolkit):
             f"title: {title!r}, category: {category}",
         )
         return {
-            "page_id": page_id or f"page-{title[:20].lower().replace(' ', '-')}",
+            "page_id": page_id,
             "title": title,
             "category": category,
+            "related_pages": list(related_pages or []),
             "status": "created",
         }
 
@@ -533,23 +632,50 @@ class LLMWikiToolkit(AbstractToolkit):
     ) -> dict[str, Any]:
         """Delete a wiki page.
 
+        Deletes the page from the WikiStore retrieval plane (row, FTS
+        entry, embeddings, and edges) and best-effort removes the
+        corresponding node from the PageIndex tree.
+
         Args:
             wiki_name: Wiki name containing the page.
-            page_id: Node ID of the page to delete.
+            page_id: Stable ``concept_id`` (or PageIndex ``node_id``).
 
         Returns:
-            Dict with keys: page_id, status, message.
+            Dict with keys: page_id, status, message.  ``status`` is
+            ``"not_found"`` when the page does not exist.
         """
+        page = await self._store.get_page(page_id, include_body=False)
+        if page is None:
+            return {
+                "page_id": page_id,
+                "status": "not_found",
+                "message": "No such page in the wiki store.",
+            }
+
+        deleted = await self._store.delete_page(page["concept_id"])
+
+        # Best-effort removal from the PageIndex authoring plane.
+        node_id = page.get("node_id")
+        if node_id:
+            try:
+                await self._pi.delete_node(wiki_name, node_id)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "delete_page: PageIndex delete_node(%s) failed: %s",
+                    node_id,
+                    exc,
+                )
+
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
             self._config_for(wiki_name).storage_dir,
             "DELETE_PAGE",
-            f"page_id: {page_id}",
+            f"page_id: {page['concept_id']}",
         )
         return {
-            "page_id": page_id,
-            "status": "deleted",
-            "message": "Page marked for deletion (physical removal pending).",
+            "page_id": page["concept_id"],
+            "status": "deleted" if deleted else "not_found",
+            "message": "Page removed from wiki store.",
         }
 
     # ------------------------------------------------------------------
@@ -639,6 +765,74 @@ class LLMWikiToolkit(AbstractToolkit):
         )
         return [r.model_dump() for r in results]
 
+    async def search_compact(
+        self,
+        wiki_name: str,
+        query: str,
+        budget_tokens: int = DEFAULT_BUDGET_TOKENS,
+        mode: str = "combined",
+    ) -> dict[str, Any]:
+        """Search and return token-budgeted compact stubs (preferred).
+
+        Each stub carries the page id, title, lead sentence, score, and
+        the token cost of reading the full page — so the caller can
+        decide what to ``read_page`` next without paying for bodies
+        up front.
+
+        Args:
+            wiki_name: Wiki name to search.
+            query: Natural-language search query.
+            budget_tokens: Hard token ceiling for the packed context.
+            mode: ``"combined"``, ``"lexical"``, or ``"vector"``.
+
+        Returns:
+            Dict with keys: context (packed text), stubs, tokens_used,
+            results_packed, total_available, truncated.
+        """
+        results = await self._search.search(
+            query, mode=mode, top_k=25, tree_name=wiki_name
+        )
+        packed = pack_results(results, budget_tokens=budget_tokens)
+        return {
+            "context": packed.text,
+            "stubs": packed.stubs,
+            "tokens_used": packed.tokens_used,
+            "results_packed": packed.results_packed,
+            "total_available": packed.total_available,
+            "truncated": packed.truncated,
+        }
+
+    async def expand(
+        self,
+        wiki_name: str,
+        page_id: str,
+        rel: Optional[str] = None,
+        budget_tokens: int = DEFAULT_BUDGET_TOKENS,
+    ) -> dict[str, Any]:
+        """Progressively disclose a page's graph neighbourhood as stubs.
+
+        Args:
+            wiki_name: Wiki name.
+            page_id: Seed page ``concept_id``.
+            rel: Optional exact relation filter (e.g. ``"summarizes"``,
+                ``"references"``).
+            budget_tokens: Token ceiling for the packed stubs.
+
+        Returns:
+            Dict with keys: page_id, context, stubs, tokens_used,
+            total_available, truncated.
+        """
+        neighbours = await self._store.neighbors(page_id, rel=rel)
+        packed = pack_results(neighbours, budget_tokens=budget_tokens)
+        return {
+            "page_id": page_id,
+            "context": packed.text,
+            "stubs": packed.stubs,
+            "tokens_used": packed.tokens_used,
+            "total_available": packed.total_available,
+            "truncated": packed.truncated,
+        }
+
     async def find_related(
         self,
         wiki_name: str,
@@ -656,6 +850,45 @@ class LLMWikiToolkit(AbstractToolkit):
             List of neighbour node dicts from GraphIndexToolkit.
         """
         return await self._search.find_related(page_id, depth=depth)
+
+    # ------------------------------------------------------------------
+    # OKF export boundary
+    # ------------------------------------------------------------------
+
+    async def export_okf(
+        self,
+        wiki_name: str,
+        output_dir: str,
+    ) -> dict[str, Any]:
+        """Export the wiki as an OKF v0.1 markdown bundle (interchange).
+
+        The wiki's internal store is machine-first SQLite; this tool
+        lazily projects it into Open Knowledge Format — one markdown
+        file per page with YAML frontmatter (``type`` from the page
+        category, ``relates_to`` from the edges table), grouped in
+        category directories with a root ``index.md``.
+
+        Args:
+            wiki_name: Wiki to export.
+            output_dir: Destination directory for the bundle.
+
+        Returns:
+            Export report dict: files_written, categories,
+            index_generated, output_dir.
+        """
+        from parrot.knowledge.wiki.export import export_okf_bundle
+
+        self._config_for(wiki_name)
+        report = await export_okf_bundle(
+            self._store, Path(output_dir), wiki_name=wiki_name
+        )
+        await asyncio.to_thread(
+            self._bookkeeper.log_operation,
+            self._config.storage_dir,
+            "EXPORT_OKF",
+            f"output_dir: {output_dir}, files: {report.files_written}",
+        )
+        return report.model_dump()
 
     # ------------------------------------------------------------------
     # Bookkeeping
@@ -753,25 +986,25 @@ class LLMWikiToolkit(AbstractToolkit):
     def _synthesise_answer(
         self,
         question: str,
-        snippets: list[str],
+        packed_context: str,
     ) -> str:
-        """Synthesise an answer from search result snippets.
+        """Synthesise an answer from token-budgeted packed context.
 
-        This is a lightweight placeholder: it concatenates the top
-        snippets with attribution markers.  In production, replace with an
-        LLM completion call using the bot's configured adapter.
+        This is a lightweight placeholder: it returns the packed stub
+        block with an attribution header.  In production, replace with
+        an LLM completion call using the bot's configured adapter — the
+        packed context is already budgeted for direct prompt inclusion.
 
         Args:
             question: The original question.
-            snippets: List of content snippets from search results.
+            packed_context: Compact stub block from :func:`pack_results`.
 
         Returns:
             A synthesised answer string.
         """
-        if not snippets:
+        if not packed_context:
             return (
                 f"No relevant wiki pages found for: {question!r}. "
                 "Try ingesting more sources first."
             )
-        joined = "\n\n".join(snippets[:5])
-        return f"Based on the wiki knowledge base:\n\n{joined}"
+        return f"Based on the wiki knowledge base:\n\n{packed_context}"

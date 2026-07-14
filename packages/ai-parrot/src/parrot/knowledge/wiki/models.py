@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -62,6 +62,12 @@ class WikiConfig(BaseModel):
             when ``None``.
         model: Optional model identifier for the heavyweight generation
             step of TwoStepIngester.
+        sync_graph: When ``True``, wiki writes also mirror pages into
+            GraphIndex.  Off by default — the WikiStore plane is the
+            wiki's retrieval backend.
+        storage_backend: ``"sqlite"`` (default; single-file ``wiki.db``)
+            or ``"memory"`` (in-memory indexes + OKF markdown bundle
+            directory — no SQLite dependency).
     """
 
     wiki_name: str = Field(..., description="Unique wiki name / identifier")
@@ -85,6 +91,22 @@ class WikiConfig(BaseModel):
     model: Optional[str] = Field(
         default=None,
         description="LLM model for heavyweight generation step",
+    )
+    sync_graph: bool = Field(
+        default=False,
+        description=(
+            "Mirror wiki pages into GraphIndex on write. Off by default — "
+            "the WikiStore plane is the retrieval backend."
+        ),
+    )
+    storage_backend: Literal["sqlite", "memory"] = Field(
+        default="sqlite",
+        description=(
+            "Retrieval-plane backend: 'sqlite' (single-file wiki.db, "
+            "FTS5/BM25) or 'memory' (in-memory indexes persisted as an "
+            "OKF markdown bundle under {storage_dir}/pages/). Explicit "
+            "selection only — no auto-fallback."
+        ),
     )
 
     @field_validator("search_weights")
@@ -148,16 +170,20 @@ class SourceManifestEntry(BaseModel):
 
 
 class WikiSearchResult(BaseModel):
-    """Unified search result returned by combined (PageIndex + GraphIndex) search.
+    """Unified wiki search result.
 
     Attributes:
-        node_id: Stable node/page identifier in the underlying index.
+        node_id: Stable page identifier (``concept_id`` on the WikiStore
+            path; index node id on the legacy path).
         title: Human-readable page or node title.
         score: Normalised relevance score in [0, 1] after weight application.
-        source: Which backend produced this result — ``"pageindex"`` or
-            ``"graphindex"``.
+        source: Which search leg produced this result — ``"lexical"`` /
+            ``"vector"`` (WikiStore plane) or ``"pageindex"`` /
+            ``"graphindex"`` (legacy toolkit path).
         snippet: Short excerpt or summary extracted from the page content.
         category: Optional WikiPageCategory if the page has one.
+        token_count: Token cost of reading the full page body — used by
+            context packing to budget progressive disclosure.
     """
 
     node_id: str = Field(..., description="Stable node/page identifier")
@@ -170,7 +196,15 @@ class WikiSearchResult(BaseModel):
     )
     source: str = Field(
         ...,
-        description="Search backend: 'pageindex' or 'graphindex'",
+        description=(
+            "Search leg: 'lexical'/'vector' (WikiStore) or "
+            "'pageindex'/'graphindex' (legacy)"
+        ),
+    )
+    token_count: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Token cost of the full page body (for budgeting)",
     )
     snippet: str = Field(
         default="",
