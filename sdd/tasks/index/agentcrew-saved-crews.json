@@ -148,7 +148,7 @@
       "feature_id": "FEAT-307",
       "feature": "agentcrew-saved-crews",
       "spec": "sdd/specs/agentcrew-saved-crews.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -160,8 +160,8 @@
       "parallelism_notes": "Depends on ABC, Postgres backend, and models",
       "assigned_to": null,
       "started_at": "2026-07-14T00:46:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1772-saved-execution-service.md"
+      "completed_at": "2026-07-14T01:29:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1772-saved-execution-service.md"
     },
     {
       "id": "TASK-1773",
