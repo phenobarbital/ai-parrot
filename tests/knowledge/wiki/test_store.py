@@ -254,6 +254,43 @@ class TestReplaceSourceSlice:
         await store.replace_source_slice("src-1", [_page("a2", source_id="src-1")])
         assert await store.get_page("b") is not None
 
+    @pytest.mark.asyncio
+    async def test_replace_preserves_incoming_edges_to_stable_ids(
+        self, store: BaseWikiStore
+    ):
+        """Incoming edges from other sources survive a re-ingest.
+
+        A directory 'contains' edge (or an importer's 'references'
+        edge) points INTO a page whose concept_id is stable across
+        re-ingests — replacing the page's source slice must not drop it.
+        """
+        await store.replace_source_slice("src-1", [_page("a", source_id="src-1")])
+        await store.upsert_pages([_page("dir-x")])
+        await store.add_edges([("dir-x", "a", "contains")])
+
+        await store.replace_source_slice("src-1", [_page("a", source_id="src-1")])
+
+        incoming = await store.neighbors("a", direction="in")
+        assert [(n["concept_id"], n["rel"]) for n in incoming] == [
+            ("dir-x", "contains")
+        ]
+
+    @pytest.mark.asyncio
+    async def test_replace_drops_incoming_edges_to_removed_ids(
+        self, store: BaseWikiStore
+    ):
+        """Incoming edges are NOT preserved when the target id vanishes."""
+        await store.replace_source_slice("src-1", [_page("a", source_id="src-1")])
+        await store.upsert_pages([_page("dir-x")])
+        await store.add_edges([("dir-x", "a", "contains")])
+
+        # Re-ingest produces a different page id — the old edge target
+        # is gone, so the edge must be cleaned up (no dangling edges).
+        await store.replace_source_slice("src-1", [_page("a2", source_id="src-1")])
+
+        stats = await store.stats()
+        assert stats["edges"] == 0
+
 
 class TestLintQueries:
     """Fast SQL lint checks."""
