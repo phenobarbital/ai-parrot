@@ -55,9 +55,6 @@ from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
 # Shared helpers
 # --------------------------------------------------------------------------
 
-
-
-
 #: Shared `--path` option — every command resolves the repo root the same way.
 path_option = click.option(
     "--path", "path_", default=None, help="Repo root (default: auto-detect)."
@@ -320,15 +317,20 @@ def build(
 def _changed_files_from_git(root: Path) -> list[str]:
     """Relative paths touched by the last commit (post-commit hook).
 
-    Uses ``-z`` so paths with spaces/unicode are not C-quoted, and
+    Uses ``-z`` so paths with spaces/unicode are not C-quoted,
     ``--root`` so the very first commit of a repository also reports
-    its files.
+    its files, and ``-m --first-parent`` so **merge commits** report the
+    files they bring in relative to the first parent. Without the latter,
+    a plain ``diff-tree HEAD`` emits the (usually empty) combined diff for
+    a merge, so every file a ``git merge`` introduces would silently stay
+    stale in the wiki until the next full ``wikitoolkit build``.
     """
     try:
         proc = subprocess.run(
             [
                 "git", "-C", str(root), "diff-tree", "--no-commit-id",
-                "--name-only", "-z", "-r", "--root", "HEAD",
+                "--name-only", "-z", "-r", "-m", "--first-parent",
+                "--root", "HEAD",
             ],
             capture_output=True,
             timeout=30,
@@ -337,7 +339,15 @@ def _changed_files_from_git(root: Path) -> list[str]:
     except (OSError, subprocess.SubprocessError):
         return []
     out = proc.stdout.decode("utf-8", errors="replace")
-    return [p for p in out.split("\0") if p]
+    # `-m` can repeat a path across parent sections; dedupe while
+    # preserving first-seen order.
+    seen: set[str] = set()
+    result: list[str] = []
+    for p in out.split("\0"):
+        if p and p not in seen:
+            seen.add(p)
+            result.append(p)
+    return result
 
 
 @wiki.command()

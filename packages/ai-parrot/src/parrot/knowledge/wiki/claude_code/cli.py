@@ -30,8 +30,6 @@ from parrot.knowledge.wiki.project import (
 )
 
 
-
-
 #: Shared `--path` option — every command resolves the repo root the same way.
 path_option = click.option(
     "--path", "path_", default=None, help="Repo root (default: auto-detect)."

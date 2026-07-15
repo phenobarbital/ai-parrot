@@ -192,3 +192,62 @@ class TestImportEdges:
         _write(tmp_path, "pkg/__init__.py", "import pkg\n")
         scan = scan_repository(tmp_path, use_git=False)
         assert all(src != dst for src, dst, _ in scan.import_edges)
+
+
+class TestIncrementalScanCost:
+    """Partial scans avoid the whole-repo discovery when they can."""
+
+    def test_docs_only_upsert_skips_full_discovery(
+        self, tmp_path: Path, monkeypatch
+    ):
+        # A docs/config-only incremental commit cannot produce import
+        # edges, so the O(repo) discovery scan must be skipped entirely
+        # (the git post-commit hook runs on every commit).
+        _write(tmp_path, "pkg/a.py", PY_A)
+        _write(tmp_path, "README.md", "# Title\n\nText.\n")
+
+        import parrot.knowledge.wiki.repo_scan as rs
+
+        called = False
+        real_discover = rs.discover_repo_files
+
+        def _spy(*args, **kwargs):
+            nonlocal called
+            called = True
+            return real_discover(*args, **kwargs)
+
+        monkeypatch.setattr(rs, "discover_repo_files", _spy)
+        scan = scan_repository(
+            tmp_path, use_git=False, rel_paths=["README.md"]
+        )
+        assert called is False
+        assert [fs.rel_path for fs in scan.files] == ["README.md"]
+        assert scan.import_edges == []
+
+    def test_python_upsert_still_runs_full_discovery(
+        self, tmp_path: Path, monkeypatch
+    ):
+        _write(tmp_path, "pkg/a.py", PY_A)
+        _write(tmp_path, "pkg/b.py", PY_B)
+
+        import parrot.knowledge.wiki.repo_scan as rs
+
+        called = False
+        real_discover = rs.discover_repo_files
+
+        def _spy(*args, **kwargs):
+            nonlocal called
+            called = True
+            return real_discover(*args, **kwargs)
+
+        monkeypatch.setattr(rs, "discover_repo_files", _spy)
+        scan = scan_repository(
+            tmp_path, use_git=False, rel_paths=["pkg/a.py"]
+        )
+        assert called is True
+        # Edge to the unscanned b.py still resolves via the full index.
+        assert (
+            file_concept_id("pkg/a.py"),
+            file_concept_id("pkg/b.py"),
+            "references",
+        ) in scan.import_edges

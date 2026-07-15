@@ -6,12 +6,13 @@ no LLM.
 """
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
-from parrot.knowledge.wiki.cli import wiki
+from parrot.knowledge.wiki.cli import _changed_files_from_git, wiki
 from parrot.knowledge.wiki.project import (
     config_path,
     load_project_config,
@@ -236,3 +237,52 @@ class TestStatusAndExport:
         out = repo / "docs" / "wiki"
         assert (out / "index.md").exists()
         assert any(out.rglob("*store.py*"))
+
+
+def _git(root: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(root), *args], check=True,
+                   capture_output=True)
+
+
+class TestChangedFilesFromGit:
+    """The post-commit hook's file-listing helper (merge-safe)."""
+
+    @staticmethod
+    def _init_repo(root: Path) -> None:
+        _git(root, "init", "-q")
+        _git(root, "config", "user.email", "t@t.t")
+        _git(root, "config", "user.name", "t")
+        _git(root, "config", "commit.gpgsign", "false")
+
+    def test_first_commit_reports_files(self, tmp_path: Path):
+        self._init_repo(tmp_path)
+        (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-q", "-m", "init")
+        assert _changed_files_from_git(tmp_path) == ["a.py"]
+
+    def test_merge_commit_reports_merged_files(self, tmp_path: Path):
+        # A plain `diff-tree HEAD` yields the (empty) combined diff for a
+        # merge — the helper must instead report files brought in by the
+        # merge relative to the first parent, or the wiki goes stale.
+        self._init_repo(tmp_path)
+        (tmp_path / "base.py").write_text("x = 1\n", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-q", "-m", "base")
+        default_branch = subprocess.run(
+            ["git", "-C", str(tmp_path), "rev-parse", "--abbrev-ref", "HEAD"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+
+        _git(tmp_path, "checkout", "-q", "-b", "feature")
+        (tmp_path / "feature.py").write_text("y = 2\n", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-q", "-m", "feature")
+
+        _git(tmp_path, "checkout", "-q", default_branch)
+        # Force a real merge commit (two parents), not a fast-forward.
+        _git(tmp_path, "merge", "--no-ff", "-q", "-m", "merge", "feature")
+
+        changed = _changed_files_from_git(tmp_path)
+        assert "feature.py" in changed
+        assert changed.count("feature.py") == 1  # deduped across parents
