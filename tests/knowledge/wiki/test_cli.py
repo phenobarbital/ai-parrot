@@ -1,138 +1,288 @@
-"""Tests for the ``parrot llmwiki`` CLI command (FEAT-260).
+"""Tests for the ``wikitoolkit`` / ``parrot wiki`` CLI.
 
-Drives the Click command end-to-end with :class:`click.testing.CliRunner`
-against a real, temp-populated SQLite wiki plane — no mocks: the store is
-fast enough to exercise for real, mirroring ``test_store.py``.
+Drives the click commands end-to-end with ``CliRunner`` against temp
+repositories — real SQLite plane, no git dependency (``--no-git``),
+no LLM.
 """
 
-import asyncio
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
-from parrot.knowledge.wiki.cli import _parse_inline_args, llmwiki
-from parrot.knowledge.wiki.store import WikiPageRecord, create_wiki_store
+from parrot.knowledge.wiki.cli import _changed_files_from_git, wiki
+from parrot.knowledge.wiki.project import (
+    config_path,
+    load_project_config,
+)
+
+PY_STORE = '"""A tiny key-value store module."""\n\n\nclass Store:\n    """In-memory key-value store."""\n\n    def get(self, key):\n        """Fetch a value."""\n        return key\n'
+PY_UTIL = '"""Utility helpers."""\n\n\ndef helper(key):\n    """Return the key unchanged."""\n    return key\n'
 
 
 @pytest.fixture
-def populated_wiki(tmp_path: Path) -> Path:
-    """A SQLite wiki rooted at ``tmp_path`` seeded with two pages.
-
-    Args:
-        tmp_path: Pytest-provided temporary directory.
-
-    Returns:
-        The storage root (holds ``wiki.db``).
-    """
-    store = create_wiki_store(tmp_path, backend="sqlite")
-    pages = [
-        WikiPageRecord(
-            concept_id="crew",
-            title="AgentCrew Orchestration",
-            category="summary",
-            summary="Parallel, sequential, flow and loop crew execution.",
-            body="# AgentCrew\n\nOrchestrates agents in a crew.",
-        ),
-        WikiPageRecord(
-            concept_id="memory",
-            title="Redis Memory",
-            category="concept",
-            summary="Conversation memory backed by Redis.",
-            body="# Memory\n\nRedis-backed conversation memory.",
-        ),
-    ]
-    asyncio.run(store.upsert_pages(pages))
+def repo(tmp_path: Path) -> Path:
+    """A small fake repository."""
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "store.py").write_text(PY_STORE, encoding="utf-8")
+    (tmp_path / "pkg" / "util.py").write_text(PY_UTIL, encoding="utf-8")
+    (tmp_path / "README.md").write_text(
+        "# Demo\n\nA demo project.", encoding="utf-8"
+    )
     return tmp_path
 
 
-def test_parse_inline_args_valid():
-    """Recognised ``key=value`` tokens are parsed into an override map."""
-    assert _parse_inline_args(("limit=5", "category=summary")) == {
-        "limit": "5",
-        "category": "summary",
-    }
+@pytest.fixture
+def runner() -> CliRunner:
+    return CliRunner()
 
 
-def test_parse_inline_args_rejects_unknown_key():
-    """An unknown inline key raises a Click usage error."""
-    with pytest.raises(Exception) as exc:
-        _parse_inline_args(("foo=1",))
-    assert "Unknown inline option" in str(exc.value)
-
-
-def test_parse_inline_args_rejects_non_kv():
-    """A bare token (no ``=``) raises a Click usage error."""
-    with pytest.raises(Exception) as exc:
-        _parse_inline_args(("bareword",))
-    assert "expected key=value" in str(exc.value)
-
-
-def test_llmwiki_basic_search(populated_wiki: Path):
-    """Query returns a rendered table containing the matching title."""
-    runner = CliRunner()
+def _build(runner: CliRunner, repo: Path, *extra: str):
     result = runner.invoke(
-        llmwiki,
-        ["agent crew orchestration", "--store", str(populated_wiki)],
+        wiki, ["build", "--path", str(repo), "--no-git", *extra]
     )
     assert result.exit_code == 0, result.output
-    assert "AgentCrew Orchestration" in result.output
+    return result
 
 
-def test_llmwiki_inline_limit(populated_wiki: Path):
-    """The ``limit=N`` shorthand is honoured alongside --store."""
-    runner = CliRunner()
-    result = runner.invoke(
-        llmwiki,
-        ["crew", "limit=1", "--store", str(populated_wiki), "--json"],
-    )
-    assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert len(payload) == 1
-    assert payload[0]["concept_id"] == "crew"
+class TestBuild:
+    def test_build_creates_plane_and_config(self, runner, repo):
+        result = _build(runner, repo)
+        assert "built" in result.output
+        assert config_path(repo).exists()
+        config = load_project_config(repo)
+        assert config.wiki_name == repo.name
+        assert config.db_path(repo).exists()
+
+    def test_rebuild_is_incremental(self, runner, repo):
+        _build(runner, repo)
+        result = _build(runner, repo)
+        assert "0 ingested" in result.output
+        assert "3 unchanged" in result.output
+
+    def test_changed_file_reingested(self, runner, repo):
+        _build(runner, repo)
+        (repo / "pkg" / "util.py").write_text(
+            '"""Utility helpers v2."""\n', encoding="utf-8"
+        )
+        result = _build(runner, repo)
+        assert "1 ingested" in result.output
+
+    def test_deleted_file_pruned(self, runner, repo):
+        _build(runner, repo)
+        (repo / "pkg" / "util.py").unlink()
+        result = _build(runner, repo)
+        assert "removed" in result.output
+        page = runner.invoke(
+            wiki, ["page", "file:pkg/util.py", "--path", str(repo)]
+        )
+        assert page.exit_code != 0
+
+    def test_custom_name_and_backend(self, runner, repo):
+        _build(runner, repo, "--name", "kb", "--backend", "memory")
+        config = load_project_config(repo)
+        assert config.wiki_name == "kb"
+        assert config.backend == "memory"
+        result = runner.invoke(
+            wiki, ["query", "store", "--path", str(repo)]
+        )
+        assert result.exit_code == 0, result.output
 
 
-def test_llmwiki_category_filter(populated_wiki: Path):
-    """A category filter restricts the result set."""
-    runner = CliRunner()
-    result = runner.invoke(
-        llmwiki,
-        ["memory", "--category", "concept", "--store", str(populated_wiki), "--json"],
-    )
-    assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert all(row["category"] == "concept" for row in payload)
+class TestQuery:
+    def test_query_returns_packed_stubs(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(
+            wiki, ["query", "key value store", "--path", str(repo)]
+        )
+        assert result.exit_code == 0, result.output
+        assert "file:pkg/store.py" in result.output
+        assert "wikitoolkit page" in result.output  # follow-up hint
+
+    def test_query_json(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(
+            wiki,
+            ["query", "utility helpers", "--path", str(repo), "--json"],
+        )
+        assert result.exit_code == 0
+        rows = json.loads(result.output)
+        assert any(r["concept_id"] == "file:pkg/util.py" for r in rows)
+        assert all(0.0 <= r["score"] <= 1.0 for r in rows)
+
+    def test_query_without_build_fails_with_guidance(self, runner, repo):
+        result = runner.invoke(
+            wiki, ["query", "anything", "--path", str(repo)]
+        )
+        assert result.exit_code != 0
+        assert "wikitoolkit build" in result.output
+
+    def test_query_no_results_message(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(
+            wiki, ["query", "zzzqqqxyzzy", "--path", str(repo)]
+        )
+        assert result.exit_code == 0
+        assert "No wiki results" in result.output
 
 
-def test_llmwiki_body_flag_hydrates_top_hit(populated_wiki: Path):
-    """The --body flag hydrates the full markdown body of the top hit."""
-    runner = CliRunner()
-    result = runner.invoke(
-        llmwiki,
-        ["crew", "--body", "--store", str(populated_wiki), "--json"],
-    )
-    assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert "Orchestrates agents in a crew" in payload[0]["body"]
+class TestPageAndRelated:
+    def test_page_full_read(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(
+            wiki, ["page", "file:pkg/store.py", "--path", str(repo)]
+        )
+        assert result.exit_code == 0
+        assert "In-memory key-value store" in result.output
+
+    def test_page_max_tokens_truncates(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(
+            wiki,
+            [
+                "page", "file:pkg/store.py",
+                "--path", str(repo), "--max-tokens", "5",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "truncated" in result.output
+
+    def test_related_shows_contains_edge(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(
+            wiki, ["related", "file:pkg/store.py", "--path", str(repo)]
+        )
+        assert result.exit_code == 0
+        assert "dir:pkg" in result.output
+        assert "contains" in result.output
 
 
-def test_llmwiki_missing_db_errors(tmp_path: Path):
-    """A missing wiki.db yields a friendly non-zero exit."""
-    runner = CliRunner()
-    result = runner.invoke(
-        llmwiki, ["anything", "--store", str(tmp_path / "empty")]
-    )
-    assert result.exit_code != 0
-    assert "No wiki database found" in result.output
+class TestUpsert:
+    def test_upsert_explicit_path(self, runner, repo):
+        _build(runner, repo)
+        (repo / "pkg" / "util.py").write_text(
+            '"""Utility helpers v2."""\n', encoding="utf-8"
+        )
+        result = runner.invoke(
+            wiki, ["upsert", "pkg/util.py", "--path", str(repo)]
+        )
+        assert result.exit_code == 0, result.output
+        assert "Upserted 1" in result.output
+        page = runner.invoke(
+            wiki, ["page", "file:pkg/util.py", "--path", str(repo)]
+        )
+        assert "v2" in page.output
+
+    def test_upsert_preserves_incoming_edges(self, runner, repo):
+        _build(runner, repo)
+        (repo / "pkg" / "util.py").write_text(
+            '"""Utility helpers v3."""\n', encoding="utf-8"
+        )
+        runner.invoke(wiki, ["upsert", "pkg/util.py", "--path", str(repo)])
+        result = runner.invoke(
+            wiki,
+            ["related", "file:pkg/util.py", "--path", str(repo), "--json"],
+        )
+        rows = json.loads(result.output)
+        rels = {(r["concept_id"], r["rel"]) for r in rows}
+        assert ("dir:pkg", "contains") in rels
+
+    def test_upsert_deleted_file_removes_pages(self, runner, repo):
+        _build(runner, repo)
+        (repo / "pkg" / "util.py").unlink()
+        result = runner.invoke(
+            wiki, ["upsert", "pkg/util.py", "--path", str(repo)]
+        )
+        assert result.exit_code == 0
+        assert "removed 1" in result.output
+
+    def test_upsert_ignores_excluded_dirs(self, runner, repo):
+        _build(runner, repo)
+        state = repo / ".parrot" / "wiki.json"
+        assert state.exists()
+        result = runner.invoke(
+            wiki, ["upsert", ".parrot/wiki.json", "--path", str(repo)]
+        )
+        assert result.exit_code == 0
+        assert "No wiki-relevant files" in result.output
+
+    def test_upsert_before_build_is_noop(self, runner, tmp_path):
+        (tmp_path / "a.py").write_text("x = 1", encoding="utf-8")
+        result = runner.invoke(
+            wiki, ["upsert", "a.py", "--path", str(tmp_path)]
+        )
+        assert result.exit_code == 0
+        assert "not built" in result.output
 
 
-def test_llmwiki_no_matches(populated_wiki: Path):
-    """A query with no hits exits cleanly with a friendly message."""
-    runner = CliRunner()
-    result = runner.invoke(
-        llmwiki,
-        ["zzzznomatchzzzz", "--store", str(populated_wiki)],
-    )
-    assert result.exit_code == 0, result.output
-    assert "No wiki pages matched" in result.output
+class TestStatusAndExport:
+    def test_status_json(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(
+            wiki, ["status", "--path", str(repo), "--json"]
+        )
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["stats"]["pages"] >= 3
+        assert payload["stale_sources"] == 0
+
+    def test_export_markdown_bundle(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(
+            wiki, ["export", "--path", str(repo), "-o", "docs/wiki"]
+        )
+        assert result.exit_code == 0, result.output
+        out = repo / "docs" / "wiki"
+        assert (out / "index.md").exists()
+        assert any(out.rglob("*store.py*"))
+
+
+def _git(root: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(root), *args], check=True,
+                   capture_output=True)
+
+
+class TestChangedFilesFromGit:
+    """The post-commit hook's file-listing helper (merge-safe)."""
+
+    @staticmethod
+    def _init_repo(root: Path) -> None:
+        _git(root, "init", "-q")
+        _git(root, "config", "user.email", "t@t.t")
+        _git(root, "config", "user.name", "t")
+        _git(root, "config", "commit.gpgsign", "false")
+
+    def test_first_commit_reports_files(self, tmp_path: Path):
+        self._init_repo(tmp_path)
+        (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-q", "-m", "init")
+        assert _changed_files_from_git(tmp_path) == ["a.py"]
+
+    def test_merge_commit_reports_merged_files(self, tmp_path: Path):
+        # A plain `diff-tree HEAD` yields the (empty) combined diff for a
+        # merge — the helper must instead report files brought in by the
+        # merge relative to the first parent, or the wiki goes stale.
+        self._init_repo(tmp_path)
+        (tmp_path / "base.py").write_text("x = 1\n", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-q", "-m", "base")
+        default_branch = subprocess.run(
+            ["git", "-C", str(tmp_path), "rev-parse", "--abbrev-ref", "HEAD"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+
+        _git(tmp_path, "checkout", "-q", "-b", "feature")
+        (tmp_path / "feature.py").write_text("y = 2\n", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-q", "-m", "feature")
+
+        _git(tmp_path, "checkout", "-q", default_branch)
+        # Force a real merge commit (two parents), not a fast-forward.
+        _git(tmp_path, "merge", "--no-ff", "-q", "-m", "merge", "feature")
+
+        changed = _changed_files_from_git(tmp_path)
+        assert "feature.py" in changed
+        assert changed.count("feature.py") == 1  # deduped across parents

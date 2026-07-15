@@ -71,7 +71,8 @@ cli._lazy_commands = {
     "mcp": "parrot.mcp.cli",
     "autonomous": "parrot.autonomous.cli",
     "agent": "parrot.cli.agent_repl",
-    "llmwiki": "parrot.knowledge.wiki.cli",
+    "wiki": "parrot.knowledge.wiki.cli",
+    "claude": "parrot.knowledge.wiki.claude_code.cli",
 }
 
 if __name__ == "__main__":

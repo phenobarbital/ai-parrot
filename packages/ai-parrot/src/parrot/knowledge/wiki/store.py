@@ -548,6 +548,12 @@ class SQLiteWikiStore(BaseWikiStore):
         FTS rows, embeddings, and any edges touching them), then inserts
         the replacements — so re-ingest never accumulates duplicates.
 
+        Incoming edges from OTHER sources (e.g. a directory ``contains``
+        edge, or a ``references`` edge from an importing file) are
+        preserved when the replacement re-inserts the same stable
+        ``concept_id`` — the slice owns its outgoing edges, but links
+        pointing INTO it stay valid across a re-ingest.
+
         Args:
             source_id: Source whose derived pages are being replaced.
             pages: Replacement page records.
@@ -557,6 +563,7 @@ class SQLiteWikiStore(BaseWikiStore):
             ``{"pages_deleted": N, "pages_written": M, "edges_written": K}``
         """
         edges = edges or []
+        new_ids = {page.concept_id for page in pages}
         async with self._connect() as conn:
             async with conn.execute(
                 "SELECT concept_id FROM pages WHERE source_id = ?",
@@ -564,7 +571,23 @@ class SQLiteWikiStore(BaseWikiStore):
             ) as cur:
                 old_ids = [row["concept_id"] for row in await cur.fetchall()]
 
+            preserved: list[tuple[str, str, str]] = []
             if old_ids:
+                # Snapshot incoming edges whose target survives the
+                # replacement (same concept_id re-inserted below).
+                old_set = set(old_ids)
+                placeholders = ",".join("?" for _ in old_ids)
+                async with conn.execute(
+                    "SELECT src, dst, rel FROM edges"
+                    f" WHERE dst IN ({placeholders})",
+                    old_ids,
+                ) as cur:
+                    preserved = [
+                        (row["src"], row["dst"], row["rel"])
+                        for row in await cur.fetchall()
+                        if row["src"] not in old_set
+                        and row["dst"] in new_ids
+                    ]
                 await conn.executemany(
                     "DELETE FROM pages_fts WHERE concept_id = ?",
                     [(cid,) for cid in old_ids],
@@ -583,6 +606,8 @@ class SQLiteWikiStore(BaseWikiStore):
 
             await self._upsert_pages_conn(conn, pages)
             await self._insert_edges_conn(conn, edges)
+            if preserved:
+                await self._insert_edges_conn(conn, preserved)
             await conn.commit()
 
         self.logger.debug(
