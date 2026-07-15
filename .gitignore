@@ -348,3 +348,5 @@ packages/ai-parrot/src/parrot/_version.py
 # Scripts/manifest are committed; raw files and trees are not.
 corpus/compliance_soc2_hipaa/raw/
 corpus/compliance_soc2_hipaa/trees/
+# parrot LLM-wiki state (local retrieval plane)
+.parrot/

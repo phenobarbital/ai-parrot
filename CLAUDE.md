@@ -331,3 +331,28 @@ Authoritative reference: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
   with no benefit. Work directly on a feature branch.
 - **Exploratory brainstorming**: `/sdd-brainstorm` doesn't produce code — no worktree needed.
 - **Quick bug fixes**: If the fix is a single commit, skip the worktree ceremony.
+
+<!-- parrot:wiki:begin -->
+## Codebase Knowledge Graph (LLM Wiki)
+
+This repository maintains a machine-first knowledge graph of the
+codebase (pages + typed edges over a local SQLite plane, built by
+`wikitoolkit build`). For questions about the codebase — where
+something lives, how modules relate, what a subsystem does — PREFER
+scoped wiki queries over reading whole files or grepping raw source:
+
+- `wikitoolkit query "<question>"` — token-budgeted, ranked page
+  stubs for a scoped question. Start here.
+- `wikitoolkit page <id>` — read one page in full (file summaries,
+  API outlines, content). Use the ids returned by `query`.
+- `wikitoolkit related <id>` — follow typed edges (`contains`,
+  `references`) to neighbouring files/modules.
+- `wikitoolkit status` — plane statistics and staleness.
+- `wikitoolkit build` — refresh the graph after large changes
+  (a git post-commit hook may already keep it fresh).
+
+The `/parrotwiki` command wraps these (e.g. `/parrotwiki query how
+does ingest work`, `/parrotwiki --wiki` to export a human-readable
+markdown wiki). Fall back to Grep/Glob/Read when the wiki has no
+answer, and consider `wikitoolkit build` if results look stale.
+<!-- parrot:wiki:end -->
