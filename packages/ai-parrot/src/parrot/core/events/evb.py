@@ -118,7 +118,10 @@ class EventBus:
         """Cierra conexiones."""
         self._running = False
         if self._pubsub:
-            await self._pubsub.unsubscribe()
+            # The listener subscribes with psubscribe() (pattern channels), so
+            # tear down with punsubscribe() — unsubscribe() only clears exact
+            # channel subscriptions and would leave the pattern registered.
+            await self._pubsub.punsubscribe()
             await self._pubsub.close()
         if self._redis:
             await self._redis.close()
