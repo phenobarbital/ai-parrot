@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import stat
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Optional
 
 from parrot.knowledge.wiki.claude_code import assets
@@ -45,11 +45,19 @@ logger = logging.getLogger(__name__)
 def _upsert_marker_block(
     text: str, block: str, begin: str, end: str
 ) -> str:
-    """Insert or replace a marker-delimited block inside ``text``."""
+    """Insert or replace a marker-delimited block inside ``text``.
+
+    Keys on the BEGIN marker alone: if a previous block was left with a
+    BEGIN but no END (hand-edited or truncated file), the block is
+    replaced through end-of-text rather than appended — so we never
+    leave a stray BEGIN behind or emit a second, duplicate block.
+    """
     block = block.rstrip("\n")
-    if begin in text and end in text:
+    if begin in text:
         head, _, rest = text.partition(begin)
-        _, _, tail = rest.partition(end)
+        # Replace through the END marker; if it is missing (corrupted
+        # block), replace to end-of-text and re-terminate with a newline.
+        tail = rest.partition(end)[2] if end in rest else "\n"
         return f"{head}{block}{tail}"
     if text and not text.endswith("\n"):
         text += "\n"
@@ -58,11 +66,16 @@ def _upsert_marker_block(
 
 
 def _remove_marker_block(text: str, begin: str, end: str) -> str:
-    """Remove a marker-delimited block (markers included) from ``text``."""
-    if begin not in text or end not in text:
+    """Remove a marker-delimited block (markers included) from ``text``.
+
+    Keys on the BEGIN marker: a block with a BEGIN but a missing END
+    (corrupted) is still removed through end-of-text so no stray marker
+    survives.
+    """
+    if begin not in text:
         return text
     head, _, rest = text.partition(begin)
-    _, _, tail = rest.partition(end)
+    tail = rest.partition(end)[2] if end in rest else ""
     head = head.rstrip(" \t").rstrip("\n")
     if not head and not tail.strip():
         return ""
@@ -209,6 +222,33 @@ def _git_hook_path(root: Path) -> Optional[Path]:
     return None
 
 
+#: Interpreter basenames whose syntax accepts the POSIX-sh redirection
+#: (`>/dev/null 2>&1`, `|| true`) used by :data:`assets.GIT_HOOK_BLOCK`.
+_SH_FAMILY: frozenset[str] = frozenset({
+    "sh", "bash", "dash", "ash", "ksh", "ksh93", "mksh", "zsh",
+})
+
+
+def _shebang_is_sh_compatible(first_line: str) -> bool:
+    """Whether appending POSIX-sh syntax to this hook is safe.
+
+    A missing shebang is treated as ``sh`` (git's default). The
+    interpreter basename is matched exactly against :data:`_SH_FAMILY`
+    rather than by substring, so ``csh``/``pwsh`` (which contain the
+    substring ``"sh"`` but reject sh redirection syntax) are correctly
+    rejected while ``#!/usr/bin/env bash`` is accepted.
+    """
+    if not first_line.startswith("#!"):
+        return True
+    tokens = first_line[2:].split()
+    if not tokens:
+        return True
+    interpreter = PurePosixPath(tokens[0]).name
+    if interpreter == "env" and len(tokens) > 1:
+        interpreter = PurePosixPath(tokens[1]).name
+    return interpreter in _SH_FAMILY
+
+
 def _install_git_hook(root: Path) -> str:
     """Install (or chain into) the git post-commit auto-upsert hook."""
     hook_path = _git_hook_path(root)
@@ -219,8 +259,8 @@ def _install_git_hook(root: Path) -> str:
         if assets.GIT_HOOK_BEGIN in text:
             return "git post-commit hook — already installed"
         first_line = text.splitlines()[0] if text.strip() else ""
-        if first_line.startswith("#!") and "sh" not in first_line:
-            # Appending sh syntax to a python/node hook would break it.
+        if not _shebang_is_sh_compatible(first_line):
+            # Appending sh syntax to a python/node/csh hook would break it.
             return (
                 "git post-commit hook — skipped (existing hook is not a "
                 "shell script; add `wikitoolkit upsert --changed --quiet` "

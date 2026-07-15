@@ -147,6 +147,44 @@ class TestInstaller:
         install_claude_integration(repo, git_hook=False)
         assert not (repo / ".git" / "hooks" / "post-commit").exists()
 
+    def test_skips_chaining_into_non_sh_git_hook(self, repo):
+        # A csh/pwsh interpreter contains the substring "sh" but rejects
+        # POSIX-sh redirection syntax — the block must NOT be appended.
+        hooks_dir = repo / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True)
+        original = "#!/bin/csh\necho existing\n"
+        (hooks_dir / "post-commit").write_text(original, encoding="utf-8")
+        install_claude_integration(repo)
+        text = (hooks_dir / "post-commit").read_text(encoding="utf-8")
+        assert text == original
+        assert assets.GIT_HOOK_BEGIN not in text
+
+    def test_chains_into_env_bash_git_hook(self, repo):
+        # `#!/usr/bin/env bash` resolves to a sh-family interpreter.
+        hooks_dir = repo / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True)
+        (hooks_dir / "post-commit").write_text(
+            "#!/usr/bin/env bash\necho existing\n", encoding="utf-8"
+        )
+        install_claude_integration(repo)
+        text = (hooks_dir / "post-commit").read_text(encoding="utf-8")
+        assert "echo existing" in text
+        assert assets.GIT_HOOK_BEGIN in text
+
+    def test_claude_md_repaired_when_end_marker_lost(self, repo):
+        # A prior block whose END marker was hand-deleted must be
+        # replaced in place, not duplicated (no second BEGIN marker).
+        (repo / "CLAUDE.md").write_text(
+            f"# My rules\n\n{assets.CLAUDE_MD_BEGIN}\nstale wiki text\n",
+            encoding="utf-8",
+        )
+        install_claude_integration(repo)
+        text = (repo / "CLAUDE.md").read_text(encoding="utf-8")
+        assert text.count(assets.CLAUDE_MD_BEGIN) == 1
+        assert text.count(assets.CLAUDE_MD_END) == 1
+        assert "stale wiki text" not in text
+        assert text.startswith("# My rules")
+
     def test_uninstall_removes_only_ours(self, repo):
         (repo / "CLAUDE.md").write_text("# Mine\n", encoding="utf-8")
         hooks_dir = repo / ".git" / "hooks"

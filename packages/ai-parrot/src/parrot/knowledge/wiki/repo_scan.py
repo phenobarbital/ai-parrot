@@ -555,13 +555,25 @@ def scan_repository(
         A fully populated :class:`RepoScan`.
     """
     root = root.resolve()
-    discovered = discover_repo_files(
-        root, suffixes=suffixes, exclude_dirs=exclude_dirs, use_git=use_git
-    )
     if rel_paths is None:
+        discovered = discover_repo_files(
+            root, suffixes=suffixes, exclude_dirs=exclude_dirs, use_git=use_git
+        )
         targets = discovered
     else:
         targets = sorted({PurePosixPath(p).as_posix() for p in rel_paths})
+        # The repo-wide index is only needed to resolve Python imports to
+        # files OUTSIDE the changed set. Skip the (whole-repo) discovery
+        # scan when no changed file can produce import edges — e.g. a
+        # docs- or config-only commit — so the git post-commit hook does
+        # not pay an O(repo) cost on every such commit.
+        if any(PurePosixPath(t).suffix in {".py", ".pyi"} for t in targets):
+            discovered = discover_repo_files(
+                root, suffixes=suffixes, exclude_dirs=exclude_dirs,
+                use_git=use_git,
+            )
+        else:
+            discovered = list(targets)
 
     scan = RepoScan(root=root)
     for rel in targets:

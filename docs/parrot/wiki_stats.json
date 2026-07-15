@@ -1,0 +1,46 @@
+{
+  "wiki_name": "ai-parrot",
+  "generated_at": "2026-07-14T22:20:29+00:00",
+  "repo": "/home/jesuslara/proyectos/ai-parrot",
+  "modules": 1756,
+  "docs": 205,
+  "pages": 6362,
+  "pages_by_category": {
+    "concept": 912,
+    "entity": 3248,
+    "overview": 446,
+    "summary": 1756
+  },
+  "edges": 11586,
+  "edges_by_rel": {
+    "contains": 1988,
+    "defines": 4160,
+    "extends": 826,
+    "mentions": 340,
+    "references": 4272
+  },
+  "store": {
+    "pages": 6362,
+    "edges": 11586,
+    "sources": 1961,
+    "embeddings": 0,
+    "total_tokens": 1386182,
+    "categories": {
+      "concept": 912,
+      "entity": 3248,
+      "overview": 446,
+      "summary": 1756
+    }
+  },
+  "okf_files": 6362,
+  "graph": {
+    "nodes": 1998,
+    "edges": 6260,
+    "exported": true,
+    "html": "graph.html",
+    "json": "graph.json",
+    "communities": 25,
+    "modularity": 0.7768
+  },
+  "duration_ms": 24774.6
+}

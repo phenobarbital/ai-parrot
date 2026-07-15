@@ -55,9 +55,6 @@ from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
 # Shared helpers
 # --------------------------------------------------------------------------
 
-
-
-
 #: Shared `--path` option — every command resolves the repo root the same way.
 path_option = click.option(
     "--path", "path_", default=None, help="Repo root (default: auto-detect)."
@@ -128,6 +125,121 @@ def _normalize_scores(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _run(coro: Any) -> Any:
     """Run an async store operation from a sync click command."""
     return asyncio.run(coro)
+
+
+def _env_setting(name: str) -> Optional[str]:
+    """Read a wiki env setting (``WIKI_STORE`` / ``WIKI_STORE_BACKEND``).
+
+    Prefers navconfig (so values in ``.env`` are honoured, matching the
+    legacy ``parrot llmwiki`` behaviour) and falls back to ``os.environ``
+    when navconfig is unavailable.
+    """
+    try:
+        from navconfig import config as _nav
+
+        value = _nav.get(name, fallback=None)
+    except Exception:  # noqa: BLE001 — navconfig optional; env is enough
+        import os
+
+        value = os.environ.get(name)
+    return value or None
+
+
+def _resolve_read_store(
+    path_: Optional[str],
+    store_opt: Optional[str],
+    backend_opt: Optional[str],
+) -> BaseWikiStore:
+    """Open a store for a read command (``query`` / ``page`` / ``related``).
+
+    With ``--store`` (or the ``WIKI_STORE`` env var) the CLI reads an
+    arbitrary pre-built wiki store directly — e.g. the rich
+    ``docs/parrot`` bundle produced by ``scripts/build_llm_wiki.py`` —
+    instead of the project's own ``.parrot/wiki`` plane. Without it, the
+    project config resolves the plane exactly as ``build`` writes it.
+    """
+    store_override = store_opt or _env_setting("WIKI_STORE")
+    if store_override:
+        backend = backend_opt or _env_setting("WIKI_STORE_BACKEND") or "sqlite"
+        storage_dir = Path(store_override).expanduser()
+        if not storage_dir.is_dir():
+            raise click.ClickException(f"No wiki store directory: {storage_dir}")
+        if backend == "sqlite" and not (storage_dir / "wiki.db").exists():
+            raise click.ClickException(
+                f"No wiki database at {storage_dir / 'wiki.db'}. Build it "
+                "first, or point --store at the right root."
+            )
+        return create_wiki_store(storage_dir, backend=backend)
+    root, config = _resolve_project(path_)
+    return _require_built(root, config)
+
+
+#: Shared `--store`/`--backend` options for the read commands.
+def _store_options(func: Any) -> Any:
+    """Attach ``--store`` and ``--backend`` to a read command."""
+    func = click.option(
+        "--backend",
+        "backend_opt",
+        type=click.Choice(["sqlite", "memory"]),
+        default=None,
+        help="Backend for --store (default: sqlite / WIKI_STORE_BACKEND).",
+    )(func)
+    func = click.option(
+        "--store",
+        "store_opt",
+        default=None,
+        help="Read a pre-built wiki store directly (e.g. docs/parrot); "
+        "defaults to WIKI_STORE env or the project's own plane.",
+    )(func)
+    return func
+
+
+def _render_results_table(
+    rows: list[dict[str, Any]], question: str, show_body: bool
+) -> None:
+    """Pretty-print ranked results as a Rich table (+ optional body panel).
+
+    Human-facing counterpart to the machine-first context pack — ported
+    from the legacy ``parrot llmwiki`` renderer so ``wiki query --table``
+    keeps the same at-a-glance output.
+    """
+    from rich.console import Console
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+    from rich.table import Table
+
+    console = Console()
+    table = Table(title=f"LLM Wiki · {question!r}", title_justify="left")
+    table.add_column("#", justify="right", style="dim")
+    table.add_column("Score", justify="right", style="cyan")
+    table.add_column("Category", style="magenta")
+    table.add_column("Title", style="bold")
+    table.add_column("Summary")
+    for idx, row in enumerate(rows, start=1):
+        score = row.get("score")
+        score_str = f"{score:.3f}" if isinstance(score, (int, float)) else "-"
+        summary = (row.get("summary") or "").strip().replace("\n", " ")
+        if len(summary) > 140:
+            summary = summary[:137] + "..."
+        table.add_row(
+            str(idx),
+            score_str,
+            str(row.get("category", "")),
+            str(row.get("title", "")),
+            summary,
+        )
+    console.print(table)
+    if show_body and rows:
+        top = rows[0]
+        body = (top.get("body") or "").strip()
+        if body:
+            console.print(
+                Panel(
+                    Markdown(body),
+                    title=f"{top.get('title', '')} · {top.get('concept_id', '')}",
+                    border_style="green",
+                )
+            )
 
 
 # --------------------------------------------------------------------------
@@ -320,15 +432,20 @@ def build(
 def _changed_files_from_git(root: Path) -> list[str]:
     """Relative paths touched by the last commit (post-commit hook).
 
-    Uses ``-z`` so paths with spaces/unicode are not C-quoted, and
+    Uses ``-z`` so paths with spaces/unicode are not C-quoted,
     ``--root`` so the very first commit of a repository also reports
-    its files.
+    its files, and ``-m --first-parent`` so **merge commits** report the
+    files they bring in relative to the first parent. Without the latter,
+    a plain ``diff-tree HEAD`` emits the (usually empty) combined diff for
+    a merge, so every file a ``git merge`` introduces would silently stay
+    stale in the wiki until the next full ``wikitoolkit build``.
     """
     try:
         proc = subprocess.run(
             [
                 "git", "-C", str(root), "diff-tree", "--no-commit-id",
-                "--name-only", "-z", "-r", "--root", "HEAD",
+                "--name-only", "-z", "-r", "-m", "--first-parent",
+                "--root", "HEAD",
             ],
             capture_output=True,
             timeout=30,
@@ -337,7 +454,15 @@ def _changed_files_from_git(root: Path) -> list[str]:
     except (OSError, subprocess.SubprocessError):
         return []
     out = proc.stdout.decode("utf-8", errors="replace")
-    return [p for p in out.split("\0") if p]
+    # `-m` can repeat a path across parent sections; dedupe while
+    # preserving first-seen order.
+    seen: set[str] = set()
+    result: list[str] = []
+    for p in out.split("\0"):
+        if p and p not in seen:
+            seen.add(p)
+            result.append(p)
+    return result
 
 
 @wiki.command()
@@ -436,7 +561,9 @@ def upsert(
 @wiki.command()
 @click.argument("question")
 @path_option
-@click.option("--top-k", default=12, show_default=True, help="Max results to rank.")
+@click.option(
+    "--top-k", "-n", default=12, show_default=True, help="Max results to rank."
+)
 @click.option(
     "--budget",
     default=DEFAULT_BUDGET_TOKENS,
@@ -444,6 +571,20 @@ def upsert(
     help="Token budget for the packed context.",
 )
 @click.option("--category", default=None, help="Filter by page category.")
+@_store_options
+@click.option(
+    "--table",
+    "as_table",
+    is_flag=True,
+    help="Render a human-facing Rich table instead of the context pack.",
+)
+@click.option(
+    "--body",
+    "-b",
+    "show_body",
+    is_flag=True,
+    help="Also fetch/render the full body of the top-ranked page.",
+)
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON results.")
 def query(
     question: str,
@@ -451,18 +592,29 @@ def query(
     top_k: int,
     budget: int,
     category: Optional[str],
+    store_opt: Optional[str],
+    backend_opt: Optional[str],
+    as_table: bool,
+    show_body: bool,
     as_json: bool,
 ) -> None:
     """Scoped question against the codebase KB (lexical BM25 search).
 
-    Returns a token-budgeted context pack of page stubs. Follow up
+    Returns a token-budgeted context pack of page stubs (or a
+    human-facing Rich table with `--table`). Point `--store` at any
+    pre-built wiki (e.g. `docs/parrot`) to query it directly. Follow up
     with `wikitoolkit page <id>` to read a full page, or
     `wikitoolkit related <id>` to walk the graph.
     """
-    root, config = _resolve_project(path_)
-    store = _require_built(root, config)
+    store = _resolve_read_store(path_, store_opt, backend_opt)
     rows = _run(store.search_fts(question, category=category, limit=top_k))
     rows = _normalize_scores(rows)
+
+    # Hydrate the top hit's body once, for --body across every renderer.
+    if show_body and rows:
+        top = _run(store.get_page(rows[0]["concept_id"], include_body=True))
+        if top:
+            rows[0] = {**rows[0], **top}
 
     if as_json:
         click.echo(json.dumps(rows, indent=2, default=str))
@@ -473,6 +625,9 @@ def query(
             "try `wikitoolkit build`, or fall back to code search."
         )
         return
+    if as_table:
+        _render_results_table(rows, question, show_body=show_body)
+        return
     packed = pack_results(rows, budget_tokens=budget)
     click.echo(f"# Wiki results for: {question}\n")
     click.echo(packed.text)
@@ -480,6 +635,8 @@ def query(
         f"\n({packed.results_packed}/{packed.total_available} results, "
         f"~{packed.tokens_used} tokens)"
     )
+    if show_body and rows[0].get("body"):
+        click.echo(f"\n## {rows[0].get('title')}\n{rows[0]['body']}")
     click.echo(
         "Next: `wikitoolkit page <id>` for a full page · "
         "`wikitoolkit related <id>` for linked pages."
@@ -495,16 +652,18 @@ def query(
     type=int,
     help="Truncate the body to roughly this many tokens.",
 )
+@_store_options
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def page(
     page_id: str,
     path_: Optional[str],
     max_tokens: Optional[int],
+    store_opt: Optional[str],
+    backend_opt: Optional[str],
     as_json: bool,
 ) -> None:
     """Read one wiki page in full (progressive disclosure)."""
-    root, config = _resolve_project(path_)
-    store = _require_built(root, config)
+    store = _resolve_read_store(path_, store_opt, backend_opt)
     data = _run(store.get_page(page_id, include_body=True))
     if data is None:
         raise click.ClickException(
@@ -537,17 +696,19 @@ def page(
     default="both",
     show_default=True,
 )
+@_store_options
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def related(
     page_id: str,
     path_: Optional[str],
     rel: Optional[str],
     direction: str,
+    store_opt: Optional[str],
+    backend_opt: Optional[str],
     as_json: bool,
 ) -> None:
     """List pages linked to PAGE_ID by typed edges."""
-    root, config = _resolve_project(path_)
-    store = _require_built(root, config)
+    store = _resolve_read_store(path_, store_opt, backend_opt)
     rows = _run(store.neighbors(page_id, rel=rel, direction=direction))
     if as_json:
         click.echo(json.dumps(rows, indent=2, default=str))
