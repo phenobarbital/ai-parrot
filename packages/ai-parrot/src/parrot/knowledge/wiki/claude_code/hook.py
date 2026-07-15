@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path, PurePosixPath
@@ -49,6 +50,64 @@ def _should_nudge_read(tool_input: dict[str, Any]) -> bool:
     if not file_path:
         return False
     return PurePosixPath(file_path).suffix.lower() in _READ_NUDGE_SUFFIXES
+
+
+#: Shell executables that *search* the repository — an unambiguous signal
+#: that the assistant is scanning source instead of querying the wiki.
+_BASH_SEARCH_TOOLS = frozenset({
+    "grep", "egrep", "fgrep", "rg", "ag", "ack", "ripgrep", "find",
+})
+
+#: Shell executables that *read* files — nudged only when an argument
+#: looks like a source/doc file (so ``cat wiki.db`` or ``cat /etc/hosts``
+#: stays silent).
+_BASH_READ_TOOLS = frozenset({"cat", "head", "tail", "sed", "awk", "bat", "less"})
+
+#: Command wrappers to skip when finding a segment's real executable.
+_BASH_WRAPPERS = frozenset({"sudo", "command", "time", "nice", "xargs", "env"})
+
+
+def _leading_exe(tokens: list[str]) -> Optional[str]:
+    """First real executable basename in a command segment.
+
+    Skips leading ``VAR=value`` environment assignments and common
+    wrappers (``sudo``/``xargs``/``env`` …) so ``FOO=1 grep`` and
+    ``xargs rg`` are recognised.
+    """
+    for tok in tokens:
+        if "=" in tok and not tok.startswith("-") and "/" not in tok.split("=", 1)[0]:
+            continue  # environment assignment
+        if tok in _BASH_WRAPPERS:
+            continue
+        return PurePosixPath(tok).name
+    return None
+
+
+def _should_nudge_bash(tool_input: dict[str, Any]) -> bool:
+    """Whether a Bash command is searching/reading the repo.
+
+    Fires for code-search tools (``grep``/``rg``/``find`` …) anywhere in
+    the command, and for file readers (``cat``/``head`` …) only when an
+    argument targets a source/doc file. Every other shell command
+    (``git``, ``ls``, ``pytest``, ``uv`` …) is left alone so the nudge
+    never spams unrelated Bash calls.
+    """
+    command = str(tool_input.get("command") or "")
+    if not command:
+        return False
+    for segment in re.split(r"[|&;\n]+", command):
+        tokens = segment.split()
+        exe = _leading_exe(tokens)
+        if exe is None:
+            continue
+        if exe in _BASH_SEARCH_TOOLS:
+            return True
+        if exe in _BASH_READ_TOOLS and any(
+            PurePosixPath(tok).suffix.lower() in _READ_NUDGE_SUFFIXES
+            for tok in tokens[1:]
+        ):
+            return True
+    return False
 
 
 def _throttled(storage: Path, cooldown_seconds: int, now: float) -> bool:
@@ -131,6 +190,8 @@ def build_nudge(
     if not config.is_built(root):
         return None
     if tool_name == "Read" and not _should_nudge_read(tool_input):
+        return None
+    if tool_name == "Bash" and not _should_nudge_bash(tool_input):
         return None
 
     storage = config.storage_path(root)

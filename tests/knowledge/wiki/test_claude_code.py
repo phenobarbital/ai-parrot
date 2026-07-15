@@ -94,6 +94,47 @@ class TestInstaller:
         for path, before in snapshot.items():
             assert path.read_text(encoding="utf-8") == before
 
+    def test_reinstall_upgrades_hook_matcher(self, repo):
+        # Simulate an older install whose matcher predates Bash coverage.
+        install_claude_integration(repo)
+        settings_path = repo / ".claude" / "settings.json"
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        settings["hooks"]["PreToolUse"][0]["matcher"] = "Grep|Glob|Read"
+        settings_path.write_text(json.dumps(settings), encoding="utf-8")
+
+        actions = install_claude_integration(repo)
+
+        upgraded = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert (
+            upgraded["hooks"]["PreToolUse"][0]["matcher"]
+            == assets.HOOK_MATCHER == "Grep|Glob|Read|Bash"
+        )
+        assert any("matcher updated" in a for a in actions)
+
+    def test_reinstall_migrates_nudge_tools(self, repo):
+        install_claude_integration(repo)
+        # Downgrade the persisted config to the pre-Bash default.
+        cfg = load_project_config(repo)
+        cfg.claude.nudge_tools = ["Grep", "Glob", "Read"]
+        save_project_config(repo, cfg)
+
+        actions = install_claude_integration(repo)
+
+        assert load_project_config(repo).claude.nudge_tools == [
+            "Grep", "Glob", "Read", "Bash",
+        ]
+        assert any("nudge tools upgraded" in a for a in actions)
+
+    def test_customised_nudge_tools_not_overridden(self, repo):
+        install_claude_integration(repo)
+        cfg = load_project_config(repo)
+        cfg.claude.nudge_tools = ["Grep"]  # user narrowed it deliberately
+        save_project_config(repo, cfg)
+
+        install_claude_integration(repo)
+
+        assert load_project_config(repo).claude.nudge_tools == ["Grep"]
+
     def test_preserves_existing_claude_md(self, repo):
         (repo / "CLAUDE.md").write_text(
             "# My rules\n\nDo good work.\n", encoding="utf-8"
@@ -246,7 +287,47 @@ class TestHookNudge:
 
     def test_no_nudge_for_unmatched_tool(self, repo):
         _built_repo(repo)
-        assert build_nudge(self._payload(repo, "Bash"), root=repo) is None
+        # Edit/Write are not search tools → never nudged.
+        assert build_nudge(self._payload(repo, "Edit"), root=repo) is None
+
+    def test_nudges_bash_search(self, repo):
+        # Shell searches run via the Bash tool are nudged too.
+        _built_repo(repo)
+        cfg = load_project_config(repo)
+        commands = (
+            'grep -rn "EventBus" --include=*.py',
+            "rg EventBus packages/",
+            'find . -name "*.py" | xargs grep EventBus',
+        )
+        # Space `now` past the 300 s cooldown so the throttle doesn't mask
+        # later assertions.
+        for i, cmd in enumerate(commands):
+            out = build_nudge(
+                self._payload(repo, "Bash", {"command": cmd}),
+                root=repo, config=cfg, now=1000.0 + i * 400,
+            )
+            assert out is not None, cmd
+            assert "wikitoolkit query" in out["hookSpecificOutput"][
+                "additionalContext"
+            ]
+
+    def test_no_nudge_for_non_search_bash(self, repo):
+        _built_repo(repo)
+        cfg = load_project_config(repo)
+        for cmd in ("git status", "ls -la", "pytest -q", "uv pip install -e ."):
+            out = build_nudge(
+                self._payload(repo, "Bash", {"command": cmd}),
+                root=repo, config=cfg, now=1000.0,
+            )
+            assert out is None, cmd
+
+    def test_bash_file_reader_only_nudges_source(self, repo):
+        _built_repo(repo)
+        cfg = load_project_config(repo)
+        src = self._payload(repo, "Bash", {"command": "cat pkg/mod.py"})
+        assert build_nudge(src, root=repo, config=cfg, now=1000.0) is not None
+        other = self._payload(repo, "Bash", {"command": "cat /etc/hosts"})
+        assert build_nudge(other, root=repo, config=cfg, now=2000.0) is None
 
     def test_read_nudges_only_source_files(self, repo):
         _built_repo(repo)
