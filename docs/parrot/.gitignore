@@ -1,0 +1,8 @@
+# Regenerable machine-plane artifacts — rebuild with:
+#   python scripts/build_llm_wiki.py --preset ai-parrot
+# The SQLite retrieval plane (bodies + FTS5 index) is derived from the
+# committed OKF markdown bundle and can always be rebuilt.
+wiki.db
+wiki.db-wal
+wiki.db-shm
+sources/
