@@ -20,8 +20,11 @@ CLAUDE_MD_END = "<!-- parrot:wiki:end -->"
 #: used to find (and remove) our hook entries when merging settings.
 HOOK_COMMAND = "wikitoolkit claude-hook"
 
-#: Tool matcher for the PreToolUse nudge.
-HOOK_MATCHER = "Grep|Glob|Read"
+#: Tool matcher for the PreToolUse nudge. Includes ``Bash`` so shell-based
+#: searches (``grep``/``rg``/``find`` run via the Bash tool) are nudged too —
+#: the hook decides per-command whether a given Bash call is actually a
+#: repo search (see ``hook._should_nudge_bash``).
+HOOK_MATCHER = "Grep|Glob|Read|Bash"
 
 #: Managed-block markers inside .git/hooks/post-commit.
 GIT_HOOK_BEGIN = "# >>> parrot-wiki post-commit >>>"
@@ -53,10 +56,15 @@ scoped wiki queries over reading whole files or grepping raw source:
 - `wikitoolkit build` — refresh the graph after large changes
   (a git post-commit hook may already keep it fresh).
 
+This applies to shell searches too: prefer `wikitoolkit query` over
+`grep`/`rg`/`find` run via Bash (or the Grep/Glob/Read tools) when the
+question is "where/how/what" about the codebase.
+
 The `/parrotwiki` command wraps these (e.g. `/parrotwiki query how
 does ingest work`, `/parrotwiki --wiki` to export a human-readable
-markdown wiki). Fall back to Grep/Glob/Read when the wiki has no
-answer, and consider `wikitoolkit build` if results look stale.
+markdown wiki). Fall back to Grep/Glob/Read (or shell search) when the
+wiki has no answer, and consider `wikitoolkit build` if results look
+stale.
 {CLAUDE_MD_END}
 """
 
@@ -117,9 +125,9 @@ GIT_HOOK_NEW_FILE = f"""#!/bin/sh
 
 NUDGE_TEXT = (
     "This repository has an LLM-wiki knowledge graph of the codebase. "
-    "Before scanning raw files, prefer a scoped query: "
-    "`wikitoolkit query \"<question>\"` returns ranked, token-budgeted "
-    "page stubs; follow up with `wikitoolkit page <id>` (full page) or "
-    "`wikitoolkit related <id>` (typed edges). Fall back to direct "
-    "Grep/Glob/Read when the wiki has no answer."
+    "Before scanning raw files (including grep/rg/find via Bash), prefer "
+    "a scoped query: `wikitoolkit query \"<question>\"` returns ranked, "
+    "token-budgeted page stubs; follow up with `wikitoolkit page <id>` "
+    "(full page) or `wikitoolkit related <id>` (typed edges). Fall back "
+    "to direct Grep/Glob/Read or shell search when the wiki has no answer."
 )

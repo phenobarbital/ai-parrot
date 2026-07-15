@@ -152,13 +152,23 @@ def _resolve_read_store(
 ) -> BaseWikiStore:
     """Open a store for a read command (``query`` / ``page`` / ``related``).
 
-    With ``--store`` (or the ``WIKI_STORE`` env var) the CLI reads an
-    arbitrary pre-built wiki store directly — e.g. the rich
-    ``docs/parrot`` bundle produced by ``scripts/build_llm_wiki.py`` —
-    instead of the project's own ``.parrot/wiki`` plane. Without it, the
-    project config resolves the plane exactly as ``build`` writes it.
+    With ``--store`` the CLI reads an arbitrary pre-built wiki store
+    directly — e.g. the rich ``docs/parrot`` bundle produced by
+    ``scripts/build_llm_wiki.py`` — instead of the project's own
+    ``.parrot/wiki`` plane. Otherwise the project config resolves the
+    plane exactly as ``build`` writes it.
+
+    Resolution precedence (an *explicit* target always wins over the
+    ambient env, so a ``--path``-scoped invocation is never silently
+    redirected by ``WIKI_STORE``)::
+
+        --store  >  --path project  >  WIKI_STORE env  >  auto-detected project
     """
-    store_override = store_opt or _env_setting("WIKI_STORE")
+    store_override = store_opt
+    if not store_override and not path_:
+        # Only consult the env when neither an explicit store nor an
+        # explicit project path was given.
+        store_override = _env_setting("WIKI_STORE")
     if store_override:
         backend = backend_opt or _env_setting("WIKI_STORE_BACKEND") or "sqlite"
         storage_dir = Path(store_override).expanduser()
