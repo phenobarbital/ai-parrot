@@ -127,6 +127,76 @@ class TestQuery:
         assert result.exit_code == 0
         assert "No wiki results" in result.output
 
+    def _store_dir(self, repo: Path) -> str:
+        return str(repo / ".parrot" / "wiki")
+
+    def test_query_table_renders_human_output(self, runner, repo):
+        # Ported llmwiki capability: --table shows a Rich table.
+        _build(runner, repo)
+        result = runner.invoke(
+            wiki, ["query", "key value store", "--path", str(repo), "--table"]
+        )
+        assert result.exit_code == 0, result.output
+        assert "LLM Wiki" in result.output
+        assert "Score" in result.output and "store.py" in result.output
+
+    def test_query_body_hydrates_top_hit(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(
+            wiki,
+            ["query", "key value store", "--path", str(repo),
+             "--body", "--json"],
+        )
+        assert result.exit_code == 0, result.output
+        rows = json.loads(result.output)
+        assert rows and rows[0].get("body"), "top hit body not hydrated"
+
+    def test_query_store_targets_prebuilt_store(self, runner, repo):
+        # Ported llmwiki capability: query an arbitrary pre-built store
+        # directly (here the project's own plane by absolute --store),
+        # without needing .parrot/wiki.json resolution.
+        _build(runner, repo)
+        result = runner.invoke(
+            wiki, ["query", "utility helpers", "--store",
+                   self._store_dir(repo), "--json"]
+        )
+        assert result.exit_code == 0, result.output
+        rows = json.loads(result.output)
+        assert any(r["concept_id"] == "file:pkg/util.py" for r in rows)
+
+    def test_query_store_env_var(self, runner, repo, monkeypatch):
+        _build(runner, repo)
+        monkeypatch.setenv("WIKI_STORE", self._store_dir(repo))
+        result = runner.invoke(wiki, ["query", "store", "--json"])
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output)
+
+    def test_query_store_missing_dir_errors(self, runner, repo):
+        result = runner.invoke(
+            wiki, ["query", "x", "--store", str(repo / "does-not-exist")]
+        )
+        assert result.exit_code != 0
+        assert "No wiki store directory" in result.output
+
+    def test_query_store_missing_db_errors(self, runner, repo):
+        # Directory exists but holds no wiki.db → friendly guidance.
+        (repo / "emptystore").mkdir()
+        result = runner.invoke(
+            wiki, ["query", "x", "--store", str(repo / "emptystore")]
+        )
+        assert result.exit_code != 0
+        assert "No wiki database" in result.output
+
+    def test_page_and_related_accept_store(self, runner, repo):
+        _build(runner, repo)
+        sd = self._store_dir(repo)
+        page = runner.invoke(
+            wiki, ["page", "file:pkg/store.py", "--store", sd]
+        )
+        assert page.exit_code == 0, page.output
+        rel = runner.invoke(wiki, ["related", "dir:pkg", "--store", sd])
+        assert rel.exit_code == 0, rel.output
+
 
 class TestPageAndRelated:
     def test_page_full_read(self, runner, repo):
