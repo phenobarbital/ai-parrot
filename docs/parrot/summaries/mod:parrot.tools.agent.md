@@ -4,7 +4,7 @@ title: parrot.tools.agent
 id: mod:parrot.tools.agent
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Complete Fixed AgentTool with Correct Schema Structure
 relates_to:
 - concept: class:parrot.tools.agent.AgentContext

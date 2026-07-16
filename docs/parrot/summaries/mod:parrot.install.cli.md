@@ -4,7 +4,7 @@ title: parrot.install.cli
 id: mod:parrot.install.cli
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: CLI commands for installing external tools via Docker.
 relates_to:
 - concept: func:parrot.install.cli.cloudsploit

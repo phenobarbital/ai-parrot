@@ -4,7 +4,7 @@ title: PausedEnvelope
 id: class:parrot.handlers.agent.PausedEnvelope
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HTTP-200 structured reply returned by AgentTalk when a SUSPEND tool raises
 ---
 

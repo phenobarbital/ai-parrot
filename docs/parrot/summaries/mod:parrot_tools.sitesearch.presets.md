@@ -4,7 +4,7 @@ title: parrot_tools.sitesearch.presets
 id: mod:parrot_tools.sitesearch.presets
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Preset configurations for site-specific searches.
 relates_to:
 - concept: class:parrot_tools.sitesearch.presets.PresetConfig

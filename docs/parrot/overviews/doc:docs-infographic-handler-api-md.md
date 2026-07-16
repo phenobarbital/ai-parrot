@@ -4,7 +4,7 @@ title: Infographic Handler — Frontend API Contract
 id: doc:docs-infographic-handler-api-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This document is the authoritative contract for talking to the Infographic
   HTTP API exposed by ai-parrot. It covers URL shapes, request payloads, response
   shapes, error codes, built-in templates/themes and the data blocks the LLM can return.

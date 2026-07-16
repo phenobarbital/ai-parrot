@@ -4,7 +4,7 @@ title: load_vault_keys()
 id: func:parrot.security.vault_utils.load_vault_keys
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Load vault master keys from the environment.
 ---
 

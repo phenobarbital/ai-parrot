@@ -4,7 +4,7 @@ title: SecurityAdvisoryEngine
 id: class:parrot_tools.security.advisory_engine.SecurityAdvisoryEngine
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Deterministic day-over-day security advisory engine.
 ---
 

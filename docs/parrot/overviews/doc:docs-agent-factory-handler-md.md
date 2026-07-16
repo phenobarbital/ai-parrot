@@ -4,7 +4,7 @@ title: AgentFactory HTTP API
 id: doc:docs-agent-factory-handler-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Reference for the `AgentFactoryHandler` endpoint and the HITL flow needed
 relates_to:
 - concept: mod:parrot.bots.agent

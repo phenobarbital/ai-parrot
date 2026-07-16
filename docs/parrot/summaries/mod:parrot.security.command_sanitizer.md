@@ -4,7 +4,7 @@ title: parrot.security.command_sanitizer
 id: mod:parrot.security.command_sanitizer
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Command Sanitizer — Shared Security Engine (FEAT-252).
 relates_to:
 - concept: class:parrot.security.command_sanitizer.CommandRule

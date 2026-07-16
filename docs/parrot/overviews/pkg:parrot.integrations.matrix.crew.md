@@ -4,7 +4,7 @@ title: parrot.integrations.matrix.crew
 id: pkg:parrot.integrations.matrix.crew
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot.integrations.matrix.crew (9 modules, 0 sub-packages).
 relates_to:
 - concept: mod:parrot.integrations.matrix.crew.config

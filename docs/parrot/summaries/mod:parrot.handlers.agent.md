@@ -4,7 +4,7 @@ title: parrot.handlers.agent
 id: mod:parrot.handlers.agent
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AgentTalk - HTTP Handler for Agent Conversations
 relates_to:
 - concept: class:parrot.handlers.agent.AgentTalk

@@ -4,7 +4,7 @@ title: howto_extractor()
 id: func:parrot.utils.jsonld_extractors.howto_extractor
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Extract HowTo data from a JSON-LD node.
 ---
 

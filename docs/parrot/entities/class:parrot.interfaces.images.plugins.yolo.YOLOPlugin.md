@@ -4,7 +4,7 @@ title: YOLOPlugin
 id: class:parrot.interfaces.images.plugins.yolo.YOLOPlugin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: YOLOPlugin is a plugin for performing object detection using the YOLO (You
   Only Look Once) model.
 relates_to:

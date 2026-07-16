@@ -4,7 +4,7 @@ title: parrot.integrations.liveavatar.voice_session
 id: mod:parrot.integrations.liveavatar.voice_session
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: VoiceAvatarSession — drive a LiveAvatar mouth from a realtime PCM stream
   (FEAT-245).
 relates_to:

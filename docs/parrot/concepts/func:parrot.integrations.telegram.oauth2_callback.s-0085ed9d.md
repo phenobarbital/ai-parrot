@@ -4,7 +4,7 @@ title: setup_oauth2_routes()
 id: func:parrot.integrations.telegram.oauth2_callback.setup_oauth2_routes
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Register OAuth2 callback route on the aiohttp application.
 ---
 

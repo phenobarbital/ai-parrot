@@ -4,7 +4,7 @@ title: build_recorders_from_config()
 id: func:parrot.observability.recorders.factory.build_recorders_from_config
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return the recorder backends for ``config.usage_backend``.
 ---
 

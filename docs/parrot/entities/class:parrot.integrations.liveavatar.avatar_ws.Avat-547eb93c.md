@@ -4,7 +4,7 @@ title: AvatarWebSocket
 id: class:parrot.integrations.liveavatar.avatar_ws.AvatarWebSocket
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: WebSocket bridge that pushes PCM audio frames to the LiveAvatar media server.
 ---
 

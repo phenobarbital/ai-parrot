@@ -4,7 +4,7 @@ title: parrot.integrations.core.auth.post_auth
 id: mod:parrot.integrations.core.auth.post_auth
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: PostAuthProvider protocol and registry for secondary authentication flows.
 relates_to:
 - concept: class:parrot.integrations.core.auth.post_auth.PostAuthProvider

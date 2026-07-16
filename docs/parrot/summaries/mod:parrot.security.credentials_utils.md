@@ -4,7 +4,7 @@ title: parrot.security.credentials_utils
 id: mod:parrot.security.credentials_utils
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Credential encryption/decryption helpers for DocumentDB storage.
 relates_to:
 - concept: func:parrot.security.credentials_utils.decrypt_credential

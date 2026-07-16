@@ -4,7 +4,7 @@ title: WorkdayWriteTypeBase
 id: class:parrot_tools.interfaces.workday.handlers.base.WorkdayWriteTypeBase
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Single-call (non-paginated) write base for Workday write operations.
 relates_to:
 - concept: class:parrot_tools.interfaces.workday.handlers.base.WorkdayTypeBase

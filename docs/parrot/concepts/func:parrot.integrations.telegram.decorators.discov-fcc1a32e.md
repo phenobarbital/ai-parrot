@@ -4,7 +4,7 @@ title: discover_telegram_commands()
 id: func:parrot.integrations.telegram.decorators.discover_telegram_commands
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Scan an agent instance for methods decorated with @telegram_command.
 ---
 

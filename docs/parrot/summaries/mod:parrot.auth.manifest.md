@@ -4,7 +4,7 @@ title: parrot.auth.manifest
 id: mod:parrot.auth.manifest
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: In-package YAML manifest loader for per-agent credential configuration.
 relates_to:
 - concept: func:parrot.auth.manifest.load_credentials_manifest

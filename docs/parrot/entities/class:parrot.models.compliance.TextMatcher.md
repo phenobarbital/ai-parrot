@@ -4,7 +4,7 @@ title: TextMatcher
 id: class:parrot.models.compliance.TextMatcher
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: N-gram + fuzzy text matcher for planogram text compliance.
 ---
 

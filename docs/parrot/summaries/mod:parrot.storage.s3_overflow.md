@@ -4,7 +4,7 @@ title: parrot.storage.s3_overflow
 id: mod:parrot.storage.s3_overflow
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: S3 Overflow Manager — backward-compatible subclass of OverflowStore.
 relates_to:
 - concept: class:parrot.storage.s3_overflow.S3OverflowManager

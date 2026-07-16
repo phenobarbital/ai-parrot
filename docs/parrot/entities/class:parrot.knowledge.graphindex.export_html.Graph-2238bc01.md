@@ -4,7 +4,7 @@ title: GraphExportCategory
 id: class:parrot.knowledge.graphindex.export_html.GraphExportCategory
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A community category (an ECharts legend entry + colour).
 ---
 

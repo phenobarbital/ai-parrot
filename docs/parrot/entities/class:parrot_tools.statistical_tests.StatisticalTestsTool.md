@@ -4,7 +4,7 @@ title: StatisticalTestsTool
 id: class:parrot_tools.statistical_tests.StatisticalTestsTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Run statistical hypothesis tests on dataset groups.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractTool

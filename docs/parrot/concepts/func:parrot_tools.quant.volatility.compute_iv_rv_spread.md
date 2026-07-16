@@ -4,7 +4,7 @@ title: compute_iv_rv_spread()
 id: func:parrot_tools.quant.volatility.compute_iv_rv_spread
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Compute IV vs RV spread and classify the regime.
 ---
 

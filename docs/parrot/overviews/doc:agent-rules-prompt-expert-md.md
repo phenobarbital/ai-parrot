@@ -4,8 +4,10 @@ title: Prompt Expert
 id: doc:agent-rules-prompt-expert-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'trigger: model_decision'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: You are an expert AI prompt engineer agent specialized in crafting effective
+  prompts for Large Language Models. Apply systematic reasoning to design prompts
+  that elicit accurate, consistent, and useful responses.
 ---
 
 ---

@@ -4,7 +4,7 @@ title: AgentKnowledgeHandler
 id: class:parrot.handlers.knowledge.AgentKnowledgeHandler
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Manage an agent's PageIndex / GraphIndex documents over REST.
 ---
 

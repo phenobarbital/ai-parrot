@@ -4862,6 +4862,26 @@ Karpathy's wiki page type taxonomy.
 
 Unified wiki search result.
 
+## [ClaudeIntegrationConfig](entities/class:parrot.knowledge.wiki.project.ClaudeIntegrationConfig.md)
+
+Settings for the Claude Code integration.
+
+## [WikiConfigError](entities/class:parrot.knowledge.wiki.project.WikiConfigError.md)
+
+Raised when an existing ``.parrot/wiki.json`` cannot be used.
+
+## [WikiProjectConfig](entities/class:parrot.knowledge.wiki.project.WikiProjectConfig.md)
+
+Repository-level wiki configuration (``.parrot/wiki.json``).
+
+## [FileSlice](entities/class:parrot.knowledge.wiki.repo_scan.FileSlice.md)
+
+Everything scanned from a single source file.
+
+## [RepoScan](entities/class:parrot.knowledge.wiki.repo_scan.RepoScan.md)
+
+Full result of scanning a repository.
+
 ## [WikiCombinedSearch](entities/class:parrot.knowledge.wiki.search.WikiCombinedSearch.md)
 
 Unified search across PageIndex and GraphIndex.
@@ -13000,15 +13020,15 @@ Async-first Python framework for building AI Agents and Chatbots.
 
 ## [Async Programming Expert](overviews/doc:agent-rules-async-programming-expert-md.md)
 
-trigger: glob
+You are an expert in Python asynchronous programming with asyncio.
 
 ## [Code Reviewer](overviews/doc:agent-rules-code-reviewer-md.md)
 
-trigger: model_decision
+You are an expert code review agent that provides thorough, constructive, and actionable feedback. Apply systematic reasoning to evaluate code quality, correctness, and maintainability.
 
 ## [Cython Development](overviews/doc:agent-rules-cython-development-md.md)
 
-trigger: glob
+You are an expert in Cython development.
 
 ## [🛸 Antigravity Directives (v1.0)](overviews/doc:agent-rules-md.md)
 
@@ -13016,35 +13036,35 @@ You are running inside Google Antigravity. DO NOT just write code.
 
 ## [Patching Files](overviews/doc:agent-rules-patching-files-md.md)
 
-name: patch-plan
+Instructions:
 
 ## [Prompt Expert](overviews/doc:agent-rules-prompt-expert-md.md)
 
-trigger: model_decision
+You are an expert AI prompt engineer agent specialized in crafting effective prompts for Large Language Models. Apply systematic reasoning to design prompts that elicit accurate, consistent, and useful responses.
 
 ## [Python Development](overviews/doc:agent-rules-python-development-md.md)
 
-trigger: always_on
+You are an expert in Python, AI, and Machine Learning development.
 
 ## [Refactor Planner Expert](overviews/doc:agent-rules-refactor-planner-expert-md.md)
 
-trigger: always_on
+name: refactor-planner
 
 ## [Rust Development](overviews/doc:agent-rules-rust-development-md.md)
 
-trigger: glob
+You are an expert in Rust-Python FFI, specializing in PyO3 and Maturin.
 
 ## [Browser Automation with agent-browser (async Playwright)](overviews/doc:agent-skills-agent-browser-skill-md.md)
 
-name: agent-browser
+AI-Parrot adaptation of the upstream `agent-browser` Node CLI. Same command
 
 ## [Code Review Skill](overviews/doc:agent-skills-code-review-skill-md.md)
 
-name: code-review
+When reviewing code, you MUST provide feedback on code style and best practices.
 
 ## [Codex Specifications Skill](overviews/doc:agent-skills-codex-specifications-skill-md.md)
 
-name: codex-specifications
+Use this skill when a user wants a bugfix or feature implemented from a
 
 ## [NumPy 2.0 Migration Reference](overviews/doc:agent-skills-cython-extensions-references-numpy-04aa993d.md)
 
@@ -13052,31 +13072,31 @@ This reference provides detailed information about deprecated types and breaking
 
 ## [Building Cython Extension Packages](overviews/doc:agent-skills-cython-extensions-skill-md.md)
 
-name: build-cython-ext
+This skill provides systematic approaches for building Cython extension packages, with emphasis on resolving compatibility issues that arise with modern Python and NumPy versions.
 
 ## [Data Storytelling](overviews/doc:agent-skills-data-storytelling-skill-md.md)
 
-name: data-storytelling
+Transform raw data into compelling narratives that drive decisions and inspire action.
 
 ## [Database Schema Validator Skill](overviews/doc:agent-skills-database-schema-validator-skill-md.md)
 
-name: database-schema-validator
+This skill ensures that all SQL files provided by the user comply with our strict database standards.
 
 ## [Skill](overviews/doc:agent-skills-docstring-skill-md.md)
 
-name: docstring
+Document a Python module and its classes using Google-style docstrings following project conventions. The class name is provided as an argument.
 
 ## [Skill](overviews/doc:agent-skills-git-commit-formatter-skill-md.md)
 
-name: git-commit-formatter
+Git Commit Formatter Skill
 
 ## [JSON to Pydantic Skill](overviews/doc:agent-skills-json-to-pydantic-skill-md.md)
 
-name: json-to-pydantic
+This skill helps convert raw JSON data or API responses into structured, strongly-typed Python classes using Pydantic.
 
 ## [License Header Adder Skill](overviews/doc:agent-skills-license-header-adder-skill-md.md)
 
-name: license-header-adder
+This skill ensures that all new source files have the correct copyright header.
 
 ## [SKILL: Analyze Task Complexity](overviews/doc:agent-skills-meta-prompting-analyze-complexity-skill-md.md)
 
@@ -13096,19 +13116,19 @@ Recursively improve LLM outputs through quality-driven iteration with automatic 
 
 ## [Meta-Prompting Framework](overviews/doc:agent-skills-meta-prompting-skill-md.md)
 
-name: meta-prompting
+Recursive prompt improvement through quality-driven iteration with automatic complexity routing.
 
 ## [ai-parrot Tool Scaffold Skill](overviews/doc:agent-skills-parrot-scaffold-tool-skill-md.md)
 
-name: parrot-tool-scaffold
+This skill automates the creation of standard `AbstractTool` implementations for the ai-parrot framework.
 
 ## [Production Dockerfile Skill](overviews/doc:agent-skills-production-dockerfile-skill-md.md)
 
-name: production-dockerfile
+Think like a DevOps engineer who optimizes container images for production Kubernetes deployments. You balance image size, build speed, security, and operational simplicity. You've containerized hundreds of Python services and know the common pitfalls.
 
 ## [Python Standards](overviews/doc:agent-skills-python-standards-skill-md.md)
 
-name: Python Standards
+uv pip install package-name
 
 ## [Changelog](overviews/doc:agent-skills-reverse-engineering-api-changelog-md.md)
 
@@ -13124,11 +13144,11 @@ This document covers how to analyze HAR (HTTP Archive) files to extract API endp
 
 ## [Reverse Engineering API Skill](overviews/doc:agent-skills-reverse-engineering-api-skill-md.md)
 
-name: reverse-engineering-api
+This skill enables you to reverse engineer web APIs by:
 
 ## [Rust + PyO3 function skill (eo-processor)](overviews/doc:agent-skills-rust-pyo3-function-skill-md.md)
 
-name: rust-pyo3-function
+Use this skill when you need to add or change a Rust implementation that is exposed to Python. The goal is: **correct math + stable API + high performance + predictable behavior**.
 
 ## [Skill Creator](overviews/doc:agent-skills-skill-creator-readme-md.md)
 
@@ -13144,23 +13164,23 @@ For complex tasks, break operations into clear, sequential steps. It is often he
 
 ## [Skill Creator](overviews/doc:agent-skills-skill-creator-skill-md.md)
 
-name: skill-creator
+This skill provides guidance for creating effective skills.
 
 ## [Using Git Worktrees](overviews/doc:agent-skills-using-git-worktrees-skill-md.md)
 
-name: using-git-worktrees
+Git worktrees create isolated workspaces sharing the same repository, allowing work on multiple branches simultaneously without switching.
 
 ## [Goal](overviews/doc:agent-skills-worktree-pr-and-clean-skill-md.md)
 
-name: worktree-pr-and-clean
+After user approval: push branch + open PR to main + clean up the worktree.
 
 ## [Goal](overviews/doc:agent-skills-worktree-start-feature-skill-md.md)
 
-name: worktree-start-feature
+Implement a feature in a separate working directory (git worktree) on a new branch.
 
 ## [Goal](overviews/doc:agent-skills-worktree-status-skill-md.md)
 
-name: worktree-status
+Show the current worktree situation and prevent accidental edits in the primary working directory.
 
 ## [System Prompt for Antigravity IDE](overviews/doc:agent-system-prompt-md.md)
 
@@ -13168,75 +13188,75 @@ You are an advanced AI assistant operating within the **Google Antigravity IDE**
 
 ## [Create Parrot Tool](overviews/doc:agent-workflows-create-parrot-tool-md.md)
 
-description: Create a new Parrot Tool
+description: Create a new Parrot Tool with standard structure and styling
 
 ## [Workflow Creator](overviews/doc:agent-workflows-create-workflow-md.md)
 
-description: Create an antigravity Workflow
+description: Create new stack-agnostic workflows for the Antigravity repository
 
 ## [Generate Tests Workflow](overviews/doc:agent-workflows-generate-tests-md.md)
 
-description: Generate comprehensive pytest suites
+This workflow guides you through creating comprehensive pytest suites using `pytest-asyncio`, fixtures, and correct project structure.
 
 ## [Git New Feature](overviews/doc:agent-workflows-git-new-feature-md.md)
 
-description: Create a new feature from main branch
+description: Start a new feature branch synchronized with main
 
 ## [Parrot Mcp Server](overviews/doc:agent-workflows-parrot-mcp-server-md.md)
 
-description: Scaffold a SimpleMCPServer for a designated Parrot Tool
+Follow these steps to generate a new MCP Server script for a Parrot Tool.
 
 ## [Release Package](overviews/doc:agent-workflows-release-package-md.md)
 
-description: Release Package
+description: Automated Release Workflow
 
 ## [Run Python Command](overviews/doc:agent-workflows-run-python-command-md.md)
 
-description: Run a Python command inside the virtual environment
+1. Check if the virtual environment exists in `.venv`.
 
 ## [/brainstorm — Structured Idea Exploration](overviews/doc:agent-workflows-sdd-brainstorm-md.md)
 
-description: Structured brainstorming for projects and features. Explores multiple options before implementation.
+Explore a feature idea by generating multiple approaches with library and code references,
 
 ## [/sdd-codereview — Code Review a Completed Task](overviews/doc:agent-workflows-sdd-codereview-md.md)
 
-description: Run a code-review analysis over a completed SDD task
+Perform a structured code review over the implementation produced by a completed SDD task.
 
 ## [/sdd-fromjira — Bootstrap Brainstorm from Jira](overviews/doc:agent-workflows-sdd-fromjira-md.md)
 
-description: Bootstrap an SDD Brainstorm from a Jira ticket using mcp-atlassian
+Fetch requirements from a Jira ticket (`issue_key`) and scaffold a structured brainstorm document in `sdd/proposals/`.
 
 ## [/sdd-next — Suggest Next Tasks to Assign](overviews/doc:agent-workflows-sdd-next-md.md)
 
-description: Suggest next unblocked SDD tasks to assign
+Read `sdd/tasks/.index.json`, identify unblocked tasks, and suggest assignments.
 
 ## [/sdd-proposal — Feature Proposal & Discussion](overviews/doc:agent-workflows-sdd-proposal-md.md)
 
-description: Propose and discuss a feature idea before building a spec
+Propose a feature idea in plain, non-technical language. The agent discusses the idea
 
 ## [/sdd-spec — Scaffold a Feature Specification](overviews/doc:agent-workflows-sdd-spec-md.md)
 
-description: Scaffold a Feature Specification using SDD methodology
+Create a new Feature Specification for AI-Parrot using the Spec-Driven Development methodology.
 
 ## [/sdd-start — Start an SDD Task](overviews/doc:agent-workflows-sdd-start-md.md)
 
-description: Start working on an SDD task by name or ID
+Pick up a task from the SDD task index by ID or slug, validate it is ready, mark it in-progress,
 
 ## [/sdd-status — Show Task Status](overviews/doc:agent-workflows-sdd-status-md.md)
 
-description: Show SDD task index status summary
+Read `sdd/tasks/.index.json` and print a human-friendly status report of all SDD tasks.
 
 ## [/sdd-task — Generate Task Artifacts from a Spec](overviews/doc:agent-workflows-sdd-task-md.md)
 
-description: Decompose an approved spec into SDD Task Artifacts
+Read an approved Feature Specification and decompose it into discrete, self-contained Task Artifacts
 
 ## [/sdd-tojira — Export Specification to Jira](overviews/doc:agent-workflows-sdd-tojira-md.md)
 
-description: Export an SDD Specification to a Jira Story using mcp-atlassian
+Export the content of a formal specification file (`sdd/specs/*.spec.md`) to a new Jira ticket.
 
 ## [Start Flow](overviews/doc:agent-workflows-start-flow-md.md)
 
-description: A fresh startup for work
+description: Startup flow — sync repo then install + start dev environment
 
 ## [AI-Parrot Development Guide for Claude](overviews/doc:claude-md.md)
 
@@ -13524,7 +13544,7 @@ Human-in-the-Loop over Microsoft Teams — setup, deployment prerequisites,
 
 ## [AI-Parrot](overviews/doc:docs-index-md.md)
 
-hide:
+AI-Parrot is a vendor-agnostic framework that lets you build conversational
 
 ## [Infographic Handler — Frontend API Contract](overviews/doc:docs-infographic-handler-api-md.md)
 
@@ -13806,9 +13826,10447 @@ Complete guide for connecting WhatsApp as an input channel to AI-Parrot's `Auton
 
 If you have an NVIDIA GPU:
 
+## [WikiToolkit as Claude Code infrastructure](overviews/doc:docs-wiki-claude-code-md.md)
+
+wikitoolkit build
+
+## [Feature Specification: Visit & Event Lifecycle (multi-shift)](overviews/doc:packages-parrot-formdesigner-sdd-specs-visit-ev-8d969639.md)
+
+Vision Legacy modela una Activity single-rep: un solo representante ejecuta
+
+## [TASK-303-1: Event/Shift/Visit models + state machine + EventStorage (JSONB)](overviews/doc:packages-parrot-formdesigner-sdd-tasks-complete-e2ffd72d.md)
+
+Module 1 of FEAT-303. Introduces the lifecycle layer
+
+## [TASK-303-2: Check-in/out + geofence validation + recap submission](overviews/doc:packages-parrot-formdesigner-sdd-tasks-complete-632e2b35.md)
+
+Module 2. Check-in/out flow with GPS geofence validation; recap submission is
+
+## [TASK-303-3: Missed Reasons (per-tenant) + ad-hoc stops](overviews/doc:packages-parrot-formdesigner-sdd-tasks-complete-bad78020.md)
+
+Module 3. Per-tenant Missed Reasons catalogue (decision §8: per-tenant, hard
+
+## [TASK-303-4: PayrollHook interface + visit API endpoints](overviews/doc:packages-parrot-formdesigner-sdd-tasks-complete-d6b02840.md)
+
+Module 4. PayrollHook ABC (concrete Workday/claims impls are external) +
+
 ## [AI-Parrot](overviews/doc:readme-md.md)
 
 Whether you need a simple chatbot, a complex multi-agent orchestration workflow, or a robust production-ready AI service, AI-Parrot exposes the primitives to build it efficiently.
+
+## [Brainstorm: A2UI Protocol Integration — `parrot.outputs` Rendering Core (FEAT-A)](overviews/doc:sdd-proposals-a2ui-implementation-brainstorm-md.md)
+
+ai-parrot's rich-output pipeline produces maps, charts, infographics, tables and
+
+## [Brainstorm Input: A2UI Integration into `parrot.outputs`](overviews/doc:sdd-proposals-a2ui-outputs-brainstorm-md.md)
+
+ai-parrot currently produces rich outputs (folium maps, infographics, reports,
+
+## [Brainstorm: Agent Artifact Persistency](overviews/doc:sdd-proposals-agent-artifact-persistency-brainstorm-md.md)
+
+Every time a user interacts with an AI agent, the system generates valuable artifacts — charts, canvas tabs, infographics, DataFrames — that live exclusively in frontend memory and disappear on page reload. Hours of curatorial work vanish when the browser tab closes.
+
+## [Brainstorm: Agent Skill System](overviews/doc:sdd-proposals-agent-skill-system-brainstorm-md.md)
+
+AI-Parrot agents currently have no lightweight mechanism for developers (or the agents themselves) to define reusable behavioral instructions that activate on demand. The existing `SkillRegistryMixin` provides learned-skill storage with vector search, versioning, and FAISS indexi
+
+## [FEAT-231 — AgentTalk voice support (REST round-trip: audio → STT → text Agent → TTS → audio + content)](overviews/doc:sdd-proposals-agentalk-voice-support-proposal-md.md)
+
+The original request, preserved verbatim. Full source at
+
+## [FEAT-156 — Add AgentCrew.from_definition classmethod](overviews/doc:sdd-proposals-agentcrew-from-definition-proposal-md.md)
+
+The original request, preserved verbatim:
+
+## [FEAT-157 — Add on_complete and on_error lifecycle hooks to AgentCrew](overviews/doc:sdd-proposals-agentcrew-hooks-proposal-md.md)
+
+AgentCrew currently has no crew-level lifecycle hooks — only per-agent callbacks
+
+## [Brainstorm: AgentCrew ResultAgent — End-of-Flow Multi-Tab Infographic Node](overviews/doc:sdd-proposals-agentcrew-node-infographic-brainstorm-md.md)
+
+When an `AgentCrew` finishes a multi-agent run, its output is a `FlowResult`
+
+## [Brainstorm: AgentCrew Primitives Migration (Spec 2)](overviews/doc:sdd-proposals-agentcrew-primitives-brainstorm-md.md)
+
+Migrate AgentCrew one execution mode at a time, in order of complexity:
+
+## [Brainstorm: AgentCrew → `parrot.bots.flows.core` Migration](overviews/doc:sdd-proposals-agentcrew-primitives-md.md)
+
+Migrar **internamente** `parrot.bots.orchestration.crew.AgentCrew` para que consuma las primitivas de `parrot.bots.flows.core` definidas en FEAT-134. La migración es **invisible** para los usuarios: la API pública (`run_sequential`, `run_parallel`, `run_flow`, `run_loop`, `task_f
+
+## [Brainstorm: AgentCrew Saved Crews (Execution Persistence & Replay)](overviews/doc:sdd-proposals-agentcrew-saved-crews-brainstorm-md.md)
+
+AgentCrew already persists execution results via the `ResultStorage` backends
+
+## [Brainstorm Research: AgentsFlow — Current State Audit & Refactor Direction](overviews/doc:sdd-proposals-agents-flow-refactor-research-md.md)
+
+This is **not a spec proposal**. It is an audit of the current AgentsFlow code (`parrot/bots/flow/`) intended to feed `/sdd-brainstorm` with grounded, code-verified observations instead of speculation. The spec(s) that follow this brainstorm will be informed by the decisions take
+
+## [Brainstorm: AgentsFlow Migration — finish moving `bots/flow/` into `bots/flows/`](overviews/doc:sdd-proposals-agentsflow-migration-brainstorm-md.md)
+
+FEAT-163 (`agentsflow-refactor-spec3`, merged on `dev` 2026-05-11) moved the
+
+## [Brainstorm: AgentsFlow Persistency](overviews/doc:sdd-proposals-agentsflow-persistency-brainstorm-md.md)
+
+AgentsFlow (`parrot/bots/flow/fsm.py`) provides sophisticated DAG-based agent pipelines with FSM-controlled lifecycle management, conditional transitions, and pre/post hooks. However, flows are **defined exclusively in Python code**, which creates significant limitations:
+
+## [AgentsFlow FlowDefinition — Technical Specification](overviews/doc:sdd-proposals-agentsflow-persistency-md.md)
+
+AgentsFlow (`parrot/bots/flow/fsm.py`) allows building sophisticated DAG-based agent pipelines with FSM-controlled lifecycle management, conditional transitions, and pre/post lifecycle hooks. Currently, flows are defined exclusively in Python code, making them:
+
+## [Brainstorm: AgentsFlow Refactor — DAG Engine on flows.core](overviews/doc:sdd-proposals-agentsflow-refactor-spec3-brainstorm-md.md)
+
+The grounded audit (see research doc + Explore verification) shows three real defects, not the originally-assumed "global FSM" problem:
+
+## [FEAT-184 — Agnostic S3 report reader toolkit for LLM agents](overviews/doc:sdd-proposals-agenttool-s3-readreports-proposal-md.md)
+
+The original request, preserved verbatim:
+
+## [FEAT-181 — Provider-agnostic prompt caching via PromptBuilder + AGENT_CONTEXT loader](overviews/doc:sdd-proposals-agnostic-prompt-caching-abstracti-f93b8a60.md)
+
+Verbatim source preserved at `sdd/state/FEAT-181/source.md`.
+
+## [FEAT-201 — ai-parrot-embeddings (split stores + embeddings + rerankers)](overviews/doc:sdd-proposals-ai-parrot-embeddings-proposal-md.md)
+
+The original request, preserved verbatim. The full source (with the
+
+## [Brainstorm: ai-parrot-integrations](overviews/doc:sdd-proposals-ai-parrot-integrations-brainstorm-md.md)
+
+fuente y, vía sus dependencias, arrastra al core de ai-parrot SDKs
+
+## [FEAT-202 — Extraer `parrot/integrations/` a `ai-parrot-integrations`](overviews/doc:sdd-proposals-ai-parrot-integrations-proposal-md.md)
+
+288K, msteams 220K, matrix 180K, whatsapp 116K, zoom 8K) más 5 piezas
+
+## [FEAT-203 — Extract server infrastructure into ai-parrot-server](overviews/doc:sdd-proposals-ai-parrot-server-proposal-md.md)
+
+ai-parrot currently bundles all server infrastructure (HTTP handlers, MCP/A2A
+
+## [FEAT-200 — Extract `parrot/outputs/formats` to `ai-parrot-visualizations`](overviews/doc:sdd-proposals-ai-parrot-visualizations-proposal-md.md)
+
+bokeh, holoviews, matplotlib, seaborn, d3, echarts, infographic_html, etc.).
+
+## [FEAT-259 — Auth & OBO Layer (MS Agents SDK Path)](overviews/doc:sdd-proposals-auth-obo-msagentsdk-proposal-md.md)
+
+The parent FEAT-259 proposal delivered the transport layer: `MSAgentSDKWrapper`,
+
+## [FEAT-259 — Auth & OBO layer (MS Agents SDK path)](overviews/doc:sdd-proposals-auth-obo-research-md.md)
+
+The Microsoft 365 Agents SDK uses **Azure Bot Service's OAuth capabilities** for user authentication. The **Bot Framework Token Service centrally manages tokens** — a per-user, server-side token store keyed by user + OAuth connection, with refresh handled for you. This is the sin
+
+## [FEAT-302 — Native Bedrock Client (Converse API) + Nova 2 Sonic Voice Integration](overviews/doc:sdd-proposals-bedrock-client-llm-proposal-md.md)
+
+Build a native AWS Bedrock client for ai-parrot using `aioboto3` and the Converse API (`converse`/`converse_stream`) as the primary route, with `invoke_model` fallback for models without ARN-versioned IDs. Additionally, integrate Amazon Nova 2 Sonic (bidirectional speech-to-speec
+
+## [Brainstorm: AI-Parrot ⇄ Microsoft 365 Copilot via A2A, with parrot-owned per-user tool credentials](overviews/doc:sdd-proposals-brainstorm-copilot-a2a-percredential-md.md)
+
+We want an AI-Parrot agent — bundling `work-iq`, `fireflies.ai`, and `jira` tools — to be invokable from inside the Microsoft 365 Copilot surface. Microsoft exposes this via the **Agent-to-Agent (A2A) connection** in Copilot Studio (GA, April–May 2026): Copilot's orchestrator del
+
+## [Deterministic Data-Plane Authorization for DatasetManager](overviews/doc:sdd-proposals-brainstorm-dataplane-authz-md.md)
+
+Driver-level, table-level, dataset-level access control + Row-Level Security (RLS),
+
+## [Brainstorm — Containing arbitrary-exec credential leakage across the agent runtime](overviews/doc:sdd-proposals-brainstorm-repl-sandbox-response--d2b23dc0.md)
+
+A production `JiraSpecialist` agent (model `gemini-3`, pod `navigator-agent-jira`)
+
+## [Brainstorm — Spatial Filtering for DatasetManager (deterministic + LLM-driven)](overviews/doc:sdd-proposals-brainstorm-spatial-dataset-filter-md.md)
+
+A PandasAgent over live geospatial datasets (USA apartments ~879k, public/private
+
+## [OptionsAnalyticsToolkit — Brainstorming Spec](overviews/doc:sdd-proposals-changes-analytics-md.md)
+
+AI-PARROT currently has **zero options analytics capability**. The `YFinanceTool` with `action="options"` fetches raw chain data (strikes, bids, asks, volume, OI, IV), but there is no layer that:
+
+## [FEAT-160 — CloudSploit toolkit — `--config CONFIG` file support for `run_scan`](overviews/doc:sdd-proposals-cloudsploit-config-support-proposal-md.md)
+
+Verbatim user request preserved at `sdd/state/FEAT-160/source.md`.
+
+## [FEAT-165 — Instrumentalize ECR image scan collection + interactive HTML report in CloudSploitToolkit](overviews/doc:sdd-proposals-cloudsploit-ecr-proposal-md.md)
+
+Verbatim source preserved at `sdd/state/FEAT-165/source.md`. Short excerpt:
+
+## [FEAT-305 — CompanyResearchToolkit (port of flowtask CompanyScraper)](overviews/doc:sdd-proposals-companyresearch-tool-proposal-md.md)
+
+The original request, preserved verbatim. Full source at
+
+## [Cliente Bedrock async-first para Claude y Nova Sonic en ai-parrot: guía de diseño y patrones de código (mediados de 2026)](overviews/doc:sdd-proposals-compass-artifact-wf-766f01e9-ac55-e4088f4c.md)
+
+ai-parrot ya es async-first (aiohttp/navigator-api), monorepo uv, con clientes que implementan `AbstractClient` como async context managers (`GoogleGenAIClient`, `OpenAIClient`, `AnthropicClient`) y un `@tool`/`AbstractToolkit` que autogenera schemas desde docstrings y type hints
+
+## [AI-Parrot Security Toolkits Suite — Spec & Brainstorming](overviews/doc:sdd-proposals-compliancereport-md.md)
+
+DevOps teams spend excessive time manually running cloud security scanners, cross-referencing results, and producing compliance reports (SOC2, HIPAA, PCI-DSS). Each tool has its own CLI, output format, and learning curve. There is no unified interface for an AI agent to orchestra
+
+## [SDD Spec: Computed Columns & Composite Datasets](overviews/doc:sdd-proposals-composite-datasets-brainstorm-md.md)
+
+Two new features for `DatasetManager` that extend its capabilities as a data catalog:
+
+## [FEAT-227 — Computer-Use Agent](overviews/doc:sdd-proposals-computer-use-agent-proposal-md.md)
+
+The original request, preserved verbatim:
+
+## [Brainstorm: Concept-Document Authority Layer](overviews/doc:sdd-proposals-concept-document-authority-brainstorm-md.md)
+
+Pure vector RAG over a corporate corpus produces high-confidence false positives because semantic similarity does not capture **document authority** within that corpus:
+
+## [Brainstorm: Console CLI Agents](overviews/doc:sdd-proposals-console-cli-agents-brainstorm-md.md)
+
+When AI-Parrot runs as a webserver (`python run.py`), developers and operators
+
+## [FEAT-263 — AI-Parrot ⇄ M365 Copilot via A2A, with parrot-owned per-user tool credentials](overviews/doc:sdd-proposals-copilot-a2a-percredential-proposal-md.md)
+
+Continuation of in-progress work integrating one AI-Parrot agent (bundling
+
+## [Support WebSearchAgent in CrewBuilder UI and CrewBuilder handler.](overviews/doc:sdd-proposals-crew-websearchagent-support-md.md)
+
+WebSearchAgent is a new type of Agent supporting directly LLMs calls to do synthesis or doing a "contrastive search"
+
+## [Brainstorm: Cross-Repository JiraToolkit OAuth2 3LO (Web AgentChat)](overviews/doc:sdd-proposals-cross-repository-jiratoolkit-oaut-87aa4e54.md)
+
+integration (`/connect_jira` → inline button → `/api/auth/jira/callback` → token in
+
+## [Brainstorm: DatabaseAgent Homologation](overviews/doc:sdd-proposals-database-agent-homologation-brainstorm-md.md)
+
+is structurally behind the current AI-Parrot agent conventions, while the legacy
+
+## [Specification: DatabaseToolkit](overviews/doc:sdd-proposals-databasetoolkit-brainstorm-md.md)
+
+by optional parameters (`query`, `get_metadata`, etc.). Empirical evidence across
+
+## [Add support for DatasetManager to AgentTalk Handler](overviews/doc:sdd-proposals-dataset-support-agenttalk-md.md)
+
+is like a ToolManager but for data (queries, dataframes).
+
+## [DatasetManager — Lazy Data Sources: Spec & Brainstorm](overviews/doc:sdd-proposals-datasetmanager-datasources-md.md)
+
+The current `DatasetManager` distinguishes between two kinds of entries:
+
+## [Brainstorm: DatasetManager Common-Field Filtering (`define_filters`)](overviews/doc:sdd-proposals-datasetmanager-filtering-brainstorm-md.md)
+
+A `DatasetManager` holds **multiple heterogeneous datasets** (SQL tables, query
+
+## [FIX: DatasetManagerToolkit ↔ PythonPandasTool Variable Name Synchronization](overviews/doc:sdd-proposals-datasource-fix-md.md)
+
+When Gemini (or any LLM) uses the `DatasetManagerToolkit` tools (`get_metadata` → `fetch_dataset` → `get_dataframe`) followed by `python_repl_pandas`, the LLM invents variable names that don't exist in the PythonPandasTool execution environment. This causes `NameError` on every a
+
+## [Brainstorm: Dev-Loop Orchestration with Claude Code Subagent Mirror](overviews/doc:sdd-proposals-dev-loop-orchestration-brainstorm-md.md)
+
+The development feedback loop for "small operational fixes" today is entirely
+
+## [Brainstorm: Pluggable Storage Backends for Conversations & Artifacts](overviews/doc:sdd-proposals-dynamodb-fallback-redis-brainstorm-md.md)
+
+Since FEAT-103 (`agent-artifact-persistency`), chat history, conversation threads
+
+## [FEAT-232 — Expand AnthropicClient to support AWS Bedrock and AWS-native backends](overviews/doc:sdd-proposals-enable-anthropic-aws-bedrock-proposal-md.md)
+
+The original request, preserved verbatim. The full source is at
+
+## [Brainstorm: Endcap Backlit Multitier Planogram Type](overviews/doc:sdd-proposals-endcap-backlit-multitier-brainstorm-md.md)
+
+The existing `product_on_shelves` planogram type was designed for flat shelves with
+
+## [EpisodicMemoryStore v2 — Brainstorm Spec](overviews/doc:sdd-proposals-episodicstore-brainstorm-md.md)
+
+Un agente de AI-Parrot atiende múltiples usuarios en múltiples rooms (Matrix, Telegram, Slack).
+
+## [FEAT-177 — OpenTelemetry + Cost Observability for AI-Parrot](overviews/doc:sdd-proposals-feat-177-otel-observability-brainstorm-md.md)
+
+The original FEAT-OBS-001 brainstorm proposed a full instrumentation framework. With FEAT-176 in flight, large parts of it become redundant:
+
+## [FEAT-193 — Google GenAI client: simultaneous tool-calling + structured output for newer Gemini models](overviews/doc:sdd-proposals-feat-193-google-genai-combined-to-af3b2376.md)
+
+The original request, preserved verbatim. The full source is at `sdd/state/FEAT-193/source.md`.
+
+## [FEAT-concept-document-authority — Brainstorm](overviews/doc:sdd-proposals-feat-concept-document-authority-b-fb8e2848.md)
+
+Pure vector RAG cannot reliably answer authority-grounded questions like *"how do commissions work?"* because semantic similarity does not capture **document authority** within a corpus. This feature introduces `Document` and `Concept` as first-class ontology entities, a curated 
+
+## [FEAT-ontology-entity-extraction — Brainstorm](overviews/doc:sdd-proposals-feat-ontology-entity-extraction-b-e2e3d609.md)
+
+Today's `OntologyRAGMixin.ontology_process` resolves intents and executes graph traversals but cannot resolve **named entities mentioned in the user's query** (e.g. *"the team of Jesús"*), and its `post_action: tool_call` only builds a static hint via `_build_tool_hint` rather th
+
+## [SweetSpot Toolkit — Spatial MCDA Scoring Engine](overviews/doc:sdd-proposals-feat-tbd-sweetspot-brainstorm-md.md)
+
+Deterministic site-selection scoring. Given a set of candidate locations and
+
+## [FEAT-topic-authority-ontology — Brainstorm](overviews/doc:sdd-proposals-feat-topic-authority-ontology-bra-d0c899e2.md)
+
+The three sibling brainstorms each leave a deliberate gap:
+
+## [FEAT-topic-authority-operational — Brainstorm](overviews/doc:sdd-proposals-feat-topic-authority-operational--fc860839.md)
+
+The `covers_topic` relation introduced in FEAT-concept-document-authority is too operational to live in YAML. This feature implements a Postgres-backed **operational truth** with a five-state machine (`proposed → pending_review → approved → deprecated/rejected`), a **transactiona
+
+## [FilesystemTransport — Especificación Técnica](overviews/doc:sdd-proposals-filesystem-transport-md.md)
+
+1. [Motivación](#1-motivación)
+
+## [Brainstorm: Finance Research Collective Memory](overviews/doc:sdd-proposals-finance-research-brainstorm-md.md)
+
+El sistema actual de Finance Research + Analyst tiene limitaciones arquitectónicas fundamentales:
+
+## [Brainstorm: First-Time Caching Embedding Model](overviews/doc:sdd-proposals-first-time-caching-embedding-mode-b0d031d7.md)
+
+Embedding models in AI-Parrot are **re-created on each access** rather than being properly cached after first load. This wastes GPU/CPU resources and adds latency:
+
+## [Brainstorm: fix-parrot-transport](overviews/doc:sdd-proposals-fix-parrot-transport-brainstorm-md.md)
+
+The `parrot/transport` package is broken because the hooks system was migrated from
+
+## [Brainstorm: Flow Primitives — Shared Core for AgentCrew & AgentsFlow](overviews/doc:sdd-proposals-flow-primitives-brainstorm-md.md)
+
+AI-Parrot has two orchestration engines that share ~80% of their conceptual model but implement it with divergent classes and contracts:
+
+## [Brainstorming: FlowtaskManagerToolkit](overviews/doc:sdd-proposals-flowtask-interface-brainstorm-md.md)
+
+Flowtask local repository: `/home/jesuslara/proyectos/parallel/flowtask`
+
+## [Brainstorm: Universal Form Abstraction Layer](overviews/doc:sdd-proposals-form-abstraction-layer-brainstorm-md.md)
+
+AI-Parrot's form system is currently tightly coupled to MS Teams. The canonical models (`FormDefinition`, `FormField`, `FormSection`) live in `parrot/integrations/dialogs/` as dataclasses, while rendering (`AdaptiveCardBuilder`), validation (`FormValidator`), orchestration (`Form
+
+## [Brainstorm: Form Designer Edition (Edit API)](overviews/doc:sdd-proposals-form-designer-edition-brainstorm-md.md)
+
+Once a form is created in AI-Parrot's form designer (via natural language, YAML, database import, or Pydantic extraction), there is no API to edit it. Developers and end-users consuming the API cannot:
+
+## [Brainstorm: Form Designer — Conditional Sections (Pre/Post Dependencies)](overviews/doc:sdd-proposals-formdesigner-conditional-sections-ae6c4983.md)
+
+AI-Parrot's form designer (`parrot-formdesigner`) already models **pre-dependencies**
+
+## [FEAT-169 — FormDesigner Edit via Tool-Based Toolkit](overviews/doc:sdd-proposals-formdesigner-edition-parts-proposal-md.md)
+
+The `POST /api/v1/forms/{form_id}/edit` endpoint currently serializes the
+
+## [Brainstorm: Form Lifecycle Events for parrot-formdesigner](overviews/doc:sdd-proposals-formdesigner-lifecycle-events-bra-b1d52e95.md)
+
+1. `services/callback_registry.py` resuelve callables async para `FieldType.REST` con `mode=callback` — es un mecanismo **por-campo** para fetch dinámico de opciones, no un ciclo de vida del formulario.
+
+## [Brainstorm: parrot-formdesigner Integration in navigator-api](overviews/doc:sdd-proposals-formdesigner-navigator-api-integr-baa36f90.md)
+
+navigator-api has an existing form system (`FormModel` + `BaseModel`) tightly coupled to
+
+## [Brainstorm: FormDesigner — New Field Types (Shadcn-Forms compatible)](overviews/doc:sdd-proposals-formdesigner-new-fields-brainstorm-md.md)
+
+The current `parrot-formdesigner` package supports a fixed set of 20 primitive
+
+## [FEAT-186 — FormDesigner Partial Saves](overviews/doc:sdd-proposals-formdesigner-partial-saves-proposal-md.md)
+
+The FormDesigner package needs a new ephemeral storage layer for partial form
+
+## [FEAT-241 — Public forms: register/revoke auth-exempt paths in navigator-auth's runtime exclude list](overviews/doc:sdd-proposals-formdesigner-public-forms-proposal-md.md)
+
+The original request, preserved verbatim. Full source at
+
+## [Brainstorm: parrot-formdesigner Structural Refactor](overviews/doc:sdd-proposals-formdesigner-refactor-brainstorm-md.md)
+
+JSON REST endpoints in the same package. As the package matured and started to
+
+## [Brainstorm: FormRegistry Multi-Tenancy](overviews/doc:sdd-proposals-formregistry-multi-tenancy-brainstorm-md.md)
+
+is the in-memory cache for `FormSchema` objects. Its persistence layer
+
+## [FEAT-XXX — Generic Agent Evaluation Harness (`AbstractEvaluator` + `EvalRunner`)](overviews/doc:sdd-proposals-generic-evaluation-harness-brainstorm-md.md)
+
+— **the real contract; there is no `completion()/stream()/embed()`** (`parrot/clients/base.py`); `EventBus`
+
+## [FEAT-253 — GigSmart Interface Toolkit](overviews/doc:sdd-proposals-gigsmart-interface-toolkit-proposal-md.md)
+
+GigSmart exposes a **GraphQL API** at `https://api.gigsmart.com/graphql` with **OAuth 2.1
+
+## [GigSmart Toolkit — SPEC](overviews/doc:sdd-proposals-gigsmarttoolkit-spec-md.md)
+
+1. Authentication / session bootstrap
+
+## [Brainstorm: GitToolkit On-Demand Code Retrieval for GithubReviewer](overviews/doc:sdd-proposals-gittoolkit-pr-context-retrieval-b-3ec325ca.md)
+
+pull requests by passing the **flat unified diff** of the PR to the LLM and asking
+
+## [Brainstorm: Google Lyria Music Generation Enhancement](overviews/doc:sdd-proposals-google-lyria-music-generation-bra-49d62cad.md)
+
+The `GoogleGenAIClient` already has a `generate_music` method using **Lyria RealTime** (streaming WebSocket API). However, this implementation:
+
+## [AI-Parrot Framework — Granular Permissions System](overviews/doc:sdd-proposals-granular-permission-md.md)
+
+_Version 0.1 — Draft_
+
+## [Brainstorm: GraphIndex OKF Frontmatter Projection](overviews/doc:sdd-proposals-graphindex-frontmatter-brainstorm-md.md)
+
+FEAT-238 (OKF Knowledge Layer) made PageIndex sidecars **self-describing** by
+
+## [FEAT-215: GraphIndex/PageIndex as LLM-Wiki Platform — Gap Analysis & Enhancement Roadmap](overviews/doc:sdd-proposals-graphindex-pageindex-llmwiki-proposal-md.md)
+
+Three external references frame this investigation:
+
+## [FEAT-187 — GraphIndex — Structured Knowledge Graph Indexing](overviews/doc:sdd-proposals-graphindex-proposal-md.md)
+
+Original brainstorm/proposal authored by Jesús Lara on 2026-05-19, exploring three architectural options for a structured knowledge graph layer that unifies code, documentation, and skill files into a single navigable surface for ai-parrot agents.
+
+## [Brainstorm: HITL Tool-Call Confirmation](overviews/doc:sdd-proposals-hitl-confirmation-brainstorm-md.md)
+
+Agents in AI-Parrot can invoke any tool the LLM decides to call, immediately and
+
+## [Brainstorm: HITL Multi-Tier Escalation Policy (per-agent) + HumanTool/HandoffTool Unification](overviews/doc:sdd-proposals-hitl-escalation-tier-brainstorm-md.md)
+
+AI-Parrot has **two parallel Human-in-the-Loop (HITL) paths** that don't share
+
+## [Brainstorm: TeamsHumanChannel — HITL channel over MS Teams / Azure Bot Framework](overviews/doc:sdd-proposals-hitl-teams-channel-brainstorm-md.md)
+
+The HITL engine can already deliver interactions to humans over Telegram
+
+## [FEAT-XXX — TeamsHumanChannel (HITL channel over MS Teams / Azure Bot Framework)](overviews/doc:sdd-proposals-hitl-teams-channel-proposal-md.md)
+
+Graph / card / service helpers into `ai-parrot-integrations` as a Teams
+
+## [Brainstorm: HITL over Stateless Web Request/Response (AgentTalk HTTP)](overviews/doc:sdd-proposals-hitl-web-brainstorm-md.md)
+
+The AI-Parrot HITL stack (`parrot/human/`) lets an agent ask a human for input
+
+## [FEAT-XXX — HITL over Web Request/Response (AgentTalk HTTP)](overviews/doc:sdd-proposals-hitl-web-proposal-md.md)
+
+The AI-Parrot HITL stack (`parrot/human/`) lets an agent ask a human for
+
+## [FEAT-174 — Homologate `ask_stream` Across All LLM Clients](overviews/doc:sdd-proposals-homologate-llm-clients-askstream--da4e67c9.md)
+
+All LLM clients in AI-Parrot should yield a uniform streaming contract from
+
+## [Brainstorm: Infographic HTML Output via Content Negotiation](overviews/doc:sdd-proposals-infographic-html-output-brainstorm-md.md)
+
+The recently merged `get_infographic()` method (branch `claude/structured-infographic-output-1jZ2v`)
+
+## [Proposal: Themed Component Catalog — HTML Renderer v2 + A2UI Output](overviews/doc:sdd-proposals-infographic-theme-catalog-a2ui-proposal-md.md)
+
+Source file: `sdd/proposals/infographic-theme-catalog-a2ui.spec.md` (draft spec, author:
+
+## [Feature Specification: Themed Component Catalog — HTML Renderer v2 + A2UI Output](overviews/doc:sdd-proposals-infographic-theme-catalog-a2ui-spec-md.md)
+
+The infographic pipeline guarantees *structural* consistency (typed Pydantic blocks) but
+
+## [Brainstorm: Infographic Toolkit — Single-Turn Interactive HTML Artifacts](overviews/doc:sdd-proposals-infographictoolkit-brainstorm-md.md)
+
+Generating an infographic today is a two-step user-visible flow:
+
+## [Brainstorm: Infographic Toolkit — Single-Turn Interactive HTML Artifacts](overviews/doc:sdd-proposals-infographictoolkit-proposal-md.md)
+
+Generating an infographic today is a two-step user-visible flow:
+
+## [Brainstorm: Integrations Hooks](overviews/doc:sdd-proposals-integrations-hooks-brainstorm-md.md)
+
+AI-Parrot has two parallel execution contexts for agents:
+
+## [FEAT: Intelligent Extraction Pipeline for ScrapingAgent](overviews/doc:sdd-proposals-intelligent-scraping-extraction-p-56a2ef8a.md)
+
+The current `WebScrapingLoader` extracts web page content as flat text/markdown
+
+## [Brainstorm: Intelligent Extraction Pipeline for ScrapingAgent](overviews/doc:sdd-proposals-intelligent-scraping-pipeline-bra-ce16ab6f.md)
+
+The current `WebScrapingLoader` extracts web page content as flat text/markdown,
+
+## [Brainstorm: Intent Router & Capability Registry](overviews/doc:sdd-proposals-intent-router-brainstorm-md.md)
+
+AI-Parrot agents that have a vector store assigned **always** attempt RAG on every
+
+## [IntentRouterMixin — Deterministic Output-Mode Routing](overviews/doc:sdd-proposals-intent-router-mixin-brainstorm-md.md)
+
+When a user asks a question, the *output mode* (pie chart, map, table, plain
+
+## [FEAT-224 — Evolve `IntentRouterMixin` with deterministic embedding routing](overviews/doc:sdd-proposals-intent-router-mixin-embedding-rou-6d1e2402.md)
+
+The original request, preserved verbatim from the brainstorm:
+
+## [FEAT-258 — JiraSpecialist Webhook Transition Detection](overviews/doc:sdd-proposals-jiraspecialist-webhooks-proposal-md.md)
+
+The Jira webhook infrastructure already exists and is receiving events at
+
+## [Brainstorm: Jira OAuth2 3LO Authentication from Telegram WebApp](overviews/doc:sdd-proposals-jiratoolkit-auth-telegram-brainstorm-md.md)
+
+Users who authenticate via the Telegram WebApp (BasicAuth against navigator-auth) need
+
+## [FEAT-304 — LeadIQ toolkit for ai-parrot-tools](overviews/doc:sdd-proposals-leadiqtool-proposal-md.md)
+
+The request is to port an existing flowtask ETL component
+
+## [Brainstorm: Lightweight Invoke Method for LLM Clients](overviews/doc:sdd-proposals-lightweight-invoke-client-method--c826f072.md)
+
+The current `ask()` method on all LLM clients is a heavy-weight operation: it loads conversation history, runs the prompt builder pipeline, applies retry logic, wraps results in a full `AIMessage`, and updates conversation memory. This is appropriate for conversational flows but 
+
+## [Briefing — Integración de LiveAvatar (LITE Mode) con ai-parrot](overviews/doc:sdd-proposals-liveavatar-ai-parrot-briefing-md.md)
+
+Dotar al `AgentChat` de ai-parrot de un **avatar parlante** (vídeo con lip-sync) que
+
+## [Brainstorm: LiveAvatar FULL Mode — speak_text Integration (Backend)](overviews/doc:sdd-proposals-liveavatar-fullmode-brainstorm-md.md)
+
+ai-parrot agents can talk through a LiveAvatar avatar today via two existing
+
+## [Brainstorm: LiveAvatar Integration (talking avatar for AgentChat)](overviews/doc:sdd-proposals-liveavatar-integration-brainstorm-md.md)
+
+verbalizes its responses, increasing presence and accessibility for voice-first
+
+## [Brainstorm: LiveKit Direct Audio (avatar-optional livekit voice)](overviews/doc:sdd-proposals-livekit-direct-audio-brainstorm-md.md)
+
+The `livekit` voice transport (LITE, FEAT-173) depends **entirely** on LiveAvatar
+
+## [Brainstorm: LiveKit Gemini Voice Input (host PTT → Gemini STT → agent)](overviews/doc:sdd-proposals-livekit-gemini-voice-input-brainstorm-md.md)
+
+After FEAT-256, the `livekit` transport has voice **output** (the ai-parrot agent
+
+## [FEAT-260 — LLM Wiki: Persistent Knowledge Base with PageIndex + GraphIndex](overviews/doc:sdd-proposals-llmwiki-pageindex-graphindex-proposal-md.md)
+
+AI-Parrot already has mature, production-ready PageIndex (~7,500 LOC) and
+
+## [Brainstorm: Fix Broken Chunking in Loaders](overviews/doc:sdd-proposals-loader-failed-chunking-brainstorm-md.md)
+
+Multiple loaders in ai-parrot-loaders (PDFLoader, TextLoader, MSWordLoader, Excel loaders, etc.)
+
+## [Brainstorm: Port `/login` (Azure SSO) and `/connect_jira` Commands to the Slack Integration](overviews/doc:sdd-proposals-login-connect-jira-to-slack-brainstorm-md.md)
+
+The Telegram integration exposes two independent authentication commands that corporate users rely on:
+
+## [AI-Parrot Long-Term Memory System](overviews/doc:sdd-proposals-long-term-memory-brainstorm-md.md)
+
+This specification defines a unified long-term memory architecture for AI-Parrot agents, integrating:
+
+## [Massive Enrichment — Deliberation Pipeline Integration Spec](overviews/doc:sdd-proposals-massive-deliberation-md.md)
+
+This document describes **how** the `MassiveToolkit` integrates into PARROT's existing deliberation pipeline. The toolkit spec (Document 04) covers *what* each tool does. This spec covers *when*, *where*, and *by whom* each tool is called, and what architectural changes are neede
+
+## [MassiveToolkit — Brainstorming Spec](overviews/doc:sdd-proposals-massivetoolkit-md.md)
+
+Massive (ex-Polygon.io) is an institutional-grade market data provider with direct exchange feeds from NYSE, NASDAQ, CBOE, and OPRA. PARROT already has broad data coverage across 12+ APIs, but Massive fills **four specific high-value gaps** where no existing tool provides equival
+
+## [Brainstorm: Matrix Collaborative Multi-Agent Crew](overviews/doc:sdd-proposals-matrix-collaborative-crew-brainstorm-md.md)
+
+The Matrix multi-agent crew infrastructure (FEAT-044) provides solid building blocks:
+
+## [Brainstorm: MCP Server OAuth2 Support](overviews/doc:sdd-proposals-mcp-server-oauth2-support-brainstorm-md.md)
+
+AI-Parrot can consume external MCP servers, but authentication support is fragmented
+
+## [FEAT-259: Microsoft Copilot Agent SDK Integration](overviews/doc:sdd-proposals-microsoft-copilot-agent-sdk-proposal-md.md)
+
+Investigate whether ai-parrot agents can be exposed as **Copilot Studio agents**
+
+## [FEAT-175 — Migrate RequestBot to ContextVar-based RequestContext Propagation](overviews/doc:sdd-proposals-migrate-requestbot-contextvars-proposal-md.md)
+
+The original request, preserved verbatim. The full source is at
+
+## [FEAT-155 — Final Migration: Remove `bots/orchestration`, Consolidate into `bots/flows`](overviews/doc:sdd-proposals-migration-orchestration-to-flows--a2573002.md)
+
+The `parrot.bots.orchestration` module contains **5 Python source files with ~4,900 lines** of code, all of which already have canonical copies in `parrot.bots.flows`. The agents (`OrchestratorAgent`, `A2AOrchestratorAgent`, HR classes) were moved to `flows/agents/` with adjusted
+
+## [Brainstorm: AI-Parrot Monorepo Workspace Migration](overviews/doc:sdd-proposals-monorepo-migration-brainstorm-md.md)
+
+The root directory for sub-packages is called **`packages/`** (not `src/`). Rationale: `src/` is ambiguous — it could mean "source code" of any single package. `packages/` clearly signals "this contains multiple distributable packages."
+
+## [Feature Proposal: Monorepo Workspace Migration](overviews/doc:sdd-proposals-monorepo-migration-proposal-md.md)
+
+AI-Parrot has grown to 100+ tools/toolkits and heavy loaders (PDF, audio, video, OCR). A regular user who only needs the core agent framework is forced to install everything. Splitting into separate repos introduces friction (cross-repo PRs, versioning headaches, local dev requir
+
+## [Brainstorm: MSAgent & A2A Integrations via YAML](overviews/doc:sdd-proposals-msagent-a2a-integrations-brainstorm-md.md)
+
+Today, `IntegrationBotManager` can start Telegram, Slack, MS Teams, WhatsApp, and MS Agent SDK bots from `integrations_bots.yaml`. However, there is no way to expose an agent as an **A2A (Agent-to-Agent Protocol)** service or as an **MS Agent SDK** bot with full credential broker
+
+## [FEAT-166 — Refactor DatabaseFormTool into a thin dispatcher over a pluggable AbstractFormService](overviews/doc:sdd-proposals-multi-origin-formdesigner-proposal-md.md)
+
+The full source (with the prescribed `_FORM_QUERY` and task list) is preserved at
+
+## [Brainstorm: Multi-Tab Infographic Template + New Component Blocks](overviews/doc:sdd-proposals-multi-tab-infographic-brainstorm-md.md)
+
+The current infographic system (`InfographicResponse`) uses a flat list of `InfographicBlock` items, which works for single-view reports (executive, dashboard, comparison) but cannot represent multi-section, tabbed infographics. Complex reports — such as methodology documentation
+
+## [SDD Brainstorm: Multi-Tab Infographic Template + New Component Blocks](overviews/doc:sdd-proposals-multi-tab-infographic-md.md)
+
+El sistema de infografías actual (`InfographicResponse`) define una lista **plana** de bloques ordenados:
+
+## [Brainstorm: Multimodal Embedding Provider (UForm-first)](overviews/doc:sdd-proposals-multimodal-embedding-provider-bra-fff8e468.md)
+
+AI-Parrot's embedding layer is currently **text-only** (HuggingFace Transformers).
+
+## [Brainstorm: SMS Analysis Report Dashboard for NavAPI](overviews/doc:sdd-proposals-nav-7622-sms-analysis-report-brainstorm-md.md)
+
+NAV currently has call detail reports for voice calls but **no equivalent reporting for SMS traffic**. Stakeholders need visibility into inbound and outbound SMS activity — including session-level analysis (sentiment, compliance, resolution) — to achieve parity with the call repo
+
+## [Brainstorm: DatabaseLoader — Load Database Tables as RAG Documents](overviews/doc:sdd-proposals-nav-7712-database-loader-brainstorm-md.md)
+
+Product data (AT&T plans: plan_name, price, specifications) lives in a PostgreSQL
+
+## [Brainstorm: NavigatorToolkit ↔ PostgresToolkit Interaction](overviews/doc:sdd-proposals-navigatortoolkit-postgrestoolkit--82617b2f.md)
+
+1782 lines) is the LLM-facing toolkit for creating/updating Navigator entities
+
+## [Brainstorm: NetSuite MCP Integration](overviews/doc:sdd-proposals-netsuite-mcp-integration-brainstorm-md.md)
+
+NetSuite (Oracle) exposes an MCP server at `https://{ACCOUNT_ID}.suitetalk.api.netsuite.com/services/mcp/v1/suiteapp/com.netsuite.mcpstandardtools` that provides tools for record CRUD, reports, saved searches, and SuiteQL queries. It uses OAuth 2.0 Authorization Code Grant with P
+
+## [Brainstorm: New API Bot Creation](overviews/doc:sdd-proposals-new-api-bot-creation-brainstorm-md.md)
+
+The `/api/v1/bots` endpoint (`ChatbotHandler`) manages agent CRUD but lacks input normalization and provisioning capabilities:
+
+## [Brainstorm: Multi-Dispatcher Code Review Gate](overviews/doc:sdd-proposals-new-codereviewers-brainstorm-md.md)
+
+The dev-loop flow currently supports five code dispatchers for the Development
+
+## [Brainstorm: FormDesigner — `FieldType.REST` (REST-driven upload field with response-derived answer)](overviews/doc:sdd-proposals-new-formdesigner-field-rest-brainstorm-md.md)
+
+Form designers currently have **no way to express a field whose value is the
+
+## [Brainstorm: O365 Auth Homologation — retire legacy interactive-auth + add `device_code` broker kind](overviews/doc:sdd-proposals-o365-auth-homologation-brainstorm-md.md)
+
+AI-Parrot carries **three generations** of Office 365 authentication code that
+
+## [FEAT-216 — OdooFieldServiceToolkit](overviews/doc:sdd-proposals-odoo-fieldservice-toolkit-proposal-md.md)
+
+The original request, preserved verbatim. Full source at
+
+## [SPEC — GraphIndex Odoo-aware + backend SQLite (extractor + reader)](overviews/doc:sdd-proposals-odoo-graphindex-code-brainstorm-md.md)
+
+Dar acceso navegable y buscable a un repositorio de código Odoo **sin vectorización semántica**, reutilizando el pipeline existente de GraphIndex (Extract → Embed → Assemble → Resolve → Persist → Analyze). Se añaden tres capacidades:
+
+## [FEAT-240 — GraphIndex Odoo-aware extractor + SQLite persistence + graph reader](overviews/doc:sdd-proposals-odoo-graphindex-code-proposal-md.md)
+
+The brainstorm proposes three capabilities for the GraphIndex pipeline, enabling
+
+## [OKF Knowledge Layer over PageIndex](overviews/doc:sdd-proposals-okf-knowledge-layer-brainstorm-md.md)
+
+PageIndex sidecars are **bare markdown** — a node body file (e.g. `0043.md`) does
+
+## [Ontological Graph RAG — SDD Brainstorm](overviews/doc:sdd-proposals-ontological-graph-rag-brainstorm-md.md)
+
+Standard vector-based RAG fails when user queries require **structural reasoning** — questions
+
+## [Brainstorm: Ontology Entity Extraction & Tool-Call Dispatch](overviews/doc:sdd-proposals-ontology-entity-extraction-brainstorm-md.md)
+
+1. **Named entities in queries cannot be resolved to graph nodes.** `OntologyIntentResolver.resolve(query, user_context)` (`intent.py:97-127`) binds only `params={"user_id": user_context.get("user_id")}` (`intent.py:151`). A query like *"¿en qué está trabajando el equipo de Jesús
+
+## [Brainstorm: Iron Butterfly & Iron Condor Strategies](overviews/doc:sdd-proposals-options-strategies-iron-spreads-b-64d95b7b.md)
+
+El sistema de Finance actualmente soporta órdenes simples de stocks/ETFs y crypto a través de `AlpacaWriteToolkit` y `BinanceWriteToolkit`. Sin embargo, **no existe capacidad para ejecutar estrategias de opciones multi-leg** como Iron Butterfly o Iron Condor.
+
+## [FEAT-223 — Multi-Party Conferencing for `OrchestratorAgent`](overviews/doc:sdd-proposals-orchestratoragent-multiparty-proposal-md.md)
+
+El `OrchestratorAgent` agrega especialistas y los consume vía `AgentTool` (un agente
+
+## [Brainstorm: Output-Mode Intent Router (LLM-driven chart / map / table selection)](overviews/doc:sdd-proposals-output-mode-intent-router-brainstorm-md.md)
+
+Today the caller must **manually** choose the output format from a frontend
+
+## [PageIndex Embedding Router + CPU Latency Micro-Benchmark](overviews/doc:sdd-proposals-pageindex-embedding-router-brainstorm-md.md)
+
+PageIndex retrieval today combines two signals (`HybridPageIndexSearch`): BM25 lexical
+
+## [FEAT-237 — PageIndex Embedding Router](overviews/doc:sdd-proposals-pageindex-embedding-router-proposal-md.md)
+
+Rich brainstorm document proposing a dense embedding signal for PageIndex
+
+## [Brainstorm: parrot-formdesigner-post-method](overviews/doc:sdd-proposals-parrot-formdesigner-post-method-b-dffb7abd.md)
+
+form designs, and already has a minimal `POST /api/v1/forms/{form_id}/data` endpoint that validates
+
+## [Brainstorm: Telegram Form Renderer for parrot-formdesigner](overviews/doc:sdd-proposals-parrot-formdesigner-renderer-tele-2a77fb1e.md)
+
+parrot-formdesigner can render forms to HTML5, JSON Schema, and Adaptive Cards, but there
+
+## [Brainstorm: Adaptive Grid Detection for Planogram Pipelines](overviews/doc:sdd-proposals-parrot-pipelines-inconsistency-br-91a8f531.md)
+
+The Planogram Compliance Pipeline suffers from **LLM detection inconsistency** caused by three interrelated factors:
+
+## [Brainstorm: PBAC-Driven DatasetManager Policy Enforcement](overviews/doc:sdd-proposals-pbac-datasetmanager-policy-brainstorm-md.md)
+
+This is a data-leak vector. Concrete failure case: user `jleon@trocglobal.com` opens a chat with a finance-aware agent and the LLM is happily exposed to a `financial_data` dataset that — by HR/compliance policy — that user is not entitled to query. The LLM may list it, describe i
+
+## [Brainstorm: Planogram Compliance Handler](overviews/doc:sdd-proposals-planogram-compliance-handler-brainstorm-md.md)
+
+The planogram compliance pipeline (`PlanogramCompliance`) exists and works well as a standalone script (see `examples/pipelines/bose/planogram.py`), but there is **no HTTP handler** to expose it as a REST API. Teams need to:
+
+## [Brainstorm: Planogram Compliance Modular](overviews/doc:sdd-proposals-planogram-compliance-modular-brainstorm-md.md)
+
+The current `PlanogramCompliance` class (`parrot/pipelines/planogram/plan.py`, ~2,004 lines) is monolithic. It handles all planogram types (ProductOnShelves, InkWall, TVWall, Gondola, EndcapBacklit, BrandPosterEndcap, ExhibitorTable, BoxesOnFloor) through a single class with comp
+
+## [Brainstorm: Planogram New Types](overviews/doc:sdd-proposals-planogram-new-types-brainstorm-md.md)
+
+Actualmente el módulo de `planogram_compliance` en `ai-parrot-pipelines` solo tiene implementados dos tipos (composables) base: `graphic_panel_display` y `product_on_shelves`.
+
+## [Brainstorm: Policy-Based Access Control (PBAC) Integration](overviews/doc:sdd-proposals-policy-based-access-control-brainstorm-md.md)
+
+ai-parrot currently has a basic RBAC permission system (roles, groups, users) baked into
+
+## [Brainstorm: Policy Rules on AbstractBot — Declarative PBAC for Agents & Tools](overviews/doc:sdd-proposals-policy-rules-abstractbot-brainstorm-md.md)
+
+The prior PBAC brainstorm (Option D — Hybrid) established the architecture for integrating
+
+## [Brainstorm: Product-On-Shelves Illumination Support](overviews/doc:sdd-proposals-product-on-shelves-illumination-b-f5eda537.md)
+
+Epson scanner displays at Office Depot have a **backlit header panel** ("Scan & Done" with Shaq photo) above 3 shelves of physical scanner products. The `product_on_shelves` planogram type already handles product detection and compliance scoring for the shelves, but it has **zero
+
+## [FEAT-167 — Prompt Library: `agent_id` support + new `UserPrompts` model](overviews/doc:sdd-proposals-promptlibrary-changes-proposal-md.md)
+
+The original request, preserved verbatim. The full source is at
+
+## [Feature Proposal: `parrot.flow` Primitives](overviews/doc:sdd-proposals-proposal-flow-primitives-md.md)
+
+Hoy las primitivas de orquestación de agentes viven duplicadas y divergentes entre dos módulos del framework:
+
+## [Brainstorm: Pulumi Toolkit for Container Deployment](overviews/doc:sdd-proposals-pulumi-toolkit-deployment-brainstorm-md.md)
+
+AI agents need the ability to deploy and manage containerized applications as part of their workflows. Currently, there's no infrastructure-as-code (IaC) toolkit in AI-Parrot that allows agents to:
+
+## [QuantToolkit — Brainstorming Spec](overviews/doc:sdd-proposals-quant-toolkit-md.md)
+
+AI-PARROT's risk analyst crew has extensive **prompt-level responsibilities** (VaR, beta, Sharpe, drawdown, correlation, concentration risk, stress testing) but **no dedicated computation tools** to actually perform these calculations. The risk research crew's instructions say "Q
+
+## [FEAT-199 — Cerrar migración `parrot.forms` → `parrot-formdesigner`](overviews/doc:sdd-proposals-remove-parrot-forms-shim-proposal-md.md)
+
+ningún paquete del workspace).
+
+## [FEAT-252 — Harden the tactical credential-leak fix into the strategic containment contract](overviews/doc:sdd-proposals-repl-sandbox-response-contract-sc-18572a9e.md)
+
+The source is a verified-anchor brainstorm (revision 2) triggered by a production
+
+## [FieldType.REST — Frontend Implementation Guide](overviews/doc:sdd-proposals-rest-field-md.md)
+
+The user uploads a file (photo, document, etc.); the form runtime forwards
+
+## [Brainstorm: Router-Based Adaptive RAG (Store-Level)](overviews/doc:sdd-proposals-router-based-adaptive-rag-brainstorm-md.md)
+
+AI-Parrot has a functional **strategy-level** intent router (`IntentRouterMixin`, FEAT-069/070) that picks between `VECTOR_SEARCH`, `GRAPH_PAGEINDEX`, `DATASET`, `TOOL_CALL`, `FREE_LLM`, `MULTI_HOP`, `FALLBACK`, and `HITL`.
+
+## [Brainstorm: score_threshold Semantic Fix](overviews/doc:sdd-proposals-score-threshold-semantic-fix-brainstorm-md.md)
+
+with **contradictory semantics**:
+
+## [FEAT-222 — ScrapingFlow: Composable Long-Horizon Scraping](overviews/doc:sdd-proposals-scrapingflow-composable-scraping--5125fdb9.md)
+
+The source is a brainstorm document that explored three approaches for extending the
+
+## [Brainstorm: ScrapingFlow, FlowExecutor & TemplatePlan — scraping componible de horizonte largo](overviews/doc:sdd-proposals-scrapingflow-proposal-md.md)
+
+El `WebScrapingToolkit` resuelve hoy una unidad de trabajo: un `ScrapingPlan` (JSON declarativo) que se ejecuta sobre una sola página y se cachea por URL en el `PlanRegistry`. Esto cubre extracción estructurada repetible y barata, pero tres necesidades quedan fuera:
+
+## [SPEC-03 — `CrawlEngine`](overviews/doc:sdd-proposals-scrapingplan-crawlengine-md.md)
+
+logic. It is not exposed directly as a tool; `WebScrapingToolkit.crawl()` is
+
+## [SPEC-04 — `PlaywrightDriver` (First-Class Playwright Support)](overviews/doc:sdd-proposals-scrapingplan-playwrightdriver-md.md)
+
+The current `driver.py` is heavily Selenium-centric. Playwright support
+
+## [SPEC-02 — `WebScrapingToolkit`](overviews/doc:sdd-proposals-scrapingplan-webscrapingtoolkit-md.md)
+
+operations. It inherits from `AbstractToolkit`, meaning every public async
+
+## [SPEC-01 — `ScrapingPlan` & `PlanRegistry`](overviews/doc:sdd-proposals-scrapinplan-planregistry-md.md)
+
+This spec defines the data model and persistence layer for scraping plans. A
+
+## [SDD Brainstorm: Conversation Artifact Persistence](overviews/doc:sdd-proposals-sdd-brainstorm-artifact-persistence-md.md)
+
+Cada vez que un usuario interactúa con un agente, se generan artefactos que viven exclusivamente en la memoria del frontend y desaparecen al recargar la página:
+
+## [SDD Brainstorm: Multi-Tab Infographic Template + New Component Blocks](overviews/doc:sdd-proposals-sdd-brainstorm-multi-tab-infographic-md.md)
+
+El sistema de infografías actual (`InfographicResponse`) define una lista **plana** de bloques ordenados:
+
+## [FEAT-NNN — Security Report Catalog & Persistent Operational History](overviews/doc:sdd-proposals-security-report-catalog-brainstorm-md.md)
+
+The `SecurityAgent` (`agents/security.py`) runs a suite of scanners — CloudSploit, Prowler, Trivy, Checkov — most of them Docker-backed and slow (≈10 min per full run). Today, results live in `/tmp/security-reports/` on the host filesystem, scoped to the process that produced the
+
+## [FEAT-162 — Cross-session Postgres+S3 catalog for security reports with fractal weekly/monthly summaries](overviews/doc:sdd-proposals-security-report-catalog-proposal-md.md)
+
+The original request, preserved verbatim, is the comprehensive SDD brainstorm
+
+## [Brainstorm: Skills Directory Loader + PromptBuilder Integration](overviews/doc:sdd-proposals-skill-registry-brainstorm-md.md)
+
+AI-Parrot's `parrot.memory.skills` module has a mature filesystem-backed skill subsystem
+
+## [FEAT-XXX: Skills Directory Loader + PromptBuilder Integration](overviews/doc:sdd-proposals-skill-registry-proposal-md.md)
+
+The `parrot.memory.skills` module already exposes a mature filesystem-backed skill subsystem:
+
+## [Brainstorm: Mejoras a la Integración de Slack en AI-Parrot](overviews/doc:sdd-proposals-slack-integration-md.md)
+
+El `SlackAgentWrapper` actual expone agentes de AI-Parrot via Slack Events API y slash commands. El wrapper ya maneja: eventos `app_mention` y `message`, slash commands, verificación de URL challenge, autorización por canal, memoria conversacional por sesión (`InMemoryConversatio
+
+## [Brainstorm: Spatial Filtering for DatasetManager (deterministic + LLM-driven)](overviews/doc:sdd-proposals-spatial-dataset-filter-brainstorm-md.md)
+
+A `PandasAgent` over live geospatial datasets (USA apartments ~879k, public/private
+
+## [Spec — LiveAvatar FULL Mode as voice/face for ai-parrot (no OpenAI-compatible client)](overviews/doc:sdd-proposals-spec-liveavatar-fullmode-speaktext-md.md)
+
+sandbox API). Q2 resolved (`ask_stream`). Ready for `/sdd-task` pending the ai-parrot
+
+## [Brainstorm: sqlagent-repair](overviews/doc:sdd-proposals-sqlagent-repair-brainstorm-md.md)
+
+AI-Parrot has two overlapping database agent packages that solve complementary halves of the same problem:
+
+## [Brainstorm: Structured Artifact Contract — chart alignment, config convergence & taxonomy](overviews/doc:sdd-proposals-structured-artifact-contract-brainstorm-md.md)
+
+The product direction (Jesus Lara) is that **agents return structured objects, and the
+
+## [Brainstorm: Structured Chart Output Mode](overviews/doc:sdd-proposals-structured-chart-output-brainstorm-md.md)
+
+The `navigator-frontend-next` app migrated every chart to **LayerChart** behind a
+
+## [Brainstorm: Structured Map Output Mode (`STRUCTURED_MAP`)](overviews/doc:sdd-proposals-structured-map-output-brainstorm-md.md)
+
+FEAT-219 (`spatial-dataset-filter`) delivered **half** of the original intent.
+
+## [Brainstorm: Structured Table Output Mode](overviews/doc:sdd-proposals-structured-table-brainstorm-md.md)
+
+Tabular agent results are delivered today either as **rendered HTML/Grid.js**
+
+## [TechnicalAnalysisTool Improvements — Brainstorming Spec](overviews/doc:sdd-proposals-tech-improvements-md.md)
+
+1. **No ADX (Average Directional Index)** — Cannot assess trend strength. The tool can say "price is above SMA200" but not "the trend is strong/weak."
+
+## [Brainstorm: Telegram Command Menu Registration Parity (IntegrationBotManager)](overviews/doc:sdd-proposals-telegram-integration-menu-registr-5d0cc94f.md)
+
+Agent-driven Telegram bots that are booted through the **unified integration
+
+## [Brainstorm: Telegram Wrapper — Rich Message Integration (Replies, Documents, Attachment Passthrough)](overviews/doc:sdd-proposals-telegram-wrapper-audio-files-inte-697744eb.md)
+
+The Telegram integration wrapper (`TelegramAgentWrapper`) currently handles text messages well,
+
+## [TelegramCrewTransport — Arquitectura](overviews/doc:sdd-proposals-telegramcrewtransport-md.md)
+
+Versión 0.1 · Draft · Febrero 2026
+
+## [Tradier Write Toolkit](overviews/doc:sdd-proposals-tradier-write-toolkit-md.md)
+
++-----------------------------------------------------------------------+
+
+## [Brainstorm: UI Agent Management](overviews/doc:sdd-proposals-ui-agent-management-brainstorm-md.md)
+
+The `ChatbotHandler` in `/api/v1/bots` allows creating, editing, and managing agents, but there is no dedicated User Interface to manage these bots. Currently, agent creation requires direct API interaction or database manipulation. We need a new UI in `navigator-frontend-next` (
+
+## [Brainstorm: Unified Credential Broker — one declarative per-user auth abstraction for tools & MCP](overviews/doc:sdd-proposals-unified-credential-broker-brainstorm-md.md)
+
+Connecting a tool or MCP server that needs **per-user** authentication currently
+
+## [Brainstorm: User-Based Credentials](overviews/doc:sdd-proposals-user-based-credentials-brainstorm-md.md)
+
+Users of AI-Parrot have no way to store and manage their own database credentials within the platform. When using DatabaseToolkit or DatasetManager, credentials must be configured externally each time. There is no persistent, per-user credential vault that survives across session
+
+## [Brainstorm: UX for Custom Engine Copilot Agents (Semantic UI Model → Adaptive Cards)](overviews/doc:sdd-proposals-ux-custom-engine-copilot-brainstorm-md.md)
+
+AI-Parrot agents are already exposed to Microsoft 365 Copilot and Teams as
+
+## [Brainstorm: Vector Store Handler — Clean Content Extraction from Scraped Pages](overviews/doc:sdd-proposals-vector-store-handler-scraping-bra-48435784.md)
+
+The `VectorStoreHandler._load_urls()` method (handler.py:777-795) uses the **legacy `WebScrapingTool`** directly to fetch web pages, storing the raw `result.content` (complete HTML with `<script>`, `<style>`, navigation, ads, etc.) into the vector store. This raw HTML is unsuitab
+
+## [Brainstorm: Vector Store Handler API](overviews/doc:sdd-proposals-vectorstore-handler-api-brainstorm-md.md)
+
+Developers and frontend applications need a REST API to create, manage, load data into, and test vector store collections without writing Python code or interacting with the framework programmatically. Currently, vector store operations (creating collections, loading documents, r
+
+## [Brainstorm: vLLM Client Integration](overviews/doc:sdd-proposals-vllm-client-brainstorm-md.md)
+
+The project needs a dedicated client for consuming **vLLM** (https://vllm.ai/) local LLM servers, supporting the standard `ask` and `ask_stream` methods compatible with `OpenAIClient` and `AnthropicClient`.
+
+## [Brainstorm: Workday Conversational Agent over Telegram (Phases 3–5)](overviews/doc:sdd-proposals-workday-conversational-agent-tele-0c2416b5.md)
+
+The boss's 5-phase plan replicates Workday's reference conversational bridge so a
+
+## [Brainstorm: Workday Knowledge Agent (3-edge program, routed)](overviews/doc:sdd-proposals-workday-knowledge-agent-brainstorm-md.md)
+
+FEAT-230 (merged) gave us a homologated `WorkdayToolkit`. Stage 1 (the Telegram
+
+## [FEAT-230 — Vendor flowtask's composable Workday interface and rebase WorkdayToolkit onto it](overviews/doc:sdd-proposals-workday-tooling-composable-interf-91e2fc3b.md)
+
+The original request, preserved verbatim, is at `sdd/state/FEAT-230/source.md`.
+
+## [Brainstorm: Z.ai Code Dispatcher for the Dev Loop (GLM-5.2)](overviews/doc:sdd-proposals-zai-client-code-brainstorm-md.md)
+
+The dev-loop flow (`parrot/flows/dev_loop/`) currently supports five code
+
+## [Feature Specification: A2A Protocol v1.0.0 Compatibility](overviews/doc:sdd-specs-a2a-protocol-compatibility-spec-md.md)
+
+AI-Parrot's A2A implementation was built against the pre-release v0.3 era of the
+
+## [Feature Specification: A2UI Protocol Integration — Rendering Core (`parrot.outputs.a2ui`)](overviews/doc:sdd-specs-a2ui-implementation-spec-md.md)
+
+ai-parrot's rich-output pipeline produces maps, charts, infographics, tables
+
+## [Feature Specification: LLM Client-Level Fallback Model on Error](overviews/doc:sdd-specs-abstractbot-ask-clientretry-spec-md.md)
+
+There is a **double-retry problem** in the current architecture. LLM clients already have their own retry mechanisms (GoogleGenAIClient: explicit while-loop with `max_retries`, AnthropicClient: SDK `max_retries=2`, OpenAIClient: tenacity with `stop_after_attempt(5)`). On top of t
+
+## [Feature Specification: Adaptive Agentic RAG](overviews/doc:sdd-specs-adaptive-rag-spec-md.md)
+
+The current RAG implementation in AI-Parrot uses a static retrieval strategy:
+
+## [Feature Specification: Dataset Description for DatasetManager](overviews/doc:sdd-specs-add-description-datasetmanager-spec-md.md)
+
+When datasets are registered with `DatasetManager` via `add_dataset`, `add_table_source`, or other registration methods, there is no first-class `description` parameter. Users must pass descriptions buried inside the `metadata` dict (`metadata={"description": "..."}`), which is:
+
+## [Feature Specification: DatasetManager add_dataset Filter Support](overviews/doc:sdd-specs-add-filter-add-dataset-spec-md.md)
+
+The `DatasetManager.add_dataset()` method (in `parrot/tools/dataset_manager/tool.py`) eagerly fetches data from a source (query_slug, raw SQL, table, or pre-loaded DataFrame) and registers the full result as an in-memory DataFrame. There is currently **no way to apply row-level f
+
+## [Feature Specification: Permanent Filters for DataSource Sources](overviews/doc:sdd-specs-add-filter-datasetmanager-spec-md.md)
+
+Currently, `QuerySlugSource` and `TableSource` only accept filtering at **fetch time**:
+
+## [Feature Specification: Advisor Ontologic RAG Agent (Gorilla Sheds Example)](overviews/doc:sdd-specs-advisor-ontologic-rag-agent-spec-md.md)
+
+AI-Parrot now has an Intent Router (FEAT-070) and an Ontology RAG pipeline, but there
+
+## [Feature Specification: Agent Artifact Persistency](overviews/doc:sdd-specs-agent-artifact-persistency-spec-md.md)
+
+Every interaction with an AI agent generates artifacts — charts, canvas tabs, infographics, DataFrames — that live exclusively in frontend memory and disappear on page reload. The backend has no concept of "artifact"; all rich content is ephemeral.
+
+## [Feature Specification: Agent Skill System](overviews/doc:sdd-specs-agent-skill-system-spec-md.md)
+
+AI-Parrot agents have no lightweight mechanism for developers (or the agents themselves) to define reusable behavioral instructions that activate on demand via deterministic triggers. The existing `SkillRegistryMixin` provides learned-skill storage with vector search, FAISS index
+
+## [Feature Specification: AgentTalk Voice Support (REST round-trip: audio → STT → text Agent → TTS → audio + content)](overviews/doc:sdd-specs-agentalk-voice-support-spec-md.md)
+
+The **AgentTalk** REST endpoint (`parrot.handlers.agent.AgentTalk`) implements the
+
+## [Feature Specification: AgentCrew Lifecycle Hooks](overviews/doc:sdd-specs-agentcrew-hooks-spec-md.md)
+
+AgentCrew currently provides no way for users to register callbacks that fire
+
+## [Feature Specification: AgentCrew ResultAgent — End-of-Flow Multi-Tab Infographic Node](overviews/doc:sdd-specs-agentcrew-node-infographic-spec-md.md)
+
+When an `AgentCrew` finishes a multi-agent run, its output is a `FlowResult`
+
+## [Feature Specification: AgentCrew Primitives Migration (Spec 2)](overviews/doc:sdd-specs-agentcrew-primitives-spec-md.md)
+
+FEAT-134 just merged. The primitives are fresh, testable, and haven't accumulated downstream dependents. If a design flaw exists (e.g., FSM state transitions don't map to AgentCrew's `completed_tasks` pattern), now is the cheapest time to discover and fix it.
+
+## [Feature Specification: Fix `AgentCrew.run_loop()` Frozen-FSM Reassignment Bug](overviews/doc:sdd-specs-agentcrew-run-loop-frozen-fsm-fix-spec-md.md)
+
+single invocation** that has at least one registered agent, making the
+
+## [Feature Specification: AgentCrew Saved Crews (Execution Persistence & Replay)](overviews/doc:sdd-specs-agentcrew-saved-crews-spec-md.md)
+
+AgentCrew already persists execution results via the `ResultStorage` backends
+
+## [Feature Specification: AgentsFlow Migration — finish moving `bots/flow/` into `bots/flows/`](overviews/doc:sdd-specs-agentsflow-migration-spec-md.md)
+
+FEAT-163 moved AgentsFlow's **FSM engine** out of `parrot/bots/flow/fsm.py`
+
+## [Feature Specification: AgentsFlow Persistency](overviews/doc:sdd-specs-agentsflow-persistency-spec-md.md)
+
+AgentsFlow (`parrot/bots/flow/fsm.py`) provides sophisticated DAG-based agent pipelines with FSM-controlled lifecycle management, conditional transitions, and pre/post hooks. However, flows are **defined exclusively in Python code**, creating significant limitations:
+
+## [Feature Specification: AgentsFlow Refactor — DAG Engine on flows.core](overviews/doc:sdd-specs-agentsflow-refactor-spec3-spec-md.md)
+
+1. **Polling scheduler with full-graph scans.** `run_flow` polls with `await asyncio.sleep(0.1)` between iterations (fsm.py:814), and each iteration scans every node three times — `_get_ready_agents` (fsm.py:980), `_is_workflow_complete` (fsm.py:1007), `_has_active_agents` (fsm.p
+
+## [Feature Specification: Agnostic S3 Report Reader Toolkit](overviews/doc:sdd-specs-agenttool-s3-readreports-spec-md.md)
+
+The `SecurityAgent` runs a suite of scanners (CloudSploit, Prowler, Trivy,
+
+## [Feature Specification: Provider-Agnostic Prompt Caching](overviews/doc:sdd-specs-agnostic-prompt-caching-abstraction-spec-md.md)
+
+AI-Parrot agents rebuild their full system prompt on every LLM call — identity,
+
+## [Feature Specification: ai-parrot-embeddings — split stores/embeddings/rerankers backends into a new sibling package via PEP 420](overviews/doc:sdd-specs-ai-parrot-embeddings-spec-md.md)
+
+All concrete backends for the three retrieval subsystems —
+
+## [Feature Specification: ai-parrot-integrations](overviews/doc:sdd-specs-ai-parrot-integrations-spec-md.md)
+
+fuente y, vía sus dependencias, arrastra al core de ai-parrot SDKs
+
+## [Feature Specification: AI-Parrot Loaders Metadata Standardization](overviews/doc:sdd-specs-ai-parrot-loaders-metadata-standariza-d8750c6c.md)
+
+Loaders under `packages/ai-parrot-loaders/src/parrot_loaders/` produce
+
+## [Feature Specification: ai-parrot-server — extract server infrastructure into a PEP 420 satellite package](overviews/doc:sdd-specs-ai-parrot-server-spec-md.md)
+
+ai-parrot currently bundles all server infrastructure — HTTP handlers, MCP/A2A
+
+## [Feature Specification: Telegram Integration — Azure SSO via Navigator](overviews/doc:sdd-specs-archived-telegram-integration-basicau-3f90bf9e.md)
+
+The current Telegram integration's HTML login page (`static/telegram/login.html`) only
+
+## [Feature Specification: Audio Renderer Form — Turn-by-Turn Voice with SuperTonic & Narration Fallbacks](overviews/doc:sdd-specs-audio-renderer-form-spec-md.md)
+
+FEAT-224 shipped the **FormDesigner Audio Renderer** — an `AudioFormRenderer`
+
+## [Feature Specification: Per-User Auth & OBO for MS Agents SDK Integration](overviews/doc:sdd-specs-auth-obo-msagentsdk-spec-md.md)
+
+The FEAT-259 transport layer authenticates the **bot↔connector** channel
+
+## [Feature Specification: Native Bedrock Client (Converse API) + Nova 2 Sonic](overviews/doc:sdd-specs-bedrock-client-llm-spec-md.md)
+
+AI-Parrot currently accesses AWS Bedrock exclusively via the Anthropic SDK's
+
+## [Feature Specification: DB-Persisted Reranker & Parent-Searcher Config for AI Bots](overviews/doc:sdd-specs-bot-reranker-and-parent-searcher-conf-81d7b508.md)
+
+already persists `vector_store_config` JSONB, which lets a bot loaded from the
+
+## [Feature Specification: BotManager Hot Registration — NAV-6239 Confirmation](overviews/doc:sdd-specs-botmanager-hot-registration-nav6239-spec-md.md)
+
+When a new bot is created via the CRUD handler (`PUT /api/v1/bots`), the bot was
+
+## [Feature Specification: BotManager / AgentRegistry PBAC Enforcement via `ai_bots.permissions`](overviews/doc:sdd-specs-botmanager-pbac-permissions-spec-md.md)
+
+The PBAC/ABAC stack of `ai-parrot` (`PolicyEvaluator`, `PDP`, `Guardian`,
+
+## [Feature Specification: Centralize Google Default Model](overviews/doc:sdd-specs-centralize-google-default-model-spec-md.md)
+
+The framework already exposes a single global alias for the latest Google
+
+## [Feature Specification: chatbot-rag-api-integration](overviews/doc:sdd-specs-chatbot-rag-api-integration-spec-md.md)
+
+When querying a chatbot via the REST API `POST /api/v1/chat/{agent_name}`, RAG (vector context retrieval) is silently skipped — the LLM responds without any document context. However, the same vector store works correctly when tested directly via `PgVectorStore.similarity_search(
+
+## [Feature Specification: Claude SDK Migration & ClaudeAgentClient](overviews/doc:sdd-specs-claude-sdk-migration-spec-md.md)
+
+Two distinct, related concerns motivate this work:
+
+## [Feature Specification: CLI Wizard Setup](overviews/doc:sdd-specs-cli-wizard-setup-spec-md.md)
+
+New users of AI-Parrot face a steep onboarding curve: they must manually configure
+
+## [Feature Specification: CloudSploit ECR Image-Scan Collector & Interactive Report](overviews/doc:sdd-specs-cloudsploit-ecr-spec-md.md)
+
+The user maintains two Node.js scripts — `collect_ecr_findings.js` and
+
+## [Feature Specification: CompanyResearch — extend CompanyInfoToolkit with VisualVisitor, first-success `research_company`, DDG-first search and result validation](overviews/doc:sdd-specs-companyresearch-tool-spec-md.md)
+
+An LLM agent should be able to send a company name and retrieve structured
+
+## [Feature Specification: Complete FEAT-250 Repo Wiring — BASE_DIR-anchored worktrees & declared-repo provisioning](overviews/doc:sdd-specs-complete-feat-250-dev-loop-repo-wiring-spec-md.md)
+
+The dev-loop flow (`examples/dev_loop/server.py`) can only ever edit the folder
+
+## [Feature Specification: Security Toolkits Suite](overviews/doc:sdd-specs-compliancereport-toolkit-spec-md.md)
+
+DevOps teams spend excessive time manually running cloud security scanners, cross-referencing results, and producing compliance reports (SOC2, HIPAA, PCI-DSS). Each tool has its own CLI, output format, and learning curve. There is no unified interface for an AI agent to orchestra
+
+## [SPEC: Composable Prompt Layer System](overviews/doc:sdd-specs-composable-prompt-layer-spec-md.md)
+
+The current prompt system has several issues:
+
+## [Feature Specification: Computed Columns & Composite Datasets](overviews/doc:sdd-specs-composite-datasets-spec-md.md)
+
+DatasetManager datasets often need derived columns that don't exist in the source data (e.g., EBITDA = revenue - expenses, display_name = first + " " + last). Today, the LLM must compute these in `python_repl_pandas` every time — wasting tokens and introducing inconsistency.
+
+## [Feature Specification: Computer-Use Agent](overviews/doc:sdd-specs-computer-use-agent-spec-md.md)
+
+AI-Parrot's existing browser automation (`WebScrapingToolkit`) uses **CSS selectors and
+
+## [Feature Specification: Concept-Document Authority Layer](overviews/doc:sdd-specs-concept-document-authority-spec-md.md)
+
+Pure vector RAG over a corporate corpus produces high-confidence false positives because semantic similarity does not capture **document authority** within that corpus:
+
+## [Feature Specification: Console CLI Agents](overviews/doc:sdd-specs-console-cli-agents-spec-md.md)
+
+When AI-Parrot runs as a webserver (`python run.py`), developers and operators
+
+## [Feature Specification: Metadata-Driven Contextual Embedding Headers](overviews/doc:sdd-specs-contextual-embedding-headers-spec-md.md)
+
+Chunks ingested into the vector store today are embedded as bare `page_content`,
+
+## [Feature Specification: AI-Parrot ⇄ M365 Copilot via A2A, with parrot-owned per-user tool credentials](overviews/doc:sdd-specs-copilot-a2a-percredential-spec-md.md)
+
+An AI-Parrot agent must be invokable from inside the Microsoft 365 Copilot
+
+## [Feature Specification: Crew Per-Agent Result Persistence & Deterministic Execution Document](overviews/doc:sdd-specs-crew-per-agent-result-persistence-spec-md.md)
+
+Today `AgentCrew` persists only the crew-level `FlowResult` via `PersistenceMixin._save_result()`
+
+## [Feature Specification: Crew Result Storage Backends](overviews/doc:sdd-specs-crew-result-storage-backends-spec-md.md)
+
+Today every `AgentCrew.run_*` method and the `AgentsFlow.run_flow` method
+
+## [Feature Specification: WebSearchAgent Support in CrewBuilder](overviews/doc:sdd-specs-crew-websearchagent-support-spec-md.md)
+
+This feature extends the existing CrewBuilder visual designer to recognize `WebSearchAgent` as a special agent type with additional configuration options. The backend already supports passing arbitrary config via `agent_def.config`, so the primary work is frontend UI changes and 
+
+## [Feature Specification: Cross-Repository JiraToolkit OAuth2 3LO (Web AgentChat)](overviews/doc:sdd-specs-cross-repository-jiratoolkit-oauth2-3-2bfe4e7e.md)
+
+integration (`/connect_jira` → inline button → `/api/auth/jira/callback` → token in
+
+## [Feature Specification: DatabaseAgent Homologation](overviews/doc:sdd-specs-database-agent-homologation-spec-md.md)
+
+415 LOC) is structurally behind the rest of the AI-Parrot agent fleet,
+
+## [Feature Specification: Database Toolkit — asyncpg Native Boundary Refactor](overviews/doc:sdd-specs-database-toolkit-asyncpg-boundary-ref-2253725b.md)
+
+While investigating the NavigatorToolkit runtime failure fixed by
+
+## [Feature Specification: Database Toolkit Cache Contract & Tool Semantics](overviews/doc:sdd-specs-database-toolkit-cache-contract-spec-md.md)
+
+(`db_search_schema`, `db_generate_query`, `db_validate_query`). In production,
+
+## [Feature Specification: database-toolkit-parity](overviews/doc:sdd-specs-database-toolkit-parity-spec-md.md)
+
+FEAT-105 (databasetoolkit-clash) migrated `DatabaseQueryTool` into the new
+
+## [Feature Specification: Internal Toolkit Prefix Migration (`int_`)](overviews/doc:sdd-specs-databaseagent-internal-toolkit-prefix-spec-md.md)
+
+FEAT-172 (`databaseagent-mandatory-prefix-collision`). Both must be
+
+## [Feature Specification: Mandatory `tool_prefix` + Eager Collision Detection](overviews/doc:sdd-specs-databaseagent-mandatory-prefix-collis-6cc70ac1.md)
+
+merged first. This feature assumes the two-map split
+
+## [Feature Specification: Prefix-Aware Tool Resolution for DatabaseAgent](overviews/doc:sdd-specs-databaseagent-prefix-aware-tools-spec-md.md)
+
+PR #866 (`fix/database-agent-improvements`, merged into `dev`) added
+
+## [Feature Specification: databasetoolkit-clash](overviews/doc:sdd-specs-databasetoolkit-clash-spec-md.md)
+
+FEAT-062 introduced a new multi-database toolkit at
+
+## [Feature Specification: DatabaseToolkit](overviews/doc:sdd-specs-databasetoolkit-spec-md.md)
+
+multiple operating modes controlled by optional parameters (`query`, `get_metadata`,
+
+## [Feature Specification: Deterministic Data-Plane Authorization for DatasetManager](overviews/doc:sdd-specs-dataplane-authz-spec-md.md)
+
+FEAT-151 established a working PBAC spine for `DatasetManager`: a
+
+## [Feature Specification: DatasetManager Support for AgentTalk Handler](overviews/doc:sdd-specs-dataset-support-agenttalk-spec-md.md)
+
+1. Override, enable, or disable datasets from the AgentTalk HTTP handler
+
+## [Feature Specification: DatasetManager Lazy Data Sources](overviews/doc:sdd-specs-datasetmanager-datasources-spec-md.md)
+
+The current `DatasetManager` (`parrot/tools/dataset_manager.py`) distinguishes only two kinds of entries:
+
+## [Feature Specification: DatasetManager File Intelligence](overviews/doc:sdd-specs-datasetmanager-files-spec-md.md)
+
+DatasetManager currently handles files (CSV, Excel) by converting them into pandas DataFrames
+
+## [Feature Specification: DatasetManager Common-Field Filtering (`define_filters`)](overviews/doc:sdd-specs-datasetmanager-filtering-spec-md.md)
+
+A `DatasetManager` holds **multiple heterogeneous datasets** (SQL tables, query
+
+## [Feature Specification: DatasetManager Multi-Dataset Response](overviews/doc:sdd-specs-datasetmanager-more-data-spec-md.md)
+
+When a user asks a question that involves multiple datasets (e.g., "return users by Q3, tasks completed and list of tasks completed"), the PandasAgent currently populates `response.data` with only a **single** dataset — typically the last one materialized or the last `data_variab
+
+## [Feature Specification: DatasetManager New Sources (Iceberg, MongoDB, DeltaTable)](overviews/doc:sdd-specs-datasetmanager-sources-spec-md.md)
+
+All three new sources have mature asyncdb drivers (`asyncdb.drivers.iceberg`, `asyncdb.drivers.delta`, `asyncdb.drivers.mongo`) that follow the same connection/query patterns, making integration straightforward.
+
+## [Feature Specification: DatasetManager TableSource Column List](overviews/doc:sdd-specs-datasetmanager-tablesource-column-list-spec-md.md)
+
+When a `TableSource` is registered with `DatasetManager`, **all columns** from the database table are exposed to the LLM — both in the schema guide and in fetch results. There is no mechanism to restrict which columns are visible or queryable.
+
+## [Feature Specification: BotManager Initialization Flags Decoupling](overviews/doc:sdd-specs-decoupling-db-bots-botmanager-spec-md.md)
+
+constants imported from `parrot.conf` (`ENABLE_CREWS`, `ENABLE_DASHBOARDS`,
+
+## [Feature Specification: Dev-Loop Orchestration with Claude Code Subagent Mirror](overviews/doc:sdd-specs-dev-loop-orchestration-spec-md.md)
+
+The development feedback loop for "small operational fixes" today is entirely
+
+## [Feature Specification: Dev-Loop Refactor — Declarative Flow, Repo Provisioning, Code-Review QA & PR Revision Loop](overviews/doc:sdd-specs-dev-loop-refactor-spec-md.md)
+
+The dev-loop (FEAT-129/132) automates "small operational fixes": classify a
+
+## [Feature Specification: Docker Toolkit](overviews/doc:sdd-specs-docker-toolkit-spec-md.md)
+
+AI agents need direct Docker management capabilities for development, testing, and deployment workflows. Currently, Docker operations require either manual CLI usage or going through the Pulumi abstraction (FEAT-013), which adds unnecessary complexity for straightforward containe
+
+## [Feature Specification: Pluggable Storage Backends for Conversations & Artifacts](overviews/doc:sdd-specs-dynamodb-fallback-redis-spec-md.md)
+
+Since FEAT-103 (`agent-artifact-persistency`), chat history, conversation
+
+## [Feature Specification: Embedding Catalog as Prefix Source of Truth](overviews/doc:sdd-specs-embedding-catalog-as-prefix-source-of-29f53f0e.md)
+
+Today, the runtime behaviour of `SentenceTransformerModel` (in
+
+## [Feature Specification: Embeddings Catalog Update](overviews/doc:sdd-specs-embeddings-catalog-update-spec-md.md)
+
+The curated embedding catalog at `parrot/embeddings/catalog.py` is consumed by an
+
+## [Feature Specification: Enable Anthropic AWS Bedrock & AWS-native Backends](overviews/doc:sdd-specs-enable-anthropic-aws-bedrock-spec-md.md)
+
+AI-Parrot's `AnthropicClient` (`clients/claude.py`) can only reach Claude through
+
+## [Feature Specification: Endcap Backlit Multitier Planogram Type](overviews/doc:sdd-specs-endcap-backlit-multitier-spec-md.md)
+
+The existing `product_on_shelves` planogram type was designed for flat shelves with
+
+## [Feature Specification: Fix endcap_no_shelves_promotional](overviews/doc:sdd-specs-endcap-no-shelves-promotional-fix-spec-md.md)
+
+EcoTank endcap displays and any retail endcap that has:
+
+## [Feature Specification: Ephemeral User Agents](overviews/doc:sdd-specs-ephemeral-agents-spec-md.md)
+
+Today users can only create bots through the existing `UserAgentHandler`
+
+## [Feature Specification: Episodic Memory Store v2](overviews/doc:sdd-specs-episodicmemorystore-spec-md.md)
+
+AI-Parrot agents currently have conversation memory (`ConversationMemory` backends) and vector-based RAG, but no **episodic memory** — the ability to remember past experiences, failures, and learned lessons across sessions.
+
+## [Feature Specification: Evaluate Odoo MCP Toolkit](overviews/doc:sdd-specs-evaluate-odoo-mcp-toolkit-spec-md.md)
+
+The existing `OdooToolkit` covers CRUD operations, partner/sales/invoicing helpers,
+
+## [Feature Specification: ExcelLoader Migration to Per-Sheet Documents](overviews/doc:sdd-specs-excelloader-migration-spec-md.md)
+
+The current `ExcelLoader` (in `parrot_loaders`) creates **one Document per row per sheet**.
+
+## [Feature Specification: Exception Migration — Cython to Pure Python](overviews/doc:sdd-specs-exception-migration-spec-md.md)
+
+several maintenance and portability problems:
+
+## [Feature Specification: Extending WorkingMemoryToolkit](overviews/doc:sdd-specs-extending-workingmemorytoolkit-spec-md.md)
+
+The `WorkingMemoryToolkit` currently stores **only `pd.DataFrame` objects**. Every
+
+## [Feature Specification: Jira OAuth 2.0 (3LO) Per-User Authentication](overviews/doc:sdd-specs-feat-107-jira-oauth2-3lo-spec-md.md)
+
+When multiple users interact with the same agent (via Telegram or AgenTalk), they all share the same Jira identity. The `reporter` defaults to the bot account, `currentUser()` in JQL resolves to the bot, and Jira's activity feed attributes everything to a single service account.
+
+## [Feature Specification: Jira OAuth2 3LO Authentication from Telegram WebApp](overviews/doc:sdd-specs-feat-108-jiratoolkit-auth-telegram-spec-md.md)
+
+Users who interact with AI-Parrot chatbots via Telegram must complete **two
+
+## [Feature Specification: Telegram Multi-Auth Negotiation](overviews/doc:sdd-specs-feat-109-telegram-multi-auth-negotiat-3bf0035f.md)
+
+(`BasicAuthStrategy` | `AzureAuthStrategy` | `OAuth2AuthStrategy`) at
+
+## [Feature Specification: JiraSpecialist Webhook — Autonomous Reporter Re-assignment on Ticket Creation](overviews/doc:sdd-specs-feat-110-jiraspecialist-webhook-ticke-08118268.md)
+
+Navigator's Jira instance emits `jira:issue_created` webhooks every time a
+
+## [Feature Specification: Bot Cleanup Lifecycle — BotManager-driven per-agent teardown](overviews/doc:sdd-specs-feat-114-bot-cleanup-lifecycle-spec-md.md)
+
+but its aiohttp lifecycle hooks (`on_startup`, `on_shutdown`, `on_cleanup`)
+
+## [Feature Specification: Reminder Toolkit for Agents](overviews/doc:sdd-specs-feat-115-reminder-toolkit-spec-md.md)
+
+Managers and end-users frequently request **one-time, time-delayed follow-ups** inside
+
+## [Feature Specification: dev-loop intake upgrades — intent routing + plan-summary comment](overviews/doc:sdd-specs-feat-129-upgrades-spec-md.md)
+
+The dev-loop flow shipped by FEAT-129 (`sdd/specs/dev-loop-orchestration.spec.md`)
+
+## [Feature Specification: Lifecycle Events System](overviews/doc:sdd-specs-feat-176-lifecycle-events-system-md.md)
+
+AI-Parrot currently lacks a structured observability layer for agent execution. The existing mechanism — `AbstractBot._trigger_event()` / `add_event_listener()` — is:
+
+## [Feature Specification: GraphIndex Signal Relevance Model](overviews/doc:sdd-specs-feat-190-graphindex-signal-relevance-spec-md.md)
+
+GraphIndex today answers *"is this node similar to that one?"* with a single
+
+## [Feature Specification: GraphIndex Louvain Community Detection](overviews/doc:sdd-specs-feat-191-graphindex-louvain-communiti-90cb988c.md)
+
+GraphIndex assembles a knowledge graph from documents, code, and skills
+
+## [Feature Specification: GraphIndexToolkit Write Tools + Signal/Community Surface](overviews/doc:sdd-specs-feat-192-graphindex-toolkit-write-and-f1cddd32.md)
+
+(`packages/ai-parrot-tools/src/parrot_tools/graphindex/toolkit.py`)
+
+## [Feature Specification: Align `financial_variance` template with the positional block validator](overviews/doc:sdd-specs-feat-206-financial-variance-contract-spec-md.md)
+
+when `len(blocks_raw) > len(specs)`, and coerces each slot with
+
+## [Feature Specification: Spawn Ephemeral Sub-Agent Tool](overviews/doc:sdd-specs-feat-208-spawn-ephemeral-subagent-tool-spec-md.md)
+
+Para construir un *agent harness* autónomo (inspirado en el proyecto Go
+
+## [Feature Specification: Autonomous Agent Heartbeat](overviews/doc:sdd-specs-feat-209-autonomous-agent-heartbeat-spec-md.md)
+
+Para un *agent harness* autónomo de servicio (inspirado en el proyecto Go
+
+## [Feature Specification: Telegram Operator Commands](overviews/doc:sdd-specs-feat-210-telegram-operator-commands-spec-md.md)
+
+Un *agent harness* autónomo de servicio (inspirado en el proyecto Go
+
+## [Feature Specification: Tool Grants & Bounded Approval Windows](overviews/doc:sdd-specs-feat-211-tool-grants-bounded-approval-spec-md.md)
+
+Un *agent harness* autónomo (inspirado en **aphelion**) separa la **persona
+
+## [Feature Specification: Typed Event Ledger & Crash Resume](overviews/doc:sdd-specs-feat-212-event-ledger-resume-spec-md.md)
+
+Un *agent harness* autónomo de servicio (inspirado en **aphelion**) escribe cada
+
+## [Feature Specification: Telegram Voice Reply (TTS Output)](overviews/doc:sdd-specs-feat-213-telegram-voice-reply-tts-spec-md.md)
+
+El *agent harness* (inspirado en **aphelion**) transcribe notas de voz a la
+
+## [Feature Specification: Kubernetes Toolkit (kubectl-like agent tools)](overviews/doc:sdd-specs-feat-214-kubernetes-toolkit-spec-md.md)
+
+El usuario prefiere, frente al despliegue remoto Tailscale de **aphelion**,
+
+## [Feature Specification: GraphIndex Analytics Insights](overviews/doc:sdd-specs-feat-215-graphindex-analytics-insights-spec-md.md)
+
+GraphIndex analytics currently computes god-nodes (betweenness/eigenvector centrality) and surprising connections (confidence-only ranking of inferred edges). Three capabilities are missing:
+
+## [Feature Specification: OKF Knowledge Lint & Bundle Interchange](overviews/doc:sdd-specs-feat-216-okf-knowledge-lint-and-bundle-spec-md.md)
+
+The OKF Knowledge Layer (FEAT-238) provides concept_id, typed relations,
+
+## [Feature Specification: Graph-Expanded Retrieval Pipeline](overviews/doc:sdd-specs-feat-217-graph-expanded-retrieval-spec-md.md)
+
+PageIndex hybrid search (FEAT-237) operates within a single document tree -- it does BM25 + optional vec_rank + embedding_walk but never crosses document boundaries via graph topology. GraphIndex toolkit has `get_neighborhood()` and `neighborhood_by_relevance()` but these are sta
+
+## [Feature Specification: FileInterface Migration to navigator-api](overviews/doc:sdd-specs-fileinterface-migration-spec-md.md)
+
+(`FileManagerInterface`, `FileMetadata`, `LocalFileManager`,
+
+## [Feature Specification: FileManagerTool Migration to Toolkit](overviews/doc:sdd-specs-filemanagertool-migration-toolkit-spec-md.md)
+
+The current `FileManagerTool` uses a **multi-operation dispatch pattern** where the LLM must set an `operation` field (one of `list`, `upload`, `download`, `copy`, `delete`, `exists`, `get_url`, `get_metadata`, `create`) alongside operation-specific arguments in a single flat sch
+
+## [Feature Specification: FilesystemTransport](overviews/doc:sdd-specs-filesystem-transport-spec-md.md)
+
+AI-Parrot supports multiple communication channels (WebSockets, WhatsApp/Redis, A2A HTTP, MCP), but all require external infrastructure (Redis, HTTP server, Matrix homeserver). For development, CI/CD, and air-gapped environments, there is no zero-dependency option for multi-agent
+
+## [Feature Specification: Analyst Derivatives Recommendations](overviews/doc:sdd-specs-finance-analyst-derivatives-prompts-spec-md.md)
+
+The investment committee system has fully integrated **options and futures execution** capabilities:
+
+## [Feature Specification: CIO Memory Context](overviews/doc:sdd-specs-finance-cio-memory-context-spec-md.md)
+
+The CIO (Chief Investment Officer) agent orchestrates the deliberation process but currently operates **without historical context**. Each deliberation is treated as a fresh start, losing valuable information:
+
+## [Feature Specification: Investment Memo Persistency](overviews/doc:sdd-specs-finance-investment-memo-persistency-spec-md.md)
+
+The Finance deliberation process produces an **InvestmentMemo** as its final artifact. This memo contains:
+
+## [Feature Specification: Investment Policy Statement (IPS)](overviews/doc:sdd-specs-finance-investment-policy-statement-spec-md.md)
+
+The investment committee agents (analysts + CIO) currently operate with no awareness of the portfolio owner's investment philosophy, preferences, or constraints beyond the structural `ExecutorConstraints` (position sizing, drawdown limits, etc.). Those constraints are numerical g
+
+## [Feature Specification: Multi-Executor Integration (Kraken + IBKR)](overviews/doc:sdd-specs-finance-multi-executor-integration-spec-md.md)
+
+The `ExecutionOrchestrator` currently registers only **two** executors:
+
+## [Feature Specification: Finance Paper Trading Executors](overviews/doc:sdd-specs-finance-paper-trading-spec-md.md)
+
+AI-Parrot's finance module has a working research and deliberation pipeline that produces
+
+## [Feature Specification: Finance Research Collective Memory](overviews/doc:sdd-specs-finance-research-collective-memory-spec-md.md)
+
+El sistema actual de Finance Research tiene limitaciones arquitectónicas fundamentales:
+
+## [Feature Specification: First-Time Caching Embedding Model](overviews/doc:sdd-specs-first-time-caching-embedding-model-spec-md.md)
+
+Embedding models in AI-Parrot are **re-created on each access** instead of being cached after first load. This causes three concrete problems:
+
+## [Feature Specification: Fix Parrot Transport](overviews/doc:sdd-specs-fix-parrot-transport-spec-md.md)
+
+The `parrot/transport` package is broken because the hooks system was migrated from
+
+## [Feature Specification: fix-webscrapingtoolkit-executor](overviews/doc:sdd-specs-fix-webscrapingtoolkit-executor-spec-md.md)
+
+plan execution directly against a raw **Selenium `WebDriver`**:
+
+## [Feature Specification: Flow Primitives — Shared Core for AgentCrew & AgentsFlow](overviews/doc:sdd-specs-flow-primitives-spec-md.md)
+
+AI-Parrot has two orchestration engines — **AgentCrew** (`parrot.bots.orchestration.crew`) and **AgentsFlow** (`parrot.bots.flow.fsm`) — that share ~80% of their conceptual model (a graph of agents with dependencies executed in topological order) but implement it with divergent c
+
+## [Feature Specification: Flows Consolidation — Migrate Orchestration to `parrot/bots/flows/`](overviews/doc:sdd-specs-flows-consolidation-spec-md.md)
+
+even though it is the primary consumer of the flow primitives defined in
+
+## [Feature Specification: Universal Form Abstraction Layer](overviews/doc:sdd-specs-form-abstraction-layer-spec-md.md)
+
+AI-Parrot's form system is tightly coupled to MS Teams. The canonical models (`FormDefinition`, `FormField`, `FormSection`) live in `parrot/integrations/dialogs/` as Python dataclasses, while rendering (`AdaptiveCardBuilder`), validation (`FormValidator`), orchestration (`FormOrc
+
+## [Feature Specification: Form Designer Edition (Edit API)](overviews/doc:sdd-specs-form-designer-edition-spec-md.md)
+
+Once a form is created in AI-Parrot's form designer (via natural language, YAML, database import, or Pydantic extraction), there is no API to modify it. The current `FormAPIHandler` only exposes `POST /api/v1/forms` (create) and `GET` endpoints (read). Developers and end-users ca
+
+## [Feature Specification: FormDesigner Audio Renderer](overviews/doc:sdd-specs-formdesigner-audio-renderer-spec-md.md)
+
+Form Designer currently renders form definitions into visual formats (HTML,
+
+## [Feature Specification: FormDesigner Authentication](overviews/doc:sdd-specs-formdesigner-authentication-spec-md.md)
+
+The `parrot-formdesigner` API endpoints currently use a custom shared-secret
+
+## [Feature Specification: FormDesigner — Clone Form](overviews/doc:sdd-specs-formdesigner-clone-form-spec-md.md)
+
+Users and integrations frequently need to create a new form that is a variation
+
+## [Feature Specification: Form Designer — Conditional Sections (Pre/Post Dependencies)](overviews/doc:sdd-specs-formdesigner-conditional-sections-spec-md.md)
+
+AI-Parrot's form designer (`parrot-formdesigner`) already models **pre-dependencies** in the
+
+## [Feature Specification: FormDesigner Edit via Tool-Based Toolkit](overviews/doc:sdd-specs-formdesigner-edition-parts-spec-md.md)
+
+The `POST /api/v1/forms/{form_id}/edit` endpoint currently serializes the
+
+## [Feature Specification: Form Lifecycle Events for parrot-formdesigner](overviews/doc:sdd-specs-formdesigner-lifecycle-events-spec-md.md)
+
+1. `services/callback_registry.py` resuelve callables async para `FieldType.REST` con `mode=callback` — es un mecanismo **por-campo** para fetch dinámico de opciones, no un ciclo de vida.
+
+## [Feature Specification: FormDesigner — New Field Types (Shadcn-Forms compatible)](overviews/doc:sdd-specs-formdesigner-new-fields-spec-md.md)
+
+inputs but cannot express the richer interactions that modern web UIs
+
+## [Spec: formdesigner-package-fixes](overviews/doc:sdd-specs-formdesigner-package-fixes-spec-md.md)
+
+Code review of FEAT-079 (parrot-formdesigner package extraction) identified 31 issues across 7 severity levels. These range from critical security vulnerabilities (XSS, missing auth) and phantom APIs (AI hallucinations) to important reliability issues (wrong Redis library, race c
+
+## [Feature Specification: FormDesigner Package](overviews/doc:sdd-specs-formdesigner-package-spec-md.md)
+
+All form-related functionality (schema models, tools, extractors, renderers, validators,
+
+## [Feature Specification: FormDesigner Partial Saves](overviews/doc:sdd-specs-formdesigner-partial-saves-spec-md.md)
+
+When users fill out complex multi-section forms in the frontend, any browser
+
+## [Feature Specification: FormDesigner Public Forms](overviews/doc:sdd-specs-formdesigner-public-forms-spec-md.md)
+
+parrot-formdesigner needs to expose *public* forms: when a new
+
+## [Feature Specification: parrot-formdesigner Structural Refactor](overviews/doc:sdd-specs-formdesigner-refactor-spec-md.md)
+
+and JSON REST endpoints in the same package. As the package matured and started
+
+## [Feature Specification: FormRegistry Multi-Tenancy](overviews/doc:sdd-specs-formregistry-multi-tenancy-spec-md.md)
+
+(`packages/parrot-formdesigner/src/parrot_formdesigner/services/registry.py`)
+
+## [Feature Specification: Generic Agent Evaluation Harness (`AbstractEvaluator` + `EvalRunner`)](overviews/doc:sdd-specs-generic-evaluation-harness-spec-md.md)
+
+AI-Parrot ships many agent types — coding, tool/toolkit, conversational RAG, multi-agent crews,
+
+## [Feature Specification: get_infographic HTTP Handler](overviews/doc:sdd-specs-get-infographic-handler-spec-md.md)
+
+FEAT-094 introduced `AbstractBot.get_infographic()` — a method that produces
+
+## [Feature Specification: GigSmart Interface Toolkit](overviews/doc:sdd-specs-gigsmart-interface-toolkit-spec-md.md)
+
+AI-Parrot agents need to interact with the GigSmart Developer API to manage gig economy
+
+## [Feature Specification: Git Parrot Flow — Staging Branch and Sync Automation](overviews/doc:sdd-specs-git-parrot-flow-spec-md.md)
+
+AI-Parrot has outgrown the two-branch flow (`dev` ↔ `main`) that FEAT-145
+
+## [Feature Specification: GitHub App Authentication for GitToolkit](overviews/doc:sdd-specs-github-app-auth-gittoolkit-spec-md.md)
+
+authenticates against the GitHub REST API exclusively with a Personal Access
+
+## [Feature Specification: GitHub Repository Weekly Activity Report](overviews/doc:sdd-specs-github-repo-weekly-activity-report-spec-md.md)
+
+stale-PR digest, but teams running the agent have no visibility into
+
+## [Feature Specification: GitToolkit On-Demand Code Retrieval for GithubReviewer](overviews/doc:sdd-specs-gittoolkit-pr-context-retrieval-spec-md.md)
+
+reviews pull requests by passing the **flat unified diff** of the PR to the
+
+## [Feature Specification: Google Document Understanding](overviews/doc:sdd-specs-google-document-understanding-spec-md.md)
+
+for document processing. Users who need to extract information, summarize,
+
+## [Feature Specification: Google GenAI client — simultaneous tool-calling + structured output](overviews/doc:sdd-specs-google-genai-combined-tools-and-schema-spec-md.md)
+
+However, newer Gemini 3.x models — confirmed via the SDK-level probe at `examples/google/test_tool_structured_output.py` — now accept `tools` + `response_mime_type` + `response_schema` in a **single** `GenerateContentConfig`. Per upstream evaluation:
+
+## [Feature Specification: Google Lyria Music Generation Enhancement](overviews/doc:sdd-specs-google-lyria-music-generation-spec-md.md)
+
+The `GoogleGenAIClient` already has a `generate_music` method using **Lyria RealTime** (streaming WebSocket API). However, this implementation:
+
+## [Feature Specification: Granular Permissions System for Tools & Toolkits](overviews/doc:sdd-specs-granular-permission-system-spec-md.md)
+
+AI-Parrot exposes LLM agents to collections of tools via Toolkits. At runtime, the LLM receives the full list of available tools in its context window and can call any of them. System-prompt enforcement ("only use tools the user is allowed to") is a guideline, not a contract — th
+
+## [Feature Specification: GraphIndex OKF Frontmatter Projection](overviews/doc:sdd-specs-graphindex-frontmatter-spec-md.md)
+
+FEAT-238 (OKF Knowledge Layer) made PageIndex sidecars self-describing by
+
+## [Feature Specification: GraphIndex — Structured Knowledge Graph Indexing](overviews/doc:sdd-specs-graphindex-spec-md.md)
+
+ai-parrot agents currently rely on three relatively flat retrieval surfaces:
+
+## [Feature Specification: Handoff Tool for Integrations Agents](overviews/doc:sdd-specs-handoff-tool-for-integrations-agents-spec-md.md)
+
+Currently, when a user asks an Agent to perform an action (e.g., "create a Jira ticket") via a chat integration, but omits required parameters (e.g., the project, component, or issue type), the Agent usually fails or hallucinates parameters. The Agent execution framework does not
+
+## [Feature Specification: HITL Tool-Call Confirmation](overviews/doc:sdd-specs-hitl-confirmation-spec-md.md)
+
+Agents in AI-Parrot can invoke any tool the LLM decides to call, immediately and
+
+## [Feature Specification: HITL Multi-Tier Escalation Policy (per-policy_id registry + gap completion)](overviews/doc:sdd-specs-hitl-escalation-tier-spec-md.md)
+
+AI-Parrot historically had two parallel HITL paths — `parrot.human.*`
+
+## [Feature Specification: TeamsHumanChannel — HITL channel over MS Teams / Azure Bot Framework](overviews/doc:sdd-specs-hitl-teams-channel-spec-md.md)
+
+The HITL engine can already deliver interactions to humans over Telegram
+
+## [Feature Specification: HITL over Stateless Web Request/Response (AgentTalk HTTP)](overviews/doc:sdd-specs-hitl-web-spec-md.md)
+
+The AI-Parrot HITL stack (`parrot/human/`) lets an agent ask a human for input
+
+## [Feature Specification: Homologate `ask_stream` Across All LLM Clients](overviews/doc:sdd-specs-homologate-llm-clients-askstream-spec-md.md)
+
+All LLM clients in AI-Parrot implement `ask_stream` as an async generator, but
+
+## [Feature Specification: IBKR Trading Toolkit](overviews/doc:sdd-specs-ibkr-trading-toolkit-spec-md.md)
+
+AI-Parrot agents currently have no way to interact with financial markets through
+
+## [Feature Specification: ImageLoader — OCR with Layout-Aware Extraction](overviews/doc:sdd-specs-image-loader-spec-md.md)
+
+The current `ImageUnderstandingLoader` requires an LLM (Google GenAI) to extract
+
+## [Feature Specification: Image & Video Understanding REST API Handler](overviews/doc:sdd-specs-image-video-understanding-handler-spec-md.md)
+
+AI-Parrot already exposes `GoogleGenAIClient.image_understanding()` and
+
+## [Feature Specification: Infographic HTML Output via Content Negotiation](overviews/doc:sdd-specs-infographic-html-output-spec-md.md)
+
+The `get_infographic()` method (added in branch `claude/structured-infographic-output-1jZ2v`)
+
+## [Feature Specification: Infographic Toolkit — Single-Turn Interactive HTML Artifacts](overviews/doc:sdd-specs-infographictoolkit-spec-md.md)
+
+Generating an infographic today is a two-step user-visible flow: the user asks
+
+## [Feature Specification: AWS Inspector Toolkit (Inspector2)](overviews/doc:sdd-specs-inspector-toolkit-spec-md.md)
+
+Amazon Inspector v2 (boto3 client `inspector2`) is the authoritative source for:
+
+## [Feature Specification: Integrate FIREFLIES_API_KEY env-var support into the MCP Client definition](overviews/doc:sdd-specs-integrate-mcp-fireflies-spec-md.md)
+
+The Fireflies.ai MCP server is already wired into the MCP Client definition
+
+## [Feature Specification: Integration User/Channel Whitelisting](overviews/doc:sdd-specs-integration-user-limit-spec-md.md)
+
+The integration wrappers have inconsistent authorization filtering:
+
+## [Feature Specification: Shared Hooks Infrastructure](overviews/doc:sdd-specs-integrations-hooks-spec-md.md)
+
+AI-Parrot has two parallel execution contexts for agents:
+
+## [Feature Specification: Matrix Multi-Agent Crew Integration](overviews/doc:sdd-specs-integrations-matrix-multi-spec-md.md)
+
+The current `parrot/integrations/matrix/` module supports a single-agent model:
+
+## [Feature Specification: Intelligent Extraction Pipeline for ScrapingAgent](overviews/doc:sdd-specs-intelligent-scraping-pipeline-spec-md.md)
+
+The current `WebScrapingLoader` extracts web page content as flat text/markdown,
+
+## [Feature Specification: IntentRouterMixin — Embedding-Based Output-Mode Routing](overviews/doc:sdd-specs-intent-router-mixin-embedding-routing-spec-md.md)
+
+When a user asks a question, the *output mode* (pie chart, map, table, plain
+
+## [Feature Specification: Intent Router & Capability Registry](overviews/doc:sdd-specs-intent-router-spec-md.md)
+
+AI-Parrot agents that have a vector store assigned **always** attempt RAG on every query — even when the query is about structured data (a dataset), requires executing a tool, or should be delegated to the LLM directly. There is no mechanism to decide *who should answer* before r
+
+## [Feature Specification: Jira Analyst System Prompt Hardening](overviews/doc:sdd-specs-jira-analyst-systemprompt-hardening-spec-md.md)
+
+JiraSpecialist instances using `gemini-3-flash-preview` hallucinate invented Jira
+
+## [Feature Specification: JiraSpecialist `trigger_agent` → Orchestrator Dispatch](overviews/doc:sdd-specs-jiraspecialist-trigger-agent-orchestr-9566f7b5.md)
+
+classifies the event, and the agent routes it through
+
+## [Feature Specification: JiraSpecialist Webhook Transition Detection](overviews/doc:sdd-specs-jiraspecialist-webhooks-spec-md.md)
+
+The Jira webhook infrastructure (`JiraWebhookHook` at `POST /api/v1/hooks/jira`)
+
+## [Feature Specification: JiraToolkit Default Fields for Ticket Creation](overviews/doc:sdd-specs-jiratoolkit-defaults-spec-md.md)
+
+When creating Jira tickets via `JiraToolkit.jira_create_issue()`, the LLM (or caller) must explicitly provide every field — project, issue type, labels, components, due date, etc. — even when most tickets in a given deployment share the same defaults. This leads to:
+
+## [Feature Specification: JiraToolkit Integrations OAuth2](overviews/doc:sdd-specs-jiratoolkit-integrations-oauth2-spec-md.md)
+
+The Telegram integration exposes three Jira OAuth 2.0 (3LO) commands that users rely on:
+
+## [Feature Specification: LeadIQ Toolkit for ai-parrot-tools](overviews/doc:sdd-specs-leadiqtool-spec-md.md)
+
+flowtask ships a `LeadIQ` ETL component
+
+## [Feature Specification: Lightweight Invoke Method for LLM Clients](overviews/doc:sdd-specs-lightweight-invoke-client-method-spec-md.md)
+
+The current `ask()` method on all LLM clients is a heavy-weight operation that loads conversation history, runs the full prompt builder pipeline, applies retry logic, wraps results in a full `AIMessage`, and updates conversation memory. For stateless, structured extraction tasks 
+
+## [Feature Specification: LiveAvatar FULL Mode — ai-parrot as the brain via OpenAI-compatible streaming](overviews/doc:sdd-specs-liveavatar-full-mode-custom-llm-spec-md.md)
+
+Phase C (FEAT-243, "Option C") gives a fluent voice-native avatar but at the
+
+## [Feature Specification: LiveAvatar FULL Mode — speak_text Integration (Backend)](overviews/doc:sdd-specs-liveavatar-fullmode-speaktext-spec-md.md)
+
+ai-parrot agents can talk through a LiveAvatar avatar today via two existing
+
+## [Feature Specification: LiveAvatar — Phase A (avatar as the "mouth" of AgentChat)](overviews/doc:sdd-specs-liveavatar-phase-a-mouth-spec-md.md)
+
+verbalizes its responses, increasing presence and accessibility for voice-first
+
+## [Feature Specification: LiveAvatar — Phase C (voice-native hybrid, ai-parrot as the brain)](overviews/doc:sdd-specs-liveavatar-phase-c-voice-native-spec-md.md)
+
+Phase A (FEAT-242) gives AgentChat a talking avatar but **drives turn-taking manually** —
+
+## [Feature Specification: LiveAvatar + Voice — Consolidation & Mode Unification](overviews/doc:sdd-specs-liveavatar-voice-consolidation-spec-md.md)
+
+Eight overlapping specs (FEAT-231 → 248) grew three different "brains", two
+
+## [Feature Specification: LiveKit Direct Audio (avatar-optional livekit voice)](overviews/doc:sdd-specs-livekit-direct-audio-spec-md.md)
+
+The `livekit` voice transport (LITE, FEAT-173 on the frontend) depends **entirely**
+
+## [Feature Specification: Gemini STT-only mode (voice WS)](overviews/doc:sdd-specs-livekit-gemini-voice-input-spec-md.md)
+
+The Gemini voice path (`/ws/voice`, `agent_voice.py` / `GeminiLiveClient`) runs
+
+## [Feature Specification: LiveKit Native Voice Adapters (AI-Parrot own STT/TTS for Phase C)](overviews/doc:sdd-specs-livekit-native-voice-adapters-spec-md.md)
+
+LiveAvatar Phase C (FEAT-243, "Option C" — voice-native hybrid with ai-parrot
+
+## [Feature Specification: LLM Wiki — Persistent Knowledge Base with PageIndex + GraphIndex](overviews/doc:sdd-specs-llmwiki-pageindex-graphindex-spec-md.md)
+
+AI agents need a persistent, compounding knowledge base — not just ephemeral
+
+## [Feature Specification: Fix Broken Chunking in Loaders](overviews/doc:sdd-specs-loader-failed-chunking-spec-md.md)
+
+Multiple loaders in ai-parrot-loaders produce unusable chunks when `split_documents=True`
+
+## [Feature Specification: Local Cross-Encoder Reranker for RAG Retrieval](overviews/doc:sdd-specs-local-cross-encoder-reranker-spec-md.md)
+
+The current RAG retrieval pipeline in `BaseBot.ask()` and `BaseBot.conversation()` relies on
+
+## [Feature Specification: LocalLLMClient](overviews/doc:sdd-specs-localllm-client-spec-md.md)
+
+AI-Parrot currently requires cloud-hosted LLM providers (OpenAI, Anthropic, Google, etc.)
+
+## [Feature Specification: Long-Term Memory (Unified Memory Architecture)](overviews/doc:sdd-specs-long-term-memory-spec-md.md)
+
+AI-Parrot agents have two independent memory subsystems — **EpisodicMemoryStore** (FEAT-045, implemented) and **SkillRegistry** (implemented) — plus the existing **ConversationMemory** backends. However, there is no unified layer that:
+
+## [Feature Specification: MassiveToolkit](overviews/doc:sdd-specs-massive-toolkit-spec-md.md)
+
+PARROT's finance research pipeline has broad market data coverage across 12+ APIs, but four specific high-value data gaps remain where no existing tool provides equivalent quality:
+
+## [Feature Specification: MassiveToolkit Integration](overviews/doc:sdd-specs-massivetoolkit-integration-spec-md.md)
+
+The `MassiveToolkit` provides institutional-grade data, but it needs to be integrated into PARROT's existing deliberation pipeline efficiently. A naive integration would have each research crew call the toolkit independently, leading to rate limit exhaustion and duplicated data. 
+
+## [Feature Specification: Matrix Collaborative Multi-Agent Crew](overviews/doc:sdd-specs-matrix-collaborative-crew-spec-md.md)
+
+The Matrix multi-agent crew infrastructure (FEAT-044) provides solid building blocks:
+
+## [Feature Specification: Matryoshka Embedding Truncation](overviews/doc:sdd-specs-matryoshka-embedding-truncation-spec-md.md)
+
+The embeddings catalog (`parrot/embeddings/catalog.py`) already declares
+
+## [Feature Specification: Vault-Backed Credentials for Telegram /add_mcp](overviews/doc:sdd-specs-mcp-command-credentials-spec-md.md)
+
+The Telegram integration exposes three commands — `/add_mcp`, `/list_mcp`,
+
+## [Feature Specification: MCP Mixin Helper Handler](overviews/doc:sdd-specs-mcp-mixin-helper-handler-spec-md.md)
+
+The `MCPEnabledMixin` class provides convenience methods (`add_perplexity_mcp_server`,
+
+## [Feature Specification: MCP Server OAuth2 Support](overviews/doc:sdd-specs-mcp-server-oauth2-support-spec-md.md)
+
+AI-Parrot can consume external MCP servers, but authentication support is fragmented
+
+## [Feature Specification: Microsoft Copilot Agent SDK Integration](overviews/doc:sdd-specs-microsoft-copilot-agent-sdk-spec-md.md)
+
+ai-parrot agents are currently exposed through Telegram, MS Teams (via legacy
+
+## [Feature Specification: Migrate GitHub Release Workflow](overviews/doc:sdd-specs-migrate-github-release-spec-md.md)
+
+The current `.github/workflows/release.yml` builds and publishes a single `ai-parrot` wheel to PyPI. After FEAT-057 (monorepo-migration), the repository contains three independent packages:
+
+## [Feature Specification: Migrate RequestBot to ContextVar-based RequestContext](overviews/doc:sdd-specs-migrate-requestbot-contextvars-spec-md.md)
+
+The current request-scoping mechanism uses `RequestBot`, a `__getattr__`-based
+
+## [Feature Specification: Final Migration — Remove `bots/orchestration`, Consolidate into `bots/flows`](overviews/doc:sdd-specs-migration-orchestration-to-flows-spec-md.md)
+
+FEAT-134 (flow-primitives) and FEAT-137 (agentcrew-primitives) moved all orchestration
+
+## [Feature Specification: Monorepo Workspace Migration](overviews/doc:sdd-specs-monorepo-migration-spec-md.md)
+
+AI-Parrot has grown to 100+ tools/toolkits and heavy document loaders. All of this code lives in a single package, forcing every user to install everything — even if they only need the core agent framework. Splitting into multiple repositories introduces cross-repo PR friction, v
+
+## [Feature Specification: Move PageIndex under `parrot.knowledge`](overviews/doc:sdd-specs-move-pageindex-kb-spec-md.md)
+
+AI-Parrot currently has two knowledge-indexing subsystems with asymmetric placement in the package tree:
+
+## [Feature Specification: MSAgent & A2A YAML Integrations](overviews/doc:sdd-specs-msagent-a2a-integrations-spec-md.md)
+
+Operators currently need to write custom Python (like `examples/msagent/server.py`) to get A2A exposure, broker-backed credential resolution, OAuth2 SSO flows, or AgentCard discovery. This blocks production deployments that want declarative, zero-code agent surfacing.
+
+## [Feature Specification: MS Teams Voice Note Support](overviews/doc:sdd-specs-msteams-voice-support-spec-md.md)
+
+The `MSTeamsAgentWrapper` currently only processes text messages from users. When a user sends a voice note (audio attachment) in MS Teams, the wrapper ignores it completely. This creates a poor user experience for users who prefer voice input or are in situations where typing is
+
+## [Feature Specification: Multi-Origin FormDesigner — Pluggable AbstractFormService](overviews/doc:sdd-specs-multi-origin-formdesigner-spec-md.md)
+
+mixes three concerns inside a single class: NetworkNinja-specific SQL + JSON mapping,
+
+## [Feature Specification: Multi-Tab Infographic Template + New Component Blocks](overviews/doc:sdd-specs-multi-tab-infographic-spec-md.md)
+
+The current infographic system (`InfographicResponse`) uses a flat list of `InfographicBlock` items. This works for single-view reports (executive, dashboard, comparison) but cannot represent multi-section, tabbed infographics. Complex reports — such as methodology documentation 
+
+## [Feature Specification: Multimodal Embedding Provider](overviews/doc:sdd-specs-multimodal-embedding-provider-spec-md.md)
+
+AI-Parrot's embedding layer is currently **text-only** (HuggingFace Transformers).
+
+## [Feature Specification: DatabaseLoader — Load Database Tables as RAG Documents](overviews/doc:sdd-specs-nav-7712-database-loader-spec-md.md)
+
+Product data (e.g., AT&T prepaid plans with plan_name, price, specifications) lives
+
+## [Feature Specification: NavigatorToolkit — Dashboard Draft/Publish Lifecycle](overviews/doc:sdd-specs-navigator-dashboard-draft-publish-lif-cffeb08d.md)
+
+The `nav_create_dashboard` tool defaulted to `is_system=True`, producing
+
+## [Feature Specification: NavigatorToolkit — Local asyncpg Conn Unwrap](overviews/doc:sdd-specs-navigator-toolkit-asyncdb-conn-unwrap-spec-md.md)
+
+After the FEAT-107 migration (commit `c1e93b8d`, TASK-743), NavigatorToolkit
+
+## [Feature Specification: NavigatorToolkit Method Migration to PostgresToolkit CRUD](overviews/doc:sdd-specs-navigator-toolkit-method-migration-spec-md.md)
+
+FEAT-106 refactored `NavigatorToolkit` to inherit from `PostgresToolkit` and
+
+## [Feature Specification: NavigatorToolkit ↔ PostgresToolkit Interaction](overviews/doc:sdd-specs-navigatortoolkit-postgrestoolkit-inte-58111e91.md)
+
+1782 lines) is the LLM-facing toolkit for creating and updating Navigator
+
+## [Feature Specification: NetSuite MCP Integration](overviews/doc:sdd-specs-netsuite-mcp-integration-spec-md.md)
+
+NetSuite (Oracle) exposes an MCP server at `https://{ACCOUNT_ID}.suitetalk.api.netsuite.com/services/mcp/v1/suiteapp/com.netsuite.mcpstandardtools` that provides tools for record CRUD, reports, saved searches, and SuiteQL queries. It uses OAuth 2.0 Authorization Code Grant with P
+
+## [Feature Specification: API Bot Creation — Normalization & Provisioning](overviews/doc:sdd-specs-new-api-bot-creation-spec-md.md)
+
+The `ChatbotHandler` (`parrot/handlers/bots.py`) manages agent CRUD via `/api/v1/bots` but has three deficiencies:
+
+## [Feature Specification: Multi-Dispatcher Code Review Gate](overviews/doc:sdd-specs-new-codereviewers-spec-md.md)
+
+The dev-loop flow currently supports five code dispatchers for the Development
+
+## [Feature Specification: FormDesigner — `FieldType.REST` (REST-driven upload field with response-derived answer)](overviews/doc:sdd-specs-new-formdesigner-field-rest-spec-md.md)
+
+Form designers currently have **no way to express a field whose value is the
+
+## [Feature Specification: New Scheduler Decorators](overviews/doc:sdd-specs-new-scheduler-decorators-spec-md.md)
+
+The existing `@schedule(schedule_type=ScheduleType.DAILY, hour=8, minute=0)` decorator is general-purpose but requires the developer to supply timing values explicitly and inline. For the two most common recurring report patterns — **daily reports** and **weekly digests** — the d
+
+## [Feature Specification: Nvidia Client](overviews/doc:sdd-specs-nvidia-client-spec-md.md)
+
+Nvidia's NIM API hosts a curated set of frontier OSS models (reasoning,
+
+## [Feature Specification: O365 Auth Homologation — retire legacy interactive-auth + `device_code` broker kind](overviews/doc:sdd-specs-o365-auth-homologation-spec-md.md)
+
+AI-Parrot carries **three generations** of Office 365 authentication that have drifted apart:
+
+## [Feature Specification: O365 Device-Code Follow-ups — CLI tenant/roles hardcoding + non-atomic token persistence](overviews/doc:sdd-specs-o365-devicecode-followups-spec-md.md)
+
+The FEAT-266 code review surfaced two gaps in the newly-merged `device_code` O365 broker path
+
+## [Feature Specification: OdooFieldServiceToolkit](overviews/doc:sdd-specs-odoo-fieldservice-toolkit-spec-md.md)
+
+Field-service reps (e.g. vending/kiosk route reps) execute a daily route in
+
+## [Feature Specification: GraphIndex Odoo-aware Extractor + SQLite Persistence + Graph Reader](overviews/doc:sdd-specs-odoo-graphindex-code-spec-md.md)
+
+Navigating large Odoo codebases to understand model inheritance is painful.
+
+## [Feature Specification: Odoo Interface (JSON-RPC 2.0)](overviews/doc:sdd-specs-odoo-interface-spec-md.md)
+
+AI-Parrot agents need to interact with Odoo ERP (v16+) for reading/writing business data
+
+## [Feature Specification: Odoo PageIndex Documentation Agent (OdooAgent / "Oddie")](overviews/doc:sdd-specs-odoo-pageindex-documentation-agent-spec-md.md)
+
+AI-Parrot already ships an `OdooToolkit` (RPC: JSON-2 / XML-RPC / JSON-RPC) and a
+
+## [Feature Specification: OKF Knowledge Layer over PageIndex](overviews/doc:sdd-specs-okf-knowledge-layer-spec-md.md)
+
+PageIndex sidecars are **bare markdown** — a node body file (e.g. `0043.md`) does
+
+## [Feature Specification: Ontological Graph RAG](overviews/doc:sdd-specs-ontological-graph-rag-spec-md.md)
+
+An EPSON field employee asks *"What is my portal?"*. Pure vector search for "portal" returns
+
+## [Feature Specification: Ontology Entity Extraction & Tool-Call Dispatch](overviews/doc:sdd-specs-ontology-entity-extraction-spec-md.md)
+
+1. **Named entities in queries cannot be resolved to graph nodes.** `OntologyIntentResolver.resolve(query, user_context)` (`intent.py:97-127`) binds only `params={"user_id": user_context.get("user_id")}` (`intent.py:151`). A query like *"¿en qué está trabajando el equipo de Jesús
+
+## [Feature Specification: Ontology RAG + Employee Knowledge Base](overviews/doc:sdd-specs-ontology-rag-kb-spec-md.md)
+
+NAV-8350 asks whether two capabilities exist in the parrot framework:
+
+## [Feature Specification: OpenAI Model Deprecation Refresh](overviews/doc:sdd-specs-openai-model-deprecation-spec-md.md)
+
+OpenAI has published a deprecation schedule with shutoff dates ranging from
+
+## [Feature Specification: OpenRouter Client](overviews/doc:sdd-specs-openrouter-client-spec-md.md)
+
+AI-Parrot currently supports a fixed set of providers (OpenAI, Anthropic, Google,
+
+## [Feature Specification: Options Analytics Toolkit](overviews/doc:sdd-specs-options-analytics-spec-md.md)
+
+AI-PARROT currently has **zero options analytics capability**. The `YFinanceTool` with `action="options"` fetches raw chain data (strikes, bids, asks, volume, OI, IV), but there is no layer that:
+
+## [Feature Specification: Multi-Leg Options Strategy Execution](overviews/doc:sdd-specs-options-multi-leg-strategies-spec-md.md)
+
+AI-Parrot's finance module currently supports single-leg order execution for stocks/ETFs (`AlpacaWriteToolkit`) and crypto (`BinanceWriteToolkit`). However, **there is no capability to execute multi-leg options strategies** such as Iron Butterfly, Iron Condor, or other defined-ri
+
+## [Feature Specification: Multi-Party Conferencing for OrchestratorAgent](overviews/doc:sdd-specs-orchestratoragent-multiparty-spec-md.md)
+
+El `OrchestratorAgent` (`parrot/bots/flows/agents/orchestrator.py`) agrega
+
+## [Feature Specification: OpenTelemetry + Cost Observability](overviews/doc:sdd-specs-otel-observability-spec-md.md)
+
+AI-Parrot agents make LLM calls and tool executions that are currently observable only through ad-hoc logging. There is no standardized way to:
+
+## [Feature Specification: PageIndex Content Store + LLM-Wiki Foundations](overviews/doc:sdd-specs-pageindex-content-store-and-llm-wiki--98138ad3.md)
+
+PageIndex (`packages/ai-parrot/src/parrot/pageindex/`) currently persists a
+
+## [Feature Specification: PageIndex Embedding Router](overviews/doc:sdd-specs-pageindex-embedding-router-spec-md.md)
+
+PageIndex retrieval today combines BM25 lexical ranking over flattened node text
+
+## [Feature Specification: Parent-Child Retrieval with Composable Parent Searcher](overviews/doc:sdd-specs-parent-child-retrieval-spec-md.md)
+
+Today's retrieval pipeline embeds and searches over chunks of approximately
+
+## [Feature Specification: Parrot FormDesigner POST Submission Pipeline](overviews/doc:sdd-specs-parrot-formdesigner-post-method-spec-md.md)
+
+render form designs, and already has a minimal `POST /api/v1/forms/{form_id}/data` endpoint
+
+## [Feature Specification: Telegram Form Renderer for parrot-formdesigner](overviews/doc:sdd-specs-parrot-formdesigner-renderer-telegram-spec-md.md)
+
+parrot-formdesigner renders forms to HTML5, JSON Schema, and Adaptive Cards, but has no
+
+## [Feature Specification: Adaptive Grid Detection for Planogram Pipelines](overviews/doc:sdd-specs-parrot-pipelines-inconsistency-spec-md.md)
+
+The Planogram Compliance Pipeline suffers from **LLM detection inconsistency** caused by three interrelated factors:
+
+## [Feature Specification: PBAC-Driven DatasetManager Policy Enforcement](overviews/doc:sdd-specs-pbac-datasetmanager-policy-spec-md.md)
+
+This is a data-leak vector. Concrete failure case: user `jleon@trocglobal.com` opens a chat with a finance-aware agent and the LLM is exposed to a `financial_data` dataset that — by HR/compliance policy — that user is not entitled to query. The LLM may list it, describe its schem
+
+## [Feature Specification: Per-Agent Cost & Usage Metrics](overviews/doc:sdd-specs-per-agent-cost-usage-metrics-spec-md.md)
+
+traces**, not in metrics. Today:
+
+## [Feature Specification: Per-Loop LLM Client Cache](overviews/doc:sdd-specs-per-loop-llm-client-cache-spec-md.md)
+
+Every `AbstractClient` subclass caches a single SDK client instance on
+
+## [Feature Specification: Configurable Persistency for Video Reel Generation](overviews/doc:sdd-specs-persistency-videos-generate-reel-vide-eeebb50c.md)
+
+final artifacts directly to the local filesystem using `Path` objects and
+
+## [Feature Specification: Planogram Compliance Handler](overviews/doc:sdd-specs-planogram-compliance-handler-spec-md.md)
+
+The planogram compliance pipeline (`PlanogramCompliance`) works as a standalone script but has no HTTP surface. Teams need to:
+
+## [Feature Specification: Planogram Compliance Modular](overviews/doc:sdd-specs-planogram-compliance-modular-spec-md.md)
+
+The current `PlanogramCompliance` class (`parrot/pipelines/planogram/plan.py`) handles all planogram types (ProductOnShelves, InkWall, TVWall, Gondola, EndcapBacklit, BrandPosterEndcap, ExhibitorTable, BoxesOnFloor) through a single monolithic class with:
+
+## [Feature Specification: Planogram New Types](overviews/doc:sdd-specs-planogram-new-types-spec-md.md)
+
+The `planogram_compliance` module in `ai-parrot-pipelines` currently only supports two composable types: `product_on_shelves` and `graphic_panel_display`. Two additional physical retail formats need compliance validation:
+
+## [Feature Specification: Policy-Based Access Control (PBAC) Integration](overviews/doc:sdd-specs-policy-based-access-control-spec-md.md)
+
+FEAT-014 introduced a two-layer permission system (Layer 1: preventive filtering,
+
+## [Feature Specification: Declarative PBAC Policy Rules on AbstractBot](overviews/doc:sdd-specs-policy-rules-abstractbot-spec-md.md)
+
+FEAT-077 established the PBAC engine (`PDP`, `PolicyEvaluator`, `Guardian`) and wired it
+
+## [Feature Specification: PowerPointLoader Image Parsing via GoogleGenAIClient](overviews/doc:sdd-specs-powerpoint-loader-parsing-images-spec-md.md)
+
+When a PPTX slide contains images, the `PowerPointLoader` has no ability to extract or describe the visual content. Image-only slides are skipped by default, and slides with mixed text+images lose the image context entirely. This degrades retrieval quality in downstream RAG appli
+
+## [Feature Specification: Print-to-PDF Helper for AgentTalk](overviews/doc:sdd-specs-printpdf-helper-agenttalk-spec-md.md)
+
+AI-Parrot agents produce rich HTML outputs (infographics, reports, dashboards) but
+
+## [Feature Specification: Product-On-Shelves Illumination Support](overviews/doc:sdd-specs-product-on-shelves-illumination-spec-md.md)
+
+Epson scanner displays at Office Depot feature a **backlit header panel** ("Scan & Done" with Shaq photo) above 3 shelves of physical scanner products. The `product_on_shelves` planogram type correctly handles the shelves but has **zero illumination support** — the backlit header
+
+## [Feature Specification: Prompt Library — `agent_id` support + new `UserPrompts` model](overviews/doc:sdd-specs-promptlibrary-changes-spec-md.md)
+
+The current `PromptLibrary` model at
+
+## [Feature Specification: Pulumi Toolkit for Container Deployment](overviews/doc:sdd-specs-pulumi-toolkit-deployment-spec-md.md)
+
+AI agents need the ability to deploy and manage containerized applications as part of their workflows. Currently, there's no infrastructure-as-code (IaC) toolkit in AI-Parrot that allows agents to:
+
+## [Feature Specification: QuantToolkit](overviews/doc:sdd-specs-quant-toolkit-spec-md.md)
+
+AI-Parrot's risk analyst crew has extensive **prompt-level responsibilities** (VaR, beta, Sharpe, drawdown, correlation, concentration risk, stress testing) but **no dedicated computation tools** to actually perform these calculations. The risk research crew's instructions say "Q
+
+## [Feature Specification: Refactor Episodic + AgentCoreMemory Consolidation](overviews/doc:sdd-specs-refactor-episodic-agentcorememory-spec-md.md)
+
+Rather than fixing the orphaned `AgentCoreMemory`, we should:
+
+## [Feature Specification: Refactor FormRegistry — aiohttp App-Integrated Lifecycle](overviews/doc:sdd-specs-refactor-formregistry-spec-md.md)
+
+has no awareness of the aiohttp application lifecycle. This forces every
+
+## [Feature Specification: Refactor Tools Imports (Monorepo Migration Fix)](overviews/doc:sdd-specs-refactor-tools-imports-spec-md.md)
+
+During the migration to a monorepo structure (`ai-parrot` core + `ai-parrot-tools` sub-package), dozens of tool files retained stale import paths. Files inside `parrot_tools` (the `ai-parrot-tools` package) reference modules via `parrot.tools.*` that **no longer exist** in the co
+
+## [Feature Specification: Refactor WorkingMemoryToolkit](overviews/doc:sdd-specs-refactor-workingmemorytoolkit-spec-md.md)
+
+The `WorkingMemoryToolkit` in `packages/ai-parrot/src/parrot/tools/working_memory/tool.py` was developed as a standalone prototype with stub imports. It is not usable within the ai-parrot framework because:
+
+## [Feature Specification: REPL Sandbox + Gemini Response Contract + Secret Scrubber](overviews/doc:sdd-specs-repl-sandbox-response-contract-scrubb-df69beb1.md)
+
+A production `JiraSpecialist` agent (model `gemini-3`) running an autonomous loop
+
+## [Feature Specification: REST API — Lyria Music Generation](overviews/doc:sdd-specs-rest-api-for-lyria-music-spec-md.md)
+
+Add a new handler class `LyriaMusicHandler(BaseHandler)` in `parrot/handlers/lyria_music.py` that:
+
+## [Feature Specification: REST API — Generate Video Reel](overviews/doc:sdd-specs-rest-api-generate-video-reel-spec-md.md)
+
+Add a new handler class `VideoReelHandler(BaseHandler)` in `parrot/handlers/video_reel.py` that:
+
+## [Feature Specification: Router-Based Adaptive RAG (Store-Level)](overviews/doc:sdd-specs-router-based-adaptive-rag-spec-md.md)
+
+AI-Parrot has a working **strategy-level** intent router (`IntentRouterMixin`, FEAT-069/070) that selects between `VECTOR_SEARCH`, `GRAPH_PAGEINDEX`, `DATASET`, `TOOL_CALL`, `FREE_LLM`, `MULTI_HOP`, `FALLBACK`, and `HITL`. However, **within** `VECTOR_SEARCH`, there is no routing:
+
+## [Feature Specification: Runtime Dependency Reduction](overviews/doc:sdd-specs-runtime-dependency-reduction-spec-md.md)
+
+AI-Parrot has ~57 hard runtime dependencies in `pyproject.toml [project.dependencies]`, many of which are heavy, domain-specific packages that most users will never need. Installing `ai-parrot` as a library triggers installation of:
+
+## [Feature Specification: Rust-backed Semantic Text Splitter](overviews/doc:sdd-specs-rust-semantic-text-splitter-spec-md.md)
+
+The current `SemanticTextSplitter` (`packages/ai-parrot-loaders/src/parrot_loaders/splitters/semantic.py`,
+
+## [Feature Specification: PlaywrightDriver (First-Class Playwright Support)](overviews/doc:sdd-specs-scraping-playwrightdriver-spec-md.md)
+
+The current `parrot/tools/scraping/driver.py` contains a monolithic `SeleniumSetup`
+
+## [Feature Specification: WebScrapingToolkit](overviews/doc:sdd-specs-scraping-toolkit-spec-md.md)
+
+generation, single-page scraping, multi-page crawling, and plan management into a
+
+## [Feature Specification: ScrapingFlow — Composable Long-Horizon Scraping](overviews/doc:sdd-specs-scrapingflow-composable-scraping-spec-md.md)
+
+The `WebScrapingToolkit` resolves a single unit of work: a `ScrapingPlan` (JSON declarative)
+
+## [Feature Specification: CrawlEngine](overviews/doc:sdd-specs-scrapingplan-crawlengine-spec-md.md)
+
+(following links, managing depth, deduplicating URLs) is either missing or ad-hoc in
+
+## [Feature Specification: ScrapingPlan & PlanRegistry](overviews/doc:sdd-specs-scrapingplan-planregistry-spec-md.md)
+
+The `WebScrapingTool` currently generates a fresh LLM inference call every time it
+
+## [Feature Specification: ScrapingToolkit HTTP Handler](overviews/doc:sdd-specs-scrapingtoolkit-handler-spec-md.md)
+
+The `WebScrapingToolkit` (FEAT-014) provides a powerful async toolkit for web scraping — plan creation, plan management, scraping execution, and crawling — but it is only accessible programmatically within Python code. There is no HTTP API layer to expose these capabilities to ex
+
+## [Feature Specification: SDD Flow Types and Per-Spec Index](overviews/doc:sdd-specs-sdd-flow-types-and-per-spec-index-spec-md.md)
+
+The current SDD tooling has two structural defects:
+
+## [Feature Specification: SecurityAdvisor — SOC2-Oriented Read-Only Advisory Agent](overviews/doc:sdd-specs-security-advisor-spec-md.md)
+
+The existing `SecurityAgent` (`agents/security.py`) **produces** security
+
+## [Feature Specification: Cross-Session Security Report Catalog (Postgres + S3) with Fractal Summaries](overviews/doc:sdd-specs-security-report-catalog-spec-md.md)
+
+The `SecurityAgent` (`agents/security.py`) runs a suite of scanners — CloudSploit,
+
+## [Feature Specification: ShellTool Security — Command Sanitizer](overviews/doc:sdd-specs-shelltool-security-spec-md.md)
+
+The `ShellTool` (`parrot/tools/shell_tool/`) executes arbitrary shell commands on behalf of AI agents. While it has a basic security layer (`BaseAction.FORBIDDEN_PATHS` + `_validate_command` regex), the current implementation has significant gaps:
+
+## [Feature Specification: Skills Directory Loader + PromptBuilder Integration](overviews/doc:sdd-specs-skill-registry-spec-md.md)
+
+AI-Parrot's `parrot.memory.skills` module has a mature filesystem-backed skill subsystem
+
+## [Feature Specification: Skills Tools → Toolkit Unification](overviews/doc:sdd-specs-skills-tools-toolkit-spec-md.md)
+
+The skills subsystem (`parrot/skills/`) exposes its agent-facing tools as a
+
+## [Feature Specification: Slack Wrapper Integration Enhancements](overviews/doc:sdd-specs-slack-wrapper-integration-spec-md.md)
+
+The current `SlackAgentWrapper` exposes AI-Parrot agents via Slack Events API and slash commands but has critical gaps preventing production deployment:
+
+## [Feature Specification: Spatial Filtering for DatasetManager](overviews/doc:sdd-specs-spatial-dataset-filter-spec-md.md)
+
+A `PandasAgent` over live geospatial datasets (USA apartments ~879k, public/private
+
+## [Feature Specification: sqlagent-repair](overviews/doc:sdd-specs-sqlagent-repair-spec-md.md)
+
+AI-Parrot has two overlapping database agent packages that solve complementary halves of the same problem:
+
+## [Feature Specification: Structured Artifact Contract — homologate the `structured_` family](overviews/doc:sdd-specs-structured-artifact-contract-spec-md.md)
+
+The `structured_` output family is inconsistent. `STRUCTURED_TABLE` (FEAT-218) is built on a
+
+## [Feature Specification: Structured Chart Output Mode](overviews/doc:sdd-specs-structured-chart-output-spec-md.md)
+
+The `navigator-frontend-next` app migrated every chart to **LayerChart** behind a single
+
+## [Feature Specification: Structured Config Homologation (`artifacts[]` envelope)](overviews/doc:sdd-specs-structured-config-homologation-spec-md.md)
+
+The three structured output modes (`STRUCTURED_TABLE` FEAT-218,
+
+## [Feature Specification: Structured Map Output Mode (`STRUCTURED_MAP`)](overviews/doc:sdd-specs-structured-map-output-spec-md.md)
+
+FEAT-219 (`spatial-dataset-filter`) delivered only **half** of the original
+
+## [Feature Specification: Structured Table Output Mode](overviews/doc:sdd-specs-structured-table-spec-md.md)
+
+Tabular agent results are delivered today either as **rendered HTML/Grid.js**
+
+## [Feature Specification: TechnicalAnalysisTool Improvements](overviews/doc:sdd-specs-technical-analysis-improvements-spec-md.md)
+
+The current `TechnicalAnalysisTool` (`parrot/tools/technical_analysis.py`) provides basic technical indicators (SMA, RSI, MACD, Bollinger Bands) but lacks critical capabilities required for autonomous trading decisions:
+
+## [Feature Specification: TelegramCrewTransport](overviews/doc:sdd-specs-telegram-crew-transport-spec-md.md)
+
+AI-Parrot's current Telegram integration wrapper follows a **1 bot = 1 agent = 1 chat** model. When multiple agents need to collaborate on a task (e.g., data extraction + report generation + orchestration), there is no mechanism for them to operate as a visible crew in a shared T
+
+## [Feature Specification: Telegram Command Menu Registration Parity (IntegrationBotManager)](overviews/doc:sdd-specs-telegram-integration-menu-registration-spec-md.md)
+
+Agent-driven Telegram bots booted through the **unified integration path**
+
+## [Feature Specification: Telegram Integration — OAuth2 Authentication](overviews/doc:sdd-specs-telegram-integrations-auth-spec-md.md)
+
+The current Telegram integration (`parrot/integrations/telegram/`) has authentication tightly coupled to Navigator's Basic Auth:
+
+## [Feature Specification: Telegram Voice Note Support](overviews/doc:sdd-specs-telegram-voice-notes-spec-md.md)
+
+The `TelegramAgentWrapper` currently handles text, photos, and documents — but ignores voice messages and audio files entirely. When a Telegram user sends a voice note (the microphone button) or forwards an audio file, the bot does not respond.
+
+## [Feature Specification: Telegram Wrapper — Rich Message Integration](overviews/doc:sdd-specs-telegram-wrapper-audio-files-integrat-7291fc92.md)
+
+The Telegram integration wrapper (`TelegramAgentWrapper`) currently handles text messages well,
+
+## [FEAT-032: Database Schema Tools — Completion & Hardening](overviews/doc:sdd-specs-tools-database-spec-md.md)
+
+(`PgSchemaSearchTool`) and BigQuery (`BQSchemaSearchTool`). Three areas are incomplete:
+
+## [Feature Specification: Topic-Authority Ontology Curation](overviews/doc:sdd-specs-topic-authority-ontology-spec-md.md)
+
+The three sibling brainstorms in the topic-authority trilogy leave a deliberate gap:
+
+## [Feature Specification: Unified Credential Broker — one declarative per-user auth abstraction for tools & MCP](overviews/doc:sdd-specs-unified-credential-broker-spec-md.md)
+
+Connecting a tool or MCP server that needs **per-user** authentication currently
+
+## [Feature Specification: Unified Voice Control on the StreamHandler WebSocket](overviews/doc:sdd-specs-unified-voice-control-streamhandler-spec-md.md)
+
+Today a browser running a LiveAvatar Phase C (FEAT-243) voice conversation needs
+
+## [Feature Specification: Update AgentCrew & AgentsFlow Documentation](overviews/doc:sdd-specs-update-agentcrew-agentflow-documentat-9506fd8b.md)
+
+The public-facing documentation for AI-Parrot's orchestration layer (AgentCrew
+
+## [Feature Specification: User-Based Credentials](overviews/doc:sdd-specs-user-based-credentials-spec-md.md)
+
+Users of AI-Parrot have no way to store and manage their own database credentials within the platform. When using DatabaseToolkit or DatasetManager, credentials must be configured externally each time. There is no persistent, per-user credential vault that survives across session
+
+## [Feature Specification: UX for Custom Engine Copilot Agents (Semantic UI Model → Adaptive Cards)](overviews/doc:sdd-specs-ux-custom-engine-copilot-spec-md.md)
+
+AI-Parrot agents are exposed to Microsoft 365 Copilot and Teams as **custom
+
+## [Feature Specification: Vector Store Handler — Clean Content Extraction from Scraped Pages](overviews/doc:sdd-specs-vector-store-handler-scraping-spec-md.md)
+
+The `VectorStoreHandler._load_urls()` method uses the legacy `WebScrapingTool` directly, storing raw HTML content (complete with `<script>`, `<style>`, navigation, ads, cookie banners, and tracking code) into the vector store. This raw HTML is unsuitable for RAG retrieval:
+
+## [Feature Specification: Vector Store Handler API](overviews/doc:sdd-specs-vectorstore-handler-api-spec-md.md)
+
+Developers and frontend applications need a REST API to create, manage, load data into, and test vector store collections without writing Python code. Currently, all vector store operations require direct use of `PgVectorStore`, loaders, and `AbstractBot.define_store_config()` — 
+
+## [Feature Specification: VideoReel Handler — Reference Image Upload per Scene](overviews/doc:sdd-specs-videoreelhandler-upload-images-spec-md.md)
+
+user-provided images to individual scenes. The background generation step in
+
+## [FEAT-022: vLLM Client Integration](overviews/doc:sdd-specs-vllm-client-spec-md.md)
+
+The project needs a dedicated client for consuming **vLLM** (https://vllm.ai/) local LLM servers, supporting the standard `ask` and `ask_stream` methods compatible with `OpenAIClient` and `AnthropicClient`.
+
+## [Feature Specification: Realtime LiveAvatar mouth driven by VoiceBot (Gemini Live)](overviews/doc:sdd-specs-voicechat-liveavatar-gemini-spec-md.md)
+
+Today `VoiceChatHandler` (`/ws/voice`) runs a fully realtime voice conversation
+
+## [Feature Specification: Web HITL Channel & Demo Agent](overviews/doc:sdd-specs-web-hitl-and-demo-agent-spec-md.md)
+
+integration. The web surface (`AgentTalk` HTTP handler at
+
+## [Feature Specification: WebScrapingLoader JSON-LD Multi-Type Support](overviews/doc:sdd-specs-webscrapingloader-jsonld-support-spec-md.md)
+
+WebScrapingLoader currently extracts JSON-LD structured data only for
+
+## [Feature Specification: WebScrapingToolkit `extract_jsonld` Browser Action](overviews/doc:sdd-specs-webscrapingtoolkit-jsonld-spec-md.md)
+
+The `WebScrapingTool` browser-action system (used by LLM-directed scraping
+
+## [Feature Specification: WhatIf Toolkit Decomposition & Statistical Analysis Tools](overviews/doc:sdd-specs-whatif-toolkit-decomposition-spec-md.md)
+
+The current `WhatIfTool` is a **single monolithic tool** with a complex `WhatIfInput` schema containing ~10 fields (objectives, constraints, possible_actions, derived_metrics, algorithm). LLMs — especially Gemini — consistently fail with multi-purpose tools because they:
+
+## [Feature Specification: Workday Composable-Only WSDL Routing (retire legacy SOAP path)](overviews/doc:sdd-specs-workday-composable-only-wsdl-routing-spec-md.md)
+
+After FEAT-230, `WorkdayToolkit` carries **two coexisting WSDL-routing systems**:
+
+## [Feature Specification: Workday Composable Interface + Toolkit Homologation](overviews/doc:sdd-specs-workday-tooling-composable-interface-spec-md.md)
+
+A mature, SDD-built composable Workday interface already exists in a sibling
+
+## [Feature Specification: Z.ai Code Dispatcher for the Dev Loop (GLM-5.2)](overviews/doc:sdd-specs-zai-client-code-spec-md.md)
+
+The dev-loop flow (`parrot/flows/dev_loop/`) currently supports five code
+
+## [Feature Specification: Zammad Interface & Toolkit](overviews/doc:sdd-specs-zammad-interface-toolkit-spec-md.md)
+
+AI-Parrot agents need to interact with Zammad helpdesk servers for ticket
+
+## [TASK-1484: Multimodal Embedding Base ABC & Enums](overviews/doc:sdd-tasks-active-task-1484-multimodal-base-abc-md.md)
+
+This is the foundation task for the multimodal embedding feature. It creates the
+
+## [TASK-1485: Quantization & Matryoshka Post-processing](overviews/doc:sdd-tasks-active-task-1485-quantization-postprocess-md.md)
+
+This task implements the shared post-processing pipeline for multimodal embeddings:
+
+## [TASK-1486: UForm Embedding Provider](overviews/doc:sdd-tasks-active-task-1486-uform-provider-md.md)
+
+This task implements `UFormEmbedding`, the first concrete multimodal embedding
+
+## [TASK-1487: Registry & Catalog Integration](overviews/doc:sdd-tasks-active-task-1487-registry-catalog-int-560d7083.md)
+
+This task wires `UFormEmbedding` into the existing embedding infrastructure so
+
+## [TASK-1488: PgVector Multimodal Collection Schema](overviews/doc:sdd-tasks-active-task-1488-pgvector-multimodal-schema-md.md)
+
+This task creates a parallel multimodal collection table in PgVector, separate
+
+## [TASK-1489: Multimodal Embedding Benchmark Harness](overviews/doc:sdd-tasks-active-task-1489-benchmark-harness-md.md)
+
+This task delivers the benchmark harness that serves as a decision gate: it
+
+## [TASK-1490: Driver–Dialect Map](overviews/doc:sdd-tasks-active-task-1490-driver-dialect-map-md.md)
+
+driver aliases (as returned by `normalize_driver`) to sqlglot 30.9.0 dialect
+
+## [TASK-1490: Multimodal Embedding Integration Tests](overviews/doc:sdd-tasks-active-task-1490-integration-tests-md.md)
+
+This task writes the integration test suite that validates the full multimodal
+
+## [TASK-1491: Physical-Resource Resolver](overviews/doc:sdd-tasks-active-task-1491-physical-resource-resolver-md.md)
+
+that inspects a `DataSource` subclass and returns the set of driver + tables /
+
+## [TASK-1492: Opaque-Source Resolvers](overviews/doc:sdd-tasks-active-task-1492-opaque-source-resolvers-md.md)
+
+with per-type extraction logic for each non-SQL `DataSource` subclass.
+
+## [TASK-1493: RLS Registry](overviews/doc:sdd-tasks-active-task-1493-rls-registry-md.md)
+
+template with subject attributes, producing bound parameters (not interpolated).
+
+## [TASK-1494: RLS Predicate Injection](overviews/doc:sdd-tasks-active-task-1494-rls-predicate-injection-md.md)
+
+— sqlglot AST rewrite: wrap as `SELECT * FROM (<orig>) AS _rls WHERE <pred>`
+
+## [TASK-1495: DataPlanePolicyGuard](overviews/doc:sdd-tasks-active-task-1495-dataplane-policy-guard-md.md)
+
+driver gate → table/source gate. Raises `AuthorizationRequired` on denial.
+
+## [TASK-1496: AuthorizingDataSource Decorator](overviews/doc:sdd-tasks-active-task-1496-authorizing-data-source-md.md)
+
+a callable that returns the current `PermissionContext` (from `_pctx_var`).
+
+## [TASK-1497: DatasetManager Integration](overviews/doc:sdd-tasks-active-task-1497-datasetmanager-integration-md.md)
+
+wraps the source in `AuthorizingDataSource` when `dataplane_guard` is set.
+
+## [TASK-1498: DatabaseQueryTool Integration](overviews/doc:sdd-tasks-active-task-1498-databasequerytool-in-cd07038a.md)
+
+here), remote execution (Module 10).
+
+## [TASK-1499: Agent-identity ContextVar module](overviews/doc:sdd-tasks-active-task-1499-agent-identity-contextvar-md.md)
+
+Foundation of FEAT-228 (spec §2 Overview, §3 Module 1). The per-agent metric
+
+## [TASK-1500: Add agent_name field to client lifecycle events](overviews/doc:sdd-tasks-active-task-1500-client-event-agent-n-61afa612.md)
+
+Spec §2 Data Models, §3 Module 2. The agent identity must ride on the client
+
+## [TASK-1501: Bind agent identity around bot invocations](overviews/doc:sdd-tasks-active-task-1501-bot-invocation-wrapping-md.md)
+
+Spec §2 Overview, §3 Module 3. The ContextVar from TASK-1499 must be SET for the
+
+## [TASK-1502: Populate agent_name on client events from the ContextVar](overviews/doc:sdd-tasks-active-task-1502-client-populate-agent-name-md.md)
+
+Spec §2 Overview step 3, §3 Module 4. The client builds its three lifecycle
+
+## [TASK-1503: Add parrot.agent.name label to client metrics](overviews/doc:sdd-tasks-active-task-1503-metrics-agent-label-md.md)
+
+Spec §1 Problem Statement, §3 Module 5 — the core deliverable. The cost counter,
+
+## [TASK-1514: Bedrock model-ID translator](overviews/doc:sdd-tasks-active-task-1514-bedrock-model-translator-md.md)
+
+Implements **Module 1** of the spec. Bedrock requires prefixed / inference-profile
+
+## [TASK-1515: Add AWS session-token & Anthropic-AWS workspace conf constants](overviews/doc:sdd-tasks-active-task-1515-aws-conf-constants-md.md)
+
+Implements **Module 4** of the spec. The Bedrock and AWS-workspace backends need
+
+## [TASK-1516: Fold `aws` into the `[anthropic]` packaging extra](overviews/doc:sdd-tasks-active-task-1516-anthropic-aws-packag-ab6d5823.md)
+
+Implements **Module 6** of the spec. The Bedrock and AWS-workspace clients require
+
+## [TASK-1517: Backend strategy objects (Direct / Bedrock / AWS-workspace)](overviews/doc:sdd-tasks-active-task-1517-anthropic-backend-strategy-md.md)
+
+Implements **Module 2** of the spec. These are the composable backend objects that
+
+## [TASK-1518: Integrate backend strategy into AnthropicClient](overviews/doc:sdd-tasks-active-task-1518-anthropicclient-back-6b1700e9.md)
+
+Implements **Module 3** of the spec — the heart of the feature. Adds the `backend`
+
+## [TASK-1559: Integration Edits — tree_ops, toolkit, content_store](overviews/doc:sdd-tasks-active-task-1559-okf-integration-md.md)
+
+This is the final integration task. All new OKF modules exist; now they must be wired
+
+## [TASK-1599: Node Types Reference Documentation](overviews/doc:sdd-tasks-active-task-1599-node-types-reference-md.md)
+
+for every registered node type in AI-Parrot's orchestration layer.
+
+## [TASK-1600: AgentCrew User Guide Documentation](overviews/doc:sdd-tasks-active-task-1600-agentcrew-user-guide-md.md)
+
+1. **What is AgentCrew?** — High-level explanation: multi-agent orchestrator
+
+## [TASK-1601: AgentsFlow User Guide Documentation](overviews/doc:sdd-tasks-active-task-1601-agentsflow-user-guide-md.md)
+
+1. **What is AgentsFlow?** — DAG-first executor with per-node FSM, event-driven
+
+## [TASK-1602: mkdocs.yml Nav Update & Page Cleanup](overviews/doc:sdd-tasks-active-task-1602-mkdocs-nav-update-an-83baefe6.md)
+
+"Bots & Agents" nav sections:
+
+## [TASK-1613: `_resolve_final_response` chokepoint in the Gemini client (WS2)](overviews/doc:sdd-tasks-active-task-1613-gemini-resolve-final-30d738bb.md)
+
+WS2 — the **primary containment** (spec §3 Module 3, G3). Today there is no single
+
+## [TASK-1614: `PythonCodeSanitizer` allowlist-first AST gate (WS1)](overviews/doc:sdd-tasks-active-task-1614-pythoncodesanitizer--38b26d43.md)
+
+WS1 (spec §3 Module 4, G2). The shipped fix (`0f76129b1`) gates `python_repl` with
+
+## [TASK-1615: Containment integration + non-regression test suite (G5)](overviews/doc:sdd-tasks-active-task-1615-containment-regressi-53bc9886.md)
+
+Spec §3 Module 5, §4 Integration Tests, G5. The unit tests live with their modules;
+
+## [TASK-1618: GigSmart OAuth 2.1 Authentication](overviews/doc:sdd-tasks-active-task-1618-gigsmart-oauth-md.md)
+
+OAuth 2.1 token lifecycle management for GigSmart API. Supports both
+
+## [TASK-1619: GigSmart Pydantic Models](overviews/doc:sdd-tasks-active-task-1619-gigsmart-models-md.md)
+
+All Pydantic v2 input/output models for the 6 GigSmart API surfaces plus generic
+
+## [TASK-1620: GigSmart GraphQL Documents](overviews/doc:sdd-tasks-active-task-1620-gigsmart-graphql-documents-md.md)
+
+All GraphQL query and mutation strings for the GigSmart API. Organized by surface
+
+## [TASK-1621: GigSmart GraphQL Client](overviews/doc:sdd-tasks-active-task-1621-gigsmart-graphql-client-md.md)
+
+Core aiohttp-based GraphQL client for the GigSmart API. Sends queries/mutations,
+
+## [TASK-1622: GigSmartToolkit — AbstractToolkit for LLM Agents](overviews/doc:sdd-tasks-active-task-1622-gigsmart-toolkit-md.md)
+
+The main LLM-facing toolkit. Inherits `AbstractToolkit` and exposes 23 async methods
+
+## [TASK-1623: GigSmart Package Init & Registration](overviews/doc:sdd-tasks-active-task-1623-gigsmart-package-init-md.md)
+
+Final integration task: wire up all package `__init__.py` exports, register the
+
+## [TASK-1627: Wiki Data Models](overviews/doc:sdd-tasks-active-task-1627-wiki-data-models-md.md)
+
+Foundation task — defines all Pydantic data models used across the wiki feature.
+
+## [TASK-1628: OKF Schema Extensions](overviews/doc:sdd-tasks-active-task-1628-okf-schema-extensions-md.md)
+
+Extends existing OKF enums (ConceptType, RelationType) with wiki-specific
+
+## [TASK-1629: Source Collection Manager](overviews/doc:sdd-tasks-active-task-1629-source-collection-manager-md.md)
+
+Implements the "Raw Sources" layer of Karpathy's 3-layer architecture. Manages
+
+## [TASK-1630: Wiki Bookkeeper](overviews/doc:sdd-tasks-active-task-1630-wiki-bookkeeper-md.md)
+
+Implements index.md and log.md bookkeeping for the wiki. Extends OKF's
+
+## [TASK-1631: Combined Search](overviews/doc:sdd-tasks-active-task-1631-combined-search-md.md)
+
+Implements unified search across PageIndex trees and GraphIndex graph. Merges
+
+## [TASK-1632: Wiki Ingest Orchestrator](overviews/doc:sdd-tasks-active-task-1632-wiki-ingest-orchestrator-md.md)
+
+Implements the core "Ingest" operation from Karpathy's 3-layer architecture.
+
+## [TASK-1633: LLMWikiToolkit](overviews/doc:sdd-tasks-active-task-1633-llmwiki-toolkit-md.md)
+
+The main agent-facing toolkit. Composes PageIndexToolkit + GraphIndexToolkit +
+
+## [TASK-1634: Bot Integration Wiring](overviews/doc:sdd-tasks-active-task-1634-bot-integration-wiring-md.md)
+
+Wires LLMWikiToolkit into the bot framework following the established
+
+## [TASK-1635: Wiki Package Init + Exports](overviews/doc:sdd-tasks-active-task-1635-wiki-package-init-md.md)
+
+Finalizes the wiki package's `__init__.py` with all public exports and
+
+## [TASK-246-001: Implement voice_adapters.py — SupertonicTTS, _TranscriberSTT, WhisperSTT, MoonshineSTT](overviews/doc:sdd-tasks-active-task-246-001-voice-adapters-module-md.md)
+
+FEAT-246 — expose AI-Parrot's own voice infra (SupertonicPipeline TTS and
+
+## [TASK-246-002: Add resolve_stt/resolve_tts factories and wire them into pipeline.py](overviews/doc:sdd-tasks-active-task-246-002-resolve-factories-faa4b709.md)
+
+FEAT-246 Module 3 — env-driven provider factory and pipeline wiring.
+
+## [TASK-246-003: Unit tests for voice adapters and provider factories](overviews/doc:sdd-tasks-active-task-246-003-unit-tests-md.md)
+
+FEAT-246 test coverage. All tests from the spec section 4 (unit tests table),
+
+## [TASK-001: BASE_DIR-anchored WORKTREE / repo base paths](overviews/doc:sdd-tasks-completed-task-001-base-dir-anchored-config-md.md)
+
+Implements **Module 1** of the spec. Today `WORKTREE_BASE_PATH` is the relative
+
+## [TASK-001: Engine — `node_factories` injection for declarative custom nodes](overviews/doc:sdd-tasks-completed-task-001-engine-node-factories-md.md)
+
+Implements spec §2.A and Module 1 (G2). `AgentsFlow.from_definition()` today can
+
+## [TASK-001: LiveAvatar package skeleton, Pydantic models & `livekit-api` extra](overviews/doc:sdd-tasks-completed-task-001-liveavatar-package-454d2700.md)
+
+Foundation task for FEAT-242. Every other module (M1–M7) imports the Pydantic
+
+## [TASK-001: LiveKit-agent optional deps + package skeleton + data models](overviews/doc:sdd-tasks-completed-task-001-livekit-agent-deps-5259c64d.md)
+
+Foundation task for Phase C (spec §2 "Data Models", §3 Module 1, §7 "External
+
+## [TASK-001: Define MusicGenerationRequest Pydantic Model](overviews/doc:sdd-tasks-completed-task-001-music-generation-model-md.md)
+
+class MusicGenerationRequest(BaseModel):
+
+## [TASK-001: Vendor Bot Framework plumbing & resolve packaging clash](overviews/doc:sdd-tasks-completed-task-001-vendor-bf-plumbing-f58544d7.md)
+
+Foundation task (spec §3 Module 2 + §7 packaging constraints). Before any
+
+## [TASK-002: GitToolkit — `clone_repo` / `pull_repo` (public + private)](overviews/doc:sdd-tasks-completed-task-002-gittoolkit-clone-pull-md.md)
+
+Implements spec §2.B and Module 2 (G3). `GitToolkit` today is REST-only; it has
+
+## [TASK-002: Minimal async Microsoft Graph client (email→AAD resolution)](overviews/doc:sdd-tasks-completed-task-002-graph-client-md.md)
+
+Spec §3 Module 1. The channel receives an **email** as `recipient` (decision
+
+## [TASK-002: LiveAvatar HTTP client & session lifecycle (M1)](overviews/doc:sdd-tasks-completed-task-002-liveavatar-client--7f540920.md)
+
+Implements **Module 1** (spec §3): the LiveAvatar HTTP client and session
+
+## [TASK-002: Implement LyriaMusicHandler](overviews/doc:sdd-tasks-completed-task-002-lyria-music-handler-md.md)
+
+from navigator.views import BaseHandler
+
+## [TASK-002: Structured-output → AgentChat UI bridge (`OutputBridge`)](overviews/doc:sdd-tasks-completed-task-002-output-bridge-md.md)
+
+Implements spec §3 **Module 3** and Open Question **P4**. Phase C bifurcates the
+
+## [TASK-002: `parse_repo_specs` — DEV_LOOP_REPOS → RepoSpec parser](overviews/doc:sdd-tasks-completed-task-002-parse-repo-specs-md.md)
+
+Implements **Module 2** of the spec. `conf.DEV_LOOP_REPOS` (`conf.py:870`) is a
+
+## [TASK-003: Avatar audio bridge — WebSocket PCM push (M2)](overviews/doc:sdd-tasks-completed-task-003-avatar-ws-pcm-bridge-md.md)
+
+Implements **Module 2** (spec §3): the avatar audio bridge that pushes PCM frames
+
+## [TASK-003: TeamsCardRenderer — InteractionType → Adaptive Card](overviews/doc:sdd-tasks-completed-task-003-card-renderer-md.md)
+
+Spec §3 Module 4. Each `HumanInteraction` must render as an Adaptive Card with
+
+## [TASK-003: Dev-loop model additions (`RepoSpec`, `RevisionBrief`, QA/Research fields)](overviews/doc:sdd-tasks-completed-task-003-dev-loop-models-md.md)
+
+Implements spec §2 Data Models and Module 3. Foundational Pydantic contracts
+
+## [TASK-003: `LiveAvatarAgent.llm_node` ai-parrot bridge](overviews/doc:sdd-tasks-completed-task-003-llm-node-aiparrot-bridge-md.md)
+
+The FEAT-242 `SpeakableFlattener` is now present in this worktree (FEAT-243 is
+
+## [TASK-003: ResearchNode — BASE_DIR fallback + clone-sourced worktree](overviews/doc:sdd-tasks-completed-task-003-provision-local-fa-ce6e30fe.md)
+
+Implements **Module 3** — the core wiring. Today `_provision_repos`
+
+## [TASK-003: Update GoogleGenerationHelper with Music Schema](overviews/doc:sdd-tasks-completed-task-003-update-schema-helper-md.md)
+
+@staticmethod
+
+## [TASK-004: conf settings for repos, revision trigger, code-review model](overviews/doc:sdd-tasks-completed-task-004-conf-settings-md.md)
+
+Implements Module 11. Adds the navconfig settings the new dev-loop behaviours
+
+## [TASK-004: LiveKit room manager — BYO Cloud tokens (M3)](overviews/doc:sdd-tasks-completed-task-004-livekit-room-manager-md.md)
+
+Implements **Module 3** (spec §3): mint a LiveKit Cloud room plus client/agent
+
+## [TASK-004: LiveKit Agents worker + session pipeline](overviews/doc:sdd-tasks-completed-task-004-livekit-worker-and-97f3b867.md)
+
+FEAT-242's `LiveKitRoomManager`, `LiveAvatarClient` and models are present in
+
+## [TASK-004: Write Tests for LyriaMusicHandler](overviews/doc:sdd-tasks-completed-task-004-lyria-music-tests-md.md)
+
+import pytest
+
+## [TASK-004: Proactive 1:1 bootstrap + ConversationReference cache](overviews/doc:sdd-tasks-completed-task-004-proactive-1to1-convref-md.md)
+
+Spec §3 Module 3 — the **net-new core**. The repo has NO proactive messaging
+
+## [TASK-004: Wire GitToolkit + repos into the demo server](overviews/doc:sdd-tasks-completed-task-004-wire-demo-server-md.md)
+
+Implements **Module 4**. The demo (`examples/dev_loop/server.py:389`) calls
+
+## [TASK-005: Live integration tests — clone→worktree & local→worktree](overviews/doc:sdd-tasks-completed-task-005-live-integration-tests-md.md)
+
+Implements the **Integration Tests** of the spec §4. The unit tests in
+
+## [TASK-005: `sdd-codereview` subagent definition + allowlist](overviews/doc:sdd-tasks-completed-task-005-sdd-codereview-subagent-md.md)
+
+Implements Module 5 (G4). Adds a read-only code-review subagent that the QA node
+
+## [TASK-005: Speakable-text flattener & sentence segmenter (M4)](overviews/doc:sdd-tasks-completed-task-005-speakable-flattener-md.md)
+
+Implements **Module 4** (spec §3): convert markdown chunks streamed from the
+
+## [TASK-005: TeamsHumanChannel assembly + inbound demux + registry](overviews/doc:sdd-tasks-completed-task-005-teams-channel-assembly-md.md)
+
+Spec §3 Module 5 (core assembly). Implements the `HumanChannel` contract using
+
+## [TASK-005: Implement VideoReelHandler](overviews/doc:sdd-tasks-completed-task-005-video-reel-handler-md.md)
+
+from navigator.views import BaseHandler
+
+## [TASK-006: Avatar session orchestrator (M5)](overviews/doc:sdd-tasks-completed-task-006-avatar-session-orc-e9fb178e.md)
+
+Implements **Module 5** (spec §3) — the Phase A glue. It opens a LiveAvatar
+
+## [TASK-006: Repo provisioning step (clone/pull configured repos before Development)](overviews/doc:sdd-tasks-completed-task-006-repo-provisioning-md.md)
+
+Implements Module 4 (G3). Before Development runs, the flow must clone/pull the
+
+## [TASK-006: setup_teams_hitl boot helper, per-agent override & docs](overviews/doc:sdd-tasks-completed-task-006-setup-helper-and-docs-md.md)
+
+Spec §3 Module 5 (wiring + override + docs). Provides the one-call boot helper
+
+## [TASK-006: Update GoogleGenerationHelper with Video Reel Schema](overviews/doc:sdd-tasks-completed-task-006-update-schema-help-f623c5e6.md)
+
+{
+
+## [TASK-007: Avatar session endpoint + avatar-mode flag (M6)](overviews/doc:sdd-tasks-completed-task-007-avatar-session-endpoint-md.md)
+
+Implements **Module 6** (spec §3): the HTTP surface. Add a start/stop avatar
+
+## [TASK-007: DeploymentHandoff opens a DRAFT PR (and surfaces PR number)](overviews/doc:sdd-tasks-completed-task-007-draft-pr-md.md)
+
+Implements Module 7 (G5). The PR must be a DRAFT so the revision loop (TASK-012)
+
+## [TASK-007: Register VideoReelHandler Routes](overviews/doc:sdd-tasks-completed-task-007-register-video-ree-f08eeb8e.md)
+
+def __getattr__(name: str):
+
+## [TASK-008: Per-tenant opt-in gating (M7)](overviews/doc:sdd-tasks-completed-task-008-avatar-tenant-optin-md.md)
+
+Implements **Module 7** (spec §3): resolve per-program/tenant opt-in and inject
+
+## [TASK-008: QA code-review gate (additive `sdd-codereview` dispatch)](overviews/doc:sdd-tasks-completed-task-008-qa-codereview-gate-md.md)
+
+Implements Module 6 (G4). QA gains a qualitative code-review gate **in addition**
+
+## [TASK-008: Write Tests for VideoReelHandler](overviews/doc:sdd-tasks-completed-task-008-video-reel-tests-md.md)
+
+import pytest
+
+## [TASK-009: `DevLoopCloseNode` terminal node](overviews/doc:sdd-tasks-completed-task-009-close-node-md.md)
+
+Implements Module 10 (G7). A terminal node that records the run's final state
+
+## [TASK-009: Flow Definition Pydantic Models](overviews/doc:sdd-tasks-completed-task-009-flow-definition-models-md.md)
+
+from pydantic import BaseModel, Field, model_validator
+
+## [TASK-009: Frontend LiveKit viewer (Svelte 5) (M8)](overviews/doc:sdd-tasks-completed-task-009-frontend-livekit-viewer-md.md)
+
+Implements **Module 8** (spec §3): embed a `livekit-client` viewer in the
+
+## [TASK-010: Declarative dev-loop `FlowDefinition` + node factories + parity](overviews/doc:sdd-tasks-completed-task-010-declarative-defini-8c270b7f.md)
+
+Implements Module 8 (G1) — the integration task. Re-express the dev-loop graph
+
+## [TASK-010: EndNode Implementation](overviews/doc:sdd-tasks-completed-task-010-endnode-implementation-md.md)
+
+class StartNode(AbstractBot):
+
+## [TASK-011: Action Registry](overviews/doc:sdd-tasks-completed-task-011-action-registry-md.md)
+
+from abc import ABC, abstractmethod
+
+## [TASK-011: GitHub webhook — emit `pr_comment` / `pr_review` events](overviews/doc:sdd-tasks-completed-task-011-github-webhook-pr--397b8ea4.md)
+
+Implements the webhook half of Module 9. `GitHubWebhookHook` today only
+
+## [TASK-012: CEL Predicate Evaluator](overviews/doc:sdd-tasks-completed-task-012-cel-evaluator-md.md)
+
+import celpy
+
+## [TASK-012: Revision-mode run (`run_revision` + `RevisionHandoffNode` + trigger)](overviews/doc:sdd-tasks-completed-task-012-revision-mode-run-md.md)
+
+Implements the run half of Module 9 (G6). A reviewer comment/review on a draft
+
+## [TASK-013: Flow Loader](overviews/doc:sdd-tasks-completed-task-013-flow-loader-md.md)
+
+from __future__ import annotations
+
+## [TASK-013: Live integration tests (initial draft PR, revision, private clone)](overviews/doc:sdd-tasks-completed-task-013-live-integration-tests-md.md)
+
+Implements the integration-test portion of Module 12 / §4. End-to-end coverage
+
+## [TASK-014: SvelteFlow Adapter](overviews/doc:sdd-tasks-completed-task-014-svelteflow-adapter-md.md)
+
+from typing import Any, Dict
+
+## [TASK-015: Integration Tests](overviews/doc:sdd-tasks-completed-task-015-integration-tests-md.md)
+
+// tests/fixtures/flows/food_order_flow.json
+
+## [TASK-016: Configuration & Data Models](overviews/doc:sdd-tasks-completed-task-016-crew-config-models-md.md)
+
+This task implements Module 1 from the spec. The configuration models are the foundation for the entire crew transport system — every other module depends on loading and validating config correctly.
+
+## [TASK-016: Voice Transcription Data Models](overviews/doc:sdd-tasks-completed-task-016-voice-transcriptio-98a8096c.md)
+
+This task implements the foundational Pydantic data models for the voice transcription feature. These models define configuration, results, and attachment parsing — used by all other modules in FEAT-008.
+
+## [TASK-017: Abstract Transcriber Backend](overviews/doc:sdd-tasks-completed-task-017-abstract-transcrib-3fe4c73c.md)
+
+This task defines the abstract base class for transcription backends. Both FasterWhisperBackend and OpenAIWhisperBackend will implement this interface, allowing the VoiceTranscriber service to work with either backend interchangeably.
+
+## [TASK-017: AgentCard & AgentSkill Models](overviews/doc:sdd-tasks-completed-task-017-agent-card-md.md)
+
+This task implements Module 2 from the spec. `AgentCard` is the identity and capability descriptor for each agent in the crew. It provides rendering methods used by the CoordinatorBot for the pinned registry message and agent announcements.
+
+## [TASK-018: CrewRegistry](overviews/doc:sdd-tasks-completed-task-018-crew-registry-md.md)
+
+This task implements Module 3 from the spec. The `CrewRegistry` is the thread-safe in-memory registry that tracks all active agents in the crew. It provides CRUD operations and resolution by username or agent name.
+
+## [TASK-018: Faster Whisper Backend](overviews/doc:sdd-tasks-completed-task-018-faster-whisper-backend-md.md)
+
+This task implements the local GPU-accelerated transcription backend using the `faster-whisper` library. This is the default backend for voice transcription, offering low latency and no API costs.
+
+## [TASK-019: DataPayload](overviews/doc:sdd-tasks-completed-task-019-data-payload-md.md)
+
+This task implements Module 4 from the spec. `DataPayload` handles file exchange between agents via Telegram document attachments. It manages downloading documents from Telegram messages, uploading files to the group, MIME type validation, and CSV convenience methods.
+
+## [TASK-019: OpenAI Whisper Backend](overviews/doc:sdd-tasks-completed-task-019-openai-whisper-backend-md.md)
+
+This task implements the cloud-based transcription backend using OpenAI's Whisper API. This provides an alternative to local GPU transcription for environments without GPU access or for simpler deployment.
+
+## [TASK-020: Voice Transcriber Service](overviews/doc:sdd-tasks-completed-task-020-voice-transcriber--37f717c4.md)
+
+This task implements the main `VoiceTranscriber` service that orchestrates transcription. It selects the appropriate backend based on configuration, handles audio downloads from URLs, manages temp files, and provides the unified interface used by MSTeamsAgentWrapper.
+
+## [TASK-021: CoordinatorBot](overviews/doc:sdd-tasks-completed-task-021-coordinator-bot-md.md)
+
+This task implements Module 6 from the spec. The `CoordinatorBot` is a non-agent bot that manages the pinned registry message in the Telegram supergroup. It provides real-time visibility of which agents are online, busy, or offline.
+
+## [TASK-021: MSTeamsAgentWrapper Voice Integration](overviews/doc:sdd-tasks-completed-task-021-msteams-wrapper-in-43d2669b.md)
+
+This is the main integration task that adds voice note processing to `MSTeamsAgentWrapper`. When a user sends a voice note attachment in MS Teams, the wrapper will detect it, transcribe it, and process the transcribed text as the user's question.
+
+## [TASK-022: CrewAgentWrapper](overviews/doc:sdd-tasks-completed-task-022-crew-agent-wrapper-md.md)
+
+This task implements Module 7 from the spec. The `CrewAgentWrapper` is the per-agent message handler for crew context. It handles @mention routing, silent tool call execution, @mention-tagged responses, document send/receive, typing indicators, and status updates to the coordinat
+
+## [TASK-022: MSTeamsAgentConfig Voice Extension](overviews/doc:sdd-tasks-completed-task-022-msteams-config-extension-md.md)
+
+This task extends `MSTeamsAgentConfig` to include voice transcription settings. This allows users to configure voice support when creating their MS Teams bot wrapper.
+
+## [TASK-023: TelegramCrewTransport](overviews/doc:sdd-tasks-completed-task-023-crew-transport-md.md)
+
+This task implements Module 8 from the spec. `TelegramCrewTransport` is the top-level orchestrator that manages the full lifecycle of a multi-agent crew in a Telegram supergroup. It initializes all bots, manages the coordinator, and provides the public API for sending messages/do
+
+## [TASK-023: Extend SlackAgentConfig Model](overviews/doc:sdd-tasks-completed-task-023-slack-config-model-md.md)
+
+The existing config only has basic fields. We need to add:
+
+## [TASK-024: Package Init & Integration](overviews/doc:sdd-tasks-completed-task-024-package-init-md.md)
+
+This task implements Module 9 from the spec. It sets up clean public exports for the `crew` subpackage and integrates the `TelegramCrewTransport` into the existing Telegram integration module.
+
+## [TASK-024: Slack Signature Verification Module](overviews/doc:sdd-tasks-completed-task-024-slack-signature-ve-726028fa.md)
+
+Currently, any HTTP request to the Slack webhook is processed without verification. This is a critical security vulnerability that allows spoofing attacks. Slack signs all requests with HMAC-SHA256 using the app's signing secret.
+
+## [TASK-025: Integration Tests](overviews/doc:sdd-tasks-completed-task-025-integration-tests-md.md)
+
+This task implements the integration test suite from spec Section 4. These tests verify end-to-end flows with all components wired together, using mocked Telegram API calls. They ensure the crew transport works as a cohesive system.
+
+## [TASK-025: Slack Event Deduplication Module](overviews/doc:sdd-tasks-completed-task-025-slack-event-dedupl-6105fc61.md)
+
+Slack retries event delivery if it doesn't receive HTTP 200 within ~3 seconds. Without deduplication, the same message can be processed multiple times, causing duplicate responses. This module provides both in-memory and Redis-backed deduplication.
+
+## [TASK-026: FilesystemTransportConfig Pydantic Model](overviews/doc:sdd-tasks-completed-task-026-filesystem-transpo-6306fa08.md)
+
+This is the foundational task for the FilesystemTransport feature. All other modules depend on this config model for their settings. The config also supports loading from `parrot.yaml` transport section (per owner decision).
+
+## [TASK-026: Slack Async Background Processing](overviews/doc:sdd-tasks-completed-task-026-slack-async-processing-md.md)
+
+The current wrapper processes agent responses synchronously, which can exceed Slack's 3-second timeout and trigger retries. This task integrates signature verification, deduplication, and async processing.
+
+## [TASK-027: AbstractTransport Interface](overviews/doc:sdd-tasks-completed-task-027-abstract-transport-md.md)
+
+Per owner decision (spec Open Question 7.2), an `AbstractTransport` interface should be created now, provided it doesn't break existing transports. This defines the common interface that `FilesystemTransport` (and future `TelegramCrewTransport`) will implement: `send`, `broadcast
+
+## [TASK-027: Slack Typing Indicator](overviews/doc:sdd-tasks-completed-task-027-slack-typing-indicator-md.md)
+
+Users currently see no feedback while waiting for agent responses. This task adds ephemeral "thinking" messages and optional assistant status indicators (for Agents & AI Apps).
+
+## [TASK-028: AgentRegistry](overviews/doc:sdd-tasks-completed-task-028-agent-registry-md.md)
+
+The AgentRegistry is the presence system for FilesystemTransport. Each agent registers itself as a JSON file in `registry/<agent-id>.json`. Liveness is determined by PID checking (`os.kill(pid, 0)`), not TTL-based heartbeats, providing instant detection of crashed agents.
+
+## [TASK-028: Slack File Handling Module](overviews/doc:sdd-tasks-completed-task-028-slack-file-handling-md.md)
+
+Users can attach files (PDFs, images, documents) to messages. Currently these are ignored. This task downloads files using Slack's authenticated API and integrates with AI-Parrot's loaders.
+
+## [TASK-029: InboxManager](overviews/doc:sdd-tasks-completed-task-029-inbox-manager-md.md)
+
+The InboxManager handles point-to-point message delivery between agents. It uses write-then-rename for atomic delivery, ensures exactly-once processing by moving messages to `.processed/` before yielding, and supports both inotify (via watchdog) and polling fallback.
+
+## [TASK-029: Slack Socket Mode Handler](overviews/doc:sdd-tasks-completed-task-029-slack-socket-mode-md.md)
+
+HTTP webhooks require a public URL, complicating local development. Socket Mode uses WebSocket connections initiated from the client, eliminating the need for ngrok or similar tools.
+
+## [TASK-030: ActivityFeed](overviews/doc:sdd-tasks-completed-task-030-activity-feed-md.md)
+
+The ActivityFeed is a global append-only JSONL log of all system events (joins, leaves, messages, broadcasts, reservations). It provides observability for debugging and the CLI overlay. The feed auto-rotates when it exceeds `feed_retention` lines.
+
+## [TASK-030: Slack Block Kit Interactive Handler](overviews/doc:sdd-tasks-completed-task-030-slack-interactive--56ee435e.md)
+
+Block Kit is Slack's UI framework (equivalent to Adaptive Cards in MS Teams). This task adds support for interactive elements: buttons, select menus, date pickers, and modals.
+
+## [TASK-031: ChannelManager](overviews/doc:sdd-tasks-completed-task-031-channel-manager-md.md)
+
+The ChannelManager provides broadcast communication via JSONL append-only files. Each channel is a separate `.jsonl` file. Agents publish messages and poll from an offset. No subscription state is maintained — offset tracking is the caller's responsibility.
+
+## [TASK-031: Slack Agents & AI Apps Handler](overviews/doc:sdd-tasks-completed-task-031-slack-assistant-handler-md.md)
+
+Slack's "Agents & AI Apps" feature provides a native AI assistant experience with split-view panel, suggested prompts, loading states, thread titles, and chat streaming.
+
+## [TASK-032: ReservationManager](overviews/doc:sdd-tasks-completed-task-032-reservation-manager-md.md)
+
+The ReservationManager provides cooperative resource reservations. Agents declare which resources (file paths, IDs, etc.) they are working on so others can avoid collisions. Reservations are advisory (cooperative), not enforced at OS level. They use all-or-nothing semantics and T
+
+## [TASK-032: Shared Security Models](overviews/doc:sdd-tasks-completed-task-032-shared-security-models-md.md)
+
+This is the foundational task for the Security Toolkits Suite (FEAT-011). All scanner integrations (Prowler, Trivy, Checkov) must normalize their findings into a unified data model. This task creates the shared models that enable cross-tool aggregation and unified compliance repo
+
+## [TASK-033: Base Executor](overviews/doc:sdd-tasks-completed-task-033-base-executor-md.md)
+
+The Base Executor provides a reusable abstraction for running CLI-based security scanners via Docker or direct process execution. All scanner executors (Prowler, Trivy, Checkov) will inherit from this base class.
+
+## [TASK-033: FilesystemTransport (Main Orchestrator)](overviews/doc:sdd-tasks-completed-task-033-filesystem-transport-md.md)
+
+The `FilesystemTransport` is the top-level orchestrator that composes all managers (Registry, Inbox, Feed, Channel, Reservation) into a unified API. It manages the agent lifecycle (start/stop), presence heartbeat loop, and exposes the public interface for sending, broadcasting, d
+
+## [TASK-034: Base Parser](overviews/doc:sdd-tasks-completed-task-034-base-parser-md.md)
+
+The Base Parser provides an abstract interface for normalizing scanner-specific output into the unified `SecurityFinding` model. Each scanner parser (Prowler, Trivy, Checkov) will implement this interface.
+
+## [TASK-034: FilesystemHook Integration](overviews/doc:sdd-tasks-completed-task-034-filesystem-hook-md.md)
+
+The `FilesystemHook` integrates the FilesystemTransport with AI-Parrot's autonomous hooks system. It follows the `BaseHook` pattern exactly as `WhatsAppRedisHook` does: listens to the inbox, filters messages, dispatches to the target agent via the orchestrator's callback, and opt
+
+## [TASK-035: CLI Overlay (HITL)](overviews/doc:sdd-tasks-completed-task-035-cli-overlay-md.md)
+
+The CLI overlay allows a human operator to observe the FilesystemTransport system in real-time: see which agents are active, read the activity feed, and send messages to agents. It reads directly from the filesystem — no running process or daemon required.
+
+## [TASK-035: Prowler Config & Executor](overviews/doc:sdd-tasks-completed-task-035-prowler-config-executor-md.md)
+
+Prowler is a cloud security posture assessment tool supporting AWS, Azure, GCP, and Kubernetes. This task implements the Prowler-specific configuration and executor that builds on the base executor.
+
+## [TASK-036: Package Init & YAML Config Integration](overviews/doc:sdd-tasks-completed-task-036-package-init-yaml-md.md)
+
+This task finalizes the package by setting up clean public exports and integrating with `parrot.yaml` configuration loading. It also registers the `FilesystemHook` in the hook factory so it can be instantiated from YAML config.
+
+## [TASK-036: Prowler Parser](overviews/doc:sdd-tasks-completed-task-036-prowler-parser-md.md)
+
+The Prowler Parser normalizes Prowler's JSON-OCSF output into the unified `SecurityFinding` model. This enables cross-tool aggregation with Trivy and Checkov findings.
+
+## [TASK-037: CloudPostureToolkit](overviews/doc:sdd-tasks-completed-task-037-cloud-posture-toolkit-md.md)
+
+CloudPostureToolkit is the agent-facing toolkit that wraps Prowler. It exposes security scanning capabilities as tools that agents can call. This follows the `AbstractToolkit` pattern where all public async methods become agent tools.
+
+## [TASK-037: Integration Tests](overviews/doc:sdd-tasks-completed-task-037-integration-tests-md.md)
+
+This task creates comprehensive integration tests that verify the complete FilesystemTransport system works end-to-end: multi-agent conversations, broadcast channels, reservation conflicts, presence lifecycle, feed completeness, and hook dispatching.
+
+## [TASK-038: ScrapingPlan Pydantic Model](overviews/doc:sdd-tasks-completed-task-038-scraping-plan-model-md.md)
+
+from pydantic import BaseModel, Field, computed_field
+
+## [TASK-038: Trivy Config & Executor](overviews/doc:sdd-tasks-completed-task-038-trivy-config-executor-md.md)
+
+Trivy is a comprehensive security scanner for containers, filesystems, git repositories, Kubernetes, and IaC configurations. This task implements the Trivy-specific configuration and executor.
+
+## [TASK-039: PlanRegistry](overviews/doc:sdd-tasks-completed-task-039-plan-registry-md.md)
+
+import asyncio
+
+## [TASK-039: Trivy Parser](overviews/doc:sdd-tasks-completed-task-039-trivy-parser-md.md)
+
+The Trivy Parser normalizes Trivy's JSON output (vulnerabilities, secrets, misconfigs) into the unified `SecurityFinding` model.
+
+## [TASK-040: ContainerSecurityToolkit](overviews/doc:sdd-tasks-completed-task-040-container-security-db509573.md)
+
+ContainerSecurityToolkit is the agent-facing toolkit that wraps Trivy. It exposes container, filesystem, Kubernetes, and IaC scanning capabilities as tools that agents can call.
+
+## [TASK-040: Plan File I/O Helpers](overviews/doc:sdd-tasks-completed-task-040-plan-file-io-md.md)
+
+import aiofiles
+
+## [TASK-041: Checkov Config & Executor](overviews/doc:sdd-tasks-completed-task-041-checkov-config-executor-md.md)
+
+Checkov is a static code analysis tool for infrastructure-as-code (IaC), scanning Terraform, CloudFormation, Kubernetes, Helm, Dockerfiles, and more for security misconfigurations and secrets.
+
+## [TASK-041: WebScrapingTool Integration](overviews/doc:sdd-tasks-completed-task-041-webscraping-tool-i-2496b095.md)
+
+from .plan import ScrapingPlan
+
+## [TASK-042: Checkov Parser](overviews/doc:sdd-tasks-completed-task-042-checkov-parser-md.md)
+
+The Checkov Parser normalizes Checkov's JSON output (IaC misconfigurations) into the unified `SecurityFinding` model.
+
+## [TASK-042: Integration Tests for ScrapingPlan & PlanRegistry](overviews/doc:sdd-tasks-completed-task-042-scraping-plan-inte-6f3ff3b7.md)
+
+import pytest
+
+## [TASK-043: SecretsIaCToolkit](overviews/doc:sdd-tasks-completed-task-043-secrets-iac-toolkit-md.md)
+
+SecretsIaCToolkit is the agent-facing toolkit that wraps Checkov. It exposes IaC scanning and secrets detection capabilities as tools that agents can call.
+
+## [TASK-043: URL Normalization Utilities](overviews/doc:sdd-tasks-completed-task-043-url-normalization-md.md)
+
+URL normalization is the foundation for deduplication across the CrawlEngine.
+
+## [TASK-044: Compliance Mapper](overviews/doc:sdd-tasks-completed-task-044-compliance-mapper-md.md)
+
+The Compliance Mapper is responsible for mapping normalized `SecurityFinding` objects to compliance framework controls (SOC2, HIPAA, PCI-DSS, etc.). This is the critical piece that enables cross-tool compliance reporting.
+
+## [TASK-044: CrawlGraph & CrawlNode](overviews/doc:sdd-tasks-completed-task-044-crawl-graph-md.md)
+
+URLs have been visited, maintains the frontier queue, and collects results. It is
+
+## [TASK-045: CrawlStrategy Protocol & Built-in Strategies](overviews/doc:sdd-tasks-completed-task-045-crawl-strategies-md.md)
+
+The `CrawlStrategy` protocol decouples traversal order from the crawl engine,
+
+## [TASK-045: Report Generator](overviews/doc:sdd-tasks-completed-task-045-report-generator-md.md)
+
+The Report Generator produces multi-format compliance reports from consolidated scan results. It uses Jinja2 templates for HTML reports and supports PDF generation via WeasyPrint.
+
+## [TASK-046: ComplianceReportToolkit](overviews/doc:sdd-tasks-completed-task-046-compliance-report--b73d9fe0.md)
+
+ComplianceReportToolkit is the aggregation layer that orchestrates all three scanners (Prowler, Trivy, Checkov) and produces unified compliance reports. It uses the underlying executors and parsers directly (not the individual toolkits) to avoid circular dependencies.
+
+## [TASK-046: LinkDiscoverer](overviews/doc:sdd-tasks-completed-task-046-link-discoverer-md.md)
+
+scraped HTML pages. It applies CSS selector filtering, regex pattern matching, and
+
+## [TASK-047: CrawlEngine](overviews/doc:sdd-tasks-completed-task-047-crawl-engine-md.md)
+
+extraction), and a caller-provided `scrape_fn` (page execution). It supports both
+
+## [TASK-047: Security Package Exports](overviews/doc:sdd-tasks-completed-task-047-security-package-exports-md.md)
+
+This task ensures all security toolkits and components are properly exported from the package `__init__.py` files, making them easily importable by users.
+
+## [TASK-048: WebScrapingToolkit Crawl Integration](overviews/doc:sdd-tasks-completed-task-048-crawl-integration-md.md)
+
+This task wires the `CrawlEngine` into the existing `WebScrapingTool` / scraping
+
+## [TASK-048: Integration Tests](overviews/doc:sdd-tasks-completed-task-048-integration-tests-md.md)
+
+This task creates comprehensive integration tests that verify the end-to-end workflows of the Security Toolkits Suite, including the full consolidated scan workflow with mocked executors.
+
+## [TASK-049: DriverConfig, PlanSummary & PlanSaveResult Models](overviews/doc:sdd-tasks-completed-task-049-toolkit-models-md.md)
+
+from typing import Any, Dict, List, Literal, Optional
+
+## [TASK-049: WebSearchAgent Config Svelte Component](overviews/doc:sdd-tasks-completed-task-049-websearchagent-con-6c68a4af.md)
+
+When users add a `WebSearchAgent` to their crew in the visual designer, they currently see only the generic agent config. This task creates a specialized configuration component that exposes WebSearchAgent's unique parameters.
+
+## [TASK-050: Agent Type Detection in Config Panel](overviews/doc:sdd-tasks-completed-task-050-agent-type-detection-md.md)
+
+The CrewBuilder needs to recognize when the selected agent is a `WebSearchAgent` and dynamically render the specialized `WebSearchAgentConfig` component instead of the generic agent config panel.
+
+## [TASK-050: Driver Context Manager](overviews/doc:sdd-tasks-completed-task-050-driver-context-md.md)
+
+import logging
+
+## [TASK-051: JSON Serialization for WebSearchAgent Config](overviews/doc:sdd-tasks-completed-task-051-json-serialization-md.md)
+
+When the crew is saved (exported or sent to the backend), the JSON must include all WebSearchAgent parameters in the `config` object for each agent.
+
+## [TASK-052: Backend WebSearchAgent Config Passthrough Verification](overviews/doc:sdd-tasks-completed-task-052-backend-config-pas-6ee8da99.md)
+
+The `CrewHandler._create_crew_from_definition` method already passes `**agent_def.config` to agent constructors. This task verifies the flow works correctly for WebSearchAgent and adds optional logging for debugging.
+
+## [TASK-053: WebSearchAgent Crew Integration Tests](overviews/doc:sdd-tasks-completed-task-053-websearchagent-int-93741fc6.md)
+
+End-to-end tests that verify:
+
+## [TASK-054: Package Init & Deprecation](overviews/doc:sdd-tasks-completed-task-054-package-init-deprecation-md.md)
+
+from .tool import WebScrapingTool, WebScrapingToolArgs, ScrapingResult
+
+## [TASK-054: Pulumi Configuration](overviews/doc:sdd-tasks-completed-task-054-pulumi-config-md.md)
+
+The configuration module defines `PulumiConfig` extending `BaseExecutorConfig` with Pulumi-specific settings. This is the foundation for the executor and toolkit.
+
+## [TASK-055: Pulumi Executor](overviews/doc:sdd-tasks-completed-task-055-pulumi-executor-md.md)
+
+The executor handles CLI argument building, subprocess execution, and JSON output parsing. It extends `BaseExecutor` following the pattern established by Checkov, Prowler, and Trivy.
+
+## [TASK-055: WebScrapingToolkit Integration Tests](overviews/doc:sdd-tasks-completed-task-055-toolkit-integratio-6e43f44a.md)
+
+1. **Full plan lifecycle**: `plan_create` → `plan_save` → new toolkit instance → `plan_load` → verify
+
+## [TASK-056: AbstractDriver Interface](overviews/doc:sdd-tasks-completed-task-056-abstract-driver-md.md)
+
+abstract method groups:
+
+## [TASK-056: Pulumi Toolkit](overviews/doc:sdd-tasks-completed-task-056-pulumi-toolkit-md.md)
+
+The toolkit is the main user-facing class that exposes `pulumi_plan`, `pulumi_apply`, `pulumi_destroy`, and `pulumi_status` as agent tools. It inherits from `AbstractToolkit` and uses `PulumiExecutor` internally.
+
+## [TASK-057: PlaywrightConfig Dataclass](overviews/doc:sdd-tasks-completed-task-057-playwright-config-md.md)
+
+from dataclasses import dataclass, field
+
+## [TASK-057: Pulumi CLI Install Command](overviews/doc:sdd-tasks-completed-task-057-pulumi-cli-install-md.md)
+
+Add `parrot install pulumi` command to the existing CLI installation group. This allows users to easily install Pulumi CLI and optionally the `pulumi_docker` Python package.
+
+## [TASK-058: PlaywrightDriver Implementation](overviews/doc:sdd-tasks-completed-task-058-playwright-driver-md.md)
+
+WebScrapingTool integration (TASK-061)
+
+## [TASK-058: Pulumi Integration Tests & Package Export](overviews/doc:sdd-tasks-completed-task-058-pulumi-integration-tests-md.md)
+
+Finalize the package exports and write integration tests that verify the full Pulumi workflow with a real Docker project (using mocked Pulumi CLI if necessary).
+
+## [TASK-059: Permission Data Models](overviews/doc:sdd-tasks-completed-task-059-permission-data-models-md.md)
+
+Define the foundational data structures for the permission system: `UserSession` and `PermissionContext`. These are lightweight, immutable structures that carry user identity and roles through the execution chain.
+
+## [TASK-059: SeleniumDriver Refactor](overviews/doc:sdd-tasks-completed-task-059-selenium-driver-md.md)
+
+(Selenium does not support HAR, tracing, PDF, interception)
+
+## [TASK-060: DriverFactory](overviews/doc:sdd-tasks-completed-task-060-driver-factory-md.md)
+
+determine which driver to instantiate and returns it
+
+## [TASK-060: Permission Resolver](overviews/doc:sdd-tasks-completed-task-060-permission-resolver-md.md)
+
+The resolver is the single point of truth for "can this user execute this tool?" It is designed to be injectable — different deployments can provide different implementations.
+
+## [TASK-061: Requires Permission Decorator](overviews/doc:sdd-tasks-completed-task-061-requires-permissio-b1ce0212.md)
+
+The `@requires_permission` decorator annotates toolkit methods with required permissions. The annotation is introspected at runtime by the resolver and `get_tools()` for filtering.
+
+## [TASK-061: WebScrapingTool Driver Integration](overviews/doc:sdd-tasks-completed-task-061-tool-driver-integration-md.md)
+
+classes alongside existing exports
+
+## [TASK-062: AbstractTool Layer 2 Enforcement](overviews/doc:sdd-tasks-completed-task-062-abstracttool-layer-ccda6579.md)
+
+Layer 2 enforcement is the reactive safety net. Even if a tool slips through Layer 1 filtering (e.g., registered manually), `execute()` checks permissions before calling `_execute()`. Returns a structured `ToolResult` rather than raising an exception.
+
+## [TASK-062: Driver Abstraction Integration Tests](overviews/doc:sdd-tasks-completed-task-062-driver-tests-md.md)
+
+for both Selenium and Playwright paths
+
+## [TASK-063: AbstractToolkit Layer 1 Filtering](overviews/doc:sdd-tasks-completed-task-063-abstracttoolkit-la-b020b20d.md)
+
+Layer 1 is the preventive enforcement layer. When a `PermissionContext` is provided, `get_tools()` delegates filtering to the resolver. Unauthorized tools are invisible to the LLM — they never appear in the tool list.
+
+## [TASK-063: Define Request/Response Pydantic Models for Scraping API](overviews/doc:sdd-tasks-completed-task-063-scraping-handler-models-md.md)
+
+FEAT-016 exposes the `WebScrapingToolkit` over HTTP. Before building any handler, we need
+
+## [TASK-064: Implement ScrapingInfoHandler (Reference Metadata Endpoints)](overviews/doc:sdd-tasks-completed-task-064-scraping-info-handler-md.md)
+
+The `ScrapingToolkit` Svelte UI needs to dynamically render forms for browser actions,
+
+## [TASK-064: ToolManager Resolver Injection](overviews/doc:sdd-tasks-completed-task-064-toolmanager-resolv-59d64886.md)
+
+The `ToolManager` is the injection point for the resolver. A single resolver instance is shared across all tool dispatches within an agent session. The manager propagates the `PermissionContext` during tool execution.
+
+## [TASK-065: JiraToolkit Permission Annotations](overviews/doc:sdd-tasks-completed-task-065-jiratoolkit-permissions-md.md)
+
+Annotate JiraToolkit methods with `@requires_permission` to demonstrate the permission system. This serves as a reference implementation for other toolkits.
+
+## [TASK-065: Implement ScrapingHandler (Plan CRUD + Scrape/Crawl Execution)](overviews/doc:sdd-tasks-completed-task-065-scraping-handler-md.md)
+
+This is the core task of FEAT-016. The `ScrapingHandler` is a class-based view (extends
+
+## [TASK-066: Permission System Integration Tests](overviews/doc:sdd-tasks-completed-task-066-permission-integra-70d914f2.md)
+
+Write comprehensive integration tests that verify the full permission flow works end-to-end: session creation → context building → tool filtering → execution enforcement.
+
+## [TASK-066: Package Init & Route Registration for Scraping Handlers](overviews/doc:sdd-tasks-completed-task-066-scraping-package-init-md.md)
+
+With both handlers implemented, we need a clean package init that exports public symbols
+
+## [TASK-067: Technical Analysis Data Models](overviews/doc:sdd-tasks-completed-task-067-data-models-md.md)
+
+This task creates the foundational Pydantic models and dataclasses for the TechnicalAnalysisTool improvements. These models define the structured output format for ADX, ATR, signals, and composite scores. All subsequent tasks depend on these models being available.
+
+## [TASK-067: Integration Tests for Scraping Handler Endpoints](overviews/doc:sdd-tasks-completed-task-067-scraping-handler-i-b6e379c7.md)
+
+With all handler modules implemented and route registration in place, this task adds
+
+## [TASK-068: ADX Indicator Implementation](overviews/doc:sdd-tasks-completed-task-068-adx-indicator-md.md)
+
+ADX (Average Directional Index) measures trend strength regardless of direction. It's the only indicator that tells you *how strong* a trend is. Without it, analysts can't distinguish between a weak drift and a powerful move. The risk analyst needs this to size positions appropri
+
+## [TASK-069: ATR Indicator Implementation](overviews/doc:sdd-tasks-completed-task-069-atr-indicator-md.md)
+
+ATR (Average True Range) measures volatility in price terms. It's the foundation for volatility-adjusted stop-losses and position sizing. The execution layer places limit orders with stop-losses — ATR tells you how wide those stops should be relative to normal price movement.
+
+## [TASK-070: EMA Indicator Implementation](overviews/doc:sdd-tasks-completed-task-070-ema-indicator-md.md)
+
+EMA (Exponential Moving Average) reacts faster to recent prices than SMA and is the industry standard for trend-following strategies. The tool currently only has SMA(50, 200). Adding EMA(12) and EMA(26) enables:
+
+## [TASK-071: Signal Generation Engine](overviews/doc:sdd-tasks-completed-task-071-signal-engine-md.md)
+
+The current signal system produces flat string signals like "Bullish Trend (Price > SMA200)" with no hierarchy or confidence scoring. The signal engine transforms raw indicator values into structured `TechnicalSignal` objects with:
+
+## [TASK-072: CompositeScoreTool Implementation](overviews/doc:sdd-tasks-completed-task-072-composite-score-tool-md.md)
+
+Per the open question decision, composite scoring is implemented as a **separate tool** (`CompositeScoreTool`) rather than a method on `TechnicalAnalysisTool`. This tool provides 0-10 bullish/bearish scores for ranking multiple assets by technical strength.
+
+## [TASK-073: Multi-Timeframe Analysis](overviews/doc:sdd-tasks-completed-task-073-multi-timeframe-md.md)
+
+A signal is much stronger when confirmed across multiple timeframes. Multi-timeframe analysis computes indicators on hourly, daily, and weekly data independently, then produces a consensus verdict with confidence adjustment.
+
+## [TASK-074: Output Restructuring](overviews/doc:sdd-tasks-completed-task-074-output-restructuring-md.md)
+
+The current `_execute()` method returns a flat output structure. This task restructures the output to a semantically grouped format while maintaining backward compatibility via a `legacy_format=True` parameter.
+
+## [TASK-075: Unit Tests for Technical Analysis Improvements](overviews/doc:sdd-tasks-completed-task-075-unit-tests-md.md)
+
+This task consolidates all unit tests for the TechnicalAnalysisTool improvements into a comprehensive test suite. While individual tasks include test scaffolds, this task ensures complete coverage and validates indicator accuracy against reference implementations.
+
+## [TASK-076: Integration Tests with Live Data](overviews/doc:sdd-tasks-completed-task-076-integration-tests-md.md)
+
+This is the final task that validates the complete TechnicalAnalysisTool improvements work correctly with real data from Alpaca and CoinGecko. These tests ensure the full pipeline works end-to-end.
+
+## [TASK-077: Options Analytics Data Models](overviews/doc:sdd-tasks-completed-task-077-options-data-models-md.md)
+
+This is the foundational task for the Options Analytics Toolkit (FEAT-015). It defines all shared dataclasses and Pydantic input models used by the Black-Scholes engine, spread analyzers, and PMCC scanner.
+
+## [TASK-078: Black-Scholes Pricing Engine](overviews/doc:sdd-tasks-completed-task-078-black-scholes-engine-md.md)
+
+This is the core computation module for the Options Analytics Toolkit. It implements the Black-Scholes pricing model, Greeks calculations, and implied volatility solver. This module is used by all other modules in the toolkit.
+
+## [TASK-079: Spread Strategy Analyzer](overviews/doc:sdd-tasks-completed-task-079-spread-analyzer-md.md)
+
+This module implements analysis functions for 5 multi-leg option strategies: verticals, diagonals (PMCC), straddles, strangles, and iron condors. Each analyzer computes max profit, max loss, breakevens, probability of profit (POP), and expected value.
+
+## [TASK-080: PMCC Scanner](overviews/doc:sdd-tasks-completed-task-080-pmcc-scanner-md.md)
+
+This module implements the Poor Man's Covered Call (PMCC) scanner and scoring system. PMCC is a diagonal spread strategy where you buy a deep ITM LEAPS call and sell short-term OTM calls against it.
+
+## [TASK-081: Options Analytics Toolkit Class](overviews/doc:sdd-tasks-completed-task-081-options-toolkit-md.md)
+
+This is the integration task that creates the `OptionsAnalyticsToolkit` class inheriting from `AbstractToolkit`. It wraps all the pure computation functions from previous modules (black_scholes, spreads, pmcc) as async tool methods with `@tool_schema` decorators.
+
+## [TASK-082: Options Analytics Unit Tests](overviews/doc:sdd-tasks-completed-task-082-options-unit-tests-md.md)
+
+This task creates comprehensive unit tests for all modules in the Options Analytics Toolkit. Tests must validate pricing accuracy against known values, edge case handling, and toolkit method behavior.
+
+## [TASK-083: Options Analytics Integration Tests](overviews/doc:sdd-tasks-completed-task-083-options-integratio-2f5ec413.md)
+
+This is the final task for the Options Analytics Toolkit feature. It creates integration tests that validate the full pipeline: YFinanceTool output → OptionsAnalyticsToolkit → actionable analysis.
+
+## [TASK-084: QuantToolkit Data Models](overviews/doc:sdd-tasks-completed-task-084-quant-data-models-md.md)
+
+This task creates the foundational Pydantic models for all QuantToolkit operations. These models define the input/output contracts for risk metrics, correlation analysis, stress testing, Piotroski scoring, and volatility calculations.
+
+## [TASK-085: Risk Metrics Engine](overviews/doc:sdd-tasks-completed-task-085-risk-metrics-engine-md.md)
+
+This task implements the core risk metrics engine — the computational heart of the QuantToolkit. It provides VaR, CVaR, beta, Sharpe ratio, and maximum drawdown calculations for both single assets and portfolios.
+
+## [TASK-086: Correlation Engine](overviews/doc:sdd-tasks-completed-task-086-correlation-engine-md.md)
+
+This task implements the correlation analysis engine. Correlation matrices and regime detection are critical for the risk analyst crew to monitor portfolio diversification and detect when correlations break down (a key risk signal).
+
+## [TASK-087: Piotroski F-Score](overviews/doc:sdd-tasks-completed-task-087-piotroski-fscore-md.md)
+
+This task implements the Piotroski F-Score calculator — a fundamental quality scoring system. The equity analyst crew uses F-Scores to evaluate company financial health based on 9 accounting criteria.
+
+## [TASK-088: Volatility Analytics](overviews/doc:sdd-tasks-completed-task-088-volatility-analytics-md.md)
+
+This task implements volatility analytics for the sentiment analyst crew. It provides multiple volatility estimators, volatility cone analysis, and implied vs realized volatility spread analysis.
+
+## [TASK-089: Stress Testing](overviews/doc:sdd-tasks-completed-task-089-stress-testing-md.md)
+
+This task implements the stress testing framework. Stress tests apply historical or hypothetical shock scenarios to a portfolio to estimate potential losses. This is critical for the risk analyst crew's scenario analysis capabilities.
+
+## [TASK-090: QuantToolkit Main Class](overviews/doc:sdd-tasks-completed-task-090-quant-toolkit-main-md.md)
+
+This task implements the main `QuantToolkit` class that inherits from `AbstractToolkit` and exposes all quantitative functions as agent tools. This is the integration point that agents use to access risk metrics, correlation analysis, Piotroski scoring, volatility analytics, and 
+
+## [TASK-091: QuantToolkit Integration Tests](overviews/doc:sdd-tasks-completed-task-091-quant-integration-tests-md.md)
+
+This task implements end-to-end integration tests for the QuantToolkit. These tests verify that the toolkit works correctly with the finance crew agents and produces output compatible with the deliberation schemas.
+
+## [TASK-092: MassiveToolkit Input Models](overviews/doc:sdd-tasks-completed-task-092-massive-models-md.md)
+
+This task implements the Pydantic input models for all 5 MassiveToolkit tools. These models define the schema for agent tool calls and are the foundation for the toolkit implementation.
+
+## [TASK-093: MassiveToolkit Client Wrapper](overviews/doc:sdd-tasks-completed-task-093-massive-client-md.md)
+
+This task implements the client wrapper around the Massive SDK. The SDK is synchronous, so all calls must be wrapped with `asyncio.to_thread()`. The wrapper handles retry logic, rate limiting, and provides typed methods for each endpoint.
+
+## [TASK-094: MassiveToolkit Cache Layer](overviews/doc:sdd-tasks-completed-task-094-massive-cache-md.md)
+
+This task implements the caching layer for MassiveToolkit. Different endpoints have different data freshness requirements — options Greeks change tick-by-tick (15 min TTL) while short interest updates bi-monthly (12 hour TTL). The cache layer manages these per-endpoint TTLs.
+
+## [TASK-095: MassiveToolkit Main Implementation](overviews/doc:sdd-tasks-completed-task-095-massive-toolkit-md.md)
+
+This task implements the main `MassiveToolkit` class with all 5 tool methods. It integrates the client wrapper and cache layer to provide a complete toolkit that agents can use for enrichment.
+
+## [TASK-096: MassiveToolkit Unit Tests](overviews/doc:sdd-tasks-completed-task-096-massive-unit-tests-md.md)
+
+This task implements comprehensive unit tests for all MassiveToolkit components. All external dependencies (SDK, Redis) are mocked to ensure fast, deterministic tests.
+
+## [TASK-097: MassiveToolkit Integration Tests](overviews/doc:sdd-tasks-completed-task-097-massive-integratio-9e725fb1.md)
+
+This task implements integration tests that run against the real Massive API (free tier). These tests verify end-to-end functionality including actual API responses, caching behavior, and rate limit compliance.
+
+## [TASK-098: CandidateTicker Model & Data Needs Classifier](overviews/doc:sdd-tasks-completed-task-098-candidate-ticker-model-md.md)
+
+from dataclasses import dataclass, field
+
+## [TASK-099: EnrichmentService Core Implementation](overviews/doc:sdd-tasks-completed-task-099-enrichment-service-md.md)
+
+import pytest
+
+## [TASK-100: Pipeline FSM & Execution Updates](overviews/doc:sdd-tasks-completed-task-100-pipeline-fsm-execution-md.md)
+
+enriching = State("enriching")
+
+## [TASK-1000: Update `/sdd-next` and `/sdd-status` to scan per-spec indexes](overviews/doc:sdd-tasks-completed-task-1000-sdd-next-and-stat-fc866b51.md)
+
+Implements **Module 7** of FEAT-145. Both commands are read-only —
+
+## [TASK-1001: Update `sdd-worker` agent for per-spec index + base_branch](overviews/doc:sdd-tasks-completed-task-1001-sdd-worker-flow-aware-md.md)
+
+Implements **Module 8** of FEAT-145. The autonomous `sdd-worker`
+
+## [TASK-1002: Update `sdd/WORKFLOW.md` and `CLAUDE.md` for the new flow model](overviews/doc:sdd-tasks-completed-task-1002-update-sdd-docs-md.md)
+
+Implements **Module 9** of FEAT-145. Documentation closes the loop —
+
+## [TASK-1003: Implement WebHumanChannel](overviews/doc:sdd-tasks-completed-task-1003-webhumanchannel-md.md)
+
+This task implements the `WebHumanChannel` that bridges the HITL (`HumanInteractionManager`) with web users via the existing `UserSocketManager` WebSocket infrastructure. It is the first module in the web HITL stack (§3 Module 1 in the spec).
+
+## [TASK-1004: Add `current_web_session` ContextVar helpers](overviews/doc:sdd-tasks-completed-task-1004-hitl-context-var-md.md)
+
+This task implements the `current_web_session` ContextVar and its three helper functions in `parrot/handlers/web_hitl.py`. The ContextVar allows `WebHumanTool` to lazily resolve the active web session (channel ID) at request time without being explicitly passed by the caller (§3 
+
+## [TASK-1005: Implement WebHumanTool](overviews/doc:sdd-tasks-completed-task-1005-webhumantool-md.md)
+
+This task implements `WebHumanTool`, a subclass of `HumanTool` that auto-resolves the HITL manager and the current web session at invocation time (§3 Module 2 in the spec). It mirrors the lazy-resolution pattern used by `TelegramHumanTool`, but uses the `current_web_session` Cont
+
+## [TASK-1006: Implement HITLResponseHandler (POST /api/v1/agents/hitl/respond)](overviews/doc:sdd-tasks-completed-task-1006-hitl-response-handler-md.md)
+
+This task implements the HTTP endpoint handler that receives human responses from the frontend and resolves pending HITL interactions. The `HITLResponseHandler` class is deployed at `POST /api/v1/agents/hitl/respond` and bridges the web UI back to the `HumanInteractionManager` (§
+
+## [TASK-1007: Implement setup_web_hitl bootstrap](overviews/doc:sdd-tasks-completed-task-1007-setup-web-hitl-bo-31adca14.md)
+
+This task implements the `setup_web_hitl(app)` bootstrap function that ensures a process-wide `HumanInteractionManager` and `WebHumanChannel` are available at app startup (§3 Module 4 in the spec). The bootstrap is idempotent and integrates with the BotManager (called from TASK-1
+
+## [TASK-1008: Wire current_web_session in AgentTalk.post](overviews/doc:sdd-tasks-completed-task-1008-agenttalk-context-1be76a55.md)
+
+This task adds ContextVar wiring to the `AgentTalk.post` request handler so that the `current_web_session` ContextVar is set at request entry and reset in a `finally` block (§3 Module 5 in the spec). This ensures that any tools invoked by the agent (including `WebHumanTool`) can 
+
+## [TASK-1009: Register HITL route + call setup_web_hitl in BotManager.setup](overviews/doc:sdd-tasks-completed-task-1009-botmanager-route--4a072bea.md)
+
+This task wires the HITL response handler into the routing layer and ensures the bootstrap is called at the right time (§3 Modules 4 and 6 in the spec). The modifications are made to `BotManager.setup`, which is the central registration point for agent routes.
+
+## [TASK-101: Analyst Prompts Update](overviews/doc:sdd-tasks-completed-task-101-analyst-prompts-update-md.md)
+
+When these are present, prefer their data over YFinance options data
+
+## [TASK-1010: Create demo agent agents/demo.py with WebHumanTool, HandoffTool, BookFlightTool](overviews/doc:sdd-tasks-completed-task-1010-hitl-demo-agent-md.md)
+
+This task creates a registered demo agent (`hitl_demo`, "Travel Concierge") that demonstrates the full HITL flow on the web surface. The agent uses `WebHumanTool`, `HandoffTool`, and a custom `BookFlightTool` that intentionally raises `HumanInteractionInterrupt` on malformed date
+
+## [TASK-1011: End-to-end integration tests for web HITL flow](overviews/doc:sdd-tasks-completed-task-1011-hitl-e2e-tests-md.md)
+
+This task implements the three end-to-end integration tests that exercise the full web HITL flow from agent invocation through user response (§4 Integration Tests in the spec). These tests use a real `HumanInteractionManager` wired to Redis and a fake `UserSocketManager` to verif
+
+## [TASK-1012: Write docs/web-hitl-frontend-brainstorm.md](overviews/doc:sdd-tasks-completed-task-1012-frontend-brainstorm-doc-md.md)
+
+This task produces the brainstorm document for the frontend team that specifies what the `navigator-frontend-next` codebase must implement to support web HITL. The document is self-contained and serves as the input for the frontend's own SDD spec (§3 Module 9 in the spec).
+
+## [TASK-1013: Input Schemas, Result Envelopes & Entity Models (Phase 1 + Phase 2)](overviews/doc:sdd-tasks-completed-task-1013-odoo-pydantic-mod-c2313bd5.md)
+
+All other tasks import Pydantic input schemas, result envelopes, and entity models.
+
+## [TASK-1013: ResultStorage abstract base, factory, and config plumbing](overviews/doc:sdd-tasks-completed-task-1013-result-storage-fo-ba0bf35f.md)
+
+This is the foundation task for FEAT-147. It creates the
+
+## [TASK-1014: DocumentDbResultStorage backend (default)](overviews/doc:sdd-tasks-completed-task-1014-documentdb-result-d33d308e.md)
+
+The default backend. Wraps the existing `DocumentDb` interface and
+
+## [TASK-1014: Smart Field Selection Module](overviews/doc:sdd-tasks-completed-task-1014-smart-field-selection-md.md)
+
+When agents omit `fields` in `search_records` or `get_record`, the toolkit returns
+
+## [TASK-1015: RedisResultStorage backend](overviews/doc:sdd-tasks-completed-task-1015-redis-result-stor-880eff3c.md)
+
+Implements the Redis backend for FEAT-147. One key per execution
+
+## [TASK-1015: Wire Smart Field Selection into search_records & get_record](overviews/doc:sdd-tasks-completed-task-1015-smart-field-integration-md.md)
+
+With `select_smart_fields` implemented (TASK-1014), this task wires it into the
+
+## [TASK-1016: Aggregate Records (read_group / formatted_read_group)](overviews/doc:sdd-tasks-completed-task-1016-aggregate-records-md.md)
+
+Agents currently must fetch raw records and aggregate client-side, wasting bandwidth
+
+## [TASK-1016: PostgresResultStorage backend](overviews/doc:sdd-tasks-completed-task-1016-postgres-result-s-290d415e.md)
+
+Implements the Postgres backend for FEAT-147. Uses `asyncdb.AsyncDB('pg')`
+
+## [TASK-1017: Rewrite PersistenceMixin and consolidate the legacy duplicate](overviews/doc:sdd-tasks-completed-task-1017-persistence-mixin-8136614e.md)
+
+Rewrites `PersistenceMixin` to delegate to `self._result_storage` (lazily
+
+## [TASK-1018: Wire `persist_results` / `result_storage` into AgentCrew & AgentsFlow + lifecycle](overviews/doc:sdd-tasks-completed-task-1018-crew-flow-constru-ac901181.md)
+
+Wires the new constructor parameters (`persist_results`,
+
+## [TASK-1018: Odoo Profile & Schema Catalog](overviews/doc:sdd-tasks-completed-task-1018-profile-and-schem-2b20d24d.md)
+
+Agents need a comprehensive environment snapshot (`get_odoo_profile`) and a way to
+
+## [TASK-1019: Model Introspection & Diagnostics (inspect_model_relationships, diagnose_access, health_check)](overviews/doc:sdd-tasks-completed-task-1019-introspection-and-afb23a9e.md)
+
+Agents need to understand model schemas (which fields are relational, which are
+
+## [TASK-1019: End-to-end integration tests for FEAT-147](overviews/doc:sdd-tasks-completed-task-1019-result-storage-in-82e89ad6.md)
+
+The earlier tasks (TASK-1013…TASK-1018) each ship narrowly scoped unit
+
+## [TASK-102: Integration Tests & Degradation Tests](overviews/doc:sdd-tasks-completed-task-102-integration-tests-md.md)
+
+import pytest
+
+## [TASK-1020: HR Convenience Methods (search_employee, search_holidays)](overviews/doc:sdd-tasks-completed-task-1020-hr-convenience-methods-md.md)
+
+Agents need typed convenience methods for HR queries, following the same pattern as
+
+## [TASK-1021: Phase 1 Tests](overviews/doc:sdd-tasks-completed-task-1021-phase1-tests-md.md)
+
+Comprehensive unit tests for all Phase 1 methods. Each prior task may have added
+
+## [TASK-1022: Diagnose Odoo Call (Phase 2)](overviews/doc:sdd-tasks-completed-task-1022-diagnose-odoo-call-md.md)
+
+Agents need to preview/debug a failing Odoo call without executing it. This method
+
+## [TASK-1023: JSON-2 Payload Generator (Phase 2)](overviews/doc:sdd-tasks-completed-task-1023-generate-json2-payload-md.md)
+
+When migrating from XML-RPC to Odoo 19+ JSON-2, agents need to preview the
+
+## [TASK-1024: Addon Source Scanner (Phase 2)](overviews/doc:sdd-tasks-completed-task-1024-scan-addons-source-md.md)
+
+Agents need to inspect local custom addon code without importing it. This tool scans
+
+## [TASK-1025: Fit/Gap Report (Phase 2)](overviews/doc:sdd-tasks-completed-task-1025-fit-gap-report-md.md)
+
+Agents need to classify business requirements against Odoo's capabilities to
+
+## [TASK-1026: Business Pack Report (Phase 2)](overviews/doc:sdd-tasks-completed-task-1026-business-pack-report-md.md)
+
+Agents need a quick way to check which modules, models, and capabilities are available
+
+## [TASK-1027: Phase 2 Tests](overviews/doc:sdd-tasks-completed-task-1027-phase2-tests-md.md)
+
+Comprehensive unit tests for all Phase 2 methods. This task ensures full coverage
+
+## [TASK-1028: Add `created_at` field to FormSchema](overviews/doc:sdd-tasks-completed-task-1028-formschema-create-19f83eb1.md)
+
+The enriched `GET /api/v1/forms` response (FEAT-148, Module 4) needs a
+
+## [TASK-1029: Update `FormStorage.list_forms()` ABC docstring contract](overviews/doc:sdd-tasks-completed-task-1029-formstorage-abc-l-4f2eb30c.md)
+
+Module 4 of the spec relies on `list_forms()` returning richer entries
+
+## [TASK-103: Add Lyria Batch Data Models](overviews/doc:sdd-tasks-completed-task-103-lyria-batch-models-md.md)
+
+This task implements Module 1 from the spec. It adds the Pydantic data models needed for the Vertex AI Lyria batch API integration.
+
+## [TASK-1030: Enrich `PostgresFormStorage.list_forms()` with `created_at` and `description`](overviews/doc:sdd-tasks-completed-task-1030-postgres-list-for-e26e5ecb.md)
+
+(TASK-1032) needs `created_at` (ISO-8601) and `description` to build
+
+## [TASK-1031: Unit tests for `PostgresFormStorage.list_forms()` enriched output](overviews/doc:sdd-tasks-completed-task-1031-postgres-list-for-50aaa5a0.md)
+
+There is no existing unit-test file for `PostgresFormStorage`
+
+## [TASK-1032: Refactor `FormAPIHandler.list_forms()` — merged rich descriptors](overviews/doc:sdd-tasks-completed-task-1032-handler-list-form-a89ef177.md)
+
+This task replaces the body of `FormAPIHandler.list_forms()` to merge
+
+## [TASK-1033: Tests for handler `list_forms` merge + `FormSchema.created_at`](overviews/doc:sdd-tasks-completed-task-1033-handler-and-schem-9f81edf6.md)
+
+This task closes FEAT-148 by:
+
+## [TASK-1034: EphemeralAgentStatus model & in-memory registry](overviews/doc:sdd-tasks-completed-task-1034-ephemeral-status-model-md.md)
+
+from pydantic import BaseModel, Field # standard dependency
+
+## [TASK-1034: MatryoshkaConfig Pydantic model + catalog validator](overviews/doc:sdd-tasks-completed-task-1034-matryoshka-config-196108e2.md)
+
+First module of FEAT-150 (spec §3 Module 1). Defines the operator-facing
+
+## [TASK-1035: BotManager ephemeral methods + save_user_bot](overviews/doc:sdd-tasks-completed-task-1035-botmanager-epheme-62a8353a.md)
+
+from parrot.manager.manager import BotManager # parrot/manager/manager.py:81
+
+## [TASK-1035: SentenceTransformerModel Matryoshka encoding](overviews/doc:sdd-tasks-completed-task-1035-sentence-transfor-0e1549f0.md)
+
+Wires Matryoshka truncation into the actual embedding hot path
+
+## [TASK-1036: EmbeddingRegistry Matryoshka cache key](overviews/doc:sdd-tasks-completed-task-1036-embedding-registr-9712fbea.md)
+
+bots that use the same model with DIFFERENT `matryoshka.dimension`
+
+## [TASK-1036: Warm-up coroutine (_warm_up)](overviews/doc:sdd-tasks-completed-task-1036-warmup-coroutine-md.md)
+
+from parrot.manager.ephemeral import EphemeralAgentStatus # TASK-1034
+
+## [TASK-1037: FAISS persistence to S3](overviews/doc:sdd-tasks-completed-task-1037-faiss-s3-persistence-md.md)
+
+from parrot.stores.faiss_store import FAISSStore # parrot/stores/faiss_store.py:32
+
+## [TASK-1037: AbstractStore.create_embedding forwards matryoshka kwarg](overviews/doc:sdd-tasks-completed-task-1037-store-create-embe-1305e142.md)
+
+operator-supplied `embedding_model` dict (from
+
+## [TASK-1038: MCP HTTP handshake validator](overviews/doc:sdd-tasks-completed-task-1038-mcp-handshake-validator-md.md)
+
+from parrot.mcp.config import MCPServerConfig # parrot/mcp/config.py:16
+
+## [TASK-1038: _provision_vector_store dim-equality check](overviews/doc:sdd-tasks-completed-task-1038-provision-store-d-ecf97045.md)
+
+pgvector table with a fixed dimension read from
+
+## [TASK-1039: Matryoshka end-to-end integration tests + documentation](overviews/doc:sdd-tasks-completed-task-1039-matryoshka-integr-b93fc18f.md)
+
+Final task for FEAT-150. Adds the heavy end-to-end test that loads
+
+## [TASK-1039: ToolCatalogHandler](overviews/doc:sdd-tasks-completed-task-1039-tool-catalog-handler-md.md)
+
+from parrot_tools import TOOL_REGISTRY # used in parrot/tools/__init__.py:184
+
+## [TASK-104: Implement generate_music_batch Method](overviews/doc:sdd-tasks-completed-task-104-lyria-batch-method-md.md)
+
+This task implements Module 2 from the spec — the core `generate_music_batch()` method in the `GoogleGeneration` mixin.
+
+## [TASK-1040: EphemeralUserAgentHandler](overviews/doc:sdd-tasks-completed-task-1040-ephemeral-handler-md.md)
+
+from parrot.manager.manager import BotManager # parrot/manager/manager.py:81
+
+## [TASK-1040: Promote `navigator-auth`, `lxml`, `reportlab` to hard deps + bump to 0.2.0](overviews/doc:sdd-tasks-completed-task-1040-formdesigner-prom-7389a091.md)
+
+Wave 1, Step 3 of FEAT-152 promotes three previously-optional /
+
+## [TASK-1041: Build `parrot_formdesigner.controls` package (registry + builtin seed)](overviews/doc:sdd-tasks-completed-task-1041-formdesigner-cont-c0e78ad5.md)
+
+Wave 1, Step 5 of FEAT-152 introduces an extensible registry of form
+
+## [TASK-1041: Route registration](overviews/doc:sdd-tasks-completed-task-1041-route-registration-md.md)
+
+from parrot.handlers.agents.ephemeral import EphemeralUserAgentHandler # TASK-1040 creates this
+
+## [TASK-1042: Build `parrot_formdesigner.api` package — REST surface with hard navigator-auth](overviews/doc:sdd-tasks-completed-task-1042-formdesigner-api--9e8a898c.md)
+
+This is the largest Wave 1 task: it migrates the entire JSON REST
+
+## [TASK-1042: Sharing scaffold (deferred stub)](overviews/doc:sdd-tasks-completed-task-1042-sharing-scaffold-stub-md.md)
+
+"""Agent sharing scaffold — deferred to a follow-up FEAT.
+
+## [TASK-1043: Build `parrot_formdesigner.ui` package — HTML pages + Telegram WebApp](overviews/doc:sdd-tasks-completed-task-1043-formdesigner-ui-package-md.md)
+
+Wave 1, Step 1 (UI half) of FEAT-152 splits the HTML pages and
+
+## [TASK-1043: Frontend integration handoff document](overviews/doc:sdd-tasks-completed-task-1043-frontend-handoff-doc-md.md)
+
+1. **Context** — what an ephemeral agent is, user-perspective description.
+
+## [TASK-1044: DatasetPolicyGuard class](overviews/doc:sdd-tasks-completed-task-1044-dataset-policy-guard-md.md)
+
+from parrot.auth.permission import PermissionContext, UserSession, to_eval_context
+
+## [TASK-1044: Empty `parrot_formdesigner/__init__.py` and delete `handlers/`](overviews/doc:sdd-tasks-completed-task-1044-formdesigner-empt-489455c6.md)
+
+Final cleanup task of Wave 1. With `api/` and `ui/` populated, the old
+
+## [TASK-1045: XForms 1.1 renderer with `<xf:bind>` constraint expressions](overviews/doc:sdd-tasks-completed-task-1045-formdesigner-xfor-e7c3b1c6.md)
+
+Wave 2a of FEAT-152 — parallelizable with TASK-1046 / 1047 / 1048.
+
+## [TASK-1045: setup_pbac datasets directory extension](overviews/doc:sdd-tasks-completed-task-1045-setup-pbac-datase-63448763.md)
+
+loading block (lines 131–149), add an identical block for `policies/datasets/`.
+
+## [TASK-1046: DatasetManager policy integration](overviews/doc:sdd-tasks-completed-task-1046-datasetmanager-po-70682067.md)
+
+1. Add `policy_guard: Optional["DatasetPolicyGuard"] = None` constructor kwarg; store as `self._policy_guard`.
+
+## [TASK-1046: PDF AcroForm fillable renderer (`reportlab`)](overviews/doc:sdd-tasks-completed-task-1046-formdesigner-pdf--0babc39b.md)
+
+Wave 2b of FEAT-152 — parallelizable with TASK-1045 / 1047 / 1048.
+
+## [TASK-1047: Form-controls REST contract tests + extension hooks](overviews/doc:sdd-tasks-completed-task-1047-formdesigner-cont-2493f1b8.md)
+
+Wave 2c of FEAT-152 — parallelizable with TASK-1045 / 1046 / 1048.
+
+## [TASK-1047: Sample YAML policies and integration tests](overviews/doc:sdd-tasks-completed-task-1047-sample-policies-i-c5615734.md)
+
+1. Boot a stub aiohttp app, call `setup_pbac(app, policy_dir=tmp)` with YAML fixtures.
+
+## [TASK-1048: `PATCH /api/v1/forms/{id}/operations` — atomic batched edit API](overviews/doc:sdd-tasks-completed-task-1048-formdesigner-edit-7cb74ce5.md)
+
+Wave 2d of FEAT-152 — parallelizable with TASK-1045 / 1046 / 1047.
+
+## [TASK-1048: Promote `jsonld_extractors` Module to `ai-parrot` Core](overviews/doc:sdd-tasks-completed-task-1048-promote-jsonld-ex-0435fd65.md)
+
+existing `EXTRACTOR_REGISTRY` and `JsonLdItem` from
+
+## [TASK-1049: Add `ExtractJsonLd` BrowserAction Model](overviews/doc:sdd-tasks-completed-task-1049-add-extract-jsonl-4629be77.md)
+
+The toolkit's plan-driven scraping system uses Pydantic-modelled
+
+## [TASK-1049: agent_guard module — parser, enforcer, exception](overviews/doc:sdd-tasks-completed-task-1049-agent-guard-module-md.md)
+
+Foundation of FEAT-153. Implements §3 Module 1 of the spec: a single new
+
+## [TASK-105: Rename generate_music to generate_music_stream](overviews/doc:sdd-tasks-completed-task-105-rename-generate-music-md.md)
+
+This task implements Module 3 from the spec. It renames the existing `generate_music()` method to `generate_music_stream()` for API clarity, and adds a deprecated alias.
+
+## [TASK-1050: Add `_action_extract_jsonld` Executor Handler + Dispatch Wiring](overviews/doc:sdd-tasks-completed-task-1050-add-extract-jsonl-d1c4f256.md)
+
+With the model registered (TASK-1049) and the shared `EXTRACTOR_REGISTRY`
+
+## [TASK-1050: BotModel.permissions schema documentation](overviews/doc:sdd-tasks-completed-task-1050-botmodel-permissi-2071ae6f.md)
+
+Implements §3 Module 2 of the spec. The `permissions` JSONB column on
+
+## [TASK-1051: AgentRegistry.register_db_bot_policies](overviews/doc:sdd-tasks-completed-task-1051-agentregistry-reg-7e6eb5e6.md)
+
+Implements §3 Module 3. Adds the public method on `AgentRegistry` that
+
+## [TASK-1052: BotManager._load_database_bots — wire policy registration](overviews/doc:sdd-tasks-completed-task-1052-load-database-bot-6de9d949.md)
+
+Implements §3 Module 4. Closes the loop between the DB row and the
+
+## [TASK-1053: BotManager.get_bot enforcement](overviews/doc:sdd-tasks-completed-task-1053-botmanager-get-bo-f79adc72.md)
+
+Implements §3 Module 5. Adds the actual access check at the primary
+
+## [TASK-1054: AgentRegistry.get_instance enforcement](overviews/doc:sdd-tasks-completed-task-1054-agentregistry-get-0ae8c9d5.md)
+
+Implements §3 Module 6. Mirror of TASK-1053 for the second
+
+## [TASK-1055: user_bots exemption regression test](overviews/doc:sdd-tasks-completed-task-1055-user-bots-exempti-270e7c4e.md)
+
+Implements §3 Module 7. `user_bots` (`navigator.users_bots`) are
+
+## [TASK-1056: Update Handler Imports from orchestration to flows](overviews/doc:sdd-tasks-completed-task-1056-handler-import-mi-fb02726b.md)
+
+The handler layer is production code serving REST endpoints for AgentCrew management.
+
+## [TASK-1057: Update Test Imports from orchestration to flows](overviews/doc:sdd-tasks-completed-task-1057-test-import-migration-md.md)
+
+15 test files contain 27+ import lines referencing `parrot.bots.orchestration`. This task
+
+## [TASK-1058: Update Example Imports from orchestration to flows](overviews/doc:sdd-tasks-completed-task-1058-example-import-mi-6c05934d.md)
+
+17 example files contain 24 import lines referencing `parrot.bots.orchestration`. Most
+
+## [TASK-1059: Delete orchestration/ Directory and Clean Up Bytecache](overviews/doc:sdd-tasks-completed-task-1059-delete-orchestrat-04175f8b.md)
+
+After all consumers (handlers, tests, examples) have been repointed to `parrot.bots.flows`,
+
+## [TASK-106: Update Internal Callers to Use generate_music_stream](overviews/doc:sdd-tasks-completed-task-106-update-internal-callers-md.md)
+
+This task implements Module 4 from the spec. After renaming `generate_music` to `generate_music_stream` (TASK-105), internal callers need to be updated to use the new name.
+
+## [TASK-1060: Relocate crew definition models to parrot/models/](overviews/doc:sdd-tasks-completed-task-1060-relocate-crew-def-332d53a4.md)
+
+The definition models (`ExecutionMode`, `AgentDefinition`, `FlowRelation`,
+
+## [TASK-1060: Reshape `core.node` — Node ABC + AgentNode + StartNode + EndNode to frozen Pydantic](overviews/doc:sdd-tasks-completed-task-1060-reshape-core-node-81fb8fdd.md)
+
+Implements Spec §3 Module 1. Promotes the existing `parrot/bots/flows/core/node.py` classes (`Node` ABC, `AgentNode`, `StartNode`, `EndNode`) from `@dataclass` to frozen Pydantic `BaseModel` with `model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)`. Action-hook 
+
+## [TASK-1061: Add AgentCrew.from_definition() classmethod](overviews/doc:sdd-tasks-completed-task-1061-agentcrew-from-de-090ec58c.md)
+
+and `BotManager._create_crew_from_definition()`. This task adds a
+
+## [TASK-1061: Extend `FlowContext` with `resolve_agent` + AgentRegistry binding](overviews/doc:sdd-tasks-completed-task-1061-flowcontext-resol-d6f909c8.md)
+
+Implements Spec §3 Module 2. The new `AgentsFlow` uses `AgentRegistry` (`parrot/registry/registry.py:228`) as the single agent-resolution source (spec §8 D5). This task extends `parrot/bots/flows/core/context.py:FlowContext` with:
+
+## [TASK-1062: Migrate `parrot/bots/flows/crew/` to the new AgentNode shape](overviews/doc:sdd-tasks-completed-task-1062-migrate-agentcrew-0f972877.md)
+
+Implements Spec §3 Module 3. TASK-1060 changed `core.node.AgentNode` from `@dataclass` to frozen Pydantic and changed its `execute()` signature. `CrewAgentNode` (`parrot/bots/flows/crew/nodes.py`) subclasses `_CoreAgentNode` and inherits this contract; the instantiation site at `
+
+## [TASK-1062: Refactor callers to use AgentCrew.from_definition()](overviews/doc:sdd-tasks-completed-task-1062-refactor-callers--5f3f4187.md)
+
+With `AgentCrew.from_definition()` available (TASK-1061), the duplicated
+
+## [TASK-1063: Define CrewHookCallback type alias](overviews/doc:sdd-tasks-completed-task-1063-crew-hook-type-md.md)
+
+This task defines the `CrewHookCallback` type alias used by the hook registration
+
+## [TASK-1063: Add `synthesize_results` util in `core/storage/synthesis.py`](overviews/doc:sdd-tasks-completed-task-1063-synthesize-results-util-md.md)
+
+Implements Spec §3 Module 7. The new `AgentsFlow` drops `SynthesisMixin` inheritance (spec §8 D11) and offers two consumer paths for LLM-based result synthesis:
+
+## [TASK-1064: Hook registration and dispatch in AgentCrew](overviews/doc:sdd-tasks-completed-task-1064-crew-hook-registr-da396263.md)
+
+This is the core task for FEAT-157. It implements Module 2 from the spec (§3):
+
+## [TASK-1064: Add cycle detection `model_validator` to `FlowDefinition`](overviews/doc:sdd-tasks-completed-task-1064-flowdefinition-cy-8fdb9cfd.md)
+
+Implements Spec §3 Module 9. The legacy executor's `_would_create_cycle` method (`parrot/bots/flow/fsm.py:1252`) only checks cycles at `task_flow()` time — runtime, after the flow has already been mostly built. With this refactor, cycle detection moves into `FlowDefinition.model_
+
+## [TASK-1065: Tests for AgentCrew lifecycle hooks](overviews/doc:sdd-tasks-completed-task-1065-crew-hook-tests-md.md)
+
+This task implements Module 3 from the spec (§3) — comprehensive unit tests
+
+## [TASK-1065: Scaffold `parrot/bots/flows/flow.py` with `NODE_REGISTRY` + `@register_node` + `AgentsFlow` class skeleton](overviews/doc:sdd-tasks-completed-task-1065-scaffold-flow-py--0666e65b.md)
+
+Implements Spec §3 Module 4 + the module skeleton from §3 Module 6 (constructor, fields, `add_node`, deferred `run_flow`). This is the foundation file for the new executor at `parrot/bots/flows/flow.py`. It defines:
+
+## [TASK-1066: New Node subclasses — `DecisionNode`, `InteractiveDecisionNode`, `SynthesisNode`](overviews/doc:sdd-tasks-completed-task-1066-new-node-subclasses-md.md)
+
+Implements Spec §3 Module 5. Adds three new Node subclasses to `parrot/bots/flows/flow.py`, each registered via `@register_node(...)`:
+
+## [TASK-1067: Implement event-driven scheduler — `run_flow`, `_materialize_nodes`, completion queue, `on_complete` hooks, `FlowResult` aggregation](overviews/doc:sdd-tasks-completed-task-1067-event-driven-scheduler-md.md)
+
+Implements Spec §3 Module 6 — the heart of the new executor. Replaces the legacy polling loop (`await asyncio.sleep(0.1)` + full-graph scans) with an event-driven design:
+
+## [TASK-1068: Implement `AgentsFlow.from_definition()` with eager AgentRegistry resolution](overviews/doc:sdd-tasks-completed-task-1068-from-definition-e-d6c070f4.md)
+
+Implements Spec §3 Module 8 — the bridge between the declarative `FlowDefinition` layer and the runtime `AgentsFlow` executor. The factory classmethod walks the definition, eagerly resolves every `NodeDefinition.agent_ref` against `AgentRegistry`, and stores both the definition A
+
+## [TASK-1069: Delete legacy `parrot/bots/flow/fsm.py` and update `parrot/bots/flow/loader.py`](overviews/doc:sdd-tasks-completed-task-1069-delete-legacy-fsm-7ea84b8c.md)
+
+Implements Spec §3 Module 10. The new `parrot/bots/flows/flow.py` is fully functional after TASK-1067 + TASK-1068. The legacy file `parrot/bots/flow/fsm.py` (1815 lines, contains the broken polling executor + 6 duplicated symbols) can now be removed.
+
+## [TASK-107: Add Lyria Batch Unit and Integration Tests](overviews/doc:sdd-tasks-completed-task-107-lyria-batch-tests-md.md)
+
+This task adds comprehensive tests for the Lyria batch music generation feature. It covers:
+
+## [TASK-1070: Integration test suite for the new AgentsFlow (7 scenarios)](overviews/doc:sdd-tasks-completed-task-1070-integration-test-suite-md.md)
+
+Implements Spec §3 Module 11 + §4 Integration Tests. Validates the new `AgentsFlow` executor end-to-end against the 7 scenarios enumerated in the spec. Replaces the deleted legacy integration tests (`test_fsm.py`, etc., removed by TASK-1069).
+
+## [TASK-1071: Ontology schema extensions for entity extraction, authorization, tool_call](overviews/doc:sdd-tasks-completed-task-1071-ontology-schema-e-794e0f88.md)
+
+Spec §2 Data Models. This task lands the new Pydantic types every other task in FEAT-158 imports. Without it, TASK-1072/1073/1074/1075 are blocked.
+
+## [TASK-1072: Extend OntologyCache.build_key to include resolved entities](overviews/doc:sdd-tasks-completed-task-1072-ontology-cache-ke-7939596f.md)
+
+Spec §3 Module 6, §5 Acceptance Criteria. Without this, two users querying the same pattern with different target entities can share a cache entry — a correctness bug and a confidentiality risk. The current key shape `f"{prefix}:{tenant_id}:{user_id}:{pattern}"` (`cache.py:43-55`
+
+## [TASK-1073: Implement EntityResolver with four strategies](overviews/doc:sdd-tasks-completed-task-1073-entity-resolver-md.md)
+
+Spec §2 New Public Interfaces, §3 Module 2. `EntityResolver` is the component that converts natural-language mentions (e.g., *"Jesús"*) into graph `_id`s. It is the linchpin of the driving use case — without it, the AQL has no `@target_id` to bind, and traversal cannot proceed.
+
+## [TASK-1074: Implement AuthorizationChecker with 5 declarative rules](overviews/doc:sdd-tasks-completed-task-1074-authorization-checker-md.md)
+
+Spec §2 New Public Interfaces, §3 Module 3. `AuthorizationChecker` enforces intent-level authorization AFTER entity resolution but BEFORE graph traversal. Without it, any user matching a trigger phrase could execute any pattern — there is no defense against cross-department or of
+
+## [TASK-1075: Implement ToolCallDispatcher with Jinja2 templating and per-user credential plumbing](overviews/doc:sdd-tasks-completed-task-1075-tool-call-dispatcher-md.md)
+
+Spec §2 New Public Interfaces, §3 Module 4, §6 Codebase Contract. `ToolCallDispatcher` is the bridge between graph results and real tool invocation. It renders `ToolCallSpec.parameters` via Jinja2 with safety filters, resolves the tool via `ToolManager.get_tool`, and forwards `_p
+
+## [TASK-1076: Refactor OntologyRAGMixin.ontology_process to compose entity resolution, authorization, and tool dispatch](overviews/doc:sdd-tasks-completed-task-1076-ontology-mixin-refactor-md.md)
+
+Spec §2 Component Diagram, §3 Module 5, §5 Acceptance Criteria. This task wires the three new modules into the production pipeline. After this task lands, the *"team of Jesús"* flow runs end-to-end inside `ontology_process` — only the IntentRouter forwarding fix (TASK-1077) and t
+
+## [TASK-1077: Wire IntentRouterMixin._run_graph_pageindex to forward user_context and tenant_id](overviews/doc:sdd-tasks-completed-task-1077-intent-router-for-04c680e1.md)
+
+Spec §3 Module 7, §6 Codebase Contract (Does NOT Exist), §5 Acceptance Criteria. Today's call site at `intent_router.py:636` is `await ontology_process(prompt)` — a single positional arg against a signature that requires three. The call is wrapped in `try/except Exception: pass` 
+
+## [TASK-1078: End-to-end test + YAML fixture for the team_work_in_progress driving use case](overviews/doc:sdd-tasks-completed-task-1078-e2e-team-work-in--f173f379.md)
+
+Spec §3 Module 8, §5 Acceptance Criteria. This is the proof that the bundled feature actually delivers the driving use case: a user query *"¿en qué está trabajando el equipo de Jesús?"* lands an `EnrichedContext` whose `tool_result["in_progress_issues"]` contains the asking user'
+
+## [TASK-1079: Add `config_file` field to CloudSploitConfig](overviews/doc:sdd-tasks-completed-task-1079-cloudsploit-confi-2d2b9508.md)
+
+Per FEAT-160 proposal §3 ("What Changes" → first bullet) and §2.1 (Localization row 1):
+
+## [TASK-1079: InspectorToolkit skeleton + Pydantic input schemas + filter builder](overviews/doc:sdd-tasks-completed-task-1079-inspector-skeleto-5f4c1066.md)
+
+This is the foundation task for FEAT-161. It creates the `InspectorToolkit` class skeleton, all Pydantic v2 input schemas, and the private `_build_filter_criteria()` helper that translates simple keyword arguments into the verbose `filterCriteria` dict consumed by `inspector2:Lis
+
+## [TASK-108: Add Lyria Batch Usage Example](overviews/doc:sdd-tasks-completed-task-108-lyria-batch-example-md.md)
+
+This task adds a usage example demonstrating the new `generate_music_batch()` method. Examples help developers understand how to use the feature.
+
+## [TASK-1080: Widen `_build_docker_command.volume_mount` to accept multiple mounts](overviews/doc:sdd-tasks-completed-task-1080-cloudsploit-multi-08037723.md)
+
+Per FEAT-160 proposal §2.2 ("Existing volume-mount slot is single-tuple") and §3
+
+## [TASK-1080: Direct read operations (list_findings, aggregate, ECR image, coverage, account status)](overviews/doc:sdd-tasks-completed-task-1080-direct-read-operations-md.md)
+
+Implements the six direct read operations (Spec Module 2, §3) that wrap the core Inspector2 API calls. These are the workhorse methods — everything else builds on them. The normalized output shape defined in §2 becomes the contract for downstream agent prompts.
+
+## [TASK-1081: Emit `--config=<path>` from `_build_cli_args`](overviews/doc:sdd-tasks-completed-task-1081-cloudsploit-cli-c-a5725a65.md)
+
+Per FEAT-160 proposal §3 ("What Changes" → second bullet) and §2.1 (Localization
+
+## [TASK-1081: Composite read operations (security posture + top vulnerable resources)](overviews/doc:sdd-tasks-completed-task-1081-composite-read-op-67882e65.md)
+
+Implements the two composite read operations (Spec Module 3, §3) that orchestrate multiple Inspector2 API calls to produce agent-ready summaries. These mirror the pattern used by `SecurityHubToolkit.aws_securityhub_get_security_score` but are Inspector-specific.
+
+## [TASK-1082: Async export operations (findings report + SBOM export)](overviews/doc:sdd-tasks-completed-task-1082-async-export-operations-md.md)
+
+Implements the four async export operations (Spec Module 4, §3). These kick off asynchronous S3 exports (findings report or SBOM) and provide polling methods. Designed for qworker-driven offline analysis and SBOM → vector-store ingestion pipelines.
+
+## [TASK-1082: Plumb `config` through `_run_with_outputs`, `run_scan`, `run_compliance_scan`](overviews/doc:sdd-tasks-completed-task-1082-cloudsploit-execu-dd29880f.md)
+
+Per FEAT-160 proposal §3 ("What Changes" → fourth and fifth bullets) and §2.1
+
+## [TASK-1083: Add `config` argument to `CloudSploitToolkit.run_scan` / `run_compliance_scan`](overviews/doc:sdd-tasks-completed-task-1083-cloudsploit-toolk-9026a90a.md)
+
+Per FEAT-160 proposal §3 ("What Changes" → sixth bullet) and §2.1 (Localization
+
+## [TASK-1083: IAM policy sidecar + package wiring + example](overviews/doc:sdd-tasks-completed-task-1083-iam-policy-packag-4d5cb55d.md)
+
+Wires up the completed `InspectorToolkit` into the `parrot_tools.aws` package, ships the IAM policy sidecar (establishing a new convention), adds a usage example, and updates the package README. This is the final task that makes the toolkit discoverable and documented.
+
+## [TASK-1084: Postgres Migration — Ontology Curation Tables](overviews/doc:sdd-tasks-completed-task-1084-postgres-migratio-04c498da.md)
+
+This is the first task in the FEAT-159 feature. All seven new Postgres tables (4 concept-side, 3 schema-side) plus their indexes and constraints must land before any service code can be written. See spec §2 Data Models and §3 Module 1.
+
+## [TASK-1084: YAML Knowledge Layer](overviews/doc:sdd-tasks-completed-task-1084-yaml-knowledge-layer-md.md)
+
+from parrot.knowledge.ontology.merger import OntologyMerger # verified: merger.py:26
+
+## [TASK-1085: Concept Embedding Pipeline](overviews/doc:sdd-tasks-completed-task-1085-concept-embedding-8541ac2d.md)
+
+from parrot.stores.postgres import PgVectorStore # verified: postgres.py:58
+
+## [TASK-1085: Ontology Exception Types Extension](overviews/doc:sdd-tasks-completed-task-1085-ontology-exceptio-485a3358.md)
+
+Four new exception types are needed by the concept catalog service, schema overlay service, and merger extension. They must inherit from the existing `OntologyError` base class. See spec §3 Module 2.
+
+## [TASK-1086: OntologyMerger.merge_with_overlay Extension](overviews/doc:sdd-tasks-completed-task-1086-merger-merge-with-e7b4ce0f.md)
+
+The `OntologyMerger` currently supports merging YAML layers via `merge()` and in-memory `OntologyDefinition` lists via `merge_definitions()`. This task adds `merge_with_overlay()` which combines both: YAML layers first, then in-memory PG-sourced overlay definitions on top. It als
+
+## [TASK-1086: TenantOntologyManager Pipeline Integration](overviews/doc:sdd-tasks-completed-task-1086-tenant-manager-pi-bae5454f.md)
+
+from parrot.knowledge.ontology.tenant import TenantOntologyManager # verified: tenant.py:18
+
+## [TASK-1087: Concept Catalog Pydantic Models](overviews/doc:sdd-tasks-completed-task-1087-concept-catalog-models-md.md)
+
+Pydantic v2 row models for the concept catalog tables. These are used by the service, worker, seed, reconcile, and HTTP modules. See spec §2 Data Models and §3 Module 3.
+
+## [TASK-1087: PgVectorStore metadata_filters Extension](overviews/doc:sdd-tasks-completed-task-1087-pgvector-metadata-dc774ba6.md)
+
+from parrot.stores.postgres import PgVectorStore # verified: postgres.py:58
+
+## [TASK-1088: Concept Catalog Service](overviews/doc:sdd-tasks-completed-task-1088-concept-catalog-service-md.md)
+
+The `ConceptCatalogService` is the sole SQL writer for the concept catalog tables (`ontology_concept`, `ontology_concept_isa`, `ontology_concept_audit`, `ontology_concept_outbox`). It implements the five-state machine, synonym collision detection, is_a DAG cycle detection, audit 
+
+## [TASK-1088: hybrid_concept_match Resolver Strategy](overviews/doc:sdd-tasks-completed-task-1088-hybrid-concept-ma-3b6b60ad.md)
+
+from parrot.stores.postgres import PgVectorStore # verified: postgres.py:58
+
+## [TASK-1089: Concept Catalog Sync Worker](overviews/doc:sdd-tasks-completed-task-1089-concept-catalog-s-a7e13eba.md)
+
+The `ConceptCatalogSyncWorker` drains the `ontology_concept_outbox` table using `SELECT ... FOR UPDATE SKIP LOCKED`, upserts concepts/edges to ArangoDB via `OntologyGraphStore`, and publishes cache invalidation messages via Redis pub/sub. See spec §3 Module 5.
+
+## [TASK-1089: PageIndexToolkit.search_documents_scoped](overviews/doc:sdd-tasks-completed-task-1089-pageindex-scoped-search-md.md)
+
+from parrot.tools.pageindex_toolkit import PageIndexToolkit # verified: pageindex_toolkit.py:39
+
+## [TASK-109: Research Memory Data Models](overviews/doc:sdd-tasks-completed-task-109-research-memory-schemas-md.md)
+
+This task implements the Pydantic data models for the Collective Research Memory system. These models define the schema for research documents, schedule configurations, and audit events that form the foundation of the new filesystem-based research storage.
+
+## [TASK-1090: Concept Catalog YAML Seed](overviews/doc:sdd-tasks-completed-task-1090-concept-catalog-y-5993e83a.md)
+
+A CLI/script entry point that seeds concept rows from existing YAML ontology files into the Postgres concept catalog. Idempotent: existing rows (any state) are skipped. Uses the service's `propose` + `approve` admin path. See spec §3 Module 6.
+
+## [TASK-1090: ontology_process Degradation Chain](overviews/doc:sdd-tasks-completed-task-1090-ontology-degradat-44bb1acc.md)
+
+1. `authority="primary"` traversal → tool_call → `context.source="graph:primary"`
+
+## [TASK-1091: Concept Catalog Reconciliation Job](overviews/doc:sdd-tasks-completed-task-1091-concept-catalog-r-15250a2c.md)
+
+A nightly reconciliation job that detects drift between Postgres (source of truth) and ArangoDB (materialized view). For each tenant: scan approved PG rows, verify matching ArangoDB documents/edges with correct `pg_concept_id`/`pg_isa_edge_id`, and reverse-scan. Discrepancies are
+
+## [TASK-1091: IntentRouterMixin Branch Logic](overviews/doc:sdd-tasks-completed-task-1091-intent-router-bra-5a4184fd.md)
+
+from parrot.bots.mixins.intent_router import IntentRouterMixin # verified: intent_router.py:107
+
+## [TASK-1092: Concept Catalog HTTP Routes](overviews/doc:sdd-tasks-completed-task-1092-concept-catalog-h-00f8d7c7.md)
+
+aiohttp routes under `/api/ontology/concepts/*` providing the REST API for concept catalog operations. Role enforcement via `navigator-auth`: `topic_curator` for reads/proposals, `topic_reviewer` for approvals, `topic_admin` for deprecation/restore. See spec §3 Module 8.
+
+## [TASK-1092: End-to-End Tests & Golden Fixtures](overviews/doc:sdd-tasks-completed-task-1092-e2e-tests-golden--946cf30e.md)
+
+from parrot.knowledge.ontology.mixin import OntologyRAGMixin # verified: mixin.py:27
+
+## [TASK-1093: Schema Overlay Pydantic Models](overviews/doc:sdd-tasks-completed-task-1093-schema-overlay-models-md.md)
+
+Pydantic v2 row models for the schema overlay tables. Used by the schema overlay service, validator, worker, and HTTP modules. See spec §2 Data Models and §3 Module 9.
+
+## [TASK-1094: Schema Overlay Validator (Dry-Run)](overviews/doc:sdd-tasks-completed-task-1094-schema-overlay-va-f9fc204a.md)
+
+The dry-run validator is the mandatory gate between `pending_review` and `approved` for schema overlays. It performs a sandboxed merge using `OntologyMerger.merge_with_overlay()` against an ephemeral copy of the tenant's current state, runs `validate_aql` for traversal patterns, 
+
+## [TASK-1095: Schema Overlay Service](overviews/doc:sdd-tasks-completed-task-1095-schema-overlay-service-md.md)
+
+The `SchemaOverlayService` is the sole SQL writer for the schema overlay tables (`ontology_schema_overlay`, `ontology_schema_audit`, `ontology_schema_outbox`). It implements the same five-state machine as the concept catalog but with a mandatory `dry_run()` gate between `pending_
+
+## [TASK-1096: Schema Overlay Sync Worker](overviews/doc:sdd-tasks-completed-task-1096-schema-overlay-sy-d795b8bd.md)
+
+The `SchemaOverlaySyncWorker` drains `ontology_schema_outbox` with `SELECT ... FOR UPDATE SKIP LOCKED` and publishes cache invalidation messages via Redis pub/sub. Unlike the concept worker, it does NOT materialize to ArangoDB — schema overlays are composed at resolve-time. See s
+
+## [TASK-1097: Schema Overlay HTTP Routes](overviews/doc:sdd-tasks-completed-task-1097-schema-overlay-ht-aa542522.md)
+
+aiohttp routes under `/api/ontology/schema/*` providing the REST API for schema overlay operations. All routes require `ontology_schema_admin` role. The dry-run endpoint lets admins preview validation results before approving. See spec §3 Module 13.
+
+## [TASK-1098: TenantOntologyManager Extension — PG Overlay Composition](overviews/doc:sdd-tasks-completed-task-1098-tenant-ontology-m-1049d256.md)
+
+1. Fetch approved concept rows for the tenant → synthesize `OntologyDefinition` (`pg_overlay_concepts`).
+
+## [TASK-1099: OntologyCache Pub/Sub Subscriber](overviews/doc:sdd-tasks-completed-task-1099-ontology-cache-pu-800d6178.md)
+
+When a concept or schema overlay is approved/deprecated, the sync workers publish `ontology:invalidate:<tenant_id>` on Redis. Every agent process must subscribe to this channel and call `TenantOntologyManager.invalidate(tenant_id)` + `OntologyCache.invalidate_tenant(tenant_id)` o
+
+## [TASK-110: Abstract Research Memory Interface](overviews/doc:sdd-tasks-completed-task-110-research-memory-abstract-md.md)
+
+This task implements the abstract base class `ResearchMemory` that defines the interface for research memory storage. This follows the pattern established by `ConversationMemory` in `parrot/memory/abstract.py`.
+
+## [TASK-1100: nav-admin Concept Catalog Queue Panel](overviews/doc:sdd-tasks-completed-task-1100-navadmin-concept--4f2d5d92.md)
+
+A SvelteKit panel in nav-admin for reviewing proposed/pending_review concept rows. Reuses UX patterns from the operational Review Queue (or extracts a shared `<CurationQueue>` component). See spec §3 Module 17.
+
+## [TASK-1101: nav-admin Concept Browser Panel](overviews/doc:sdd-tasks-completed-task-1101-navadmin-concept--efd7aa8f.md)
+
+A SvelteKit panel for browsing approved concepts. Features: is_a ancestor/descendant tree view, synonym editor, deprecate action with cascade preview. See spec §3 Module 18.
+
+## [TASK-1102: nav-admin Schema Overlay Panel](overviews/doc:sdd-tasks-completed-task-1102-navadmin-schema-o-543f4f77.md)
+
+A schema-admin-only SvelteKit panel for managing schema overlays (entity types, relation types, traversal patterns). Features: diff view of proposed overlay vs current merged ontology, dry-run report display, route guarded by `ontology_schema_admin` role. See spec §3 Module 19.
+
+## [TASK-1103: navigator-auth Role Addition — ontology_schema_admin](overviews/doc:sdd-tasks-completed-task-1103-navigator-auth-ro-c2dcf001.md)
+
+The schema overlay endpoints require a new `ontology_schema_admin` role that is separate from the existing `topic_*` roles. This task registers the role in navigator-auth's role catalog. See spec §3 Module 20.
+
+## [TASK-1104: Remove broken consolidate_weekly_security_summary stub (precondition)](overviews/doc:sdd-tasks-completed-task-1104-remove-broken-con-ddb13966.md)
+
+It currently contains an in-progress `consolidate_weekly_security_summary`
+
+## [TASK-1105: Storage data models (ReportKind, ReportRef, ReportFilter, SeverityBreakdown, EmbeddedFinding)](overviews/doc:sdd-tasks-completed-task-1105-storage-data-models-md.md)
+
+Foundation task for FEAT-162. Defines the Pydantic v2 data layer used by
+
+## [TASK-1106: Postgres schema (security_reports table + indexes)](overviews/doc:sdd-tasks-completed-task-1106-postgres-schema-sql-md.md)
+
+Defines the Postgres DDL for the `security_reports` table that backs the
+
+## [TASK-1107: SecurityReportStore Protocol + PostgresS3SecurityReportStore implementation](overviews/doc:sdd-tasks-completed-task-1107-security-report-store-md.md)
+
+The catalog's persistence core. Defines the `SecurityReportStore` Protocol
+
+## [TASK-1108: Per-scanner parser registry (Trivy, CloudSploit, Prowler, Checkov, Aggregator)](overviews/doc:sdd-tasks-completed-task-1108-scanner-parsers-md.md)
+
+Deterministic Python parsers — one per scanner — that turn scanner output
+
+## [TASK-1109: ReportPersistenceMixin](overviews/doc:sdd-tasks-completed-task-1109-report-persistenc-a674d30b.md)
+
+The mixin that producer scanner toolkits compose in. When both
+
+## [TASK-111: File Research Memory Implementation](overviews/doc:sdd-tasks-completed-task-111-file-research-memory-md.md)
+
+This task implements `FileResearchMemory`, the filesystem-based implementation of `ResearchMemory`. This is the core component of the collective memory system, featuring in-memory cache, fire-and-forget disk writes, and LRU eviction.
+
+## [TASK-1110: CloudSploitToolkit mixin integration (with FEAT-160 config threading)](overviews/doc:sdd-tasks-completed-task-1110-cloudsploit-toolk-95435e4a.md)
+
+Wires `ReportPersistenceMixin` into `CloudSploitToolkit` so every
+
+## [TASK-1111: ComplianceReportToolkit mixin integration](overviews/doc:sdd-tasks-completed-task-1111-compliance-toolki-3489618e.md)
+
+Wires `ReportPersistenceMixin` into `ComplianceReportToolkit` so each
+
+## [TASK-1112: ContainerSecurityToolkit mixin integration + Trivy temp-file lifecycle](overviews/doc:sdd-tasks-completed-task-1112-container-toolkit-7190e277.md)
+
+Wires `ReportPersistenceMixin` into `ContainerSecurityToolkit` AND
+
+## [TASK-1113: SecurityReportToolkit (LLM-facing read side)](overviews/doc:sdd-tasks-completed-task-1113-security-report-toolkit-md.md)
+
+The LLM-facing read toolkit. The `SecurityAgent` calls these tools
+
+## [TASK-1114: WeeklySecuritySummarizer + MonthlySecuritySummarizer (multi-provider × framework)](overviews/doc:sdd-tasks-completed-task-1114-summarizers-md.md)
+
+Deterministic Python diff math + a single LLM call for the executive
+
+## [TASK-1115: parrot/conf.py — AWS_CREDENTIALS['security'] slot](overviews/doc:sdd-tasks-completed-task-1115-aws-credentials-s-debbbd77.md)
+
+Adds an `AWS_CREDENTIALS['security']` slot in `parrot/conf.py` derived
+
+## [TASK-1116: agents/security.py wiring + scheduled consolidators + BACKSTORY alignment](overviews/doc:sdd-tasks-completed-task-1116-security-agent-wiring-md.md)
+
+The final integration task. Wires every previously-shipped module into
+
+## [TASK-1117: README for parrot/storage/security_reports/](overviews/doc:sdd-tasks-completed-task-1117-readme-docs-md.md)
+
+Spec §5 final acceptance criterion: a ≤2-page README explaining the
+
+## [TASK-1118: ECR domain models + CloudSploitConfig.ecr_plan_file](overviews/doc:sdd-tasks-completed-task-1118-ecr-domain-models-md.md)
+
+Foundation task. Adds the Pydantic types that every later task depends on,
+
+## [TASK-1119: Extend `aws_ecr_get_image_scan_findings` with `include_attributes`](overviews/doc:sdd-tasks-completed-task-1119-ecr-wrapper-inclu-267269f2.md)
+
+Implements **Module 3** of the spec (`sdd/specs/cloudsploit-ecr.spec.md` §3).
+
+## [TASK-112: Audit Trail & Cleanup Implementation](overviews/doc:sdd-tasks-completed-task-112-audit-trail-cleanup-md.md)
+
+This task adds audit trail logging and cleanup/archival functionality to `FileResearchMemory`. The audit trail logs all store/access events to an append-only JSONL file, and cleanup archives old documents to `_historical/` folder.
+
+## [TASK-1120: `EcrScanCollector` — multi-repo / tag-priority loop](overviews/doc:sdd-tasks-completed-task-1120-ecr-scan-collector-md.md)
+
+Implements **Module 2** of the spec (`sdd/specs/cloudsploit-ecr.spec.md` §3).
+
+## [TASK-1121: Port `generate_ecr_report.js` to Jinja2 template](overviews/doc:sdd-tasks-completed-task-1121-ecr-html-template-md.md)
+
+Implements **Module 4** of the spec (`sdd/specs/cloudsploit-ecr.spec.md` §3).
+
+## [TASK-1122: `ReportGenerator.generate_ecr_html` — render the template](overviews/doc:sdd-tasks-completed-task-1122-ecr-report-generator-md.md)
+
+Implements **Module 5** of the spec (`sdd/specs/cloudsploit-ecr.spec.md` §3).
+
+## [TASK-1122: Kubernetes config and result models](overviews/doc:sdd-tasks-completed-task-1122-k8s-config-result-aa1e7c5b.md)
+
+in-cluster flag, and timeout.
+
+## [TASK-1123: `CloudSploitToolkit.collect_ecr_findings` + `generate_ecr_report`](overviews/doc:sdd-tasks-completed-task-1123-cloudsploit-toolk-935a12cb.md)
+
+Implements **Module 6** of the spec (`sdd/specs/cloudsploit-ecr.spec.md` §3).
+
+## [TASK-1123: KubernetesExecutor — async client wrapper](overviews/doc:sdd-tasks-completed-task-1123-k8s-executor-md.md)
+
+(never dump full API objects).
+
+## [TASK-1124: Example plan YAML + `__init__.py` re-exports](overviews/doc:sdd-tasks-completed-task-1124-ecr-example-plan--d1f00ab0.md)
+
+Implements **Module 8** of the spec (`sdd/specs/cloudsploit-ecr.spec.md` §3).
+
+## [TASK-1124: KubernetesToolkit — AbstractToolkit with routing_meta](overviews/doc:sdd-tasks-completed-task-1124-k8s-toolkit-md.md)
+
+prefixed `k8s_` (4 read + 4 mutating).
+
+## [TASK-1125: AbstractFormService ABC](overviews/doc:sdd-tasks-completed-task-1125-abstract-form-service-md.md)
+
+Implements §3 Module 1 of the spec. Defines the strategy interface that every
+
+## [TASK-1125: Lazy registration + exports + integration tests](overviews/doc:sdd-tasks-completed-task-1125-k8s-lazy-registration-md.md)
+
+(all covered by TASK-1122–1124).
+
+## [TASK-1125: QueryDataset & QueryResponse Pydantic Models](overviews/doc:sdd-tasks-completed-task-1125-query-dataset-and-be87d6ae.md)
+
+Implements **Module 1** of FEAT-164 (spec §3 "Module 1"). `DatabaseAgent`
+
+## [TASK-1126: Database PromptLayer Constants & Builder Factory](overviews/doc:sdd-tasks-completed-task-1126-database-prompt-layers-md.md)
+
+Implements **Module 2** of FEAT-164 (spec §3 "Module 2"). The current
+
+## [TASK-1126: Form-Service Registry](overviews/doc:sdd-tasks-completed-task-1126-form-service-registry-md.md)
+
+Implements §3 Module 2 of the spec. Adds the module-level registry that maps
+
+## [TASK-1127: DatabaseAgentToolkit (Internal Toolkit)](overviews/doc:sdd-tasks-completed-task-1127-database-agent-in-efcc0830.md)
+
+Implements **Module 3** of FEAT-164 (spec §3 "Module 3"). The legacy
+
+## [TASK-1127: NetworkninjaFormService — migrate existing logic](overviews/doc:sdd-tasks-completed-task-1127-networkninja-form-84998d8f.md)
+
+Implements §3 Module 3 of the spec. Migrates the existing NetworkNinja-specific
+
+## [TASK-1128: Rewrite DatabaseAgent on BasicAgent + Structured Output + Toolkit Gating](overviews/doc:sdd-tasks-completed-task-1128-database-agent-rewrite-md.md)
+
+Implements **Modules 4 + 5** of FEAT-164 (spec §3 "Module 4" and "Module
+
+## [TASK-1128: Services sub-package init + self-registration](overviews/doc:sdd-tasks-completed-task-1128-services-package-init-md.md)
+
+Implements §3 Module 4 of the spec. Fills in the previously-empty
+
+## [TASK-1129: DatabaseFormTool — dispatcher refactor + input update + version bump](overviews/doc:sdd-tasks-completed-task-1129-database-form-too-fd2aaefb.md)
+
+Implements §3 Module 5 of the spec. Turns `DatabaseFormTool` into a thin
+
+## [TASK-1129: Toolkit-Level Retry Wiring + Agent Re-Ask Loop](overviews/doc:sdd-tasks-completed-task-1129-toolkit-retry-wiring-md.md)
+
+Implements **Module 6** of FEAT-164 (spec §3 "Module 6"). Both
+
+## [TASK-113: Research Memory Tools](overviews/doc:sdd-tasks-completed-task-113-research-memory-tools-md.md)
+
+This task implements the tools that research crews and analysts use to interact with the collective memory. Crews use deduplication tools; analysts use query tools.
+
+## [TASK-1130: Delete Legacy AbstractDBAgent](overviews/doc:sdd-tasks-completed-task-1130-delete-abstract-dbagent-md.md)
+
+Implements **Module 7** of FEAT-164 (spec §3 "Module 7"). The legacy
+
+## [TASK-1130: Test split — relocate 27 mapping tests + shared fixtures](overviews/doc:sdd-tasks-completed-task-1130-test-split-and-fixtures-md.md)
+
+Implements §3 Module 6 of the spec. The current
+
+## [TASK-1131: CLI Package Setup & Dependency Addition](overviews/doc:sdd-tasks-completed-task-1131-cli-package-setup-md.md)
+
+at `packages/ai-parrot/src/parrot/cli.py` (lines 34-40)
+
+## [TASK-1131: Implement EditToolkit Module](overviews/doc:sdd-tasks-completed-task-1131-edit-toolkit-module-md.md)
+
+This is the core module for FEAT-169. The FormDesigner edit endpoint currently
+
+## [TASK-1131: Comprehensive Postgres DatabaseAgent Example](overviews/doc:sdd-tasks-completed-task-1131-postgres-agent-example-md.md)
+
+Implements **Module 8** of FEAT-164 (spec §3 "Module 8"). The spec's
+
+## [TASK-1132: CHANGELOG Release Note for FEAT-164](overviews/doc:sdd-tasks-completed-task-1132-changelog-release-note-md.md)
+
+Implements **Module 9** of FEAT-164 (spec §3 "Module 9"). Per the
+
+## [TASK-1132: Integrate EditToolkit into CreateFormTool](overviews/doc:sdd-tasks-completed-task-1132-createformtool-to-42bebf4a.md)
+
+TASK-1131 creates the `EditToolkit` class with 12 tools. This task wires it
+
+## [TASK-1132: Response Renderer](overviews/doc:sdd-tasks-completed-task-1132-response-renderer-md.md)
+
+tool call panels, usage stats
+
+## [TASK-1133: Agent Loading — Standalone & Server](overviews/doc:sdd-tasks-completed-task-1133-agent-loaders-md.md)
+
+call `configure()` if not already done
+
+## [TASK-1133: Tests for EditToolkit and CreateFormTool Integration](overviews/doc:sdd-tasks-completed-task-1133-edit-toolkit-tests-md.md)
+
+TASK-1131 creates the `EditToolkit` class and TASK-1132 integrates it into
+
+## [TASK-1133: Add `agent_id` to `PromptLibrary` model + ALTER TABLE docs](overviews/doc:sdd-tasks-completed-task-1133-prompt-library-agent-id-md.md)
+
+Spec §3 Module A1. The current `PromptLibrary` model only accepts a UUID
+
+## [TASK-1134: Teach `PromptLibraryManagement` GET to filter by `chatbot_id` OR `agent_id`](overviews/doc:sdd-tasks-completed-task-1134-prompt-library-ma-fc876685.md)
+
+Spec §3 Module A2. After TASK-1133 the `PromptLibrary` row can be owned
+
+## [TASK-1134: Slash Commands](overviews/doc:sdd-tasks-completed-task-1134-slash-commands-md.md)
+
+returns `True` if input was a slash command, `False` otherwise
+
+## [TASK-1135: REPL Engine](overviews/doc:sdd-tasks-completed-task-1135-repl-engine-md.md)
+
+user_id, `output_mode=OutputMode.TERMINAL`
+
+## [TASK-1135: Create the `UserPrompts` Python model](overviews/doc:sdd-tasks-completed-task-1135-user-prompts-model-md.md)
+
+Spec §3 Module B1. The codebase needs a per-user prompt store so users
+
+## [TASK-1136: CLI Command Wiring](overviews/doc:sdd-tasks-completed-task-1136-cli-command-wiring-md.md)
+
+full Click command implementation
+
+## [TASK-1136: Author the `navigator.users_prompts` DDL file](overviews/doc:sdd-tasks-completed-task-1136-user-prompts-ddl-md.md)
+
+Spec §3 Module B2. Unlike `PromptLibrary` (which embeds DDL in its
+
+## [TASK-1137: Integration Tests](overviews/doc:sdd-tasks-completed-task-1137-integration-tests-md.md)
+
+from parrot.cli.agent_repl import cli # NEW (TASK-1136)
+
+## [TASK-1137: Implement `UserPromptsManagement` and wire `/api/v1/agents/user_prompts`](overviews/doc:sdd-tasks-completed-task-1137-user-prompts-mana-eb799ff1.md)
+
+Spec §3 Module B3. After TASK-1135 the `UserPrompts` model exists. This
+
+## [TASK-1138: Test suite for `PromptLibrary` GET filter and `UserPrompts` CRUD](overviews/doc:sdd-tasks-completed-task-1138-prompt-library-an-eb6debb4.md)
+
+Spec §3 Module T1. The current codebase has **zero** tests for
+
+## [TASK-1139: FieldRenderer Protocol + Registry Skeleton](overviews/doc:sdd-tasks-completed-task-1139-fieldrenderer-pro-8186f24d.md)
+
+Phase 1, Module 1. Introduces `FieldRenderer` protocol and `FallbackRenderer`
+
+## [TASK-114: Service Integration](overviews/doc:sdd-tasks-completed-task-114-service-integration-md.md)
+
+This task integrates `FileResearchMemory` into `FinanceResearchService`, replacing the Redis-based `ResearchBriefingStore`. Also updates `DeliberationTrigger` to use the new memory.
+
+## [TASK-1140: Renderer Registry — HTML5](overviews/doc:sdd-tasks-completed-task-1140-renderer-registry-html5-md.md)
+
+Phase 1, Module 2. Migrate the existing `if/elif field_type` dispatch chain in
+
+## [TASK-1141: Renderer Registry — Adaptive Card](overviews/doc:sdd-tasks-completed-task-1141-renderer-registry-2227df51.md)
+
+Phase 1, Module 3. Migrate the existing if/elif dispatch chain in
+
+## [TASK-1142: Renderer Registry — PDF](overviews/doc:sdd-tasks-completed-task-1142-renderer-registry-pdf-md.md)
+
+Phase 1, Module 4. Migrate the existing if/elif dispatch in `renderers/pdf.py`
+
+## [TASK-1143: Renderer Registry — XForms](overviews/doc:sdd-tasks-completed-task-1143-renderer-registry-7dcae65e.md)
+
+Phase 1, Module 5. Migrate the existing if/elif dispatch in `renderers/xforms.py`
+
+## [TASK-1144: Renderer Registry — JSON Schema](overviews/doc:sdd-tasks-completed-task-1144-renderer-registry-0f1be67b.md)
+
+Phase 1, Module 6. Migrate the existing if/elif dispatch in
+
+## [TASK-1145: Renderer Registry — Telegram](overviews/doc:sdd-tasks-completed-task-1145-renderer-registry-eaa262ba.md)
+
+Phase 1, Module 7. Migrate dispatch in `renderers/telegram/renderer.py`
+
+## [TASK-1146: RenderedForm.warnings + RenderWarning Model](overviews/doc:sdd-tasks-completed-task-1146-renderedform-warn-d46c5b84.md)
+
+Phase 1, Module 8. Adds `RenderWarning` Pydantic model and extends
+
+## [TASK-1147: FieldType Enum — 10 New Values](overviews/doc:sdd-tasks-completed-task-1147-fieldtype-enum-ad-a5ce1156.md)
+
+Phase 2, Module 9. Appends 10 new enum values to `FieldType` in `core/types.py`.
+
+## [TASK-1148: FieldConstraints — Scale Fields](overviews/doc:sdd-tasks-completed-task-1148-fieldconstraints--59d702a2.md)
+
+Phase 2, Module 10. Extends `FieldConstraints` in `core/constraints.py` with
+
+## [TASK-1149: OptionsSource Extensions](overviews/doc:sdd-tasks-completed-task-1149-optionssource-ext-09a36de2.md)
+
+Phase 2, Module 11. Extends `OptionsSource` in `core/options.py` with
+
+## [TASK-115: Research Crew Integration](overviews/doc:sdd-tasks-completed-task-115-crew-integration-md.md)
+
+This task integrates deduplication tools into research crews. Each crew checks if research exists for the current period before executing, and stores results after completion.
+
+## [TASK-1150: Validator Branches for New Field Types (excl. REMOTE_RESPONSE)](overviews/doc:sdd-tasks-completed-task-1150-validator-branche-a4b0b370.md)
+
+Phase 2, Module 12a. Extends `FormValidator` in `services/validators.py`
+
+## [TASK-1151: Per-Type Renderer Implementations (New Field Types)](overviews/doc:sdd-tasks-completed-task-1151-per-type-renderer-8aeb6dad.md)
+
+Phase 2, Module 13. Registers one `FieldRenderer` callable per new `FieldType`
+
+## [TASK-1152: Extractor Reverse-Mappings for New Field Types](overviews/doc:sdd-tasks-completed-task-1152-extractor-reverse-22662a05.md)
+
+Phase 2, Module 14. Adds reverse-mapping entries for the 10 new `FieldType`
+
+## [TASK-1153: Controls Registry Seeding for New Field Types](overviews/doc:sdd-tasks-completed-task-1153-controls-registry-6cba7125.md)
+
+Phase 2, Module 15. Adds `register_field_control()` calls for each of the 10
+
+## [TASK-1154: pycountry Dependency + LOCATION Reference Data](overviews/doc:sdd-tasks-completed-task-1154-pycountry-locatio-9057ecbe.md)
+
+Phase 2, Module 16. Adds `pycountry>=23.0` to the package dependencies and
+
+## [TASK-1155: AuthContext Model](overviews/doc:sdd-tasks-completed-task-1155-authcontext-model-md.md)
+
+Phase 3, Module 17. Creates the `AuthContext` Pydantic model in a new
+
+## [TASK-1156: OptionsLoader Service](overviews/doc:sdd-tasks-completed-task-1156-optionsloader-service-md.md)
+
+Phase 3, Module 18. Creates `services/options_loader.py` — an async HTTP
+
+## [TASK-1157: RemoteResponseResolver Service](overviews/doc:sdd-tasks-completed-task-1157-remoteresponseres-54b4c8c2.md)
+
+Phase 3, Module 19. Creates `services/remote_response_resolver.py` with
+
+## [TASK-1158: API Handler — Build AuthContext from Request](overviews/doc:sdd-tasks-completed-task-1158-api-handler-authc-427787b2.md)
+
+Phase 3, Module 20. Extends `api/handlers.py` to construct `AuthContext`
+
+## [TASK-1159: Validator Branch Wiring for REMOTE_RESPONSE](overviews/doc:sdd-tasks-completed-task-1159-validator-remote--9fe01c86.md)
+
+Phase 3, Module 21. Completes the deferred sub-task of TASK-1150 (Module 12):
+
+## [TASK-116: Analyst Integration](overviews/doc:sdd-tasks-completed-task-116-analyst-integration-md.md)
+
+This task integrates query tools into analyst agents. Analysts now "pull" research from collective memory instead of "receiving" it. This enables cross-pollination and historical comparison.
+
+## [TASK-1160: `AbstractBlobStorage` + `S3BlobStorage` + pre-persist hook stub](overviews/doc:sdd-tasks-completed-task-1160-blob-storage-md.md)
+
+Phase 1 foundation service. `FieldType.REST` persists binary uploads
+
+## [TASK-1161: Tenant-scoped callback registry](overviews/doc:sdd-tasks-completed-task-1161-callback-registry-md.md)
+
+Phase 1 foundation service. `FieldType.REST` mode `callback` invokes a
+
+## [TASK-1162: `RestFieldSpec` discriminated union + `RestFieldResolver`](overviews/doc:sdd-tasks-completed-task-1162-rest-field-resolver-md.md)
+
+Phase 1 core service. Owns the discriminated-union spec model and the
+
+## [TASK-1163: Add `FieldType.REST` enum value](overviews/doc:sdd-tasks-completed-task-1163-field-type-rest-enum-md.md)
+
+Append the new field type to `core/types.py::FieldType`. Trivial but
+
+## [TASK-1164: `_BUILTIN_METADATA[FieldType.REST]` registration](overviews/doc:sdd-tasks-completed-task-1164-builtin-metadata-rest-md.md)
+
+Registers the new field type with the form-designer UI metadata
+
+## [TASK-1165: REST field-schema snippet in `tools/field_helpers`](overviews/doc:sdd-tasks-completed-task-1165-field-helper-snippet-md.md)
+
+Seeds an LLM-friendly example snippet for `FieldType.REST` in
+
+## [TASK-1166: `FormValidator` branch for `FieldType.REST`](overviews/doc:sdd-tasks-completed-task-1166-validator-rest-branch-md.md)
+
+of a `FieldType.REST` answer: `{answer, blob_ref, status?}`, rejecting
+
+## [TASK-1167: Per-renderer registry entries for `FieldType.REST`](overviews/doc:sdd-tasks-completed-task-1167-renderer-entries-md.md)
+
+Register `FieldType.REST` in each of the 6 renderers. Two native
+
+## [TASK-1168: Extractor reverse-mappings for `FieldType.REST`](overviews/doc:sdd-tasks-completed-task-1168-extractor-mappings-md.md)
+
+The YAML and JSON-Schema extractors translate external definitions
+
+## [TASK-1169: Add `jsonpath-ng` and `aioboto3` to `pyproject.toml`](overviews/doc:sdd-tasks-completed-task-1169-pyproject-deps-md.md)
+
+Two new runtime dependencies. Jinja2 ≥ 3.1 is already pinned.
+
+## [TASK-117: Research Memory Unit Tests](overviews/doc:sdd-tasks-completed-task-117-unit-tests-md.md)
+
+This task creates comprehensive unit tests for all research memory components: schemas, abstract interface, file implementation, audit trail, and tools.
+
+## [TASK-1170: Upload route + `handle_rest_upload`](overviews/doc:sdd-tasks-completed-task-1170-upload-route-handler-md.md)
+
+Phase 3 entry point. The full upload pipeline lives here:
+
+## [TASK-1171: App bootstrap wiring (`blob_storage` + `rest_resolver` kwargs)](overviews/doc:sdd-tasks-completed-task-1171-bootstrap-wiring-md.md)
+
+Wire `AbstractBlobStorage` and `RestFieldResolver` into the aiohttp
+
+## [TASK-1172: Auto-generated frontend implementation docs](overviews/doc:sdd-tasks-completed-task-1172-frontend-docs-gen-md.md)
+
+The form-runtime UI lives in a separate frontend repo (spec §1
+
+## [TASK-1173: Update AbstractClient `ask_stream` Return Type](overviews/doc:sdd-tasks-completed-task-1173-abstract-client-t-c21793dc.md)
+
+This is the foundation task. The abstract `ask_stream` method in `AbstractClient`
+
+## [TASK-1174: ClaudeClient `ask_stream` — Yield Final AIMessage](overviews/doc:sdd-tasks-completed-task-1174-claude-client-ask-1117a1bf.md)
+
+ClaudeClient already captures `final_message = await stream.get_final_message()`
+
+## [TASK-1175: OpenAIClient `ask_stream` — Yield Final AIMessage](overviews/doc:sdd-tasks-completed-task-1175-openai-client-ask-191926d3.md)
+
+OpenAIClient has two streaming paths: Responses API (newer, for o3/o4 models)
+
+## [TASK-1176: GroqClient `ask_stream` — Yield Final AIMessage](overviews/doc:sdd-tasks-completed-task-1176-groq-client-askst-4265763a.md)
+
+GroqClient uses the Groq SDK (OpenAI-compatible) for streaming. The streaming
+
+## [TASK-1177: GrokClient `ask_stream` — Yield Final AIMessage](overviews/doc:sdd-tasks-completed-task-1177-grok-client-askst-67559d00.md)
+
+GrokClient (xAI) uses a custom chat SDK. The streaming loop iterates
+
+## [TASK-1178: Gemma4Client `ask_stream` — Yield Final AIMessage](overviews/doc:sdd-tasks-completed-task-1178-gemma4-client-ask-98ca5724.md)
+
+Gemma4Client uses pseudo-streaming: `ask_stream` calls `self.ask()` (which
+
+## [TASK-1179: TransformersClient `ask_stream` — Yield Final AIMessage](overviews/doc:sdd-tasks-completed-task-1179-hf-client-askstre-e9491af8.md)
+
+TransformersClient uses pseudo-streaming identical to Gemma4Client: `ask_stream`
+
+## [TASK-118: Research Memory Integration Tests](overviews/doc:sdd-tasks-completed-task-118-integration-tests-md.md)
+
+This task creates integration tests that verify the complete flow: research crews with deduplication, analysts with pull model, and the full research-to-deliberation pipeline.
+
+## [TASK-1180: ClaudeAgentClient `ask_stream` — Yield Final AIMessage](overviews/doc:sdd-tasks-completed-task-1180-claude-agent-clie-443de925.md)
+
+ClaudeAgentClient wraps the Claude Agent SDK. Its `ask_stream` iterates over
+
+## [TASK-1181: Integration Tests — Verify Streaming Contract Across All Clients](overviews/doc:sdd-tasks-completed-task-1181-integration-tests-bef91e17.md)
+
+After all client implementations are complete, this task verifies the uniform
+
+## [TASK-1182: Implement TraceContext dataclass](overviews/doc:sdd-tasks-completed-task-1182-trace-context-dataclass-md.md)
+
+Module 1 of the spec. `TraceContext` is the W3C Trace Context dataclass that propagates trace identity across agent → client → tool → sub-agent boundaries. It is the foundation for every other module in this feature: events embed it, `PermissionContext` carries it, `EventEmitterM
+
+## [TASK-1183: Implement LifecycleEvent base class](overviews/doc:sdd-tasks-completed-task-1183-lifecycle-event-base-md.md)
+
+Module 2 of the spec. `LifecycleEvent` is the abstract frozen dataclass that every concrete lifecycle event inherits from. It carries the cross-cutting fields (`trace_context`, `event_id`, `timestamp`, `source_type`, `source_name`) and implements `to_dict()` with strict JSON vali
+
+## [TASK-1184: Implement concrete lifecycle event classes](overviews/doc:sdd-tasks-completed-task-1184-concrete-lifecycl-7b069632.md)
+
+Modules 3 + 4 of the spec. This task creates all 15 concrete lifecycle event classes (agent / invoke / client / tool / message domains) plus the `SubscriberErrorEvent` meta-event used by the error-isolation model. Every event is `@dataclass(frozen=True)` and inherits from `Lifecy
+
+## [TASK-1185: Add trace_context field to PermissionContext](overviews/doc:sdd-tasks-completed-task-1185-permission-contex-d2fc9ec3.md)
+
+Module 15 of the spec. `PermissionContext` is the carrier passed through the toolkit wrapper (`_permission_context` kwarg) and stored on tool instances as `self._current_pctx`. For lifecycle events to propagate trace identity across agent → tool and agent → sub-agent boundaries, 
+
+## [TASK-1186: Implement EventRegistry with dispatch and dual-emit](overviews/doc:sdd-tasks-completed-task-1186-event-registry-dispatch-md.md)
+
+Module 5 of the spec. `EventRegistry` is the heart of the dispatch pipeline: it stores subscriptions per scope, matches events by `isinstance`, runs callbacks in deterministic order (forward for Before*, reverse for After*/Failed), isolates subscriber exceptions via the model-B e
+
+## [TASK-1187: Implement global registry singleton and scope() context manager](overviews/doc:sdd-tasks-completed-task-1187-global-registry-a-a3c1c708.md)
+
+Module 6 of the spec. The global registry is a process-wide `EventRegistry` singleton that observes every event (unless an agent opts out via `forward_to_global=False`). The `scope()` context manager swaps it for a fresh registry during the block — required for test isolation, es
+
+## [TASK-1188: Implement EventProvider Protocol](overviews/doc:sdd-tasks-completed-task-1188-event-provider-protocol-md.md)
+
+Module 7 of the spec. `EventProvider` is a `runtime_checkable` Protocol that lets users bundle multiple subscriber callbacks under a single registerable object (e.g., `OpenTelemetrySubscriber` registers subscribers for `BeforeInvokeEvent`, `AfterInvokeEvent`, and `InvokeFailedEve
+
+## [TASK-1189: Implement EventEmitterMixin and emit_nowait helper](overviews/doc:sdd-tasks-completed-task-1189-event-emitter-mixin-md.md)
+
+Module 8 of the spec. `EventEmitterMixin` is the uniform interface attached to `AbstractBot`, `AbstractClient`, and `AbstractTool`. It exposes `self.events: EventRegistry` (lazily created) and wires the per-instance registry to the global registry (unless opted out). This task al
+
+## [TASK-119: UserObjectsHandler Class](overviews/doc:sdd-tasks-completed-task-119-user-objects-handler-md.md)
+
+Extract the session-scoped ToolManager and DatasetManager configuration logic from AgentTalk into a dedicated `UserObjectsHandler` class. This reduces AgentTalk complexity and centralizes user object management.
+
+## [TASK-1190: Implement LoggingSubscriber](overviews/doc:sdd-tasks-completed-task-1190-logging-subscriber-md.md)
+
+Module 9 of the spec. `LoggingSubscriber` is the simplest built-in subscriber: it logs every lifecycle event via `navconfig.logging` at a configurable level. It exists primarily for the basic-telemetry PoC scenario and as a default-on observability tool for development. It is als
+
+## [TASK-1191: Implement OpenTelemetrySubscriber + extras_require['otel']](overviews/doc:sdd-tasks-completed-task-1191-opentelemetry-sub-b2743703.md)
+
+Module 10 of the spec. `OpenTelemetrySubscriber` maps `LifecycleEvent`s to OTel spans, so that any project running an OTel collector (Jaeger, Zipkin, Datadog APM, Honeycomb, etc.) gets distributed tracing across agent → client → tool boundaries for free. This is the headline payo
+
+## [TASK-1192: Implement WebhookSubscriber](overviews/doc:sdd-tasks-completed-task-1192-webhook-subscriber-md.md)
+
+Module 11 of the spec. `WebhookSubscriber` POSTs serialized lifecycle events to a configured HTTPS endpoint, optionally signed with HMAC-SHA256. Use case: feeding events to SIEM, alerting, audit-trail, or third-party observability dashboards. Each subscriber instance reuses a sin
+
+## [TASK-1193: Integrate EventEmitterMixin into AbstractBot](overviews/doc:sdd-tasks-completed-task-1193-abstractbot-lifec-57502406.md)
+
+Module 12 of the spec — the biggest of the integration tasks. `AbstractBot` gains `self.events: EventRegistry`, emits 6 distinct lifecycle events, accepts an optional `trace_context` parameter on `ask` / `ask_stream` / `conversation`, propagates the trace through `PermissionConte
+
+## [TASK-1194: Integrate EventEmitterMixin into AbstractClient](overviews/doc:sdd-tasks-completed-task-1194-abstractclient-li-1e17ae32.md)
+
+Module 13 of the spec. `AbstractClient` gains `self.events: EventRegistry` and emits `BeforeClientCallEvent` / `AfterClientCallEvent` / `ClientCallFailedEvent` around its `ask` and `ask_stream` methods, plus `ClientStreamChunkEvent` per streamed chunk. Because `ask` / `ask_stream
+
+## [TASK-1195: Integrate EventEmitterMixin into AbstractTool + trace propagation](overviews/doc:sdd-tasks-completed-task-1195-abstracttool-life-a6101203.md)
+
+Module 14 of the spec. `AbstractTool.execute()` already strips `_permission_context` (line 391) and stashes it on `self._current_pctx` (line 421). This task wraps `execute()` so it emits `BeforeToolCallEvent` / `AfterToolCallEvent` / `ToolCallFailedEvent` around the concrete `_ex
+
+## [TASK-1196: Add events: YAML block parsing to BotManager / AgentRegistry](overviews/doc:sdd-tasks-completed-task-1196-botmanager-yaml-e-882fd140.md)
+
+Module 16 of the spec. Lets users declare lifecycle subscribers directly in agent YAML definitions. Two forms supported: single-callback `handler:` (with `events:` filter list) and bundled `provider:` (with `config:` block). Optional `where:` clauses translate to predicate filter
+
+## [TASK-1197: Curate public API exports for lifecycle events package](overviews/doc:sdd-tasks-completed-task-1197-lifecycle-public--e507b650.md)
+
+Module 17 of the spec. Curate the public API of `parrot.core.events.lifecycle` so users have one clean import statement for all common types. Without this, users would import from `parrot.core.events.lifecycle.events.invoke`, `parrot.core.events.lifecycle.registry`, etc. — too ve
+
+## [TASK-1198: End-to-End PoC script for lifecycle events](overviews/doc:sdd-tasks-completed-task-1198-lifecycle-poc-script-md.md)
+
+Module 18 of the spec. The PoC script is the post-implementation "did it actually work" check — five canonical scenarios covering the headline use cases (basic telemetry, OTel spans, A2A trace propagation, YAML declarative loading, subscriber error isolation). It triples as: (a) 
+
+## [TASK-1199: Write user docs for lifecycle events system](overviews/doc:sdd-tasks-completed-task-1199-lifecycle-events-docs-md.md)
+
+Acceptance criterion in spec §5: "Public API documented in `packages/ai-parrot/docs/lifecycle_events.md`, including: data model overview, registry API, TraceContext semantics, YAML syntax, subscriber catalog, migration guide from `_trigger_event`."
+
+## [TASK-120: AgentTalk Refactor to Use UserObjectsHandler](overviews/doc:sdd-tasks-completed-task-120-agenttalk-refactor-md.md)
+
+Refactor AgentTalk to use the new `UserObjectsHandler` for tool/dataset manager configuration. Add integration with `PandasAgent.attach_dm()` to attach user's DatasetManager.
+
+## [TASK-1200: Add performance benchmarks for lifecycle events](overviews/doc:sdd-tasks-completed-task-1200-lifecycle-perform-b197d85f.md)
+
+Two acceptance criteria in spec §5 are performance contracts:
+
+## [TASK-1201: Completeness model & TableMetadata fields](overviews/doc:sdd-tasks-completed-task-1201-completeness-mode-70125f70.md)
+
+Foundation for every other task in FEAT-178. The whole cache + tool
+
+## [TASK-1201: ContextVar Infrastructure in helpers.py](overviews/doc:sdd-tasks-completed-task-1201-contextvar-infras-62d9e14d.md)
+
+This is the foundation task. It adds the `_current_ctx` ContextVar and
+
+## [TASK-1202: CachePartition API rework — completeness + TTL gating + score-sorted search](overviews/doc:sdd-tasks-completed-task-1202-cachepartition-ap-c9ddd5d3.md)
+
+The current `CachePartition` silently returns stub `TableMetadata`
+
+## [TASK-1202: AbstractBot.session() Context Manager + Entry Point Fallbacks](overviews/doc:sdd-tasks-completed-task-1202-session-contextmanager-md.md)
+
+This is the core task. It adds `session()` to AbstractBot (absorbing PBAC +
+
+## [TASK-1203: Handler Migration from retrieval() to session()](overviews/doc:sdd-tasks-completed-task-1203-handler-migration-md.md)
+
+Three handlers call `retrieval()` and must be updated to use `session()`.
+
+## [TASK-1203: Concurrency coalescing for DB introspection](overviews/doc:sdd-tasks-completed-task-1203-introspection-coa-029c6b0a.md)
+
+promotion from `NAME_ONLY` to `FULL` in `search_schema` must
+
+## [TASK-1204: BaseBot Concrete ContextVar Fallbacks](overviews/doc:sdd-tasks-completed-task-1204-basebot-fallbacks-md.md)
+
+BaseBot's concrete implementations of `ask()`, `ask_stream()`, and
+
+## [TASK-1204: SQLToolkit — fix `search_schema`, add `describe_table`, repurpose `generate_query`](overviews/doc:sdd-tasks-completed-task-1204-sqltoolkit-method-f81f2896.md)
+
+The three LLM-visible tools on `SQLToolkit` are the core of the
+
+## [TASK-1205: PostgresToolkit — migrate introspection queries to `pg_catalog`](overviews/doc:sdd-tasks-completed-task-1205-postgrestoolkit-p-8f3dce59.md)
+
+which is slower (views over `pg_catalog`), poorer (no system OIDs,
+
+## [TASK-1205: Test Updates — PBAC Migration + ContextVar Isolation Tests](overviews/doc:sdd-tasks-completed-task-1205-test-updates-md.md)
+
+Existing PBAC tests call `bot.retrieval()` and must be migrated to
+
+## [TASK-1206: Add PyGithub dependency to ai-parrot-tools](overviews/doc:sdd-tasks-completed-task-1206-pygithub-dependency-md.md)
+
+only (`gittoolkit.py:275`). The feature adds an explicit `auth_type="github_app"`
+
+## [TASK-1206: SCHEMA_TOOL_USAGE_LAYER prompt layer](overviews/doc:sdd-tasks-completed-task-1206-schema-tool-usage-83fcbd03.md)
+
+After TASK-1204 ships, the LLM sees three tools (`db_search_schema`,
+
+## [TASK-1207: Implement `_GitHubAppTokenProvider` helper + unit tests](overviews/doc:sdd-tasks-completed-task-1207-github-app-token--24f5c2f7.md)
+
+GitHub Apps authenticate to the REST API with short-lived (≤1h) installation
+
+## [TASK-1207: Regression + integration tests for cache contract & tool workflow](overviews/doc:sdd-tasks-completed-task-1207-regression-and-in-9ad80ac7.md)
+
+End-to-end coverage that the production bugs (`pokemon.stores`
+
+## [TASK-1208: Extend `GitToolkit.__init__` with `auth_type` + route every call through `_bearer_token`](overviews/doc:sdd-tasks-completed-task-1208-gittoolkit-auth-t-2919577d.md)
+
+With the `_GitHubAppTokenProvider` from TASK-1207 in place, this task wires
+
+## [TASK-1208: Prefix-aware tool resolution in DatabaseAgent](overviews/doc:sdd-tasks-completed-task-1208-prefix-aware-tool-5d5d30fa.md)
+
+PR #866 added external-toolkit tool exposure to
+
+## [TASK-1209: Wire `GitHubReviewer._build_git_toolkit` to honour `GITHUB_AUTH_TYPE`](overviews/doc:sdd-tasks-completed-task-1209-github-reviewer-a-f97c0479.md)
+
+Today `GitHubReviewer._build_git_toolkit` (`github_reviewer.py:451`) only
+
+## [TASK-1209: Multi-toolkit runtime integration test](overviews/doc:sdd-tasks-completed-task-1209-multi-toolkit-int-f9900273.md)
+
+Unit tests in TASK-1208 verify `_compute_active_tools` in
+
+## [TASK-121: DatasetManager Request/Response Models](overviews/doc:sdd-tasks-completed-task-121-dataset-request-re-741db4dc.md)
+
+Create Pydantic models for all request and response types used by the DatasetManagerHandler endpoints.
+
+## [TASK-1210: `configure()`-time prefix and collision validation](overviews/doc:sdd-tasks-completed-task-1210-configure-time-pr-64fc140e.md)
+
+FEAT-171 made `_compute_active_tools` prefix-aware and added a
+
+## [TASK-1210: Implement `_get_stats_with_polling` helper in GitToolkit](overviews/doc:sdd-tasks-completed-task-1210-gittoolkit-stats--2e88094f.md)
+
+GitHub's `/stats/*` endpoints (used by Module 2 of the spec) are
+
+## [TASK-1211: Add three stats tools to GitToolkit with typed Pydantic returns](overviews/doc:sdd-tasks-completed-task-1211-gittoolkit-stats-tools-md.md)
+
+With the polling helper from TASK-1210 in place, expose three new
+
+## [TASK-1211: SQL Analyst no-regression integration test](overviews/doc:sdd-tasks-completed-task-1211-sql-analyst-no-re-513fee9f.md)
+
+The validation logic added by TASK-1210 is defensive — it must not
+
+## [TASK-1213: Implement templated HTML renderer for the weekly digest](overviews/doc:sdd-tasks-completed-task-1213-weekly-html-renderer-md.md)
+
+The weekly report ships via Telegram with `parse_mode="HTML"` (same
+
+## [TASK-1214: Implement optional `_llm_summarize_weekly` with safe fallback](overviews/doc:sdd-tasks-completed-task-1214-weekly-llm-summarizer-md.md)
+
+When `self.use_llm_summary is True`, the orchestrator (TASK-1215) calls
+
+## [TASK-1215: Implement `report_weekly_activity` orchestrator + Telegram sender](overviews/doc:sdd-tasks-completed-task-1215-report-weekly-act-e8952191.md)
+
+The scheduled entry-point. Implements spec §3 Module 6 — the only
+
+## [TASK-1216: Wire env config into ParrotReviewer + update docs](overviews/doc:sdd-tasks-completed-task-1216-config-wiring-and-docs-md.md)
+
+Implements spec §3 Module 7 — the last mile: expose the three new
+
+## [TASK-1217: CacheableSegment dataclass + PromptLayer.cacheable attribute](overviews/doc:sdd-tasks-completed-task-1217-cacheable-segment-0c39a3f9.md)
+
+This is the foundational data-model task for FEAT-181. Every other task depends
+
+## [TASK-1217: Pydantic input/output models for PR-context tools](overviews/doc:sdd-tasks-completed-task-1217-pydantic-models-md.md)
+
+Foundational task. Defines the Pydantic input and output models that the
+
+## [TASK-1218: `_FileBlobCache` SHA-keyed cache helper](overviews/doc:sdd-tasks-completed-task-1218-file-blob-cache-md.md)
+
+Implements spec §3 Module 2. Provides a SHA-keyed cache that fronts file
+
+## [TASK-1219: AgentContextLoader + AGENT_CONTEXT_LAYER + AGENT_CONTEXT_DIR](overviews/doc:sdd-tasks-completed-task-1219-agent-context-loa-29b0e60a.md)
+
+This task implements the file-based agent context loading system (spec Module 3,
+
+## [TASK-1219: `get_file_content_at_ref` LLM tool](overviews/doc:sdd-tasks-completed-task-1219-get-file-content-tool-md.md)
+
+Implements spec §3 Module 3. The first of the three new `@tool_schema`
+
+## [TASK-122: DatasetManagerHandler HTTP Handler](overviews/doc:sdd-tasks-completed-task-122-dataset-manager-handler-md.md)
+
+Create the HTTP handler for managing user's DatasetManager via REST API endpoints at `/api/v1/agents/datasets/{agent_id}`.
+
+## [TASK-1220: AbstractBot prompt_caching kwarg + auto-injection](overviews/doc:sdd-tasks-completed-task-1220-abstractbot-promp-4d3c64aa.md)
+
+This task wires the prompt caching plumbing into `AbstractBot` (spec Module 4,
+
+## [TASK-1220: `compare_pr_versions` LLM tool](overviews/doc:sdd-tasks-completed-task-1220-compare-pr-versio-cfdf7793.md)
+
+Implements spec §3 Module 4. Returns full base + head versions of a
+
+## [TASK-1221: AbstractClient._apply_cache_hints() base + system_prompt Union widening](overviews/doc:sdd-tasks-completed-task-1221-abstractclient-ap-d491b205.md)
+
+This task adds the base cache-hint infrastructure to `AbstractClient` (spec
+
+## [TASK-1221: `search_repo_code` LLM tool](overviews/doc:sdd-tasks-completed-task-1221-search-repo-code-tool-md.md)
+
+Implements spec §3 Module 5. Wraps GitHub Code Search API
+
+## [TASK-1222: ClaudeClient (AnthropicClient) cache translator](overviews/doc:sdd-tasks-completed-task-1222-claude-client-cac-76894f85.md)
+
+This task implements the Anthropic-specific cache translator (spec Module 6, §3).
+
+## [TASK-1222: GithubReviewer tool-calling loop with iteration cap](overviews/doc:sdd-tasks-completed-task-1222-reviewer-tool-cal-f72ddbaf.md)
+
+Implements spec §3 Module 6. Switches
+
+## [TASK-1223: Integration tests + documentation](overviews/doc:sdd-tasks-completed-task-1223-integration-tests-0701ba43.md)
+
+Final task. Implements spec §3 Module 7 (integration tests) and
+
+## [TASK-1223: OpenAI client cache translator](overviews/doc:sdd-tasks-completed-task-1223-openai-client-cac-ab83cdff.md)
+
+This task implements the OpenAI-specific cache translator (spec Module 7, §3).
+
+## [TASK-1224: Google/Gemini client cache translator](overviews/doc:sdd-tasks-completed-task-1224-gemini-client-cac-d2c213e9.md)
+
+This task implements the Gemini-specific cache translator (spec Module 8, §3).
+
+## [TASK-1225: PromptCacheAppliedEvent + PromptCacheSkippedEvent lifecycle events](overviews/doc:sdd-tasks-completed-task-1225-lifecycle-events--7f913e57.md)
+
+This task adds two new lifecycle event dataclasses (spec Module 9, §3) for
+
+## [TASK-1226: GitHubReviewer prompt_caching opt-in](overviews/doc:sdd-tasks-completed-task-1226-github-reviewer-opt-in-md.md)
+
+This task makes `GitHubReviewer` the canonical consumer of the prompt caching
+
+## [TASK-1227: Patch EventRegistry.emit for fire-and-forget bus dispatch](overviews/doc:sdd-tasks-completed-task-1227-patch-eventregist-91eb58d9.md)
+
+Spec §3 TASK-000 and §1 Goals — the per-subscriber `forward_to_bus=True` branch in `EventRegistry.emit` currently uses blocking `await self._event_bus.emit(...)`. A slow Redis bus will block the agent's request path, which makes the §5 performance budget (< 0.1% LLM-latency overh
+
+## [TASK-1227: FormRegistry.clone_form](overviews/doc:sdd-tasks-completed-task-1227-registry-clone-form-md.md)
+
+This is the core task for FEAT-183. It adds a `clone_form` async method to
+
+## [TASK-1228: REST Endpoint — clone_form handler + route](overviews/doc:sdd-tasks-completed-task-1228-clone-rest-endpoint-md.md)
+
+This task wires up the HTTP surface for form cloning. It adds a
+
+## [TASK-1228: ObservabilityConfig + parrot.observability package skeleton](overviews/doc:sdd-tasks-completed-task-1228-observability-con-b4b46b93.md)
+
+Spec §3 Module 1. Create the `parrot.observability` top-level subpackage with public re-exports and the central Pydantic v2 config model. All subsequent tasks import from this skeleton.
+
+## [TASK-1229: Unit + Integration Tests for clone_form](overviews/doc:sdd-tasks-completed-task-1229-clone-form-tests-md.md)
+
+This task adds comprehensive test coverage for the form cloning feature:
+
+## [TASK-123: DatasetManagerHandler Route Registration](overviews/doc:sdd-tasks-completed-task-123-route-registration-md.md)
+
+Register the `DatasetManagerHandler` routes in the application's route configuration.
+
+## [TASK-1230: GenAIOpenTelemetrySubscriber](overviews/doc:sdd-tasks-completed-task-1230-genai-opentelemet-18b66015.md)
+
+Spec §3 Module 3 and §2 (Event → Span mapping). The rich subscriber that maps 12 of FEAT-176's lifecycle events to OTel spans with full GenAI SemConv attributes. Coexists with FEAT-176's `OpenTelemetrySubscriber` stub via name disambiguation (different class name).
+
+## [TASK-1231: MetricsSubscriber](overviews/doc:sdd-tasks-completed-task-1231-metrics-subscriber-md.md)
+
+Spec §3 Module 4 and §2 (Event → Metric mapping). Separate subscriber (not the trace subscriber) that emits OTel counters and histograms for tokens, latency, errors, and cost. Decision Q2 from the brainstorm: separate subscriber allows Prometheus-only deployments without spans.
+
+## [TASK-1232: CostCalculator + bundled pricing JSON](overviews/doc:sdd-tasks-completed-task-1232-cost-calculator-pricing-md.md)
+
+Spec §3 Module 5 and brainstorm §4.6. Stateless cost calculator with per-provider bundled JSON pricing tables. Pricing loaded once at module import — never re-read in the hot path. Unknown `(provider, model)` returns `None` and logs once.
+
+## [TASK-1233: ParrotTelemetryProvider (EventProvider bundle)](overviews/doc:sdd-tasks-completed-task-1233-parrot-telemetry--cf5b5d26.md)
+
+Spec §3 Module 6. Implements FEAT-176's `EventProvider` Protocol. Bundles the trace subscriber, metrics subscriber, and cost calculator into a single object that `setup_telemetry` registers via `get_global_registry().add_provider(...)`.
+
+## [TASK-1234: OTLP exporter helpers](overviews/doc:sdd-tasks-completed-task-1234-otlp-exporter-helpers-md.md)
+
+Spec §3 Module 7. Factory helpers that return OTLP exporters configured from `ObservabilityConfig` for either `http/protobuf` or `grpc` protocol. Keeps `setup_telemetry` clean.
+
+## [TASK-1235: setup_telemetry() boot helper](overviews/doc:sdd-tasks-completed-task-1235-setup-telemetry-b-18cbf645.md)
+
+Spec §3 Module 8 and §2 (Initialization flow). The single public entrypoint that wires `TracerProvider` + `MeterProvider`, builds the subscribers + cost calculator, bundles them into `ParrotTelemetryProvider`, and registers with the global registry. Idempotent. No-op when `config
+
+## [TASK-1236: OpenLIT integration wrapper](overviews/doc:sdd-tasks-completed-task-1236-openlit-integration-md.md)
+
+Spec §3 Module 9. Lazy-imported wrapper around `openlit.init(...)`. Module-level sentinel ensures `openlit.init` is called at most once even if `setup_telemetry` is invoked multiple times. Called only from TASK-1235 (`setup_telemetry`) when `config.enable_openlit=True`.
+
+## [TASK-1237: Examples + observability docker-compose](overviews/doc:sdd-tasks-completed-task-1237-examples-docker-compose-md.md)
+
+Spec §3 Module 10 and D4 (resolved): bundle a minimal example stack so users can `docker compose up` and immediately see traces/metrics for a running agent. The stack is intentionally one option (OpenLIT UI) — other community backends are linked from docs but not bundled.
+
+## [TASK-1238: README + end-to-end PoC (5 scenarios)](overviews/doc:sdd-tasks-completed-task-1238-readme-and-end-to-46453e94.md)
+
+Spec §3 Module 11 — the final acceptance gate analogous to FEAT-176's Module 18. Two deliverables:
+
+## [TASK-1239: FormRegistry core refactor — nested-dict state, tenant resolution, new constructor args](overviews/doc:sdd-tasks-completed-task-1239-formregistry-core-9bdbb637.md)
+
+Foundational task for FEAT-183. Implements Module 1 of the spec: reshapes
+
+## [TASK-1239: GenericReportComparator + Package Init](overviews/doc:sdd-tasks-completed-task-1239-generic-report-co-2ff063fb.md)
+
+This task implements Spec Module 2 (Generic Report Comparator) and Module 3
+
+## [TASK-124: DatasetManager Handler Unit Tests](overviews/doc:sdd-tasks-completed-task-124-dataset-handler-tests-md.md)
+
+Write comprehensive unit and integration tests for all components of the DatasetManager support feature.
+
+## [TASK-1240: `load_from_directory` per-file tenant resolution (YAML wins, kwarg default, skip-with-warning)](overviews/doc:sdd-tasks-completed-task-1240-formregistry-load-bd1b6c43.md)
+
+Implements Module 2 of the spec: makes `FormRegistry.load_from_directory`
+
+## [TASK-1240: S3ReportReaderToolkit + Package Registry](overviews/doc:sdd-tasks-completed-task-1240-s3-report-reader--0a499ea0.md)
+
+This task implements Spec Module 1 (S3 Report Reader Toolkit) and the
+
+## [TASK-1241: Bulk YAML fixture tagger — `scripts/sdd/tag_yaml_fixtures.py`](overviews/doc:sdd-tasks-completed-task-1241-bulk-yaml-fixture-577d135a.md)
+
+Implements Module 3 of the spec. Once TASK-1239 lands and `require_tenant=True`
+
+## [TASK-1241: Unit Tests for S3ReportReaderToolkit + GenericReportComparator](overviews/doc:sdd-tasks-completed-task-1241-s3-report-reader-tests-md.md)
+
+This task implements Spec Module 4 (Tests). It covers the full unit test
+
+## [TASK-1242: Run `tag_yaml_fixtures.py` and commit retagged YAML form fixtures](overviews/doc:sdd-tasks-completed-task-1242-apply-bulk-tagger-8df62e20.md)
+
+One-shot data step: now that the tagger script exists (TASK-1241), execute
+
+## [TASK-1242: FormStorage `close()` + FormRegistry aiohttp Lifecycle](overviews/doc:sdd-tasks-completed-task-1242-formstorage-close-1a9bac0e.md)
+
+This is the foundation task for FEAT-185. It modifies two classes in the same
+
+## [TASK-1243: Caller updates — `api/handlers.py`, `ui/handlers.py`, `renderers/telegram/router.py`](overviews/doc:sdd-tasks-completed-task-1243-caller-updates-ap-80d2602d.md)
+
+Implements Module 4 of the spec. The core `FormRegistry` refactor in
+
+## [TASK-1243: PostgresFormStorage Self-Managed Pool](overviews/doc:sdd-tasks-completed-task-1243-postgres-storage--b432b97a.md)
+
+This task refactors `PostgresFormStorage` in the parrot-formdesigner package
+
+## [TASK-1244: Caller updates — tools, uploads, render, operations](overviews/doc:sdd-tasks-completed-task-1244-caller-updates-to-8e3806cf.md)
+
+Implements Module 5 of the spec. Mirror of TASK-1243 for the remaining call
+
+## [TASK-1244: Core Package Mirror Update](overviews/doc:sdd-tasks-completed-task-1244-core-package-mirror-md.md)
+
+The `parrot.forms` core package contains fallback copies of `FormStorage`,
+
+## [TASK-1245: Call-Site Simplification](overviews/doc:sdd-tasks-completed-task-1245-callsite-simplification-md.md)
+
+Now that `FormRegistry` self-registers into the aiohttp app and hooks into
+
+## [TASK-1245: Audit and update `on_unregister` callback consumers](overviews/doc:sdd-tasks-completed-task-1245-on-unregister-cal-06bebc79.md)
+
+Implements Module 6 of the spec. The `on_unregister` callback signature
+
+## [TASK-1246: Integration tests + final acceptance sweep](overviews/doc:sdd-tasks-completed-task-1246-integration-tests-bab67d2e.md)
+
+Final task for FEAT-183. After all implementation tasks have landed in the
+
+## [TASK-1246: Lifecycle Unit Tests](overviews/doc:sdd-tasks-completed-task-1246-lifecycle-tests-md.md)
+
+This task adds unit tests verifying the new aiohttp lifecycle integration in
+
+## [TASK-1247: PartialFormData Pydantic Model](overviews/doc:sdd-tasks-completed-task-1247-partial-form-data-model-md.md)
+
+This is the foundation model for the partial saves feature (Spec §2 Data Models,
+
+## [TASK-1248: PartialSaveStore Redis Service](overviews/doc:sdd-tasks-completed-task-1248-partial-save-stor-c86ca0f1.md)
+
+This is the core service for the partial saves feature (Spec §2 New Public
+
+## [TASK-1249: Partial Save Handler Methods](overviews/doc:sdd-tasks-completed-task-1249-partial-save-handlers-md.md)
+
+This task adds three new handler methods to `FormAPIHandler` for the partial
+
+## [TASK-125: vLLM Pydantic Models](overviews/doc:sdd-tasks-completed-task-125-vllm-models-md.md)
+
+Create Pydantic models for vLLM-specific configuration, requests, and responses.
+
+## [TASK-1250: Submit Merge Integration (?merge_partials)](overviews/doc:sdd-tasks-completed-task-1250-submit-merge-inte-d80ae186.md)
+
+This task extends the existing `submit_data()` handler to optionally merge
+
+## [TASK-1251: Route Registration for Partial Saves](overviews/doc:sdd-tasks-completed-task-1251-partial-save-routes-md.md)
+
+This task wires the new handler methods into the aiohttp route table (Spec §3
+
+## [TASK-1252: Integration Tests for Partial Saves](overviews/doc:sdd-tasks-completed-task-1252-partial-saves-int-45ea85e9.md)
+
+This is the final task for FEAT-186 (Spec §3 Module 6, §4 Integration Tests).
+
+## [TASK-1253: Core Schema — Universal Node/Edge Models and Meta-Ontology](overviews/doc:sdd-tasks-completed-task-1253-graphindex-core-schema-md.md)
+
+This is the **prerequisite foundation** for all other GraphIndex tasks. It defines the `UniversalNode`, `UniversalEdge`, and supporting Pydantic models that form the contract between all pipeline stages. It also defines the universal meta-ontology (6 entity types, 5 relation type
+
+## [TASK-1253: Add `KNOWN_BRANCHES` constant to `sdd_meta`](overviews/doc:sdd-tasks-completed-task-1253-known-branches-constant-md.md)
+
+This task implements **Module 1** of FEAT-187. It adds a small additive
+
+## [TASK-1254: Code Extractor — tree-sitter Python Parsing](overviews/doc:sdd-tasks-completed-task-1254-graphindex-code-e-247c8495.md)
+
+This task implements the **code extraction** pipeline for GraphIndex. It uses tree-sitter to parse Python source files and emit `UniversalNode` / `UniversalEdge` instances representing the structural and semantic content of a codebase. It also extracts rationale from docstrings a
+
+## [TASK-1254: Create `sync-down.yml` GitHub Action](overviews/doc:sdd-tasks-completed-task-1254-sync-down-github-action-md.md)
+
+This task implements **Module 2** of FEAT-187. It creates the GitHub
+
+## [TASK-1255: Loader-Based Extractor — ai-parrot-loaders + PageIndex Integration](overviews/doc:sdd-tasks-completed-task-1255-graphindex-loader-cb7630d2.md)
+
+This task implements the **loader-based extraction** pipeline for GraphIndex. It bridges ai-parrot's existing loader ecosystem and PageIndex hierarchical indexing system to produce `UniversalNode` / `UniversalEdge` instances from documents (PDF, Markdown, DOCX, audio/video transc
+
+## [TASK-1255: Refactor `/sdd-done` sync-down to target `{staging, dev}`](overviews/doc:sdd-tasks-completed-task-1255-sdd-done-sync-dow-270b0933.md)
+
+This task implements **Module 3** of FEAT-187. The `/sdd-done` command
+
+## [TASK-1256: Block `type: feature, base_branch: main` across SDD commands](overviews/doc:sdd-tasks-completed-task-1256-feature-base-vali-f2e026f7.md)
+
+This task implements **Module 4** of FEAT-187. The Git Parrot Flow
+
+## [TASK-1256: SKILL.md Extractor](overviews/doc:sdd-tasks-completed-task-1256-graphindex-skill--bf005167.md)
+
+This task implements the **SKILL.md extraction** pipeline for GraphIndex. SKILL.md files are the skill definition format used throughout AI-Parrot, containing YAML frontmatter with metadata (name, description, triggers, etc.) and a markdown body. This extractor parses those files
+
+## [TASK-1257: Documentation refresh — three-branch model + release-cut procedure](overviews/doc:sdd-tasks-completed-task-1257-documentation-refresh-md.md)
+
+This task implements **Module 5** of FEAT-187. After the code changes
+
+## [TASK-1257: Embedding Stage — EmbeddingModel + FAISS + pgvector](overviews/doc:sdd-tasks-completed-task-1257-graphindex-embed-stage-md.md)
+
+This task implements the **embedding stage** of the GraphIndex pipeline. After extractors produce `UniversalNode` instances, this stage batch-embeds their summaries/titles via `EmbeddingModel`, builds an in-memory FAISS index for fast similarity search, and persists embeddings to
+
+## [TASK-1258: Acceptance test guard — `staging`-mention check + workflow lint](overviews/doc:sdd-tasks-completed-task-1258-acceptance-test-guard-md.md)
+
+This task implements **Module 6** of FEAT-187. It is the regression
+
+## [TASK-1258: Graph Assembly — rustworkx PyDiGraph Construction](overviews/doc:sdd-tasks-completed-task-1258-graphindex-assembly-md.md)
+
+This task implements the **graph assembly** stage of the GraphIndex pipeline. After extractors produce streams of `UniversalNode` and `UniversalEdge`, this stage constructs a `rustworkx.PyDiGraph` — the in-memory knowledge graph. Node payloads contain IDs and metadata only (sourc
+
+## [TASK-1259: Cross-Domain Resolution — Level 1 Embedding Threshold](overviews/doc:sdd-tasks-completed-task-1259-graphindex-cross--97838557.md)
+
+Cross-domain resolution is the mechanism that discovers implicit relationships between nodes produced by DIFFERENT extractors (e.g., a code symbol mentioned in a document section, or a concept that appears in both a rationale and a skill description). It uses embedding similarity
+
+## [TASK-126: vLLMClient Implementation](overviews/doc:sdd-tasks-completed-task-126-vllm-client-md.md)
+
+Create the main `vLLMClient` class that extends `LocalLLMClient` and adds vLLM-specific features.
+
+## [TASK-1260: Persistence — ArangoDB via OntologyGraphStore + pgvector](overviews/doc:sdd-tasks-completed-task-1260-graphindex-persistence-md.md)
+
+Persistence is responsible for durably storing the assembled knowledge graph and its embeddings. Nodes go to ArangoDB (via the existing `OntologyGraphStore` abstraction), edges go to ArangoDB edge collections, and embeddings go to pgvector. This task also implements atomic per-do
+
+## [TASK-1261: Analytics + Report — Centrality, Connections, GRAPH_REPORT.md](overviews/doc:sdd-tasks-completed-task-1261-graphindex-analyt-b3f021ad.md)
+
+Analytics and reporting is the stage that extracts actionable insights from the assembled and resolved knowledge graph. It computes centrality metrics to identify "god-nodes" (highly connected concepts), ranks cross-domain edges by confidence to surface surprising connections, an
+
+## [TASK-1263: GraphIndex Toolkit — Agent-Facing Tools](overviews/doc:sdd-tasks-completed-task-1263-graphindex-toolkit-md.md)
+
+The GraphIndex Toolkit exposes the knowledge graph to AI agents as a set of callable tools. It extends `AbstractToolkit`, which auto-discovers public async methods and registers them as tools. The toolkit provides 8 methods for querying, traversing, and explaining the knowledge g
+
+## [TASK-1264: Flowtask Integration + pyproject.toml Extra](overviews/doc:sdd-tasks-completed-task-1264-graphindex-flowta-5deafd98.md)
+
+This task provides two integration pieces: (1) a Flowtask component wrapper that allows `GraphIndexBuilder` to be invoked as a Flowtask pipeline step, and (2) a new `[graphindex]` extra in `pyproject.toml` that bundles all GraphIndex-specific dependencies for opt-in installation.
+
+## [TASK-1265: Core event models and FormEventAbort exception](overviews/doc:sdd-tasks-completed-task-1265-core-events-models-md.md)
+
+Foundation task. Defines the Pydantic models and typed exception that all later tasks (registry, dispatcher, schema extension, handlers, renderer) import. Without these, every other task is blocked.
+
+## [TASK-1266: Tenant-scoped event registry (mirror of callback_registry)](overviews/doc:sdd-tasks-completed-task-1266-event-registry-md.md)
+
+Implements §3 Module 2 of the spec: the tenant-scoped registry where users register lifecycle event handlers via `@register_form_event(...)`. Structural mirror of `services/callback_registry.py` — same fallback semantics, same helper shape, same exception behavior on duplicate re
+
+## [TASK-1267: Event dispatcher (orchestration + FormEventAbort capture)](overviews/doc:sdd-tasks-completed-task-1267-event-dispatcher-md.md)
+
+Implements §3 Module 3. The dispatcher is the single API surface that `FormAPIHandler` calls. It resolves the binding from `form.events`, looks up the handler in the registry, runs it, captures `FormEventAbort`, and returns an `EventResolution`.
+
+## [TASK-1268: Add `FormSchema.events` field](overviews/doc:sdd-tasks-completed-task-1268-formschema-events-field-md.md)
+
+Implements §3 Module 4. Adds the `events: FormEventsConfig | None = None` field to `FormSchema` so forms can declaratively bind lifecycle events to logical handler refs.
+
+## [TASK-1269: Wire onBeforeOpen and onSchemaLoaded into read handlers](overviews/doc:sdd-tasks-completed-task-1269-handlers-read-hooks-md.md)
+
+Implements §3 Module 5 partially — the read-side hooks. Wires:
+
+## [TASK-127: vLLM Factory Registration and Exports](overviews/doc:sdd-tasks-completed-task-127-vllm-registration-md.md)
+
+Register `vLLMClient` in the client factory and export it from the clients package.
+
+## [TASK-1270: Wire onBeforeSubmit, onAfterSubmit and onError into submit_data](overviews/doc:sdd-tasks-completed-task-1270-handlers-submit-hooks-md.md)
+
+Implements §3 Module 5 — the submit-path portion. This is the most intricate hook integration because three dispatches share a single try/except envelope and `onBeforeSubmit` may replace the payload before validation.
+
+## [TASK-1271: Remote events endpoint with CSRF protection](overviews/doc:sdd-tasks-completed-task-1271-remote-events-endpoint-md.md)
+
+Implements §3 Module 6. Provides the server-side endpoint that the HTML5 renderer (TASK-1272) calls when a binding declares `remote: true`. This endpoint must validate a per-form CSRF token in addition to the standard auth via `_wrap_auth`.
+
+## [TASK-1272: HTML5 renderer — CustomEvent emission and remote bridge script](overviews/doc:sdd-tasks-completed-task-1272-html5-renderer-events-md.md)
+
+Implements §3 Module 7. The HTML5 renderer is the only renderer in MVP scope. It must:
+
+## [TASK-1273: End-to-end tests, documentation and CHANGELOG](overviews/doc:sdd-tasks-completed-task-1273-e2e-tests-and-docs-md.md)
+
+Final task. Ties everything together with:
+
+## [TASK-1274: Severity + BusinessHours models + select_starting_tier](overviews/doc:sdd-tasks-completed-task-1274-severity-business-7a26b777.md)
+
+Implements §3 module **C1**. The shipped baseline (`afe70e82`) has no notion
+
+## [TASK-1275: Action backends (Email / Zammad / Webhook)](overviews/doc:sdd-tasks-completed-task-1275-action-backends-md.md)
+
+Implements §3 module **C2**. Today `NotifyAction` and `TicketAction`
+
+## [TASK-1276: NotifyAction / TicketAction dispatcher by action_metadata["kind"]](overviews/doc:sdd-tasks-completed-task-1276-action-dispatcher-md.md)
+
+Implements §3 module **C3**. Replaces the two simulated stubs
+
+## [TASK-1277: Manager — action-failure fix + advance_chain public + severity/hours selection](overviews/doc:sdd-tasks-completed-task-1277-manager-advance-chain-md.md)
+
+Implements §3 module **C4**. Heart of the V1 completion: fixes the
+
+## [TASK-1278: RejectIntentDetector (regex first, Groq Haiku confirmation on doubt)](overviews/doc:sdd-tasks-completed-task-1278-reject-intent-detector-md.md)
+
+Implements §3 module **C5**. Detects escalation intent in free-text
+
+## [TASK-1279: Reject-button hook on HumanChannel + Telegram/Web rendering](overviews/doc:sdd-tasks-completed-task-1279-reject-button-channels-md.md)
+
+Implements §3 module **C6**. Adds the standardised "↑ Escalar" button
+
+## [TASK-128: vLLM Client Unit Tests](overviews/doc:sdd-tasks-completed-task-128-vllm-tests-md.md)
+
+Write comprehensive unit tests for vLLMClient and vLLM models.
+
+## [TASK-1280: Structured tier-transition events on EventEmitterMixin](overviews/doc:sdd-tasks-completed-task-1280-tier-events-md.md)
+
+Implements §3 module **C7**. Adds the observability layer the spec
+
+## [TASK-1281: HumanDecisionNode policy + severity ctor kwargs](overviews/doc:sdd-tasks-completed-task-1281-decision-node-pol-314c8f7d.md)
+
+Implements §3 module **C8**. Today `HumanDecisionNode` (the flow-node
+
+## [TASK-1282: HumanTool severity input field](overviews/doc:sdd-tasks-completed-task-1282-human-tool-severity-md.md)
+
+Implements §3 module **C9**. Exposes `severity` to the LLM as a
+
+## [TASK-1283: HandoffTool dedup + DeprecationWarning](overviews/doc:sdd-tasks-completed-task-1283-handoff-tool-dedup-md.md)
+
+Implements §3 module **C10**. Today `HandoffTool._aexecute`
+
+## [TASK-1284: Orchestrator policy_id short-circuit hardening](overviews/doc:sdd-tasks-completed-task-1284-orchestrator-poli-42be7b89.md)
+
+Implements §3 module **C11**. Defence-in-depth for the `HandoffTool`
+
+## [TASK-1285: Web HITL handler — reject button route](overviews/doc:sdd-tasks-completed-task-1285-web-hitl-reject-route-md.md)
+
+Implements §3 module **C12**. The Web channel renders the reject
+
+## [TASK-1286: Documentation update — tiered escalation example](overviews/doc:sdd-tasks-completed-task-1286-documentation-update-md.md)
+
+Implements §3 module **C13**. The existing
+
+## [TASK-1287: Namespace Promotion — Move parrot.memory.skills to parrot.skills](overviews/doc:sdd-tasks-completed-task-1287-namespace-promotion-md.md)
+
+This is the foundational task for FEAT-188. All subsequent tasks depend on the new
+
+## [TASK-1288: SkillDefinition Model Extension — Add assets_dir Field](overviews/doc:sdd-tasks-completed-task-1288-model-extension-md.md)
+
+Composite skills (directory-based with `SKILL.md` + adjacent assets) need a way to
+
+## [TASK-1289: Composite Skill Parser — parse_skill_directory()](overviews/doc:sdd-tasks-completed-task-1289-composite-skill-parser-md.md)
+
+Composite skills are stored as directories with a `SKILL.md` entry point plus adjacent
+
+## [TASK-129: Core Data Models](overviews/doc:sdd-tasks-completed-task-129-paper-trading-models-md.md)
+
+## [TASK-1290: SkillFileRegistry Extension — Add get_by_name()](overviews/doc:sdd-tasks-completed-task-1290-registry-get-by-name-md.md)
+
+currently has a private `_by_name` dict but no public accessor. This task adds the
+
+## [TASK-1291: SkillsDirectoryLoader — Filesystem Discovery](overviews/doc:sdd-tasks-completed-task-1291-directory-loader-md.md)
+
+This is the core discovery mechanism for FEAT-188. The `SkillsDirectoryLoader` scans
+
+## [TASK-1292: Skills Prompt Layer Factory — render_skills_prompt_layer()](overviews/doc:sdd-tasks-completed-task-1292-prompt-layer-factory-md.md)
+
+This is the Tier 1 mechanism: a static `<available_skills>` XML block injected into the
+
+## [TASK-1293: LoadSkillTool — Tier 2 On-Demand Skill Retrieval](overviews/doc:sdd-tasks-completed-task-1293-load-skill-tool-md.md)
+
+This is the Tier 2 mechanism: a tool the LLM calls after spotting a relevant skill
+
+## [TASK-1294: Mixin Wiring — Integrate Discovery, Prompt, and Tool into SkillRegistryMixin](overviews/doc:sdd-tasks-completed-task-1294-mixin-wiring-md.md)
+
+This is the final integration task for FEAT-188. It wires the `SkillsDirectoryLoader`,
+
+## [TASK-1295: Reply-to Threading Support](overviews/doc:sdd-tasks-completed-task-1295-reply-to-threading-md.md)
+
+The collaborative session requires agents to post reply-to messages so that
+
+## [TASK-1296: Collaborative Config Extension](overviews/doc:sdd-tasks-completed-task-1296-collaborative-config-md.md)
+
+The collaborative session needs YAML configuration for trigger command, round count,
+
+## [TASK-1297: Session State Models](overviews/doc:sdd-tasks-completed-task-1297-session-state-models-md.md)
+
+The collaborative session orchestrator needs Pydantic models to track session lifecycle,
+
+## [TASK-1298: Collaborative Session Orchestrator](overviews/doc:sdd-tasks-completed-task-1298-collaborative-ses-93d8e00c.md)
+
+This is the core of the collaborative feature. `MatrixCollaborativeSession` orchestrates
+
+## [TASK-1299: Transport Integration](overviews/doc:sdd-tasks-completed-task-1299-transport-integration-md.md)
+
+The collaborative session orchestrator (TASK-1298) exists but is not wired into the
+
+## [TASK-130: Virtual Portfolio Engine](overviews/doc:sdd-tasks-completed-task-130-virtual-portfolio-engine-md.md)
+
+## [TASK-1300: Hybrid Tool Delegation](overviews/doc:sdd-tasks-completed-task-1300-hybrid-tool-delegation-md.md)
+
+During cross-pollination, agents may need to delegate tool execution to a peer with
+
+## [TASK-1301: Example and Documentation](overviews/doc:sdd-tasks-completed-task-1301-example-and-docum-b36f6b7c.md)
+
+The collaborative session feature is implemented but needs a working example and
+
+## [TASK-1302: Add `GEMINI_3_5_FLASH` to GoogleModel enum](overviews/doc:sdd-tasks-completed-task-1302-add-gemini-3-5-fl-1dc726b4.md)
+
+The spec's combined-mode whitelist references `gemini-3.5-flash` as a real Google model identifier (confirmed in the proposal Q&A — U1, citing https://ai.google.dev/gemini-api/docs/deprecations). The `GoogleModel` enum at `packages/ai-parrot/src/parrot/models/google.py:9-39` does
+
+## [TASK-1303: Capability helper + configurable whitelist + constructor kwarg](overviews/doc:sdd-tasks-completed-task-1303-capability-helper-593e3d8b.md)
+
+The spec introduces a model-capability gate (`_supports_combined_tools_and_schema`) that decides, per call, whether `tools=` and `response_schema=` can be combined in a single `GenerateContentConfig`. This task lays the foundation: the helper itself, the configurable whitelist me
+
+## [TASK-1304: Refactor `ask()` to support combined tools + structured output](overviews/doc:sdd-tasks-completed-task-1304-ask-combined-mode-2e2961c6.md)
+
+Also includes a malformed-JSON recovery branch: if the model violates `response_schema` despite the constraint, fall back to the legacy reformat call (preserves today's reliability).
+
+## [TASK-1305: Refactor `ask_stream()` symmetrically for combined mode](overviews/doc:sdd-tasks-completed-task-1305-ask-stream-combin-eb707c97.md)
+
+TASK-1305 depends on TASK-1303 (the helper) but is INDEPENDENT of TASK-1304 — the two methods don't share runtime state. In a parallel-worktree world they could be done concurrently, but since this feature uses a single per-spec worktree, they will run sequentially.
+
+## [TASK-1306: Parametrize `examples/google/structured_with_tools.py` over the whitelist](overviews/doc:sdd-tasks-completed-task-1306-parametrize-example-md.md)
+
+The current example at `examples/google/structured_with_tools.py` is hardcoded to `gemini-2.0-flash` (a non-whitelisted model that falls back to the two-phase flow). To let the user exercise the new combined-mode path against each whitelisted model, extend the example to iterate 
+
+## [TASK-1307: Combined-mode regression tests in `test_google_client.py`](overviews/doc:sdd-tasks-completed-task-1307-combined-mode-reg-c29de2d4.md)
+
+The spec's acceptance criteria require explicit regression coverage for both branches: combined-mode (one chat call, schema on the streamed config) and the two-phase fallback (chat call + reformat call). There is currently no test in `test_google_client.py` that covers tools + st
+
+## [TASK-1308: flows/flow/ subpackage skeleton (L1 — Module 1)](overviews/doc:sdd-tasks-completed-task-1308-agentsflow-migrat-77dc9900.md)
+
+This is Layer 1 of the AgentsFlow migration (FEAT-196). The current
+
+## [TASK-1309: Move-only relocations — 5 files (L1 — Module 2)](overviews/doc:sdd-tasks-completed-task-1309-agentsflow-migrat-a434b3ed.md)
+
+Layer 1 of the migration (continued). After TASK-1308 converts `flows/flow.py`
+
+## [TASK-131: Paper Trading Mixin](overviews/doc:sdd-tasks-completed-task-131-paper-trading-mixin-md.md)
+
+## [TASK-1310: Storage reconciliation — L2 (Module 3)](overviews/doc:sdd-tasks-completed-task-1310-agentsflow-migrat-8daefbd4.md)
+
+Layer 2 of the migration. The legacy `parrot/bots/flow/storage/` contains three
+
+## [TASK-1311: flows/flow/nodes.py — decision + interactive nodes (L3 — Module 4)](overviews/doc:sdd-tasks-completed-task-1311-agentsflow-migrat-81385f6f.md)
+
+Layer 3 of the migration. The legacy `parrot/bots/flow/decision_node.py` (1,140 LoC)
+
+## [TASK-1312: AgentsFlow class internal repointing (L4 — Module 5)](overviews/doc:sdd-tasks-completed-task-1312-agentsflow-migrat-1e8b2cfd.md)
+
+Layer 4 of the migration. After Modules 1–4, all files the AgentsFlow class
+
+## [TASK-1313: parrot/flows/dev_loop/ consumer repointing (L5 — Module 6)](overviews/doc:sdd-tasks-completed-task-1313-agentsflow-migrat-02d299e7.md)
+
+Layer 5 of the migration (external consumer repointing). The 8 files in
+
+## [TASK-1314: Test suite repointing + broken-test refactor (L5 — Module 7)](overviews/doc:sdd-tasks-completed-task-1314-agentsflow-migrat-d067c111.md)
+
+Layer 5 (continued). After TASK-1312 (internal repointing) and TASK-1313
+
+## [TASK-1315: Curate parrot/bots/flows/__init__.py (L5 — Module 8)](overviews/doc:sdd-tasks-completed-task-1315-agentsflow-migrat-309cd2fb.md)
+
+Layer 5 (finalisation). The current `parrot/bots/flows/__init__.py` exposes some
+
+## [TASK-1316: Delete parrot/bots/flow/ entirely (L6 — Module 9)](overviews/doc:sdd-tasks-completed-task-1316-agentsflow-migrat-9de6a866.md)
+
+Layer 6 — the final cleanup step. After all prior tasks have:
+
+## [TASK-1317: Mark FEAT-009 obsolete + docs sweep (L6 — Module 10)](overviews/doc:sdd-tasks-completed-task-1317-agentsflow-migrat-10376f7e.md)
+
+Layer 6 — final bookkeeping. After TASK-1316 deletes the legacy `parrot/bots/flow/`
+
+## [TASK-1318: Add `AIMessage.artifact_id` top-level field](overviews/doc:sdd-tasks-completed-task-1318-aimessage-artifac-63b839c5.md)
+
+Module 6 from the spec. `AIMessage` currently carries a generic
+
+## [TASK-1319: Add `JSBundle` model and `InfographicTemplate.js_bundles` field](overviews/doc:sdd-tasks-completed-task-1319-jsbundle-and-temp-854b0e39.md)
+
+Module 7 from the spec. The optional LLM enhance pipeline (Module 2 /
+
+## [TASK-132: Alpaca Paper Trading Enhancement](overviews/doc:sdd-tasks-completed-task-132-alpaca-paper-enhancement-md.md)
+
+## [TASK-1320: Add `OutputMode.INFOGRAPHIC` + system prompt addon + AgentTalk hooks](overviews/doc:sdd-tasks-completed-task-1320-output-mode-infographic-md.md)
+
+Module 8 from the spec. Introduces the type-safe `OutputMode.INFOGRAPHIC`
+
+## [TASK-1321: `ArtifactStore.get_public_url` + signed-URL plumbing](overviews/doc:sdd-tasks-completed-task-1321-artifactstore-pub-22ec8747.md)
+
+Module 4 from the spec. The toolkit (TASK-1323) needs a way to expose the
+
+## [TASK-1322: Public artifact HTML route + CSP headers](overviews/doc:sdd-tasks-completed-task-1322-public-artifact-h-0698f28a.md)
+
+Module 5 from the spec. Clients (browser iframes, embeds, dashboards)
+
+## [TASK-1323: `InfographicToolkit` core — envelopes, validation pipeline, render](overviews/doc:sdd-tasks-completed-task-1323-infographic-toolk-08f1b65a.md)
+
+Module 1 from the spec — the heart of the feature. Implements the
+
+## [TASK-1324: `InfographicToolkit` auxiliary tools (list/get_contract/validate)](overviews/doc:sdd-tasks-completed-task-1324-infographic-toolk-150702c9.md)
+
+TASK-1323 ships the core `render` tool. To make the LLM's job feasible
+
+## [TASK-1325: `enhance_infographic` agent method + HTML SRI validator + prompts](overviews/doc:sdd-tasks-completed-task-1325-enhance-pipeline--a056b7e3.md)
+
+Module 2 from the spec — the optional LLM-augmented JavaScript
+
+## [TASK-1326: `PandasAgent.ask` post-loop branch for `InfographicRenderResult`](overviews/doc:sdd-tasks-completed-task-1326-pandasagent-infog-58fb1e5d.md)
+
+Module 3 from the spec. The LLM tool-calling loop produces an
+
+## [TASK-1327: Example skill `financial_projection_variance` + e2e tests + docs](overviews/doc:sdd-tasks-completed-task-1327-example-skill-and-e2e-md.md)
+
+Bundles the three final deliverables for FEAT-197:
+
+## [TASK-1328: Move pageindex package directory and rewrite internal references](overviews/doc:sdd-tasks-completed-task-1328-move-pageindex-package-md.md)
+
+The PageIndex subsystem lives at `packages/ai-parrot/src/parrot/pageindex/` and must move to `packages/ai-parrot/src/parrot/knowledge/pageindex/` so it sits alongside `parrot.knowledge.graphindex`. This is the foundation task — all subsequent tasks in FEAT-198 depend on it. Imple
+
+## [TASK-1329: Update production source-code importers to `parrot.knowledge.pageindex`](overviews/doc:sdd-tasks-completed-task-1329-update-production-e68c1c9a.md)
+
+After TASK-1328 moves the package, six production-source imports still reference the old `parrot.pageindex` path. They break at import time until rewritten. This task fixes them. Implements §3 Module 2 of the spec.
+
+## [TASK-133: Binance Testnet Enhancement](overviews/doc:sdd-tasks-completed-task-133-binance-testnet-en-a4c38fdf.md)
+
+## [TASK-1330: Relocate `tests/test_pageindex/` and update test references](overviews/doc:sdd-tasks-completed-task-1330-relocate-and-upda-783891de.md)
+
+After TASK-1328 moves the source package, the test suite at `packages/ai-parrot/tests/test_pageindex/` still references `parrot.pageindex` (65 string occurrences across imports and `monkeypatch.setattr` target strings). The tests also need to move to mirror the new source layout 
+
+## [TASK-1331: Update examples and documentation imports](overviews/doc:sdd-tasks-completed-task-1331-update-examples-a-2f3e610d.md)
+
+Five example scripts under `examples/` and the user-facing `docs/pageindex.md` reference the old `parrot.pageindex` import path. After TASK-1328 moves the package, these are stale — copy-paste failures for any user reading them. Implements §3 Module 4 of the spec.
+
+## [TASK-1332: Repo-wide verification, lint, full test suite, and cleanup](overviews/doc:sdd-tasks-completed-task-1332-verification-lint-b7223adf.md)
+
+Final task of FEAT-198. Confirms the move is complete and no stale references survived, runs lint and the relevant test surface, and removes any artifacts that should not be tracked. Implements §3 Module 5 of the spec.
+
+## [TASK-1333: Move transport/ package into autonomous/transport/](overviews/doc:sdd-tasks-completed-task-1333-move-transport-package-md.md)
+
+The `parrot/transport/` package currently lives as a top-level package but is only
+
+## [TASK-1333: Scaffold the ai-parrot-embeddings satellite package (PEP 420)](overviews/doc:sdd-tasks-completed-task-1333-satellite-package-571951bf.md)
+
+This task implements **Module 1** of the spec — scaffolds the empty
+
+## [TASK-1334: Fix broken hook imports in filesystem/hook.py](overviews/doc:sdd-tasks-completed-task-1334-fix-hook-imports-md.md)
+
+After the package move (TASK-1333), `filesystem/hook.py` still has broken imports
+
+## [TASK-1334: Move embedding backends (google / huggingface / openai) to satellite](overviews/doc:sdd-tasks-completed-task-1334-move-embedding-backends-md.md)
+
+Implements **Module 2** of the spec — relocate the three concrete
+
+## [TASK-1335: Move vector-store backends (6 files) to satellite](overviews/doc:sdd-tasks-completed-task-1335-move-store-backends-md.md)
+
+Implements **Module 3** of the spec — relocate six concrete
+
+## [TASK-1335: Remove hook shims and update entry points](overviews/doc:sdd-tasks-completed-task-1335-remove-shims-upda-bc5dfb5a.md)
+
+After the package move (TASK-1333), the old backward-compatibility shims at
+
+## [TASK-1336: Move reranker backends (local / llm) to satellite](overviews/doc:sdd-tasks-completed-task-1336-move-reranker-backends-md.md)
+
+Implements **Module 4** of the spec — relocate the two concrete
+
+## [TASK-1336: Update all test imports to new paths](overviews/doc:sdd-tasks-completed-task-1336-update-test-imports-md.md)
+
+After the package move (TASK-1333), hook import fix (TASK-1334), and shim removal
+
+## [TASK-1338: Add wheel-content verification test (lock pure PEP 420 into CI)](overviews/doc:sdd-tasks-completed-task-1338-wheel-content-ver-70f9f041.md)
+
+Implements **Module 6** of the spec — the CI guard that locks the U3
+
+## [TASK-1339: Cross-distribution namespace-resolution test suite](overviews/doc:sdd-tasks-completed-task-1339-namespace-resolut-5fc6ab83.md)
+
+Implements **Module 7** of the spec — verifies the user-facing
+
+## [TASK-134: IBKR Paper Trading Enhancement](overviews/doc:sdd-tasks-completed-task-134-ibkr-paper-enhancement-md.md)
+
+1. Added `PaperTradingMixin` inheritance to `IBKRWriteToolkit`
+
+## [TASK-1341: Documentation, migration notes, CONTEXT.md update](overviews/doc:sdd-tasks-completed-task-1341-docs-and-migratio-84f0a7d2.md)
+
+Implements **Module 9** of the spec — finalize user-facing documentation
+
+## [TASK-1342: OAuth2 Relocation to parrot/auth/oauth2/](overviews/doc:sdd-tasks-completed-task-1342-oauth2-relocation-md.md)
+
+The `integrations/oauth2/` package (7 files, ~37 KB) provides OAuth2
+
+## [TASK-1343: Pluggable Hooks Refactor (MessagingHook Protocol)](overviews/doc:sdd-tasks-completed-task-1343-pluggable-hooks-r-d7632b61.md)
+
+specific messaging channel. This task refactors hooks to use a
+
+## [TASK-1344: Satellite Package Scaffold](overviews/doc:sdd-tasks-completed-task-1344-satellite-package-9fe59033.md)
+
+Create the empty satellite package `packages/ai-parrot-integrations/`
+
+## [TASK-1345: Common Integrations Files Move](overviews/doc:sdd-tasks-completed-task-1345-common-integratio-491de888.md)
+
+Move the shared/common files from `parrot/integrations/` to the satellite
+
+## [TASK-1346: Slack Channel Extraction](overviews/doc:sdd-tasks-completed-task-1346-slack-extraction-md.md)
+
+Move the Slack channel integration (9 Python files, ~288 KB) from
+
+## [TASK-1347: Telegram Channel Extraction](overviews/doc:sdd-tasks-completed-task-1347-telegram-extraction-md.md)
+
+Move the Telegram channel integration (29 Python files, ~1 MB) from
+
+## [TASK-1348: WhatsApp Channel Extraction](overviews/doc:sdd-tasks-completed-task-1348-whatsapp-extraction-md.md)
+
+Move the WhatsApp channel integration (7 Python files, ~116 KB) from
+
+## [TASK-1349: MS Teams Channel Extraction](overviews/doc:sdd-tasks-completed-task-1349-msteams-extraction-md.md)
+
+Move the MS Teams channel integration (22 Python files, ~444 KB) from
+
+## [TASK-135: Kraken Demo Mode Enhancement](overviews/doc:sdd-tasks-completed-task-135-kraken-demo-enhancement-md.md)
+
+1. Added `PaperTradingMixin` inheritance to `KrakenWriteToolkit`
+
+## [TASK-1350: Matrix Channel Extraction + Hook Implementation](overviews/doc:sdd-tasks-completed-task-1350-matrix-extraction-md.md)
+
+Move the Matrix channel integration (18 Python files, ~392 KB) from
+
+## [TASK-1351: Voice Module Extraction](overviews/doc:sdd-tasks-completed-task-1351-voice-extraction-md.md)
+
+Move the entire `parrot/voice/` module (11 Python files, ~384 KB) to
+
+## [TASK-1352: Human Channels Extraction + ChannelRegistry](overviews/doc:sdd-tasks-completed-task-1352-human-channels-ex-43b592e9.md)
+
+Move channel-specific implementations from `parrot/human/channels/` to
+
+## [TASK-1353: Zoom Relocation to ai-parrot-tools](overviews/doc:sdd-tasks-completed-task-1353-zoom-relocation-md.md)
+
+bot — it's an API integration for Zoom with its only production consumer
+
+## [TASK-1354: Core pyproject.toml Cleanup + Workspace Integration](overviews/doc:sdd-tasks-completed-task-1354-core-pyproject-cleanup-md.md)
+
+After all channels, voice, human/channels, and zoom have been moved,
+
+## [TASK-1355: CHANGELOG, Migration Guide & Documentation](overviews/doc:sdd-tasks-completed-task-1355-changelog-and-docs-md.md)
+
+Document the breaking changes and provide a migration guide for users
+
+## [TASK-1355: Scaffold ai-parrot-visualizations satellite package](overviews/doc:sdd-tasks-completed-task-1355-scaffold-satellit-a1746f00.md)
+
+[build-system]
+
+## [TASK-1356: Enable PEP 420 namespace merging in core outputs package](overviews/doc:sdd-tasks-completed-task-1356-enable-pep420-core-md.md)
+
+from pkgutil import extend_path # stdlib, no install needed
+
+## [TASK-1357: Move heavy visualization renderers to satellite](overviews/doc:sdd-tasks-completed-task-1357-move-heavy-viz-re-f24e2da0.md)
+
+from parrot.outputs.formats.base import BaseRenderer, RenderResult, RenderError # base.py stays in core
+
+## [TASK-1358: Move infographic, messaging, and utility renderers to satellite](overviews/doc:sdd-tasks-completed-task-1358-move-infographic--54ef0cca.md)
+
+from parrot.outputs.formats.base import BaseRenderer, RenderResult, RenderError # core
+
+## [TASK-1359: Migrate direct InfographicHTMLRenderer imports to registry](overviews/doc:sdd-tasks-completed-task-1359-migrate-direct-imports-md.md)
+
+from ..outputs.formats.infographic_html import InfographicHTMLRenderer # REMOVE
+
+## [TASK-136: Execution Report Enhancement](overviews/doc:sdd-tasks-completed-task-136-execution-report-e-2a146776.md)
+
+## [TASK-1360: Refactor core pyproject.toml dependencies](overviews/doc:sdd-tasks-completed-task-1360-refactor-core-dep-532e6b28.md)
+
+[project.optional-dependencies]
+
+## [TASK-1361: Integration tests and full validation](overviews/doc:sdd-tasks-completed-task-1361-integration-tests-54be3b87.md)
+
+from parrot.outputs.formats import get_renderer, get_output_prompt, has_system_prompt, RENDERERS
+
+## [TASK-1362: Implement document_understanding() method and _upload_document() helper](overviews/doc:sdd-tasks-completed-task-1362-document-understa-44c8a4cf.md)
+
+This task implements the core `document_understanding()` async method on the
+
+## [TASK-1363: Unit tests for document_understanding()](overviews/doc:sdd-tasks-completed-task-1363-document-understa-f7c0e89b.md)
+
+This task creates comprehensive unit tests for the `document_understanding()`
+
+## [TASK-1364: Integration test for document_understanding()](overviews/doc:sdd-tasks-completed-task-1364-document-understa-6b5f00e9.md)
+
+This task creates an integration test that exercises `document_understanding()`
+
+## [TASK-1365: Create ai-parrot-server package scaffold](overviews/doc:sdd-tasks-completed-task-1365-package-scaffold-md.md)
+
+Implements Module 1 from the spec. Creates the empty satellite package structure following the FEAT-201 precedent. This is the foundation — all other tasks depend on this scaffold existing.
+
+## [TASK-1366: Relocate vault_utils and credentials_utils to parrot/security/](overviews/doc:sdd-tasks-completed-task-1366-relocate-vault-utils-md.md)
+
+Implements Module 2. `vault_utils.py` and `credentials_utils.py` currently live in `parrot/handlers/` but are imported by core modules (`parrot/mcp/oauth.py`, `parrot/auth/oauth2_base.py`). Since handlers will move to the satellite, these shared utilities must be relocated to `pa
+
+## [TASK-1367: Add extend_path and lazy __getattr__ to host __init__.py files](overviews/doc:sdd-tasks-completed-task-1367-add-extend-path-md.md)
+
+Implements Module 3. None of the target `__init__.py` files (mcp, a2a, handlers, manager, services, scheduler, autonomous) currently have `extend_path` calls. This task adds them and converts eager imports of server classes into lazy `__getattr__` patterns, so the host works both
+
+## [TASK-1368: Split mcp/oauth.py — server parts to satellite](overviews/doc:sdd-tasks-completed-task-1368-split-mcp-oauth-md.md)
+
+Implements Module 4. `parrot/mcp/oauth.py` (1137 lines) mixes server-side OAuth infrastructure with consumer-side token management. The server parts must be extracted to `oauth_server.py` in the satellite.
+
+## [TASK-1369: Move MCP server files to satellite](overviews/doc:sdd-tasks-completed-task-1369-move-mcp-server-md.md)
+
+Implements Module 5. Moves all MCP server infrastructure files from host to satellite. Also consolidates `services/mcp/` into the satellite's `parrot/mcp/` namespace, eliminating the split between `parrot.mcp` and `parrot.services.mcp` for server-side code.
+
+## [TASK-137: Orchestrator Paper Mode](overviews/doc:sdd-tasks-completed-task-137-orchestrator-paper-mode-md.md)
+
+## [TASK-1370: Move A2A server files to satellite](overviews/doc:sdd-tasks-completed-task-1370-move-a2a-server-md.md)
+
+Implements Module 6. Cleanest extraction — A2A server files use only TYPE_CHECKING imports to core. No other core module imports from `parrot.a2a.server` or `parrot.a2a.security` at runtime. The lazy `__getattr__` in host `a2a/__init__.py` (set up in TASK-1367) will resolve satel
+
+## [TASK-1371: Move handlers/ to satellite](overviews/doc:sdd-tasks-completed-task-1371-move-handlers-md.md)
+
+Implements Module 7. Largest single move — ~59 Python files across 7 subdirectories. All are aiohttp BaseView subclasses for HTTP endpoints. The host `handlers/__init__.py` already has `extend_path` and lazy `__getattr__` (from TASK-1367), and `vault_utils.py` / `credentials_util
+
+## [TASK-1372: Move manager/ to satellite](overviews/doc:sdd-tasks-completed-task-1372-move-manager-md.md)
+
+Implements Module 8. BotManager imports ~25 handler classes — since handlers already moved to satellite (TASK-1371), BotManager must follow to avoid cross-distribution runtime imports. All external consumers of BotManager (`app.py`, `appauto.py`) use TYPE_CHECKING imports. The ho
+
+## [TASK-1373: Move services/ to satellite](overviews/doc:sdd-tasks-completed-task-1373-move-services-md.md)
+
+Implements Module 9. Moves all service files except `services/mcp/` (already consolidated into `parrot/mcp/` by TASK-1369) from the host to the satellite package.
+
+## [TASK-1374: Move scheduler/ to satellite](overviews/doc:sdd-tasks-completed-task-1374-move-scheduler-md.md)
+
+Implements Module 10. The current `scheduler/__init__.py` is a 1740-line file containing the entire `AgentSchedulerManager`. Its content must be moved to `manager.py` in the satellite, while the host `__init__.py` becomes a slim stub (already prepared in TASK-1367).
+
+## [TASK-1375: Move autonomous/ to satellite](overviews/doc:sdd-tasks-completed-task-1375-move-autonomous-md.md)
+
+Implements Module 11. Moves the autonomous orchestrator, transport layer, deployment tools, and CLI to the satellite package.
+
+## [TASK-1376: Update host pyproject.toml — extras redistribution](overviews/doc:sdd-tasks-completed-task-1376-update-host-pyproject-md.md)
+
+Implements Module 12. After all moves are complete, the host `pyproject.toml` must be updated to remove server-only extras and add the satellite reference.
+
+## [TASK-1377: Satellite tests — wheel layout and namespace imports](overviews/doc:sdd-tasks-completed-task-1377-satellite-tests-md.md)
+
+Implements Module 13. Creates automated tests verifying PEP 420 compliance and cross-distribution import resolution for the ai-parrot-server satellite package.
+
+## [TASK-1378: Write migration guide for FEAT-203](overviews/doc:sdd-tasks-completed-task-1378-migration-guide-md.md)
+
+Implements Module 14. Documents the extraction for users and developers, following the proven format established by FEAT-201's migration guide.
+
+## [TASK-1379: WaitStrategy enum + HumanTool.wait_strategy + SUSPEND branch](overviews/doc:sdd-tasks-completed-task-1379-waitstrategy-huma-5000217e.md)
+
+Foundation of FEAT-204 (spec §2 Overview, §3 Module 1). Today `HumanTool._execute`
+
+## [TASK-138: Package Init and Exports](overviews/doc:sdd-tasks-completed-task-138-paper-trading-exports-md.md)
+
+## [TASK-1380: SuspendedExecution model + SuspendedExecutionStore (Redis)](overviews/doc:sdd-tasks-completed-task-1380-suspended-executi-7a851adc.md)
+
+Spec §3 Module 2. `answer_memory[turn_id]` stores `{question, answer}` — enough
+
+## [TASK-1381: SuspendingWebHumanTool (REST suspend tool)](overviews/doc:sdd-tasks-completed-task-1381-suspending-web-hu-41d62601.md)
+
+Spec §3 Module 3 + the resolved SUSPEND-selection decision (§8): a deployment opts
+
+## [TASK-1382: AgentTalk suspend catch → PausedEnvelope](overviews/doc:sdd-tasks-completed-task-1382-agenttalk-suspend-d78daf89.md)
+
+Spec §3 Module 4. Today `AgentTalk.post` catches only `AuthorizationRequired` and
+
+## [TASK-1383: AgentTalk resume branch (hitl_response → receive_response → resume)](overviews/doc:sdd-tasks-completed-task-1383-agenttalk-resume-branch-md.md)
+
+Spec §3 Module 5. The second new `AgentTalk.post` branch: when a later request
+
+## [TASK-1384: HITL-web suspend/resume integration tests](overviews/doc:sdd-tasks-completed-task-1384-hitl-web-integrat-25eb1eb8.md)
+
+Spec §3 Module 6 + §4 Integration Tests. End-to-end coverage of the full
+
+## [TASK-1385: Flatten `financial_variance` template to 9 positional slots (+ tests)](overviews/doc:sdd-tasks-completed-task-1385-flatten-financial-57e04081.md)
+
+one rendered block, and it keeps only `.blocks[0]` per slot. The current
+
+## [TASK-1386: Align `daily_financial_projection/compute.py` to the flat 9-block contract](overviews/doc:sdd-tasks-completed-task-1386-align-daily-finan-406b0ba8.md)
+
+The `daily_financial_projection` skill prints `BLOCKS_JSON=<...>` — a ready-to-paste
+
+## [TASK-1387: Ephemeral ownership generalization](overviews/doc:sdd-tasks-completed-task-1387-ephemeral-ownersh-91cb633a.md)
+
+The ephemeral agent subsystem (FEAT-149) currently hardcodes ownership to
+
+## [TASK-1388: BotManager ownership-aware methods](overviews/doc:sdd-tasks-completed-task-1388-botmanager-owners-35bee10b.md)
+
+With `EphemeralAgentStatus` generalized (TASK-1387), the three `BotManager`
+
+## [TASK-1389: SpawnSubAgentTool implementation](overviews/doc:sdd-tasks-completed-task-1389-spawn-subagent-tool-md.md)
+
+This is the core deliverable: a tool that an agent can invoke to spawn an
+
+## [TASK-139: Unit Tests](overviews/doc:sdd-tasks-completed-task-139-paper-trading-unit-tests-md.md)
+
+From spec's test specification:
+
+## [TASK-1390: SpawnSubAgentTool export & registration](overviews/doc:sdd-tasks-completed-task-1390-spawn-tool-export-3e9bec2a.md)
+
+With `SpawnSubAgentTool` implemented (TASK-1389), this task wires the public
+
+## [TASK-1391: Heartbeat models & strategy](overviews/doc:sdd-tasks-completed-task-1391-heartbeat-models--28dde86c.md)
+
+a fallback `act_every_n_ticks: int` (default e.g. 10).
+
+## [TASK-1392: HeartbeatManager loop & lifecycle](overviews/doc:sdd-tasks-completed-task-1392-heartbeat-manager-md.md)
+
+record action in state.
+
+## [TASK-1393: Heartbeat export & integration tests](overviews/doc:sdd-tasks-completed-task-1393-heartbeat-export--aa92cd6d.md)
+
+add `HeartbeatManager`, `HeartbeatConfig`, `HeartbeatState`,
+
+## [TASK-1394: Operator config fields and authorization gate](overviews/doc:sdd-tasks-completed-task-1394-operator-config-gate-md.md)
+
+fields to `TelegramAgentConfig` in `models.py`.
+
+## [TASK-1395: Read-only operator commands (/context, /memory, /model, /mission)](overviews/doc:sdd-tasks-completed-task-1395-readonly-operator-b7851821.md)
+
+from aiogram.types import Message # verified: wrapper.py:22
+
+## [TASK-1396: Harness-state commands (/health, /status)](overviews/doc:sdd-tasks-completed-task-1396-harness-state-commands-md.md)
+
+from aiogram.types import Message # verified: wrapper.py:22
+
+## [TASK-1397: /thread command (fork → ephemeral sub-agent)](overviews/doc:sdd-tasks-completed-task-1397-thread-command-md.md)
+
+from aiogram.types import Message # verified: wrapper.py:22
+
+## [TASK-1398: Wiring, registration, and integration tests](overviews/doc:sdd-tasks-completed-task-1398-operator-wiring-r-05c07e97.md)
+
+with the router, gated on `enable_operator_commands`.
+
+## [TASK-1399: Ledger Models & DDL](overviews/doc:sdd-tasks-completed-task-1399-ledger-models-ddl-md.md)
+
+that converts any `LifecycleEvent` (frozen dataclass) via `to_dict()`.
+
+## [TASK-140: Integration Tests](overviews/doc:sdd-tasks-completed-task-140-paper-trading-inte-6658b842.md)
+
+From spec's integration test specification:
+
+## [TASK-1400: EventLedger ABC + PostgresLedgerBackend](overviews/doc:sdd-tasks-completed-task-1400-event-ledger-post-38ae9391.md)
+
+activity timestamp and open/closed execution counts.
+
+## [TASK-1401: LedgerRecorder — Global Event Capture](overviews/doc:sdd-tasks-completed-task-1401-ledger-recorder-md.md)
+
+with a `where` filter that excludes `config.exclude_event_classes`.
+
+## [TASK-1402: Orchestrator resume() — Crash Recovery](overviews/doc:sdd-tasks-completed-task-1402-orchestrator-resume-md.md)
+
+reconstructed from the incomplete execution metadata.
+
+## [TASK-1403: Grant Models & InMemoryGrantStore](overviews/doc:sdd-tasks-completed-task-1403-grant-models-and-store-md.md)
+
+This is the foundational task for the grant subsystem. It creates the Pydantic
+
+## [TASK-1403: Wiring, Exports & Integration Tests](overviews/doc:sdd-tasks-completed-task-1403-ledger-wiring-exports-md.md)
+
+1. `db = app["database"]`
+
+## [TASK-1404: GrantGuard (Governor)](overviews/doc:sdd-tasks-completed-task-1404-grant-guard-md.md)
+
+The `GrantGuard` is the decision engine ("Governor") that sits between the
+
+## [TASK-1405: ToolManager Grant Guard Integration](overviews/doc:sdd-tasks-completed-task-1405-toolmanager-grant-7ab1e998.md)
+
+This is the most critical integration point. The `ToolManager.execute_tool()`
+
+## [TASK-1406: Grant Exports & Wiring](overviews/doc:sdd-tasks-completed-task-1406-grant-exports-wiring-md.md)
+
+This final task wires the new grant subsystem into the public API by exporting
+
+## [TASK-1407: TTS abstraction layer (AbstractTTSBackend) + Pydantic models](overviews/doc:sdd-tasks-completed-task-1407-tts-abstraction-a-b8175e45.md)
+
+Mirror of `voice/transcriber/`, but for output. The transcriber package already
+
+## [TASK-1408: GoogleTTSBackend (wraps generate_speech) + VoiceSynthesizer (lazy backend)](overviews/doc:sdd-tasks-completed-task-1408-google-backend-an-f6f6d1eb.md)
+
+With the ABC + models in place (TASK-1407), this task implements the default
+
+## [TASK-1409: Telegram voice-reply wiring (config fields + handle_voice TTS branch)](overviews/doc:sdd-tasks-completed-task-1409-telegram-voice-re-c8eaa758.md)
+
+The output wiring. After `handle_voice` transcribes a voice note, runs the agent,
+
+## [TASK-141: Options Strategy Schemas](overviews/doc:sdd-tasks-completed-task-141-options-schemas-md.md)
+
+Added 5 Pydantic models to `parrot/finance/schemas.py` (Section 10):
+
+## [TASK-1410: Public exports for voice.tts + end-to-end integration tests](overviews/doc:sdd-tasks-completed-task-1410-exports-and-integ-a670cf43.md)
+
+Final wiring: expose the new TTS surface as a clean public API (mirror of
+
+## [TASK-1411: Add `OutputMode.STRUCTURED_CHART` enum member](overviews/doc:sdd-tasks-completed-task-1411-outputmode-struct-703ea84e.md)
+
+Spec §3 Module 1. Everything downstream (the model's `type="map"` correlation, the dispatch
+
+## [TASK-1412: `StructuredChartConfig` pydantic model + validators](overviews/doc:sdd-tasks-completed-task-1412-structuredchartco-b152d265.md)
+
+Spec §2 Data Models + §3 Module 2. The agnostic chart contract that mirrors the frontend
+
+## [TASK-1413: `StructuredChartRenderer` + system prompt + dispatch registration](overviews/doc:sdd-tasks-completed-task-1413-structured-chart--1b2ba868.md)
+
+Spec §2 (Overview, New Public Interfaces) + §3 Modules 3 & 4. The heart of the feature: a renderer
+
+## [TASK-1414: Integration tests — envelope serialization + regression guard](overviews/doc:sdd-tasks-completed-task-1414-integration-tests-md.md)
+
+Spec §4 Integration Tests + §5 Acceptance Criteria. Confirms the end-to-end contract at the
+
+## [TASK-1415: Eval data models (`parrot/eval/models.py`)](overviews/doc:sdd-tasks-completed-task-1415-eval-data-models-md.md)
+
+Foundation of the harness. Every other module imports these Pydantic v2 models. Implements spec §2
+
+## [TASK-1416: Eval registry (`@register_evaluator` / `@register_metric`)](overviews/doc:sdd-tasks-completed-task-1416-eval-registry-md.md)
+
+Implements spec §3 Module 2. A NEW lightweight `name -> class` decorator registry for evaluators and
+
+## [TASK-1417: Sandbox ABCs + `NoopSandbox` (`parrot/eval/sandbox/base.py`)](overviews/doc:sdd-tasks-completed-task-1417-sandbox-abcs-md.md)
+
+Defines the execution-environment contract used by every rollout and the runner. Implements spec §3
+
+## [TASK-1418: `StateBackend` + `DictStateBackend` (`parrot/eval/sandbox/state.py`)](overviews/doc:sdd-tasks-completed-task-1418-state-backend-md.md)
+
+The resettable, in-memory world state owned by the sandbox (NOT by any toolkit). Generic
+
+## [TASK-1419: `InMemoryStateSandbox` + `DatabaseToolkitBinder`](overviews/doc:sdd-tasks-completed-task-1419-inmemory-sandbox--536e465b.md)
+
+The state-based sandbox plus the FIRST `ToolkitBinder`. This is the proof of the binding pattern: a
+
+## [TASK-142: AlpacaOptionsToolkit Base Class](overviews/doc:sdd-tasks-completed-task-142-alpaca-options-too-6baa4005.md)
+
+Created `parrot/finance/tools/alpaca_options.py` with:
+
+## [TASK-1420: `JiraToolkitBinder` + `FakeJiraClient` + `StaticResolver`](overviews/doc:sdd-tasks-completed-task-1420-jira-binder-md.md)
+
+Second `ToolkitBinder`, proving the pattern generalizes beyond databases. A real `JiraToolkit` runs
+
+## [TASK-1421: Evaluator ABCs (`Metric`, `AbstractEvaluator`)](overviews/doc:sdd-tasks-completed-task-1421-evaluator-abcs-md.md)
+
+The scoring contract — the polymorphic point of the whole harness. Implements spec §3 Module 6:
+
+## [TASK-1422: `StateBasedEvaluator` + `StateMatch` metric](overviews/doc:sdd-tasks-completed-task-1422-state-based-evaluator-md.md)
+
+The τ-bench-style scorer: diff the post-rollout world against an annotated goal state. Implements
+
+## [TASK-1423: Rollout strategies + user simulation (`parrot/eval/rollout.py`)](overviews/doc:sdd-tasks-completed-task-1423-rollout-user-sim-md.md)
+
+Drives an agent against a task inside a sandbox and produces a `Trajectory`. Implements spec §3
+
+## [TASK-1424: Dataset loaders (`parrot/eval/datasets.py`)](overviews/doc:sdd-tasks-completed-task-1424-dataset-loaders-md.md)
+
+Loads benchmark files into `EvalDataset`. Implements spec §3 Module 8. A distinct `DatasetLoader` —
+
+## [TASK-1425: `EvalRunner` + `EvalReport` (`parrot/eval/runner.py`)](overviews/doc:sdd-tasks-completed-task-1425-eval-runner-md.md)
+
+The orchestrator that ties all five axes together. Implements spec §3 Module 9: `EvalRunConfig`,
+
+## [TASK-1426: Eval lifecycle events (`parrot/eval/events.py`)](overviews/doc:sdd-tasks-completed-task-1426-eval-events-md.md)
+
+Read-only observability events for eval runs, joining the FEAT-176 lifecycle taxonomy (already merged
+
+## [TASK-1427: `PostgresEvalSink` + schema DDL (`parrot/eval/sink.py`)](overviews/doc:sdd-tasks-completed-task-1427-postgres-sink-md.md)
+
+Persists eval runs/results to Postgres JSONB using the existing async (asyncpg) pattern. Implements
+
+## [TASK-1428: First benchmarks (DB + Jira) + end-to-end wiring](overviews/doc:sdd-tasks-completed-task-1428-benchmark-e2e-md.md)
+
+The capstone that proves the whole state-based path end to end (brainstorm §13.6). Two benchmark
+
+## [TASK-1429: Contract — `OutputMode.STRUCTURED_TABLE` + `StructuredTableConfig`](overviews/doc:sdd-tasks-completed-task-1429-contract-models-md.md)
+
+Foundation of FEAT-218 (spec §2 Data Models, §3 Module 1). Adds the routable enum member
+
+## [TASK-143: Strategy Factory](overviews/doc:sdd-tasks-completed-task-143-strategy-factory-md.md)
+
+Long Put $95 (buy)
+
+## [TASK-1430: Deterministic dtype→vocabulary map + canonical value serialization](overviews/doc:sdd-tasks-completed-task-1430-dtype-vocabulary-map-md.md)
+
+The deterministic half of the HYBRID producer (spec §2, §3 Module 2). Maps the existing
+
+## [TASK-1431: `StructuredTableRenderer` + dispatch wiring](overviews/doc:sdd-tasks-completed-task-1431-structured-table--044a09e3.md)
+
+The heart of FEAT-218 (spec §2, §3 Module 3). Builds the renderer that turns an agent
+
+## [TASK-1432: Extend `data.py` override-guard for STRUCTURED_TABLE](overviews/doc:sdd-tasks-completed-task-1432-data-py-routing-guard-md.md)
+
+Spec §3 Module 4. FEAT-215 added a guard so `data.py` does NOT overwrite `response.data`
+
+## [TASK-1433: PandasAgent producer — STRUCTURED_TABLE end-to-end](overviews/doc:sdd-tasks-completed-task-1433-pandasagent-producer-md.md)
+
+Spec §3 Module 5 (reference producer #1). PandasAgent already sets `response.data` (DataFrame)
+
+## [TASK-1434: DB/SQL agent producer — STRUCTURED_TABLE end-to-end](overviews/doc:sdd-tasks-completed-task-1434-db-sql-producer-md.md)
+
+Spec §3 Module 5 (reference producer #2). The DB/SQL agent emits a `QueryResponse`
+
+## [TASK-1435: Integration tests + envelope parity + full cloned suite](overviews/doc:sdd-tasks-completed-task-1435-integration-tests-md.md)
+
+Spec §3 Module 6 / §4 Test Specification. Closes FEAT-218 by cloning the comprehensive
+
+## [TASK-1436: Spatial contracts + profile registry + manifest](overviews/doc:sdd-tasks-completed-task-1436-spatial-contracts-cc193034.md)
+
+Foundation layer (spec §3 Module 1). Pure Pydantic contracts + a standalone profile
+
+## [TASK-1437: Ibis ⇄ navconfig connection spike (decision gate)](overviews/doc:sdd-tasks-completed-task-1437-ibis-connection-spike-md.md)
+
+The single biggest unknown in this feature (spec §3 Module 2, §8 open question
+
+## [TASK-1438: SpatialCompiler — engine push-down (pg + bigquery)](overviews/doc:sdd-tasks-completed-task-1438-spatial-compiler--b83d4dd9.md)
+
+Spec §3 Module 3. The engine push-down branch of `SpatialCompiler`: for `pg` and
+
+## [TASK-1439: SpatialCompiler — Pandas bbox fallback + table.py BETWEEN predicate](overviews/doc:sdd-tasks-completed-task-1439-spatial-compiler--4883578e.md)
+
+Spec §3 Module 4. The fallback branch of `SpatialCompiler` for backends without spatial
+
+## [TASK-144: Get Options Chain with Greeks](overviews/doc:sdd-tasks-completed-task-144-get-options-chain-md.md)
+
+from alpaca.trading.requests import GetOptionContractsRequest
+
+## [TASK-1440: DatasetManager.spatial_filter orchestration](overviews/doc:sdd-tasks-completed-task-1440-spatial-filter-or-f701e4a0.md)
+
+Spec §3 Module 5. The thin toolkit method that ties the feature together. It is LLM-visible
+
+## [TASK-1441: Transport — HTTP handler + typed AgenTalk pass-through envelope](overviews/doc:sdd-tasks-completed-task-1441-transport-handler-1cf436c3.md)
+
+Spec §3 Module 6. Exposes `spatial_filter` over transport. One thin aiohttp handler serves
+
+## [TASK-1442: Add `register_command_menu()` publisher to TelegramAgentWrapper](overviews/doc:sdd-tasks-completed-task-1442-wrapper-register--24bf558f.md)
+
+This is the **foundation** task (spec §3 Module 1). The menu-publish logic
+
+## [TASK-1443: Delegate TelegramBotManager menu registration to the wrapper](overviews/doc:sdd-tasks-completed-task-1443-telegrambotmanage-645c7a0d.md)
+
+Implements spec §3 Module 2. Now that the publish logic lives on the wrapper
+
+## [TASK-1444: Register the command menu on the IntegrationBotManager path](overviews/doc:sdd-tasks-completed-task-1444-integrationbotman-fc79a69d.md)
+
+Implements spec §3 Module 3 — the actual bug fix. `IntegrationBotManager.
+
+## [TASK-1445: Extract advanced actions from legacy WebScrapingTool](overviews/doc:sdd-tasks-completed-task-1445-advanced-actions--f4cac8e4.md)
+
+Loop and Conditional actions are fully implemented only in the legacy `WebScrapingTool`
+
+## [TASK-1445: Structured map contract models](overviews/doc:sdd-tasks-completed-task-1445-structured-map-co-890a02e3.md)
+
+Foundational module (spec §2 Data Models, §3 Module 1). Adds the
+
+## [TASK-1446: Integrate advanced actions into executor](overviews/doc:sdd-tasks-completed-task-1446-executor-loop-con-dca12591.md)
+
+logging a warning and returning True. This task replaces that stub with calls to
+
+## [TASK-1446: FEAT-219 per-dataset spatial result refactor](overviews/doc:sdd-tasks-completed-task-1446-spatial-filter-pe-1d47c546.md)
+
+Spec §2 Data Models + §3 Module 2 (G4). Today `DatasetManager.spatial_filter`
+
+## [TASK-1447: Delegate legacy WebScrapingTool loop/conditional to advanced_actions](overviews/doc:sdd-tasks-completed-task-1447-legacy-tool-delegation-md.md)
+
+The legacy `WebScrapingTool` has the original Loop/Conditional implementations. Now that
+
+## [TASK-1447: Presentation hints on DatasetSpatialProfile](overviews/doc:sdd-tasks-completed-task-1447-spatial-profile-p-3f399744.md)
+
+Spec §3 Module 5 (G5). The renderer (TASK-1449) derives each layer's presentation
+
+## [TASK-1448: Spatial transport handler compatibility](overviews/doc:sdd-tasks-completed-task-1448-spatial-handler-compat-md.md)
+
+Spec §3 Module 3. TASK-1446 changes `spatial_filter`'s return type from
+
+## [TASK-1448: Implement TemplatePlan and ParamSpec models](overviews/doc:sdd-tasks-completed-task-1448-template-plan-model-md.md)
+
+typed parameters.
+
+## [TASK-1449: Implement ScrapingFlow, FlowNode, and FlowResult models](overviews/doc:sdd-tasks-completed-task-1449-flow-models-md.md)
+
+affinity. It validates the graph structure (no cycles, no dangling refs) and provides
+
+## [TASK-1449: StructuredMapRenderer](overviews/doc:sdd-tasks-completed-task-1449-structured-map-renderer-md.md)
+
+Spec §2 Overview + §3 Module 4 (G1, G3, G5–G10). The renderer is the heart of the
+
+## [TASK-145: Strike Selection Engine](overviews/doc:sdd-tasks-completed-task-145-strike-selection-engine-md.md)
+
+1. Find ATM strike for short put/call (same strike)
+
+## [TASK-1450: Implement PageDriver adapter for Playwright Page](overviews/doc:sdd-tasks-completed-task-1450-page-driver-adapter-md.md)
+
+Playwright Pages (from different BrowserContexts) to the executor. `PageDriver` bridges
+
+## [TASK-1450: PandasAgent STRUCTURED_MAP wiring](overviews/doc:sdd-tasks-completed-task-1450-pandasagent-struc-4ed241b0.md)
+
+Spec §3 Module 6 (G9). Wires `OutputMode.STRUCTURED_MAP` into `PandasAgent` so a
+
+## [TASK-1451: Implement SessionManager for BrowserContext lifecycle](overviews/doc:sdd-tasks-completed-task-1451-session-manager-md.md)
+
+FlowExecutor needs multiple BrowserContexts (one per "session" label). SessionManager owns
+
+## [TASK-1451: Structured map end-to-end integration tests](overviews/doc:sdd-tasks-completed-task-1451-structured-map-in-dd3f2bb3.md)
+
+Spec §4 Integration Tests + §5 Acceptance Criteria. Validates the full pipeline:
+
+## [TASK-1452: Implement FlowExecutor orchestration engine](overviews/doc:sdd-tasks-completed-task-1452-flow-executor-md.md)
+
+FlowExecutor is the orchestration engine that ties everything together: topological sort,
+
+## [TASK-1453: Add new public exports to scraping __init__.py](overviews/doc:sdd-tasks-completed-task-1453-scraping-exports-md.md)
+
+All new modules need to be importable from `parrot_tools.scraping`. This task adds the
+
+## [TASK-1454: StructuredOutputBase — extract the shared structured-output contract](overviews/doc:sdd-tasks-completed-task-1454-structured-output-base-md.md)
+
+Implements **Module 1** of the spec. The deterministic-extraction + envelope-routing +
+
+## [TASK-1455: Refactor STRUCTURED_CHART onto the deterministic base](overviews/doc:sdd-tasks-completed-task-1455-chart-determinist-cb3fe8bb.md)
+
+Implements **Module 2**. `STRUCTURED_CHART` (FEAT-215) currently takes the LLM-owns-data path that
+
+## [TASK-1456: Converge the chart config — one agnostic shape](overviews/doc:sdd-tasks-completed-task-1456-chart-config-conv-e45d16c8.md)
+
+Implements **Module 3**. A "chart" is represented **three** incompatible ways today:
+
+## [TASK-1457: Add ArtifactType.MAP + conform StructuredMapRenderer to the base](overviews/doc:sdd-tasks-completed-task-1457-artifacttype-map--d0e4bb25.md)
+
+Implements **Module 4 (complete + conform)**. The map leaf already shipped under **FEAT-221**
+
+## [TASK-1458: Homologation tests + migration note](overviews/doc:sdd-tasks-completed-task-1458-tests-and-migration-md.md)
+
+Implements **Module 5**. With the shared base (TASK-1454), the deterministic chart (TASK-1455), config
+
+## [TASK-1459: Add `ArtifactType.TABLE` + generalize `Artifact.from_structured_config`](overviews/doc:sdd-tasks-completed-task-1459-artifacttype-tabl-f9003493.md)
+
+Implements **Module 1** of FEAT-224. The persisted `Artifact` model only knows
+
+## [TASK-1459: Add FieldType.AUDIO to Core Type Enum](overviews/doc:sdd-tasks-completed-task-1459-fieldtype-audio-enum-md.md)
+
+This is the foundation task for the Audio Renderer feature. All other tasks
+
+## [TASK-146: Place Iron Butterfly](overviews/doc:sdd-tasks-completed-task-146-place-iron-butterfly-md.md)
+
+from alpaca.trading.requests import OptionLegRequest, MarketOrderRequest
+
+## [TASK-1460: Audio Data Models](overviews/doc:sdd-tasks-completed-task-1460-audio-data-models-md.md)
+
+Defines the Pydantic data models shared by the audio renderer and the
+
+## [TASK-1460: Chart renderer reads config from `output`/`structured_output` (drop `response.code` dependency)](overviews/doc:sdd-tasks-completed-task-1460-chart-renderer-co-12fbb380.md)
+
+Implements **Module 2** of FEAT-224 (G3). Today `StructuredChartRenderer.render`
+
+## [TASK-1461: AudioFieldRenderer — Per-Field Audio Input for HTML5](overviews/doc:sdd-tasks-completed-task-1461-audio-field-renderer-md.md)
+
+Adds audio input capability to the HTML5 renderer so any form can include an
+
+## [TASK-1461: PandasAgent builds `artifacts[]` envelope + removes chart `response.code` staging](overviews/doc:sdd-tasks-completed-task-1461-pandasagent-artif-eda355a6.md)
+
+Implements **Module 3** of FEAT-224 (G1, G2, G3, G6) — the core of the feature.
+
+## [TASK-1462: AudioFormRenderer — Standalone Audio Renderer](overviews/doc:sdd-tasks-completed-task-1462-audio-form-renderer-md.md)
+
+The core renderer that converts any `FormSchema` into an `AudioFormManifest` —
+
+## [TASK-1462: Align FEAT-103 handler auto-save with the structured artifact envelope](overviews/doc:sdd-tasks-completed-task-1462-handler-feat103-a-20492755.md)
+
+Implements **Module 4** of FEAT-224 (G5). The AgentTalk handler auto-save
+
+## [TASK-1463: AudioFormWSHandler — WebSocket Handler](overviews/doc:sdd-tasks-completed-task-1463-audio-ws-handler-md.md)
+
+The stateful WebSocket handler that manages the interactive audio form session.
+
+## [TASK-1463: End-to-end tests + flip frontend guide §2.5 to "implemented"](overviews/doc:sdd-tasks-completed-task-1463-integration-tests-819f29f5.md)
+
+Implements **Module 5** of FEAT-224. Adds end-to-end coverage proving the
+
+## [TASK-1464: Route Registration — WebSocket Mount & Renderer Seed](overviews/doc:sdd-tasks-completed-task-1464-audio-route-regis-6c2c0bc8.md)
+
+Wires the audio renderer and WebSocket handler into the existing route
+
+## [TASK-1464: Filter Contracts (Pydantic models)](overviews/doc:sdd-tasks-completed-task-1464-filter-contracts-md.md)
+
+Implements **Module 1** of the spec. All other modules consume these models, so
+
+## [TASK-1465: Audio Control Metadata Registration](overviews/doc:sdd-tasks-completed-task-1465-audio-control-metadata-md.md)
+
+Registers `FieldType.AUDIO` metadata in the form-controls registry so it
+
+## [TASK-1465: Instance Store + `define_filters()` Validation](overviews/doc:sdd-tasks-completed-task-1465-instance-store-de-4474350f.md)
+
+Implements **Module 2**. Adds the instance-scoped filter store (`self._filter_defs`)
+
+## [TASK-1466: Audio Renderer Integration Tests](overviews/doc:sdd-tasks-completed-task-1466-audio-integration-tests-md.md)
+
+End-to-end integration tests covering the full audio form lifecycle:
+
+## [TASK-1466: Filter Compiler (SQL push-down + pandas) + extend `_apply_filter`](overviews/doc:sdd-tasks-completed-task-1466-filter-compiler-md.md)
+
+Implements **Module 3**. Translates a `FilterCondition` into either a SQL `WHERE`
+
+## [TASK-1467: `apply_filters()` Orchestration + Spatial Delegation](overviews/doc:sdd-tasks-completed-task-1467-apply-filters-orc-a3e9cd05.md)
+
+Implements **Module 4** — the heart of the feature. Resolves a filter request
+
+## [TASK-1467: Lift Shared Auth Primitives to integrations/core/auth/](overviews/doc:sdd-tasks-completed-task-1467-lift-shared-auth--ac055df4.md)
+
+This is the gating task for the entire feature. The Telegram integration
+
+## [TASK-1468: Slack Command Router + Jira Commands](overviews/doc:sdd-tasks-completed-task-1468-slack-command-rou-42ad16ad.md)
+
+The Slack integration currently handles only three built-in commands (`help`,
+
+## [TASK-1468: Value Catalogs (`get_filter_values`) + Cache](overviews/doc:sdd-tasks-completed-task-1468-value-catalogs-md.md)
+
+Implements **Module 5**. Provides the distinct-value lists that the frontend uses
+
+## [TASK-1469: `get_filter_schema()` + `suggest_filters()` (opt-in auto-discovery)](overviews/doc:sdd-tasks-completed-task-1469-schema-and-suggest-md.md)
+
+Implements **Module 6**. `get_filter_schema()` serializes the catalog for the
+
+## [TASK-1469: Slack OAuth Callback + DM Notification](overviews/doc:sdd-tasks-completed-task-1469-slack-oauth-callb-61d417b5.md)
+
+After a Slack user consents in the Atlassian OAuth flow, the browser
+
+## [TASK-147: Place Iron Condor](overviews/doc:sdd-tasks-completed-task-147-place-iron-condor-md.md)
+
+Implemented `place_iron_condor()` in `AlpacaOptionsToolkit`:
+
+## [TASK-1470: Slack Wrapper + Socket Handler Wiring](overviews/doc:sdd-tasks-completed-task-1470-slack-wrapper-wiring-md.md)
+
+TASK-1468 created `SlackCommandRouter` and Jira command handlers.
+
+## [TASK-1470: LLM Tools + HTTP/AgenTalk Transport](overviews/doc:sdd-tasks-completed-task-1470-tools-and-transport-md.md)
+
+Implements **Module 7** — the surfaces. Exposes the filtering API to (a) the LLM
+
+## [TASK-1471: MS Teams Command Router + Jira Commands](overviews/doc:sdd-tasks-completed-task-1471-msteams-command-r-bff62d70.md)
+
+The MS Teams integration has no command infrastructure — all messages go
+
+## [TASK-1472: MS Teams OAuth Callback + Proactive Notification](overviews/doc:sdd-tasks-completed-task-1472-msteams-oauth-cal-b6edf44a.md)
+
+After a Teams user consents in the Atlassian OAuth flow, the callback
+
+## [TASK-1473: MS Teams Wrapper Wiring](overviews/doc:sdd-tasks-completed-task-1473-msteams-wrapper-wiring-md.md)
+
+TASK-1471 created `MSTeamsCommandRouter` and Jira command handlers.
+
+## [TASK-1474: Config + Callback Route Extension (Integration Test)](overviews/doc:sdd-tasks-completed-task-1474-callback-route-ex-4283ea50.md)
+
+This is the final integration task. TASK-1469 and TASK-1472 each added their
+
+## [TASK-1475: Data Models for Computer-Use](overviews/doc:sdd-tasks-completed-task-1475-computer-use-models-md.md)
+
+Foundation task — all other FEAT-227 tasks depend on these data models.
+
+## [TASK-1475: Conference data models (PeerVote, ConferenceRound, ConferenceResult)](overviews/doc:sdd-tasks-completed-task-1475-conference-data-models-md.md)
+
+Implements Module 1 of the spec (§2 Data Models, §3 Module 1). These Pydantic
+
+## [TASK-1476: AsyncComputerBackend](overviews/doc:sdd-tasks-completed-task-1476-async-computer-backend-md.md)
+
+Implements spec §2 AsyncComputerBackend and §3 Module 2. This is the async Playwright
+
+## [TASK-1476: Broadcast round + anonymized peer-context helpers](overviews/doc:sdd-tasks-completed-task-1476-broadcast-and-ano-f58393fc.md)
+
+Implements Module 2 of the spec (§2 Component Diagram, §3 Module 2). Provides the two
+
+## [TASK-1477: ComputerInteractionToolkit](overviews/doc:sdd-tasks-completed-task-1477-computer-interact-2c1c9387.md)
+
+Implements spec §2 ComputerInteractionToolkit and §3 Module 3. This is the AbstractToolkit
+
+## [TASK-1477: Structured voting, weighted tally, convergence loop, and confer()](overviews/doc:sdd-tasks-completed-task-1477-voting-tally-conv-5caccb99.md)
+
+Implements Module 3 of the spec (§2 Overview/Component Diagram, §3 Module 3) — the heart
+
+## [TASK-1478: ComputerAgent](overviews/doc:sdd-tasks-completed-task-1478-computer-agent-md.md)
+
+Implements spec §2 ComputerAgent and §3 Module 4. Agent subclass configured for
+
+## [TASK-1478: Integration tests + no-regression guard for confer()](overviews/doc:sdd-tasks-completed-task-1478-integration-tests-9a9195da.md)
+
+Implements Module 4 of the spec (§4 Integration Tests, §5 Acceptance Criteria). Locks in
+
+## [TASK-1479: GoogleGenAIClient Computer-Use Support](overviews/doc:sdd-tasks-completed-task-1479-google-client-com-8a56eb70.md)
+
+Implements spec §3 Module 5. Extends GoogleGenAIClient to support the `types.ComputerUse`
+
+## [TASK-1479: Add `ReportKind.ADVISORY` enum value](overviews/doc:sdd-tasks-completed-task-1479-reportkind-adviso-b5d7330b.md)
+
+The daily advisory output produced by the new `SecurityAdvisor` agent must be
+
+## [TASK-148: Get Options Positions](overviews/doc:sdd-tasks-completed-task-148-get-options-positions-md.md)
+
+def parse_occ_symbol(symbol: str) -> dict:
+
+## [TASK-1480: GoogleModel Computer-Use Entries](overviews/doc:sdd-tasks-completed-task-1480-google-model-entries-md.md)
+
+Implements spec §3 Module 6. Adds computer-use model entries to the GoogleModel enum
+
+## [TASK-1480: SecurityAdvisoryEngine — day-over-day diff + SOC2 mapping](overviews/doc:sdd-tasks-completed-task-1480-security-advisory-07e3753b.md)
+
+The advisor's deterministic brain. Given the cross-session report catalog, this
+
+## [TASK-1481: Package Registration & Init](overviews/doc:sdd-tasks-completed-task-1481-package-registration-md.md)
+
+Implements spec §3 Module 7. Wires up the package exports and registers
+
+## [TASK-1481: SOC2AdvisoryToolkit — LLM-facing read-only advisory tools](overviews/doc:sdd-tasks-completed-task-1481-soc2-advisory-toolkit-md.md)
+
+Wrap the `SecurityAdvisoryEngine` and the existing `ComplianceMapper` as
+
+## [TASK-1482: Integration Tests](overviews/doc:sdd-tasks-completed-task-1482-integration-tests-md.md)
+
+Implements spec §3 Module 8 and §4 Integration Tests. End-to-end tests that verify
+
+## [TASK-1482: SecurityAdvisor agent — read-only, scheduled daily SOC2 advisory](overviews/doc:sdd-tasks-completed-task-1482-security-advisor-agent-md.md)
+
+The user-facing deliverable: a new `SecurityAdvisor` `Agent` that is **strictly
+
+## [TASK-1483: Package exports + advisor documentation](overviews/doc:sdd-tasks-completed-task-1483-exports-and-docs-md.md)
+
+Make the new advisory components importable from the package's public surface
+
+## [TASK-1484: EmbeddingIntentRouter engine (pure, e5-based)](overviews/doc:sdd-tasks-completed-task-1484-embedding-intent--5d6668d5.md)
+
+Implements spec §3 Module 1. The pure, agent-decoupled embedding engine that
+
+## [TASK-1484: Multimodal Embedding Base ABC & Enums](overviews/doc:sdd-tasks-completed-task-1484-multimodal-base-abc-md.md)
+
+This is the foundation task for the multimodal embedding feature. It creates the
+
+## [TASK-1485: Extend IntentRouterConfig with output-mode routing fields](overviews/doc:sdd-tasks-completed-task-1485-extend-intentrout-eb71df74.md)
+
+Implements spec §3 Module 2. Adds the configuration fields the output-mode
+
+## [TASK-1485: Quantization & Matryoshka Post-processing](overviews/doc:sdd-tasks-completed-task-1485-quantization-post-99a419e2.md)
+
+This task implements the shared post-processing pipeline for multimodal embeddings:
+
+## [TASK-1486: Add output_mode / intent_score fields to RequestContext](overviews/doc:sdd-tasks-completed-task-1486-requestcontext-ou-38c13e3e.md)
+
+Implements spec §3 Module 3 and the U3 resolution: the resolved output mode is
+
+## [TASK-1486: UForm Embedding Provider](overviews/doc:sdd-tasks-completed-task-1486-uform-provider-md.md)
+
+This task implements `UFormEmbedding`, the first concrete multimodal embedding
+
+## [TASK-1487: AbstractBot._resolve_output_mode no-op hook + ask()/conversation() call sites](overviews/doc:sdd-tasks-completed-task-1487-abstractbot-resol-cab7d9b8.md)
+
+Implements spec §3 Module 4 (G3). Declares the single narrow template-method
+
+## [TASK-1487: Registry & Catalog Integration](overviews/doc:sdd-tasks-completed-task-1487-registry-catalog--4634a404.md)
+
+This task wires `UFormEmbedding` into the existing embedding infrastructure so
+
+## [TASK-1488: Evolve IntentRouterMixin — output-mode routing + LLM tie-breaker](overviews/doc:sdd-tasks-completed-task-1488-evolve-intentrout-03357727.md)
+
+Implements spec §3 Module 5 — the heart of the feature. Adds output-mode routing
+
+## [TASK-1488: PgVector Multimodal Collection Schema](overviews/doc:sdd-tasks-completed-task-1488-pgvector-multimod-5ab8af52.md)
+
+This task creates a parallel multimodal collection table in PgVector, separate
+
+## [TASK-1489: Multimodal Embedding Benchmark Harness](overviews/doc:sdd-tasks-completed-task-1489-benchmark-harness-md.md)
+
+This task delivers the benchmark harness that serves as a decision gate: it
+
+## [TASK-1489: Integration tests (ask/conversation end-to-end) + retrieval no-regression](overviews/doc:sdd-tasks-completed-task-1489-integration-and-n-02353093.md)
+
+Implements spec §4 Integration Tests and §5 closing criteria. Validates the full
+
+## [TASK-149: Close Options Position](overviews/doc:sdd-tasks-completed-task-149-close-options-position-md.md)
+
+close_legs = []
+
+## [TASK-1490: Driver–Dialect Map](overviews/doc:sdd-tasks-completed-task-1490-driver-dialect-map-md.md)
+
+driver aliases (as returned by `normalize_driver`) to sqlglot 30.9.0 dialect
+
+## [TASK-1490: Multimodal Embedding Integration Tests](overviews/doc:sdd-tasks-completed-task-1490-integration-tests-md.md)
+
+This task writes the integration test suite that validates the full multimodal
+
+## [TASK-1491: Physical-Resource Resolver](overviews/doc:sdd-tasks-completed-task-1491-physical-resource-5db0a391.md)
+
+that inspects a `DataSource` subclass and returns the set of driver + tables /
+
+## [TASK-1492: Opaque-Source Resolvers](overviews/doc:sdd-tasks-completed-task-1492-opaque-source-resolvers-md.md)
+
+with per-type extraction logic for each non-SQL `DataSource` subclass.
+
+## [TASK-1493: RLS Registry](overviews/doc:sdd-tasks-completed-task-1493-rls-registry-md.md)
+
+template with subject attributes, producing bound parameters (not interpolated).
+
+## [TASK-1494: RLS Predicate Injection](overviews/doc:sdd-tasks-completed-task-1494-rls-predicate-injection-md.md)
+
+— sqlglot AST rewrite: wrap as `SELECT * FROM (<orig>) AS _rls WHERE <pred>`
+
+## [TASK-1495: DataPlanePolicyGuard](overviews/doc:sdd-tasks-completed-task-1495-dataplane-policy-guard-md.md)
+
+driver gate → table/source gate. Raises `AuthorizationRequired` on denial.
+
+## [TASK-1496: AuthorizingDataSource Decorator](overviews/doc:sdd-tasks-completed-task-1496-authorizing-data-source-md.md)
+
+a callable that returns the current `PermissionContext` (from `_pctx_var`).
+
+## [TASK-1497: DatasetManager Integration](overviews/doc:sdd-tasks-completed-task-1497-datasetmanager-in-03190ad7.md)
+
+wraps the source in `AuthorizingDataSource` when `dataplane_guard` is set.
+
+## [TASK-1498: DatabaseQueryTool Integration](overviews/doc:sdd-tasks-completed-task-1498-databasequerytool-beea0a6e.md)
+
+here), remote execution (Module 10).
+
+## [TASK-1499: Agent-identity ContextVar module](overviews/doc:sdd-tasks-completed-task-1499-agent-identity-co-4bcecf77.md)
+
+Foundation of FEAT-228 (spec §2 Overview, §3 Module 1). The per-agent metric
+
+## [TASK-150: Options Toolkit Unit Tests](overviews/doc:sdd-tasks-completed-task-150-options-toolkit-un-523c4b9e.md)
+
+@pytest.fixture
+
+## [TASK-1500: Add agent_name field to client lifecycle events](overviews/doc:sdd-tasks-completed-task-1500-client-event-agen-29cf762a.md)
+
+Spec §2 Data Models, §3 Module 2. The agent identity must ride on the client
+
+## [TASK-1501: Bind agent identity around bot invocations](overviews/doc:sdd-tasks-completed-task-1501-bot-invocation-wrapping-md.md)
+
+Spec §2 Overview, §3 Module 3. The ContextVar from TASK-1499 must be SET for the
+
+## [TASK-1502: Populate agent_name on client events from the ContextVar](overviews/doc:sdd-tasks-completed-task-1502-client-populate-a-5341b1f2.md)
+
+Spec §2 Overview step 3, §3 Module 4. The client builds its three lifecycle
+
+## [TASK-1503: Add parrot.agent.name label to client metrics](overviews/doc:sdd-tasks-completed-task-1503-metrics-agent-label-md.md)
+
+Spec §1 Problem Statement, §3 Module 5 — the core deliverable. The cost counter,
+
+## [TASK-1504: Add parrot.agent.name to the client span](overviews/doc:sdd-tasks-completed-task-1504-client-span-agent-attr-md.md)
+
+Spec §2 Overview step 4, §3 Module 6. Traces already carry `parrot.agent.name`
+
+## [TASK-1505: Vendor the Workday composable + rebase onto parrot core](overviews/doc:sdd-tasks-completed-task-1505-vendor-workday-co-e36fba13.md)
+
+Implements **Module 1** of the spec. A mature composable Workday interface lives
+
+## [TASK-1506: Refactor WorkdayToolkit to delegate to the composable](overviews/doc:sdd-tasks-completed-task-1506-refactor-toolkit--0db791d3.md)
+
+Implements **Module 2**. Today `WorkdayToolkit` (`parrot_tools/workday/tool.py`,
+
+## [TASK-1507: Read-path homologation — 9 agent-facing tools](overviews/doc:sdd-tasks-completed-task-1507-read-path-homologation-md.md)
+
+Implements **Module 3**. Adds the 9 read/utility homologated methods to
+
+## [TASK-1508: `request_my_time_off` write handler (NEW operation)](overviews/doc:sdd-tasks-completed-task-1508-request-time-off--2d4ff8e3.md)
+
+Implements **Module 4**. No time-off WRITE operation exists in the vendored
+
+## [TASK-1509: `get_my_time_off_eligibility` handler (NEW operation)](overviews/doc:sdd-tasks-completed-task-1509-time-off-eligibil-d39b9879.md)
+
+Implements **Module 5**. No eligibility operation exists in the vendored source
+
+## [TASK-151: CIO Options Strategy Prompt](overviews/doc:sdd-tasks-completed-task-151-cio-options-prompt-md.md)
+
+Added comprehensive options strategy guidance to the CIO agent prompt:
+
+## [TASK-1510: Supertonic TTS backend](overviews/doc:sdd-tasks-completed-task-1510-supertonic-tts-backend-md.md)
+
+Implements **Module 1** of the spec (§3). The voice round-trip needs a
+
+## [TASK-1511: Moonshine STT backend](overviews/doc:sdd-tasks-completed-task-1511-moonshine-stt-backend-md.md)
+
+Implements **Module 2** of the spec (§3). Adds an opt-in sub-second STT backend
+
+## [TASK-1512: AgentVoiceTalk handler](overviews/doc:sdd-tasks-completed-task-1512-agentvoicetalk-handler-md.md)
+
+Implements **Module 3** of the spec (§3) — the heart of the feature. A thin REST
+
+## [TASK-1513: Voice route registration + extras-guarded wiring](overviews/doc:sdd-tasks-completed-task-1513-voice-route-regis-0febc3cb.md)
+
+Implements **Module 4** of the spec (§3). Wires the new `AgentVoiceTalk` handler
+
+## [TASK-1514: Bedrock model-ID translator](overviews/doc:sdd-tasks-completed-task-1514-bedrock-model-tra-f4e3df96.md)
+
+Implements **Module 1** of the spec. Bedrock requires prefixed / inference-profile
+
+## [TASK-1515: Add AWS session-token & Anthropic-AWS workspace conf constants](overviews/doc:sdd-tasks-completed-task-1515-aws-conf-constants-md.md)
+
+Implements **Module 4** of the spec. The Bedrock and AWS-workspace backends need
+
+## [TASK-1516: Fold `aws` into the `[anthropic]` packaging extra](overviews/doc:sdd-tasks-completed-task-1516-anthropic-aws-pac-31a157f4.md)
+
+Implements **Module 6** of the spec. The Bedrock and AWS-workspace clients require
+
+## [TASK-1517: Backend strategy objects (Direct / Bedrock / AWS-workspace)](overviews/doc:sdd-tasks-completed-task-1517-anthropic-backend-e9508051.md)
+
+Implements **Module 2** of the spec. These are the composable backend objects that
+
+## [TASK-1518: Integrate backend strategy into AnthropicClient](overviews/doc:sdd-tasks-completed-task-1518-anthropicclient-b-3c417b0f.md)
+
+Implements **Module 3** of the spec — the heart of the feature. Adds the `backend`
+
+## [TASK-1519: Register `bedrock` / `anthropic-aws` provider keys in LLMFactory](overviews/doc:sdd-tasks-completed-task-1519-factory-aws-backe-91d463ae.md)
+
+Implements **Module 5** of the spec. Exposes the new backends through
+
+## [TASK-152: CIO Toolset Integration](overviews/doc:sdd-tasks-completed-task-152-cio-toolset-integration-md.md)
+
+from parrot.finance.tools.alpaca_options import AlpacaOptionsToolkit
+
+## [TASK-1520: Payroll handlers in the Workday composable](overviews/doc:sdd-tasks-completed-task-1520-payroll-handlers--a19508ac.md)
+
+Implements **Module 1**. The composable has NO payroll handlers today (only the
+
+## [TASK-1521: Migrate the 3 payroll toolkit methods to the composable](overviews/doc:sdd-tasks-completed-task-1521-migrate-payroll-methods-md.md)
+
+Implements **Module 2**. The 3 payroll methods are the only ones still on the
+
+## [TASK-1522: Delete the legacy SOAP routing block](overviews/doc:sdd-tasks-completed-task-1522-delete-legacy-soa-1171435e.md)
+
+Implements **Module 3** — the payoff. With all `wd_*` methods (incl. payroll, after
+
+## [TASK-1523: Widen DependencyRule.logic to and|or|xor|not](overviews/doc:sdd-tasks-completed-task-1523-widen-dependency-logic-md.md)
+
+Foundational model change (spec §3 Module 1). `DependencyRule.logic` is currently
+
+## [TASK-1524: DependencyOperation model (copy/arithmetic/string-date/lookup-aggregate)](overviews/doc:sdd-tasks-completed-task-1524-dependency-operat-ff2813dd.md)
+
+Spec §3 Module 2. Adds the `DependencyOperation` Pydantic model — the vocabulary for computing a
+
+## [TASK-1525: PostDependency model + FormField.post_depends attribute](overviews/doc:sdd-tasks-completed-task-1525-postdependency-mo-9167a3fe.md)
+
+Spec §3 Module 3. Introduces forward dependencies: how a control's answered value affects controls
+
+## [TASK-1526: FormValidator rule-integrity pass + extended cycle detection](overviews/doc:sdd-tasks-completed-task-1526-rule-validation-c-ae5d5afb.md)
+
+Spec §3 Module 4 — the heart of the authoring infrastructure. Adds a rule-integrity validation
+
+## [TASK-1527: JsonSchemaRenderer emits x-post-depends + serialized operations](overviews/doc:sdd-tasks-completed-task-1527-jsonschema-post-d-f2d7a7f6.md)
+
+Spec §3 Module 5. The JSON Schema renderer already serializes pre-dependencies as `x-depends-on`.
+
+## [TASK-1528: EditToolkit dependency CRUD + CreateFormTool rule coverage](overviews/doc:sdd-tasks-completed-task-1528-edit-toolkit-rule-afd723a6.md)
+
+Spec §3 Module 6 (tools slice). Closes the core authoring gap: today `EditToolkit` can add/update
+
+## [TASK-1529: Control-registry rule capability metadata + field_helpers snippets](overviews/doc:sdd-tasks-completed-task-1529-control-registry--4d0ae469.md)
+
+Spec §3 Module 6 (metadata/helpers slice). To author rules, a designer UI/LLM needs to know which
+
+## [TASK-153: Risk Analyst Options Tools](overviews/doc:sdd-tasks-completed-task-153-risk-analyst-optio-8d985115.md)
+
+1. **Added 3 input schemas** to `parrot/finance/tools/alpaca_options.py`:
+
+## [TASK-1530: Optional RuleEvaluator service (server-side authoritative resolution)](overviews/doc:sdd-tasks-completed-task-1530-rule-evaluator-service-md.md)
+
+Spec §3 Module 7 + §2 New Public Interfaces. Provides the optional, authoritative server-side
+
+## [TASK-1531: Extractor round-trip for post_depends/operations + legacy re-exports](overviews/doc:sdd-tasks-completed-task-1531-extractor-roundtr-efc58544.md)
+
+Spec §3 Module 8. Forms are imported/exported via extractors; the new `post_depends`/`operations`
+
+## [TASK-1532: Documentation — dependency/operation/post-dependency reference](overviews/doc:sdd-tasks-completed-task-1532-dependency-rules-docs-md.md)
+
+Spec §5 Acceptance Criteria requires documentation. This task writes the formdesigner reference for
+
+## [TASK-1533: Confirmation models & window store](overviews/doc:sdd-tasks-completed-task-1533-confirmation-mode-ae81111a.md)
+
+Foundation of the confirmation subsystem (spec §2 Data Models, §3 Module 1).
+
+## [TASK-1534: ConfirmationGuard core lifecycle](overviews/doc:sdd-tasks-completed-task-1534-confirmation-guard-core-md.md)
+
+The governor itself (spec §2 Overview + New Public Interfaces, §3 Module 1).
+
+## [TASK-1535: Briefing renderer & edit-before-execute re-validation](overviews/doc:sdd-tasks-completed-task-1535-briefing-renderer-bb54d33d.md)
+
+Spec §3 Module 2. Replaces the minimal raw briefing from TASK-1534 with a
+
+## [TASK-1536: ToolManager integration (dispatch gate)](overviews/doc:sdd-tasks-completed-task-1536-toolmanager-integration-md.md)
+
+Spec §2 Integration Points + §3 Module 3. Wires `ConfirmationGuard` into
+
+## [TASK-1537: Declaration surface (@tool, spawn, toolkit)](overviews/doc:sdd-tasks-completed-task-1537-declaration-surface-md.md)
+
+Spec §3 Module 4. Exposes the confirmation metadata to tool authors via three
+
+## [TASK-1538: Exports, demo agent, docs & integration tests](overviews/doc:sdd-tasks-completed-task-1538-exports-demo-agen-b0d50a5e.md)
+
+Spec §3 Module 5. Surfaces the feature: export the public API from
+
+## [TASK-1539: VoiceMode Enum + Audio Model Extensions](overviews/doc:sdd-tasks-completed-task-1539-voicemode-model-e-1552d87d.md)
+
+Spec §2 (Data Models) + §3 Module 1. This is the foundation task: it introduces
+
+## [TASK-154: Options Integration Tests (Paper Trading)](overviews/doc:sdd-tasks-completed-task-154-options-integratio-5e6b8613.md)
+
+import pytest
+
+## [TASK-1540: Voice-Mode Classification + SuperTonic-first Synthesizer](overviews/doc:sdd-tasks-completed-task-1540-voice-mode-classi-5171fbb5.md)
+
+Spec §2 (pillars 1 & 2) + §3 Module 2. Evolve `AudioFormRenderer` to (a) classify
+
+## [TASK-1541: Per-VoiceMode WebSocket Dispatch + Fallback Handlers](overviews/doc:sdd-tasks-completed-task-1541-ws-handler-voice--9325188d.md)
+
+Spec §2 (pillar 3 + WebSocket Protocol) + §3 Module 3. The core behavioral task:
+
+## [TASK-1542: Routes / SuperTonic-first Wiring Defaults](overviews/doc:sdd-tasks-completed-task-1542-routes-supertonic-2e0d60f6.md)
+
+Spec §3 Module 4. `setup_form_api()` already accepts `synthesizer`,
+
+## [TASK-1543: Audio Form Integration Tests (Hybrid Voice Flows)](overviews/doc:sdd-tasks-completed-task-1543-audio-form-integr-25092817.md)
+
+Spec §3 Module 5 + §4 (Integration Tests). End-to-end coverage of the evolved
+
+## [TASK-1544: Add backend field to EmbeddingModelEntry + new catalog entries](overviews/doc:sdd-tasks-completed-task-1544-catalog-backend-field-md.md)
+
+Module 1 of FEAT-237. The `EmbeddingModelEntry` Pydantic schema in `catalog.py` currently lacks a `backend` field, preventing ONNX/OpenVINO model entries from being expressed in the catalog. This task adds the field and registers new embedding model entries needed by the benchmar
+
+## [TASK-1545: Add backend/file_name kwargs to SentenceTransformerModel](overviews/doc:sdd-tasks-completed-task-1545-st-model-backend-kwarg-md.md)
+
+Module 2 of FEAT-237. The `SentenceTransformerModel` wrapper in `huggingface.py` does not forward `backend` or `file_name` kwargs to the `SentenceTransformer()` constructor, despite `sentence-transformers>=5.0.0` supporting ONNX/OpenVINO backends natively. This task closes that g
+
+## [TASK-1546: Implement NodeEmbeddingStore (two-tier content-addressed cache)](overviews/doc:sdd-tasks-completed-task-1546-node-embedding-store-md.md)
+
+Module 3 of FEAT-237. This is the core data structure: a two-tier content-addressed embedding cache for PageIndex trees. The global tier stores per-node embedding vectors keyed by `sha1(model_id + "\x00" + title + "\x00" + summary)` — this survives `reindex_node_ids` which rewrit
+
+## [TASK-1547: Add _vec_rank dense signal and RRF fusion (Phase A)](overviews/doc:sdd-tasks-completed-task-1547-dense-rrf-fusion-md.md)
+
+Module 4 of FEAT-237 — the core Phase A change. Adds a dense embedding ranking signal (`_vec_rank`) to `HybridPageIndexSearch` and fuses it as a third input to `_rrf_fuse`. This closes the synonymy/paraphrase gap: queries that BM25 misses because of vocabulary mismatch can now be
+
+## [TASK-1548: Implement embedding beam walk (Phase B, flag-gated)](overviews/doc:sdd-tasks-completed-task-1548-embedding-beam-walk-md.md)
+
+Module 5 of FEAT-237 — the Phase B embedding-guided beam walk. Instead of serializing the entire tree to JSON for the LLM walk, this beam search descends the tree using local `(n_children, d) @ (d,)` matmuls at each level, keeping top `beam_width` branches. The LLM never reads th
+
+## [TASK-1549: Wire NodeEmbeddingStore into PageIndexToolkit](overviews/doc:sdd-tasks-completed-task-1549-toolkit-wiring-md.md)
+
+Module 6 of FEAT-237. The `PageIndexToolkit` orchestrates tree lifecycle (create, search, persist, delete). This task wires the new `NodeEmbeddingStore` into the toolkit so that:
+
+## [TASK-155: Greeks Caching](overviews/doc:sdd-tasks-completed-task-155-greeks-caching-md.md)
+
+from functools import lru_cache
+
+## [TASK-1550: Build compliance corpus (SOC 2 + HIPAA) from manifest](overviews/doc:sdd-tasks-completed-task-1550-compliance-corpus-md.md)
+
+Module 7 of FEAT-237. The compliance corpus serves a dual purpose: it is the benchmark fixture for Module 8 (CPU latency benchmark) AND the first real knowledge bank for the future `ComplianceEvidenceAgent`. The corpus is built from a manifest that pins source URLs with SHA-256 c
+
+## [TASK-1551: CPU latency micro-benchmark harness](overviews/doc:sdd-tasks-completed-task-1551-cpu-latency-benchmark-md.md)
+
+Module 8 of FEAT-237. The benchmark measures embedding model performance on the compliance corpus to produce a data-driven model recommendation. The matrix covers models x backends x dimensions, measuring CPU latency percentiles, RSS memory, and recall@k. Results inform which mod
+
+## [TASK-1552: Fireflies MCP env-var key fallback (FIREFLIES_API_KEY)](overviews/doc:sdd-tasks-completed-task-1552-fireflies-env-key-fe80fe1c.md)
+
+The Fireflies.ai MCP server is already wired into the MCP Client definition
+
+## [TASK-1552: Controlled Type & Relation Vocabulary (ontology.py)](overviews/doc:sdd-tasks-completed-task-1552-okf-ontology-md.md)
+
+This is the foundational leaf module for the OKF Knowledge Layer. Every other
+
+## [TASK-1553: Deterministic Slug Generation (concept_id.py)](overviews/doc:sdd-tasks-completed-task-1553-okf-concept-id-md.md)
+
+(which is volatile — reassigned by `reindex_node_ids` on every mutation), `concept_id`
+
+## [TASK-1554: Frontmatter Model & Projection (frontmatter.py)](overviews/doc:sdd-tasks-completed-task-1554-okf-frontmatter-md.md)
+
+The frontmatter is the **deterministic mirror** of the authoritative JSON node onto
+
+## [TASK-1555: In-Memory Knowledge Graph (graph.py)](overviews/doc:sdd-tasks-completed-task-1555-okf-graph-md.md)
+
+The in-memory knowledge graph is the backbone that enables multi-hop retrieval.
+
+## [TASK-1556: Deterministic Sidecar & Index Generation (projection.py)](overviews/doc:sdd-tasks-completed-task-1556-okf-projection-md.md)
+
+This module is the "single writer" that projects the authoritative JSON onto disk.
+
+## [TASK-1557: okf-migrate Command (migrate.py)](overviews/doc:sdd-tasks-completed-task-1557-okf-migrate-md.md)
+
+OKF fields. It takes a bare tree (node_id-keyed, no concept_id, no type, no
+
+## [TASK-1558: Named Read Tools (tools.py)](overviews/doc:sdd-tasks-completed-task-1558-okf-tools-md.md)
+
+The enriched JSON + in-memory graph turn `PageIndexToolkit` from a single `_search_for`
+
+## [TASK-1559: Integration Edits — tree_ops, toolkit, content_store](overviews/doc:sdd-tasks-completed-task-1559-okf-integration-md.md)
+
+This is the final integration task. All new OKF modules exist; now they must be wired
+
+## [TASK-156: Position P&L Tracking](overviews/doc:sdd-tasks-completed-task-156-position-pnl-tracking-md.md)
+
+entry_credit = sum(leg.entry_price for leg in short_legs) - \
+
+## [TASK-1560: Create Shared OKF Ontology Package + PageIndex Re-exports](overviews/doc:sdd-tasks-completed-task-1560-shared-okf-ontology-md.md)
+
+This is the foundation task for FEAT-239. The OKF type vocabulary
+
+## [TASK-1561: Move Frontmatter Engine to Shared OKF Package](overviews/doc:sdd-tasks-completed-task-1561-shared-okf-frontmatter-md.md)
+
+After TASK-1560 creates the shared `parrot/knowledge/okf/` package with the
+
+## [TASK-1562: Knowledge URI Scheme](overviews/doc:sdd-tasks-completed-task-1562-knowledge-uri-scheme-md.md)
+
+The `knowledge://` URI scheme provides unified cross-index addressing.
+
+## [TASK-1563: GraphIndex Projection Layer](overviews/doc:sdd-tasks-completed-task-1563-graphindex-projection-md.md)
+
+This is the core implementation task. It creates the GraphIndex projection
+
+## [TASK-1565: Add ConceptType.OTHER to OKF Ontology](overviews/doc:sdd-tasks-completed-task-1565-concepttype-other-fb1cf8ae.md)
+
+OKF bundle import must handle arbitrary `type` values from external OKF bundles.
+
+## [TASK-1565: Knowledge Gap Detection Functions](overviews/doc:sdd-tasks-completed-task-1565-knowledge-gap-detection-md.md)
+
+from parrot.knowledge.graphindex.schema import (
+
+## [TASK-1565: Core Data Models and Retriever Skeleton](overviews/doc:sdd-tasks-completed-task-1565-retriever-data-models-md.md)
+
+This is the foundation task for the Graph-Expanded Retrieval Pipeline (FEAT-217).
+
+## [TASK-1566: Composite Surprise Scoring](overviews/doc:sdd-tasks-completed-task-1566-composite-surpris-d7a17c4f.md)
+
+and compute composite scores using the 5-signal system
+
+## [TASK-1566: Knowledge Lint Engine](overviews/doc:sdd-tasks-completed-task-1566-knowledge-lint-engine-md.md)
+
+Implements Karpathy's lint pattern for the OKF knowledge graph. The KnowledgeGraph
+
+## [TASK-1566: Phase 1 — Seed Search Adapters](overviews/doc:sdd-tasks-completed-task-1566-seed-search-adapters-md.md)
+
+Phase 1 of the 4-phase retrieval pipeline. Seed search selects initial nodes
+
+## [TASK-1567: Phase 2 — Graph Expansion Engine](overviews/doc:sdd-tasks-completed-task-1567-graph-expansion-engine-md.md)
+
+Phase 2 is the core of the graph-expanded retrieval pipeline. Starting from seed
+
+## [TASK-1567: Insight Dismissal + GRAPH_REPORT.md Knowledge Gaps Section](overviews/doc:sdd-tasks-completed-task-1567-insight-dismissal-c22d7f9d.md)
+
+isolated nodes, sparse communities, bridge nodes
+
+## [TASK-1567: OKF Bundle Export](overviews/doc:sdd-tasks-completed-task-1567-okf-bundle-export-md.md)
+
+PageIndex's OKF layer (FEAT-238) projects sidecars with `pageindex://` URIs and
+
+## [TASK-1568: Phase 3+4 — Community Context and Result Assembly](overviews/doc:sdd-tasks-completed-task-1568-community-context-a5535c52.md)
+
+Phase 3 annotates expanded nodes with community information (community_id, cohesion)
+
+## [TASK-1568: OKF Bundle Import](overviews/doc:sdd-tasks-completed-task-1568-okf-bundle-import-md.md)
+
+Completes the OKF interchange by implementing the import path: read an OKF bundle
+
+## [TASK-1568: Toolkit Gap Detection & Insight Management Tools](overviews/doc:sdd-tasks-completed-task-1568-toolkit-gap-and-i-b0cee2c8.md)
+
+from parrot.tools.toolkit import AbstractToolkit # base class
+
+## [TASK-1569: OKFToolkit Lint & Bundle Tools](overviews/doc:sdd-tasks-completed-task-1569-okftoolkit-lint-b-2b88be8b.md)
+
+Extends the existing `OKFToolkit` with 3 new agent-facing tools that expose the
+
+## [TASK-1569: Toolkit Integration — search_with_expansion Tool](overviews/doc:sdd-tasks-completed-task-1569-toolkit-integration-md.md)
+
+The final integration step: expose the `GraphExpandedRetriever` as a new tool
+
+## [TASK-157: Options Toolkit Documentation](overviews/doc:sdd-tasks-completed-task-157-options-documentation-md.md)
+
+1. **Overview**
+
+## [TASK-1570: OKF Lint & Bundle Integration Tests](overviews/doc:sdd-tasks-completed-task-1570-okf-lint-bundle-i-f714407c.md)
+
+Final integration pass for FEAT-216. Verifies end-to-end workflows:
+
+## [TASK-1571: OdooToolkit `odoo-bin` / `odoo-cli` shell functions](overviews/doc:sdd-tasks-completed-task-1571-odoo-shell-toolki-d9688e38.md)
+
+Implements **Module 1** of the spec. The existing `OdooToolkit` is RPC-only
+
+## [TASK-1571: Schema & Ontology Prerequisites — Add EdgeKind.EXTENDS](overviews/doc:sdd-tasks-completed-task-1571-schema-ontology-extends-md.md)
+
+This is the prerequisite task for FEAT-240. All other tasks depend on the
+
+## [TASK-1572: CodeExtractor Enhancements — mtime, sha1, lineno](overviews/doc:sdd-tasks-completed-task-1572-code-extractor-en-b4451e1f.md)
+
+The base `CodeExtractor` needs three backward-compatible additions so that
+
+## [TASK-1572: Odoo documentation generation script (`fetch_odoo_docs.sh`)](overviews/doc:sdd-tasks-completed-task-1572-fetch-odoo-docs-script-md.md)
+
+Implements **Module 2** of the spec. Generates the official Odoo 16 / 18 / 19
+
+## [TASK-1573: SQLitePersistence Backend](overviews/doc:sdd-tasks-completed-task-1573-sqlite-persistence-md.md)
+
+The SQLite persistence backend is a new component that materializes the
+
+## [TASK-1574: OdooAgent implementation + backstory (`agents/oddie.py`)](overviews/doc:sdd-tasks-completed-task-1574-odoo-agent-implem-0481e0fd.md)
+
+Implements **Modules 4 & 5** of the spec — the registered `OdooAgent` ("Oddie")
+
+## [TASK-1574: OdooCodeExtractor](overviews/doc:sdd-tasks-completed-task-1574-odoo-code-extractor-md.md)
+
+The OdooCodeExtractor is the core domain-specific component. It subclasses
+
+## [TASK-1575: Composite skill — install an Odoo module](overviews/doc:sdd-tasks-completed-task-1575-skill-install-odo-225c04d9.md)
+
+Implements **Module 6** of the spec — a composite file-based skill teaching the
+
+## [TASK-1575: SQLiteGraphReader](overviews/doc:sdd-tasks-completed-task-1575-sqlite-graph-reader-md.md)
+
+The SQLiteGraphReader is the read-side navigator. It loads the graph topology
+
+## [TASK-1576: Composite skill — structured operation response](overviews/doc:sdd-tasks-completed-task-1576-skill-structured--6c500672.md)
+
+Implements **Module 7** of the spec — a composite file-based skill instructing the
+
+## [TASK-1577: navigator-auth exclude-list mutation API](overviews/doc:sdd-tasks-completed-task-1577-navigator-auth-ex-9758c584.md)
+
+This task implements Module 1 of FEAT-241 in the **sibling repo `../navigator-auth`**.
+
+## [TASK-1578: navigator-auth exclude-provider callback](overviews/doc:sdd-tasks-completed-task-1578-navigator-auth-ex-2b896253.md)
+
+This task implements Module 2 of FEAT-241 in the **sibling repo `../navigator-auth`**.
+
+## [TASK-1579: is_authenticated honors the exclude list](overviews/doc:sdd-tasks-completed-task-1579-is-authenticated--99bf5ae2.md)
+
+This task implements Module 3 of FEAT-241 in the **sibling repo `../navigator-auth`**.
+
+## [TASK-158: AbstractMemoStore Interface](overviews/doc:sdd-tasks-completed-task-158-memo-store-interface-md.md)
+
+class AbstractMemoStore(ABC):
+
+## [TASK-1580: FormSchema.is_public field](overviews/doc:sdd-tasks-completed-task-1580-formschema-is-pub-a3bb387b.md)
+
+This task implements Module 4 of FEAT-241 in **this repo** (`packages/parrot-formdesigner`).
+
+## [TASK-1581: public-form paths helper](overviews/doc:sdd-tasks-completed-task-1581-public-form-paths-ace6f7bc.md)
+
+This task implements Module 5 of FEAT-241 in **this repo** (`packages/parrot-formdesigner`).
+
+## [TASK-1582: lifecycle toggle integration](overviews/doc:sdd-tasks-completed-task-1582-lifecycle-toggle--818a2dec.md)
+
+This task implements Module 6 of FEAT-241 in **this repo** (`packages/parrot-formdesigner`).
+
+## [TASK-1583: exclude-provider registration (restart re-hydration)](overviews/doc:sdd-tasks-completed-task-1583-exclude-provider--0eb0d380.md)
+
+This task implements Module 7 of FEAT-241 in **this repo** (`packages/parrot-formdesigner`).
+
+## [TASK-1584: Extract request-agnostic voice-native helpers from avatar.py](overviews/doc:sdd-tasks-completed-task-1584-extract-voice-nat-56b0e226.md)
+
+Implements **Module 1** of FEAT-244. Today the logic to mint a publish-capable
+
+## [TASK-1585: StreamHandler voice control + per-session channel delivery](overviews/doc:sdd-tasks-completed-task-1585-streamhandler-voi-9aa684e7.md)
+
+Implements **Module 2** of FEAT-244. Turns the existing text-only
+
+## [TASK-1586: Fan-out the structured-output subscriber to StreamHandler](overviews/doc:sdd-tasks-completed-task-1586-fanout-output-sub-875ef386.md)
+
+Implements **Module 3** of FEAT-244. The FEAT-243 Redis consumer
+
+## [TASK-1587: Integration tests for unified voice control](overviews/doc:sdd-tasks-completed-task-1587-unified-voice-int-71992d95.md)
+
+Implements **Module 4** of FEAT-244. The per-task unit tests (TASK-1584/85/86)
+
+## [TASK-1588: VoiceAvatarSession helper (drive avatar mouth from a realtime PCM stream)](overviews/doc:sdd-tasks-completed-task-1588-voice-avatar-sess-fc9208ab.md)
+
+Implements **Module 1** of FEAT-245. Today the only way to drive the LiveAvatar
+
+## [TASK-1589: Wire VoiceAvatarSession into VoiceChatHandler (lifecycle + audio tee)](overviews/doc:sdd-tasks-completed-task-1589-wire-voice-avatar-70e66c2e.md)
+
+Implements **Module 2** of FEAT-245. With `VoiceAvatarSession` (TASK-1588)
+
+## [TASK-159: FileMemoStore Implementation](overviews/doc:sdd-tasks-completed-task-159-file-memo-store-md.md)
+
+Created `parrot/finance/memo_store/file_store.py` (~620 lines):
+
+## [TASK-1590: Integration tests for VoiceChat → LiveAvatar (Gemini Live)](overviews/doc:sdd-tasks-completed-task-1590-voicechat-avatar--7459df9b.md)
+
+Implements **Module 3** of FEAT-245. The unit tests in TASK-1588/1589 cover the
+
+## [TASK-1591: FULL Mode Data Models](overviews/doc:sdd-tasks-completed-task-1591-fullmode-data-models-md.md)
+
+Foundational task for FEAT-248. The FULL mode session requires new Pydantic
+
+## [TASK-1592: FULL Mode Client Extension](overviews/doc:sdd-tasks-completed-task-1592-fullmode-client-e-afaa6960.md)
+
+Extends `LiveAvatarClient` with FULL mode session creation and read-only
+
+## [TASK-1593: Per-Tenant Config Resolver](overviews/doc:sdd-tasks-completed-task-1593-tenant-config-resolver-md.md)
+
+The FULL mode handler needs a resolved `FullModeConfig` for each session. Config
+
+## [TASK-1594: FULL Mode REST Handler (Start / Stop)](overviews/doc:sdd-tasks-completed-task-1594-fullmode-rest-handler-md.md)
+
+The FULL mode needs its own handler endpoints separate from the existing LITE
+
+## [TASK-1595: Avatar/Voice Listing Handler](overviews/doc:sdd-tasks-completed-task-1595-avatar-voice-list-63bfaf38.md)
+
+The frontend needs endpoints to list available avatars and voices for the
+
+## [TASK-1596: FULL Mode Room Observer](overviews/doc:sdd-tasks-completed-task-1596-fullmode-room-observer-md.md)
+
+In FULL mode, LiveAvatar manages the LiveKit room. The backend joins as a
+
+## [TASK-1597: Package Wiring & Opt-in](overviews/doc:sdd-tasks-completed-task-1597-package-wiring-optin-md.md)
+
+Integration task that wires all FULL mode components together: updates
+
+## [TASK-1598: End-to-End Tests](overviews/doc:sdd-tasks-completed-task-1598-fullmode-tests-md.md)
+
+Final task: integration-level tests that verify the full FULL mode flow
+
+## [TASK-1599: Relocate StructuredOutputMessage out of livekit_agent/](overviews/doc:sdd-tasks-completed-task-1599-relocate-structur-6edee1b6.md)
+
+The Phase C worker package `liveavatar/livekit_agent/` is being deleted
+
+## [TASK-160: MemoStore LRU Cache](overviews/doc:sdd-tasks-completed-task-160-memo-store-lru-cache-md.md)
+
+Upgraded `FileMemoStore._cache` from plain `dict` to `OrderedDict` with proper LRU semantics:
+
+## [TASK-1600: Delete Phase C LiveKit Agents worker stack](overviews/doc:sdd-tasks-completed-task-1600-delete-phase-c-wo-4fab37a9.md)
+
+Phase C (FEAT-243/246) — the LiveKit Agents STT/VAD/TTS worker that ran in a
+
+## [TASK-1601: Delete Phase C server endpoints + dispatch + voice_start/stop](overviews/doc:sdd-tasks-completed-task-1601-delete-phase-c-se-a3014edb.md)
+
+With the Phase C worker gone (TASK-1600), its server-side entry points are dead:
+
+## [TASK-1602: Delete remaining dead/duplicate code](overviews/doc:sdd-tasks-completed-task-1602-delete-dead-code-md.md)
+
+Several modules are unwired/superseded and confirmed dead by the audit
+
+## [TASK-1603: Decouple + rename the Redis structured-output transport](overviews/doc:sdd-tasks-completed-task-1603-decouple-rename-r-c7e4f2b2.md)
+
+The server is multi-process (gunicorn `(2×CPUs)+1`) and
+
+## [TASK-1604: Prune pyproject extras, fix sample-rate constants, verify clean tree](overviews/doc:sdd-tasks-completed-task-1604-prune-extras-fix--6c8b4ac5.md)
+
+After the deletions, the Phase-C-only dependency extra and stale constants are
+
+## [TASK-1605: Mode D — mount VoiceChatHandler (/ws/voice) in the main server](overviews/doc:sdd-tasks-completed-task-1605-mount-gemini-voic-d16f41f1.md)
+
+Mode D (Gemini Live + LITE avatar tee, FEAT-245) is fully implemented in
+
+## [TASK-1606: Mode C — multi-viewer token endpoint](overviews/doc:sdd-tasks-completed-task-1606-multi-viewer-toke-47229f18.md)
+
+Mode C: because we control the LiveKit room (LITE), multiple people can watch the
+
+## [TASK-1607: Mode B — backend output-bifurcation helper](overviews/doc:sdd-tasks-completed-task-1607-fullmode-output-b-c2fd68ce.md)
+
+Mode B (FULL mode, FEAT-248) currently leaves all output bifurcation to the
+
+## [TASK-1608: Mode B — pluggable STT (internal + LiveAvatar)](overviews/doc:sdd-tasks-completed-task-1608-pluggable-stt-mode-b-md.md)
+
+Q-internal-stt-full resolved: Mode B must offer **our internal STT in addition
+
+## [TASK-1609: Mode B — document & test the /ws/userinfo structured-output contract](overviews/doc:sdd-tasks-completed-task-1609-document-test-ws--0e585e69.md)
+
+The `session_id`-keyed structured-output channel (`/ws/userinfo`) is the
+
+## [TASK-161: MemoEventLog Implementation](overviews/doc:sdd-tasks-completed-task-161-memo-event-log-md.md)
+
+Each line in `memo_events.jsonl`:
+
+## [TASK-1610: Mode A — end-to-end validation against the sandbox](overviews/doc:sdd-tasks-completed-task-1610-mode-a-e2e-validation-md.md)
+
+Mode A (text/voice + LITE avatar, FEAT-231 + FEAT-242) is implemented and wired,
+
+## [TASK-1611: Relocate the shared security engine into core (`parrot.security`)](overviews/doc:sdd-tasks-completed-task-1611-relocate-security-beaadc7b.md)
+
+Foundation (spec §3 Module 1, G1). The compiled, deterministic security engine
+
+## [TASK-1612: `OutputScrubber` policy + single-seam hook at `AbstractTool.execute()`](overviews/doc:sdd-tasks-completed-task-1612-outputscrubber-si-5f370d51.md)
+
+WS3 (spec §3 Module 2, G4). Today `security/redaction.py` is a flat-marker
+
+## [TASK-1613: `_resolve_final_response` chokepoint in the Gemini client (WS2)](overviews/doc:sdd-tasks-completed-task-1613-gemini-resolve-fi-151f5a96.md)
+
+WS2 — the **primary containment** (spec §3 Module 3, G3). Today there is no single
+
+## [TASK-1614: `PythonCodeSanitizer` allowlist-first AST gate (WS1)](overviews/doc:sdd-tasks-completed-task-1614-pythoncodesanitiz-44a9777d.md)
+
+WS1 (spec §3 Module 4, G2). The shipped fix (`0f76129b1`) gates `python_repl` with
+
+## [TASK-1615: Containment integration + non-regression test suite (G5)](overviews/doc:sdd-tasks-completed-task-1615-containment-regre-5b86959b.md)
+
+Spec §3 Module 5, §4 Integration Tests, G5. The unit tests live with their modules;
+
+## [TASK-1616: GigSmart Typed Exception Hierarchy](overviews/doc:sdd-tasks-completed-task-1616-gigsmart-exceptions-md.md)
+
+Foundation module for all GigSmart error handling. Every other module in the toolkit
+
+## [TASK-1616: Regression Tests — BotManager Hot Registration (NAV-6239)](overviews/doc:sdd-tasks-completed-task-1616-hot-registration--09c77b0a.md)
+
+NAV-6239 reported that newly created database-backed bots required a server
+
+## [TASK-1617: GigSmart Configuration](overviews/doc:sdd-tasks-completed-task-1617-gigsmart-config-md.md)
+
+Configuration module for the GigSmart client. Loads OAuth credentials and API
+
+## [TASK-1617: Jira Comment — NAV-6239 Fix Confirmed](overviews/doc:sdd-tasks-completed-task-1617-nav6239-jira-comment-md.md)
+
+After TASK-1616 adds and passes the regression tests confirming that
+
+## [TASK-1618: GigSmart OAuth 2.1 Authentication](overviews/doc:sdd-tasks-completed-task-1618-gigsmart-oauth-md.md)
+
+OAuth 2.1 token lifecycle management for GigSmart API. Supports both
+
+## [TASK-1619: GigSmart Pydantic Models](overviews/doc:sdd-tasks-completed-task-1619-gigsmart-models-md.md)
+
+All Pydantic v2 input/output models for the 6 GigSmart API surfaces plus generic
+
+## [TASK-162: FileMemoStore Unit Tests](overviews/doc:sdd-tasks-completed-task-162-memo-store-unit-tests-md.md)
+
+import pytest
+
+## [TASK-1620: GigSmart GraphQL Documents](overviews/doc:sdd-tasks-completed-task-1620-gigsmart-graphql--ec1f0f63.md)
+
+All GraphQL query and mutation strings for the GigSmart API. Organized by surface
+
+## [TASK-1621: GigSmart GraphQL Client](overviews/doc:sdd-tasks-completed-task-1621-gigsmart-graphql-client-md.md)
+
+Core aiohttp-based GraphQL client for the GigSmart API. Sends queries/mutations,
+
+## [TASK-1622: GigSmartToolkit — AbstractToolkit for LLM Agents](overviews/doc:sdd-tasks-completed-task-1622-gigsmart-toolkit-md.md)
+
+The main LLM-facing toolkit. Inherits `AbstractToolkit` and exposes 23 async methods
+
+## [TASK-1623: GigSmart Package Init & Registration](overviews/doc:sdd-tasks-completed-task-1623-gigsmart-package-init-md.md)
+
+Final integration task: wire up all package `__init__.py` exports, register the
+
+## [TASK-1624: Verify and Harden Employee Entity in knowledge.ontology.yaml](overviews/doc:sdd-tasks-completed-task-1624-knowledge-yaml-em-73cde82a.md)
+
+NAV-8350 requests an Employee Knowledge Base that injects employee data into
+
+## [TASK-1625: Employee Ontology Integration Smoke Test](overviews/doc:sdd-tasks-completed-task-1625-employee-ontology-e954f9ce.md)
+
+After adding the Employee entity to `knowledge.ontology.yaml` (TASK-1624), this task
+
+## [TASK-1626: Update NAV-8350 with Triage Findings](overviews/doc:sdd-tasks-completed-task-1626-nav8350-jira-comment-md.md)
+
+NAV-8350 asks whether Ontology RAG and an Employee KB exist. Research confirms
+
+## [TASK-1627: livekit dependency + RoomAudioPublisher (headless room audio)](overviews/doc:sdd-tasks-completed-task-1627-room-audio-publisher-md.md)
+
+Foundation of FEAT-256 (spec §2, §3 Module 1 + Module 4). Today ai-parrot only
+
+## [TASK-1627: Wiki Data Models](overviews/doc:sdd-tasks-completed-task-1627-wiki-data-models-md.md)
+
+Foundation task — defines all Pydantic data models used across the wiki feature.
+
+## [TASK-1628: Mode-aware AvatarTurnSpeaker sink](overviews/doc:sdd-tasks-completed-task-1628-mode-aware-speaker-sink-md.md)
+
+Spec §3 Module 2. The per-turn speaker (`AvatarTurnSpeaker`) currently pushes
+
+## [TASK-1628: OKF Schema Extensions](overviews/doc:sdd-tasks-completed-task-1628-okf-schema-extensions-md.md)
+
+Extends existing OKF enums (ConceptType, RelationType) with wiki-specific
+
+## [TASK-1629: Source Collection Manager](overviews/doc:sdd-tasks-completed-task-1629-source-collection-e1b5d742.md)
+
+Implements the "Raw Sources" layer of Karpathy's 3-layer architecture. Manages
+
+## [TASK-1629: _start_avatar_session mode-select + 402 auto-fallback](overviews/doc:sdd-tasks-completed-task-1629-start-session-mod-663c5290.md)
+
+Spec §3 Module 3 — the wiring that selects the audio mode and degrades gracefully.
+
+## [TASK-163: Add MemoStore to ExecutionOrchestrator](overviews/doc:sdd-tasks-completed-task-163-orchestrator-memo-store-md.md)
+
+1. **`parrot/finance/execution.py`**:
+
+## [TASK-1630: Direct-audio integration tests](overviews/doc:sdd-tasks-completed-task-1630-direct-audio-inte-9dee0e06.md)
+
+Spec §4 Integration Tests. End-to-end (mocked room) coverage that the direct-audio
+
+## [TASK-1630: Wiki Bookkeeper](overviews/doc:sdd-tasks-completed-task-1630-wiki-bookkeeper-md.md)
+
+Implements index.md and log.md bookkeeping for the wiki. Extends OKF's
+
+## [TASK-1631: Combined Search](overviews/doc:sdd-tasks-completed-task-1631-combined-search-md.md)
+
+Implements unified search across PageIndex trees and GraphIndex graph. Merges
+
+## [TASK-1631: Gemini STT-only mode (voice WS)](overviews/doc:sdd-tasks-completed-task-1631-gemini-stt-only-mode-md.md)
+
+Spec §3 Module 1. The Gemini voice path runs full-duplex today (Gemini transcribes
+
+## [TASK-1632: STT-only voice WS integration test](overviews/doc:sdd-tasks-completed-task-1632-stt-only-integrat-37cd57fe.md)
+
+Spec §4 Integration. End-to-end (mocked Gemini) coverage of the STT-only session on
+
+## [TASK-1632: Wiki Ingest Orchestrator](overviews/doc:sdd-tasks-completed-task-1632-wiki-ingest-orche-33e44eaf.md)
+
+Implements the core "Ingest" operation from Karpathy's 3-layer architecture.
+
+## [TASK-1633: LLMWikiToolkit](overviews/doc:sdd-tasks-completed-task-1633-llmwiki-toolkit-md.md)
+
+The main agent-facing toolkit. Composes PageIndexToolkit + GraphIndexToolkit +
+
+## [TASK-1633: TransitionAction Model & Config](overviews/doc:sdd-tasks-completed-task-1633-transition-action-model-md.md)
+
+This task creates the data models that Module 1 (classification) and Module 3
+
+## [TASK-1634: Bot Integration Wiring](overviews/doc:sdd-tasks-completed-task-1634-bot-integration-wiring-md.md)
+
+Wires LLMWikiToolkit into the bot framework following the established
+
+## [TASK-1634: Transition Event Classification & Payload Enrichment](overviews/doc:sdd-tasks-completed-task-1634-transition-event--a0ed761f.md)
+
+This task modifies the Jira webhook hook to detect all status transitions
+
+## [TASK-1635: Transition Dispatch & Built-in Action Handlers](overviews/doc:sdd-tasks-completed-task-1635-transition-dispat-049512d6.md)
+
+This task wires the new `jira.transitioned` event type (from TASK-1634)
+
+## [TASK-1635: Wiki Package Init + Exports](overviews/doc:sdd-tasks-completed-task-1635-wiki-package-init-md.md)
+
+Finalizes the wiki package's `__init__.py` with all public exports and
+
+## [TASK-1636: Transition Dispatch Tests](overviews/doc:sdd-tasks-completed-task-1636-transition-dispat-ddaf58c2.md)
+
+This task adds comprehensive tests for the transition dispatch logic and
+
+## [TASK-1636: Wiki Integration Tests](overviews/doc:sdd-tasks-completed-task-1636-wiki-integration-tests-md.md)
+
+End-to-end integration tests that verify the full wiki pipeline works as a
+
+## [TASK-1637: Package Scaffold + Config Model](overviews/doc:sdd-tasks-completed-task-1637-msagentsdk-packag-3fc81bd5.md)
+
+This is the foundational task for the MS Agent SDK integration. It creates the
+
+## [TASK-1638: Bridge Agent (ParrotM365Agent)](overviews/doc:sdd-tasks-completed-task-1638-msagentsdk-bridge-agent-md.md)
+
+This task creates the core bridge class that implements the MS Agent SDK's
+
+## [TASK-1639: Integration Wrapper (MSAgentSDKWrapper)](overviews/doc:sdd-tasks-completed-task-1639-msagentsdk-wrapper-md.md)
+
+This task creates the integration wrapper class that owns the MS SDK
+
+## [TASK-164: Hook Memo Persistence After Deliberation](overviews/doc:sdd-tasks-completed-task-164-memo-persistence-hook-md.md)
+
+class ExecutionOrchestrator:
+
+## [TASK-1640: Manager Registration](overviews/doc:sdd-tasks-completed-task-1640-msagentsdk-manage-9d06e471.md)
+
+This task wires the new MS Agent SDK integration into the existing
+
+## [TASK-1641: Integration Tests](overviews/doc:sdd-tasks-completed-task-1641-msagentsdk-tests-md.md)
+
+This task creates the comprehensive test suite for the MS Agent SDK integration.
+
+## [TASK-1642: AuditLedger — append-only, KMS-signed credential-invocation ledger](overviews/doc:sdd-tasks-completed-task-1642-auditledger-md.md)
+
+Implements spec Module **A4**. The brainstorm asserted an `AuditLedger` as an
+
+## [TASK-1643: A2A per-user identity extraction in process_message](overviews/doc:sdd-tasks-completed-task-1643-a2a-identity-extraction-md.md)
+
+Implements spec Module **A1**. `A2AServer.process_message` today delegates
+
+## [TASK-1644: Credential gate + suspend-on-missing-credential in the A2A path](overviews/doc:sdd-tasks-completed-task-1644-credential-gate-suspend-md.md)
+
+Implements spec Module **A2** — the core of the bridge. When a credentialed
+
+## [TASK-1645: OAuth-callback resume trigger (nonce → resume suspended A2A task)](overviews/doc:sdd-tasks-completed-task-1645-oauth-callback-re-8e4d18d7.md)
+
+Implements spec Module **A3**. The existing OAuth callback (`oauth2_routes`)
+
+## [TASK-1646: Stub credentialed tool + end-to-end bridge proof (v1 acceptance)](overviews/doc:sdd-tasks-completed-task-1646-stub-tool-e2e-md.md)
+
+Implements spec Module **A5** — the operator-chosen **tool-agnostic** v1 proof.
+
+## [TASK-1647: jira tool vertical over the A2A credential bridge (Group B)](overviews/doc:sdd-tasks-completed-task-1647-jira-vertical-md.md)
+
+Implements spec Module **B1** — the first real tool vertical. jira is the most
+
+## [TASK-1648: fireflies MCP-credential vertical (Group B — GATED on OQ#6)](overviews/doc:sdd-tasks-completed-task-1648-fireflies-mcp-vertical-md.md)
+
+Implements spec Module **B2**. Research found fireflies is **MCP-based**, not a
+
+## [TASK-1649: work-iq tool vertical via Entra OBO (Group B — GATED on OQ#5)](overviews/doc:sdd-tasks-completed-task-1649-workiq-obo-vertical-md.md)
+
+Implements spec Module **B3** — the headline tool, and the only fully greenfield
+
+## [TASK-165: Hook Event Logging After Execution](overviews/doc:sdd-tasks-completed-task-165-event-logging-hook-md.md)
+
+class ExecutionOrchestrator:
+
+## [TASK-1650: Config Extension — oauth_connections and obo_scopes fields](overviews/doc:sdd-tasks-completed-task-1650-msagentsdk-config-577ab320.md)
+
+Implements spec Module **1**. `MSAgentSDKConfig` in `models.py` currently has
+
+## [TASK-1651: Identity Extraction — aad_object_id from Activity](overviews/doc:sdd-tasks-completed-task-1651-msagentsdk-identi-b837cfff.md)
+
+Implements spec Module **2**. `ParrotM365Agent` currently extracts
+
+## [TASK-1652: Invoke Routing — signin/verifyState and signin/tokenExchange](overviews/doc:sdd-tasks-completed-task-1652-msagentsdk-invoke-8088d7b2.md)
+
+Implements spec Module **3**. The Bot Framework sign-in flow completes when the
+
+## [TASK-1653: Credential Context Bridge — PermissionContext + RequestContext in _handle_message](overviews/doc:sdd-tasks-completed-task-1653-msagentsdk-creden-bff947f4.md)
+
+Implements spec Module **4**. After identity extraction (TASK-1651), the bridge
+
+## [TASK-1654: BFTokenServiceResolver — CredentialResolver for BF Token Service](overviews/doc:sdd-tasks-completed-task-1654-bftokenservice-resolver-md.md)
+
+Implements spec Module **5**. The `BFTokenServiceResolver` is the core
+
+## [TASK-1655: AuditLedger — credential invocation audit log](overviews/doc:sdd-tasks-completed-task-1655-auditledger-md.md)
+
+Implements spec Module **6**. The `AuditLedger` records per-invocation
+
+## [TASK-1656: Sign-in Card Emission — OAuthCard on CredentialRequired](overviews/doc:sdd-tasks-completed-task-1656-signin-card-emission-md.md)
+
+Implements spec Module **7**. When a tool raises `CredentialRequired`, the
+
+## [TASK-1657: Wrapper Auth Wiring — BFTokenServiceResolver + AuditLedger in wrapper](overviews/doc:sdd-tasks-completed-task-1657-wrapper-auth-wiring-md.md)
+
+Implements spec Module **8**. The `MSAgentSDKWrapper` currently does not wire
+
+## [TASK-1658: Tests — FEAT-261 unit and integration tests](overviews/doc:sdd-tasks-completed-task-1658-msagentsdk-auth-tests-md.md)
+
+Implements spec Module **9**. All unit tests for FEAT-261 modules 1-8.
+
+## [TASK-1659: MCPOAuth2Config Model & Presets Registry](overviews/doc:sdd-tasks-completed-task-1659-mcp-oauth2-config-737f1986.md)
+
+This is the foundational task for FEAT-262. It defines the Pydantic data models
+
+## [TASK-166: Memo Persistence Integration Tests](overviews/doc:sdd-tasks-completed-task-166-memo-integration-tests-md.md)
+
+import asyncio
+
+## [TASK-1660: VaultMCPTokenStorage Adapter](overviews/doc:sdd-tasks-completed-task-1660-vault-mcp-token-storage-md.md)
+
+Bridges the MCP SDK's `TokenStorage` protocol with AI-Parrot's `VaultTokenStore`.
+
+## [TASK-1661: MCPOAuth2Provider & Registry Integration](overviews/doc:sdd-tasks-completed-task-1661-mcp-oauth2-provider-md.md)
+
+Creates an `MCPOAuth2Provider` that subclasses the existing `OAuth2Provider` ABC,
+
+## [TASK-1662: MCPClientConfig Extension](overviews/doc:sdd-tasks-completed-task-1662-mcp-client-config-03e2af68.md)
+
+Extends `MCPClientConfig` with `oauth2` and `auth_preset` fields. Updates
+
+## [TASK-1663: Transport OAuth2 Integration](overviews/doc:sdd-tasks-completed-task-1663-transport-oauth2--8300cd94.md)
+
+The core transport integration task. When `MCPClientConfig.oauth2` is set,
+
+## [TASK-1664: Navigator Callback Route](overviews/doc:sdd-tasks-completed-task-1664-navigator-callbac-2dc9d3c2.md)
+
+Adds an MCP-specific OAuth2 callback handler to Navigator at
+
+## [TASK-1665: OAuthManager Removal & Factory Migration](overviews/doc:sdd-tasks-completed-task-1665-oauth-manager-removal-md.md)
+
+Final migration task. Fully removes the `OAuthManager` class from `parrot/mcp/oauth.py`
+
+## [TASK-1666: MCP OAuth2 End-to-End Tests](overviews/doc:sdd-tasks-completed-task-1666-mcp-oauth2-tests-md.md)
+
+Comprehensive end-to-end integration tests that validate the full OAuth2 flow
+
+## [TASK-1667: CredentialBroker + ResolverFactory + signal/config models](overviews/doc:sdd-tasks-completed-task-1667-credential-broker-core-md.md)
+
+Foundation of the feature (spec §2, §3 Module 1). Provides the surface-agnostic
+
+## [TASK-1668: Adapt OBO / static-key / oauth2 / mcp resolver strategies](overviews/doc:sdd-tasks-completed-task-1668-resolver-strategies-md.md)
+
+Spec §3 Module 2. Make the existing resolvers constructible by
+
+## [TASK-1669: Core tool-loop credential seam + ContextVar injection](overviews/doc:sdd-tasks-completed-task-1669-tool-loop-seam-md.md)
+
+Spec §3 Module 3 — the spine. Inserts the single, surface-agnostic credential-resolution
+
+## [TASK-167: get_recent_memos Tool](overviews/doc:sdd-tasks-completed-task-167-get-recent-memos-tool-md.md)
+
+from datetime import datetime, timedelta
+
+## [TASK-1670: AgentDefinition credential config + broker build + in-package manifest loader](overviews/doc:sdd-tasks-completed-task-1670-agent-config-and--bc30af03.md)
+
+Spec §3 Module 4 + resolved questions (config source = per-agent + in-package manifest).
+
+## [TASK-1671: Canonical identity mapper (cross-surface credential reuse)](overviews/doc:sdd-tasks-completed-task-1671-canonical-identit-3f705047.md)
+
+Spec §3 Module 5 + resolved question (credentials reusable across surfaces). Normalizes
+
+## [TASK-1672: Replace the A2AServer credential gate with broker calls](overviews/doc:sdd-tasks-completed-task-1672-a2a-gate-replacement-md.md)
+
+Spec §3 Module 6 + resolved question (replace the gate). Removes the embedded registry +
+
+## [TASK-1673: MSAgentSDK — consume broker + render Adaptive/OAuth cards](overviews/doc:sdd-tasks-completed-task-1673-msagent-broker-an-7d570995.md)
+
+Spec §3 Module 7 (part 1). Cables the MSAgentSDK chat path to the broker and renders the
+
+## [TASK-1674: MSAgentSDK — suspend + auto-resume on consent (proactive delivery)](overviews/doc:sdd-tasks-completed-task-1674-msagent-suspend-resume-md.md)
+
+Spec §3 Module 7 (part 2) + resolved question (request creds AND auto-resume; no
+
+## [TASK-1675: Reconcile audit ledgers + Azure Key Vault signer](overviews/doc:sdd-tasks-completed-task-1675-audit-ledger-reco-8af43c93.md)
+
+Spec §3 Module 8 + resolved questions (canonical = `parrot.security.audit_ledger`;
+
+## [TASK-1676: MCP per-user token injection via broker](overviews/doc:sdd-tasks-completed-task-1676-mcp-per-user-toke-02809ee6.md)
+
+Spec §3 Module 9. Lets MCP-backed credentialed tools call their MCP server with the
+
+## [TASK-1677: Example — Fireflies + work.iq per-user auth on both surfaces](overviews/doc:sdd-tasks-completed-task-1677-msagent-example-f-1ea27c48.md)
+
+Spec §3 Module 10 — the motivating deliverable. Demonstrates the whole feature end-to-end:
+
+## [TASK-1678: AgentDispatcher protocol + dispatcher slot on JiraSpecialist](overviews/doc:sdd-tasks-completed-task-1678-agent-dispatcher--68eacbec.md)
+
+Foundation for FEAT-265 (spec §2, §3 Module 1). `JiraSpecialist` currently
+
+## [TASK-1679: Real dispatch in `_action_trigger_agent` + tests](overviews/doc:sdd-tasks-completed-task-1679-real-dispatch-in--f07267bd.md)
+
+Core of FEAT-265 (spec §2 Overview, §3 Module 2 + Module 4). Replaces the
+
+## [TASK-168: get_memo_detail Tool](overviews/doc:sdd-tasks-completed-task-168-get-memo-detail-tool-md.md)
+
+from dataclasses import asdict
+
+## [TASK-1680: Document the `app.py` startup wiring for trigger_agent dispatch](overviews/doc:sdd-tasks-completed-task-1680-startup-wiring-docs-md.md)
+
+FEAT-265 spec §3 Module 3 (resolved §8): the real dispatch is wired in the
+
+## [TASK-1681: Extend broker signal models with `device_code` kind + device-code fields](overviews/doc:sdd-tasks-completed-task-1681-extend-broker-sig-bb64d780.md)
+
+Implements spec §3 Module 1. The device-code resolver (TASK-1683) and the future chat
+
+## [TASK-1682: Promote O365 refresh to a public stateless `refresh_access_token`](overviews/doc:sdd-tasks-completed-task-1682-public-o365-refre-bb27aeae.md)
+
+Implements spec §3 Module 2. The device-code resolver (TASK-1683) must refresh the Entra
+
+## [TASK-1683: Implement `O365DeviceCodeCredentialResolver` + canonical `o365:*` persistence](overviews/doc:sdd-tasks-completed-task-1683-o365-devicecode-r-e3cf2e6c.md)
+
+Implements spec §3 Module 3 — the heart of the feature. A new resolver that wraps the
+
+## [TASK-1684: Wire `device_code` into `CredentialResolverFactory`](overviews/doc:sdd-tasks-completed-task-1684-broker-factory-de-2a63693e.md)
+
+Implements spec §3 Module 4. The broker builds resolvers declaratively from
+
+## [TASK-1685: CLI device-code bootstrap + identity wiring + end-to-end integration test](overviews/doc:sdd-tasks-completed-task-1685-cli-devicecode-bo-91171877.md)
+
+Implements spec §3 Module 5. Closes the loop so a CLI-run agent with an o365-credentialed tool
+
+## [TASK-1686: Delete Gen 1 legacy O365 interactive-auth (orphaned)](overviews/doc:sdd-tasks-completed-task-1686-remove-gen1-inter-a39f85cf.md)
+
+Implements spec §3 Module 6. The Gen 1 device-code auth (`RemoteAuthManager` + REST handlers)
+
+## [TASK-1687: Replace hardcoded `tenant_id="cli"` with explicit tenant / fail-loud sentinel](overviews/doc:sdd-tasks-completed-task-1687-cli-identity-tena-ba2d1072.md)
+
+FEAT-266 code review flagged that `build_cli_permission_context()`
+
+## [TASK-1688: Close `VaultTokenSync.store_tokens` partial-write / forever-valid-on-missing-`expires_at` gap](overviews/doc:sdd-tasks-completed-task-1688-vault-token-sync--80bdd107.md)
+
+FEAT-266 code review flagged that `VaultTokenSync.store_tokens()`
+
+## [TASK-1689: Scope the `_install_parrot_stubs()` sys.modules leak to an opt-in fixture](overviews/doc:sdd-tasks-completed-task-1689-scope-conftest-pa-9611029b.md)
+
+376-434) builds fake, minimal stand-ins for `parrot.bots.abstract.AbstractBot`
+
+## [TASK-169: Add Memo Tools to Analyst Toolkit](overviews/doc:sdd-tasks-completed-task-169-analyst-toolkit-in-27c2545e.md)
+
+If using a toolkit class:
+
+## [TASK-1692: AbstractCodeReviewDispatcher ABC + Factory](overviews/doc:sdd-tasks-completed-task-1692-abc-and-factory-md.md)
+
+from abc import ABC, abstractmethod # stdlib
+
+## [TASK-1692: Z.ai model registry — add GLM-5.2, bump ZaiClient defaults, tighten SDK pin](overviews/doc:sdd-tasks-completed-task-1692-zai-model-registry-md.md)
+
+Module 1 of FEAT-269 (spec §3). GLM-5.2 is Z.ai's new coding flagship but is
+
+## [TASK-1693: CodeReviewVerdict Extended Model + Review Profiles](overviews/doc:sdd-tasks-completed-task-1693-extended-verdict-model-md.md)
+
+from pydantic import BaseModel, Field # pydantic
+
+## [TASK-1693: ZaiCodeDispatchProfile — Pydantic profile with Z.ai-native thinking fields](overviews/doc:sdd-tasks-completed-task-1693-zai-dispatch-profile-md.md)
+
+Module 2 of FEAT-269 (spec §3, §2 Data Models). Unlike Grok's standalone
+
+## [TASK-1694: ClaudeCodeReviewDispatcher](overviews/doc:sdd-tasks-completed-task-1694-claude-code-reviewer-md.md)
+
+from parrot.flows.dev_loop.code_review import (
+
+## [TASK-1694: ZaiCodeDispatcher — native thinking/reasoning_effort loop + Grok factory fix](overviews/doc:sdd-tasks-completed-task-1694-zai-code-dispatcher-md.md)
+
+Module 3 of FEAT-269 (spec §2 New Public Interfaces, §3). The core
+
+## [TASK-1695: CodexCodeReviewDispatcher](overviews/doc:sdd-tasks-completed-task-1695-codex-code-reviewer-md.md)
+
+and `CodeReviewVerdict` as output_model
+
+## [TASK-1695: Dev-loop wiring — package exports + server `zai` agent branch](overviews/doc:sdd-tasks-completed-task-1695-zai-devloop-wiring-md.md)
+
+Module 4 of FEAT-269 (spec §3). Makes the new dispatcher reachable: exported
+
+## [TASK-1696: GeminiCodeReviewDispatcher](overviews/doc:sdd-tasks-completed-task-1696-gemini-code-reviewer-md.md)
+
+and `CodeReviewVerdict` as output_model
+
+## [TASK-1696: Test suite — Zai dispatcher/profile/registry tests, server wiring, Grok regression](overviews/doc:sdd-tasks-completed-task-1696-zai-test-suite-md.md)
+
+Module 5 of FEAT-269 (spec §3, §4). Locks in the whole feature with the
+
+## [TASK-1697: QANode Review-Fix-Rerun Loop](overviews/doc:sdd-tasks-completed-task-1697-qa-review-fix-rerun-md.md)
+
+the deterministic QA pass (acceptance criteria + lint)
+
+## [TASK-1698: Factory Wiring + Server Bootstrap](overviews/doc:sdd-tasks-completed-task-1698-factory-wiring-se-8459db80.md)
+
+(reuse existing dispatchers or create new ones as needed)
+
+## [TASK-1699: Update sdd-codereview Subagent Prompt](overviews/doc:sdd-tasks-completed-task-1699-update-codereview-ad48b5ca.md)
+
+N/A — this is a prompt file, not Python code.
+
+## [TASK-170: Memo Tools Tests](overviews/doc:sdd-tasks-completed-task-170-memo-tools-tests-md.md)
+
+import pytest
+
+## [TASK-1700: Integration Tests](overviews/doc:sdd-tasks-completed-task-1700-integration-tests-md.md)
+
+from parrot.flows.dev_loop.code_review import (
+
+## [TASK-1701: Add ZAMMAD_* environment variable declarations to parrot.conf](overviews/doc:sdd-tasks-completed-task-1701-zammad-conf-vars-md.md)
+
+All Zammad configuration values must be declared in `parrot/conf.py` before the
+
+## [TASK-1702: Implement ZammadInterface async HTTP client](overviews/doc:sdd-tasks-completed-task-1702-zammad-interface-md.md)
+
+The core async HTTP client wrapping the Zammad REST API v1. All toolkit
+
+## [TASK-1703: Implement ZammadToolkit (AbstractToolkit subclass)](overviews/doc:sdd-tasks-completed-task-1703-zammad-toolkit-md.md)
+
+The LLM-facing toolkit that wraps `ZammadInterface` methods as auto-discovered
+
+## [TASK-1704: Register ZammadToolkit in TOOL_REGISTRY](overviews/doc:sdd-tasks-completed-task-1704-zammad-registry-md.md)
+
+The toolkit must be discoverable at runtime via `TOOL_REGISTRY` so that
+
+## [TASK-1705: Integration tests for ZammadInterface and ZammadToolkit](overviews/doc:sdd-tasks-completed-task-1705-zammad-tests-md.md)
+
+Final validation task: review and extend unit tests from TASK-1702 and TASK-1703,
+
+## [TASK-1706: A2A Agent Config Dataclass](overviews/doc:sdd-tasks-completed-task-1706-a2a-agent-config-md.md)
+
+This task creates the `A2AAgentConfig` dataclass that models the YAML configuration for `kind: a2a` entries in `integrations_bots.yaml`. This is the foundation for the A2A integration — all subsequent A2A tasks depend on this config model.
+
+## [TASK-1707: MSAgent Integration Config Dataclass](overviews/doc:sdd-tasks-completed-task-1707-msagent-integrati-6d8f89ad.md)
+
+This task creates the `MSAgentIntegrationConfig` dataclass that models the YAML configuration for `kind: msagent` entries in `integrations_bots.yaml`. This config extends the existing `MSAgentSDKConfig` pattern with credential broker fields, O365 OAuth fields, and A2A companion s
+
+## [TASK-1708: Config Dispatch Extension](overviews/doc:sdd-tasks-completed-task-1708-config-dispatch-e-ea04fafa.md)
+
+This task wires the two new config dataclasses into the YAML parsing dispatch chain so that `kind: a2a` and `kind: msagent` entries in `integrations_bots.yaml` are recognized and parsed into the correct config objects.
+
+## [TASK-1709: A2A Bot Startup + Discovery Registry + Security](overviews/doc:sdd-tasks-completed-task-1709-a2a-bot-startup-md.md)
+
+This is the core A2A integration task. It implements the `_start_a2a_bot()` method in `IntegrationBotManager`, the in-process A2A discovery registry, the `/a2a/directory` endpoint, and security middleware wiring. After this task, `kind: a2a` entries in the YAML will produce a run
+
+## [TASK-171: CIOMemoryContext & TrackRecordEntry Dataclasses](overviews/doc:sdd-tasks-completed-task-171-cio-memory-dataclasses-md.md)
+
+Per user's answer to Open Question #2: if executive_summary is long (>500 chars), replace with the bullet list of recommendations from the memo.
+
+## [TASK-1710: MSAgent Bot Startup + Credential Broker + O365 OAuth + A2A Companion](overviews/doc:sdd-tasks-completed-task-1710-msagent-bot-startup-md.md)
+
+This task implements `_start_msagent_bot()` in `IntegrationBotManager`, which brings up a full MS Agent SDK surface from a `kind: msagent` YAML entry. It wires the `MSAgentSDKWrapper`, configures the `CredentialBroker` with O365 OAuth provider, sets up the identity bridge, and sp
+
+## [TASK-1711: Unit & Integration Tests for A2A and MSAgent Integrations](overviews/doc:sdd-tasks-completed-task-1711-integration-tests-md.md)
+
+This task writes the comprehensive test suite for the entire FEAT-271 integration. It covers config parsing, dispatch wiring, A2A startup, MSAgent startup, discovery registry, and security middleware. Tests use mocking to avoid requiring live services.
+
+## [TASK-1712: v1.0 Data Models — Core Types & Enums](overviews/doc:sdd-tasks-completed-task-1712-a2a-v1-data-models-md.md)
+
+This is the foundational task for FEAT-272. All other tasks depend on the
+
+## [TASK-1713: AgentCard v1.0 Structure](overviews/doc:sdd-tasks-completed-task-1713-a2a-v1-agent-card-md.md)
+
+The A2A v1.0.0 spec replaces the flat `url` + `preferredTransport` AgentCard
+
+## [TASK-1714: A2AServer — v1.0 REST Routes & Version Negotiation](overviews/doc:sdd-tasks-completed-task-1714-a2a-v1-server-routes-md.md)
+
+The A2A v1.0.0 spec defines specific REST binding routes using colon syntax
+
+## [TASK-1715: A2AServer — v1.0 JSON-RPC Methods & Error Codes](overviews/doc:sdd-tasks-completed-task-1715-a2a-v1-jsonrpc-errors-md.md)
+
+The A2A v1.0.0 spec defines 11 JSON-RPC methods with PascalCase names
+
+## [TASK-1716: Push Notification Config Store](overviews/doc:sdd-tasks-completed-task-1716-a2a-v1-push-notif-282fe767.md)
+
+The A2A v1.0.0 spec defines four push notification configuration operations
+
+## [TASK-1717: A2AClient v1.0 Upgrade](overviews/doc:sdd-tasks-completed-task-1717-a2a-v1-client-upgrade-md.md)
+
+The `A2AClient` currently sends no `A2A-Version` header, discovers agents at
+
+## [TASK-1718: Mesh & Router v1.0 Compatibility](overviews/doc:sdd-tasks-completed-task-1718-a2a-v1-mesh-router-md.md)
+
+and route to remote agents. Both need to handle v1.0 AgentCards (which use
+
+## [TASK-1719: v1.0 Protocol Integration Tests](overviews/doc:sdd-tasks-completed-task-1719-a2a-v1-protocol-tests-md.md)
+
+Each prior task includes unit tests for its specific changes. This task adds
+
+## [TASK-1720: A2UI envelope models + serialization layer](overviews/doc:sdd-tasks-completed-task-1720-a2ui-envelope-models-md.md)
+
+Implements **Module 1** of the spec (§3, "Envelope models + serialization layer") — the foundational data contract every other FEAT-273 module builds on. A2UI v1.0 defines a six-message wire protocol; this task ships the complete message set as Pydantic v2 models plus a single se
+
+## [TASK-1721: Catalog registry + component contract](overviews/doc:sdd-tasks-completed-task-1721-a2ui-catalog-registry-md.md)
+
+Implements **Module 2** of the spec (§3, "Catalog registry + component contract"). The catalog is the security allowlist at the heart of G1: envelopes are validated against registered `ComponentDefinition`s, so only known components ever reach a renderer. It also carries the mand
+
+## [TASK-1722: SPK-1: rasterization backend spike (weasyprint vs playwright)](overviews/doc:sdd-tasks-completed-task-1722-spk1-rasterizatio-f9923c6b.md)
+
+Implements **Module 0a** of the spec (§3, "SPK-1 rasterization spike"). Spike gates were waived and embedded as early feature tasks (spec §8): before the pdf renderer (Module 5) hardens, we need evidence-based confirmation that **weasyprint** is the right default PDF backend vers
+
+## [TASK-1723: Renderer registry + capabilities (core side)](overviews/doc:sdd-tasks-completed-task-1723-a2ui-renderer-registry-md.md)
+
+Implements **Module 4** of the spec (§3, "Renderer registry + capabilities (core side)"). Core ships the renderer *contract* — `RendererCapabilities`, `AbstractA2UIRenderer`, registration and resolution — while ALL concrete renderers live in `ai-parrot-visualizations` behind the 
+
+## [TASK-1724: Catalog components: Chart, DataTable, Map (+lowerings)](overviews/doc:sdd-tasks-completed-task-1724-components-chart--d53ea12f.md)
+
+Spec §3 Module 3 (Catalog v1 components + lowerings). The Parrot custom
+
+## [TASK-1725: Catalog components: Card, KPICard, Timeline, Form(schema-only)](overviews/doc:sdd-tasks-completed-task-1725-components-card-k-ef7dcbb4.md)
+
+Spec §3 Module 3 (Catalog v1 components + lowerings). This task implements
+
+## [TASK-1726: Catalog components: Infographic, Report (+lowerings)](overviews/doc:sdd-tasks-completed-task-1726-components-infogr-796f67ea.md)
+
+Spec §3 Module 3 (Catalog v1 components + lowerings). This task implements the
+
+## [TASK-1727: SPK-3: LLM envelope fidelity spike (Claude + Gemini)](overviews/doc:sdd-tasks-completed-task-1727-spk3-envelope-fid-cfc3e677.md)
+
+Implements **Module 0b** of the spec (§3, "SPK-3 LLM envelope fidelity spike"). Before the LLM producer (Module 9, TASK-1737) hardens its catalog-validate-retry loop, we need a measured structured-output validity rate for `CreateSurface` envelopes generated against the registered
+
+## [TASK-1728: Baking pass + RenderedArtifact model](overviews/doc:sdd-tasks-completed-task-1728-baking-rendered-a-a0921c58.md)
+
+Implements **Module 6** of the spec (§3): the baking pass and the `RenderedArtifact`
+
+## [TASK-1729: SSR-HTML renderer](overviews/doc:sdd-tasks-completed-task-1729-renderer-ssr-html-md.md)
+
+Implements the **ssr-html renderer** of **Module 5** (spec §3): the reference
+
+## [TASK-173: Sentiment Reversal Detection](overviews/doc:sdd-tasks-completed-task-173-sentiment-reversal-25e96f11.md)
+
+1. Extract ticker + direction (buy/sell/hold) from each TrackRecordEntry's recommendations
+
+## [TASK-1730: Adaptive Cards renderer (display subset)](overviews/doc:sdd-tasks-completed-task-1730-renderer-adaptive-cards-md.md)
+
+Implements the **adaptive-cards renderer** of **Module 5** (spec §3): transcodes
+
+## [TASK-1731: Folium map + ECharts payload renderers](overviews/doc:sdd-tasks-completed-task-1731-renderers-folium--0da70059.md)
+
+Implements two more **Module 5** renderers (spec §3): `folium_map` and `echarts`.
+
+## [TASK-1732: PDF renderer (SPK-1 backend)](overviews/doc:sdd-tasks-completed-task-1732-renderer-pdf-md.md)
+
+Implements the **pdf renderer** of **Module 5** (spec §3), closing the G5 static
+
+## [TASK-1733: Delivery bridge: RenderedArtifact → send_notification + Slack URL downgrade](overviews/doc:sdd-tasks-completed-task-1733-delivery-bridge-s-628703f3.md)
+
+Spec §3 Module 7 (first half): baked A2UI surfaces produce a `RenderedArtifact`
+
+## [TASK-1734: Teams Graph-API file upload](overviews/doc:sdd-tasks-completed-task-1734-teams-graph-upload-md.md)
+
+Spec §3 Module 7 (second half) and spec-session decision (§8, "Teams/Slack
+
+## [TASK-1735: Deep-link token service + web (AgentTalk) resume route](overviews/doc:sdd-tasks-completed-task-1735-deeplink-service--a0768e8c.md)
+
+Spec §3 Module 8 and goal **G6** (D9 expanded): `requires_actions` components
+
+## [TASK-1736: Per-channel resume routes: Telegram + MS Teams](overviews/doc:sdd-tasks-completed-task-1736-resume-routes-tel-8c9e182f.md)
+
+Spec §3 Module 8 (channel half) and goal **G6**: deep links on baked surfaces
+
+## [TASK-1737: LLM envelope producer with catalog-validate-retry loop](overviews/doc:sdd-tasks-completed-task-1737-llm-producer-retry-md.md)
+
+Spec §3 Module 9 (LLM producer, validate-retry loop) — the D1b half of the
+
+## [TASK-1738: Emission wiring: OutputMode.A2UI + AIMessage carrier + bot/handler routing](overviews/doc:sdd-tasks-completed-task-1738-emission-wiring-md.md)
+
+Implements **Module 10** of the spec (§3, "Emission wiring"). Everything built so
+
+## [TASK-174: CommitteeDeliberation CIO Context Integration](overviews/doc:sdd-tasks-completed-task-174-cio-deliberation-i-7161fd34.md)
+
+async def build_cio_memory_context(
+
+## [TASK-1740: Legacy format deprecation warnings](overviews/doc:sdd-tasks-completed-task-1740-legacy-deprecatio-dc74aaac.md)
+
+Implements **Module 12** of the spec (§3, "Legacy deprecation warnings") in
+
+## [TASK-1741: A2UI-A2A extension emit (display) — BLOCKED until FEAT-272 merges](overviews/doc:sdd-tasks-completed-task-1741-a2a-extension-emit-md.md)
+
+Implements **Module 13** of the spec: expose A2UI display envelopes over the A2A
+
+## [TASK-1742: Response Model Extensions for Bedrock](overviews/doc:sdd-tasks-completed-task-1742-response-model-ex-d22916c4.md)
+
+This is a leaf dependency that all subsequent Bedrock client tasks depend on. It adds the factory methods needed to construct ai-parrot's unified response models from Bedrock Converse API response shapes. Without these, the `BedrockConverseClient` cannot return proper `AIMessage`
+
+## [TASK-1743: Tool Schema Adapter for Bedrock](overviews/doc:sdd-tasks-completed-task-1743-tool-schema-adapter-md.md)
+
+Bedrock Converse API requires tool definitions in a specific format (`toolSpec`/`inputSchema.json`) that differs from ai-parrot's internal schema. This task adds the adapter so `BedrockConverseClient` can convert registered tools automatically.
+
+## [TASK-1744: Model ID Extensions for Nova and Multi-Provider](overviews/doc:sdd-tasks-completed-task-1744-model-id-extensions-md.md)
+
+The existing `bedrock_models.py` translator only maps Claude model IDs. The new `BedrockConverseClient` supports multi-provider models (Nova, Llama, Mistral) and `NovaSonicClient` needs Nova Sonic model IDs. This task extends the translator.
+
+## [TASK-1745: BedrockConverseClient Core](overviews/doc:sdd-tasks-completed-task-1745-bedrock-converse--3331dce0.md)
+
+This is the central task: implement the `BedrockConverseClient` class with `aioboto3` session management and the Bedrock Converse API for text-based LLM interaction. Depends on the response models, tool schema adapter, and model ID translator from the previous tasks.
+
+## [TASK-1746: BedrockConverseClient Advanced Features](overviews/doc:sdd-tasks-completed-task-1746-advanced-features-md.md)
+
+After the core `BedrockConverseClient` is functional, this task adds the advanced features: extended thinking, prompt caching, structured output, and guardrails configuration. These features use Bedrock-specific API parameters.
+
+## [TASK-1747: Factory Registration and Dependencies](overviews/doc:sdd-tasks-completed-task-1747-factory-registration-md.md)
+
+Register the new `BedrockConverseClient` in the factory so it can be instantiated via `create_client("bedrock-converse")`. Also add `aioboto3` as an optional dependency in `pyproject.toml`.
+
+## [TASK-1748: NovaSonicClient Experimental Voice Client](overviews/doc:sdd-tasks-completed-task-1748-nova-sonic-client-md.md)
+
+Implement an experimental bidirectional speech-to-speech client using Amazon Nova 2 Sonic via the pre-alpha `aws_sdk_bedrock_runtime` SDK. This follows the same architectural pattern as `GeminiLiveClient` but uses HTTP/2 bidirectional streams instead of WebSockets.
+
+## [TASK-1749: Voice Integration Provider Registration](overviews/doc:sdd-tasks-completed-task-1749-voice-integration-md.md)
+
+Register Nova Sonic as a voice provider in the `VoiceProvider` enum and ensure `VoiceChatHandler` can route to `NovaSonicClient` for bidirectional voice sessions.
+
+## [TASK-175: CIO Memory Context Unit Tests](overviews/doc:sdd-tasks-completed-task-175-cio-memory-unit-tests-md.md)
+
+From spec Section 4 (Unit Tests):
+
+## [TASK-1750: Comprehensive Test Suite for FEAT-302](overviews/doc:sdd-tasks-completed-task-1750-tests-md.md)
+
+Each prior task includes its own unit tests. This task adds integration tests that span multiple components: end-to-end flow through factory → client → response models, error handling scenarios, and edge cases.
+
+## [TASK-1751: Semantic UI Model (Pydantic contract)](overviews/doc:sdd-tasks-completed-task-1751-semantic-ui-model-md.md)
+
+Implements **Module 1** of FEAT-303 (spec §3). The Semantic UI Model is the
+
+## [TASK-1752: Adaptive Card renderer (templates + text fallback)](overviews/doc:sdd-tasks-completed-task-1752-adaptive-card-renderer-md.md)
+
+Implements **Module 2** of FEAT-303 (spec §3). The renderer is the
+
+## [TASK-1753: Bridge wiring + config knobs + lazy exports](overviews/doc:sdd-tasks-completed-task-1753-bridge-wiring-config-md.md)
+
+Implements **Module 3** of FEAT-303 (spec §3). Wires the Semantic UI Model
+
+## [TASK-1754: Card action round-trip invoke shim](overviews/doc:sdd-tasks-completed-task-1754-card-action-invoke-shim-md.md)
+
+Implements **Module 4** of FEAT-303 (spec §3). The primary action round-trip
+
+## [TASK-1755: Integration tests, import isolation, and docs](overviews/doc:sdd-tasks-completed-task-1755-integration-tests-docs-md.md)
+
+Implements **Module 5** of FEAT-303 (spec §3). Per-module unit tests already
+
+## [TASK-1756: Implement LeadIQToolkit core (leadiq/tool.py)](overviews/doc:sdd-tasks-completed-task-1756-leadiq-toolkit-core-md.md)
+
+Implements Spec §3 Module 1. Ports flowtask's LeadIQ GraphQL logic
+
+## [TASK-1757: Wire LeadIQ package exports and TOOL_REGISTRY entry](overviews/doc:sdd-tasks-completed-task-1757-leadiq-package-wiring-md.md)
+
+Implements Spec §3 Module 2. Makes `LeadIQToolkit` importable as a package and
+
+## [TASK-1758: Unit tests for LeadIQToolkit](overviews/doc:sdd-tasks-completed-task-1758-leadiq-tests-md.md)
+
+Implements Spec §3 Module 3 and §4 Test Specification. Verifies the toolkit's
+
+## [TASK-1759: Declare playwright + rapidfuzz (and verify ddgs) in satellite pyproject](overviews/doc:sdd-tasks-completed-task-1759-deps-playwright-r-6d28c44b.md)
+
+extra in `packages/ai-parrot-tools/pyproject.toml` (it is currently only in
+
+## [TASK-176: CIO Memory Context Integration Tests](overviews/doc:sdd-tasks-completed-task-176-cio-memory-integra-ca70a018.md)
+
+From spec Section 4 (Integration Tests):
+
+## [TASK-1760: Search layer — SourceConfig registry, DDG-first `_search_company_url`, hit validation](overviews/doc:sdd-tasks-completed-task-1760-search-layer-ddg--29e3e1ca.md)
+
+Add to `packages/ai-parrot-tools/src/parrot_tools/company_info/tool.py`:
+
+## [TASK-1761: Playwright fetch layer — replace Selenium internals with `driver_context`/`DriverConfig`](overviews/doc:sdd-tasks-completed-task-1761-playwright-fetch-layer-md.md)
+
+In `packages/ai-parrot-tools/src/parrot_tools/company_info/tool.py`:
+
+## [TASK-1762: `scrape_visualvisitor` per-source extractor](overviews/doc:sdd-tasks-completed-task-1762-scrape-visualvisitor-md.md)
+
+In `packages/ai-parrot-tools/src/parrot_tools/company_info/tool.py`:
+
+## [TASK-1763: `research_company` first-success aggregate + wire existing scrapers to new search](overviews/doc:sdd-tasks-completed-task-1763-research-company--81b416d7.md)
+
+In `packages/ai-parrot-tools/src/parrot_tools/company_info/tool.py`:
+
+## [TASK-1764: Tests + recorded-HTML fixtures for company_info](overviews/doc:sdd-tasks-completed-task-1764-tests-fixtures-md.md)
+
+Create `packages/ai-parrot-tools/tests/company_info/`:
+
+## [TASK-1765: NodeResult.to_dict() — safe per-agent result serialisation](overviews/doc:sdd-tasks-completed-task-1765-noderesult-to-dict-md.md)
+
+Implements **Module 1** of FEAT-306. `NodeResult` (the per-agent execution record) has
+
+## [TASK-1765: ResultStorage ABC Extension](overviews/doc:sdd-tasks-completed-task-1765-result-storage-ab-fbd11d34.md)
+
+The `ResultStorage` ABC (FEAT-147) currently only defines `save()` and `close()`.
+
+## [TASK-1766: PersistenceMixin Save Path Enhancement](overviews/doc:sdd-tasks-completed-task-1766-persistence-mixin-78155f73.md)
+
+The original prompt/query and tenant are NOT captured. This task ensures `prompt`
+
+## [TASK-1766: ResultStorage.fetch() — read API by execution_id in 3 backends](overviews/doc:sdd-tasks-completed-task-1766-resultstorage-fet-a9c25519.md)
+
+Implements **Module 2** of FEAT-306. `ResultStorage` today is write-only (`save`/`close`).
+
+## [TASK-1767: Pydantic Request/Response Models](overviews/doc:sdd-tasks-completed-task-1767-pydantic-request--405f859d.md)
+
+The REST API for saved executions needs Pydantic models for request parsing and
+
+## [TASK-1767: PersistenceMixin._save_agent_result() — incremental per-agent writes](overviews/doc:sdd-tasks-completed-task-1767-save-agent-result-mixin-md.md)
+
+Implements **Module 3** of FEAT-306. `PersistenceMixin` persists only the crew-level result
+
+## [TASK-1768: CrewExecutionDocument — deterministic LLM-free consolidated document](overviews/doc:sdd-tasks-completed-task-1768-crew-execution-document-md.md)
+
+Implements **Module 4** of FEAT-306 — the centrepiece deliverable: a dataclass that assembles
+
+## [TASK-1768: PostgresResultStorage Read Methods + DDL Migration](overviews/doc:sdd-tasks-completed-task-1768-postgres-result-s-9370ace2.md)
+
+implements the four read methods defined in the ABC (TASK-1765) with parameterized
+
+## [TASK-1769: AgentCrew wiring — execution_id, incremental persist, consolidated write](overviews/doc:sdd-tasks-completed-task-1769-agentcrew-wiring-md.md)
+
+Implements **Module 5** of FEAT-306 — the integration layer. Wires the crew-level
+
+## [TASK-1769: RedisResultStorage Read Methods](overviews/doc:sdd-tasks-completed-task-1769-redis-result-stor-786cf1be.md)
+
+Redis SCAN + GET for listing and direct key operations for get/delete.
+
+## [TASK-177: Schema Enhancements (RoutingMode, FUTURES, Capabilities, IBKR Profile)](overviews/doc:sdd-tasks-completed-task-177-schema-enhancements-md.md)
+
+class RoutingMode(str, Enum):
+
+## [TASK-1770: DocumentDbResultStorage Read Methods](overviews/doc:sdd-tasks-completed-task-1770-documentdb-result-e4b7b5a1.md)
+
+Implements spec Module 4.
+
+## [TASK-1770: End-to-end integration tests + documentation](overviews/doc:sdd-tasks-completed-task-1770-integration-tests-docs-md.md)
+
+Implements **Module 6** of FEAT-306. All building blocks exist after TASK-1769; this task
+
+## [TASK-1771: AgentCrew run_* Prompt Passthrough](overviews/doc:sdd-tasks-completed-task-1771-agentcrew-prompt--20c636d6.md)
+
+Each `AgentCrew.run_*` method calls `_save_result()` as a fire-and-forget task,
+
+## [TASK-1772: SavedExecutionService](overviews/doc:sdd-tasks-completed-task-1772-saved-execution-service-md.md)
+
+The `SavedExecutionService` is the thin orchestration layer between the HTTP
+
+## [TASK-1773: CrewExecutionHistoryHandler](overviews/doc:sdd-tasks-completed-task-1773-execution-history-3e1bdbfb.md)
+
+This is the HTTP layer that exposes saved execution operations via REST. It wires
+
+## [TASK-1774: Integration Tests](overviews/doc:sdd-tasks-completed-task-1774-integration-tests-md.md)
+
+End-to-end integration tests that verify the full flow: save an execution via
+
+## [TASK-1775: Register `crew_report` Infographic Template Variant](overviews/doc:sdd-tasks-completed-task-1775-crew-report-template-md.md)
+
+from parrot.models.infographic_templates import (
+
+## [TASK-1776: Add `infographic` Field to `FlowResult`](overviews/doc:sdd-tasks-completed-task-1776-flowresult-infogr-904378b0.md)
+
+field on `FlowResult`.
+
+## [TASK-1777: Deterministic Tab-Assembly Helper](overviews/doc:sdd-tasks-completed-task-1777-tab-assembly-helper-md.md)
+
+that returns the block list: TITLE block + TAB_VIEW block containing
+
+## [TASK-1778: `ResultAgent` — Registered Agent for Infographic Rendering](overviews/doc:sdd-tasks-completed-task-1778-result-agent-md.md)
+
+that: (a) LLM-authors Tab 1 blocks from the crew summary, (b) merges
+
+## [TASK-1779: `AgentCrew._finalize_infographic` Integration](overviews/doc:sdd-tasks-completed-task-1779-agentcrew-finaliz-ef305d75.md)
+
+from parrot.bots.flows.crew.crew import AgentCrew # crew.py:93
+
+## [TASK-178: IBKR Executor Prompt](overviews/doc:sdd-tasks-completed-task-178-ibkr-executor-prompt-md.md)
+
+1. Read `EXECUTOR_STOCK` and `EXECUTOR_CRYPTO` in `parrot/finance/prompts.py` for structure
+
+## [TASK-1780: End-to-End Integration Tests for Crew Infographic](overviews/doc:sdd-tasks-completed-task-1780-infographic-integ-addebc73.md)
+
+from parrot.bots.flows.crew.crew import AgentCrew # crew.py:93
+
+## [TASK-1781: Fix `run_loop()` Frozen-FSM Reassignment Bug](overviews/doc:sdd-tasks-completed-task-1781-run-loop-frozen-fsm-fix-md.md)
+
+escape hatch: `object.__setattr__(node, "fsm", AgentTaskMachine(agent_name=node.agent.name))`.
+
+## [TASK-1782: Regression Tests for `run_loop()` FSM Reset](overviews/doc:sdd-tasks-completed-task-1782-run-loop-fsm-regr-60d1230b.md)
+
+completes without `ValidationError`.
+
+## [TASK-179: IBKR Executor Agent Factory](overviews/doc:sdd-tasks-completed-task-179-ibkr-executor-agen-86fec1ec.md)
+
+1. Read existing executor factories in `parrot/finance/agents/executors.py`
+
+## [TASK-180: Orchestrator Multi-Executor Registration](overviews/doc:sdd-tasks-completed-task-180-orchestrator-multi-115d89bc.md)
+
+All callers in `process_orders()` must iterate over the list.
+
+## [TASK-181: Portfolio Manager Platform Update](overviews/doc:sdd-tasks-completed-task-181-pm-platform-update-md.md)
+
+Added `Platform.IBKR` to the `platforms` list in `create_portfolio_manager()` in
+
+## [TASK-182: Exports Update](overviews/doc:sdd-tasks-completed-task-182-exports-update-md.md)
+
+1. Open both `__init__.py` files
+
+## [TASK-183: Multi-Executor Integration Tests](overviews/doc:sdd-tasks-completed-task-183-multi-executor-int-f9263949.md)
+
+Created `tests/test_multi_executor_integration.py` with 34 tests covering:
+
+## [TASK-184: Macro Analyst Derivatives Guidance](overviews/doc:sdd-tasks-completed-task-184-macro-derivatives--1c02c9b4.md)
+
+Insert the `<derivatives_guidance>` block after the `</instructions>` tag and before
+
+## [TASK-185: Equity Analyst Derivatives Guidance](overviews/doc:sdd-tasks-completed-task-185-equity-derivatives-0cd4320d.md)
+
+Insert the `<derivatives_guidance>` block after the `</sources_priority>` tag and
+
+## [TASK-186: Sentiment Analyst Derivatives Guidance](overviews/doc:sdd-tasks-completed-task-186-sentiment-derivati-96d7e03e.md)
+
+The Sentiment Analyst already analyzes "options flow" — this task adds the
+
+## [TASK-187: Risk Analyst Derivatives Guidance](overviews/doc:sdd-tasks-completed-task-187-risk-derivatives-g-7b61ff41.md)
+
+The Risk Analyst already has `<options_risk_tools>` for analyzing existing
+
+## [TASK-188: Analyst Output Schema Options Flag](overviews/doc:sdd-tasks-completed-task-188-analyst-output-sch-7716b031.md)
+
+Each analyst prompt has an `<output_format>` section with a JSON schema.
+
+## [TASK-189: Derivatives Prompts Integration Tests](overviews/doc:sdd-tasks-completed-task-189-derivatives-prompt-710a34b6.md)
+
+Tests should import prompts and check for string presence:
+
+## [TASK-190: InvestmentPolicyStatement Dataclass](overviews/doc:sdd-tasks-completed-task-190-ips-dataclass-md.md)
+
+@dataclass
+
+## [TASK-191: IPS Injection — Analyst Factory Functions](overviews/doc:sdd-tasks-completed-task-191-ips-analysts-injection-md.md)
+
+All five analyst factory functions in `parrot/finance/agents/analysts.py`:
+
+## [TASK-192: IPS Injection — CIO and Secretary Factory Functions](overviews/doc:sdd-tasks-completed-task-192-ips-cio-secretary--d98db4c4.md)
+
+def create_cio(ips: InvestmentPolicyStatement | None = None) -> Agent:
+
+## [TASK-193: IPS Threading Through TradingSwarm](overviews/doc:sdd-tasks-completed-task-193-ips-swarm-threading-md.md)
+
+internally, this task may be a no-op for `swarm.py` and the threading belongs in
+
+## [TASK-194: IPS Parameter in Research Runner](overviews/doc:sdd-tasks-completed-task-194-ips-research-runner-md.md)
+
+1. Read `parrot/finance/research_runner.py`
+
+## [TASK-195: IPS Demo Integration and Sample YAML](overviews/doc:sdd-tasks-completed-task-195-ips-demo-and-sample-yaml-md.md)
+
+allowed_asset_classes: [equity, etf]
+
+## [TASK-196: IPS Exports Update](overviews/doc:sdd-tasks-completed-task-196-ips-exports-md.md)
+
+1. Read `parrot/finance/__init__.py`
+
+## [TASK-197: IPS Unit Tests](overviews/doc:sdd-tasks-completed-task-197-ips-unit-tests-md.md)
+
+preferred_tickers: [AAPL, MSFT]
+
+## [TASK-198: New Report Scheduler Decorators](overviews/doc:sdd-tasks-completed-task-198-scheduler-report-d-d59445b4.md)
+
+This is Module 1 + Module 4 from the spec.
+
+## [TASK-199: Env Var Resolution Helpers](overviews/doc:sdd-tasks-completed-task-199-scheduler-envvar-helpers-md.md)
+
+This is Module 2 from the spec.
+
+## [TASK-200: register_bot_schedules() Enhancement](overviews/doc:sdd-tasks-completed-task-200-register-bot-sched-b2abd57d.md)
+
+This is Module 3 from the spec.
+
+## [TASK-201: Unit Tests + Verify Script — Report Scheduler Decorators](overviews/doc:sdd-tasks-completed-task-201-scheduler-decorato-a77e008d.md)
+
+"""Unit tests for @schedule_daily_report and @schedule_weekly_report (FEAT-028)."""
+
+## [TASK-202: Add Futures Guidance to Macro Analyst Prompt](overviews/doc:sdd-tasks-completed-task-202-macro-analyst-futu-a7996a07.md)
+
+The Macro Analyst prompt currently references "index futures" only as a data source. It has no guidance for recommending futures positions as an asset class. This task adds a `<derivatives_guidance>` section so the analyst can recommend ES, NQ, ZB, ZN, and related contracts.
+
+## [TASK-203: Add Options Guidance to Equity Analyst Prompt](overviews/doc:sdd-tasks-completed-task-203-equity-analyst-opt-888eb8d2.md)
+
+The Equity Analyst prompt recommends stocks and ETFs only. It has no guidance for recommending options strategies (covered calls, protective puts, long calls/puts, collars). This task adds a `<derivatives_guidance>` section enabling options recommendations.
+
+## [TASK-204: Add Flow-to-Recommendation Guidance to Sentiment Analyst Prompt](overviews/doc:sdd-tasks-completed-task-204-sentiment-analyst--f8b18926.md)
+
+The Sentiment Analyst currently analyzes options flow as an input signal but has no guidance on translating detected flow into actionable options recommendations. This task adds a `<derivatives_guidance>` section enabling the analyst to convert flow signals into recommendations.
+
+## [TASK-205: Add Hedging Guidance to Risk Analyst Prompt](overviews/doc:sdd-tasks-completed-task-205-risk-analyst-hedge-80334ae0.md)
+
+The Risk Analyst has options risk tools but no guidance on recommending derivatives-based hedges when portfolio risks are identified. This task adds a `<derivatives_guidance>` section enabling the Risk Analyst to recommend portfolio protection, sector hedges, single-stock hedges,
+
+## [TASK-206: Add Futures Awareness Note to Crypto Analyst Prompt](overviews/doc:sdd-tasks-completed-task-206-crypto-analyst-fut-5f04f093.md)
+
+The spec (§2 Integration Points) calls for a note about futures awareness in the Crypto Analyst prompt. Crypto derivatives (Binance perps, etc.) are explicitly out of scope per the spec, but the analyst should be aware of the concept and set the `options_opportunity_flag` when re
+
+## [TASK-207: Integration Tests for Analyst Derivatives Prompts](overviews/doc:sdd-tasks-completed-task-207-analyst-derivative-3a30e338.md)
+
+After all analyst prompts have been updated (TASK-202 through TASK-206), this task writes the integration tests from spec §4 to verify all prompts contain the required derivatives guidance and output schema fields.
+
+## [TASK-208: Model Changes — VideoReelScene.reference_image + VideoReelRequest.reference_images](overviews/doc:sdd-tasks-completed-task-208-videoreel-model-changes-md.md)
+
+field to transport the list of uploaded image paths from the handler to the generation
+
+## [TASK-209: _process_scene() — Pass reference_image to generate_image()](overviews/doc:sdd-tasks-completed-task-209-process-scene-refe-78d05538.md)
+
+reference images. Now that `VideoReelScene` carries `reference_image`, this method must
+
+## [TASK-210: _generate_video_reel() — Apply reference_images onto scenes](overviews/doc:sdd-tasks-completed-task-210-generate-video-ree-fcf29554.md)
+
+After scenes are resolved (either from `request.scenes` or from `_breakdown_prompt_to_scenes()`),
+
+## [TASK-211: VideoReelHandler — Multipart Upload + Temp File Cleanup](overviews/doc:sdd-tasks-completed-task-211-handler-multipart-upload-md.md)
+
+multipart/form-data support so clients can upload reference images alongside the JSON
+
+## [TASK-212: Tests — VideoReel Reference Image Upload](overviews/doc:sdd-tasks-completed-task-212-videoreel-upload-tests-md.md)
+
+After all implementation tasks are done, extend the existing test files with unit and
+
+## [TASK-213: DatasetManager Subpackage Scaffold + DataSource ABC](overviews/doc:sdd-tasks-completed-task-213-datasource-subpack-1dfc63b8.md)
+
+from abc import ABC, abstractmethod
+
+## [TASK-214: InMemorySource](overviews/doc:sdd-tasks-completed-task-214-inmemory-source-md.md)
+
+from typing import Dict
+
+## [TASK-215: QuerySlugSource + MultiQuerySlugSource](overviews/doc:sdd-tasks-completed-task-215-queryslug-source-md.md)
+
+Implement `QuerySlugSource` and `MultiQuerySlugSource` at `parrot/tools/dataset_manager/sources/query_slug.py`.
+
+## [TASK-216: SQLQuerySource](overviews/doc:sdd-tasks-completed-task-216-sql-query-source-md.md)
+
+Implement `SQLQuerySource` at `parrot/tools/dataset_manager/sources/sql.py`.
+
+## [TASK-217: TableSource (Schema Prefetch)](overviews/doc:sdd-tasks-completed-task-217-table-source-md.md)
+
+Implement `TableSource` at `parrot/tools/dataset_manager/sources/table.py`.
+
+## [TASK-218: Revised DatasetEntry + DatasetInfo](overviews/doc:sdd-tasks-completed-task-218-dataset-entry-and-info-md.md)
+
+Modify `parrot/tools/dataset_manager/tool.py` to replace the existing `DatasetEntry` class and `DatasetInfo` Pydantic model.
+
+## [TASK-219: DatasetManager Core — Registration, Materialization, Caching, LLM Tools](overviews/doc:sdd-tasks-completed-task-219-datasetmanager-core-md.md)
+
+Modify `parrot/tools/dataset_manager/tool.py` — the `DatasetManager` class.
+
+## [TASK-220: Unit Tests — All Source Types + DatasetManager](overviews/doc:sdd-tasks-completed-task-220-unit-tests-datasources-md.md)
+
+Create `tests/tools/test_datasources.py` with the following test classes:
+
+## [TASK-221: Integration Tests — DatasetManager Data Sources](overviews/doc:sdd-tasks-completed-task-221-integration-tests--5035d1d7.md)
+
+Create `tests/tools/test_datasetmanager_integration.py` with the following tests:
+
+## [TASK-222: Pure Python Exception Implementation](overviews/doc:sdd-tasks-completed-task-222-pure-python-exceptions-md.md)
+
+Create `parrot/exceptions.py` with the following implementation:
+
+## [TASK-223: Rename exceptions.pxi → exceptions.pyi (PEP 561 Stub)](overviews/doc:sdd-tasks-completed-task-223-rename-pyi-stub-md.md)
+
+1. Read `parrot/exceptions.pxi` to confirm its current content.
+
+## [TASK-224: Remove parrot.exceptions Extension from setup.py](overviews/doc:sdd-tasks-completed-task-224-remove-cython-exte-210bd486.md)
+
+Edit `setup.py` to remove the `parrot.exceptions` Extension block:
+
+## [TASK-225: Remove # pylint: disable=E0611 from Dependent Files](overviews/doc:sdd-tasks-completed-task-225-remove-pylint-supp-dde9c1bb.md)
+
+For each file in the table below, remove the `# pylint: disable=E0611` inline comment from the
+
+## [TASK-226: Delete Stale Cython Artifacts](overviews/doc:sdd-tasks-completed-task-226-delete-cython-artifacts-md.md)
+
+Delete the following files:
+
+## [TASK-227: Unit Tests for parrot/exceptions.py](overviews/doc:sdd-tasks-completed-task-227-unit-tests-exceptions-md.md)
+
+Create `tests/test_exceptions.py` covering all test cases defined in the spec:
+
+## [TASK-228: Database Tools — Package Exports (`__init__.py`)](overviews/doc:sdd-tasks-completed-task-228-database-tools-pac-7cdf15c0.md)
+
+Replace the empty `parrot/tools/database/__init__.py` with proper exports:
+
+## [TASK-229: Database Tools — Credential Resolution (`abstract.py`)](overviews/doc:sdd-tasks-completed-task-229-database-tools-cre-e6a8fbcc.md)
+
+Modify `parrot/tools/database/abstract.py`:
+
+## [TASK-230: Database Tools — Complete Vector-Store Cache Tier (`cache.py`)](overviews/doc:sdd-tasks-completed-task-230-database-tools-vec-ff9fb53c.md)
+
+Modify `parrot/tools/database/cache.py`:
+
+## [TASK-231: Database Tools — BigQuery Engine Fix & `_search_in_database` (`bq.py`)](overviews/doc:sdd-tasks-completed-task-231-database-tools-big-5782aad9.md)
+
+## [TASK-232: Database Tools — Tests (`tests/tools/database/`)](overviews/doc:sdd-tasks-completed-task-232-database-tools-tests-md.md)
+
+Created 5 files in `tests/tools/database/`:
+
+## [TASK-233: Docker Configuration & Environment Variable](overviews/doc:sdd-tasks-completed-task-233-docker-config-md.md)
+
+from pydantic import Field
+
+## [TASK-234: Docker Data Models](overviews/doc:sdd-tasks-completed-task-234-docker-models-md.md)
+
+Follow the models defined in spec Section 2 "Data Models", plus add:
+
+## [TASK-235: Docker Executor](overviews/doc:sdd-tasks-completed-task-235-docker-executor-md.md)
+
+import asyncio
+
+## [TASK-236: Docker Compose Generator](overviews/doc:sdd-tasks-completed-task-236-docker-compose-generator-md.md)
+
+import os
+
+## [TASK-237: Docker Toolkit (AbstractToolkit)](overviews/doc:sdd-tasks-completed-task-237-docker-toolkit-md.md)
+
+from typing import Dict, List, Optional, Any
+
+## [TASK-238: Docker Package Init & Registry](overviews/doc:sdd-tasks-completed-task-238-docker-package-init-md.md)
+
+"""Docker Toolkit — manage containers and compose stacks."""
+
+## [TASK-239: Docker Toolkit Unit Tests](overviews/doc:sdd-tasks-completed-task-239-docker-unit-tests-md.md)
+
+import pytest
+
+## [TASK-240: Docker Toolkit Integration Tests](overviews/doc:sdd-tasks-completed-task-240-docker-integration-tests-md.md)
+
+import shutil
+
+## [TASK-241: Config Model — Add OAuth2 Fields to TelegramAgentConfig](overviews/doc:sdd-tasks-completed-task-241-config-model-oauth-b7eb6792.md)
+
+When you pick up this task:
+
+## [TASK-242: Auth Strategy Abstraction & BasicAuthStrategy](overviews/doc:sdd-tasks-completed-task-242-auth-strategy-abst-71b0b600.md)
+
+class AbstractAuthStrategy(ABC):
+
+## [TASK-243: OAuth2 Provider Registry](overviews/doc:sdd-tasks-completed-task-243-oauth2-provider-registry-md.md)
+
+@dataclass
+
+## [TASK-244: OAuth2 Auth Strategy with PKCE Support](overviews/doc:sdd-tasks-completed-task-244-oauth2-auth-strategy-md.md)
+
+import hashlib, base64, secrets
+
+## [TASK-245: Wrapper — Delegate Auth to Strategy](overviews/doc:sdd-tasks-completed-task-245-wrapper-auth-delegation-md.md)
+
+if config.auth_method == "oauth2":
+
+## [TASK-246-001: Implement voice_adapters.py — SupertonicTTS, _TranscriberSTT, WhisperSTT, MoonshineSTT](overviews/doc:sdd-tasks-completed-task-246-001-voice-adapters-e90781c9.md)
+
+FEAT-246 — expose AI-Parrot's own voice infra (SupertonicPipeline TTS and
+
+## [TASK-246-002: Add resolve_stt/resolve_tts factories and wire them into pipeline.py](overviews/doc:sdd-tasks-completed-task-246-002-resolve-factor-5ceb77a6.md)
+
+FEAT-246 Module 3 — env-driven provider factory and pipeline wiring.
+
+## [TASK-246-003: Unit tests for voice adapters and provider factories](overviews/doc:sdd-tasks-completed-task-246-003-unit-tests-md.md)
+
+FEAT-246 test coverage. All tests from the spec section 4 (unit tests table),
+
+## [TASK-246: OAuth2 Callback aiohttp Endpoint](overviews/doc:sdd-tasks-completed-task-246-oauth2-callback-endpoint-md.md)
+
+async def oauth2_callback_handler(request: web.Request) -> web.Response:
+
+## [TASK-247: Unit Tests — Auth Strategies & Config](overviews/doc:sdd-tasks-completed-task-247-unit-tests-auth-st-9d16d4b8.md)
+
+Use fixtures from spec Section 4:
+
+## [TASK-248: Integration Tests — OAuth2 Full Flow](overviews/doc:sdd-tasks-completed-task-248-integration-tests--30b9502d.md)
+
+Simulate the complete flow: `/login` → authorize URL generated → callback with code → token exchange (mocked) → userinfo (mocked) → session authenticated with Google profile
+
+## [TASK-249: MS Teams Config — Whitelist Fields](overviews/doc:sdd-tasks-completed-task-249-msteams-config-whitelist-md.md)
+
+When you pick up this task:
+
+## [TASK-250: MS Teams Wrapper — Authorization Check](overviews/doc:sdd-tasks-completed-task-250-msteams-wrapper-au-4cb02d45.md)
+
+When you pick up this task:
+
+## [TASK-251: Slack Config — User Whitelist Field](overviews/doc:sdd-tasks-completed-task-251-slack-config-user--48be36c3.md)
+
+When you pick up this task:
+
+## [TASK-252: Slack Wrapper — Extend Authorization to Users](overviews/doc:sdd-tasks-completed-task-252-slack-wrapper-user-2ef32fa8.md)
+
+When you pick up this task:
+
+## [TASK-253: Unit Tests — Whitelist Config & Authorization](overviews/doc:sdd-tasks-completed-task-253-whitelist-unit-tests-md.md)
+
+When you pick up this task:
+
+## [TASK-254: Integration Tests — Whitelist Full Flow](overviews/doc:sdd-tasks-completed-task-254-whitelist-integrat-2dbe6826.md)
+
+When you pick up this task:
+
+## [TASK-255: Security Data Models](overviews/doc:sdd-tasks-completed-task-255-security-data-models-md.md)
+
+1. **Read** the spec at `sdd/specs/shelltool-security.spec.md` for full model definitions
+
+## [TASK-256: SecurityPolicy Dataclass & Defaults](overviews/doc:sdd-tasks-completed-task-256-security-policy-md.md)
+
+1. **Read** spec Section 2 (Data Models → SecurityPolicy) and the user's reference code
+
+## [TASK-257: CommandSanitizer — 6-Layer Validation Pipeline](overviews/doc:sdd-tasks-completed-task-257-command-sanitizer-md.md)
+
+1. **Layer 0**: Basic sanity — empty check, length check
+
+## [TASK-258: SecureShellMixin — Integration Mixin](overviews/doc:sdd-tasks-completed-task-258-secure-shell-mixin-md.md)
+
+1. **Read** spec Section 2 (Integration Mixin)
+
+## [TASK-259: ShellTool Integration — Wire Security into Existing Code](overviews/doc:sdd-tasks-completed-task-259-shelltool-integration-md.md)
+
+1. **Read** all existing shell_tool files: `tool.py`, `models.py`, `actions.py`, `__init__.py`
+
+## [TASK-260: Permissive Mode — rm CommandRule for Safe Single-File Deletion](overviews/doc:sdd-tasks-completed-task-260-permissive-rm-rule-md.md)
+
+1. **Read** `security.py` and the spec Open Question 2
+
+## [TASK-261: Comprehensive Unit Tests — ShellTool Security](overviews/doc:sdd-tasks-completed-task-261-security-comprehen-6c94d6ce.md)
+
+1. **Read** spec Section 4 (Testing) for full test matrix
+
+## [TASK-262: Shared Voice Transcription Module](overviews/doc:sdd-tasks-completed-task-262-shared-voice-transcriber-md.md)
+
+When you pick up this task:
+
+## [TASK-263: MS Teams Voice Backward Compatibility](overviews/doc:sdd-tasks-completed-task-263-msteams-voice-back-dade6542.md)
+
+When you pick up this task:
+
+## [TASK-264: Telegram Voice Config](overviews/doc:sdd-tasks-completed-task-264-telegram-voice-config-md.md)
+
+voice_config:
+
+## [TASK-265: Telegram Voice Handler](overviews/doc:sdd-tasks-completed-task-265-telegram-voice-handler-md.md)
+
+1. Extract `voice` or `audio` object from message
+
+## [TASK-266: Voice Transcriber Unit Tests](overviews/doc:sdd-tasks-completed-task-266-voice-transcriber--96d8f061.md)
+
+When you pick up this task:
+
+## [TASK-267: Telegram Voice Handler Tests](overviews/doc:sdd-tasks-completed-task-267-telegram-voice-tests-md.md)
+
+When you pick up this task:
+
+## [TASK-268: Create parrot/core/ Package](overviews/doc:sdd-tasks-completed-task-268-core-package-init-md.md)
+
+1. Create `parrot/core/__init__.py` with a docstring
+
+## [TASK-269: Move Hooks to parrot/core/hooks/](overviews/doc:sdd-tasks-completed-task-269-move-hooks-to-core-md.md)
+
+1. Read the spec for full context
+
+## [TASK-270: Move EventBus to parrot/core/events/](overviews/doc:sdd-tasks-completed-task-270-move-eventbus-to-core-md.md)
+
+1. Create `parrot/core/events/` directory
+
+## [TASK-271: Update parrot/autonomous/ Imports](overviews/doc:sdd-tasks-completed-task-271-update-autonomous--885068c9.md)
+
+from .hooks import BaseHook, HookManager, HookEvent
+
+## [TASK-272: HookManager EventBus Dual-Emit](overviews/doc:sdd-tasks-completed-task-272-hookmanager-eventb-1f173ea3.md)
+
+class HookManager:
+
+## [TASK-273: HookableAgent Mixin](overviews/doc:sdd-tasks-completed-task-273-hookable-agent-mixin-md.md)
+
+class HookableAgent:
+
+## [TASK-274: Core Hooks & Events Unit Tests](overviews/doc:sdd-tasks-completed-task-274-core-hooks-unit-tests-md.md)
+
+1. Create test directory structure
+
+## [TASK-275: Wizard Data Models](overviews/doc:sdd-tasks-completed-task-275-wizard-data-models-md.md)
+
+Create `parrot/setup/__init__.py` (empty, marks package) and `parrot/setup/wizard.py`
+
+## [TASK-276: BaseClientWizard ABC and WizardRunner](overviews/doc:sdd-tasks-completed-task-276-base-client-wizard-md.md)
+
+Extend `parrot/setup/wizard.py` (already has data models from TASK-275) with:
+
+## [TASK-277: Provider Wizard Implementations (5 providers)](overviews/doc:sdd-tasks-completed-task-277-provider-wizards-md.md)
+
+Create the providers package and all five provider wizard files:
+
+## [TASK-278: Scaffolding Module](overviews/doc:sdd-tasks-completed-task-278-scaffolding-module-md.md)
+
+Create `parrot/setup/scaffolding.py` with the following public functions:
+
+## [TASK-279: Code Templates](overviews/doc:sdd-tasks-completed-task-279-code-templates-md.md)
+
+Create the `parrot/templates/` directory and three template files:
+
+## [TASK-280: Setup CLI Command and Registration](overviews/doc:sdd-tasks-completed-task-280-setup-cli-command-md.md)
+
+1. Create `parrot/setup/cli.py` with a `setup` Click command that:
+
+## [TASK-281: Unit and Integration Tests](overviews/doc:sdd-tasks-completed-task-281-unit-tests-md.md)
+
+Create `tests/test_setup_wizard.py` with all unit and integration tests for the
+
+## [TASK-282: Add ENABLE_DATABASE_BOTS and ENABLE_REGISTRY_BOTS to parrot/conf.py](overviews/doc:sdd-tasks-completed-task-282-conf-feature-flags-md.md)
+
+Add two new boolean config variables to `parrot/conf.py` immediately after the
+
+## [TASK-283: BotManager.__init__ — Add 4 flags and store as instance attributes](overviews/doc:sdd-tasks-completed-task-283-botmanager-init-flags-md.md)
+
+Modify `parrot/manager/manager.py`:
+
+## [TASK-284: BotManager.load_bots — Gate registry and database steps](overviews/doc:sdd-tasks-completed-task-284-load-bots-gating-md.md)
+
+Modify the `load_bots` method in `parrot/manager/manager.py` (currently
+
+## [TASK-285: BotManager.on_startup — Replace global ENABLE_CREWS and skip BotConfigStorage](overviews/doc:sdd-tasks-completed-task-285-on-startup-gating-md.md)
+
+Modify the `on_startup` method in `parrot/manager/manager.py` (currently
+
+## [TASK-286: BotManager.setup — Use self.enable_swagger_api instead of global](overviews/doc:sdd-tasks-completed-task-286-setup-swagger-flag-md.md)
+
+Modify the `setup` method in `parrot/manager/manager.py` (currently around
+
+## [TASK-287: Update app.py to pass enable_database_bots=True](overviews/doc:sdd-tasks-completed-task-287-update-app-py-md.md)
+
+Modify `app.py` (project root) to pass `enable_database_bots=True` when
+
+## [TASK-288: Unit Tests for BotManager initialization flags](overviews/doc:sdd-tasks-completed-task-288-unit-tests-botmana-fd5207e2.md)
+
+Create `tests/test_botmanager_flags.py` with all 15 unit tests from the spec.
+
+## [TASK-289 — Add Storage Backend Fields to VideoReelRequest](overviews/doc:sdd-tasks-completed-task-289-model-storage-fields-md.md)
+
+Add `storage_backend` and `storage_config` fields to the `VideoReelRequest` Pydantic model
+
+## [TASK-290 — Add FileManager Initialization to generate_video_reel()](overviews/doc:sdd-tasks-completed-task-290-pipeline-filemanag-b6342aa1.md)
+
+Refactor `generate_video_reel()` to accept an optional `FileManagerInterface` parameter,
+
+## [TASK-291 — Refactor _process_scene() to Use FileManager](overviews/doc:sdd-tasks-completed-task-291-scene-processing-f-f3b8b0e7.md)
+
+Refactor `_process_scene()` to save all scene artifacts (background image, video, narration audio)
+
+## [TASK-292 — Refactor _generate_reel_music() to Use FileManager](overviews/doc:sdd-tasks-completed-task-292-music-generation-f-c9e7447d.md)
+
+Refactor `_generate_reel_music()` to save the generated music file via `FileManagerInterface`
+
+## [TASK-293 — Refactor _create_reel_assembly() with Hybrid Storage Pattern](overviews/doc:sdd-tasks-completed-task-293-assembly-hybrid-storage-md.md)
+
+Refactor `_create_reel_assembly()` to implement the hybrid download→assemble→upload pattern:
+
+## [TASK-294 — Update VideoReelHandler for Storage Configuration](overviews/doc:sdd-tasks-completed-task-294-handler-storage-config-md.md)
+
+Update `VideoReelHandler.post()` to read storage configuration (server-side, from environment
+
+## [TASK-295 — Unit and Integration Tests for Video Reel Storage](overviews/doc:sdd-tasks-completed-task-295-storage-tests-md.md)
+
+Create comprehensive test suite for the configurable storage feature, covering model changes,
+
+## [TASK-296 — Matrix Crew Configuration Models](overviews/doc:sdd-tasks-completed-task-296-crew-config-models-md.md)
+
+Create the Pydantic configuration models for the Matrix crew: `MatrixCrewAgentEntry` and `MatrixCrewConfig`. These are the foundational data structures that all other crew modules import.
+
+## [TASK-297 — Matrix Mention Parsing and Formatting Utilities](overviews/doc:sdd-tasks-completed-task-297-mention-utilities-md.md)
+
+Create mention parsing and formatting utilities for Matrix, handling both plain text `@localpart` mentions and Matrix HTML pill mentions (`<a href="https://matrix.to/#/@user:server">name</a>`).
+
+## [TASK-298 — Matrix Crew Agent Registry](overviews/doc:sdd-tasks-completed-task-298-crew-registry-md.md)
+
+Create a thread-safe in-memory agent registry (`MatrixCrewRegistry`) and the `MatrixAgentCard` model for tracking agent identity and runtime status within a Matrix crew.
+
+## [TASK-299 — Matrix Crew Coordinator Bot](overviews/doc:sdd-tasks-completed-task-299-coordinator-bot-md.md)
+
+Create the `MatrixCoordinator` bot that maintains a pinned status board message in the general room, updating it whenever agent status changes (join, leave, busy, ready, offline).
+
+## [TASK-300 — Matrix Crew Agent Wrapper](overviews/doc:sdd-tasks-completed-task-300-crew-agent-wrapper-md.md)
+
+Create `MatrixCrewAgentWrapper` — the per-agent handler that processes messages directed at a specific agent. Handles typing indicators, BotManager agent resolution, response sending (with optional streaming and chunking), and coordinator status notifications.
+
+## [TASK-301 — Matrix Crew Transport Orchestrator](overviews/doc:sdd-tasks-completed-task-301-crew-transport-md.md)
+
+Create `MatrixCrewTransport` — the top-level orchestrator that manages the full lifecycle of a Matrix multi-agent crew. Also update `parrot/integrations/matrix/crew/__init__.py` with all exports and extend `parrot/integrations/manager.py` to support `matrix_crew` configuration.
+
+## [TASK-302 — Unit and Integration Tests for Matrix Crew](overviews/doc:sdd-tasks-completed-task-302-crew-tests-md.md)
+
+Create comprehensive unit and integration tests for the Matrix crew modules: config loading, registry operations, mention parsing, coordinator status board, agent wrapper message handling, and transport routing.
+
+## [TASK-303 — Matrix Crew Example Script and Documentation](overviews/doc:sdd-tasks-completed-task-303-example-and-docume-a96dda28.md)
+
+Create a comprehensive example script demonstrating a Matrix multi-agent crew with 3 agents, each in its own room and all sharing a general room. Include an extensive documentation guide covering setup, configuration, architecture, and production deployment.
+
+## [TASK-304 — Episodic Memory Data Models and Enums](overviews/doc:sdd-tasks-completed-task-304-episodic-models-md.md)
+
+Create all Pydantic models, enums, and dataclasses for the episodic memory system. These are the foundational types that all other episodic modules import.
+
+## [TASK-305 — PgVector Episode Backend](overviews/doc:sdd-tasks-completed-task-305-pgvector-backend-md.md)
+
+Implement the `AbstractEpisodeBackend` Protocol and the `PgVectorBackend` using asyncpg for production episodic memory storage with pgvector similarity search.
+
+## [TASK-306 — FAISS Episode Backend](overviews/doc:sdd-tasks-completed-task-306-faiss-backend-md.md)
+
+Implement the `FAISSBackend` for local development without PostgreSQL. Uses in-memory FAISS index + dict storage with optional disk persistence.
+
+## [TASK-307 — Embedding Provider and Reflection Engine](overviews/doc:sdd-tasks-completed-task-307-embedding-reflection-md.md)
+
+Implement the `EpisodeEmbeddingProvider` (lazy-loading sentence-transformers) and the `ReflectionEngine` (LLM-powered with heuristic fallback).
+
+## [TASK-308 — Redis Hot Cache for Episodes](overviews/doc:sdd-tasks-completed-task-308-redis-cache-md.md)
+
+Implement `EpisodeRedisCache` for caching recent episodes and failures per namespace in Redis, enabling fast access without hitting the backend.
+
+## [TASK-309 — EpisodicMemoryStore Main Orchestrator](overviews/doc:sdd-tasks-completed-task-309-episodic-store-md.md)
+
+Implement `EpisodicMemoryStore` — the main API class that orchestrates the backend, reflection engine, embedding provider, and Redis cache to provide recording, recall, and maintenance operations.
+
+## [TASK-310 — Agent-Usable Episodic Memory Tools](overviews/doc:sdd-tasks-completed-task-310-episodic-tools-md.md)
+
+Create agent-usable tools that allow LLM agents to explicitly search, record, and retrieve warnings from episodic memory during their reasoning loop.
+
+## [TASK-311 — EpisodicMemoryMixin for AbstractBot](overviews/doc:sdd-tasks-completed-task-311-episodic-mixin-md.md)
+
+Create `EpisodicMemoryMixin` that hooks into `AbstractBot` to automatically record episodes after tool calls and conversations, and inject episodic context (warnings, preferences, room context) into the system prompt before LLM calls.
+
+## [TASK-312 — Unit and Integration Tests for Episodic Memory Store](overviews/doc:sdd-tasks-completed-task-312-episodic-tests-md.md)
+
+Create comprehensive unit and integration tests covering all episodic memory modules: models, backends, embedding, reflection, cache, store, tools, and mixin.
+
+## [TASK-324: Chat Integration State Management](overviews/doc:sdd-tasks-completed-task-324-chat-integration-state-md.md)
+
+import pytest
+
+## [TASK-325: PromptLayer Dataclass & Built-in Layers](overviews/doc:sdd-tasks-completed-task-325-prompt-layer-dataclass-md.md)
+
+import pytest
+
+## [TASK-327: Presets Registry](overviews/doc:sdd-tasks-completed-task-327-presets-registry-md.md)
+
+import pytest
+
+## [TASK-328: Domain-Specific Layers](overviews/doc:sdd-tasks-completed-task-328-domain-layers-md.md)
+
+import pytest
+
+## [TASK-329: AbstractBot PromptBuilder Integration](overviews/doc:sdd-tasks-completed-task-329-abstractbot-integration-md.md)
+
+import pytest
+
+## [TASK-330: VoiceBot Prompt Migration](overviews/doc:sdd-tasks-completed-task-330-voicebot-migration-md.md)
+
+import pytest
+
+## [TASK-331: PandasAgent Prompt Migration](overviews/doc:sdd-tasks-completed-task-331-pandasagent-migration-md.md)
+
+import pytest
+
+## [TASK-332: YAML & BotManager Prompt Config Integration](overviews/doc:sdd-tasks-completed-task-332-yaml-botmanager-in-6915e442.md)
+
+prompt:
+
+## [TASK-333: Prompts Package __init__.py & Legacy Compat](overviews/doc:sdd-tasks-completed-task-333-prompts-package-init-md.md)
+
+import pytest
+
+## [TASK-334: Unit Tests for Prompt Layer System](overviews/doc:sdd-tasks-completed-task-334-unit-tests-md.md)
+
+When you pick up this task:
+
+## [TASK-335: Integration Tests for Prompt Layer System](overviews/doc:sdd-tasks-completed-task-335-integration-tests-md.md)
+
+When you pick up this task:
+
+## [TASK-336: PlanogramComplianceHandler — Core Implementation](overviews/doc:sdd-tasks-completed-task-336-planogram-handler-core-md.md)
+
+1. Parse multipart form-data via `_parse_multipart()` → extract `image` file (save to temp dir) and `config_name` string.
+
+## [TASK-337: PlanogramComplianceHandler — Registration & Export](overviews/doc:sdd-tasks-completed-task-337-planogram-handler--c2f006f5.md)
+
+if name == "PlanogramComplianceHandler":
+
+## [TASK-338: PlanogramComplianceHandler — Tests](overviews/doc:sdd-tasks-completed-task-338-planogram-handler-tests-md.md)
+
+@pytest.fixture
+
+## [TASK-339: AbstractPlanogramType ABC & Types Package](overviews/doc:sdd-tasks-completed-task-339-abstract-planogram-type-md.md)
+
+1. Create `parrot/pipelines/planogram/types/__init__.py`:
+
+## [TASK-340: PlanogramConfig — Add planogram_type Field](overviews/doc:sdd-tasks-completed-task-340-planogram-config-t-6abe9fb8.md)
+
+1. Add `planogram_type: str = "product_on_shelves"` field to `PlanogramConfig`:
+
+## [TASK-341: ProductOnShelves Composable — Extract Current Logic](overviews/doc:sdd-tasks-completed-task-341-product-on-shelves-2cba2b82.md)
+
+Implement `ProductOnShelves(AbstractPlanogramType)` with all methods currently in `plan.py` that handle shelf-based planogram compliance:
+
+## [TASK-342: PlanogramCompliance Refactor — Composable Delegation](overviews/doc:sdd-tasks-completed-task-342-planogram-complian-88dcb8d5.md)
+
+1. **Add internal registry** — class-level dict mapping type strings to composable classes:
+
+## [TASK-343: Handler Hydration Update & Integration](overviews/doc:sdd-tasks-completed-task-343-handler-hydration--1cf32db5.md)
+
+1. In `_build_planogram_config()`, add `planogram_type` from DB row:
+
+## [TASK-344: Unit Tests for Planogram Compliance Modular](overviews/doc:sdd-tasks-completed-task-344-planogram-modular-tests-md.md)
+
+1. **`test_abstract_planogram_type_contract`**: Verify `AbstractPlanogramType` cannot be instantiated directly — raises `TypeError`.
+
+## [TASK-345: Create Name Slugification & Deduplication Utilities](overviews/doc:sdd-tasks-completed-task-345-naming-utilities-md.md)
+
+## [TASK-346: Replace Direct Registry Internals Access with get_metadata()](overviews/doc:sdd-tasks-completed-task-346-registry-access-cleanup-md.md)
+
+def get_metadata(self, name: str) -> Optional[BotMetadata]:
+
+## [TASK-347: Integrate Name Slugification & Dedup into _put_database()](overviews/doc:sdd-tasks-completed-task-347-name-normalization-b002c12d.md)
+
+At the top of `_put_database()`, before the duplicate check:
+
+## [TASK-348: Eager Vector Store Provisioning at Bot Creation](overviews/doc:sdd-tasks-completed-task-348-vector-store-provi-e0eeb153.md)
+
+Add a private async method:
+
+## [TASK-349: Implement _apply_filter Helper and add_dataset filter Parameter](overviews/doc:sdd-tasks-completed-task-349-apply-filter-helper-md.md)
+
+if filter:
+
+## [TASK-349 — QuerySlugSource Permanent Filter](overviews/doc:sdd-tasks-completed-task-349-queryslugsource-pe-4dfa436c.md)
+
+Add an optional `permanent_filter: Optional[Dict[str, Any]]` parameter to `QuerySlugSource` that is merged into every `fetch()` call, with the permanent filter taking precedence over runtime params.
+
+## [TASK-350 — TableSource Permanent Filter](overviews/doc:sdd-tasks-completed-task-350-tablesource-perman-b5b24350.md)
+
+Add an optional `permanent_filter: Optional[Dict[str, Any]]` parameter to `TableSource` that injects a WHERE clause into every SQL query in `fetch()`.
+
+## [TASK-351 — DatasetManager Permanent Filter Integration](overviews/doc:sdd-tasks-completed-task-351-datasetmanager-per-003d8166.md)
+
+Expose the `filter` parameter through `DatasetManager.add_query()`, `DatasetManager.add_table_source()`, and `DatasetManager.add_dataset()` (for `query_slug` and `table` modes), passing it through to the respective source constructors.
+
+## [TASK-352 — JiraToolkit Config Defaults & Init](overviews/doc:sdd-tasks-completed-task-352-jiratoolkit-config-b93ee46d.md)
+
+Add configurable default values for Jira ticket creation fields and wire them into `JiraToolkit.__init__`.
+
+## [TASK-353 — Apply Defaults in jira_create_issue & Add jira_get_components](overviews/doc:sdd-tasks-completed-task-353-jiratoolkit-create-2366edac.md)
+
+Wire default values into `jira_create_issue()` so omitted fields fall back to configured defaults. Add the `jira_get_components()` method for component ID discovery.
+
+## [TASK-354 — Unit & Integration Tests for JiraToolkit Defaults](overviews/doc:sdd-tasks-completed-task-354-jiratoolkit-defaul-5bbe487e.md)
+
+Write tests to verify that all default fields are correctly applied during ticket creation, that explicit values override defaults, and that `jira_get_components()` works.
+
+## [TASK-355: Add ONTOLOGY_* Configuration Variables](overviews/doc:sdd-tasks-completed-task-355-ontology-conf-variables-md.md)
+
+Add the following 12 configuration variables after the existing config section, following the `config.get()` pattern:
+
+## [TASK-356: Ontology Exceptions & Package Init](overviews/doc:sdd-tasks-completed-task-356-ontology-exceptions-md.md)
+
+Empty init or minimal exports.
+
+## [TASK-357: ExtractDataSource ABC & Base Models](overviews/doc:sdd-tasks-completed-task-357-extract-datasource-abc-md.md)
+
+1. **`ExtractedRecord(BaseModel)`**:
+
+## [TASK-358: Data Source Implementations (CSV, JSON, Records, SQL, API)](overviews/doc:sdd-tasks-completed-task-358-extract-datasource-impls-md.md)
+
+Export all implementations.
+
+## [TASK-359: DataSourceFactory](overviews/doc:sdd-tasks-completed-task-359-datasource-factory-md.md)
+
+1. Check `source_config["type"]` (or fall back to `source_name`).
+
+## [TASK-360: Ontology Pydantic Schema Models](overviews/doc:sdd-tasks-completed-task-360-ontology-schema-models-md.md)
+
+All models with `model_config = ConfigDict(extra="forbid")`:
+
+## [TASK-361: YAML Parser](overviews/doc:sdd-tasks-completed-task-361-ontology-parser-md.md)
+
+## [TASK-362: YAML Merger — Multi-Layer Composition](overviews/doc:sdd-tasks-completed-task-362-ontology-merger-md.md)
+
+Helper methods:
+
+## [TASK-363: Ontology Graph Store — ArangoDB Operations](overviews/doc:sdd-tasks-completed-task-363-ontology-graph-store-md.md)
+
+## [TASK-364: AQL Security Validator](overviews/doc:sdd-tasks-completed-task-364-aql-validator-md.md)
+
+1. No mutation keywords: `INSERT`, `UPDATE`, `REMOVE`, `REPLACE`, `UPSERT` (case-insensitive regex).
+
+## [TASK-365: Relation Discovery Engine](overviews/doc:sdd-tasks-completed-task-365-relation-discovery-md.md)
+
+1. `_exact_match(source_data, target_data, rule) -> list[dict]`:
+
+## [TASK-366: Dual-Path Intent Resolver](overviews/doc:sdd-tasks-completed-task-366-intent-resolver-md.md)
+
+## [TASK-367: Tenant Ontology Manager](overviews/doc:sdd-tasks-completed-task-367-tenant-manager-md.md)
+
+1. Check `_cache` for tenant.
+
+## [TASK-368: Redis Cache Helpers](overviews/doc:sdd-tasks-completed-task-368-cache-helpers-md.md)
+
+## [TASK-369: OntologyRAGMixin — Agent Pipeline Orchestrator](overviews/doc:sdd-tasks-completed-task-369-ontology-mixin-md.md)
+
+1. Check `ENABLE_ONTOLOGY_RAG` — if False, return `EnrichedContext(source="disabled")`.
+
+## [TASK-370: CRON Refresh Pipeline — Delta Sync](overviews/doc:sdd-tasks-completed-task-370-refresh-pipeline-md.md)
+
+1. Resolve tenant context.
+
+## [TASK-371: Default Ontology YAML Files](overviews/doc:sdd-tasks-completed-task-371-default-ontology-yamls-md.md)
+
+Base ontology with universal entities and relations:
+
+## [TASK-372: Integration Tests — Full E2E Pipeline](overviews/doc:sdd-tasks-completed-task-372-integration-tests-md.md)
+
+## [TASK-373: Add EMBEDDING_REGISTRY_MAX_MODELS Configuration](overviews/doc:sdd-tasks-completed-task-373-embedding-registry-bb79f16d.md)
+
+Follow the existing pattern in `parrot/conf.py` for environment-variable-backed settings:
+
+## [TASK-374: Implement EmbeddingRegistry Singleton Core](overviews/doc:sdd-tasks-completed-task-374-embedding-registry-core-md.md)
+
+import asyncio
+
+## [TASK-375: Export EmbeddingRegistry from Embeddings Package](overviews/doc:sdd-tasks-completed-task-375-embedding-registry-991a0c51.md)
+
+from .registry import EmbeddingRegistry
+
+## [TASK-376: Integrate AbstractStore with EmbeddingRegistry](overviews/doc:sdd-tasks-completed-task-376-abstractstore-regi-c00021fe.md)
+
+Current code in `AbstractStore.create_embedding()`:
+
+## [TASK-377: Integrate KnowledgeBaseStore with EmbeddingRegistry](overviews/doc:sdd-tasks-completed-task-377-kbstore-registry-i-9d388c52.md)
+
+Current eager loading:
+
+## [TASK-378: Integrate Bot Warmup with EmbeddingRegistry](overviews/doc:sdd-tasks-completed-task-378-bot-warmup-registr-bb5df6af.md)
+
+Current warmup:
+
+## [TASK-379: Integrate EmbeddingModel Base with Registry](overviews/doc:sdd-tasks-completed-task-379-embeddingmodel-bas-eaaf1040.md)
+
+Current property:
+
+## [TASK-380: Unified Memory Models](overviews/doc:sdd-tasks-completed-task-380-unified-memory-models-md.md)
+
+This task implements the foundational Pydantic data models for the unified memory layer (Module 1 from the spec). These models are used by all subsequent modules: `ContextAssembler`, `UnifiedMemoryManager`, and `LongTermMemoryMixin`.
+
+## [TASK-381: Context Assembler](overviews/doc:sdd-tasks-completed-task-381-context-assembler-md.md)
+
+This task implements the `ContextAssembler` (Module 2 from the spec) — the component responsible for priority-based token budget allocation when assembling context from multiple memory subsystems. It ensures the combined memory context never exceeds the configured token limit.
+
+## [TASK-382: Unified Memory Manager](overviews/doc:sdd-tasks-completed-task-382-unified-memory-manager-md.md)
+
+This task implements the `UnifiedMemoryManager` (Module 3 from the spec) — the central coordinator that orchestrates parallel retrieval from episodic memory, skill registry, and conversation memory, then passes results through `ContextAssembler` for token-budgeted context assembl
+
+## [TASK-383: LongTermMemoryMixin](overviews/doc:sdd-tasks-completed-task-383-long-term-memory-mixin-md.md)
+
+This task implements the `LongTermMemoryMixin` (Module 4 from the spec) — a single opt-in mixin that any `AbstractBot` subclass can use to gain long-term memory capabilities. It wires the `UnifiedMemoryManager` into the agent lifecycle: configuring subsystems at startup, injectin
+
+## [TASK-384: Unified Memory Package Exports](overviews/doc:sdd-tasks-completed-task-384-unified-package-exports-md.md)
+
+This task finalizes the `parrot/memory/unified/` package (Module 5 from the spec) by setting up proper `__init__.py` exports and updating the parent `parrot/memory/__init__.py` to include the unified components.
+
+## [TASK-385: Bot Integration Hooks for Long-Term Memory](overviews/doc:sdd-tasks-completed-task-385-bot-integration-hooks-md.md)
+
+This task implements the integration hooks in `AbstractBot` / bot base classes (Module 6 from the spec) that wire the `LongTermMemoryMixin` into the actual agent lifecycle. These are minimal, additive, backward-compatible changes that allow agents using the mixin to automatically
+
+## [TASK-386: Lazy Import Utility](overviews/doc:sdd-tasks-completed-task-386-lazy-import-utility-md.md)
+
+This is the foundation task for FEAT-056. All subsequent lazy-import refactoring tasks depend on this utility module. It provides a standardized, canonical pattern for lazy-importing optional dependencies across the entire codebase, replacing the 4-5 ad-hoc patterns currently in 
+
+## [TASK-387: pyproject.toml Dependency Restructuring](overviews/doc:sdd-tasks-completed-task-387-pyproject-restructure-md.md)
+
+This is the central packaging task for FEAT-056. It restructures `pyproject.toml` to move ~30 heavy dependencies from `[project.dependencies]` to new/existing `[project.optional-dependencies]` extras groups. This must be done carefully since it changes what gets installed by defa
+
+## [TASK-388: Core Clients Lazy Imports](overviews/doc:sdd-tasks-completed-task-388-clients-lazy-imports-md.md)
+
+Core client files (`parrot/clients/base.py`, `parrot/clients/gpt.py`) currently import heavy optional dependencies (pydub, pytesseract) at module level, causing import failures when those packages aren't installed. This task converts them to lazy imports using the utility from TA
+
+## [TASK-389: Database/Query Tools Lazy Imports](overviews/doc:sdd-tasks-completed-task-389-db-tools-lazy-imports-md.md)
+
+Database and query tools are the most widespread users of `asyncdb` and `querysource` imports. Since `querysource` is now in the `[db]` extra, all 7+ tool files that import it must be converted to lazy imports. These tools should still work perfectly when the `[db]` extra is inst
+
+## [TASK-390: Handler/Interface Lazy Imports](overviews/doc:sdd-tasks-completed-task-390-handlers-lazy-imports-md.md)
+
+Handlers, interfaces, and store modules import `asyncdb` and `querysource` at module level. Since `querysource` moved to the `[db]` extra, these files need lazy imports so the handler framework remains importable without DB extras. Note that `asyncdb[default]` is still in core.
+
+## [TASK-391: Document/PDF/OCR Tools Lazy Imports](overviews/doc:sdd-tasks-completed-task-391-pdf-ocr-lazy-imports-md.md)
+
+PDF export (weasyprint), document conversion (markitdown), and OCR (pytesseract) tools currently import heavy dependencies at module level. These require system libraries (cairo/pango for weasyprint, tesseract for pytesseract) that make the base install fragile. Moving them to la
+
+## [TASK-392: ML/Embeddings Lazy Imports](overviews/doc:sdd-tasks-completed-task-392-ml-embeddings-lazy-9f908a66.md)
+
+ML and embedding modules import `sentence-transformers`, `faiss`, and `torch` at module level. These are among the heaviest dependencies in the project (torch alone is ~2GB). They must be lazy-imported so the core framework loads without ML packages.
+
+## [TASK-393: Financial Tools Lazy Imports](overviews/doc:sdd-tasks-completed-task-393-finance-tools-lazy-c83ff867.md)
+
+Financial analysis tools import `ta-lib` and `pandas-datareader` at module level. `ta-lib` requires a C library (`libta-lib-dev`) making it one of the hardest dependencies to install. These are niche tools used only by financial analysis agents.
+
+## [TASK-394: FlowtTask Isolation](overviews/doc:sdd-tasks-completed-task-394-flowtask-isolation-md.md)
+
+Implements: Spec Module 9 — FlowtTask Isolation.
+
+## [TASK-395: Audio/Voice Lazy Imports](overviews/doc:sdd-tasks-completed-task-395-audio-voice-lazy-imports-md.md)
+
+Audio and voice processing modules import `pydub`, `whisperx`, and `moviepy` at module level. These require ffmpeg and other system dependencies. They should be lazy-imported since most users don't need audio processing.
+
+## [TASK-396: Bot DB Modules Lazy Imports](overviews/doc:sdd-tasks-completed-task-396-bot-db-lazy-imports-md.md)
+
+Several bot modules in `parrot/bots/` import `querysource` at module level for database-backed bot functionality. Since querysource moved to the `[db]` extra, these must use lazy imports.
+
+## [TASK-397: Validation Tests & Final Verification](overviews/doc:sdd-tasks-completed-task-397-validation-tests-md.md)
+
+Final validation task that verifies all lazy-import refactoring works end-to-end. Creates comprehensive tests that mock missing optional dependencies and verify the core framework loads cleanly.
+
+## [TASK-398: Workspace Scaffolding](overviews/doc:sdd-tasks-completed-task-398-workspace-scaffolding-md.md)
+
+Foundation task for FEAT-057. Creates the `uv` workspace structure, transforms the root `pyproject.toml` into a workspace root, moves existing `parrot/` into `packages/ai-parrot/src/parrot/`, and creates empty sub-package scaffolds. No code logic changes — purely structural.
+
+## [TASK-399: Import Proxy — Tools](overviews/doc:sdd-tasks-completed-task-399-import-proxy-tools-md.md)
+
+Creates the `__getattr__`-based proxy in `parrot/tools/__init__.py` that resolves imports from `parrot_tools` (the separate package) transparently. This enables backward-compatible `from parrot.tools.X import Y` imports after tools are moved to `parrot_tools`. Base classes and co
+
+## [TASK-400: Import Proxy — Loaders](overviews/doc:sdd-tasks-completed-task-400-import-proxy-loaders-md.md)
+
+Same pattern as TASK-399 but for loaders. Creates the `__getattr__`-based proxy in `parrot/loaders/__init__.py` that resolves imports from `parrot_loaders` package. `BaseLoader` and abstract base stay in core.
+
+## [TASK-401: Tool Discovery System](overviews/doc:sdd-tasks-completed-task-401-tool-discovery-system-md.md)
+
+Creates the multi-source discovery system for `ToolManager`. Two strategies: FAST (read `TOOL_REGISTRY` dicts — no imports needed) and FULL (walk_packages for plugins/). Updates `ToolManager` to use discovery. Deprecates old `ToolkitRegistry`.
+
+## [TASK-402: Tools Package Setup](overviews/doc:sdd-tasks-completed-task-402-tools-package-setup-md.md)
+
+Creates the `ai-parrot-tools` package structure with proper `pyproject.toml`, per-tool optional extras groups, and the `TOOL_REGISTRY` dict in `__init__.py`. This is the target package where tools will be migrated to.
+
+## [TASK-403: Tools Migration — Batch 1 (Simple Tools)](overviews/doc:sdd-tasks-completed-task-403-tools-migration-batch1-md.md)
+
+First batch of tool migrations: simple, self-contained tools with few/no external dependencies. This validates the migration pattern and proxy resolution before tackling complex tools.
+
+## [TASK-404: Tools Migration — Batch 2 (Toolkit-Based Tools)](overviews/doc:sdd-tasks-completed-task-404-tools-migration-batch2-md.md)
+
+Second batch: toolkit-based tools that extend `AbstractToolkit`. These are more complex than simple tools but still well-structured. `OpenAPIToolkit` stays in core (it's a generic dynamic tool generator, not service-specific).
+
+## [TASK-405: Tools Migration — Batch 3 (Complex/Heavy Tools)](overviews/doc:sdd-tasks-completed-task-405-tools-migration-batch3-md.md)
+
+Final tools batch: complex tools with heavy external dependencies and cross-imports. These include DB tools, financial analysis, scraping, code interpreter, sandbox, sitesearch, flowtask wrapper, etc. Most complex migration due to external deps and potential cross-tool imports.
+
+## [TASK-406: Loaders Package Setup & Migration](overviews/doc:sdd-tasks-completed-task-406-loaders-migration-md.md)
+
+Creates the `ai-parrot-loaders` package and moves all loaders from `parrot/loaders/` to `parrot_loaders/`. Fewer loaders than tools, so this is a single task (not batched). `BaseLoader` / abstract base stays in core.
+
+## [TASK-407: Registry Generation Script](overviews/doc:sdd-tasks-completed-task-407-registry-generatio-46bd2992.md)
+
+Creates `scripts/generate_tool_registry.py` that scans `parrot_tools/` and `parrot_loaders/` for tool/loader classes and generates/updates the `TOOL_REGISTRY` and `LOADER_REGISTRY` dicts. Includes `--check` mode for CI.
+
+## [TASK-408: Cleanup & CI](overviews/doc:sdd-tasks-completed-task-408-cleanup-ci-md.md)
+
+Post-migration cleanup: remove empty directories from core, update CI pipeline, ensure version synchronization, update `.gitignore`, verify workspace-level operations.
+
+## [TASK-409: Tests & Validation](overviews/doc:sdd-tasks-completed-task-409-monorepo-tests-val-5958c495.md)
+
+Final validation: comprehensive tests verifying the entire monorepo migration works end-to-end. Tests proxy resolution, discovery, backward compat, core tool availability, error messages, and full install scenarios.
+
+## [TASK-412: Add Deploy Job — Publish All Packages to PyPI](overviews/doc:sdd-tasks-completed-task-412-release-deploy-job-md.md)
+
+After TASK-410 and TASK-411 create the three build jobs, this task adds the `deploy` job that downloads all artifacts and publishes them to PyPI. This replaces the old deploy job that only published `ai-parrot`.
+
+## [TASK-413: Validation — Actionlint & Dry-Run Builds](overviews/doc:sdd-tasks-completed-task-413-release-validation-md.md)
+
+After the full `release.yml` is assembled (TASK-410 through TASK-412), this task validates the workflow end-to-end: syntax checking with `actionlint`, YAML validation, and local dry-run builds for each package to confirm they produce the expected artifacts.
+
+## [TASK-414: Release Process Documentation](overviews/doc:sdd-tasks-completed-task-414-release-documentation-md.md)
+
+The monorepo release process differs from the original single-package workflow. This task documents how to create releases, the PyPI setup required for the two new packages, and how versioning works across the three packages.
+
+## [TASK-415: Add description field to DatasetEntry](overviews/doc:sdd-tasks-completed-task-415-dataset-entry-desc-ace4d1c6.md)
+
+This is the foundational task for FEAT-059. `DatasetEntry` needs a first-class `description` field so that all downstream features (registration methods, summary generation, metadata output) can use it. Currently descriptions are only available via the opaque `metadata["descripti
+
+## [TASK-416: Add description parameter to all registration methods](overviews/doc:sdd-tasks-completed-task-416-registration-metho-85e16c59.md)
+
+With `DatasetEntry` now supporting a first-class `description` field (TASK-415), all registration methods on `DatasetManager` need to accept and forward this parameter. This is the largest task by surface area — 7 methods need updating.
+
+## [TASK-417: Implement get_datasets_summary() method](overviews/doc:sdd-tasks-completed-task-417-get-datasets-summary-md.md)
+
+With descriptions available on `DatasetEntry` (TASK-415), we need a method that generates a concise markdown summary of all active datasets. This summary serves two purposes (per owner decision): (1) LLM-callable tool for on-demand summary, and (2) internal use for system prompt 
+
+## [TASK-418: Surface description in get_metadata() and guide generation](overviews/doc:sdd-tasks-completed-task-418-surface-descriptio-351252dd.md)
+
+With descriptions stored in `DatasetEntry` (TASK-415) and `get_datasets_summary()` available (TASK-417), this task wires them into the two main output channels: the `get_metadata()` tool response and the `_generate_dataframe_guide()` system prompt injection.
+
+## [TASK-419: Unit tests for dataset description feature](overviews/doc:sdd-tasks-completed-task-419-dataset-descriptio-32355737.md)
+
+Final task for FEAT-059. Consolidates all test cases from the spec into a dedicated test file. Individual tasks may have added inline tests; this task ensures comprehensive coverage including edge cases and integration scenarios.
+
+## [TASK-420: Implement IcebergSource](overviews/doc:sdd-tasks-completed-task-420-iceberg-source-md.md)
+
+from parrot._imports import lazy_import
+
+## [TASK-421: Implement MongoSource](overviews/doc:sdd-tasks-completed-task-421-mongo-source-md.md)
+
+from .base import DataSource
+
+## [TASK-422: Implement DeltaTableSource](overviews/doc:sdd-tasks-completed-task-422-deltatable-source-md.md)
+
+import hashlib
+
+## [TASK-423: DatasetManager Registration Methods + DatasetInfo Update](overviews/doc:sdd-tasks-completed-task-423-registration-methods-md.md)
+
+async def add_iceberg_source(
+
+## [TASK-424: Source Exports and __init__.py Updates](overviews/doc:sdd-tasks-completed-task-424-source-exports-md.md)
+
+"""
+
+## [TASK-425: Integration Tests for New DatasetManager Sources](overviews/doc:sdd-tasks-completed-task-425-new-sources-tests-md.md)
+
+import pytest
+
+## [TASK-426: Integration tests for allowed_columns (guide + metadata)](overviews/doc:sdd-tasks-completed-task-426-tablesource-allowe-55b6aaa3.md)
+
+With all implementation and unit tests complete, this task adds integration-level tests verifying that the `allowed_columns` restriction flows through the full DatasetManager pipeline: registration → guide generation → metadata retrieval. These tests verify that the LLM-facing in
+
+## [TASK-427: Computed Columns Foundation](overviews/doc:sdd-tasks-completed-task-427-computed-columns-f-d770da44.md)
+
+This task creates the foundational module for computed columns: the `ComputedColumnDef` Pydantic model, the `COMPUTED_FUNCTIONS` registry, built-in fallback functions, and the lazy-load bridge from QuerySource functions.
+
+## [TASK-427: Result Types & AbstractDatabaseSource](overviews/doc:sdd-tasks-completed-task-427-dbtoolkit-base-types-md.md)
+
+This is the foundation task for the DatabaseToolkit feature. It defines all Pydantic
+
+## [TASK-428: DatasetEntry Computed Column Integration](overviews/doc:sdd-tasks-completed-task-428-datasetentry-compu-3f85c8ec.md)
+
+Integrates computed columns into `DatasetEntry` so they are applied post-materialization and appear as regular columns in all metadata surfaces.
+
+## [TASK-428: Source Registry & Driver Alias Resolution](overviews/doc:sdd-tasks-completed-task-428-dbtoolkit-source-r-973f4d8e.md)
+
+## [TASK-429: DatasetManager add_* Methods Computed Columns](overviews/doc:sdd-tasks-completed-task-429-add-methods-comput-f008fdf3.md)
+
+All `add_*` registration methods on DatasetManager must gain an optional `computed_columns` parameter that flows through to `DatasetEntry`.
+
+## [TASK-429: Core SQL Sources — PostgreSQL, MySQL, SQLite](overviews/doc:sdd-tasks-completed-task-429-dbtoolkit-sql-sour-42dfcf73.md)
+
+## [TASK-430: Extended SQL Sources — BigQuery, Oracle, ClickHouse, DuckDB](overviews/doc:sdd-tasks-completed-task-430-dbtoolkit-sql-sour-32b07678.md)
+
+## [TASK-430: LLM Runtime Computed Columns](overviews/doc:sdd-tasks-completed-task-430-llm-runtime-comput-50972b0f.md)
+
+The LLM should be able to add computed columns at runtime (restricted to the function registry) and list available functions. These are new tool methods on DatasetManager.
+
+## [TASK-431: CompositeDataSource](overviews/doc:sdd-tasks-completed-task-431-composite-datasource-md.md)
+
+Creates the `CompositeDataSource` — a virtual `DataSource` that JOINs existing datasets on demand with per-component filter propagation.
+
+## [TASK-431: MSSQL Source with Stored Procedure Support](overviews/doc:sdd-tasks-completed-task-431-dbtoolkit-mssql-source-md.md)
+
+## [TASK-432: DatasetManager.add_composite_dataset](overviews/doc:sdd-tasks-completed-task-432-add-composite-dataset-md.md)
+
+Adds the `add_composite_dataset()` registration method to DatasetManager, creating a `CompositeDataSource` and wrapping it in a `DatasetEntry` with optional computed columns.
+
+## [TASK-432: MongoDB Source](overviews/doc:sdd-tasks-completed-task-432-dbtoolkit-mongo-source-md.md)
+
+## [TASK-432:](overviews/doc:sdd-tasks-completed-task-432-md.md)
+
+## [TASK-433: DatasetInfo, Guide & Fetch Integration](overviews/doc:sdd-tasks-completed-task-433-datasetinfo-guide--95f745f3.md)
+
+Final integration task: composite datasets must appear correctly in all DatasetManager surfaces — DatasetInfo model, LLM guide, fetch_dataset routing, list_datasets, and get_metadata.
+
+## [TASK-433: DocumentDB & Atlas Sources](overviews/doc:sdd-tasks-completed-task-433-dbtoolkit-document-0d1e0a6a.md)
+
+## [TASK-433:](overviews/doc:sdd-tasks-completed-task-433-md.md)
+
+## [TASK-434: InfluxDB & Elasticsearch Sources](overviews/doc:sdd-tasks-completed-task-434-dbtoolkit-influx-elastic-md.md)
+
+## [TASK-434: Implement HandoffTool & Exception](overviews/doc:sdd-tasks-completed-task-434-handoff-tool-md.md)
+
+import pytest
+
+## [TASK-434:](overviews/doc:sdd-tasks-completed-task-434-md.md)
+
+## [TASK-434: Step Executor](overviews/doc:sdd-tasks-completed-task-434-step-executor-md.md)
+
+import logging
+
+## [TASK-435: DatabaseToolkit — Tools, Schemas & Package Init](overviews/doc:sdd-tasks-completed-task-435-dbtoolkit-toolkit-tools-md.md)
+
+## [TASK-435: Orchestrator Pause & Resume Support](overviews/doc:sdd-tasks-completed-task-435-orchestrator-pause-64a5c982.md)
+
+import pytest
+
+## [TASK-435: LLM Plan Generator](overviews/doc:sdd-tasks-completed-task-435-plan-generator-md.md)
+
+import json
+
+## [TASK-436: DatabaseToolkit — Unit & Integration Tests](overviews/doc:sdd-tasks-completed-task-436-dbtoolkit-tests-md.md)
+
+This task creates comprehensive test coverage for the entire DatabaseToolkit feature.
+
+## [TASK-436: WebScrapingToolkit Core](overviews/doc:sdd-tasks-completed-task-436-toolkit-core-md.md)
+
+CrawlEngine internals (FEAT-013)
+
+## [TASK-437: Credential Data Models](overviews/doc:sdd-tasks-completed-task-437-credential-data-models-md.md)
+
+from pydantic import BaseModel, Field
+
+## [TASK-437: Unit and Integration Tests for add_dataset Filter](overviews/doc:sdd-tasks-completed-task-437-filter-tests-md.md)
+
+## [TASK-438: Credential Encryption Helpers](overviews/doc:sdd-tasks-completed-task-438-credential-encrypt-988ba535.md)
+
+import base64
+
+## [TASK-438 — Odoo Config Variables](overviews/doc:sdd-tasks-completed-task-438-odoo-config-variables-md.md)
+
+Add Odoo connection configuration variables to `parrot/conf.py` so the OdooInterface can read them from environment variables.
+
+## [TASK-439: CredentialsHandler (HTTP View)](overviews/doc:sdd-tasks-completed-task-439-credentials-handler-md.md)
+
+from aiohttp import web
+
+## [TASK-439 — Odoo Core Interface (Auth + execute_kw + Context Manager)](overviews/doc:sdd-tasks-completed-task-439-odoo-core-interface-md.md)
+
+Implement the core `OdooInterface` class in `parrot/interfaces/odoointerface.py` with JSON-RPC 2.0 authentication, the generic `execute_kw` dispatcher, Pydantic data models, custom exceptions, and async context manager support.
+
+## [TASK-440: Route Registration & Collection Setup](overviews/doc:sdd-tasks-completed-task-440-credential-routes-md.md)
+
+def setup_credentials_routes(app: web.Application) -> None:
+
+## [TASK-440 — Odoo CRUD Convenience Methods](overviews/doc:sdd-tasks-completed-task-440-odoo-crud-methods-md.md)
+
+Add typed convenience methods to `OdooInterface` for all standard Odoo model operations: `search`, `search_read`, `read`, `create`, `write`, `unlink`, `search_count`, and `fields_get`. All delegate to `execute_kw`.
+
+## [TASK-441: Credential Integration Tests](overviews/doc:sdd-tasks-completed-task-441-credential-integra-94b5fe6c.md)
+
+Use `aiohttp.test_utils.AioHTTPTestCase` or `pytest-aiohttp` fixtures to create a test client:
+
+## [TASK-441 — Odoo Interface Export & Registration](overviews/doc:sdd-tasks-completed-task-441-odoo-export-registration-md.md)
+
+Export `OdooInterface` from the `parrot.interfaces` package so it can be imported directly.
+
+## [TASK-442 — Odoo Interface Unit Tests](overviews/doc:sdd-tasks-completed-task-442-odoo-unit-tests-md.md)
+
+Write comprehensive unit tests for `OdooInterface` using mocked aiohttp responses. No live Odoo instance required.
+
+## [TASK-443: TableSource — allowed_columns parameter and schema filtering](overviews/doc:sdd-tasks-completed-task-443-tablesource-allowe-3c3a815e.md)
+
+This is the foundational task for FEAT-061. It adds the `allowed_columns` parameter to `TableSource`, validates column names, filters the prefetched schema to only include allowed columns, updates `describe()` to mention restrictions, and incorporates `allowed_columns` into `cach
+
+## [TASK-444: TableSource — SQL column validation in fetch()](overviews/doc:sdd-tasks-completed-task-444-tablesource-sql-co-24c0799c.md)
+
+With `allowed_columns` stored and schema filtered (TASK-422), this task adds runtime enforcement in `fetch()`. The LLM-generated SQL must be validated to ensure it only references allowed columns, and `SELECT *` must be rejected with an actionable error. A post-fetch DataFrame co
+
+## [TASK-445: DatasetManager — pass allowed_columns through to TableSource](overviews/doc:sdd-tasks-completed-task-445-datasetmanager-all-3e4479c3.md)
+
+The `allowed_columns` parameter is implemented in `TableSource` (TASK-422). This task threads it through `DatasetManager.add_table_source()` so users can pass `allowed_columns` when registering a table source via the public API.
+
+## [TASK-446: Unit tests for TableSource allowed_columns](overviews/doc:sdd-tasks-completed-task-446-tablesource-allowe-0ed727ee.md)
+
+All implementation tasks (TASK-422/423/424) are complete. This task adds comprehensive unit tests covering the `allowed_columns` feature in `TableSource` and the `add_table_source()` passthrough.
+
+## [TASK-447: Extract enums and Pydantic models to models.py](overviews/doc:sdd-tasks-completed-task-447-extract-models-md.md)
+
+The `tool.py` monolith contains all enums and Pydantic input models inline. Per the spec (Module 1), these must be extracted to `models.py` so that `internals.py` and `tool.py` can import them independently.
+
+## [TASK-448: Extract internal classes to internals.py](overviews/doc:sdd-tasks-completed-task-448-extract-internals-md.md)
+
+Per the spec (Module 2), the internal engine classes must be extracted from `tool.py` into `internals.py`, with underscore prefixes removed from class names. These classes handle catalog storage, operation execution, and shape limiting.
+
+## [TASK-449: Replace stubs with real AbstractToolkit and tool_schema imports](overviews/doc:sdd-tasks-completed-task-449-toolkit-real-imports-md.md)
+
+Per the spec (Module 3), `tool.py` still contains local stub definitions for `AbstractToolkit` and `tool_schema`. These must be replaced with the real framework imports. Additionally, the module-level `logger` must be replaced with `self.logger` in `WorkingMemoryToolkit`.
+
+## [TASK-450: Populate __init__.py with public exports](overviews/doc:sdd-tasks-completed-task-450-package-init-md.md)
+
+Per the spec (Module 4), the `__init__.py` is currently empty. It must re-export the public API so consumers can do `from parrot.tools.working_memory import WorkingMemoryToolkit`.
+
+## [TASK-451: Relocate tests to tests/ sub-package with conftest.py](overviews/doc:sdd-tasks-completed-task-451-relocate-tests-md.md)
+
+Per the spec (Module 5), `tests.py` lives inside the package. It must be moved to a `tests/` sub-package with corrected imports pointing to the new module structure. Per the open question resolution, shared fixtures should go in `conftest.py`.
+
+## [TASK-452: WhatIfToolkit Scaffold & ScenarioState Model](overviews/doc:sdd-tasks-completed-task-452-whatif-toolkit-scaffold-md.md)
+
+from parrot_tools.toolkit import AbstractToolkit
+
+## [TASK-453: Implement describe_scenario Tool Method](overviews/doc:sdd-tasks-completed-task-453-describe-scenario-tool-md.md)
+
+async def _resolve_dataframe(self, df_name: str) -> Tuple[str, pd.DataFrame]:
+
+## [TASK-454: Implement add_actions and set_constraints Tool Methods](overviews/doc:sdd-tasks-completed-task-454-add-actions-set-co-a55ce33e.md)
+
+async def _validate_action(self, action: WhatIfAction, df: pd.DataFrame) -> Tuple[bool, str]:
+
+## [TASK-455: Implement simulate Tool Method with DatasetManager Integration](overviews/doc:sdd-tasks-completed-task-455-simulate-tool-md.md)
+
+The mapping from WhatIfAction types to DSL methods already exists in `whatif.py` lines 1074-1113.
+
+## [TASK-456: Implement quick_impact Tool Method](overviews/doc:sdd-tasks-completed-task-456-quick-impact-tool-md.md)
+
+For quick_impact, we bypass the solver for most action types. Instead of defining possible actions
+
+## [TASK-457: Implement compare_scenarios Tool + System Prompt](overviews/doc:sdd-tasks-completed-task-457-compare-scenarios--e89c3b4d.md)
+
+async def compare_scenarios(self, scenario_ids: List[str]) -> str:
+
+## [TASK-458: Backward Compatibility Wrapper + Registry Updates](overviews/doc:sdd-tasks-completed-task-458-backward-compat-registry-md.md)
+
+class WhatIfTool(AbstractTool):
+
+## [TASK-459: SensitivityAnalysisTool](overviews/doc:sdd-tasks-completed-task-459-sensitivity-analys-79680e3c.md)
+
+1. Resolve DataFrame (from parent agent's dataframes)
+
+## [TASK-460: MonteCarloSimulationTool](overviews/doc:sdd-tasks-completed-task-460-montecarlo-simulat-c6c08463.md)
+
+1. Resolve DataFrame
+
+## [TASK-461: StatisticalTestsTool](overviews/doc:sdd-tasks-completed-task-461-statistical-tests-tool-md.md)
+
+from scipy import stats as scipy_stats
+
+## [TASK-462: RegressionAnalysisTool](overviews/doc:sdd-tasks-completed-task-462-regression-analysis-tool-md.md)
+
+1. Resolve DataFrame
+
+## [TASK-463: BreakEvenAnalysisTool](overviews/doc:sdd-tasks-completed-task-463-breakeven-analysis-tool-md.md)
+
+1. Resolve DataFrame
+
+## [TASK-464: Integration Tests & End-to-End Validation](overviews/doc:sdd-tasks-completed-task-464-integration-tests-e2e-md.md)
+
+1. `test_toolkit_with_dataset_manager`: Scenario resolves datasets from DM, results registered back
+
+## [TASK-465: Understanding Request & Response Models](overviews/doc:sdd-tasks-completed-task-465-understanding-requ-075b535b.md)
+
+This task creates the Pydantic data models used by the Understanding REST handler.
+
+## [TASK-466: Understanding Handler Implementation](overviews/doc:sdd-tasks-completed-task-466-understanding-handler-md.md)
+
+This is the core task — implements the aiohttp handler that receives image or video
+
+## [TASK-467: Route Registration for Understanding Handler](overviews/doc:sdd-tasks-completed-task-467-understanding-rout-7dd4c5db.md)
+
+Wire the `UnderstandingHandler` into the application's route registry so it is
+
+## [TASK-468: Integration Tests for Understanding Handler](overviews/doc:sdd-tasks-completed-task-468-understanding-inte-f8722613.md)
+
+End-to-end integration tests that verify the full request lifecycle: HTTP request →
+
+## [TASK-469: Base Client Fallback Interface](overviews/doc:sdd-tasks-completed-task-469-base-client-fallba-5ac4524f.md)
+
+class AbstractClient:
+
+## [TASK-470: GoogleGenAIClient Fallback Standardization](overviews/doc:sdd-tasks-completed-task-470-google-fallback-st-7dcf22d5.md)
+
+_high_demand_fallback_model = 'gemini-2.5-flash'
+
+## [TASK-471: AnthropicClient Fallback Model](overviews/doc:sdd-tasks-completed-task-471-anthropic-client-f-ba3fd5cc.md)
+
+def _is_capacity_error(self, error: Exception) -> bool:
+
+## [TASK-472: OpenAIClient Fallback Model](overviews/doc:sdd-tasks-completed-task-472-openai-client-fallback-md.md)
+
+Two options for where to place the fallback:
+
+## [TASK-473: Remove Redundant Bot-Level Retry Loops](overviews/doc:sdd-tasks-completed-task-473-remove-bot-retry-loops-md.md)
+
+retries = kwargs.get('retries', 0)
+
+## [TASK-474: Client Fallback Integration Tests](overviews/doc:sdd-tasks-completed-task-474-client-fallback-in-b6aac98d.md)
+
+class TestFallbackDecisionLogic:
+
+## [TASK-475: Excel Structure Analysis Engine](overviews/doc:sdd-tasks-completed-task-475-excel-structure-an-fb8c0072.md)
+
+The user provided a complete reference implementation in the spec arguments. Use it as the
+
+## [TASK-476: ExcelIntelligenceToolkit](overviews/doc:sdd-tasks-completed-task-476-excel-intelligence-750e15aa.md)
+
+Follow the `AbstractToolkit` pattern — all public async methods become LLM tools automatically:
+
+## [TASK-477: DatasetManager File Loading](overviews/doc:sdd-tasks-completed-task-477-datasetmanager-fil-99b70a42.md)
+
+from dataclasses import dataclass, field
+
+## [TASK-478: CSV Markdown Conversion](overviews/doc:sdd-tasks-completed-task-478-csv-markdown-conversion-md.md)
+
+"""CSV-to-markdown converter for DatasetManager file loading."""
+
+## [TASK-479: DatasetManager Files Integration Tests](overviews/doc:sdd-tasks-completed-task-479-datasetmanager-fil-39b27219.md)
+
+1. **Complex Excel end-to-end**: Create a workbook with 3 sheets, each with 2+ stacked tables,
+
+## [TASK-480: InvokeResult Model and InvokeError Exception](overviews/doc:sdd-tasks-completed-task-480-invoke-result-and-error-md.md)
+
+class InvokeResult(BaseModel):
+
+## [TASK-481: AbstractClient Invoke Infrastructure](overviews/doc:sdd-tasks-completed-task-481-abstractclient-inv-f1e1f301.md)
+
+1. `_resolve_invoke_system_prompt(system_prompt: Optional[str]) -> str`
+
+## [TASK-482: AnthropicClient.invoke() Implementation](overviews/doc:sdd-tasks-completed-task-482-anthropic-invoke-md.md)
+
+1. Call shared helpers for system prompt, structured config, model resolution.
+
+## [TASK-483: OpenAIClient.invoke() Implementation](overviews/doc:sdd-tasks-completed-task-483-openai-invoke-md.md)
+
+1. Call shared helpers for system prompt, structured config, model resolution.
+
+## [TASK-484: GoogleGenAIClient.invoke() Implementation](overviews/doc:sdd-tasks-completed-task-484-google-invoke-md.md)
+
+1. Call shared helpers for system prompt, structured config, model resolution.
+
+## [TASK-485: GroqClient.invoke() Implementation](overviews/doc:sdd-tasks-completed-task-485-groq-invoke-md.md)
+
+1. Call shared helpers for system prompt, structured config, model resolution.
+
+## [TASK-486: GrokClient.invoke() Implementation](overviews/doc:sdd-tasks-completed-task-486-grok-invoke-md.md)
+
+1. Call shared helpers for system prompt, structured config, model resolution.
+
+## [TASK-487: LocalLLMClient.invoke() Implementation](overviews/doc:sdd-tasks-completed-task-487-localllm-invoke-md.md)
+
+1. Call shared helpers for system prompt, structured config, model resolution.
+
+## [TASK-488: Invoke Integration Tests](overviews/doc:sdd-tasks-completed-task-488-invoke-integration-tests-md.md)
+
+import pytest
+
+## [TASK-489: Routing Models](overviews/doc:sdd-tasks-completed-task-489-routing-models-md.md)
+
+from enum import Enum
+
+## [TASK-490: CapabilityRegistry](overviews/doc:sdd-tasks-completed-task-490-capability-registry-md.md)
+
+import logging
+
+## [TASK-491: IntentRouterMixin](overviews/doc:sdd-tasks-completed-task-491-intent-router-mixin-md.md)
+
+import asyncio
+
+## [TASK-492: AbstractBot Touch-Point & RoutingTrace in AIMessage](overviews/doc:sdd-tasks-completed-task-492-abstractbot-touchpoint-md.md)
+
+injected_context = kwargs.pop("injected_context", None)
+
+## [TASK-493: Auto-Registration Hooks](overviews/doc:sdd-tasks-completed-task-493-auto-registration-hooks-md.md)
+
+class DataSource:
+
+## [TASK-494: OntologyIntentResolver Demotion](overviews/doc:sdd-tasks-completed-task-494-ontology-resolver--0fb44c0b.md)
+
+import warnings
+
+## [TASK-495: Intent Router Unit Tests](overviews/doc:sdd-tasks-completed-task-495-intent-router-unit-tests-md.md)
+
+class TestCascadeChain:
+
+## [TASK-496: Intent Router Integration Tests](overviews/doc:sdd-tasks-completed-task-496-intent-router-inte-679e68ed.md)
+
+1. **Dataset routing**: user asks about sales data → routed to DATASET strategy → DatasetManager queried → context injected → LLM response.
+
+## [TASK-497: Gorilla Sheds Scraper & PageIndex Builder](overviews/doc:sdd-tasks-completed-task-497-gorilla-scraper-md.md)
+
+price (if available), images, URL
+
+## [TASK-498: Gorilla Sheds Catalog Loader (Verification & Utility Script)](overviews/doc:sdd-tasks-completed-task-498-catalog-loader-md.md)
+
+import asyncio
+
+## [TASK-499: Gorilla Sheds Advisor Agent (Multi-Mixin Bot)](overviews/doc:sdd-tasks-completed-task-499-gorilla-advisor-agent-md.md)
+
+1. Loads `ProductCatalog` via `get_catalog()` from TASK-498
+
+## [TASK-500: Fix configure() to auto-enable vector store when config is present](overviews/doc:sdd-tasks-completed-task-500-configure-auto-ena-0da5e8a6.md)
+
+In `configure()`, around line 959-967:
+
+## [TASK-501: Fix YAML agent definition vector store key mismatch](overviews/doc:sdd-tasks-completed-task-501-fix-registry-vecto-68ee8eaa.md)
+
+if config.vector_store:
+
+## [TASK-502: Integration test for RAG via API path](overviews/doc:sdd-tasks-completed-task-502-integration-test-rag-api-md.md)
+
+1. Creates a bot with `vector_store_config` kwarg (simulating YAML/DB-loaded bot) — no explicit `use_vectorstore=True`
+
+## [TASK-503: Add EntryType Enum, GenericEntry, and New Pydantic Input Models](overviews/doc:sdd-tasks-completed-task-503-entry-type-enum-an-cdd13ecf.md)
+
+This is the foundation task for FEAT-074. It adds the data types needed by all
+
+## [TASK-504: Extend WorkingMemoryCatalog for Generic Entries](overviews/doc:sdd-tasks-completed-task-504-extend-working-mem-2f8abc6b.md)
+
+With `GenericEntry` and `EntryType` available from TASK-503, the catalog must
+
+## [TASK-505: Add Generic Tool Methods (store_result, get_result, search_stored)](overviews/doc:sdd-tasks-completed-task-505-generic-tool-methods-md.md)
+
+With the catalog extended for generic entries, this task adds the new tool
+
+## [TASK-506: AnswerMemory Bridge (save_interaction / recall_interaction)](overviews/doc:sdd-tasks-completed-task-506-answer-memory-bridge-md.md)
+
+This task adds the AnswerMemory bridge to `WorkingMemoryToolkit`, enabling
+
+## [TASK-507: BasicAgent Auto-Injection of AnswerMemory](overviews/doc:sdd-tasks-completed-task-507-basicagent-auto-in-646ac44d.md)
+
+With the AnswerMemory bridge available in `WorkingMemoryToolkit`, this task
+
+## [TASK-508: Update Package Exports](overviews/doc:sdd-tasks-completed-task-508-package-exports-md.md)
+
+With all new types and tools implemented, the package `__init__.py` must
+
+## [TASK-509: Comprehensive Tests for Generic Entries and AnswerMemory Bridge](overviews/doc:sdd-tasks-completed-task-509-comprehensive-tests-md.md)
+
+Final task: write comprehensive tests covering all new functionality —
+
+## [TASK-510: ImportanceScorer Abstraction + ValueScorer Port](overviews/doc:sdd-tasks-completed-task-510-importance-scorer-md.md)
+
+Module 1 from the spec. Defines a pluggable importance-scoring protocol and ports the `ValueScorer` from `AgentCoreMemory` (`parrot/memory/core.py`). Currently, `EpisodicMemoryStore.record_episode()` uses inline heuristic logic to compute importance (1-10 scale based on outcome).
+
+## [TASK-511: RecallStrategy Abstraction + HybridBM25Strategy](overviews/doc:sdd-tasks-completed-task-511-recall-strategy-bm25-md.md)
+
+Module 2 from the spec. Defines a pluggable recall strategy protocol and implements BM25+semantic hybrid search. Currently `EpisodicMemoryStore.recall_similar()` delegates directly to `backend.search_similar()` (pure vector search). This task creates a strategy layer that can fus
+
+## [TASK-512: RedisVectorBackend](overviews/doc:sdd-tasks-completed-task-512-redis-vector-backend-md.md)
+
+Module 3 from the spec. Implements a new `AbstractEpisodeBackend` using Redis Stack (RediSearch + vector similarity). This provides a vector-search-capable hot storage tier alongside the existing `EpisodeRedisCache` (which remains separate per the open questions resolution — cach
+
+## [TASK-513: PgVector Hybrid Search Enhancement](overviews/doc:sdd-tasks-completed-task-513-pgvector-hybrid-search-md.md)
+
+Module 4 from the spec. Enhances the existing PgVector backend with tsvector-based full-text search to support hybrid BM25+vector retrieval at the database level. This complements the in-memory BM25 approach from TASK-511 by enabling PostgreSQL-native hybrid search for production
+
+## [TASK-514: CrossDomainRouter](overviews/doc:sdd-tasks-completed-task-514-cross-domain-router-md.md)
+
+Module 5 from the spec. Ports the cross-domain routing logic from `AgentCoreMemory` into a standalone component for the UnifiedMemoryManager. This enables multi-agent memory sharing — when an agent queries memory, the router identifies other agents whose expertise is semantically
+
+## [TASK-515: EpisodicMemoryStore Integration](overviews/doc:sdd-tasks-completed-task-515-store-integration-md.md)
+
+Module 6 from the spec. Wires the new `ImportanceScorer`, `RecallStrategy`, and `RedisVectorBackend` into `EpisodicMemoryStore`. This is the central integration task — it connects the modular utilities (TASK-510, TASK-511, TASK-512) into the existing store without breaking the de
+
+## [TASK-516: UnifiedMemoryManager Cross-Domain Routing](overviews/doc:sdd-tasks-completed-task-516-unified-manager-routing-md.md)
+
+Module 7 from the spec. Wires `CrossDomainRouter` into `UnifiedMemoryManager.get_context_for_query()`. When a router is present and query matches other agents' expertise, the manager expands the search to include memories from those agents (with decay factor applied), then merges
+
+## [TASK-517: Delete core.py + Cleanup](overviews/doc:sdd-tasks-completed-task-517-delete-corepy-md.md)
+
+Module 8 from the spec. Final cleanup task — delete the orphaned `AgentCoreMemory` in `parrot/memory/core.py` after all its valuable patterns have been ported and verified in TASK-510 through TASK-516.
+
+## [TASK-518: Schema Core Models](overviews/doc:sdd-tasks-completed-task-518-schema-core-models-md.md)
+
+This is the foundation task for FEAT-076. Every other task depends on these models. Implements Module 1 from the spec — the canonical Pydantic models that define what a form is (structure, fields, constraints, options, conditional visibility) and how it looks (style, layout).
+
+## [TASK-519: Form Validators](overviews/doc:sdd-tasks-completed-task-519-form-validators-md.md)
+
+Implements Module 2 from the spec. Migrates the existing `FormValidator` from `parrot/integrations/msteams/dialogs/validator.py` to the new `parrot/forms/` package and enhances it with new validation types. The validator is platform-agnostic — it validates form submissions agains
+
+## [TASK-520: Pydantic Extractor](overviews/doc:sdd-tasks-completed-task-520-pydantic-extractor-md.md)
+
+Implements Module 3 from the spec. Creates a schema extractor that introspects Pydantic BaseModel classes to produce `FormSchema`. This is the most important extractor — the Tool Extractor (TASK-521) delegates to it, and it's the foundation for LLM-driven form creation.
+
+## [TASK-521: Tool Extractor](overviews/doc:sdd-tasks-completed-task-521-tool-extractor-md.md)
+
+Implements Module 4 from the spec. Extracts `FormSchema` from `AbstractTool.args_schema`. Delegates to `PydanticExtractor` with tool-specific metadata (name, description). This is used by `RequestFormTool` to generate forms on-the-fly from tool parameters.
+
+## [TASK-522: YAML Extractor](overviews/doc:sdd-tasks-completed-task-522-yaml-extractor-md.md)
+
+Implements Module 5 from the spec. Parses YAML form definitions into `FormSchema`. Must be backward-compatible with the existing YAML format used by current form files, while also supporting new features (constraints, depends_on, i18n labels).
+
+## [TASK-523: JSON Schema Extractor](overviews/doc:sdd-tasks-completed-task-523-jsonschema-extractor-md.md)
+
+Implements Module 6 from the spec. Converts a standard JSON Schema dict into `FormSchema`. This is the passthrough extractor for pre-existing JSON Schemas — useful when consuming external API schemas or when a Pydantic model's `model_json_schema()` output is the starting point.
+
+## [TASK-524: Adaptive Card Renderer](overviews/doc:sdd-tasks-completed-task-524-adaptive-card-renderer-md.md)
+
+Implements Module 7 from the spec. Migrates `AdaptiveCardBuilder` from `parrot/integrations/msteams/dialogs/card_builder.py` to a new `AdaptiveCardRenderer` that implements `AbstractFormRenderer`. This is the most complex renderer — it must produce identical output for equivalent
+
+## [TASK-525: HTML5 Renderer](overviews/doc:sdd-tasks-completed-task-525-html5-renderer-md.md)
+
+Implements Module 8 from the spec. Renders `FormSchema` + `StyleSchema` as an HTML `<form>` fragment meant to be served via API and embedded in another page. Uses Jinja2 templates. Does NOT include client-side JavaScript for conditional visibility — the consuming frontend handles
+
+## [TASK-526: JSON Schema Renderer](overviews/doc:sdd-tasks-completed-task-526-jsonschema-renderer-md.md)
+
+Implements Module 9 from the spec. Renders `FormSchema` as two JSON outputs: (1) a structural JSON Schema with custom extensions for form semantics, and (2) a style JSON from `StyleSchema`. This is the "no-renderer" approach — designed for consumption by custom Svelte form-builde
+
+## [TASK-527: Form Registry](overviews/doc:sdd-tasks-completed-task-527-form-registry-md.md)
+
+Implements Module 10 from the spec. Migrates the existing `FormRegistry` from `parrot/integrations/dialogs/registry.py` to `parrot/forms/registry.py`. Adds support for optional `FormStorage` backend for database persistence. The registry is the central lookup point for all regist
+
+## [TASK-528: Form Cache](overviews/doc:sdd-tasks-completed-task-528-form-cache-md.md)
+
+Implements Module 11 from the spec. Migrates the existing `FormDefinitionCache` from `parrot/integrations/dialogs/cache.py` to `parrot/forms/cache.py`. Provides in-memory caching for `FormSchema` with TTL, optional Redis backend, and file system watching for YAML auto-invalidatio
+
+## [TASK-529: PostgreSQL Form Storage](overviews/doc:sdd-tasks-completed-task-529-postgres-form-storage-md.md)
+
+Implements Module 12 from the spec. Implements `FormStorage` ABC using asyncpg for PostgreSQL persistence. Creates the `form_schemas` table via raw SQL. This enables `persistence=True` in the `FormRegistry` — forms survive process restarts.
+
+## [TASK-530: RequestFormTool Migration](overviews/doc:sdd-tasks-completed-task-530-request-form-tool-md.md)
+
+Implements Module 13 from the spec. Migrates `RequestFormTool` from `parrot/integrations/msteams/tools/request_form.py` to `parrot/forms/tools/request_form.py`. The tool is no longer Teams-specific — any integration wrapper can detect the `form_requested` status and render the fo
+
+## [TASK-531: CreateFormTool](overviews/doc:sdd-tasks-completed-task-531-create-form-tool-md.md)
+
+Implements Module 14 from the spec. New agent tool that accepts a natural language prompt and returns a validated `FormSchema`. Supports iterative refinement — when `refine_form_id` is provided, loads the existing form and applies modifications. Optionally persists via `FormRegis
+
+## [TASK-532: MS Teams Integration Rewrite](overviews/doc:sdd-tasks-completed-task-532-msteams-integratio-1bf7b7d7.md)
+
+Implements Module 15 from the spec. Rewrites all MS Teams form consumers to use the new `parrot/forms/` package instead of `parrot/integrations/dialogs/`. This is the hard cutover — 9 files change simultaneously. After this task, Teams uses `FormSchema` instead of `FormDefinition
+
+## [TASK-533: Remove Legacy Dialogs Module](overviews/doc:sdd-tasks-completed-task-533-remove-legacy-dialogs-md.md)
+
+Implements Module 16 from the spec. Deletes `parrot/integrations/dialogs/` entirely after all consumers have been rewritten to use `parrot/forms/`. This is the final cleanup task.
+
+## [TASK-534: navigator-auth Upstream Changes](overviews/doc:sdd-tasks-completed-task-534-navigator-auth-upstream-md.md)
+
+and `EvalContext` (programs from session accessible as condition key)
+
+## [TASK-535: PBAC Setup & Initialization](overviews/doc:sdd-tasks-completed-task-535-pbac-setup-md.md)
+
+1. Create `YAMLStorage(directory=policy_dir)` to load YAML policy files
+
+## [TASK-536: PBACPermissionResolver](overviews/doc:sdd-tasks-completed-task-536-pbac-permission-resolver-md.md)
+
+from navigator_auth.abac.policies.evaluator import PolicyEvaluator
+
+## [TASK-537: Agent Access Guard](overviews/doc:sdd-tasks-completed-task-537-agent-access-guard-md.md)
+
+resource_name_param="agent_id")` decorator to `AgentTalk` POST and PATCH handlers
+
+## [TASK-538: Tool Filtering Integration](overviews/doc:sdd-tasks-completed-task-538-tool-filtering-md.md)
+
+1. Get Guardian from `self.request.app['security']`
+
+## [TASK-539: Dataset Filtering Integration](overviews/doc:sdd-tasks-completed-task-539-dataset-filtering-md.md)
+
+1. Get Guardian from `request.app['security']`
+
+## [TASK-540: MCP Server Filtering Integration](overviews/doc:sdd-tasks-completed-task-540-mcp-filtering-md.md)
+
+1. Get Guardian from `request.app['security']`
+
+## [TASK-541: App Startup Integration](overviews/doc:sdd-tasks-completed-task-541-app-startup-md.md)
+
+(after AuthHandler setup, before BotManager setup)
+
+## [TASK-542: Default YAML Policies](overviews/doc:sdd-tasks-completed-task-542-default-policies-md.md)
+
+common operations (list tools, list agents)
+
+## [TASK-543: PBAC Unit & Integration Tests](overviews/doc:sdd-tasks-completed-task-543-pbac-tests-md.md)
+
+class TestPBACResolver:
+
+## [TASK-544: DatabaseFormTool — Core Implementation](overviews/doc:sdd-tasks-completed-task-544-database-form-tool-md.md)
+
+This is the core task for FEAT-078. It implements the `DatabaseFormTool` — an `AbstractTool`
+
+## [TASK-545: Package Exports for DatabaseFormTool](overviews/doc:sdd-tasks-completed-task-545-package-exports-md.md)
+
+After `DatabaseFormTool` is implemented (TASK-544), it must be exported from the
+
+## [TASK-546: Example UI Integration for Database Forms](overviews/doc:sdd-tasks-completed-task-546-example-ui-integration-md.md)
+
+The existing `form_server.py` example lets users create forms via natural language.
+
+## [TASK-547: Unit & Integration Tests for DatabaseFormTool](overviews/doc:sdd-tasks-completed-task-547-database-form-tests-md.md)
+
+Comprehensive test suite for `DatabaseFormTool`, covering type mapping, conditional logic
+
+## [TASK-548: Package Scaffold + Core Models](overviews/doc:sdd-tasks-completed-task-548-formdesigner-packa-05256bb4.md)
+
+This is the foundational task for FEAT-079. It creates the `parrot-formdesigner` package
+
+## [TASK-549: Extractors Migration](overviews/doc:sdd-tasks-completed-task-549-formdesigner-extractors-md.md)
+
+Implements Module 2 of FEAT-079. Moves the four extractor modules from
+
+## [TASK-550: Renderers Migration](overviews/doc:sdd-tasks-completed-task-550-formdesigner-renderers-md.md)
+
+Implements Module 3 of FEAT-079. Moves the renderer modules from
+
+## [TASK-551: Services Migration (Validator, Registry, Cache, Storage)](overviews/doc:sdd-tasks-completed-task-551-formdesigner-services-md.md)
+
+Implements Module 4 of FEAT-079. Moves the service modules (validator, registry,
+
+## [TASK-552: Tools Migration](overviews/doc:sdd-tasks-completed-task-552-formdesigner-tools-md.md)
+
+Implements Module 5 of FEAT-079. Moves the form creation tools from
+
+## [TASK-553: HTTP Handlers & REST API](overviews/doc:sdd-tasks-completed-task-553-formdesigner-handlers-md.md)
+
+Implements Module 6 of FEAT-079. Creates production-quality aiohttp HTTP handlers
+
+## [TASK-554: Package Exports & Re-export Shim](overviews/doc:sdd-tasks-completed-task-554-formdesigner-expor-55068c8f.md)
+
+Implements Module 7 of FEAT-079. Defines the clean public API for `parrot.formdesigner`
+
+## [TASK-555: Update Consumers & Examples](overviews/doc:sdd-tasks-completed-task-555-formdesigner-consu-77818c4b.md)
+
+Implements Module 8 of FEAT-079. Simplifies `examples/forms/form_server.py` using the
+
+## [TASK-556: Fix cache layer — Redis library, race condition, datetime deprecation](overviews/doc:sdd-tasks-completed-task-556-fix-cache-redis-datetime-md.md)
+
+Code review found that `services/cache.py` imports `aioredis` which is not installed — the project standard is `redis.asyncio`. Additionally, `_get_redis()` has a race condition on startup, and all `datetime.utcnow()` calls are deprecated in Python 3.12+.
+
+## [TASK-557: Fix phantom attributes and dead code](overviews/doc:sdd-tasks-completed-task-557-fix-phantom-attrib-c02b7c14.md)
+
+Code review identified several AI hallucinations — code referencing attributes and imports that do not exist. These cause silent failures where features appear to work but actually do nothing.
+
+## [TASK-558: Fix XSS vulnerabilities in renderer and templates](overviews/doc:sdd-tasks-completed-task-558-fix-xss-vulnerabilities-md.md)
+
+Code review found multiple XSS injection points where user-controlled data is interpolated into HTML without escaping. The `html.escape` function is already imported but not applied in several critical locations.
+
+## [TASK-559: Add API authentication to handler endpoints](overviews/doc:sdd-tasks-completed-task-559-add-api-authentication-md.md)
+
+All 8 API routes in `handlers/api.py` are completely open with no authentication. The `POST /api/forms/from-db` endpoint executes live PostgreSQL queries, and `POST /api/forms` drives LLM calls at the operator's API key expense. This is a cost-amplification and data-enumeration a
+
+## [TASK-560: Fix tool layer issues](overviews/doc:sdd-tasks-completed-task-560-fix-tool-layer-issues-md.md)
+
+Code review found 7 issues in the tools layer: a broken cross-package import, private method access, fragile CPython-specific hacks, missing connection pooling, wrong Pydantic sentinel comparison, unhelpful import fallbacks, and per-request tool construction.
+
+## [TASK-561: Fix handler robustness and service hardening](overviews/doc:sdd-tasks-completed-task-561-fix-handler-robust-d38aa089.md)
+
+Code review identified several robustness issues in handlers and services: unguarded dictionary access, missing type annotations, inconsistent error responses, N+1 queries, ReDoS vulnerability, missing Pydantic constraints, and inefficient serialization.
+
+## [TASK-562: Telegram Form Models](overviews/doc:sdd-tasks-completed-task-562-telegram-form-models-md.md)
+
+This task creates the foundational data models for the Telegram renderer. All other
+
+## [TASK-563: Telegram Renderer](overviews/doc:sdd-tasks-completed-task-563-telegram-renderer-md.md)
+
+Core renderer class that analyzes FormSchema fields and produces either inline-mode
+
+## [TASK-564: Telegram Form Router](overviews/doc:sdd-tasks-completed-task-564-telegram-form-router-md.md)
+
+The aiogram Router that drives form conversations — both inline keyboard multi-step
+
+## [TASK-565: WebApp HTML Handler & Template](overviews/doc:sdd-tasks-completed-task-565-telegram-webapp-handler-md.md)
+
+Serves the form as an HTML page at `/forms/{id}/telegram` with the Telegram WebApp
+
+## [TASK-566: Package Integration & Exports](overviews/doc:sdd-tasks-completed-task-566-telegram-package-i-d6363f86.md)
+
+Wire everything together: populate `renderers/telegram/__init__.py` exports, update
+
+## [TASK-567: Telegram Renderer Tests](overviews/doc:sdd-tasks-completed-task-567-telegram-renderer-tests-md.md)
+
+Comprehensive test suite covering all components of the Telegram renderer feature.
+
+## [TASK-568: CacheManager with Namespaced Partitions](overviews/doc:sdd-tasks-completed-task-568-cache-manager-md.md)
+
+This is the foundational task for FEAT-082. The `CacheManager` replaces the current monolithic `SchemaMetadataCache` with a partitioned cache that supports multiple databases. Each toolkit will get its own partition with independent LRU sizing and TTL, while sharing a single Redi
+
+## [TASK-569: DatabaseToolkit Base Class](overviews/doc:sdd-tasks-completed-task-569-database-toolkit-base-md.md)
+
+Implements spec Module 2. The `DatabaseToolkit` is the abstract base class that all per-database toolkits inherit from. It bridges `AbstractToolkit` (which auto-generates tools from async methods) with the database-specific contract (connect, search schema, execute queries). It a
+
+## [TASK-570: SQLToolkit — Common SQL Operations](overviews/doc:sdd-tasks-completed-task-570-sql-toolkit-md.md)
+
+Implements spec Module 3. `SQLToolkit` is the shared base for all SQL-dialect databases (PostgreSQL, BigQuery, MySQL, etc.). It implements `search_schema()`, `generate_query()`, `execute_query()`, `explain_query()`, and `validate_query()` with overridable hooks for dialect differ
+
+## [TASK-571: PostgresToolkit — PostgreSQL-Specific Overrides](overviews/doc:sdd-tasks-completed-task-571-postgres-toolkit-md.md)
+
+Implements spec Module 4. `PostgresToolkit` overrides `SQLToolkit` dialect hooks for PostgreSQL-specific behavior: `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`, `pg_class`/`pg_namespace` joins for schema introspection, `postgresql+asyncpg://` driver mapping. Absorbs the full `PgSche
+
+## [TASK-572: BigQueryToolkit — BigQuery-Specific Overrides](overviews/doc:sdd-tasks-completed-task-572-bigquery-toolkit-md.md)
+
+Implements spec Module 5. `BigQueryToolkit` overrides `SQLToolkit` for BigQuery: `INFORMATION_SCHEMA.TABLES`/`COLUMNS` syntax, dry-run cost estimation instead of `EXPLAIN ANALYZE`, project/dataset-based connection via `google-cloud-bigquery` or asyncdb bigquery driver. Absorbs `B
+
+## [TASK-573: InfluxDBToolkit — InfluxDB Flux Query Support](overviews/doc:sdd-tasks-completed-task-573-influxdb-toolkit-md.md)
+
+Implements spec Module 6. `InfluxDBToolkit` inherits directly from `DatabaseToolkit` (not `SQLToolkit`) because InfluxDB uses Flux query language, not SQL. Port from `parrot/bots/db/influx.py:InfluxDBAgent`.
+
+## [TASK-574: ElasticToolkit — Elasticsearch DSL Support](overviews/doc:sdd-tasks-completed-task-574-elastic-toolkit-md.md)
+
+Implements spec Module 7. `ElasticToolkit` inherits from `DatabaseToolkit` (not `SQLToolkit`) because Elasticsearch uses Query DSL, not SQL. Port from `parrot/bots/db/elastic.py:ElasticDbAgent`.
+
+## [TASK-575: DocumentDBToolkit — MongoDB Query Language Support](overviews/doc:sdd-tasks-completed-task-575-documentdb-toolkit-md.md)
+
+Implements spec Module 8. `DocumentDBToolkit` inherits from `DatabaseToolkit` for AWS DocumentDB (MongoDB-compatible). Port from `parrot/bots/db/documentdb.py:DocumentDBAgent`.
+
+## [TASK-576: Extended Router — Database Selection + Role Inference](overviews/doc:sdd-tasks-completed-task-576-extended-router-md.md)
+
+Implements spec Module 9. Extends the existing `SchemaQueryRouter` with two new capabilities: (a) database selection — detecting which toolkit to route to based on query mentions, and (b) role inference — mapping `QueryIntent` to a suggested `UserRole` when no explicit role is pr
+
+## [TASK-577: Extended RetryHandler — Generalized for Non-SQL Databases](overviews/doc:sdd-tasks-completed-task-577-extended-retry-handler-md.md)
+
+Implements spec Module 10. The current `SQLRetryHandler` is tightly coupled to SQLAlchemy (`sqlalchemy.text`) and SQL-specific error patterns. This task generalizes it by creating a `RetryHandler` base class that any toolkit can subclass, while keeping `SQLRetryHandler` as the SQ
+
+## [TASK-578: DatabaseAgent — Unified Agent with Multi-Toolkit Support](overviews/doc:sdd-tasks-completed-task-578-database-agent-md.md)
+
+Implements spec Module 11. This is the capstone task — rewriting the current 3,071-line `AbstractDBAgent` into a thin `DatabaseAgent` that orchestrates toolkits, cache manager, router, and response formatting. The agent owns: LLM interaction, system prompt generation, conversatio
+
+## [TASK-579: Cleanup & Migration — Delete Old Code, Update Exports](overviews/doc:sdd-tasks-completed-task-579-cleanup-migration-md.md)
+
+Implements spec Module 12. Final cleanup task: update `parrot/bots/database/__init__.py` to export the new `DatabaseAgent` and all toolkits, delete the old `parrot/bots/db/` directory entirely, delete absorbed tools from `parrot_tools/database/` (`pg.py`, `bq.py`), and ensure no 
+
+## [TASK-580: FormAPIHandler Auth Cleanup & User Context Helpers](overviews/doc:sdd-tasks-completed-task-580-formapi-auth-cleanup-md.md)
+
+This is the foundational task for FEAT-083. It removes the custom `PARROT_FORM_API_KEY`
+
+## [TASK-581: Route Registration Auth Wrappers](overviews/doc:sdd-tasks-completed-task-581-route-auth-wrappers-md.md)
+
+This task applies `navigator-auth` decorators to all formdesigner handler methods
+
+## [TASK-582: FormDesigner Authentication Tests](overviews/doc:sdd-tasks-completed-task-582-formdesigner-auth-tests-md.md)
+
+This task writes unit and integration tests for the formdesigner authentication
+
+## [TASK-592: Implement ProductCounter Planogram Type](overviews/doc:sdd-tasks-completed-task-592-product-counter-type-md.md)
+
+This task implements the `ProductCounter` composable class — the first of two new planogram types defined in FEAT-085. It handles compliance validation for product-on-counter displays: a single product on a counter/podium with promotional background material and an information la
+
+## [TASK-593: Implement EndcapNoShelvesPromotional Planogram Type](overviews/doc:sdd-tasks-completed-task-593-endcap-no-shelves-type-md.md)
+
+This task implements the `EndcapNoShelvesPromotional` composable class — the second of two new planogram types in FEAT-085. It handles compliance validation for shelf-less promotional endcaps: a retro-illuminated upper panel (brand/promo) and a lower poster. No physical products 
+
+## [TASK-594: Register New Planogram Types and Update Exports](overviews/doc:sdd-tasks-completed-task-594-registration-exports-md.md)
+
+This task wires up the two new planogram types (`ProductCounter` and `EndcapNoShelvesPromotional`) into the pipeline's type registry and module exports so they are usable via the `planogram_type` config field.
+
+## [TASK-595: Create Example Planogram Configuration Scripts](overviews/doc:sdd-tasks-completed-task-595-example-config-scripts-md.md)
+
+This task creates example Python scripts that generate JSON `planogramConfig` payloads for the two new types, ready for insertion into `troc.planograms_configurations` in PostgreSQL.
+
+## [TASK-596: Unit and Integration Tests for New Planogram Types](overviews/doc:sdd-tasks-completed-task-596-unit-integration-tests-md.md)
+
+This task creates comprehensive unit and integration tests for both `ProductCounter` and `EndcapNoShelvesPromotional` types. Tests validate ROI computation, object detection, compliance scoring, illumination logic, and full pipeline runs.
+
+## [TASK-597: AuthConfig Models](overviews/doc:sdd-tasks-completed-task-597-auth-config-models-md.md)
+
+This is the foundational task for FEAT-086. It introduces the `AuthConfig` discriminated union model that `SubmitAction` will use (TASK-598) and `SubmissionForwarder` will resolve (TASK-600). Without this, no other task can reference auth configuration.
+
+## [TASK-598: SubmitAction Auth Extension](overviews/doc:sdd-tasks-completed-task-598-submitaction-auth--66e3bd78.md)
+
+Extends the existing `SubmitAction` model with an `auth: AuthConfig | None` field. This is a small but critical change — it modifies a core data model used throughout the form system. Must maintain backward compatibility (existing forms without `auth` continue to work).
+
+## [TASK-599: FormSubmissionStorage](overviews/doc:sdd-tasks-completed-task-599-form-submission-storage-md.md)
+
+Creates the local persistence layer for form submission data. When users submit data via `POST /api/v1/forms/{form_id}/data`, the validated data is stored in a `form_submissions` PostgreSQL table before (optionally) being forwarded to an external endpoint.
+
+## [TASK-600: SubmissionForwarder](overviews/doc:sdd-tasks-completed-task-600-submission-forwarder-md.md)
+
+Creates the HTTP forwarding service that sends validated form submissions to the URL configured in `SubmitAction`. Uses `AuthConfig.resolve()` (TASK-597) to build authentication headers. The forwarder is used by the submission endpoint (TASK-602).
+
+## [TASK-601: Edit Endpoints (PUT/PATCH)](overviews/doc:sdd-tasks-completed-task-601-edit-endpoints-put-patch-md.md)
+
+This is the core editing capability. Adds `PUT` and `PATCH` endpoints to `FormAPIHandler` for full replacement and partial update of registered forms. The PATCH endpoint uses JSON merge-patch (RFC 7396) semantics.
+
+## [TASK-602: Submission Endpoint](overviews/doc:sdd-tasks-completed-task-602-submission-endpoint-md.md)
+
+Adds the `POST /api/v1/forms/{form_id}/data` endpoint that receives form submissions, validates them, stores locally, and forwards to the configured endpoint. Combines `FormSubmissionStorage` (TASK-599) and `SubmissionForwarder` (TASK-600).
+
+## [TASK-603: Route Registration](overviews/doc:sdd-tasks-completed-task-603-route-registration-md.md)
+
+Registers the three new API routes in `setup_form_routes()`. All routes are wrapped with `_wrap_auth()` for navigator-auth protection, consistent with existing routes. Also updates `FormAPIHandler` instantiation in `setup_form_routes()` to pass through `submission_storage` and `f
+
+## [TASK-604: Package Exports](overviews/doc:sdd-tasks-completed-task-604-package-exports-md.md)
+
+Ensures all new public classes are properly exported from package `__init__.py` files at every level: `core/__init__.py`, `services/__init__.py`, and the top-level `parrot.formdesigner.__init__.py`. This enables clean imports like `from parrot.formdesigner import AuthConfig, Form
+
+## [TASK-605: Unit and Integration Tests](overviews/doc:sdd-tasks-completed-task-605-tests-md.md)
+
+Final task for FEAT-086. Creates comprehensive unit and integration tests for all new functionality: auth models, SubmitAction extension, FormSubmissionStorage, SubmissionForwarder, PUT/PATCH endpoints, and submission endpoint.
+
+## [TASK-606: Config Variable & Package Init](overviews/doc:sdd-tasks-completed-task-606-config-and-package-init-md.md)
+
+from navconfig import config # verified: parrot/conf.py uses config.get(), config.getboolean(), etc.
+
+## [TASK-607: VectorStoreHelper (Metadata Endpoints)](overviews/doc:sdd-tasks-completed-task-607-vectorstore-helper-md.md)
+
+from navigator.views import BaseHandler # navigator.views (installed package)
+
+## [TASK-608: Handler Skeleton, Store Connection Cache & Lifecycle](overviews/doc:sdd-tasks-completed-task-608-handler-skeleton-s-d6050583.md)
+
+from aiohttp import web # aiohttp
+
+## [TASK-609: POST Endpoint — Create Collection](overviews/doc:sdd-tasks-completed-task-609-post-create-collection-md.md)
+
+from parrot.stores import AbstractStore, supported_stores
+
+## [TASK-610: PATCH Endpoint — Search Test](overviews/doc:sdd-tasks-completed-task-610-patch-search-test-md.md)
+
+from parrot.stores.models import StoreConfig, SearchResult
+
+## [TASK-611: PUT Endpoint — Data Loading](overviews/doc:sdd-tasks-completed-task-611-put-data-loading-md.md)
+
+import uuid
+
+## [TASK-612: Route Registration & Package Exports](overviews/doc:sdd-tasks-completed-task-612-route-registration-md.md)
+
+from parrot.handlers.stores.handler import VectorStoreHandler # TASK-608
+
+## [TASK-613: Skill Definition Model & YAML Parser](overviews/doc:sdd-tasks-completed-task-613-skill-definition-model-md.md)
+
+from parrot.memory.skills.models import SkillStatus, SkillCategory, SkillMetadata, ContentType # verified: models.py:20-66
+
+## [TASK-614: Skill File Registry](overviews/doc:sdd-tasks-completed-task-614-skill-file-registry-md.md)
+
+from parrot.memory.skills.models import SkillDefinition, SkillSource # created in TASK-613
+
+## [TASK-615: Skill Trigger Middleware](overviews/doc:sdd-tasks-completed-task-615-skill-trigger-middleware-md.md)
+
+1. Checks if message starts with `/`
+
+## [TASK-616: Mixin & Prompt Integration](overviews/doc:sdd-tasks-completed-task-616-mixin-prompt-integration-md.md)
+
+1. Resolves `AGENTS_DIR/{agent_id}/skills/` path
+
+## [TASK-617: Learned Skill Persistence Tool](overviews/doc:sdd-tasks-completed-task-617-learned-skill-pers-5cecf902.md)
+
+from parrot.tools import AbstractTool, ToolResult # verify exact import path
+
+## [TASK-618: Skill System Integration Tests](overviews/doc:sdd-tasks-completed-task-618-skill-system-integ-817d546b.md)
+
+from parrot.memory.skills.models import SkillDefinition, SkillSource
+
+## [TASK-619: Fix Critical Broken Imports (scraping, pricestool, sql)](overviews/doc:sdd-tasks-completed-task-619-fix-critical-broke-a2fefc6e.md)
+
+During the monorepo migration, several tool files in `parrot_tools` retained imports
+
+## [TASK-620: Fix base_executor Cross-Package Imports (docker, pulumi)](overviews/doc:sdd-tasks-completed-task-620-fix-base-executor--46271786.md)
+
+The `docker` and `pulumi` toolkits import `BaseExecutor` and `BaseExecutorConfig` from
+
+## [TASK-621: Fix Docstring and Example Import References](overviews/doc:sdd-tasks-completed-task-621-fix-docstring-impo-a8d8d532.md)
+
+Multiple `__init__.py` files and documentation files in `parrot_tools` contain
+
+## [TASK-622: Full Automated Sweep — Catch Remaining Stale Imports](overviews/doc:sdd-tasks-completed-task-622-full-import-sweep-audit-md.md)
+
+Tasks 619-621 fix the known broken imports identified during the initial audit.
+
+## [TASK-623: Import Validation Test Suite](overviews/doc:sdd-tasks-completed-task-623-import-validation--b95a2116.md)
+
+After fixing all broken imports (TASK-619 through TASK-622), we need a permanent
+
+## [TASK-624: Move `_extract_illumination_state` to AbstractPlanogramType](overviews/doc:sdd-tasks-completed-task-624-move-extract-illum-94ad93bd.md)
+
+and returns the illumination state string (`"on"` / `"off"` / `None`). It is currently
+
+## [TASK-625: Fix `detect_objects` — N zones from config + wire illumination check](overviews/doc:sdd-tasks-completed-task-625-fix-detect-objects-3e4d1b30.md)
+
+This means `check_planogram_compliance` receives an empty product list, the illumination
+
+## [TASK-626: Fix `check_planogram_compliance` — N zones, correct status, text/visual](overviews/doc:sdd-tasks-completed-task-626-fix-check-planogra-a0297986.md)
+
+those features are never populated. The illumination state defaults to `"ON"` always.
+
+## [TASK-627: Unit tests for EndcapNoShelvesPromotional](overviews/doc:sdd-tasks-completed-task-627-unit-tests-endcap-md.md)
+
+After TASK-624, 625, and 626, the `EndcapNoShelvesPromotional` type is fully implemented.
+
+## [TASK-628: Promote `_check_illumination()` to AbstractPlanogramType](overviews/doc:sdd-tasks-completed-task-628-promote-check-illu-17d753f0.md)
+
+Module 1 of FEAT-091. `_check_illumination()` currently lives only in
+
+## [TASK-628: Add trafilatura dependency to ai-parrot-loaders](overviews/doc:sdd-tasks-completed-task-628-trafilatura-dependency-md.md)
+
+import trafilatura # new dependency
+
+## [TASK-629: Remove Duplicate `_check_illumination()` from EndcapNoShelvesPromotional](overviews/doc:sdd-tasks-completed-task-629-remove-duplicate-c-26508be6.md)
+
+Module 2 of FEAT-091. After TASK-628 promotes `_check_illumination()` to the
+
+## [TASK-629: Add trafilatura content extraction to WebScrapingLoader](overviews/doc:sdd-tasks-completed-task-629-trafilatura-extrac-9233d738.md)
+
+from bs4 import BeautifulSoup, NavigableString # line 44
+
+## [TASK-630: Add trafilatura content extraction to WebLoader](overviews/doc:sdd-tasks-completed-task-630-trafilatura-extrac-8bbe4ead.md)
+
+from bs4 import BeautifulSoup, NavigableString
+
+## [TASK-631: Add Illumination Penalty to `ProductOnShelves.check_planogram_compliance()`](overviews/doc:sdd-tasks-completed-task-631-compliance-illumin-57e8189f.md)
+
+Module 4 of FEAT-091. After `plan.py` Step 3.5 (TASK-630) seeds
+
+## [TASK-631: Refactor VectorStoreHandler._load_urls() to use WebScrapingLoader](overviews/doc:sdd-tasks-completed-task-631-handler-refactor-l-e07b709f.md)
+
+from parrot_tools.scraping import WebScrapingTool, CrawlEngine # handler.py:777
+
+## [TASK-632: Tests for trafilatura extraction pipeline and handler refactor](overviews/doc:sdd-tasks-completed-task-632-tests-extraction-p-816645b1.md)
+
+import pytest
+
+## [TASK-633: BaseTextSplitter Enhancements](overviews/doc:sdd-tasks-completed-task-633-base-splitter-enha-c8b9ed05.md)
+
+Foundation task for FEAT-092. All subsequent splitter and loader changes depend on
+
+## [TASK-633: Fix FEAT-090 Latent Bugs in EndcapNoShelvesPromotional](overviews/doc:sdd-tasks-completed-task-633-fix-feat090-bugs-endcap-md.md)
+
+Module 6 of FEAT-091. Two latent correctness bugs were identified in the
+
+## [TASK-634: Fix MarkdownTextSplitter Character-vs-Token Bugs](overviews/doc:sdd-tasks-completed-task-634-fix-markdown-split-74b47f7e.md)
+
+The MarkdownTextSplitter has a critical inconsistency: `_merge_markdown_sections()`,
+
+## [TASK-635: Create SemanticTextSplitter](overviews/doc:sdd-tasks-completed-task-635-semantic-text-splitter-md.md)
+
+Core deliverable of FEAT-092 (Module 2 + Module 3 from spec). Creates the new
+
+## [TASK-636: AbstractLoader Defaults & Wiring](overviews/doc:sdd-tasks-completed-task-636-abstract-loader-defaults-md.md)
+
+Module 4 from the spec. Wires the new `SemanticTextSplitter` as the default splitter
+
+## [TASK-637: PDFLoader Full-Document Mode](overviews/doc:sdd-tasks-completed-task-637-pdf-loader-full-document-md.md)
+
+Module 5 from the spec. PDFLoader currently creates one Document per page (without
+
+## [TASK-638: MSWordLoader Fix Double-Chunking Bug](overviews/doc:sdd-tasks-completed-task-638-msword-loader-fix-md.md)
+
+Module 6 from the spec. MSWordLoader has a critical **double-chunking** bug: `_load()`
+
+## [TASK-639: PowerPointLoader Full-Document Mode](overviews/doc:sdd-tasks-completed-task-639-powerpoint-loader--56595922.md)
+
+Module 7 from the spec. PowerPointLoader currently creates one Document per slide,
+
+## [TASK-640: Integration Tests for Loader Chunking](overviews/doc:sdd-tasks-completed-task-640-integration-tests-md.md)
+
+Module 8 from the spec. End-to-end integration tests that verify the full pipeline:
+
+## [TASK-641: Add per-sheet document generation to ExcelLoader](overviews/doc:sdd-tasks-completed-task-641-excelloader-sheet--34def0c8.md)
+
+The ExcelLoader currently produces one Document per row per sheet. This task adds the
+
+## [TASK-639: Verify ExcelLoader factory registration and loader registry](overviews/doc:sdd-tasks-completed-task-642-excelloader-factor-11e9c0bc.md)
+
+After TASK-638 modifies `ExcelLoader`, this task verifies that the loader factory
+
+## [TASK-640: Unit tests for ExcelLoader sheet mode and row mode](overviews/doc:sdd-tasks-completed-task-643-excelloader-unit-tests-md.md)
+
+After TASK-638 adds per-sheet document generation to ExcelLoader, this task writes
+
+## [TASK-644: Infographic Theme System](overviews/doc:sdd-tasks-completed-task-644-theme-system-md.md)
+
+from pydantic import BaseModel, Field # used throughout parrot/models/
+
+## [TASK-645: HTML Block Renderers](overviews/doc:sdd-tasks-completed-task-645-html-block-renderers-md.md)
+
+either an `InfographicResponse` model or a raw dict (model_validate if dict).
+
+## [TASK-646: ECharts Chart Rendering](overviews/doc:sdd-tasks-completed-task-646-echarts-mapping-md.md)
+
+Store the minified JS as a file in `parrot/outputs/formats/assets/echarts.min.js`
+
+## [TASK-647: Content Negotiation Wiring](overviews/doc:sdd-tasks-completed-task-647-content-negotiation-md.md)
+
+parameter (str, default `"text/html"`). After calling `self.ask()` and getting
+
+## [TASK-648: Infographic HTML Output Tests](overviews/doc:sdd-tasks-completed-task-648-tests-md.md)
+
+ThemeRegistry built-ins, custom registration, unknown theme error.
+
+## [TASK-649: Infographic Helpers Façade](overviews/doc:sdd-tasks-completed-task-649-helpers-facade-md.md)
+
+FEAT-094 exposed `infographic_registry` (templates) and `theme_registry`
+
+## [TASK-650: InfographicTalk HTTP Handler](overviews/doc:sdd-tasks-completed-task-650-infographic-talk-handler-md.md)
+
+This is the core HTTP surface for FEAT-095. It introduces
+
+## [TASK-651: Register InfographicTalk Routes in BotManager](overviews/doc:sdd-tasks-completed-task-651-route-registration-md.md)
+
+The `InfographicTalk` handler created in TASK-650 must be wired into the
+
+## [TASK-652: InfographicTalk Handler Tests](overviews/doc:sdd-tasks-completed-task-652-handler-tests-md.md)
+
+Final validation task for FEAT-095. Covers unit and integration tests for
+
+## [TASK-653: ExtractionPlan Data Models](overviews/doc:sdd-tasks-completed-task-653-extraction-plan-models-md.md)
+
+from parrot_tools.scraping.plan import ScrapingPlan # verified: plan.py:59
+
+## [TASK-653: ShelfSection models + ShelfConfig extension](overviews/doc:sdd-tasks-completed-task-653-shelfconfig-sectio-eab5ed3d.md)
+
+This is Module 1 of FEAT-096. The new `EndcapBacklitMultitier` planogram type requires
+
+## [TASK-654: BasePlanRegistry Generic Extraction](overviews/doc:sdd-tasks-completed-task-654-base-plan-registry-md.md)
+
+from parrot_tools.scraping.plan import ScrapingPlan, PlanRegistryEntry # plan.py:59, :112
+
+## [TASK-654: Promote _check_illumination and _base_model_from_str to AbstractPlanogramType](overviews/doc:sdd-tasks-completed-task-654-promote-helpers-abstract-md.md)
+
+This is Module 2 of FEAT-096. `EndcapBacklitMultitier` needs two helpers that currently
+
+## [TASK-655: EndcapBacklitMultitier type class implementation](overviews/doc:sdd-tasks-completed-task-655-endcap-backlit-mul-a1f5376a.md)
+
+This is Module 3 of FEAT-096 and the core deliverable. It creates the new
+
+## [TASK-655: ExtractionPlanRegistry](overviews/doc:sdd-tasks-completed-task-655-extraction-plan-registry-md.md)
+
+from parrot_tools.scraping.extraction_models import ExtractionPlan # created by TASK-653
+
+## [TASK-656: ExtractionPlanGenerator (LLM Reconnaissance)](overviews/doc:sdd-tasks-completed-task-656-extraction-plan-ge-0696fdcd.md)
+
+from parrot_tools.scraping.extraction_models import ExtractionPlan # created by TASK-653
+
+## [TASK-656: Pipeline integration — register type and add plan.py guards](overviews/doc:sdd-tasks-completed-task-656-plan-pipeline-inte-1072b3ab.md)
+
+This is Module 4 of FEAT-096. After the type class exists (TASK-655), it must be:
+
+## [TASK-657: DB config migration for planogram_id=15 (Epson scanner endcap)](overviews/doc:sdd-tasks-completed-task-657-db-config-migratio-81a6cba0.md)
+
+This is Module 5 of FEAT-096. The Epson scanner endcap (planogram_id=15 in table
+
+## [TASK-657: RecallProcessor (Post-Extraction LLM)](overviews/doc:sdd-tasks-completed-task-657-recall-processor-md.md)
+
+from parrot_tools.scraping.extraction_models import (
+
+## [TASK-658: Pre-built ExtractionPlans](overviews/doc:sdd-tasks-completed-task-658-prebuilt-extractio-a770dc2f.md)
+
+from parrot_tools.scraping.extraction_models import ExtractionPlan, EntitySpec, EntityFieldSpec # created by TASK-653
+
+## [TASK-659: Infographic Block Models & Enums](overviews/doc:sdd-tasks-completed-task-659-infographic-block-models-md.md)
+
+This is the foundation task for FEAT-102. All other tasks depend on the data models defined here. It implements Spec Section 2 (Data Models) and Section 3 (Module 1: Block Models & Enums).
+
+## [TASK-659: ScrapingAgent.extract_documents() Orchestration](overviews/doc:sdd-tasks-completed-task-659-scraping-agent-ext-7f856a3d.md)
+
+from parrot_tools.scraping.toolkit import WebScrapingToolkit # toolkit.py:27
+
+## [TASK-660: Multi-Tab Template Definition](overviews/doc:sdd-tasks-completed-task-660-infographic-multi--2973362c.md)
+
+This task implements Spec Section 3 (Module 2: Multi-Tab Template). It creates the `TEMPLATE_MULTI_TAB` template definition and extends `to_prompt_instruction()` to generate LLM instructions that describe the tab_view block structure, allowed inner block types, and nesting constr
+
+## [TASK-660: Implement PrintPDFHandler](overviews/doc:sdd-tasks-completed-task-660-printpdf-handler-md.md)
+
+This is the core task for FEAT-097. It creates the `PrintPDFHandler` — a thin
+
+## [TASK-661: Renderer — BulletList & Table Style Updates](overviews/doc:sdd-tasks-completed-task-661-infographic-render-ae679683.md)
+
+This task updates the existing `_render_bullet_list()` and `_render_table()` methods in `InfographicHTMLRenderer` to support the new styling fields added to `BulletListBlock` and `TableBlock` in TASK-659. It implements part of Spec Section 3 (Module 4: Renderer).
+
+## [TASK-661: Register print2pdf Route in BotManager](overviews/doc:sdd-tasks-completed-task-661-printpdf-route-reg-953ddf7e.md)
+
+This task wires the `PrintPDFHandler` (created in TASK-660) into the application's
+
+## [TASK-662: Renderer — ChecklistBlock](overviews/doc:sdd-tasks-completed-task-662-infographic-render-ee80d8b9.md)
+
+This task implements the `_render_checklist()` method in `InfographicHTMLRenderer` and its CSS. It is a relatively simple block with no recursion or JS requirements. Implements part of Spec Section 3 (Module 4: Renderer).
+
+## [TASK-662: DatasetResult Model & PandasAgentResponse Extension](overviews/doc:sdd-tasks-completed-task-662-response-model-extension-md.md)
+
+This is the foundational task for FEAT-098. It adds the `DatasetResult` Pydantic model
+
+## [TASK-663: Renderer — AccordionBlock](overviews/doc:sdd-tasks-completed-task-663-infographic-render-8f7e6f53.md)
+
+This task implements the `_render_accordion()` method in `InfographicHTMLRenderer`. The accordion block is moderately complex because it supports recursive block rendering (`content_blocks`) and HTML sanitization (`html_content` via `nh3`). It also requires inline vanilla JS for 
+
+## [TASK-663: Multi-Dataset Injection Logic](overviews/doc:sdd-tasks-completed-task-663-multi-dataset-injection-md.md)
+
+This is the core logic task for FEAT-098. It adds the `_inject_multi_data_from_variables()`
+
+## [TASK-664: Renderer — TabViewBlock](overviews/doc:sdd-tasks-completed-task-664-infographic-render-175c1ff4.md)
+
+This is the most complex renderer task. It implements the `_render_tab_view()` method, which generates tab navigation HTML, tab pane containers, and recursively renders each pane's blocks. It requires inline vanilla JS for tab switching, unique instance IDs for multiple TabViewBl
+
+## [TASK-664: LLM Prompt Update for Multi-Dataset Responses](overviews/doc:sdd-tasks-completed-task-664-llm-prompt-multi-dataset-md.md)
+
+The LLM needs to know when and how to use the new `data_variables` field. Without
+
+## [TASK-665: Template Auto-Detection Pre-Pass](overviews/doc:sdd-tasks-completed-task-665-infographic-templa-14bc9e73.md)
+
+This task implements Spec Section 3 (Module 3: Template Auto-Detection). When `get_infographic()` is called with `template=None`, a lightweight LLM pre-pass determines the best template based on the user's question and available templates. This replaces the current behavior where
+
+## [TASK-665: Serialization Guard for Multi-Dataset Responses](overviews/doc:sdd-tasks-completed-task-665-serialization-guard-md.md)
+
+The response serialization block (~L1594) currently assumes `response.data` is either
+
+## [TASK-666: Implement DatabaseLoader and Register in LOADER_REGISTRY](overviews/doc:sdd-tasks-completed-task-666-database-loader-md.md)
+
+This is the sole implementation task for FEAT-099 — DatabaseLoader. It covers
+
+## [TASK-666: Integration Tests for Multi-Tab Infographic](overviews/doc:sdd-tasks-completed-task-666-infographic-integr-086a35b0.md)
+
+This task creates comprehensive integration tests that validate the full pipeline: constructing multi-tab InfographicResponse objects with all new block types, rendering them to HTML, and verifying the output structure, interactivity scripts, CSS, and backward compatibility. Impl
+
+## [TASK-700: OCR Backend Abstraction Layer](overviews/doc:sdd-tasks-completed-task-700-ocr-backend-abstraction-md.md)
+
+Foundation module for the ImageLoader feature. Defines the protocol (interface)
+
+## [TASK-701: PaddleOCR Backend](overviews/doc:sdd-tasks-completed-task-701-paddleocr-backend-md.md)
+
+Primary OCR backend providing the best quality text extraction with bounding boxes.
+
+## [TASK-702: Tesseract Backend](overviews/doc:sdd-tasks-completed-task-702-tesseract-backend-md.md)
+
+Ubiquitous OCR fallback. Tesseract is available on virtually every Linux system
+
+## [TASK-703: EasyOCR Backend](overviews/doc:sdd-tasks-completed-task-703-easyocr-backend-md.md)
+
+GPU-friendly OCR alternative. EasyOCR natively supports CUDA and 80+ languages.
+
+## [TASK-704: Heuristic Layout Analyzer](overviews/doc:sdd-tasks-completed-task-704-heuristic-layout-a-fd11ad0d.md)
+
+Default layout analysis engine. Takes raw OCR blocks (text + bboxes) and
+
+## [TASK-705: LayoutLMv3 Semantic Layout Analyzer](overviews/doc:sdd-tasks-completed-task-705-layoutlmv3-analyzer-md.md)
+
+Optional semantic layout analyzer using Microsoft's LayoutLMv3 model. Unlike
+
+## [TASK-706: ImageLoader Class and Registry Integration](overviews/doc:sdd-tasks-completed-task-706-image-loader-class-md.md)
+
+Main loader class that orchestrates the full pipeline: load image → OCR → layout
+
+## [TASK-707: PolicyRuleConfig Pydantic Model](overviews/doc:sdd-tasks-completed-task-707-policy-rule-config-model-md.md)
+
+the simple rule into a navigator-auth `ResourcePolicy` object.
+
+## [TASK-708: AbstractBot Policy API — Remove _permissions, Add policy_rules, Rewrite retrieval()](overviews/doc:sdd-tasks-completed-task-708-abstractbot-policy-api-md.md)
+
+1. Build `RequestContext` and `RequestBot` wrapper (keep existing).
+
+## [TASK-709: BotConfig Policies Field](overviews/doc:sdd-tasks-completed-task-709-botconfig-policies-field-md.md)
+
+from parrot.auth.models import PolicyRuleConfig
+
+## [TASK-710: AgentRegistry Policy Registration](overviews/doc:sdd-tasks-completed-task-710-registry-policy-re-4f028ce6.md)
+
+Stores `self._app = app`. Extracts evaluator from `app.get('abac')`.
+
+## [TASK-711: BotManager Wiring — Call registry.setup(app)](overviews/doc:sdd-tasks-completed-task-711-botmanager-wiring-md.md)
+
+as the first step, before `await self.registry.load_modules()`.
+
+## [TASK-712: ChatbotHandler PBAC Filtering](overviews/doc:sdd-tasks-completed-task-712-chatbothandler-pba-e9e546d9.md)
+
+from `agent.py:356-388`). Extracts session from `self.request`, builds `EvalContext`.
+
+## [TASK-713: ToolList PBAC Filtering](overviews/doc:sdd-tasks-completed-task-713-toollist-pbac-filtering-md.md)
+
+1. After `discover_all()`, collect all tool names.
+
+## [TASK-714: Re-enable PBAC in app.py](overviews/doc:sdd-tasks-completed-task-714-reenable-pbac-app-md.md)
+
+1. `setup_pbac(app)` → registers `app['abac']`, `app['security']`
+
+## [TASK-715: Per-Agent YAML Auto-Loading in setup_pbac()](overviews/doc:sdd-tasks-completed-task-715-per-agent-yaml-autoload-md.md)
+
+subdirectory for `.yaml` files.
+
+## [TASK-716: Integration Tests for PBAC Policy Rules](overviews/doc:sdd-tasks-completed-task-716-integration-tests-md.md)
+
+1. Bot with `policy_rules` → `retrieval()` denies unauthorized user.
+
+## [TASK-717: Artifact & Thread Pydantic Models](overviews/doc:sdd-tasks-completed-task-717-artifact-thread-models-md.md)
+
+This is the foundational task for FEAT-103. All other tasks depend on these models for serialization, deserialization, and type safety. Implements spec Module 1.
+
+## [TASK-718: DynamoDB Backend (ConversationDynamoDB)](overviews/doc:sdd-tasks-completed-task-718-dynamodb-backend-md.md)
+
+Implements spec Module 2. This is the core DynamoDB integration layer that wraps `asyncdb`'s built-in `dynamodb` driver with domain-specific methods for conversation storage. All other storage modules (ArtifactStore, ChatStorage migration) depend on this.
+
+## [TASK-719: S3 Overflow Manager](overviews/doc:sdd-tasks-completed-task-719-s3-overflow-manager-md.md)
+
+Implements spec Module 3. Handles transparent offloading of large artifact definitions (> 200KB) to S3, keeping a reference in DynamoDB. This prevents hitting the 400KB DynamoDB item limit.
+
+## [TASK-720: ArtifactStore](overviews/doc:sdd-tasks-completed-task-720-artifact-store-md.md)
+
+Implements spec Module 4. High-level artifact CRUD operations that compose `ConversationDynamoDB` (artifacts table) and `S3OverflowManager`. This is the interface that API endpoints and handler integrations use for artifact persistence.
+
+## [TASK-721: DynamoDB & S3 Configuration](overviews/doc:sdd-tasks-completed-task-721-configuration-md.md)
+
+Implements spec Module 6. Adds DynamoDB and S3 artifact configuration variables to `parrot/conf.py`. These are consumed by `ConversationDynamoDB` and `S3OverflowManager`.
+
+## [TASK-722: ChatStorage Migration — DocumentDB to DynamoDB](overviews/doc:sdd-tasks-completed-task-722-chatstorage-migration-md.md)
+
+Implements spec Module 5. This is the core migration: replace `DocumentDb` backend inside `ChatStorage` with `ConversationDynamoDB`. All existing ChatStorage methods (`save_turn`, `load_conversation`, `list_user_conversations`, `delete_conversation`, `delete_turn`, `create_conver
+
+## [TASK-723: API Endpoints — Thread Views](overviews/doc:sdd-tasks-completed-task-723-api-thread-views-md.md)
+
+Implements spec Module 7. Creates aiohttp views for thread management: list, create, load, update metadata, delete with cascade. The `user_id` comes from the JWT/session (same pattern as existing handlers).
+
+## [TASK-724: API Endpoints — Artifact Views](overviews/doc:sdd-tasks-completed-task-724-api-artifact-views-md.md)
+
+Implements spec Module 8. Creates aiohttp views for artifact CRUD operations. This is the API the frontend uses to save/load/update/delete artifacts (charts, canvas tabs, infographics, etc.).
+
+## [TASK-725: Handler Integration — Auto-Save Artifacts](overviews/doc:sdd-tasks-completed-task-725-handler-auto-save-md.md)
+
+Implements spec Module 9. Wires automatic artifact saving into existing handler flows: when `get_infographic()` returns an `InfographicResponse`, save it as an infographic artifact. When `ask()` returns data, the turn data is already saved via ChatStorage — this task ensures arti
+
+## [TASK-726: Integration Tests](overviews/doc:sdd-tasks-completed-task-726-integration-tests-md.md)
+
+Implements spec Module 10. End-to-end integration tests covering the full lifecycle: conversation creation, turn saving, artifact persistence, API endpoints, auto-save, graceful degradation, and cascade deletion.
+
+## [TASK-727: Extend AbstractDriver `select_option(by=...)` and SeleniumDriver scrollIntoView click fallback](overviews/doc:sdd-tasks-completed-task-727-extend-abstractdri-b05a19e5.md)
+
+The executor's `_action_select` (today at `executor.py:637`) supports
+
+## [TASK-728: Selenium registry adapter — return started AbstractDriver](overviews/doc:sdd-tasks-completed-task-728-selenium-registry--612069c2.md)
+
+Today the `"selenium"` factory in `DriverRegistry` returns a `SeleniumSetup`
+
+## [TASK-729: Rewrite `executor.py` against `AbstractDriver`](overviews/doc:sdd-tasks-completed-task-729-rewrite-executor-a-5047fd77.md)
+
+Selenium-only APIs directly on the `driver` argument. After TASK-728 the
+
+## [TASK-730: Rewrite `snapshot_from_driver` against `AbstractDriver`](overviews/doc:sdd-tasks-completed-task-730-rewrite-snapshot-f-b6bd5b81.md)
+
+reads `driver.current_url`, calls `driver.get(url)`, and reads `driver.page_source`
+
+## [TASK-731: Tighten `WebScrapingToolkit` typing for `AbstractDriver`](overviews/doc:sdd-tasks-completed-task-731-toolkit-typing-and-09e5bacd.md)
+
+After TASK-728/729/730 every driver yielded by the registry is an
+
+## [TASK-732: Update tests + add Selenium↔Playwright parity coverage](overviews/doc:sdd-tasks-completed-task-732-tests-and-parity-c-40c246e4.md)
+
+Existing executor / toolkit tests use `MagicMock` configured to look like a
+
+## [TASK-733: Rename package `parrot.tools.database` → `parrot.tools.databasequery`](overviews/doc:sdd-tasks-completed-task-733-rename-package-to--0487cef4.md)
+
+The new multi-database toolkit from FEAT-062 currently lives at
+
+## [TASK-734: Move legacy `DatabaseQueryTool` into the new subpackage](overviews/doc:sdd-tasks-completed-task-734-move-legacy-databa-adff036b.md)
+
+After TASK-733 renames the toolkit package, both
+
+## [TASK-735: Refactor `DatabaseQueryToolkit` as `AbstractToolkit` + DDL guard](overviews/doc:sdd-tasks-completed-task-735-refactor-databaseq-b40c5db4.md)
+
+After TASK-733, the toolkit lives at
+
+## [TASK-736: `parrot.tools.database` deprecation shim](overviews/doc:sdd-tasks-completed-task-736-deprecation-shim-p-87fff5de.md)
+
+After TASK-733 the `parrot/tools/database/` directory no longer exists,
+
+## [TASK-737: Repoint `TOOL_REGISTRY["database_query"]` to the new path](overviews/doc:sdd-tasks-completed-task-737-tool-registry-repoint-md.md)
+
+After TASK-734 the legacy `DatabaseQueryTool` lives at
+
+## [TASK-738: Tests — DDL guard, AbstractToolkit contract, backcompat](overviews/doc:sdd-tasks-completed-task-738-tests-and-backcomp-c6e30d21.md)
+
+Tests currently live in `packages/ai-parrot-tools/tests/database/` and
+
+## [TASK-739: QueryValidator PK-presence extension](overviews/doc:sdd-tasks-completed-task-739-query-validator-pk-1006ad9c.md)
+
+refuse DML that doesn't reference the target table's primary key in the
+
+## [TASK-740: TableMetadata.unique_constraints + introspection hook](overviews/doc:sdd-tasks-completed-task-740-table-metadata-uni-89d3115b.md)
+
+to primary keys **or** to any UNIQUE constraint the caller names. Today
+
+## [TASK-741: Dynamic per-table Pydantic model builder (lru_cache)](overviews/doc:sdd-tasks-completed-task-741-crud-dynamic-pydan-a44ad09e.md)
+
+validate their `data: dict` argument against a Pydantic model that is
+
+## [TASK-743: PostgresToolkit CRUD tool methods + template cache + transaction + reload_metadata](overviews/doc:sdd-tasks-completed-task-743-postgres-toolkit-c-a778cecd.md)
+
+This is the centerpiece of the feature. `PostgresToolkit` gains five
+
+## [TASK-744: NavigatorToolkit refactor to PostgresToolkit subclass](overviews/doc:sdd-tasks-completed-task-744-navigator-toolkit--bd85c3fa.md)
+
+With TASK-743 landing the CRUD primitives, we can delete most of that
+
+## [TASK-745: Update examples + internal call sites for new NavigatorToolkit constructor](overviews/doc:sdd-tasks-completed-task-745-navigator-examples-c05fda56.md)
+
+TASK-744 migrates `NavigatorToolkit` from `connection_params: dict` to
+
+## [TASK-746: Feature-wide unit + integration test coverage](overviews/doc:sdd-tasks-completed-task-746-feat-106-tests-md.md)
+
+Each prior task lands a narrow test module adjacent to its
+
+## [TASK-747: AbstractToolkit Lifecycle Hooks (_pre_execute / _post_execute)](overviews/doc:sdd-tasks-completed-task-747-abstracttoolkit-li-8c90d4ce.md)
+
+Module 1 of the spec. The entire OAuth feature depends on toolkits being able to run pre-execution logic (credential resolution, authorization checks). Currently `ToolkitTool._execute()` calls `self.bound_method(**kwargs)` directly with no hooks. This task adds `_pre_execute()` a
+
+## [TASK-748: AuthorizationRequired Exception + ToolManager Handling](overviews/doc:sdd-tasks-completed-task-748-authorization-requ-05ce0bbb.md)
+
+Module 2 of the spec. When a toolkit's `_pre_execute()` detects that a user hasn't authorized, it raises `AuthorizationRequired`. This task defines that exception and modifies `ToolManager.execute_tool()` to catch it and convert it to a structured `ToolResult` with `status='autho
+
+## [TASK-749: PermissionContext — Add `channel` Field](overviews/doc:sdd-tasks-completed-task-749-permissioncontext--5648e084.md)
+
+Module 3 of the spec. The credential resolver needs to know which channel (telegram, agentalk, teams, api) the request originates from to construct the correct Redis key and OAuth callback. `PermissionContext` currently has `session`, `request_id`, and `extra` but no explicit `ch
+
+## [TASK-750: CredentialResolver Abstraction](overviews/doc:sdd-tasks-completed-task-750-credential-resolve-a567692e.md)
+
+Module 4 of the spec. The `CredentialResolver` is the bridge between a toolkit and its credential storage. It abstracts whether credentials come from a static config (legacy) or from per-user OAuth tokens in Redis. This separation lets `JiraToolkit` call `resolver.resolve(channel
+
+## [TASK-751: JiraOAuthManager — OAuth 2.0 (3LO) Lifecycle](overviews/doc:sdd-tasks-completed-task-751-jira-oauth-manager-md.md)
+
+Module 5 of the spec. This is the core OAuth implementation. `JiraOAuthManager` handles the complete Atlassian OAuth 2.0 (3LO) lifecycle: generating authorization URLs with CSRF state nonces, exchanging codes for tokens, discovering the cloud_id via accessible-resources, resolvin
+
+## [TASK-752: OAuth Callback HTTP Routes](overviews/doc:sdd-tasks-completed-task-752-oauth-callback-routes-md.md)
+
+Module 6 of the spec. After the user authorizes on Atlassian's consent page, the browser redirects to our callback URL. This task implements the aiohttp routes that receive the redirect, verify the CSRF state nonce, exchange the authorization code for tokens via `JiraOAuthManager
+
+## [TASK-753: JiraToolkit — OAuth2 3LO Mode](overviews/doc:sdd-tasks-completed-task-753-jiratoolkit-oauth2-053dd5b8.md)
+
+Module 7 of the spec. This is the integration point that ties the framework hooks, exception, credential resolver, and OAuth manager together inside `JiraToolkit`. When `auth_type="oauth2_3lo"`, the toolkit skips client creation in `__init__` and instead resolves credentials per-
+
+## [TASK-754: Telegram Integration — /connect_jira Commands](overviews/doc:sdd-tasks-completed-task-754-telegram-connect-j-9996d651.md)
+
+Module 8 of the spec. Telegram users need a way to authorize their Jira account. This task adds bot commands `/connect_jira`, `/disconnect_jira`, and `/jira_status` that generate auth URLs (deep links), handle post-callback notification, and show connection status.
+
+## [TASK-755: AgenTalk Integration — JiraConnectTool + Hot-Swap](overviews/doc:sdd-tasks-completed-task-755-agentalk-jira-conn-50333b0b.md)
+
+Module 9 of the spec. In AgenTalk (web chat via WebSocket), the agent session must detect whether a user has Jira tokens. If yes, register full `JiraToolkit(auth_type="oauth2_3lo")`. If not, register a lightweight `JiraConnectTool` placeholder that returns the auth URL. After suc
+
+## [TASK-756: PostAuthAction Config Model & YAML Parsing](overviews/doc:sdd-tasks-completed-task-756-post-auth-config-model-md.md)
+
+This is the foundation task for FEAT-108. It adds the `PostAuthAction` dataclass
+
+## [TASK-757: PostAuthProvider Protocol & Registry](overviews/doc:sdd-tasks-completed-task-757-post-auth-provider-333da180.md)
+
+This task creates the generic framework for secondary authentication providers.
+
+## [TASK-758: JiraPostAuthProvider Implementation](overviews/doc:sdd-tasks-completed-task-758-jira-post-auth-provider-md.md)
+
+This task implements the Jira-specific `PostAuthProvider` that wraps
+
+## [TASK-759: Combined Callback Endpoint](overviews/doc:sdd-tasks-completed-task-759-combined-callback--44af8be7.md)
+
+This task creates the aiohttp route that Jira's OAuth2 consent page redirects to
+
+## [TASK-760: Identity Mapping Service](overviews/doc:sdd-tasks-completed-task-760-identity-mapping-service-md.md)
+
+This task creates a service for managing user identity records in the
+
+## [TASK-761: Vault Token Sync](overviews/doc:sdd-tasks-completed-task-761-vault-token-sync-md.md)
+
+This task creates a service to store and retrieve OAuth tokens as flat keys in
+
+## [TASK-762: Login Page JS Redirect Chain](overviews/doc:sdd-tasks-completed-task-762-login-page-redirec-a88bbfdb.md)
+
+This task modifies the static login page HTML/JS (served to the Telegram WebApp)
+
+## [TASK-763: Wrapper Orchestration (handle_web_app_data Extension)](overviews/doc:sdd-tasks-completed-task-763-wrapper-orchestration-md.md)
+
+This is the final integration task that ties all components together. It extends
+
+## [TASK-764: Add azure_auth_url to TelegramAgentConfig](overviews/doc:sdd-tasks-completed-task-764-azure-config-model-md.md)
+
+from dataclasses import dataclass, field # verified: models.py:4
+
+## [TASK-765: Implement AzureAuthStrategy](overviews/doc:sdd-tasks-completed-task-765-azure-auth-strategy-md.md)
+
+import logging # verified: auth.py top
+
+## [TASK-766: Integrate AzureAuthStrategy into TelegramAgentWrapper](overviews/doc:sdd-tasks-completed-task-766-wrapper-azure-inte-0129ae71.md)
+
+import json # verified: wrapper.py top
+
+## [TASK-767: Create Azure Login HTML Page](overviews/doc:sdd-tasks-completed-task-767-azure-login-html-md.md)
+
+N/A — this is a standalone HTML file.
+
+## [TASK-768: Azure Auth Integration Tests](overviews/doc:sdd-tasks-completed-task-768-azure-integration-tests-md.md)
+
+import pytest # standard test framework
+
+## [TASK-769: MCP Server Registry — Declarative Catalog of Pre-Built Helpers](overviews/doc:sdd-tasks-completed-task-769-mcp-server-registry-md.md)
+
+This is the foundational task for FEAT-110. The MCP Server Registry is a declarative
+
+## [TASK-770: MCP Persistence Service — DocumentDB Storage for User MCP Configs](overviews/doc:sdd-tasks-completed-task-770-mcp-persistence-service-md.md)
+
+This task implements the persistence layer that saves and loads per-user, per-agent
+
+## [TASK-771: MCP Helper HTTP Handler — Discovery, Activation & Management Endpoints](overviews/doc:sdd-tasks-completed-task-771-mcp-helper-http-handler-md.md)
+
+This is the main HTTP handler task. It exposes four endpoints that let frontends
+
+## [TASK-772: Session Restore Hook — Auto-Restore User MCP Servers on PATCH](overviews/doc:sdd-tasks-completed-task-772-session-restore-hook-md.md)
+
+This task closes the persistence loop. When a user starts a new conversation with
+
+## [TASK-773: Route Registration — Wire MCPHelperHandler into App Routes](overviews/doc:sdd-tasks-completed-task-773-route-registration-md.md)
+
+This is the final wiring task. The `MCPHelperHandler` and its
+
+## [TASK-774: Wrapper App Injection — FEAT-108 Hotfix](overviews/doc:sdd-tasks-completed-task-774-wrapper-app-inject-721aff4f.md)
+
+FEAT-108 shipped with a wiring gap: `TelegramAgentWrapper._init_post_auth_providers()`
+
+## [TASK-775: JiraOAuthManager Lifecycle & setup(app) — FEAT-107 Hotfix](overviews/doc:sdd-tasks-completed-task-775-jira-oauth-manager-82a26351.md)
+
+FEAT-107 shipped with `JiraOAuthManager` requiring the caller to pre-build a
+
+## [TASK-776: BotManager Owns Shared `app['redis']` + JiraOAuthManager Self-Discovery](overviews/doc:sdd-tasks-completed-task-776-botmanager-owns-sh-66c40fef.md)
+
+After TASK-775 shipped, the aiohttp `Application` still has no owner for a
+
+## [TASK-777: AbstractAuthStrategy Capability Refactor](overviews/doc:sdd-tasks-completed-task-777-abstract-auth-capa-e0e61877.md)
+
+FEAT-109 needs a uniform contract that the wrapper can introspect
+
+## [TASK-778: AzureAuthStrategy Post-Auth Chain Compatibility](overviews/doc:sdd-tasks-completed-task-778-azure-post-auth-compat-md.md)
+
+Today only `BasicAuthStrategy` participates in FEAT-108's
+
+## [TASK-779: CompositeAuthStrategy — Multi-Method Router](overviews/doc:sdd-tasks-completed-task-779-composite-auth-strategy-md.md)
+
+The architectural centerpiece of FEAT-109 is a composite strategy
+
+## [TASK-780: TelegramAgentConfig — auth_methods List Field](overviews/doc:sdd-tasks-completed-task-780-config-auth-methods-list-md.md)
+
+To express "offer basic AND azure on the chooser", admins need a
+
+## [TASK-781: Wrapper Strategy Selection Refactor](overviews/doc:sdd-tasks-completed-task-781-wrapper-strategy-s-6dd64ea5.md)
+
+Today strategy selection is an inline `if/elif` chain at
+
+## [TASK-782: Replace `isinstance(BasicAuthStrategy)` Post-Auth Gate](overviews/doc:sdd-tasks-completed-task-782-post-auth-capabili-47b2df65.md)
+
+redirect chain on
+
+## [TASK-783: `login_multi.html` — Unified Auth Chooser Page](overviews/doc:sdd-tasks-completed-task-783-login-multi-html-md.md)
+
+The Telegram WebApp page that `CompositeAuthStrategy` opens. It is
+
+## [TASK-784: Validation Rules + YAML Docs for Multi-Auth](overviews/doc:sdd-tasks-completed-task-784-validation-and-docs-md.md)
+
+OAuth2 and Azure per-method requirements based on the singleton
+
+## [TASK-785: Store Router Config & Decision Models](overviews/doc:sdd-tasks-completed-task-785-store-router-confi-9876bc25.md)
+
+Implements **Module 1** of FEAT-111. All other modules (rules engine, YAML loader, cache, ontology adapter, StoreRouter core, AbstractBot integration) import these models, so this task must land first.
+
+## [TASK-786: Store Router YAML Override Loader](overviews/doc:sdd-tasks-completed-task-786-store-router-yaml-loader-md.md)
+
+Implements **Module 2** of FEAT-111. Agents configure the store router per-agent via YAML; this loader merges hardcoded defaults with user overrides, following the precedent set by `IntentRouterConfig.custom_keywords`.
+
+## [TASK-787: Shared LLM-Route Helper Extraction](overviews/doc:sdd-tasks-completed-task-787-shared-llm-route-helper-md.md)
+
+Implements **Module 3** of FEAT-111. Both `IntentRouterMixin` (strategy-level routing) and the upcoming `StoreRouter` (store-level routing) invoke an LLM via `self.invoke()`, wait with a timeout, then parse a JSON response. Today that logic lives inline in `IntentRouterMixin._par
+
+## [TASK-788: Fast-Path Rules Engine](overviews/doc:sdd-tasks-completed-task-788-store-router-rules-3ec7993a.md)
+
+Implements **Module 4** of FEAT-111. The fast path scores candidate stores based on deterministic heuristic rules (hardcoded defaults plus per-agent `StoreRule`s from the config). This avoids an LLM call for most queries.
+
+## [TASK-789: Ontology Pre-Annotator Adapter](overviews/doc:sdd-tasks-completed-task-789-ontology-preannota-3cc6ae6b.md)
+
+Implements **Module 5** of FEAT-111. The store router uses entity/relation hints from the ontology to bias routing (e.g. queries with graph-shaped entities → ArangoDB). `OntologyIntentResolver` is soft-deprecated for strategy routing but its signal-extraction is still useful. Thi
+
+## [TASK-790: Decision LRU Cache](overviews/doc:sdd-tasks-completed-task-790-store-router-decis-49675d29.md)
+
+Implements **Module 6** of FEAT-111. The LLM fallback path adds latency and cost; caching routing decisions for identical queries eliminates most of it. `functools.lru_cache` cannot be used on async methods safely, so this task builds a small async-safe LRU over `OrderedDict`.
+
+## [TASK-791: Additive `store_rankings` Field on `TraceEntry`](overviews/doc:sdd-tasks-completed-task-791-trace-entry-store--53ef5ad4.md)
+
+Implements **Module 9** of FEAT-111. When the store router is active, we want the existing `RoutingTrace` / `TraceEntry` observability machinery to carry store-level detail too. This is an additive Pydantic field with a `None` default — zero impact on existing callers.
+
+## [TASK-792: StoreRouter Core Orchestrator](overviews/doc:sdd-tasks-completed-task-792-store-router-core-md.md)
+
+Implements **Module 7** of FEAT-111 — the heart of the feature. This class orchestrates all the pieces created by prior tasks into the end-to-end store-routing decision + execution flow.
+
+## [TASK-793: AbstractBot Integration (`configure_store_router` + router-aware `_build_vector_context`)](overviews/doc:sdd-tasks-completed-task-793-abstractbot-store--826aba83.md)
+
+Implements **Module 8** of FEAT-111. This task wires the `StoreRouter` into the bot pipeline so every RAG-enabled bot automatically benefits once the router is configured. The unconfigured path MUST remain byte-identical to today's behavior.
+
+## [TASK-794: End-to-End Integration Tests](overviews/doc:sdd-tasks-completed-task-794-store-router-integ-edad0dfe.md)
+
+Implements **Module 10** (integration tier) of FEAT-111. Unit tests have already been placed next to each module; this task rounds out the test suite with integration tests that exercise the full pipeline against real or realistic fakes of the stores, plus the performance budget 
+
+## [TASK-795: Implement AbstractClient Per-Loop Client Cache](overviews/doc:sdd-tasks-completed-task-795-abstract-client-pe-7e3cad56.md)
+
+Every `AbstractClient` subclass caches a single SDK client on `self.client` that
+
+## [TASK-796: Migrate GoogleGenAIClient to Base Per-Loop Cache (remove interim hack)](overviews/doc:sdd-tasks-completed-task-796-google-genai-migra-ec7f20fe.md)
+
+(`_client_loop_id`, `_current_loop_id`, a subclass `_ensure_client`) that shipped
+
+## [TASK-797: Strip GrokClient self-caching — rely on base per-loop cache](overviews/doc:sdd-tasks-completed-task-797-grok-strip-self-caching-md.md)
+
+TASK-795, `self.client` is a loop-local property — the non-`None` write in
+
+## [TASK-798: Audit remaining LLM subclasses — migrate "Client not initialized" guards](overviews/doc:sdd-tasks-completed-task-798-subclass-audit-ens-65a572e3.md)
+
+With TASK-795 landed, `self.client` is a property that returns `None` on any
+
+## [TASK-799: Audit GeminiLiveClient — document cross-loop constraints](overviews/doc:sdd-tasks-completed-task-799-gemini-live-audit--a56f296e.md)
+
+per-interaction and **cannot be migrated across event loops**. The per-loop
+
+## [TASK-800: Unit tests for AbstractClient per-loop cache + Google hook](overviews/doc:sdd-tasks-completed-task-800-unit-tests-per-loo-070b2303.md)
+
+TASK-795 introduces the per-loop cache; TASK-796 adds the Google
+
+## [TASK-801: Integration tests — cross-loop reuse + in-loop connection reuse](overviews/doc:sdd-tasks-completed-task-801-integration-cross--4a4cdd5f.md)
+
+The unit tests in TASK-800 cover the per-loop mechanics with a stub SDK.
+
+## [TASK-802: Document the per-loop client cache contract for subclass authors](overviews/doc:sdd-tasks-completed-task-802-docs-per-loop-cache-md.md)
+
+Spec §5 Acceptance Criteria lists:
+
+## [TASK-803: Telegram MCP Persistence Service](overviews/doc:sdd-tasks-completed-task-803-telegram-mcp-persi-ffa1c35e.md)
+
+This task creates the new `mcp_persistence.py` module inside
+
+## [TASK-804: Secret/Public Splitter Helper](overviews/doc:sdd-tasks-completed-task-804-split-secret-and-p-b4937afb.md)
+
+This task adds the `_split_secret_and_public` private helper inside the existing
+
+## [TASK-805: Rewrite MCP Command Handlers and Rehydration](overviews/doc:sdd-tasks-completed-task-805-rewrite-mcp-comman-53d2d5f1.md)
+
+This is the core rewrite task for FEAT-113. It replaces all Redis-backed
+
+## [TASK-806: Update Wrapper Rehydration Call Site](overviews/doc:sdd-tasks-completed-task-806-wrapper-rehydratio-b7c1142c.md)
+
+After TASK-805 rewrites `rehydrate_user_mcp_servers` to drop the `redis_client`
+
+## [TASK-807: Tests for MCP Command Credentials](overviews/doc:sdd-tasks-completed-task-807-tests-mcp-command--7c0ce43f.md)
+
+This task creates the full unit + integration test suite for FEAT-113. The
+
+## [TASK-808: Enrich JiraWebhookHook reporter payload to a dict](overviews/doc:sdd-tasks-completed-task-808-jira-webhook-repor-8963d436.md)
+
+Spec § 3 / Module 1. `JiraWebhookHook._handle_post` currently emits the
+
+## [TASK-809: Add JIRA_ALLOWED_REPORTERS / JIRA_DEFAULT_REPORTER config constants](overviews/doc:sdd-tasks-completed-task-809-jira-allowed-repor-2f492fa4.md)
+
+Spec § 3 / Module 2. The handler added in TASK-810 needs a
+
+## [TASK-810: Implement handle_jira_ticket_created + route jira.created + update assignment caller](overviews/doc:sdd-tasks-completed-task-810-jira-ticket-create-6a291112.md)
+
+Spec § 3 / Module 3. This is the core of the feature. A ticket-created
+
+## [TASK-811: Unit tests for ticket-created handler + webhook payload shape](overviews/doc:sdd-tasks-completed-task-811-jira-ticket-create-acaca3c6.md)
+
+Spec § 4. This task adds the full unit coverage for FEAT-110: the
+
+## [TASK-812: Add BOT_CLEANUP_TIMEOUT configuration constant](overviews/doc:sdd-tasks-completed-task-812-bot-cleanup-timeout-conf-md.md)
+
+The new on-cleanup flow in `BotManager` (TASK-814) wraps every per-bot
+
+## [TASK-813: Add cooperative HookableAgent.cleanup()](overviews/doc:sdd-tasks-completed-task-813-hookable-agent-cleanup-md.md)
+
+Integration, REST API) leaks background hook tasks on shutdown.
+
+## [TASK-814: Implement BotManager on_cleanup iteration](overviews/doc:sdd-tasks-completed-task-814-botmanager-on-cleanup-md.md)
+
+registers signals on the aiohttp app (`on_startup`, `on_shutdown`,
+
+## [TASK-815: Unit tests for HookableAgent.cleanup()](overviews/doc:sdd-tasks-completed-task-815-hookable-cleanup-tests-md.md)
+
+TASK-813 adds `HookableAgent.cleanup()`. This task ships the unit tests
+
+## [TASK-816: Unit + integration tests for BotManager cleanup lifecycle](overviews/doc:sdd-tasks-completed-task-816-botmanager-cleanup-tests-md.md)
+
+TASK-814 wires `_cleanup_all_bots` and `_safe_cleanup` into
+
+## [TASK-817: Document the bot cleanup lifecycle](overviews/doc:sdd-tasks-completed-task-817-cleanup-lifecycle-docs-md.md)
+
+The spec (§5 Acceptance Criteria) requires documentation updates where
+
+## [TASK-818: Implement `parrot/tools/reminder.py` — `deliver_reminder` + `ReminderToolkit`](overviews/doc:sdd-tasks-completed-task-818-reminder-toolkit-module-md.md)
+
+Foundation task for FEAT-115. Creates the new module `parrot/tools/reminder.py`
+
+## [TASK-819: Unit tests for `ReminderToolkit` and `deliver_reminder`](overviews/doc:sdd-tasks-completed-task-819-reminder-toolkit-u-aa66b3cf.md)
+
+Covers Modules 3 and 4 of the spec (§3). Two test files:
+
+## [TASK-820: Integration test — end-to-end reminder with real scheduler](overviews/doc:sdd-tasks-completed-task-820-reminder-integrati-4942a05e.md)
+
+Implements Module 5 of the spec (§3). Exercises the full reminder path against a
+
+## [TASK-821: Wire `ReminderToolkit` into `JiraSpecialist.post_configure`](overviews/doc:sdd-tasks-completed-task-821-jira-specialist-wi-ba0e20d6.md)
+
+Implements Module 2 of the spec. Makes the `JiraSpecialist` agent the first
+
+## [TASK-822: ConversationBackend ABC](overviews/doc:sdd-tasks-completed-task-822-conversation-backend-abc-md.md)
+
+This is the foundation task for FEAT-116. Introduces `ConversationBackend`, the
+
+## [TASK-823: OverflowStore Generalization](overviews/doc:sdd-tasks-completed-task-823-overflow-store-gen-9f01f089.md)
+
+Generalizes the existing `S3OverflowManager` into a backend-agnostic
+
+## [TASK-824: Refactor ConversationDynamoDB to Implement ConversationBackend](overviews/doc:sdd-tasks-completed-task-824-dynamodb-backend-r-4b1c2ed1.md)
+
+Moves `ConversationDynamoDB` to `parrot/storage/backends/dynamodb.py`, makes it
+
+## [TASK-825: ChatStorage and ArtifactStore Consume the ABC](overviews/doc:sdd-tasks-completed-task-825-chatstorage-artifa-cbdb57ec.md)
+
+Completes Phase A of the worktree strategy (spec §"Worktree Strategy"). After
+
+## [TASK-826: SQLite Backend Implementation](overviews/doc:sdd-tasks-completed-task-826-sqlite-backend-md.md)
+
+First-class, zero-dependency storage backend for data-analyst laptops and CI.
+
+## [TASK-827: PostgreSQL Backend Implementation](overviews/doc:sdd-tasks-completed-task-827-postgres-backend-md.md)
+
+Production-grade storage backend for GCP deployments (spec §1 case 3) and
+
+## [TASK-828: MongoDB Backend Implementation](overviews/doc:sdd-tasks-completed-task-828-mongodb-backend-md.md)
+
+Third new backend: MongoDB via `asyncdb[mongo]` (motor). Same document model
+
+## [TASK-829: Backend Factory and Configuration Wiring](overviews/doc:sdd-tasks-completed-task-829-factory-and-config-9230cd73.md)
+
+Final integration task. Wires the `PARROT_STORAGE_BACKEND` configuration into
+
+## [TASK-830: Shared Backend Contract Test Suite](overviews/doc:sdd-tasks-completed-task-830-backend-contract-t-659499c5.md)
+
+The guardrail that makes "backend-agnostic" real. One parametrized pytest
+
+## [TASK-831: Observability Hooks for Storage Backends](overviews/doc:sdd-tasks-completed-task-831-observability-hooks-md.md)
+
+Per the spec's Open Question #6 (answered "add on this scope"), v1 must
+
+## [TASK-832: Documentation — Storage Backends Guide](overviews/doc:sdd-tasks-completed-task-832-documentation-md.md)
+
+End-user-facing documentation for the new pluggable storage system. Without
+
+## [TASK-833: Add `datamodel-code-generator` dependency](overviews/doc:sdd-tasks-completed-task-833-add-datamodel-code-005afbdd.md)
+
+not declared in `packages/parrot-formdesigner/pyproject.toml` today — it must be added before any
+
+## [TASK-833: NavigatorToolkit `_run_on_conn` override — unwrap asyncdb to raw asyncpg](overviews/doc:sdd-tasks-completed-task-833-navigator-run-on-c-6f743254.md)
+
+FEAT-107 (`c1e93b8d`, TASK-743) migrated NavigatorToolkit CRUD onto
+
+## [TASK-834: `FormResultStorage` ABC](overviews/doc:sdd-tasks-completed-task-834-form-result-storage-abc-md.md)
+
+The submission pipeline needs a pluggable write-only storage interface so the Postgres
+
+## [TASK-834: Regression tests for `NavigatorToolkit._run_on_conn` override](overviews/doc:sdd-tasks-completed-task-834-navigator-run-on-c-d2c65f72.md)
+
+TASK-833 adds a local `_run_on_conn` override to `NavigatorToolkit` to
+
+## [TASK-835: Extend `FormSubmission` + `FormSubmissionStorage` (metadata columns, DLQ, `conn=`)](overviews/doc:sdd-tasks-completed-task-835-extend-formsubmiss-b0a14bc1.md)
+
+into an implementation of the new `FormResultStorage` ABC (from TASK-834), adds the hybrid
+
+## [TASK-836: `FormOperator` ABC + `OperatorContext`](overviews/doc:sdd-tasks-completed-task-836-form-operator-abc-md.md)
+
+Operators are the business-rule plugin layer around form submission. A `FormOperator` is a class
+
+## [TASK-836: NavigatorToolkit `transaction()` override — run on raw asyncpg](overviews/doc:sdd-tasks-completed-task-836-navigator-transact-6cdbc7d9.md)
+
+After TASK-835 landed, `nav_create_dashboard` failed with::
+
+## [TASK-837: Regression tests for `_build_table_metadata` + `transaction()` overrides](overviews/doc:sdd-tasks-completed-task-837-navigator-metadata-4cec6069.md)
+
+TASK-835 and TASK-836 were shipped during a live-debug cycle without
+
+## [TASK-837: `PydanticModelResolver` — static registry + `datamodel-code-generator` cache](overviews/doc:sdd-tasks-completed-task-837-pydantic-model-resolver-md.md)
+
+The submission pipeline needs a strong Pydantic model per `(form_id, version)`. Developer-authored
+
+## [TASK-838: Dashboard draft-by-default + clone owner coherence](overviews/doc:sdd-tasks-completed-task-838-dashboard-draft-de-d00c9da5.md)
+
+Admin workflow requires dashboards to be created as drafts
+
+## [TASK-838: `UserDetails` operator](overviews/doc:sdd-tasks-completed-task-838-userdetails-operator-md.md)
+
+First concrete `FormOperator` shipped with FEAT-121. Reads navigator-auth session fields off the
+
+## [TASK-839: New `publish_dashboard` tool](overviews/doc:sdd-tasks-completed-task-839-publish-dashboard-tool-md.md)
+
+With drafts now being the default state of newly-created dashboards
+
+## [TASK-839: `FormAPIHandler.submit_data` pipeline rewrite + `_run_submission_pipeline`](overviews/doc:sdd-tasks-completed-task-839-submit-data-pipeli-2d12d6cd.md)
+
+This task is the heart of FEAT-121. `FormAPIHandler.submit_data` (`api.py:446-535`) is rewritten
+
+## [TASK-840: Regression tests for dashboard draft/publish lifecycle](overviews/doc:sdd-tasks-completed-task-840-dashboard-lifecycl-5a3b48e5.md)
+
+TASK-838 and TASK-839 shipped the lifecycle feature during a live
+
+## [TASK-840: `setup_form_routes` wiring for operators + resolver](overviews/doc:sdd-tasks-completed-task-840-setup-form-routes-wiring-md.md)
+
+new `operators` and `pydantic_resolver` kwargs to `FormAPIHandler(...)` so application code can
+
+## [TASK-841: Add max_document_size_mb config to TelegramAgentConfig](overviews/doc:sdd-tasks-completed-task-841-config-max-document-size-md.md)
+
+Spec Module 5. The document handler (TASK-845) needs a configurable file-size limit so
+
+## [TASK-841: Integration tests — end-to-end pipeline against Postgres](overviews/doc:sdd-tasks-completed-task-841-integration-tests--62a0afb0.md)
+
+End-to-end validation that the full submission pipeline works against a real Postgres (asyncpg
+
+## [TASK-842: Attachment passthrough in _invoke_agent and handle_photo refactor](overviews/doc:sdd-tasks-completed-task-842-attachment-passthr-5c6b984a.md)
+
+Spec Module 4. The `_invoke_agent` method currently does not accept an `attachments`
+
+## [TASK-843: Message ID tracking and per-chat message cache](overviews/doc:sdd-tasks-completed-task-843-message-id-tracking-md.md)
+
+Spec Module 2. After each agent response, the wrapper needs to store the user's
+
+## [TASK-844: Reply context extraction and handler integration](overviews/doc:sdd-tasks-completed-task-844-reply-context-extraction-md.md)
+
+Spec Module 1. When a user replies to a specific bot message (or their own previous
+
+## [TASK-845: Complete document handler implementation](overviews/doc:sdd-tasks-completed-task-845-document-handler-md.md)
+
+Spec Module 3. The current `handle_document` (line 2552) is a stub that acknowledges
+
+## [TASK-846: Create NvidiaModel enum](overviews/doc:sdd-tasks-completed-task-846-nvidia-model-enum-md.md)
+
+The `NvidiaClient` needs a canonical enum of tested Nvidia-NIM model slugs
+
+## [TASK-847: Implement NvidiaClient](overviews/doc:sdd-tasks-completed-task-847-nvidia-client-impl-593154cb.md)
+
+Create the `NvidiaClient` class that extends `OpenAIClient` and routes
+
+## [TASK-848: Register NvidiaClient in LLMFactory](overviews/doc:sdd-tasks-completed-task-848-nvidia-factory-reg-c7d7b613.md)
+
+Add `"nvidia"` to `SUPPORTED_CLIENTS` in `parrot.clients.factory` so users
+
+## [TASK-849: Unit tests for NvidiaClient](overviews/doc:sdd-tasks-completed-task-849-nvidia-client-unit-tests-md.md)
+
+Write unit tests for `NvidiaClient` covering initialization, env-var
+
+## [TASK-850: Bump navigator-api dependency floor to 2.14.1](overviews/doc:sdd-tasks-completed-task-850-bump-navigator-api-82789b7d.md)
+
+The migration plan turns `parrot.interfaces.file` into a thin shim
+
+## [TASK-851: Replace parrot.interfaces.file with re-export shim over navigator.utils.file](overviews/doc:sdd-tasks-completed-task-851-shim-parrot-interf-9ab53d1d.md)
+
+Today `packages/ai-parrot/src/parrot/interfaces/file/` contains a
+
+## [TASK-852: Adapt FileManagerTool._create_file and delegate FileManagerFactory to upstream](overviews/doc:sdd-tasks-completed-task-852-adapt-filemanager--f7db1a6c.md)
+
+Two pieces of `parrot.tools.filemanager` rely on details that
+
+## [TASK-853: Add regression tests for parrot.interfaces.file shim and FileManager adapter](overviews/doc:sdd-tasks-completed-task-853-shim-regression-tests-md.md)
+
+After TASK-851 (the shim) and TASK-852 (the tool/factory adapter)
+
+## [TASK-854: Verify existing FileManager-consuming tests after migration](overviews/doc:sdd-tasks-completed-task-854-verify-existing-st-ef6615db.md)
+
+Two test modules exercise `FileManagerInterface` /
+
+## [TASK-855: AbstractLoader contract changes — language, title, validate_metadata](overviews/doc:sdd-tasks-completed-task-855-abstractloader-con-6dcf6015.md)
+
+This is the foundation task for FEAT-125. It extends `AbstractLoader` with the
+
+## [TASK-855: Upgrade `anthropic` SDK Pin from 0.61.0 to >=0.97.0](overviews/doc:sdd-tasks-completed-task-855-anthropic-sdk-pin--fd8754ec.md)
+
+resolved version is ≥0.97.0.
+
+## [TASK-855: ParentSearcher abstraction + InTable default impl](overviews/doc:sdd-tasks-completed-task-855-parent-searcher-ab-2ce876ba.md)
+
+Module 1 of FEAT-128. Introduce the composable `ParentSearcher` abstraction
+
+## [TASK-856: AnthropicClient Regression Validation Against SDK 0.97.0](overviews/doc:sdd-tasks-completed-task-856-anthropic-regressi-973ad349.md)
+
+1. `from anthropic import RateLimitError, APIStatusError, AsyncAnthropic` imports
+
+## [TASK-856: Base loader helpers — basepdf and basevideo build_default_meta](overviews/doc:sdd-tasks-completed-task-856-base-loader-helpers-md.md)
+
+concrete loaders (`pdf.py`, `pdfmark.py`, `pdftables.py`, `video.py`,
+
+## [TASK-856: Marker standardisation in stores (`is_chunk` filter)](overviews/doc:sdd-tasks-completed-task-856-store-marker-stand-94672c3a.md)
+
+Module 2 of FEAT-128. Today, parent rows (`is_full_document=True`) sit in
+
+## [TASK-857: AIMessageFactory.from_claude_agent Static Method](overviews/doc:sdd-tasks-completed-task-857-aimessage-factory--c7e75479.md)
+
+an `AIMessage`.
+
+## [TASK-857: Refactor file/document loaders to use canonical metadata](overviews/doc:sdd-tasks-completed-task-857-refactor-file-docu-216b241e.md)
+
+This task covers **Module 2** of the spec. It refactors file-based and
+
+## [TASK-857: 3-level hierarchy in late chunking (`document → parent_chunk → child`)](overviews/doc:sdd-tasks-completed-task-857-three-level-hierarchy-md.md)
+
+Module 3 of FEAT-128. When a document exceeds a configurable token
+
+## [TASK-858: Bot-side wiring (`expand_to_parent` + `parent_searcher`)](overviews/doc:sdd-tasks-completed-task-858-bot-parent-expansi-f5edfcd0.md)
+
+Module 4 of FEAT-128 — the **core** of the feature. Wire the bot to use
+
+## [TASK-858: ClaudeAgentClient Core Implementation](overviews/doc:sdd-tasks-completed-task-858-claude-agent-client-core-md.md)
+
+unit tests (TASK-861), example/docs (TASK-862).
+
+## [TASK-858: Refactor video/audio loaders to use canonical metadata](overviews/doc:sdd-tasks-completed-task-858-refactor-video-aud-451ca86d.md)
+
+This task covers the video/audio portion of **Module 3** of the spec. These
+
+## [TASK-859: Factory Registration & Lazy Loader for ClaudeAgentClient](overviews/doc:sdd-tasks-completed-task-859-factory-registrati-91b628e5.md)
+
+that imports and returns `ClaudeAgentClient`.
+
+## [TASK-859: Integration tests — pgvector end-to-end + bot composition](overviews/doc:sdd-tasks-completed-task-859-pgvector-and-bot-i-bada88e2.md)
+
+Module 5 of FEAT-128. Validate the full pipeline against a real (or
+
+## [TASK-859: Refactor YouTube and Vimeo loaders to use canonical metadata](overviews/doc:sdd-tasks-completed-task-859-refactor-youtube-v-72b2897d.md)
+
+YouTube and Vimeo loaders extend `BaseVideoLoader` and emit multiple Document
+
+## [TASK-860: Documentation — `docs/parent-child-retrieval.md`](overviews/doc:sdd-tasks-completed-task-860-parent-child-retri-86160c21.md)
+
+Module 6 of FEAT-128. Operators and bot authors need a single page that
+
+## [TASK-860: Pyproject Extras Restructure — Dedicated `claude-agent` Extra](overviews/doc:sdd-tasks-completed-task-860-pyproject-extras-r-e81e05bf.md)
+
+[project.optional-dependencies]
+
+## [TASK-860: Refactor web and webscraping loaders to use canonical metadata](overviews/doc:sdd-tasks-completed-task-860-refactor-web-loaders-md.md)
+
+Both extend `AbstractLoader` directly. `WebScrapingLoader` emits many Document
+
+## [TASK-861: Unit Tests for ClaudeAgentClient](overviews/doc:sdd-tasks-completed-task-861-claude-agent-clien-72bedf45.md)
+
+1. `test_claude_agent_init_lazy_import` — construction does not import `claude_agent_sdk`
+
+## [TASK-861: Build `contextual.py` helper module](overviews/doc:sdd-tasks-completed-task-861-contextual-helper-module-md.md)
+
+Module 1 of the spec. Provides the pure-function helper that all stores will
+
+## [TASK-861: Tests for canonical metadata standardization](overviews/doc:sdd-tasks-completed-task-861-tests-canonical-metadata-md.md)
+
+This task implements **Module 5** of the spec. It creates a comprehensive test
+
+## [TASK-862: Wire `_apply_contextual_augmentation` into `AbstractStore`](overviews/doc:sdd-tasks-completed-task-862-abstractstore-augm-59ad7f69.md)
+
+Module 2 of the spec. Adds the three opt-in constructor kwargs to
+
+## [TASK-862: Documentation for canonical metadata shape](overviews/doc:sdd-tasks-completed-task-862-documentation-cano-22aa12c2.md)
+
+This task implements **Module 6** of the spec. It documents the canonical
+
+## [TASK-862: Example & Documentation for ClaudeAgentClient](overviews/doc:sdd-tasks-completed-task-862-example-and-docs-md.md)
+
+(`packages/ai-parrot/README.md`) documenting both install paths.
+
+## [TASK-863: Wire `PgVectorStore` add_documents / from_documents to the augmentation hook](overviews/doc:sdd-tasks-completed-task-863-pgvector-wiring-md.md)
+
+Module 3 of the spec. Postgres is the mainstream store and the only
+
+## [TASK-863: Reranker Data Models and Abstract Base Class](overviews/doc:sdd-tasks-completed-task-863-reranker-models-an-4d770312.md)
+
+This is the foundational task for the reranker subsystem. It creates the
+
+## [TASK-864: LocalCrossEncoderReranker Implementation](overviews/doc:sdd-tasks-completed-task-864-local-cross-encode-9aa94731.md)
+
+This is the core implementation task. It creates `LocalCrossEncoderReranker`, which
+
+## [TASK-864: Wire `MilvusStore.add_documents` to the augmentation hook](overviews/doc:sdd-tasks-completed-task-864-milvus-wiring-md.md)
+
+Module 4 sub-task. Wires Milvus into the contextual-embedding hook. Same
+
+## [TASK-865: Wire `FaissStore.add_documents` to the augmentation hook](overviews/doc:sdd-tasks-completed-task-865-faiss-wiring-md.md)
+
+Module 4 sub-task. Wires the FAISS in-memory store into the
+
+## [TASK-865: LLMReranker Debug Implementation](overviews/doc:sdd-tasks-completed-task-865-llm-reranker-md.md)
+
+This task creates `LLMReranker`, a debug/fallback reranker that uses the bot's
+
+## [TASK-866: Wire `ArangoStore.add_document` to the augmentation hook](overviews/doc:sdd-tasks-completed-task-866-arango-wiring-md.md)
+
+Module 4 sub-task. Arango is unusual in this codebase: its `add_documents`
+
+## [TASK-866: Wire Reranker into AbstractBot Retrieval Pipeline](overviews/doc:sdd-tasks-completed-task-866-bot-reranker-integration-md.md)
+
+This task modifies `AbstractBot` to support an optional reranker in the retrieval
+
+## [TASK-867: Comprehensive Unit Tests for Reranker Subsystem](overviews/doc:sdd-tasks-completed-task-867-reranker-unit-tests-md.md)
+
+This task consolidates and expands the unit test suite for the entire reranker
+
+## [TASK-867: Surface `contextual_header` in `SearchResult.metadata`](overviews/doc:sdd-tasks-completed-task-867-searchresult-heade-a7a936c6.md)
+
+Spec §8 Open Question 2 — answered "Yes" by Jesus Lara. At retrieval
+
+## [TASK-868: Benchmark Harness, Eval Dataset, and Integration Tests](overviews/doc:sdd-tasks-completed-task-868-benchmark-harness--169e4fc7.md)
+
+This task creates the reproducible benchmark harness and integration tests that
+
+## [TASK-868: Migration script `recompute_contextual_embeddings.py`](overviews/doc:sdd-tasks-completed-task-868-recompute-migratio-e14106fe.md)
+
+Spec §8 Open Question 5 — answered "create the migration tooling" by
+
+## [TASK-869: Documentation page `docs/contextual-embedding.md`](overviews/doc:sdd-tasks-completed-task-869-contextual-embeddi-b913496f.md)
+
+Module 6 of the spec. Ships the user-facing documentation page so
+
+## [TASK-869: Implement FileManagerToolkit Core Class](overviews/doc:sdd-tasks-completed-task-869-filemanager-toolkit-core-md.md)
+
+This is the core implementation task for FEAT-127. The existing `FileManagerTool` uses a multi-operation dispatch pattern that confuses LLMs. This task creates `FileManagerToolkit` — an `AbstractToolkit` subclass where each file operation is a separate public async method, auto-w
+
+## [TASK-870: Update parrot.tools Exports for FileManagerToolkit](overviews/doc:sdd-tasks-completed-task-870-filemanager-toolki-3d20c52b.md)
+
+After `FileManagerToolkit` is implemented (TASK-869), it must be importable via `from parrot.tools import FileManagerToolkit`. This task updates the `parrot/tools/__init__.py` module to add the new toolkit to the lazy-load map and public `__all__`.
+
+## [TASK-871: Update parrot_tools Registry for FileManagerToolkit](overviews/doc:sdd-tasks-completed-task-871-filemanager-toolki-1188fbfd.md)
+
+The `parrot_tools` package maintains a `TOOL_REGISTRY` dict that maps string keys to dotted class paths. This registry enables lazy tool resolution by name. This task adds a `"file_manager_toolkit"` entry pointing to the new `FileManagerToolkit` class while keeping the existing `
+
+## [TASK-872: Unit Tests for FileManagerToolkit](overviews/doc:sdd-tasks-completed-task-872-filemanager-toolki-b0823b5c.md)
+
+FEAT-127 migrates `FileManagerTool` to `FileManagerToolkit`. This task writes the comprehensive test suite covering toolkit initialization, tool generation, schema correctness, per-operation behavior, `allowed_operations` filtering, size limits, and backward compatibility of the 
+
+## [TASK-873: Update FileManager Example for Toolkit API](overviews/doc:sdd-tasks-completed-task-873-filemanager-toolki-dfa9d881.md)
+
+The existing `examples/tool/fs.py` demonstrates `FileManagerTool` with the old multi-operation dispatch pattern. This task updates the example to showcase `FileManagerToolkit`, demonstrating how individual tools are called directly with focused parameters.
+
+## [TASK-874: Pydantic v2 contracts for `parrot.flows.dev_loop`](overviews/doc:sdd-tasks-completed-task-874-dev-loop-models-md.md)
+
+Implements **Module 1** (`parrot.flows.dev_loop.models`) from the spec.
+
+## [TASK-875: Extend `ClaudeAgentRunOptions` with `agents`, `setting_sources`, `extra_args`, `system_prompt`](overviews/doc:sdd-tasks-completed-task-875-claude-agent-optio-1099fc98.md)
+
+Spec §7 Risk **R1**: this feature is a **hard consumer** of FEAT-124's
+
+## [TASK-876: navconfig settings for the dev-loop flow](overviews/doc:sdd-tasks-completed-task-876-dev-loop-settings-md.md)
+
+Implements **Module 12** from spec §3. The dispatcher, multiplexer,
+
+## [TASK-877: SDD subagent definition files (`sdd-research`, `sdd-qa`)](overviews/doc:sdd-tasks-completed-task-877-sdd-subagent-definitions-md.md)
+
+Implements **Module 13**. The dev-loop dispatcher binds one of three
+
+## [TASK-878: `ClaudeCodeDispatcher` core class](overviews/doc:sdd-tasks-completed-task-878-claude-code-dispatcher-md.md)
+
+Implements **Module 2** — the heart of FEAT-129. The dispatcher is the
+
+## [TASK-879: `FlowStreamMultiplexer` aiohttp WebSocket handler](overviews/doc:sdd-tasks-completed-task-879-flow-stream-multiplexer-md.md)
+
+Implements **Module 3** (`parrot.flows.dev_loop.streaming`). The UI
+
+## [TASK-880: `BugIntakeNode` — input validation, no dispatch](overviews/doc:sdd-tasks-completed-task-880-bug-intake-node-md.md)
+
+Implements **Module 4** from spec §3. First node of the dev-loop flow.
+
+## [TASK-881: `ResearchNode` — Jira ticket + log fetch + sdd-research dispatch](overviews/doc:sdd-tasks-completed-task-881-research-node-md.md)
+
+Implements **Module 5** from spec §3. The most complex node before
+
+## [TASK-882: `DevelopmentNode` — sdd-worker dispatch](overviews/doc:sdd-tasks-completed-task-882-development-node-md.md)
+
+Implements **Module 6**. Thin node that dispatches to the `sdd-worker`
+
+## [TASK-883: `QANode` — sdd-qa dispatch in plan mode](overviews/doc:sdd-tasks-completed-task-883-qa-node-md.md)
+
+Implements **Module 7**. Dispatches the `sdd-qa` subagent in
+
+## [TASK-884: `DeploymentHandoffNode` — push, open PR, transition Jira](overviews/doc:sdd-tasks-completed-task-884-deployment-handoff-node-md.md)
+
+Implements **Module 8**. Pure AI-Parrot — no Claude Code dispatch. After
+
+## [TASK-885: `FailureHandlerNode` — Jira escalation on failure](overviews/doc:sdd-tasks-completed-task-885-failure-handler-node-md.md)
+
+Implements **Module 9**. Terminal failure node. Routed-to either by:
+
+## [TASK-886: `build_dev_loop_flow` factory — wire 5 nodes + transitions](overviews/doc:sdd-tasks-completed-task-886-flow-factory-md.md)
+
+Implements **Module 10**. Wires the five primary nodes plus the failure
+
+## [TASK-887: GitHub `pull_request.closed` webhook for worktree cleanup](overviews/doc:sdd-tasks-completed-task-887-pull-request-webhook-md.md)
+
+Implements **Module 11**. Worktree cleanup is external to the flow
+
+## [TASK-888: Unit-test sweep + shared fixtures for dev-loop](overviews/doc:sdd-tasks-completed-task-888-unit-tests-md.md)
+
+Each module-level task carries its own unit tests scaffolded in its
+
+## [TASK-889: Live integration tests (`@pytest.mark.live`)](overviews/doc:sdd-tasks-completed-task-889-integration-tests-md.md)
+
+Implements the four integration tests in spec §4:
+
+## [TASK-890: Documentation — README "Optional capabilities" section](overviews/doc:sdd-tasks-completed-task-890-documentation-md.md)
+
+Spec acceptance criterion: "Documentation: a short section in the
+
+## [TASK-896: Rename `BugBrief → WorkBrief` and add `kind` field](overviews/doc:sdd-tasks-completed-task-896-workbrief-rename-a-adbeeeca.md)
+
+Foundation task for FEAT-132. The dev-loop intake currently exposes a
+
+## [TASK-897: Add `DEV_LOOP_PLAN_LLM` navconfig setting](overviews/doc:sdd-tasks-completed-task-897-conf-dev-loop-plan-llm-md.md)
+
+Spec §3 Module 6. The plan summary in TASK-900 reuses the existing
+
+## [TASK-898: Implement `IntentClassifierNode`](overviews/doc:sdd-tasks-completed-task-898-intent-classifier-node-md.md)
+
+Spec §3 Module 2. New head-of-flow node that:
+
+## [TASK-899: Scope down `BugIntakeNode` (validation moves to IntentClassifierNode)](overviews/doc:sdd-tasks-completed-task-899-bug-intake-scope-down-md.md)
+
+Spec §3 Module 3. After `IntentClassifierNode` (TASK-898) takes over
+
+## [TASK-900: `ResearchNode` — issuetype routing + plan-summary comment](overviews/doc:sdd-tasks-completed-task-900-research-issuetype-9eed861a.md)
+
+Spec §3 Module 4 + §1 Goals G3, G4, G5. Two tightly-coupled changes
+
+## [TASK-901: Rewire `build_dev_loop_flow` for kind-based routing](overviews/doc:sdd-tasks-completed-task-901-flow-factory-rewir-99b7d9bb.md)
+
+Spec §3 Module 5. Insert `IntentClassifierNode` at the head of the
+
+## [TASK-902: Examples — UI form `kind` radio + server form-builder](overviews/doc:sdd-tasks-completed-task-902-ui-form-and-server-kind-md.md)
+
+Spec §3 Module 7. The bundled `examples/dev_loop/` server + UI is
+
+## [TASK-903: Integration smoke + README updates for FEAT-132](overviews/doc:sdd-tasks-completed-task-903-integration-smoke--11f74e56.md)
+
+Spec §3 Module 8 + §4 Integration Tests. After all the implementation
+
+## [TASK-904: Add reranker_config + parent_searcher_config columns to navigator.ai_bots](overviews/doc:sdd-tasks-completed-task-904-creation-sql-reran-c3e34fe8.md)
+
+but has no equivalent column for FEAT-126 (reranker) or FEAT-128 (parent
+
+## [TASK-905: Implement parrot/rerankers/factory.py](overviews/doc:sdd-tasks-completed-task-905-rerankers-factory-md.md)
+
+Bots loaded by `BotManager` need a way to turn a JSONB
+
+## [TASK-906: Implement parrot/stores/parents/factory.py](overviews/doc:sdd-tasks-completed-task-906-parents-factory-md.md)
+
+Bots loaded from the DB need a way to instantiate an
+
+## [TASK-907: Add reranker_config + parent_searcher_config to BotModel](overviews/doc:sdd-tasks-completed-task-907-botmodel-fields-md.md)
+
+datamodel mirror of `navigator.ai_bots`. It must declare the two new
+
+## [TASK-908: Wire reranker + parent searcher factories into BotManager.create_bot](overviews/doc:sdd-tasks-completed-task-908-botmanager-factory-117ce9c7.md)
+
+The factories (TASK-905, TASK-906) and the `BotModel` fields (TASK-907) only
+
+## [TASK-909: Verify BaseBot/Chatbot forward reranker/parent kwargs to AbstractBot](overviews/doc:sdd-tasks-completed-task-909-basebot-chatbot-kw-65f3d142.md)
+
+and `rerank_oversample_factor` from `**kwargs` (see `abstract.py:397-408`).
+
+## [TASK-910: Accept and persist reranker/parent_searcher configs in bot endpoints](overviews/doc:sdd-tasks-completed-task-910-handler-endpoints--816a22c2.md)
+
+endpoints that persist `BotModel` rows. They must accept the two new fields
+
+## [TASK-911: Integration test — DB-loaded bot exercises FEAT-126 + FEAT-128](overviews/doc:sdd-tasks-completed-task-911-integration-db-loa-32f0e3b7.md)
+
+The unit tests on individual modules (904-910) prove each piece works in
+
+## [TASK-912: Document the new JSONB columns + factories (CHANGELOG + README snippet)](overviews/doc:sdd-tasks-completed-task-912-docs-and-changelog-md.md)
+
+Operators editing bot rows directly (or building a future admin UI) need to
+
+## [TASK-913: Types Module — AgentLike Protocol, Type Aliases, FlowStatus](overviews/doc:sdd-tasks-completed-task-913-flow-primitives-types-md.md)
+
+This is the foundation task for the flow-primitives feature. It creates the
+
+## [TASK-914: FSM Module — AgentTaskMachine and TransitionCondition](overviews/doc:sdd-tasks-completed-task-914-flow-primitives-fsm-md.md)
+
+Extracts `AgentTaskMachine` and `TransitionCondition` from
+
+## [TASK-915: Result Models — FlowResult, NodeExecutionInfo, FlowStatus Utilities](overviews/doc:sdd-tasks-completed-task-915-flow-primitives-result-md.md)
+
+Creates `FlowResult` (replacing `CrewResult`) and `NodeExecutionInfo` (replacing
+
+## [TASK-916: Node Hierarchy — Node ABC, AgentNode, StartNode, EndNode](overviews/doc:sdd-tasks-completed-task-916-flow-primitives-node-md.md)
+
+Creates the shared node hierarchy in `parrot.bots.flows.core.node`. The `Node`
+
+## [TASK-917: FlowContext — Workflow Execution State Tracking](overviews/doc:sdd-tasks-completed-task-917-flow-primitives-context-md.md)
+
+Extracts and enhances `FlowContext` from `parrot.bots.orchestration.crew` into
+
+## [TASK-918: Transitions — FlowTransition Dataclass](overviews/doc:sdd-tasks-completed-task-918-flow-primitives-tr-6bf344ff.md)
+
+Extracts `FlowTransition` from `parrot.bots.flow.fsm` into the shared
+
+## [TASK-919: Storage Migration — ExecutionMemory, PersistenceMixin, SynthesisMixin](overviews/doc:sdd-tasks-completed-task-919-flow-primitives-storage-md.md)
+
+Moves the storage subpackage (`ExecutionMemory`, `VectorStoreMixin`,
+
+## [TASK-920: Package Init + Re-Exports + Dead Code Cleanup](overviews/doc:sdd-tasks-completed-task-920-flow-primitives-in-56898239.md)
+
+Wires up the public API surface for `parrot.bots.flows.core` and establishes
+
+## [TASK-921: Contract Tests — FSM Invariants, Serialization, Protocol Conformance](overviews/doc:sdd-tasks-completed-task-921-flow-primitives-co-82bafca5.md)
+
+Final task: consolidates and extends the per-module tests from previous tasks
+
+## [TASK-922: Implement VaultTokenStore](overviews/doc:sdd-tasks-completed-task-922-vault-token-store-md.md)
+
+The NetSuite MCP integration requires encrypted persistence of OAuth2 tokens
+
+## [TASK-923: NetSuite MCP Factory & Mixin Helper](overviews/doc:sdd-tasks-completed-task-923-netsuite-factory-helper-md.md)
+
+This is the core task of FEAT-135. It adds the `create_netsuite_mcp_server()` factory
+
+## [TASK-924: NetSuite Registry Entry & Factory Map](overviews/doc:sdd-tasks-completed-task-924-netsuite-registry-entry-md.md)
+
+After the NetSuite factory function exists (TASK-923), it needs to be registered
+
+## [TASK-925: NetSuite MCP Integration Tests](overviews/doc:sdd-tasks-completed-task-925-netsuite-mcp-tests-md.md)
+
+This task creates the unified test file for the entire FEAT-135 feature.
+
+## [TASK-926: Connection Boundary Unwrap — yield raw asyncpg.Connection](overviews/doc:sdd-tasks-completed-task-926-asyncpg-boundary-unwrap-md.md)
+
+Implements Module 1 of the spec. Currently `_acquire_asyncdb_connection`
+
+## [TASK-927: Delete SQLAlchemy Backend Path](overviews/doc:sdd-tasks-completed-task-927-delete-sqlalchemy--c25c6def.md)
+
+Implements Module 2 of the spec. The `backend="sqlalchemy"` code path has
+
+## [TASK-929: Transaction on asyncpg Native with Savepoint Support](overviews/doc:sdd-tasks-completed-task-929-transaction-asyncp-115e2196.md)
+
+Implements Module 4 of the spec. Fixes defect D5. Currently
+
+## [TASK-930: Remove FEAT-117 Override + Final Tests + Dep Audit](overviews/doc:sdd-tasks-completed-task-930-cleanup-feat117-ov-b5652960.md)
+
+Implements Module 5 of the spec — the final cleanup after all framework-level
+
+## [TASK-931: Add row-limit helper and test_connection to AbstractDatabaseSource](overviews/doc:sdd-tasks-completed-task-931-base-row-limit-tes-28008d61.md)
+
+Spec Module 1. The toolkit has no row-limit enforcement and no way to test
+
+## [TASK-932: Expand interface credential resolution and update sources](overviews/doc:sdd-tasks-completed-task-932-interface-credenti-2976d777.md)
+
+Spec Module 2. `parrot.interfaces.database.get_default_credentials()` is a
+
+## [TASK-933: Source-layer test_connection overrides for non-SQL drivers](overviews/doc:sdd-tasks-completed-task-933-source-test-connec-57f1b447.md)
+
+Spec Module 3. TASK-931 adds a default `test_connection()` to
+
+## [TASK-934: Toolkit refactor — new tools, rename, _post_execute, max_rows](overviews/doc:sdd-tasks-completed-task-934-toolkit-refactor-md.md)
+
+Spec Module 4 — the core toolkit refactor. This is the largest task and
+
+## [TASK-935: Legacy tool cleanup — remove duplicates, delegate credentials](overviews/doc:sdd-tasks-completed-task-935-legacy-tool-cleanup-md.md)
+
+Spec Module 5. `DatabaseQueryTool` (tool.py) duplicates several components
+
+## [TASK-936: Update exports and integration tests](overviews/doc:sdd-tasks-completed-task-936-exports-and-tests-md.md)
+
+Spec Module 6 — final task. Updates `__init__.py` exports, verifies all
+
+## [TASK-937: Prep — Test Audit & Infrastructure](overviews/doc:sdd-tasks-completed-task-937-prep-test-audit-in-0af6152e.md)
+
+Before migrating AgentCrew to consume `flows.core` primitives, we need to:
+
+## [TASK-938: Core AgentNode Enhancement — Add execute()](overviews/doc:sdd-tasks-completed-task-938-core-agentnode-execute-md.md)
+
+The core `AgentNode` in `flows.core.node` currently wraps an agent with FSM and dependency metadata but has no execution logic. Both `_CrewAgentNode` (crew.py) and `FlowNode` (flow/fsm.py) have their own `execute()` implementations with varying levels of functionality.
+
+## [TASK-939: Migrate run_sequential](overviews/doc:sdd-tasks-completed-task-939-migrate-run-sequential-md.md)
+
+The migration swaps crew.py's local `FlowContext` and type aliases for `flows.core` imports and wires FSM state transitions at the correct execution points. The method signature and all observable behavior must remain identical.
+
+## [TASK-940: Migrate run_parallel](overviews/doc:sdd-tasks-completed-task-940-migrate-run-parallel-md.md)
+
+This is Module 3 of the spec. It follows the same migration pattern as TASK-939 (sequential) but adds concurrency concerns.
+
+## [TASK-941: Migrate run_flow](overviews/doc:sdd-tasks-completed-task-941-migrate-run-flow-md.md)
+
+This migration is the most critical validation of the flow primitives — if `AgentTaskMachine`, `FlowContext.can_execute()`, and `FlowTransition` have design flaws, this is where they surface.
+
+## [TASK-949: Test suite for OpenAIModel catalog refresh + deprecation registry](overviews/doc:sdd-tasks-completed-task-942-deprecation-test-suite-md.md)
+
+Spec §4 enumerates 16 unit + integration tests covering catalog
+
+## [TASK-942: Migrate run_loop](overviews/doc:sdd-tasks-completed-task-942-migrate-run-loop-md.md)
+
+This mode is the most "particular" — it doesn't map cleanly to the DAG primitives. The FSM usage here is per-iteration (each pass through the loop is a fresh execution cycle) rather than per-node-in-a-graph.
+
+## [TASK-943: Cleanup & Final Regression](overviews/doc:sdd-tasks-completed-task-943-cleanup-final-regression-md.md)
+
+After all four execution modes are migrated (TASK-939 through TASK-942), crew.py still contains dead local definitions that are no longer used: the local `FlowContext` class, local type aliases (`AgentRef`, `DependencyResults`, `PromptBuilder`), and possibly other dead code left 
+
+## [TASK-944: Add JIRA_WORKFLOW_LAYER (decompose legacy prompt)](overviews/doc:sdd-tasks-completed-task-944-jira-workflow-layer-md.md)
+
+Implements **Module 1** of FEAT-138. Carries forward the workflow rules
+
+## [TASK-944: Refresh OpenAIModel enum + add DEPRECATIONS registry and helpers](overviews/doc:sdd-tasks-completed-task-944-openai-model-catal-36fd3043.md)
+
+This is the foundational task for FEAT-138. It rewrites
+
+## [TASK-945: Add JIRA_GROUNDING_LAYER (anti-hallucination)](overviews/doc:sdd-tasks-completed-task-945-jira-grounding-layer-md.md)
+
+Implements **Module 2** of FEAT-138. Adds the Jira-specific
+
+## [TASK-945: Add `_normalize_model` chokepoint that emits one-shot DeprecationWarning](overviews/doc:sdd-tasks-completed-task-945-openai-client-depr-3afd8a1c.md)
+
+Once TASK-944 lands, `parrot.models.openai` exposes `is_deprecated`,
+
+## [TASK-946: Bump OpenAIClient defaults to gpt-5-mini + refresh model sets](overviews/doc:sdd-tasks-completed-task-946-openai-client-defa-350199c9.md)
+
+After TASK-944 (catalog + helpers) and TASK-945 (warning chokepoint),
+
+## [TASK-946: Register and re-export Jira layers](overviews/doc:sdd-tasks-completed-task-946-register-and-expor-1d46edaa.md)
+
+Implements **Module 3** of FEAT-138. Wires the two new layers from
+
+## [TASK-947: Migrate hard-coded model strings in handlers/chat.py and loaders/abstract.py](overviews/doc:sdd-tasks-completed-task-947-migrate-chat-handl-b5fbadef.md)
+
+Two consumers in the codebase still hard-code soon-to-shutoff model IDs:
+
+## [TASK-948: JiraToolkit envelope — global flip on read methods](overviews/doc:sdd-tasks-completed-task-948-jiratoolkit-envelo-aea523c2.md)
+
+Implements **Module 5** of FEAT-138. Replaces the legacy native return
+
+## [TASK-948: Partition `LLMClient._get_supported_models` into active/deprecated](overviews/doc:sdd-tasks-completed-task-948-llm-handler-partit-30c5399e.md)
+
+returns a flat list of model IDs per provider. Once TASK-944 lands the
+
+## [TASK-949: Migrate non-LLM callers to envelope shape](overviews/doc:sdd-tasks-completed-task-949-migrate-non-llm-callers-md.md)
+
+Implements **Module 5b** of FEAT-138. With the global envelope flip
+
+## [TASK-950: Define JIRA_GROUNDING_LAYER anti-hallucination prompt layer](overviews/doc:sdd-tasks-completed-task-950-jira-grounding-layer-md.md)
+
+This is the foundational task for FEAT-139. The core problem is that JiraSpecialist
+
+## [TASK-950: JiraSpecialist grounding regression tests](overviews/doc:sdd-tasks-completed-task-950-jira-grounding-reg-70eb5d26.md)
+
+Implements **Module 6** of FEAT-138. End-to-end behaviour tests that
+
+## [TASK-951: Extract JIRA_OPERATIONS_LAYER from monolithic prompt](overviews/doc:sdd-tasks-completed-task-951-jira-operations-layer-md.md)
+
+The existing `JIRA_SPECIALIST_PROMPT` is a ~310-line monolithic string constant
+
+## [TASK-951: Document the JiraSpecialist prompt-layer stack](overviews/doc:sdd-tasks-completed-task-951-jira-prompt-layers-docs-md.md)
+
+Implements **Module 7** of FEAT-138. Adds a developer-facing
+
+## [TASK-953: Harden JiraToolkit error messages for LLM consumption](overviews/doc:sdd-tasks-completed-task-953-jiratoolkit-error--f38fdf16.md)
+
+When JiraToolkit tool methods fail (connection errors, HTTP 401/403, timeouts),
+
+## [TASK-962: Add Pydantic validation schema and backfill 8 metadata fields on existing catalog entries](overviews/doc:sdd-tasks-completed-task-962-catalog-schema-extension-md.md)
+
+The embedding catalog at `parrot/embeddings/catalog.py` is consumed by an external
+
+## [TASK-963: Add 5 new model entries and wire prefix resolver branches](overviews/doc:sdd-tasks-completed-task-963-new-models-and-res-d4ef82d4.md)
+
+With the schema extension in place (TASK-962), the catalog can now accept five
+
+## [TASK-964: Extend USE_CASE_DESCRIPTIONS taxonomy and reassign tags on existing entries](overviews/doc:sdd-tasks-completed-task-964-use-case-taxonomy--066a1b94.md)
+
+The catalog currently advertises 5 use-case tags (`similarity`, `retrieval`,
+
+## [TASK-965: Extend get_embedding_models() with 4 new filter kwargs](overviews/doc:sdd-tasks-completed-task-965-helper-api-extension-md.md)
+
+Once the catalog carries `metric_recommended`, `requires_prefix`, `dimension`,
+
+## [TASK-966: Cross-consistency pytest between catalog and _resolve_prefixes](overviews/doc:sdd-tasks-completed-task-966-catalog-resolver-c-f00fe305.md)
+
+Modules 1-4 added a contract: a catalog entry where `requires_prefix=True`
+
+## [TASK-967: Add `semantic-text-splitter` dependency to ai-parrot-loaders](overviews/doc:sdd-tasks-completed-task-967-add-rust-splitter--291cc977.md)
+
+Module 1 of FEAT-141. Adds the Rust-backed `semantic-text-splitter` library
+
+## [TASK-968: Extract `_enforce_min_chunk_size` helper on `BaseTextSplitter`](overviews/doc:sdd-tasks-completed-task-968-extract-tail-merge-e3fe9473.md)
+
+Module 4 of FEAT-141. The `min_chunk_size` tail-merge logic currently
+
+## [TASK-969: Rewrite `SemanticTextSplitter` as a thin Rust wrapper](overviews/doc:sdd-tasks-completed-task-969-rewrite-semantic-t-e1b3bd0a.md)
+
+Module 2 of FEAT-141. Replaces the 435-LOC ad-hoc Python implementation of
+
+## [TASK-970: Rewrite `MarkdownTextSplitter` as a thin Rust wrapper](overviews/doc:sdd-tasks-completed-task-970-rewrite-markdown-t-da88c6c4.md)
+
+Module 3 of FEAT-141. Mirrors TASK-969 but for the Markdown splitter.
+
+## [TASK-971: New test suite for Rust-backed splitters](overviews/doc:sdd-tasks-completed-task-971-rust-splitters-tes-f24caabd.md)
+
+Module 5 of FEAT-141. Adds the comprehensive test suite for the new
+
+## [TASK-972: Verify zero regression in `AbstractLoader` consumers](overviews/doc:sdd-tasks-completed-task-972-verify-no-consumer-d82d2c23.md)
+
+Module 6 of FEAT-141. **Verification only** — this task produces no
+
+## [TASK-973: Create JSON-LD Extractor Functions and JsonLdItem Model](overviews/doc:sdd-tasks-completed-task-973-jsonld-extractors-module-md.md)
+
+This is the foundation task for FEAT-142. It creates the new
+
+## [TASK-973: Refactor `_resolve_prefixes` to read prefixes from `EMBEDDING_MODELS`](overviews/doc:sdd-tasks-completed-task-973-resolve-prefixes-f-7f6eaf7a.md)
+
+runtime authority that decides which query/passage prefix to apply when
+
+## [TASK-974: Add catalog-driven and unknown-model tests for `_resolve_prefixes`](overviews/doc:sdd-tasks-completed-task-974-tests-catalog-driv-0979e61e.md)
+
+After TASK-973 makes `_resolve_prefixes` a catalog-driven lookup, the
+
+## [TASK-974: Integrate JSON-LD Registry Dispatch into WebScrapingLoader](overviews/doc:sdd-tasks-completed-task-974-webscraping-jsonld-1af96e58.md)
+
+This task wires the extractor functions (from TASK-973) into WebScrapingLoader.
+
+## [TASK-975: Integration Tests and Backward Compatibility Regression Suite](overviews/doc:sdd-tasks-completed-task-975-jsonld-integration-tests-md.md)
+
+This task adds comprehensive integration tests that exercise the full
+
+## [TASK-976: Add `shared_data` to FlowContext + introduce `NodeResult`](overviews/doc:sdd-tasks-completed-task-976-add-shared-data-an-19224979.md)
+
+from dataclasses import dataclass, field
+
+## [TASK-977: Extract `CrewAgentNode` to `flows/crew/nodes.py`](overviews/doc:sdd-tasks-completed-task-977-extract-crewagentnode-md.md)
+
+from ..core.node import AgentNode as _CoreAgentNode
+
+## [TASK-978: Move `ResultRetrievalTool` to `flows/tools.py`](overviews/doc:sdd-tasks-completed-task-978-move-resultretrievaltool-md.md)
+
+(the tool calls `result.to_text()` and `result.agent_name`, both exist on `NodeResult`)
+
+## [TASK-979: Move `AgentCrew` to `flows/crew/crew.py` + result model migration](overviews/doc:sdd-tasks-completed-task-979-move-agentcrew-and-e4286c6f.md)
+
+→ `from ..core.result import FlowResult, NodeExecutionInfo, build_node_metadata`
+
+## [TASK-980: Refactor sequential/loop/parallel modes to use `FlowContext`](overviews/doc:sdd-tasks-completed-task-980-refactor-modes-to--05879324.md)
+
+New signature: `_execute_agent(self, agent, query, session_id, user_id, index, **kwargs)`
+
+## [TASK-981: Create `flows/agents/` package and move orchestrator agents](overviews/doc:sdd-tasks-completed-task-981-move-orchestrator-agents-md.md)
+
+(update relative imports for new package depth)
+
+## [TASK-982: Update `flows/__init__.py` exports](overviews/doc:sdd-tasks-completed-task-982-update-flows-init--e153454e.md)
+
+from .crew import AgentCrew, CrewAgentNode
+
+## [TASK-983: OAuth2 Integration Models and Provider Registry](overviews/doc:sdd-tasks-completed-task-983-oauth2-models-and--85ad8cda.md)
+
+This is the foundation task for FEAT-144. It creates the new
+
+## [TASK-984: Jira OAuth2 Provider and DocumentDB Persistence](overviews/doc:sdd-tasks-completed-task-984-jira-provider-and--8fe8cf59.md)
+
+Implements the first concrete OAuth2 provider (`JiraOAuth2Provider`) and the
+
+## [TASK-985: IntegrationsService](overviews/doc:sdd-tasks-completed-task-985-integrations-service-md.md)
+
+The `IntegrationsService` is the orchestration layer that combines the
+
+## [TASK-986: IntegrationsHandler, Route Registration, and Config](overviews/doc:sdd-tasks-completed-task-986-handler-routes-config-md.md)
+
+Exposes the integrations API via four HTTP endpoints, registers them in the
+
+## [TASK-987: OAuth Callback Web-Channel Branch and Templates](overviews/doc:sdd-tasks-completed-task-987-oauth-callback-web-b5461551.md)
+
+The existing `jira_oauth_callback` in `parrot/auth/routes.py` handles only
+
+## [TASK-988: AgentTalk AuthorizationRequired Envelope Translator](overviews/doc:sdd-tasks-completed-task-988-agenttalk-auth-req-1dd8cc58.md)
+
+When a tool raises `AuthorizationRequired` during agent execution, the web
+
+## [TASK-989: UserObjectsHandler Cold-Session Hydration](overviews/doc:sdd-tasks-completed-task-989-cold-session-hydration-md.md)
+
+When a user starts a new session (Redis cache miss), the agent's `ToolManager`
+
+## [TASK-990: Frontend API Client and OAuth Popup Helper](overviews/doc:sdd-tasks-completed-task-990-frontend-api-clien-5019dfa4.md)
+
+Creates the frontend foundation modules in `navigator-frontend-next`:
+
+## [TASK-991: IntegrationsMenu Svelte Component](overviews/doc:sdd-tasks-completed-task-991-integrations-menu-md.md)
+
+The "+ Integrations" dropdown/popover in the `AgentChat` toolbar is the primary
+
+## [TASK-992: ConnectIntegrationPill and AgentChat Message Wiring](overviews/doc:sdd-tasks-completed-task-992-connect-integration-pill-md.md)
+
+When the backend returns an `auth_required` envelope instead of a normal chat
+
+## [TASK-993: End-to-End Integration Tests](overviews/doc:sdd-tasks-completed-task-993-e2e-integration-tests-md.md)
+
+End-to-end integration tests that validate the full backend flow: connect →
+
+## [TASK-994: SDD frontmatter parser (`sdd_meta`)](overviews/doc:sdd-tasks-completed-task-994-sdd-meta-frontmatt-a9de012c.md)
+
+Implements **Module 1** of FEAT-145. Every other task that needs to read
+
+## [TASK-995: One-shot migration `monolith → per-spec` index](overviews/doc:sdd-tasks-completed-task-995-migrate-monolith-t-44877bbf.md)
+
+Implements **Module 2** of FEAT-145. Splits the existing
+
+## [TASK-996: Add YAML frontmatter to SDD templates](overviews/doc:sdd-tasks-completed-task-996-sdd-templates-fron-2f300072.md)
+
+Implements **Module 3** of FEAT-145. Templates are the first thing
+
+## [TASK-997: Wire frontmatter into generation commands](overviews/doc:sdd-tasks-completed-task-997-frontmatter-in-gen-4ed9ac49.md)
+
+Implements **Module 4** of FEAT-145. Generation commands are the
+
+## [TASK-998: Rewrite `/sdd-task` and `/sdd-start` for per-spec index + base_branch](overviews/doc:sdd-tasks-completed-task-998-sdd-task-and-start-54c77cb0.md)
+
+Implements **Module 5** of FEAT-145. These two commands sit at the
+
+## [TASK-999: Rewrite `/sdd-done` for flow-type awareness + main-PR enforcement](overviews/doc:sdd-tasks-completed-task-999-sdd-done-flow-aware-md.md)
+
+Implements **Module 6** of FEAT-145. `/sdd-done` is the closing
+
+## [TASK-583: Detection Grid Models & Package Init](overviews/doc:sdd-tasks-done-task-583-grid-models-package-md.md)
+
+This is the foundational task for FEAT-084. It creates the Pydantic data models and package structure that all subsequent grid tasks depend on. Implements Spec Modules 1 and 10.
+
+## [TASK-584: Abstract Grid Strategy & NoGrid Default](overviews/doc:sdd-tasks-done-task-584-abstract-grid-strategy-md.md)
+
+Defines the `AbstractGridStrategy` ABC that all grid decomposition strategies implement, plus the `NoGrid` default strategy that preserves current single-image behavior. Implements Spec Module 2.
+
+## [TASK-585: HorizontalBands Grid Strategy](overviews/doc:sdd-tasks-done-task-585-horizontal-bands-strategy-md.md)
+
+Implements the primary grid strategy for `product_on_shelves` planograms. Splits the ROI into N horizontal bands based on `height_ratio` from the planogram shelf config, mapping expected products per band. This is the core strategy that directly addresses the LLM attention diluti
+
+## [TASK-586: Cell Result Merger](overviews/doc:sdd-tasks-done-task-586-cell-result-merger-md.md)
+
+After parallel per-cell detection, results from multiple grid cells must be merged into a unified product list. This task implements coordinate offset correction, IoU-based boundary deduplication, and out-of-place tagging. Implements Spec Module 4.
+
+## [TASK-587: Grid-Based Detection Orchestrator](overviews/doc:sdd-tasks-done-task-587-grid-detector-md.md)
+
+This is the core orchestrator that ties the grid system together. It takes a list of grid cells, crops images, builds per-cell prompts with filtered hints and reference images, executes parallel LLM calls via `asyncio.gather()`, and merges results. Implements Spec Module 5.
+
+## [TASK-588: PlanogramConfig & IdentifiedProduct Extensions](overviews/doc:sdd-tasks-done-task-588-config-model-extensions-md.md)
+
+Extends existing Pydantic models to support the grid detection system. Adds the optional `detection_grid` field to `PlanogramConfig` and the `out_of_place` flag to `IdentifiedProduct`. Both are backward compatible additions. Implements Spec Modules 6 and 9.
+
+## [TASK-589: AbstractPlanogramType Grid Integration](overviews/doc:sdd-tasks-done-task-589-abstract-type-grid-inte-78530ead.md)
+
+Extends `AbstractPlanogramType` with a `get_grid_strategy()` method that returns the appropriate grid strategy for each planogram type. The default implementation returns `NoGrid`, ensuring backward compatibility. Concrete types override to return their specific strategy. Impleme
+
+## [TASK-590: ProductOnShelves Grid-Based Detection Refactor](overviews/doc:sdd-tasks-done-task-590-product-on-shelves-refactor-md.md)
+
+This is the integration task that wires everything together. Refactors `ProductOnShelves.detect_objects()` to use the grid detection system when `detection_grid` is configured, while preserving the current single-image behavior as fallback. Implements Spec Module 8.
+
+## [TASK-591: Integration Tests & Regression Validation](overviews/doc:sdd-tasks-done-task-591-integration-tests-md.md)
+
+Final task: validate the full pipeline end-to-end with grid detection enabled and verify zero regression when grid detection is disabled. This ensures the entire feature works as a cohesive whole.
 
 ## [lazy_import()](concepts/func:parrot._imports.lazy_import.md)
 
@@ -15250,6 +25708,86 @@ Assign sequential node_id values to a tree structure.
 
 Beam search over per-node embeddings to propose candidate node_ids.
 
+## [claude()](concepts/func:parrot.knowledge.wiki.claude_code.cli.claude.md)
+
+Claude Code integration for the repository LLM Wiki.
+
+## [hook()](concepts/func:parrot.knowledge.wiki.claude_code.cli.hook.md)
+
+PreToolUse hook runtime (reads the payload from stdin).
+
+## [install()](concepts/func:parrot.knowledge.wiki.claude_code.cli.install.md)
+
+Install the wiki toolkit as Claude Code infrastructure.
+
+## [status()](concepts/func:parrot.knowledge.wiki.claude_code.cli.status.md)
+
+Show which integration pieces are installed.
+
+## [uninstall()](concepts/func:parrot.knowledge.wiki.claude_code.cli.uninstall.md)
+
+Remove the Claude Code integration (keeps the wiki plane).
+
+## [build_nudge()](concepts/func:parrot.knowledge.wiki.claude_code.hook.build_nudge.md)
+
+Decide whether the hook payload deserves a wiki nudge.
+
+## [run_pre_tool_use_hook()](concepts/func:parrot.knowledge.wiki.claude_code.hook.run_pre-2fe0871f.md)
+
+Entry point for ``wikitoolkit claude-hook`` / ``parrot claude hook``.
+
+## [install_claude_integration()](concepts/func:parrot.knowledge.wiki.claude_code.installer.in-83e60ad4.md)
+
+Install the wiki ↔ Claude Code integration into a repository.
+
+## [integration_status()](concepts/func:parrot.knowledge.wiki.claude_code.installer.in-d0a8400e.md)
+
+Report which integration pieces are currently installed.
+
+## [uninstall_claude_integration()](concepts/func:parrot.knowledge.wiki.claude_code.installer.un-00eee1fd.md)
+
+Remove every managed artifact written by the installer.
+
+## [build()](concepts/func:parrot.knowledge.wiki.cli.build.md)
+
+Generate (or refresh) the KB graph from the current repository.
+
+## [claude_hook()](concepts/func:parrot.knowledge.wiki.cli.claude_hook.md)
+
+Claude Code PreToolUse hook runtime (reads stdin JSON).
+
+## [export()](concepts/func:parrot.knowledge.wiki.cli.export.md)
+
+Export the wiki as a human-readable markdown bundle.
+
+## [main()](concepts/func:parrot.knowledge.wiki.cli.main.md)
+
+Console-script entry point for ``wikitoolkit``.
+
+## [page()](concepts/func:parrot.knowledge.wiki.cli.page.md)
+
+Read one wiki page in full (progressive disclosure).
+
+## [query()](concepts/func:parrot.knowledge.wiki.cli.query.md)
+
+Scoped question against the codebase KB (lexical BM25 search).
+
+## [related()](concepts/func:parrot.knowledge.wiki.cli.related.md)
+
+List pages linked to PAGE_ID by typed edges.
+
+## [status()](concepts/func:parrot.knowledge.wiki.cli.status.md)
+
+Show wiki plane statistics and source staleness.
+
+## [upsert()](concepts/func:parrot.knowledge.wiki.cli.upsert.md)
+
+Incrementally re-ingest specific files (or last-commit changes).
+
+## [wiki()](concepts/func:parrot.knowledge.wiki.cli.wiki.md)
+
+LLM Wiki — codebase knowledge base for agents (FEAT-260).
+
 ## [first_sentence()](concepts/func:parrot.knowledge.wiki.context.first_sentence.md)
 
 Return the lead sentence of ``text``, hard-capped at ``max_chars``.
@@ -15285,6 +25823,54 @@ Map a wiki category to an OKF ``type`` string.
 ## [page_frontmatter()](concepts/func:parrot.knowledge.wiki.export.page_frontmatter.md)
 
 Render OKF frontmatter for one page (deterministic key order).
+
+## [config_path()](concepts/func:parrot.knowledge.wiki.project.config_path.md)
+
+Return the config file path for a repo root.
+
+## [find_project_root()](concepts/func:parrot.knowledge.wiki.project.find_project_root.md)
+
+Walk upwards from ``start`` to the nearest configured repo root.
+
+## [load_project_config()](concepts/func:parrot.knowledge.wiki.project.load_project_config.md)
+
+Load the repo's wiki config.
+
+## [save_project_config()](concepts/func:parrot.knowledge.wiki.project.save_project_config.md)
+
+Persist the wiki config to ``.parrot/wiki.json``.
+
+## [build_dir_pages()](concepts/func:parrot.knowledge.wiki.repo_scan.build_dir_pages.md)
+
+Derive directory overview pages and ``contains`` edges.
+
+## [build_file_slice()](concepts/func:parrot.knowledge.wiki.repo_scan.build_file_slice.md)
+
+Build the wiki page record for a single repository file.
+
+## [build_import_edges()](concepts/func:parrot.knowledge.wiki.repo_scan.build_import_edges.md)
+
+Derive ``references`` edges between file pages from Python imports.
+
+## [dir_concept_id()](concepts/func:parrot.knowledge.wiki.repo_scan.dir_concept_id.md)
+
+Return the stable concept id for a directory overview page.
+
+## [discover_repo_files()](concepts/func:parrot.knowledge.wiki.repo_scan.discover_repo_files.md)
+
+Enumerate candidate source files under ``root``.
+
+## [file_concept_id()](concepts/func:parrot.knowledge.wiki.repo_scan.file_concept_id.md)
+
+Return the stable concept id for a file page.
+
+## [is_wiki_relevant()](concepts/func:parrot.knowledge.wiki.repo_scan.is_wiki_relevant.md)
+
+Whether a repository-relative path is in wiki scope.
+
+## [scan_repository()](concepts/func:parrot.knowledge.wiki.repo_scan.scan_repository.md)
+
+Scan a repository into wiki page records and edges.
 
 ## [create_wiki_store()](concepts/func:parrot.knowledge.wiki.store.create_wiki_store.md)
 
@@ -20386,6 +30972,30 @@ parrot.knowledge.wiki — LLM Wiki: Persistent Knowledge Base (FEAT-260).
 
 Wiki bookkeeper — index.md and log.md lifecycle management (FEAT-260).
 
+## [parrot.knowledge.wiki.claude_code](summaries/mod:parrot.knowledge.wiki.claude_code.md)
+
+Claude Code integration for the LLM Wiki (FEAT-260 follow-up).
+
+## [parrot.knowledge.wiki.claude_code.assets](summaries/mod:parrot.knowledge.wiki.claude_code.assets.md)
+
+Managed file templates for the Claude Code wiki integration.
+
+## [parrot.knowledge.wiki.claude_code.cli](summaries/mod:parrot.knowledge.wiki.claude_code.cli.md)
+
+``parrot claude`` — install the LLM Wiki as Claude Code infrastructure.
+
+## [parrot.knowledge.wiki.claude_code.hook](summaries/mod:parrot.knowledge.wiki.claude_code.hook.md)
+
+PreToolUse hook runtime for the Claude Code wiki integration.
+
+## [parrot.knowledge.wiki.claude_code.installer](summaries/mod:parrot.knowledge.wiki.claude_code.installer.md)
+
+Idempotent installer for the Claude Code wiki integration.
+
+## [parrot.knowledge.wiki.cli](summaries/mod:parrot.knowledge.wiki.cli.md)
+
+``wikitoolkit`` — machine-first CLI over the LLM Wiki retrieval plane.
+
 ## [parrot.knowledge.wiki.context](summaries/mod:parrot.knowledge.wiki.context.md)
 
 Token-efficient context packing for wiki retrieval results.
@@ -20405,6 +31015,14 @@ Wiki ingest orchestrator for the LLM Wiki feature (FEAT-260).
 ## [parrot.knowledge.wiki.models](summaries/mod:parrot.knowledge.wiki.models.md)
 
 Pydantic data models for the LLM Wiki feature (FEAT-260).
+
+## [parrot.knowledge.wiki.project](summaries/mod:parrot.knowledge.wiki.project.md)
+
+Per-repository wiki configuration for the ``wikitoolkit`` CLI.
+
+## [parrot.knowledge.wiki.repo_scan](summaries/mod:parrot.knowledge.wiki.repo_scan.md)
+
+Deterministic codebase scanner for the LLM Wiki retrieval plane.
 
 ## [parrot.knowledge.wiki.search](summaries/mod:parrot.knowledge.wiki.search.md)
 
@@ -24872,7 +35490,11 @@ Package parrot.knowledge.pageindex.okf (9 modules, 0 sub-packages).
 
 ## [parrot.knowledge.wiki](overviews/pkg:parrot.knowledge.wiki.md)
 
-Package parrot.knowledge.wiki (10 modules, 0 sub-packages).
+Package parrot.knowledge.wiki (14 modules, 1 sub-packages).
+
+## [parrot.knowledge.wiki.claude_code](overviews/pkg:parrot.knowledge.wiki.claude_code.md)
+
+Package parrot.knowledge.wiki.claude_code (4 modules, 0 sub-packages).
 
 ## [parrot.loaders](overviews/pkg:parrot.loaders.md)
 

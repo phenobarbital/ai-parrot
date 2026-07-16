@@ -4,7 +4,7 @@ title: PluginImporter
 id: class:parrot.plugins.importer.PluginImporter
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A custom importer to load plugins from a specified directory.
 ---
 

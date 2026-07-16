@@ -4,7 +4,7 @@ title: IBISWorldTool
 id: class:parrot_tools.ibisworld.tool.IBISWorldTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: IBISWorld search and content extraction tool.
 relates_to:
 - concept: class:parrot_tools.google.tools.GoogleSiteSearchTool

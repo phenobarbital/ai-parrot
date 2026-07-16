@@ -4,7 +4,7 @@ title: ResolvedCredential
 id: class:parrot.auth.credentials.ResolvedCredential
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Credential material returned by the broker on a successful resolution.
 ---
 

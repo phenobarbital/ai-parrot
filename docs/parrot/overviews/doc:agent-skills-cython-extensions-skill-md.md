@@ -4,8 +4,10 @@ title: Building Cython Extension Packages
 id: doc:agent-skills-cython-extensions-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: build-cython-ext'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: This skill provides systematic approaches for building Cython extension packages,
+  with emphasis on resolving compatibility issues that arise with modern Python and
+  NumPy versions.
 ---
 
 ---

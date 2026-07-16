@@ -4,7 +4,7 @@ title: Json2Transport
 id: class:parrot_tools.odoo.transport.json2.Json2Transport
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Async transport for Odoo's External JSON-2 API.
 relates_to:
 - concept: class:parrot_tools.odoo.transport.base.AbstractOdooTransport

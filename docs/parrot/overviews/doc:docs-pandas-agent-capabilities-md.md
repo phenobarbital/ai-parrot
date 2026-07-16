@@ -4,7 +4,7 @@ title: Capacidades de un Agente Analítico AI-Parrot (PandasAgent)
 id: doc:docs-pandas-agent-capabilities-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 1. [Anatomía de un agente analítico](#1-anatomía-de-un-agente-analítico)
 relates_to:
 - concept: mod:parrot.bots.data

@@ -4,7 +4,7 @@ title: parrot_tools.security.parsers.prowler
 id: mod:parrot_tools.security.parsers.prowler
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Catalog-level Prowler JSON parser.
 relates_to:
 - concept: class:parrot_tools.security.parsers.prowler.ProwlerParser

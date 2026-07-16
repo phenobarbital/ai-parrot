@@ -351,8 +351,28 @@ scoped wiki queries over reading whole files or grepping raw source:
 - `wikitoolkit build` — refresh the graph after large changes
   (a git post-commit hook may already keep it fresh).
 
+**Query discipline** (avoids the two most common ways the wiki
+"fails" — which are usually caller error, not missing coverage):
+
+1. **Query for the *thing*, not for your *hypothesis* about it.** The
+   ranking is semantic — extra concept words steer it toward those
+   concepts. To locate the `EventBus` class, ask
+   `"EventBus class publish subscribe events"` (returns the class page
+   at score 1.00), NOT `"EventBus backends message queue MQ transport"`
+   (the "message queue / transport" terms pull in unrelated broker/
+   transport pages and bury the class). Name the symbol/module/
+   subsystem you want; add your hypothesis terms only after you've
+   found the page and are reading it.
+2. **Follow the thread before falling back to grep.** If a result
+   scores low, or names a "re-export" / "canonical location" / parent
+   module, that is a breadcrumb — resolve it with `wikitoolkit page
+   <id>` or `wikitoolkit related <id>` (one hop usually lands the real
+   page). Do NOT jump to `grep`/`find` just because the first `query`
+   didn't rank the exact page first.
+
 The `/parrotwiki` command wraps these (e.g. `/parrotwiki query how
 does ingest work`, `/parrotwiki --wiki` to export a human-readable
-markdown wiki). Fall back to Grep/Glob/Read when the wiki has no
-answer, and consider `wikitoolkit build` if results look stale.
+markdown wiki). Only fall back to Grep/Glob/Read once a clean query
+*and* a page/related follow-up have genuinely come up empty, and
+consider `wikitoolkit build` if results look stale.
 <!-- parrot:wiki:end -->

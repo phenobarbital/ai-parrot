@@ -4,7 +4,7 @@ title: parrot.human.actions.backends.email
 id: mod:parrot.human.actions.backends.email
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Email action backend — async-notify backed (back-compat shim).
 relates_to:
 - concept: class:parrot.human.actions.backends.email.EmailBackend

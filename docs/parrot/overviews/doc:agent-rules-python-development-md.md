@@ -4,8 +4,8 @@ title: Python Development
 id: doc:agent-rules-python-development-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'trigger: always_on'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: You are an expert in Python, AI, and Machine Learning development.
 ---
 
 ---

@@ -4,7 +4,7 @@ title: EpsonProductToolkit
 id: class:parrot_tools.epson.EpsonProductToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Toolkit for managing Epson-related operations.
 relates_to:
 - concept: class:parrot_tools.querytoolkit.QueryToolkit

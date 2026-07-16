@@ -4,7 +4,7 @@ title: parrot.outputs.a2ui.delivery
 id: mod:parrot.outputs.a2ui.delivery
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A2UI delivery bridge (Module 7, first half).
 relates_to:
 - concept: func:parrot.outputs.a2ui.delivery.deliver_artifact

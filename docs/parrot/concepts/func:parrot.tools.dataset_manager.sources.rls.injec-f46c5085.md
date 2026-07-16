@@ -4,7 +4,7 @@ title: inject_rls_mongo()
 id: func:parrot.tools.dataset_manager.sources.rls.inject_rls_mongo
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Build a Mongo ``$and`` filter dict from RLS predicates.
 ---
 

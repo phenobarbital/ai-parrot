@@ -4,7 +4,7 @@ title: StateMatch
 id: class:parrot.eval.evaluators.state_based.StateMatch
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Subset-match metric comparing final state to ``goal_state``.
 relates_to:
 - concept: class:parrot.eval.evaluators.base.Metric

@@ -4,7 +4,7 @@ title: parrot.integrations.slack.socket_handler
 id: mod:parrot.integrations.slack.socket_handler
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Socket Mode handler for Slack integration.
 relates_to:
 - concept: class:parrot.integrations.slack.socket_handler.SlackSocketHandler

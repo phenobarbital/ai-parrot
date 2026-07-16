@@ -4,7 +4,7 @@ title: ScrapingInfoHandler
 id: class:parrot.handlers.scraping.info.ScrapingInfoHandler
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Method-based handler serving reference data for the Scraping UI.
 ---
 

@@ -4,7 +4,7 @@ title: AbstractBot
 id: class:parrot.bots.abstract.AbstractBot
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AbstractBot.
 relates_to:
 - concept: class:parrot.bots.stores.local.LocalKBMixin

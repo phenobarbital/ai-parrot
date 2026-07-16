@@ -4,7 +4,7 @@ title: InMemoryGrantStore
 id: class:parrot.auth.grants.InMemoryGrantStore
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Dict-backed grant store with TTL expiry and periodic cleanup.
 relates_to:
 - concept: class:parrot.auth.grants.GrantStore

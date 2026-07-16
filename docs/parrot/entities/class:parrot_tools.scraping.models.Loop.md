@@ -4,7 +4,7 @@ title: Loop
 id: class:parrot_tools.scraping.models.Loop
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Repeat a sequence of actions multiple times
 relates_to:
 - concept: class:parrot_tools.scraping.models.BrowserAction

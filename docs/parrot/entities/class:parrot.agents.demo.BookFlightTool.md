@@ -4,7 +4,7 @@ title: BookFlightTool
 id: class:parrot.agents.demo.BookFlightTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Demo tool that books a flight — or raises an interrupt on invalid input.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractTool

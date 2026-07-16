@@ -4,7 +4,7 @@ title: NavigatorToolkit
 id: class:parrot_tools.navigator.toolkit.NavigatorToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Toolkit for managing the Navigator platform.
 relates_to:
 - concept: class:parrot.bots.database.toolkits.postgres.PostgresToolkit

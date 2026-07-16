@@ -4,7 +4,7 @@ title: parrot.models.google
 id: mod:parrot.models.google
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Google Related Models to be used in GenAI.
 relates_to:
 - concept: class:parrot.models.google.AspectRatio

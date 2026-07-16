@@ -4,7 +4,7 @@ title: deprecate_concept()
 id: func:parrot.knowledge.ontology.concept_catalog.http.deprecate_concept
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: POST /api/ontology/concepts/{id}/transitions/deprecate — admin only.
 ---
 

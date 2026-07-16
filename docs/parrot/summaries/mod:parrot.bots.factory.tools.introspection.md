@@ -4,7 +4,7 @@ title: parrot.bots.factory.tools.introspection
 id: mod:parrot.bots.factory.tools.introspection
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Introspection helpers — the catalog the builders show to their LLM.
 relates_to:
 - concept: func:parrot.bots.factory.tools.introspection.list_available_toolkits

@@ -4,7 +4,7 @@ title: parrot.core.hooks.imap
 id: mod:parrot.core.hooks.imap
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: IMAP watchdog hook — async email monitoring with optional tagged filtering.
 relates_to:
 - concept: class:parrot.core.hooks.imap.IMAPWatchdogHook

@@ -4,7 +4,7 @@ title: parrot_tools.odoo.models.inputs
 id: mod:parrot_tools.odoo.models.inputs
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pydantic input schemas for OdooToolkit tool methods.
 relates_to:
 - concept: class:parrot_tools.odoo.models.inputs.AggregateRecordsInput

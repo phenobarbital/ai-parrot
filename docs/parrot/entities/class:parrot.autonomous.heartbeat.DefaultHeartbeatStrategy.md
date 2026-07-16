@@ -4,7 +4,7 @@ title: DefaultHeartbeatStrategy
 id: class:parrot.autonomous.heartbeat.DefaultHeartbeatStrategy
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Acts when ``has_pending_work()`` returns True, or every *N* ticks.
 relates_to:
 - concept: class:parrot.autonomous.heartbeat.HeartbeatStrategy

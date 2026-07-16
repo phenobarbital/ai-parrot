@@ -4,7 +4,7 @@ title: parrot_tools.pdfprint
 id: mod:parrot_tools.pdfprint
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Enhanced PDF Print Tool with improved Markdown table support.
 relates_to:
 - concept: class:parrot_tools.pdfprint.PDFPrintArgs

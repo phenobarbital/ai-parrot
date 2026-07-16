@@ -4,7 +4,7 @@ title: validate_mcp_http()
 id: func:parrot.mcp.integration.validate_mcp_http
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Validate that an MCP HTTP server is reachable and lists its tools.
 ---
 

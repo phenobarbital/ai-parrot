@@ -4,7 +4,7 @@ title: parrot_tools.leadiq.tool
 id: mod:parrot_tools.leadiq.tool
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: LeadIQToolkit - Agent-usable toolkit for the LeadIQ GraphQL API.
 relates_to:
 - concept: class:parrot_tools.leadiq.tool.LeadIQSearchInput

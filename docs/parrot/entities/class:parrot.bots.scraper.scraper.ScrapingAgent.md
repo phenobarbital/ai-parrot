@@ -4,7 +4,7 @@ title: ScrapingAgent
 id: class:parrot.bots.scraper.scraper.ScrapingAgent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'Intelligent web scraping agent that uses LLM to:'
 relates_to:
 - concept: class:parrot.bots.base.BaseBot

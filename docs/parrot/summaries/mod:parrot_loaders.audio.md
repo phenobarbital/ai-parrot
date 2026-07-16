@@ -4,7 +4,7 @@ title: parrot_loaders.audio
 id: mod:parrot_loaders.audio
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Module parrot_loaders.audio
 relates_to:
 - concept: class:parrot_loaders.audio.AudioLoader

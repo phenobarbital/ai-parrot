@@ -4,7 +4,7 @@ title: WhatIfToolkit
 id: class:parrot_tools.whatif_toolkit.WhatIfToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: What-If scenario analysis toolkit for simulating hypothetical changes on
   datasets.
 relates_to:

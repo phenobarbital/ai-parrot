@@ -4,7 +4,7 @@ title: parrot_pipelines.planogram.grid.merger
 id: mod:parrot_pipelines.planogram.grid.merger
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Cell Result Merger for grid-based detection.
 relates_to:
 - concept: class:parrot_pipelines.planogram.grid.merger.CellResultMerger

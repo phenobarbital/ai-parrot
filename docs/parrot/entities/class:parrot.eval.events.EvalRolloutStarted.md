@@ -4,7 +4,7 @@ title: EvalRolloutStarted
 id: class:parrot.eval.events.EvalRolloutStarted
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Emitted just before a (task, attempt) rollout begins.
 relates_to:
 - concept: class:parrot.core.events.lifecycle.base.LifecycleEvent

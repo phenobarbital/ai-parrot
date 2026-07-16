@@ -4,7 +4,7 @@ title: parrot.integrations.telegram.crew.registry
 id: mod:parrot.integrations.telegram.crew.registry
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Thread-safe in-memory registry of active agents in a crew.
 relates_to:
 - concept: class:parrot.integrations.telegram.crew.registry.CrewRegistry

@@ -4,7 +4,7 @@ title: convert_markdown_to_mrkdwn()
 id: func:parrot.integrations.slack.wrapper.convert_markdown_to_mrkdwn
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Convert standard Markdown to Slack mrkdwn format.
 ---
 

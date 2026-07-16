@@ -4,7 +4,7 @@ title: parrot.bots.prompts.presets
 id: mod:parrot.bots.prompts.presets
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Preset registry for common PromptBuilder configurations.
 relates_to:
 - concept: func:parrot.bots.prompts.presets.get_preset

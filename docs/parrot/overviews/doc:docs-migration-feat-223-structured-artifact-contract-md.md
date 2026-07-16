@@ -4,7 +4,7 @@ title: 'FEAT-223 — Structured Artifact Contract: Migration Guide'
 id: doc:docs-migration-feat-223-structured-artifact-contract-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: FEAT-223 homologates the three structured-output renderers
 relates_to:
 - concept: mod:parrot.models.outputs

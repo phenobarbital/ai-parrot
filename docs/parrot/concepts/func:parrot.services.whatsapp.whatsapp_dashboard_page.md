@@ -4,7 +4,7 @@ title: whatsapp_dashboard_page()
 id: func:parrot.services.whatsapp.whatsapp_dashboard_page
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Serve the WhatsApp dashboard HTML (no auth required).
 ---
 

@@ -4,7 +4,7 @@ title: parrot_formdesigner.ui.templates
 id: mod:parrot_formdesigner.ui.templates
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HTML page templates and CSS for parrot-formdesigner HTTP handlers.
 relates_to:
 - concept: func:parrot_formdesigner.ui.templates.error_page

@@ -4,7 +4,7 @@ title: run_odoo_subprocess()
 id: func:parrot_tools.odoo.shell.run_odoo_subprocess
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Run an odoo-bin / odoo-cli subprocess and capture output.
 ---
 

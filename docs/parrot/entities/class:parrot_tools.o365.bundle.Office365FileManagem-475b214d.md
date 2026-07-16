@@ -4,7 +4,7 @@ title: Office365FileManagementToolkit
 id: class:parrot_tools.o365.bundle.Office365FileManagementToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Complete Office365 file management toolkit (SharePoint + OneDrive).
 ---
 

@@ -4,7 +4,7 @@ title: write_graph_json()
 id: func:parrot.knowledge.graphindex.export_html.write_graph_json
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Write ``graph.json`` to ``output_dir``.
 ---
 

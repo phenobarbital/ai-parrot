@@ -4,7 +4,7 @@ title: parrot.autonomous.admin
 id: mod:parrot.autonomous.admin
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Admin login page for the Autonomous Orchestrator.
 relates_to:
 - concept: func:parrot.autonomous.admin.admin_login_page

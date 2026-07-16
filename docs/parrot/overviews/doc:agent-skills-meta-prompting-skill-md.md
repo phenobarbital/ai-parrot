@@ -4,8 +4,9 @@ title: Meta-Prompting Framework
 id: doc:agent-skills-meta-prompting-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: meta-prompting'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Recursive prompt improvement through quality-driven iteration with automatic
+  complexity routing.
 ---
 
 ---

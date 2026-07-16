@@ -4,7 +4,7 @@ title: parrot.handlers.lyria_music
 id: mod:parrot.handlers.lyria_music
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HTTP handler for Lyria music generation.
 relates_to:
 - concept: class:parrot.handlers.lyria_music.LyriaMusicHandler

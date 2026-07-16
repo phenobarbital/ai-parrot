@@ -4,7 +4,7 @@ title: parrot.autonomous.transport.filesystem.transport
 id: mod:parrot.autonomous.transport.filesystem.transport
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: FilesystemTransport — top-level orchestrator for filesystem-based multi-agent
   communication.
 relates_to:

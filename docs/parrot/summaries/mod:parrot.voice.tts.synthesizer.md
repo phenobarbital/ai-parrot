@@ -4,7 +4,7 @@ title: parrot.voice.tts.synthesizer
 id: mod:parrot.voice.tts.synthesizer
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Voice Synthesizer Service.
 relates_to:
 - concept: class:parrot.voice.tts.synthesizer.VoiceSynthesizer

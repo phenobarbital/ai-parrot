@@ -4,7 +4,7 @@ title: SensitivityAnalysisTool
 id: class:parrot_tools.sensitivity_analysis.SensitivityAnalysisTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Analyze which variables have the greatest impact on a target metric.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractTool

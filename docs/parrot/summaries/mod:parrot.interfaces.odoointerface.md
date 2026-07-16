@@ -4,7 +4,7 @@ title: parrot.interfaces.odoointerface
 id: mod:parrot.interfaces.odoointerface
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Odoo ERP interface via JSON-RPC 2.0.
 relates_to:
 - concept: class:parrot.interfaces.odoointerface.JsonRpcRequest

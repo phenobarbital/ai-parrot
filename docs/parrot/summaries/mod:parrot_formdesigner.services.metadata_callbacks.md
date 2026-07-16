@@ -4,7 +4,7 @@ title: parrot_formdesigner.services.metadata_callbacks
 id: mod:parrot_formdesigner.services.metadata_callbacks
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pydantic I/O models for submission metadata callbacks.
 relates_to:
 - concept: class:parrot_formdesigner.services.metadata_callbacks.MetadataCallbackInput

@@ -4,7 +4,7 @@ title: oauth2_callback_handler()
 id: func:parrot.integrations.telegram.oauth2_callback.oauth2_callback_handler
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Handle OAuth2 provider redirect with authorization code.
 ---
 

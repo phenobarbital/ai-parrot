@@ -4,8 +4,8 @@ title: Git New Feature
 id: doc:agent-workflows-git-new-feature-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Create a new feature from main branch'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: 'description: Start a new feature branch synchronized with main'
 ---
 
 ---

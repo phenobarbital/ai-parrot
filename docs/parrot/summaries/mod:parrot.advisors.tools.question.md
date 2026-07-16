@@ -4,7 +4,7 @@ title: parrot.advisors.tools.question
 id: mod:parrot.advisors.tools.question
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: GetNextQuestionTool - Returns the next optimal question to ask.
 relates_to:
 - concept: class:parrot.advisors.tools.question.GetNextQuestionArgs

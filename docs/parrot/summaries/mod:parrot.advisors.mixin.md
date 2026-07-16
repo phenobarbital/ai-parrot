@@ -4,7 +4,7 @@ title: parrot.advisors.mixin
 id: mod:parrot.advisors.mixin
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Module parrot.advisors.mixin
 relates_to:
 - concept: class:parrot.advisors.mixin.ProductAdvisorMixin

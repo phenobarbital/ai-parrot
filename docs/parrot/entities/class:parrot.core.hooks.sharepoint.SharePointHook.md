@@ -4,7 +4,7 @@ title: SharePointHook
 id: class:parrot.core.hooks.sharepoint.SharePointHook
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Subscribes to SharePoint changes via Microsoft Graph API.
 relates_to:
 - concept: class:parrot.core.hooks.base.BaseHook

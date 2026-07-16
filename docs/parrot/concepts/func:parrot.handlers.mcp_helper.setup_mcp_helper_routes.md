@@ -4,7 +4,7 @@ title: setup_mcp_helper_routes()
 id: func:parrot.handlers.mcp_helper.setup_mcp_helper_routes
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Register MCP helper management routes on the aiohttp application.
 ---
 

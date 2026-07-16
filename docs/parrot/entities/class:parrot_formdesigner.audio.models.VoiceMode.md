@@ -4,7 +4,7 @@ title: VoiceMode
 id: class:parrot_formdesigner.audio.models.VoiceMode
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: How a question participates in the audio form flow.
 ---
 

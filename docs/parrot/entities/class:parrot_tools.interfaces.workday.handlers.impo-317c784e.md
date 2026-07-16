@@ -4,7 +4,7 @@ title: ImportReportedTimeBlocksType
 id: class:parrot_tools.interfaces.workday.handlers.import_reported_time_blocks.ImportReportedTimeBlocksType
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Handler for ``Import_Reported_Time_Blocks`` (batch async import).
 relates_to:
 - concept: class:parrot_tools.interfaces.workday.handlers.base.WorkdayWriteTypeBase

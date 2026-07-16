@@ -4,7 +4,7 @@ title: JSONTreeStore
 id: class:parrot.knowledge.pageindex.store.JSONTreeStore
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: File-system backed registry of PageIndex trees.
 ---
 

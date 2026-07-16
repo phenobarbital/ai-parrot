@@ -4,7 +4,7 @@ title: InfographicTemplate
 id: class:parrot.models.infographic_templates.InfographicTemplate
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Defines the structure and block order for an infographic layout.
 ---
 

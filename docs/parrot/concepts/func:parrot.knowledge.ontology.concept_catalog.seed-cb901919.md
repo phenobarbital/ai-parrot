@@ -4,7 +4,7 @@ title: seed_concepts_from_yaml()
 id: func:parrot.knowledge.ontology.concept_catalog.seed.seed_concepts_from_yaml
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Seed concept rows from a YAML ontology file.
 ---
 

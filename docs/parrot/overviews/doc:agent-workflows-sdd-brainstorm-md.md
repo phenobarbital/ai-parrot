@@ -4,9 +4,9 @@ title: /brainstorm — Structured Idea Exploration
 id: doc:agent-workflows-sdd-brainstorm-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Structured brainstorming for projects and features. Explores
-  multiple options before implementation.'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Explore a feature idea by generating multiple approaches with library and
+  code references,
 relates_to:
 - concept: mod:parrot
   rel: mentions

@@ -4,7 +4,7 @@ title: by_organization()
 id: func:parrot.mcp.filtering.by_organization
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Create predicate that restricts to specific organizations (multi-tenancy).
 ---
 

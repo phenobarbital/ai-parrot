@@ -4,7 +4,7 @@ title: PostAuthProvider
 id: class:parrot.integrations.core.auth.post_auth.PostAuthProvider
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Protocol for secondary authentication providers.
 ---
 

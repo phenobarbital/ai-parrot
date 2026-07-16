@@ -4,7 +4,7 @@ title: get_country_info()
 id: func:parrot_formdesigner.core._location_data.get_country_info
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return name, flag emoji, and dial code for a country code.
 ---
 

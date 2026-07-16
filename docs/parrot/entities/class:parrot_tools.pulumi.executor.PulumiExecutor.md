@@ -4,7 +4,7 @@ title: PulumiExecutor
 id: class:parrot_tools.pulumi.executor.PulumiExecutor
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Executes Pulumi CLI commands via Docker or direct CLI.
 relates_to:
 - concept: class:parrot_tools.security.base_executor.BaseExecutor

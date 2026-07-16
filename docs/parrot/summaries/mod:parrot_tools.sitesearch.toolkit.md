@@ -4,7 +4,7 @@ title: parrot_tools.sitesearch.toolkit
 id: mod:parrot_tools.sitesearch.toolkit
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: SiteSearchToolkit for site-specific searches with preset support.
 relates_to:
 - concept: class:parrot_tools.sitesearch.toolkit.SiteSearchToolkit

@@ -4,7 +4,7 @@ title: QueryRetryConfig
 id: class:parrot.bots.database.retries.QueryRetryConfig
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Configuration for query retry mechanism.
 ---
 

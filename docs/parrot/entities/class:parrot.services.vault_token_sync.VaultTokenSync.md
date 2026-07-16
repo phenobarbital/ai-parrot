@@ -4,7 +4,7 @@ title: VaultTokenSync
 id: class:parrot.services.vault_token_sync.VaultTokenSync
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Persist OAuth tokens in the encrypted user vault.
 ---
 

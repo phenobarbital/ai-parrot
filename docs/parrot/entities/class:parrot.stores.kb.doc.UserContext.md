@@ -4,7 +4,7 @@ title: UserContext
 id: class:parrot.stores.kb.doc.UserContext
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Knowledge Base for user context and session data.
 relates_to:
 - concept: class:parrot.stores.kb.redis.RedisKnowledgeBase

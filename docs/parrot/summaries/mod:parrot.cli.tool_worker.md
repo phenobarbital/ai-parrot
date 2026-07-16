@@ -4,7 +4,7 @@ title: parrot.cli.tool_worker
 id: mod:parrot.cli.tool_worker
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Worker-side entrypoint for remote tool execution.
 relates_to:
 - concept: mod:parrot.tools.abstract

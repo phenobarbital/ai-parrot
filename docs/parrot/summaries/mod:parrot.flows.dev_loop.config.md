@@ -4,7 +4,7 @@ title: parrot.flows.dev_loop.config
 id: mod:parrot.flows.dev_loop.config
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Dev-loop configuration helpers (FEAT-253).
 relates_to:
 - concept: func:parrot.flows.dev_loop.config.parse_repo_specs

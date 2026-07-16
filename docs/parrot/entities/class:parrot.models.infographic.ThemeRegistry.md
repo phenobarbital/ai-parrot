@@ -4,7 +4,7 @@ title: ThemeRegistry
 id: class:parrot.models.infographic.ThemeRegistry
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Registry for infographic HTML themes.
 ---
 

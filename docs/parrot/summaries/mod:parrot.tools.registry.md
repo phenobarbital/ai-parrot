@@ -4,7 +4,7 @@ title: parrot.tools.registry
 id: mod:parrot.tools.registry
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Toolkit Registry - Registry of supported toolkits for dynamic loading.
 relates_to:
 - concept: class:parrot.tools.registry.ToolkitRegistry

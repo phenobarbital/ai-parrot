@@ -4,7 +4,7 @@ title: parrot.human.actions.backends
 id: mod:parrot.human.actions.backends
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Concrete action backends for the HITL escalation system.
 relates_to:
 - concept: mod:parrot.human

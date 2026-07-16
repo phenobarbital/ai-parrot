@@ -4,7 +4,7 @@ title: signal_relevance()
 id: func:parrot.knowledge.graphindex.signals.signal_relevance
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pairwise five-signal relevance over an assembled GraphIndex.
 ---
 

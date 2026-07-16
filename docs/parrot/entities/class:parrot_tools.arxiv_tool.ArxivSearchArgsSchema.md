@@ -4,7 +4,7 @@ title: ArxivSearchArgsSchema
 id: class:parrot_tools.arxiv_tool.ArxivSearchArgsSchema
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Schema for arXiv search arguments.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractToolArgsSchema

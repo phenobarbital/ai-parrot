@@ -4,7 +4,7 @@ title: WhatsApp Integration for AI-Parrot
 id: doc:docs-messaging-whatsapp-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Complete WhatsApp integration using **whatsmeow** (Go) bridge with Python
   hooks for autonomous agents.
 relates_to:

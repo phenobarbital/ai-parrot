@@ -4,7 +4,7 @@ title: RSSContentInterface
 id: class:parrot.interfaces.rss_content.RSSContentInterface
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Extends RSSInterface to fetch and summarize content from linked pages.
 relates_to:
 - concept: class:parrot.interfaces.rss.RSSInterface

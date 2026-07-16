@@ -4,7 +4,7 @@ title: parrot_tools.edareport
 id: mod:parrot_tools.edareport
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: EDA Report Tool - Comprehensive profiling using ydata_profiling (formerly
   pandas_profiling).
 relates_to:

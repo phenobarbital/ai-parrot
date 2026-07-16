@@ -4,7 +4,7 @@ title: parrot.integrations.msagentsdk.agent
 id: mod:parrot.integrations.msagentsdk.agent
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Bridge between ai-parrot AbstractBot and the Microsoft 365 Agents SDK protocol.
 relates_to:
 - concept: class:parrot.integrations.msagentsdk.agent.ParrotM365Agent

@@ -4,7 +4,7 @@ title: format_phone_number()
 id: func:parrot_tools.interfaces.workday.parsers.worker_parsers.format_phone_number
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Formats a phone number from various formats to the required standards.
 ---
 

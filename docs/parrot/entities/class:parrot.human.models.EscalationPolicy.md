@@ -4,7 +4,7 @@ title: EscalationPolicy
 id: class:parrot.human.models.EscalationPolicy
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A series of tiered levels for escalating human-in-the-loop requests.
 ---
 

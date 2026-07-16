@@ -4,7 +4,7 @@ title: setup_web_hitl()
 id: func:parrot.handlers.web_hitl.setup_web_hitl
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Bootstrap a process-wide HumanInteractionManager with a WebHumanChannel.
 ---
 

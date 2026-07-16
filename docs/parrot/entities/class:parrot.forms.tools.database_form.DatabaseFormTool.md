@@ -4,7 +4,7 @@ title: DatabaseFormTool
 id: class:parrot.forms.tools.database_form.DatabaseFormTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Load a form definition from PostgreSQL into a FormSchema.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractTool

@@ -4,7 +4,7 @@ title: OAuth2ProviderConfig
 id: class:parrot.integrations.core.auth.oauth2_providers.OAuth2ProviderConfig
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Configuration for a specific OAuth2 identity provider.
 ---
 

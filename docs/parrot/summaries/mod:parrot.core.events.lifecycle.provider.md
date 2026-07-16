@@ -4,7 +4,7 @@ title: parrot.core.events.lifecycle.provider
 id: mod:parrot.core.events.lifecycle.provider
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: EventProvider Protocol for batch subscriber registration.
 relates_to:
 - concept: class:parrot.core.events.lifecycle.provider.EventProvider

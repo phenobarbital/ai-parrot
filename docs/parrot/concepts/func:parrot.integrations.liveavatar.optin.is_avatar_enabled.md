@@ -4,7 +4,7 @@ title: is_avatar_enabled()
 id: func:parrot.integrations.liveavatar.optin.is_avatar_enabled
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return ``True`` iff avatar mode is enabled for the given tenant + agent.
 ---
 

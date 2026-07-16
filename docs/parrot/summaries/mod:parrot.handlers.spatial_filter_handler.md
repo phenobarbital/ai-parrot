@@ -4,7 +4,7 @@ title: parrot.handlers.spatial_filter_handler
 id: mod:parrot.handlers.spatial_filter_handler
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Spatial filter HTTP handler and AgenTalk pass-through envelope (FEAT-219
   Module 6).
 relates_to:

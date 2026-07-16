@@ -4,7 +4,7 @@ title: MergedOntology
 id: class:parrot.knowledge.ontology.schema.MergedOntology
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Fully resolved ontology after merging all YAML layers.
 ---
 

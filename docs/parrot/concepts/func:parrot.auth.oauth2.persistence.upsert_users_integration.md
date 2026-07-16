@@ -4,7 +4,7 @@ title: upsert_users_integration()
 id: func:parrot.auth.oauth2.persistence.upsert_users_integration
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Upsert a credential record in ``users_integrations``.
 ---
 

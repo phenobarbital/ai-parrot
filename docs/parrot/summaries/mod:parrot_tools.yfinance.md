@@ -4,7 +4,7 @@ title: parrot_tools.yfinance
 id: mod:parrot_tools.yfinance
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: YFinance tool for retrieving market data via Yahoo Finance.
 relates_to:
 - concept: class:parrot_tools.yfinance.YFinanceArgs

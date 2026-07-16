@@ -4,7 +4,7 @@ title: ResponseRenderer
 id: class:parrot.cli.renderer.ResponseRenderer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Renders AIMessage responses to the terminal via Rich.
 ---
 

@@ -4,7 +4,7 @@ title: stress_test_portfolio()
 id: func:parrot_tools.quant.stress_testing.stress_test_portfolio
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Apply stress scenarios to a portfolio and estimate losses.
 ---
 

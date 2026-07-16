@@ -4,7 +4,7 @@ title: EscalationActionType
 id: class:parrot.human.models.EscalationActionType
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Actions performed when escalating to a tier.
 ---
 

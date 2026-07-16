@@ -4,7 +4,7 @@ title: SchemaOverlaySyncWorker
 id: class:parrot.knowledge.ontology.schema_overlay.worker.SchemaOverlaySyncWorker
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Drain ``ontology_schema_outbox`` and publish cache invalidation.
 ---
 

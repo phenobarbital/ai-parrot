@@ -4,7 +4,7 @@ title: parrot_tools.odoo.toolkit
 id: mod:parrot_tools.odoo.toolkit
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: OdooToolkit — exposes Odoo ERP operations as agent tools.
 relates_to:
 - concept: class:parrot_tools.odoo.toolkit.OdooToolkit

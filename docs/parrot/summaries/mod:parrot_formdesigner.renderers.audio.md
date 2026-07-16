@@ -4,7 +4,7 @@ title: parrot_formdesigner.renderers.audio
 id: mod:parrot_formdesigner.renderers.audio
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AudioFormRenderer — Standalone audio form renderer for parrot-formdesigner.
 relates_to:
 - concept: class:parrot_formdesigner.renderers.audio.AudioFormRenderer

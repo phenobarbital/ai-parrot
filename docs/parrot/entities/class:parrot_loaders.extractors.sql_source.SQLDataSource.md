@@ -4,7 +4,7 @@ title: SQLDataSource
 id: class:parrot_loaders.extractors.sql_source.SQLDataSource
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Extract structured records from SQL queries.
 relates_to:
 - concept: class:parrot_loaders.extractors.base.ExtractDataSource

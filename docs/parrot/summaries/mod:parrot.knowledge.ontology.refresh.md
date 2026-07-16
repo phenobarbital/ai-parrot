@@ -4,7 +4,7 @@ title: parrot.knowledge.ontology.refresh
 id: mod:parrot.knowledge.ontology.refresh
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: CRON-triggered refresh pipeline for ontology graph delta sync.
 relates_to:
 - concept: class:parrot.knowledge.ontology.refresh.DiffResult

@@ -4,7 +4,7 @@ title: ExcelTool
 id: class:parrot_tools.excel.ExcelTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Microsoft Excel/OpenDocument Spreadsheet Generation Tool.
 relates_to:
 - concept: class:parrot_tools.document.AbstractDocumentTool

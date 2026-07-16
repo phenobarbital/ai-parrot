@@ -4,7 +4,7 @@ title: BFSStrategy
 id: class:parrot_tools.scraping.crawl_strategy.BFSStrategy
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'Breadth-first strategy: visits all nodes at depth N before depth N+1.'
 ---
 

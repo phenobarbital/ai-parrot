@@ -4,7 +4,7 @@ title: build_structured_message()
 id: func:parrot.integrations.a2ui_resume.build_structured_message
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Serialize a resumed action into a structured user-message query string.
 ---
 

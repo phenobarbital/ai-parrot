@@ -4,7 +4,7 @@ title: Método `summary()` - Documentación Completa
 id: doc:docs-crew-summary-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: El método `summary()` genera reportes completos o resúmenes ejecutivos de
   todos los resultados del crew, con dos modos de operación optimizados para diferentes
   casos de uso.

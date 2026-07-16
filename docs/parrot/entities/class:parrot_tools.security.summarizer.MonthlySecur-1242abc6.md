@@ -4,7 +4,7 @@ title: MonthlySecuritySummarizer
 id: class:parrot_tools.security.summarizer.MonthlySecuritySummarizer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Produces a ``MonthlySummary`` from a list of weekly ``WeeklySummary`` objects.
 ---
 

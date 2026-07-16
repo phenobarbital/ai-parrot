@@ -4,7 +4,7 @@ title: Ephemeral User Agents — Frontend Integration Handoff
 id: doc:docs-api-feat-149-ephemeral-agents-api-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: An *ephemeral user agent* is a personal AI assistant that lives entirely
   in
 relates_to:

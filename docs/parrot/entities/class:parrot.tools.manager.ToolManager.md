@@ -4,7 +4,7 @@ title: ToolManager
 id: class:parrot.tools.manager.ToolManager
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Unified tool manager for handling tools across AbstractBot and AbstractClient.
 relates_to:
 - concept: class:parrot.tools.mcp_mixin.MCPToolManagerMixin

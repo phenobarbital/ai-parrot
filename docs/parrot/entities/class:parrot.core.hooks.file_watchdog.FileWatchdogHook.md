@@ -4,7 +4,7 @@ title: FileWatchdogHook
 id: class:parrot.core.hooks.file_watchdog.FileWatchdogHook
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Monitors a directory for file changes and emits HookEvents.
 relates_to:
 - concept: class:parrot.core.hooks.base.BaseHook

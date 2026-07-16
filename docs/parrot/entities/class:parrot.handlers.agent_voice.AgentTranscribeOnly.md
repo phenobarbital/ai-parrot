@@ -4,7 +4,7 @@ title: AgentTranscribeOnly
 id: class:parrot.handlers.agent_voice.AgentTranscribeOnly
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Transcribe-only endpoint for Mode B internal STT (FEAT-249 TASK-1608).
 relates_to:
 - concept: class:parrot.handlers.agent_voice.AgentVoiceTalk

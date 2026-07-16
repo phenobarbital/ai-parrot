@@ -4,7 +4,7 @@ title: parrot_tools.file_reader
 id: mod:parrot_tools.file_reader
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: FileReaderTool implementation for reading various file formats.
 relates_to:
 - concept: class:parrot_tools.file_reader.FileReaderTool

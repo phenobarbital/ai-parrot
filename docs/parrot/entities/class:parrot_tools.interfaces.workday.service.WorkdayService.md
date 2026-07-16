@@ -4,7 +4,7 @@ title: WorkdayService
 id: class:parrot_tools.interfaces.workday.service.WorkdayService
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Workday operational interface — composable without a FlowComponent.
 relates_to:
 - concept: class:parrot.interfaces.soap.SOAPClient

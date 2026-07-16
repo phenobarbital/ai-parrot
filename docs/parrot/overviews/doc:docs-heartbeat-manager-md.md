@@ -4,7 +4,7 @@ title: HeartbeatManager — Per-Agent Autonomous Heartbeat Loop
 id: doc:docs-heartbeat-manager-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Unlike a cron scheduler (which fires unconditionally at fixed intervals),
   the
 relates_to:

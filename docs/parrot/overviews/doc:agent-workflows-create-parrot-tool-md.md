@@ -4,8 +4,8 @@ title: Create Parrot Tool
 id: doc:agent-workflows-create-parrot-tool-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Create a new Parrot Tool'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: 'description: Create a new Parrot Tool with standard structure and styling'
 ---
 
 ---

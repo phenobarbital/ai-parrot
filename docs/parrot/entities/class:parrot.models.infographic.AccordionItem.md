@@ -4,7 +4,7 @@ title: AccordionItem
 id: class:parrot.models.infographic.AccordionItem
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A single collapsible item within an AccordionBlock.
 ---
 

@@ -4,7 +4,7 @@ title: list_computed_functions()
 id: func:parrot.tools.dataset_manager.computed.list_computed_functions
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return a sorted list of all registered function names.
 ---
 

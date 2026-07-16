@@ -4,7 +4,7 @@ title: 9. Ontologic RAG — graph-first retrieval, intent routing & multi-tenant
 id: doc:docs-architecture-09-ontologic-rag-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: graph TB
 relates_to:
 - concept: mod:parrot.conf

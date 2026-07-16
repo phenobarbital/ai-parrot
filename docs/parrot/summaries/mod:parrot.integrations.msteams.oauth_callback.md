@@ -4,7 +4,7 @@ title: parrot.integrations.msteams.oauth_callback
 id: mod:parrot.integrations.msteams.oauth_callback
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: MS Teams OAuth callback helpers for Jira 3LO flow (FEAT-225).
 relates_to:
 - concept: class:parrot.integrations.msteams.oauth_callback.MSTeamsOAuthNotifier

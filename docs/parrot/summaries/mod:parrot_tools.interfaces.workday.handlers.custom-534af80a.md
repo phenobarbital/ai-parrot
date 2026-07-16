@@ -4,7 +4,7 @@ title: parrot_tools.interfaces.workday.handlers.custom_punch_field_report_rest
 id: mod:parrot_tools.interfaces.workday.handlers.custom_punch_field_report_rest
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: REST handler for the Custom Punch - Field Report (RaaS).
 relates_to:
 - concept: class:parrot_tools.interfaces.workday.handlers.custom_punch_field_report_rest.CustomPunchFieldReportRestType

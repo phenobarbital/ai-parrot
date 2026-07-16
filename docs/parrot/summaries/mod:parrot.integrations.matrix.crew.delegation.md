@@ -4,7 +4,7 @@ title: parrot.integrations.matrix.crew.delegation
 id: mod:parrot.integrations.matrix.crew.delegation
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Hybrid tool delegation for Matrix collaborative crew sessions.
 relates_to:
 - concept: class:parrot.integrations.matrix.crew.delegation.DelegationRequest

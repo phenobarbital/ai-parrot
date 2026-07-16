@@ -4,7 +4,7 @@ title: parrot.a2a.server
 id: mod:parrot.a2a.server
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A2A Server - Wraps an AI-Parrot Agent as an A2A-compliant HTTP service.
 relates_to:
 - concept: class:parrot.a2a.server.A2AEnabledMixin

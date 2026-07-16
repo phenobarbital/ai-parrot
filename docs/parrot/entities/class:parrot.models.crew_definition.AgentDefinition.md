@@ -4,7 +4,7 @@ title: AgentDefinition
 id: class:parrot.models.crew_definition.AgentDefinition
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Definition of an agent in a crew.
 ---
 

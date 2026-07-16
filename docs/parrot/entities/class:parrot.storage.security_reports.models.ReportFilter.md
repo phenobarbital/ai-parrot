@@ -4,7 +4,7 @@ title: ReportFilter
 id: class:parrot.storage.security_reports.models.ReportFilter
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Query filter for the security report store.
 ---
 

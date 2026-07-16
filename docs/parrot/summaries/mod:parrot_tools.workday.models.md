@@ -4,7 +4,7 @@ title: parrot_tools.workday.models
 id: mod:parrot_tools.workday.models
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Workday Response Models and Structured Output Parser
 relates_to:
 - concept: class:parrot_tools.workday.models.Address

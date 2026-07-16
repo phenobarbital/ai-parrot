@@ -4,7 +4,7 @@ title: parrot_tools.interfaces.workday.parsers.custom_punch_field_report_parsers
 id: mod:parrot_tools.interfaces.workday.parsers.custom_punch_field_report_parsers
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parsers for Workday Custom Punch - Field Report.
 relates_to:
 - concept: func:parrot_tools.interfaces.workday.parsers.custom_punch_field_report_parsers.parse_custom_punch_field_report_data

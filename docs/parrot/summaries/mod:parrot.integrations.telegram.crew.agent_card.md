@@ -4,7 +4,7 @@ title: parrot.integrations.telegram.crew.agent_card
 id: mod:parrot.integrations.telegram.crew.agent_card
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AgentCard and AgentSkill models for TelegramCrewTransport.
 relates_to:
 - concept: class:parrot.integrations.telegram.crew.agent_card.AgentCard

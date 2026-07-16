@@ -4,7 +4,7 @@ title: parrot.flows.dev_loop.nodes.revision_handoff
 id: mod:parrot.flows.dev_loop.nodes.revision_handoff
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: RevisionHandoffNode — push to the existing branch + comment the same PR.
 relates_to:
 - concept: class:parrot.flows.dev_loop.nodes.revision_handoff.RevisionHandoffNode

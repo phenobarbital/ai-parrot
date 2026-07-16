@@ -4,7 +4,7 @@ title: list_user_agent_toolkits()
 id: func:parrot.auth.oauth2.persistence.list_user_agent_toolkits
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return all enablement records for a ``(user_id, agent_id)`` pair.
 ---
 

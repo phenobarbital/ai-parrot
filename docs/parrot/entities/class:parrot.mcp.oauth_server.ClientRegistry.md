@@ -4,7 +4,7 @@ title: ClientRegistry
 id: class:parrot.mcp.oauth_server.ClientRegistry
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Minimal in-memory Dynamic Client Registration (RFC 7591) registry.
 ---
 

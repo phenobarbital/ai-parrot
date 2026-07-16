@@ -4,7 +4,7 @@ title: parrot.auth.oauth2.o365_provider
 id: mod:parrot.auth.oauth2.o365_provider
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Office365 OAuth2 provider for the AI-Parrot integrations registry.
 relates_to:
 - concept: class:parrot.auth.oauth2.o365_provider.O365OAuth2Provider

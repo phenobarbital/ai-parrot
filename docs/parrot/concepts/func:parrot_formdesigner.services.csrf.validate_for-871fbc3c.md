@@ -4,7 +4,7 @@ title: validate_form_csrf_token()
 id: func:parrot_formdesigner.services.csrf.validate_form_csrf_token
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Validate a CSRF token against the in-process store.
 ---
 

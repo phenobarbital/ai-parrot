@@ -4,7 +4,7 @@ title: parrot_tools.regression_analysis
 id: mod:parrot_tools.regression_analysis
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: RegressionAnalysisTool — linear/polynomial/log regression.
 relates_to:
 - concept: class:parrot_tools.regression_analysis.RegressionAnalysisTool

@@ -4,7 +4,7 @@ title: parrot.memory.skills.parsers
 id: mod:parrot.memory.skills.parsers
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'Deprecated: use parrot.skills.parsers instead.'
 relates_to:
 - concept: mod:parrot.skills.parsers

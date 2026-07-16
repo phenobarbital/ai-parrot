@@ -4,7 +4,7 @@ title: FirefliesCredentialResolver
 id: class:parrot.integrations.mcp.fireflies_a2a.FirefliesCredentialResolver
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Per-user static API key resolver for the Fireflies.ai MCP server.
 relates_to:
 - concept: class:parrot.auth.credentials.CredentialResolver

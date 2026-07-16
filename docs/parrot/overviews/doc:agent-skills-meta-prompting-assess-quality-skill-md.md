@@ -4,7 +4,7 @@ title: 'SKILL: Assess Output Quality'
 id: doc:agent-skills-meta-prompting-assess-quality-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Score LLM output quality (0.0-1.0) against task requirements to determine
   if iteration is needed or solution is complete.
 ---

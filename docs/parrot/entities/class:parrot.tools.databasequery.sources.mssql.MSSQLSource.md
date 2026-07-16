@@ -4,7 +4,7 @@ title: MSSQLSource
 id: class:parrot.tools.databasequery.sources.mssql.MSSQLSource
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Microsoft SQL Server database source with stored procedure support.
 relates_to:
 - concept: class:parrot.tools.databasequery.base.AbstractDatabaseSource

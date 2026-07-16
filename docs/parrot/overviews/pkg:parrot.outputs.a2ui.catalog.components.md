@@ -4,7 +4,7 @@ title: parrot.outputs.a2ui.catalog.components
 id: pkg:parrot.outputs.a2ui.catalog.components
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot.outputs.a2ui.catalog.components (9 modules, 0 sub-packages).
 relates_to:
 - concept: mod:parrot.outputs.a2ui.catalog.components.card

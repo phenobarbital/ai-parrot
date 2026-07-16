@@ -4,7 +4,7 @@ title: SimpleMCPServer
 id: class:parrot.mcp.simple_server.SimpleMCPServer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A simplified MCP Server implementation for exposing a single tool or function.
 ---
 

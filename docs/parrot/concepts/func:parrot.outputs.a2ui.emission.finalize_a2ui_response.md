@@ -4,7 +4,7 @@ title: finalize_a2ui_response()
 id: func:parrot.outputs.a2ui.emission.finalize_a2ui_response
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Route an ``OutputMode.A2UI`` response around the legacy formatter (FEAT-273).
 ---
 

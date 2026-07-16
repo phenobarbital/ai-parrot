@@ -4,7 +4,7 @@ title: close_all_fullmode_sessions()
 id: func:parrot.handlers.avatar_fullmode.close_all_fullmode_sessions
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Best-effort teardown of any lingering FULL mode sessions on shutdown.
 ---
 

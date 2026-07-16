@@ -4,7 +4,7 @@ title: parrot.services.heartbeat
 id: mod:parrot.services.heartbeat
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Heartbeat scheduler for periodic agent wake-ups.
 relates_to:
 - concept: class:parrot.services.heartbeat.HeartbeatScheduler

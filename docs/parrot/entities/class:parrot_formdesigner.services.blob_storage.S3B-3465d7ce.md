@@ -4,7 +4,7 @@ title: S3BlobStorage
 id: class:parrot_formdesigner.services.blob_storage.S3BlobStorage
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: S3 blob storage backed by ``navigator.utils.file.s3.S3FileManager``.
 ---
 

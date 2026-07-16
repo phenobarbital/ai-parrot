@@ -4,7 +4,7 @@ title: parrot.tools.dataset_manager.spatial
 id: mod:parrot.tools.dataset_manager.spatial
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Spatial filtering support for DatasetManager (FEAT-219).
 relates_to:
 - concept: mod:parrot.tools.dataset_manager

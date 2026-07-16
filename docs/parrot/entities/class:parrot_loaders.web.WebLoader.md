@@ -4,7 +4,7 @@ title: WebLoader
 id: class:parrot_loaders.web.WebLoader
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Load web pages and extract HTML + Markdown + structured bits (videos/nav/tables).
 relates_to:
 - concept: class:parrot.loaders.abstract.AbstractLoader

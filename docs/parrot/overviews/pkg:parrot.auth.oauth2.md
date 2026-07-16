@@ -4,7 +4,7 @@ title: parrot.auth.oauth2
 id: pkg:parrot.auth.oauth2
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot.auth.oauth2 (9 modules, 0 sub-packages).
 relates_to:
 - concept: mod:parrot.auth.oauth2.jira_provider

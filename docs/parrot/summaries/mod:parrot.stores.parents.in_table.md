@@ -4,7 +4,7 @@ title: parrot.stores.parents.in_table
 id: mod:parrot.stores.parents.in_table
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: In-table parent searcher for pgvector stores.
 relates_to:
 - concept: class:parrot.stores.parents.in_table.InTableParentSearcher

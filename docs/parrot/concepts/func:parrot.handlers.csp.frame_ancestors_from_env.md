@@ -4,7 +4,7 @@ title: frame_ancestors_from_env()
 id: func:parrot.handlers.csp.frame_ancestors_from_env
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Read ``INFOGRAPHIC_FRAME_ANCESTORS`` and normalise to space-separated.
 ---
 

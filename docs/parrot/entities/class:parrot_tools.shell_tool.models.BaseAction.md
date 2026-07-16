@@ -4,7 +4,7 @@ title: BaseAction
 id: class:parrot_tools.shell_tool.models.BaseAction
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Base class for shell and utility actions.
 ---
 

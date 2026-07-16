@@ -4,7 +4,7 @@ title: DuplicateAccountingCodeError
 id: class:parrot_formdesigner.services.project_service.DuplicateAccountingCodeError
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Raised when ``(client_id, accounting_code)`` already exists.
 ---
 

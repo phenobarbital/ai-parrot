@@ -4,7 +4,7 @@ title: CrawlGraph
 id: class:parrot_tools.scraping.crawl_graph.CrawlGraph
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: BFS-based crawl graph that manages the frontier and visited set.
 ---
 

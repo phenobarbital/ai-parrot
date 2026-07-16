@@ -4,7 +4,7 @@ title: YAMLRenderer
 id: class:parrot.outputs.formats.yaml.YAMLRenderer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Renderer for YAML output using yaml-rs (Rust) or PyYAML fallback
 relates_to:
 - concept: class:parrot.outputs.formats.base.BaseRenderer

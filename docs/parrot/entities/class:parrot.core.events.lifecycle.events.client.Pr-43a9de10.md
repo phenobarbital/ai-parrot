@@ -4,7 +4,7 @@ title: PromptCacheAppliedEvent
 id: class:parrot.core.events.lifecycle.events.client.PromptCacheAppliedEvent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Emitted when prompt caching is applied to an LLM call.
 relates_to:
 - concept: class:parrot.core.events.lifecycle.base.LifecycleEvent

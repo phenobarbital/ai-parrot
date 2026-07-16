@@ -4,7 +4,7 @@ title: parrot.storage.backends.mongodb
 id: mod:parrot.storage.backends.mongodb
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: MongoDB conversation backend using motor (via asyncdb[mongo]).
 relates_to:
 - concept: class:parrot.storage.backends.mongodb.ConversationMongoBackend

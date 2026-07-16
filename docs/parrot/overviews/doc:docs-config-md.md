@@ -4,7 +4,7 @@ title: AI-Parrot Configuration Guide
 id: doc:docs-config-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This document describes the most important configuration values for AI-Parrot.
   All configuration values are loaded from `.env` files in the `env/` folder using
   `navconfig`.

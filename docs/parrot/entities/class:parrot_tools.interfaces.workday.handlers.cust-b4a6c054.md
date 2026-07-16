@@ -4,7 +4,7 @@ title: CustomPunchFieldReportRestType
 id: class:parrot_tools.interfaces.workday.handlers.custom_punch_field_report_rest.CustomPunchFieldReportRestType
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Fetch the Custom Punch - Field Report via REST (customreport2).
 relates_to:
 - concept: class:parrot_tools.interfaces.workday.handlers.base.WorkdayTypeBase

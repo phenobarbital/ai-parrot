@@ -4,7 +4,7 @@ title: parrot.knowledge.graphindex.sqlite_reader
 id: mod:parrot.knowledge.graphindex.sqlite_reader
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: SQLiteGraphReader — read side of the SQLite GraphIndex artefact (FEAT-240).
 relates_to:
 - concept: class:parrot.knowledge.graphindex.sqlite_reader.SQLiteGraphReader

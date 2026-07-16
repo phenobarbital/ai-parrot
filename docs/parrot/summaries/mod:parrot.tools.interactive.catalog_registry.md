@@ -4,7 +4,7 @@ title: parrot.tools.interactive.catalog_registry
 id: mod:parrot.tools.interactive.catalog_registry
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: On-disk loader for the interactive HTML artifact catalog.
 relates_to:
 - concept: class:parrot.tools.interactive.catalog_registry.InteractiveCatalogRegistry

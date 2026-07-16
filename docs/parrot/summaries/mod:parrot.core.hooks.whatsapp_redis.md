@@ -4,7 +4,7 @@ title: parrot.core.hooks.whatsapp_redis
 id: mod:parrot.core.hooks.whatsapp_redis
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: WhatsApp Redis Bridge Hook.
 relates_to:
 - concept: class:parrot.core.hooks.whatsapp_redis.WhatsAppRedisHook

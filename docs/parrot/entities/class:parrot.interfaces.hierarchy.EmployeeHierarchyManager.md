@@ -4,7 +4,7 @@ title: EmployeeHierarchyManager
 id: class:parrot.interfaces.hierarchy.EmployeeHierarchyManager
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Hierarchy Manager using ArangoDB to store employees and their reporting structure.
 relates_to:
 - concept: class:parrot.memory.cache.CacheMixin
