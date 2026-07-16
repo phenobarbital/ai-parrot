@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-16T09:16:30Z",
-  "completed_at": null,
+  "completed_at": "2026-07-16T15:44:31+00:00",
   "tasks": [
     {
       "id": "TASK-1783",
@@ -212,7 +212,7 @@
       "feature_id": "FEAT-310",
       "feature": "eventbus-v2",
       "spec": "sdd/specs/eventbus-v2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -225,8 +225,8 @@
       "parallelism_notes": "Closing task — spans all Phase 1+2 modules; must run after they land.",
       "assigned_to": null,
       "started_at": "2026-07-16T09:49:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1793-integration-benchmark-docs.md"
+      "completed_at": "2026-07-16T15:44:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1793-integration-benchmark-docs.md"
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-310 — Unified EventBus v2 — queue-based dispatch, severity, ingress channels, and notifications
 **Spec**: `sdd/specs/eventbus-v2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1786, TASK-1787, TASK-1788, TASK-1789
@@ -153,8 +153,8 @@ async def test_graceful_shutdown_drain(mock_asyncdb): ...
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-16
+**Notes**: (1) Four spec-s4 integration tests in test_integration.py, all passing: memory-mode e2e (emit -> workers -> min_severity subscriber -> NotificationSubscriber rule fires with mocked async-notify); streams-mode e2e (two RedisStreamsBackend consumers sharing one fake Redis + group: at-least-once, no double-processing, all ACKed — the real-Redis variant remains @integration in test_redis_streams.py, run with REDIS_TEST_URL); lifecycle dual-emit through the facade (typed hot path synchronous + <0.1s despite a 300ms bus subscriber — FEAT-177 fire-and-forget preserved); graceful shutdown drain (10 pending handled, DLQ write not lost, BusClosedError after close). (2) Benchmark scripts/bench/feat310_emit_overhead.py: 10k emits with a deliberately slow (50ms) subscriber; evidence in artifacts/logs/feat-310-bench-20260716.txt (git add -f — artifacts/ is gitignored): mean 24us, p50 19us, p99 57us vs FEAT-177 budget 2ms (0.1% of a documented 2s reference LLM call) => PASS with 35x headroom; also under the stricter otel 200us hot-path line. Standalone script, NOT a CI gate. (3) Docs in docs/events/ (new topical subdir per existing docs layout): eventbus-v2.md (four layers + component diagram + typed-hot-path-vs-app-wide-fabric coexistence doctrine + meta-topics), eventbus-config.md ([bus]/[bus.alerts] defaults tables incl. BUS_INGRESS_TOKEN/AUTONOMOUS_HOOKS_VIA_BUS/DSN degrade rules), eventbus-migration.md (async delivery, return-count semantics, tz-aware Event default, wire-format note, opt-in capabilities, how to run tests). (4) Suites: tests/core + tests/unit/events = 385 passed; guard rails UNMODIFIED; ruff clean.
 
-**Deviations from spec**: none
+**Deviations from spec**: full-suite `pytest packages/ai-parrot/tests/` cannot run green in this environment for PRE-EXISTING reasons unrelated to FEAT-310: 22 collection errors from missing modules (parrot.tools.cryptoquant/coingecko/cointelegraph/marketnews/tradingeco/cmc_fear_greed, parrot_tools.alpaca, parrot.handlers.crew.execution_history_handler) that also fail on dev; additionally the worktree lacked the in-place compiled Cython artifact parrot/utils/types*.so (gitignored build output — copied from the main repo tree to unblock tests/unit and test_flow_primitives collection). Everything FEAT-310 touches (tests/core/** + tests/unit/events/**, 385 tests) is green.
