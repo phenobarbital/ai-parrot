@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-310
 **Date**: 2026-07-16
 **Author**: Jesus (phenobarbital) + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.0 (current: 0.25.18)
 **Brainstorm**: `sdd/proposals/eventbus-v2.brainstorm.md` (Recommended Option B)
 
@@ -488,7 +488,7 @@ Tests instantiate directly in `tests/core/hooks/test_hookmanager_eventbus.py` an
 - [x] gRPC ingress proto contract? — *Resolved in brainstorm*: **re-use A2UI envelope ideas** (`A2UIMessageBase` shape → `parrot.events.v1.PublishRequest`).
 - [x] Notification rate-limiting/dedup defaults? — *Resolved in brainstorm*: user delegated; defaults specified in §2 (300 s dedup, 10/min throttle, storm collapse) — all configurable.
 - [x] Should `bus.dlq` be persisted in in-memory mode? — *Resolved in brainstorm*: **yes, persisted** (asyncdb) in both modes.
-- [ ] Exact asyncdb driver/table naming convention for `bus.dlq` and audit tables (align with existing memory/audit tables if any) — *Owner: implementation (Module 6)*.
+- [x] Exact asyncdb driver/table naming convention for `bus.dlq` and audit tables (align with existing memory/audit tables if any) — *Owner: implementation (Module 6)*: use 'pg' in `navigator.evb_dlq` table
 
 ---
 
