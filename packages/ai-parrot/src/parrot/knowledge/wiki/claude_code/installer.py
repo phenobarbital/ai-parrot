@@ -173,7 +173,17 @@ def _install_settings_hook(root: Path) -> str:
     if not isinstance(pre, list):
         raise RuntimeError(f"{path}: 'hooks.PreToolUse' is not a list")
 
-    if any(isinstance(e, dict) and _is_our_hook(e) for e in pre):
+    existing = next(
+        (e for e in pre if isinstance(e, dict) and _is_our_hook(e)), None
+    )
+    if existing is not None:
+        # Upgrade an older install in place when the matcher changed
+        # (e.g. Grep|Glob|Read → Grep|Glob|Read|Bash) so a re-run picks
+        # up new coverage instead of reporting "already installed".
+        if existing.get("matcher") != assets.HOOK_MATCHER:
+            existing["matcher"] = assets.HOOK_MATCHER
+            _write_settings(path, settings)
+            return ".claude/settings.json — PreToolUse hook matcher updated"
         return ".claude/settings.json — PreToolUse hook already installed"
     pre.append(_hook_entry())
     _write_settings(path, settings)
@@ -319,12 +329,23 @@ def install_claude_integration(
     """
     root = root.resolve()
     config = config or load_project_config(root)
-    actions = [
-        f".parrot/wiki.json — config written "
-        f"(wiki '{config.wiki_name}', backend {config.backend})"
-        if not config_path(root).exists()
-        else ".parrot/wiki.json — config already present"
-    ]
+    existed = config_path(root).exists()
+    # Migrate an older config's nudge tools to include ``Bash`` so shell
+    # searches are nudged after an upgrade — but only from the exact old
+    # default, never overriding a user's customised list.
+    migrated = False
+    if config.claude.nudge_tools == ["Grep", "Glob", "Read"]:
+        config.claude.nudge_tools = ["Grep", "Glob", "Read", "Bash"]
+        migrated = True
+    if not existed:
+        actions = [
+            f".parrot/wiki.json — config written "
+            f"(wiki '{config.wiki_name}', backend {config.backend})"
+        ]
+    elif migrated:
+        actions = [".parrot/wiki.json — nudge tools upgraded (added Bash)"]
+    else:
+        actions = [".parrot/wiki.json — config already present"]
     save_project_config(root, config)
 
     actions.append(_install_claude_md(root))

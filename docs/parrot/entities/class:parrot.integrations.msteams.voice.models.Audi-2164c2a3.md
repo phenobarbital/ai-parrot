@@ -4,7 +4,7 @@ title: AudioAttachment
 id: class:parrot.integrations.msteams.voice.models.AudioAttachment
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parsed audio attachment from MS Teams.
 ---
 

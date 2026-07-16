@@ -4,7 +4,7 @@ title: parrot_formdesigner.api.controls
 id: mod:parrot_formdesigner.api.controls
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HTTP handler for ``GET /api/v1/form-controls``.
 relates_to:
 - concept: func:parrot_formdesigner.api.controls.handle_form_controls

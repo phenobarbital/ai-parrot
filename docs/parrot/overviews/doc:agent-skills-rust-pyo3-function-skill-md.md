@@ -4,8 +4,10 @@ title: Rust + PyO3 function skill (eo-processor)
 id: doc:agent-skills-rust-pyo3-function-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: rust-pyo3-function'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: 'Use this skill when you need to add or change a Rust implementation that
+  is exposed to Python. The goal is: **correct math + stable API + high performance
+  + predictable behavior**.'
 ---
 
 ---

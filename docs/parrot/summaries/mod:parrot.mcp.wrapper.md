@@ -4,7 +4,7 @@ title: parrot.mcp.wrapper
 id: mod:parrot.mcp.wrapper
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Module parrot.mcp.wrapper
 relates_to:
 - concept: func:parrot.mcp.wrapper.load_server_from_config

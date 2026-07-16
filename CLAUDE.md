@@ -331,3 +331,48 @@ Authoritative reference: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
   with no benefit. Work directly on a feature branch.
 - **Exploratory brainstorming**: `/sdd-brainstorm` doesn't produce code — no worktree needed.
 - **Quick bug fixes**: If the fix is a single commit, skip the worktree ceremony.
+
+<!-- parrot:wiki:begin -->
+## Codebase Knowledge Graph (LLM Wiki)
+
+This repository maintains a machine-first knowledge graph of the
+codebase (pages + typed edges over a local SQLite plane, built by
+`wikitoolkit build`). For questions about the codebase — where
+something lives, how modules relate, what a subsystem does — PREFER
+scoped wiki queries over reading whole files or grepping raw source:
+
+- `wikitoolkit query "<question>"` — token-budgeted, ranked page
+  stubs for a scoped question. Start here.
+- `wikitoolkit page <id>` — read one page in full (file summaries,
+  API outlines, content). Use the ids returned by `query`.
+- `wikitoolkit related <id>` — follow typed edges (`contains`,
+  `references`) to neighbouring files/modules.
+- `wikitoolkit status` — plane statistics and staleness.
+- `wikitoolkit build` — refresh the graph after large changes
+  (a git post-commit hook may already keep it fresh).
+
+**Query discipline** (avoids the two most common ways the wiki
+"fails" — which are usually caller error, not missing coverage):
+
+1. **Query for the *thing*, not for your *hypothesis* about it.** The
+   ranking is semantic — extra concept words steer it toward those
+   concepts. To locate the `EventBus` class, ask
+   `"EventBus class publish subscribe events"` (returns the class page
+   at score 1.00), NOT `"EventBus backends message queue MQ transport"`
+   (the "message queue / transport" terms pull in unrelated broker/
+   transport pages and bury the class). Name the symbol/module/
+   subsystem you want; add your hypothesis terms only after you've
+   found the page and are reading it.
+2. **Follow the thread before falling back to grep.** If a result
+   scores low, or names a "re-export" / "canonical location" / parent
+   module, that is a breadcrumb — resolve it with `wikitoolkit page
+   <id>` or `wikitoolkit related <id>` (one hop usually lands the real
+   page). Do NOT jump to `grep`/`find` just because the first `query`
+   didn't rank the exact page first.
+
+The `/parrotwiki` command wraps these (e.g. `/parrotwiki query how
+does ingest work`, `/parrotwiki --wiki` to export a human-readable
+markdown wiki). Only fall back to Grep/Glob/Read once a clean query
+*and* a page/related follow-up have genuinely come up empty, and
+consider `wikitoolkit build` if results look stale.
+<!-- parrot:wiki:end -->

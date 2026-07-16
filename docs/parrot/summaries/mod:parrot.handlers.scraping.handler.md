@@ -4,7 +4,7 @@ title: parrot.handlers.scraping.handler
 id: mod:parrot.handlers.scraping.handler
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ScrapingHandler — Class-based HTTP view for plan CRUD and scrape/crawl execution.
 relates_to:
 - concept: class:parrot.handlers.scraping.handler.ScrapingHandler

@@ -4,7 +4,7 @@ title: parrot.models.interactive
 id: mod:parrot.models.interactive
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Models for Interactive HTML Artifacts ("vibe-coding" canvas).
 relates_to:
 - concept: class:parrot.models.interactive.InteractiveRenderResult

@@ -4,7 +4,7 @@ title: parrot.core.events.lifecycle.trace
 id: mod:parrot.core.events.lifecycle.trace
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: W3C Trace Context dataclass for lifecycle event propagation.
 relates_to:
 - concept: class:parrot.core.events.lifecycle.trace.TraceContext

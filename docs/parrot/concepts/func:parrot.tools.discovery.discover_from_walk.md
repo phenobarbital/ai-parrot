@@ -4,7 +4,7 @@ title: discover_from_walk()
 id: func:parrot.tools.discovery.discover_from_walk
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'Full discovery: walk packages and find all AbstractTool/AbstractToolkit
   subclasses.'
 ---

@@ -4,7 +4,7 @@ title: OrchestratorAgent AIMessage Preservation
 id: doc:docs-superpowers-specs-2026-04-20-orchestrator-aimessage-preservation-design-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: OrchestratorAgent exposes specialist agents as tools via `AgentTool`. When
   a specialist
 ---

@@ -4,7 +4,7 @@ title: CodingTaskInput
 id: class:parrot_tools.code_toolkit.CodingTaskInput
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Shared input fields for code toolkit tools.
 ---
 

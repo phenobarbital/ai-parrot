@@ -4,7 +4,7 @@ title: parrot_tools.interfaces.gigsmart.client
 id: mod:parrot_tools.interfaces.gigsmart.client
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: GigSmart GraphQL client — aiohttp-based transport with retry and error classification.
 relates_to:
 - concept: class:parrot_tools.interfaces.gigsmart.client.GigSmartClient

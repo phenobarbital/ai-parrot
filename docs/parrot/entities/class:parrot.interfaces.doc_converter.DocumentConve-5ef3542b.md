@@ -4,7 +4,7 @@ title: DocumentConverterInterface
 id: class:parrot.interfaces.doc_converter.DocumentConverterInterface
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Wraps Docling's DocumentConverter with async support and configurable options.
 ---
 

@@ -4,7 +4,7 @@ title: parrot_tools.bingsearch
 id: mod:parrot_tools.bingsearch
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Bing Search Tool implementation for the ai-parrot framework.
 relates_to:
 - concept: class:parrot_tools.bingsearch.BingSearchArgs

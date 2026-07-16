@@ -4,7 +4,7 @@ title: rehydrate_user_mcp_servers()
 id: func:parrot.integrations.telegram.mcp_commands.rehydrate_user_mcp_servers
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Re-attach every persisted MCP server to ``tool_manager``.
 ---
 

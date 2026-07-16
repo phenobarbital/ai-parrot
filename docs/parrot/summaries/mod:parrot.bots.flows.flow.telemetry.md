@@ -4,7 +4,7 @@ title: parrot.bots.flows.flow.telemetry
 id: mod:parrot.bots.flows.flow.telemetry
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: FlowLifecycleAdapter — bridge AgentsFlow scheduler events to FEAT-176.
 relates_to:
 - concept: class:parrot.bots.flows.flow.telemetry.FlowLifecycleAdapter

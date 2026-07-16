@@ -4,7 +4,7 @@ title: AbstractOdooTransport
 id: class:parrot_tools.odoo.transport.base.AbstractOdooTransport
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Common surface for JSON-2, legacy JSON-RPC, and XML-RPC backends.
 ---
 

@@ -4,7 +4,7 @@ title: parrot_tools.databasequery
 id: mod:parrot_tools.databasequery
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Compat shim — use parrot.tools.databasequery instead.
 relates_to:
 - concept: mod:parrot.security

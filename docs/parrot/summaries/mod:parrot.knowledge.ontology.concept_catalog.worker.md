@@ -4,7 +4,7 @@ title: parrot.knowledge.ontology.concept_catalog.worker
 id: mod:parrot.knowledge.ontology.concept_catalog.worker
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Concept Catalog Sync Worker (FEAT-159 TASK-1089).
 relates_to:
 - concept: class:parrot.knowledge.ontology.concept_catalog.worker.ConceptCatalogSyncWorker

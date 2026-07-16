@@ -4,7 +4,7 @@ title: CompanyPaymentDatesType
 id: class:parrot_tools.interfaces.workday.handlers.payroll.CompanyPaymentDatesType
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Get_Company_Payment_Dates — company payment dates in a window.
 relates_to:
 - concept: class:parrot_tools.interfaces.workday.handlers.base.WorkdayTypeBase

@@ -409,6 +409,15 @@ integrations = [
     # azure-teambots moved to ai-parrot-integrations[msteams]
 ]
 
+# FEAT-310: gRPC ingress adapter (parrot.events.v1 — GrpcIngress).
+# grpcio-tools included for regenerating the committed pb2 modules
+# (see parrot/core/events/bus/ingress/proto/README.md). Keep versions
+# compatible with the protobuf 6.x runtime used by the committed gencode.
+grpc = [
+    "grpcio>=1.74.0",
+    "grpcio-tools>=1.74.0",
+]
+
 # milvus extra MOVED to ai-parrot-embeddings[milvus] in FEAT-201.
 # chroma extra MOVED to ai-parrot-embeddings[chroma] in FEAT-201.
 

@@ -4,7 +4,7 @@ title: FredAPITool Documentation
 id: doc:docs-fred-api-tool-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: The `FredAPITool` allows `ai-parrot` agents to interact with the Federal
   Reserve Economic Data (FRED) API. It provides access to a vast repository of economic
   data series, including interest rates, inflation metrics, employment numbers, and

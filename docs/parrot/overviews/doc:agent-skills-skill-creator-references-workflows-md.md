@@ -4,7 +4,7 @@ title: Workflow Patterns
 id: doc:agent-skills-skill-creator-references-workflows-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'For complex tasks, break operations into clear, sequential steps. It is
   often helpful to give Claude an overview of the process towards the beginning of
   SKILL.md:'

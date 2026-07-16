@@ -4,7 +4,7 @@ title: SQLitePersistence
 id: class:parrot.knowledge.graphindex.persist_sqlite.SQLitePersistence
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Per-tenant SQLite persistence backend for GraphIndex.
 ---
 

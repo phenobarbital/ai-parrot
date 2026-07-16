@@ -4,7 +4,7 @@ title: parrot_tools.ibkr.tws_backend
 id: mod:parrot_tools.ibkr.tws_backend
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: TWS API backend for IBKR using ib_async.
 relates_to:
 - concept: class:parrot_tools.ibkr.tws_backend.TWSBackend

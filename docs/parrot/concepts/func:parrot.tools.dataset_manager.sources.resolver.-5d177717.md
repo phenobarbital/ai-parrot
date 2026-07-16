@@ -4,7 +4,7 @@ title: resolve_physical_resources()
 id: func:parrot.tools.dataset_manager.sources.resolver.resolve_physical_resources
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Resolve a DataSource to the set of physical resources it will touch.
 ---
 

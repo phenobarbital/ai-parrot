@@ -4,7 +4,7 @@ title: InTableParentSearcher
 id: class:parrot.stores.parents.in_table.InTableParentSearcher
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Fetch parents from the same vector table by metadata filter.
 relates_to:
 - concept: class:parrot.stores.parents.abstract.AbstractParentSearcher

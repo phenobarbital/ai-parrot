@@ -4,7 +4,7 @@ title: Gemma4Client
 id: class:parrot.clients.gemma4.Gemma4Client
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Client for Google Gemma 4 multimodal instruction-tuned models.
 relates_to:
 - concept: class:parrot.clients.base.AbstractClient

@@ -4,7 +4,7 @@ title: parrot_tools.interfaces.workday.parsers.job_posting_site_parsers
 id: mod:parrot_tools.interfaces.workday.parsers.job_posting_site_parsers
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Job Posting Site parsers for Workday Get_Job_Posting_Sites operation.
 relates_to:
 - concept: func:parrot_tools.interfaces.workday.parsers.job_posting_site_parsers.parse_integration_id_data

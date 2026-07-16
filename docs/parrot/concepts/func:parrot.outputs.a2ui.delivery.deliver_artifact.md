@@ -4,7 +4,7 @@ title: deliver_artifact()
 id: func:parrot.outputs.a2ui.delivery.deliver_artifact
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Deliver a ``RenderedArtifact`` via ``owner.send_notification`` (per-provider
   policy).
 ---

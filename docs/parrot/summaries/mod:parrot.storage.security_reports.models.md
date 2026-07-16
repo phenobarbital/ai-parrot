@@ -4,7 +4,7 @@ title: parrot.storage.security_reports.models
 id: mod:parrot.storage.security_reports.models
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pydantic v2 data models for the cross-session security report catalog.
 relates_to:
 - concept: class:parrot.storage.security_reports.models.EmbeddedFinding

@@ -4,7 +4,7 @@ title: resolve_cli_o365_principal()
 id: func:parrot.cli.identity.resolve_cli_o365_principal
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Read and normalize the CLI's canonical O365 principal from the environment.
 ---
 

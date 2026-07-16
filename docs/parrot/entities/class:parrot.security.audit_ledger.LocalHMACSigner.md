@@ -4,7 +4,7 @@ title: LocalHMACSigner
 id: class:parrot.security.audit_ledger.LocalHMACSigner
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HMAC-SHA256 signer for local development and testing.
 relates_to:
 - concept: class:parrot.security.audit_ledger.AbstractKMSSigner

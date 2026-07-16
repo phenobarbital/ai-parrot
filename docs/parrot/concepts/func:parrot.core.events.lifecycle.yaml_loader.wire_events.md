@@ -4,7 +4,7 @@ title: wire_events()
 id: func:parrot.core.events.lifecycle.yaml_loader.wire_events
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Apply a parsed YAML ``events:`` block to the bot's event registry.
 ---
 

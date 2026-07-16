@@ -4,7 +4,7 @@ title: parrot.security.vault_utils
 id: mod:parrot.security.vault_utils
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Vault CRUD helpers — shared encrypted-credential storage for handlers.
 relates_to:
 - concept: func:parrot.security.vault_utils.delete_vault_credential

@@ -4,7 +4,7 @@ title: snapshot_from_driver()
 id: func:parrot_tools.scraping.page_snapshot.snapshot_from_driver
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Build a ``PageSnapshot`` from a live AbstractDriver (Selenium or Playwright).
 ---
 

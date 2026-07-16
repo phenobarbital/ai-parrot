@@ -4,7 +4,7 @@ title: CacheableSegment
 id: class:parrot.bots.prompts.segments.CacheableSegment
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: One chunk of the system prompt with a cache-eligibility flag.
 ---
 

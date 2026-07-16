@@ -4,7 +4,7 @@ title: get_concentrated_risk_positions()
 id: func:parrot_tools.quant.stress_testing.get_concentrated_risk_positions
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Identify positions that contribute disproportionately to losses.
 ---
 

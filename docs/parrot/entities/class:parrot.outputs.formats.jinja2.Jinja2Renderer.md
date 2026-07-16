@@ -4,7 +4,7 @@ title: Jinja2Renderer
 id: class:parrot.outputs.formats.jinja2.Jinja2Renderer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Renders the output using a Jinja2 template.
 relates_to:
 - concept: class:parrot.outputs.formats.base.BaseRenderer

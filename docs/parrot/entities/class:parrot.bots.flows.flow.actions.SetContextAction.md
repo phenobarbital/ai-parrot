@@ -4,7 +4,7 @@ title: SetContextAction
 id: class:parrot.bots.flows.flow.actions.SetContextAction
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Extract a value from the result and set it in the shared context.
 ---
 

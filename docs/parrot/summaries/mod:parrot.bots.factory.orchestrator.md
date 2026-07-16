@@ -4,7 +4,7 @@ title: parrot.bots.factory.orchestrator
 id: mod:parrot.bots.factory.orchestrator
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AgentFactoryOrchestrator — the user-facing entry point of the factory.
 relates_to:
 - concept: class:parrot.bots.factory.orchestrator.AgentFactoryOrchestrator

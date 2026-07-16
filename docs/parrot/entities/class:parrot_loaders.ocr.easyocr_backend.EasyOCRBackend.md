@@ -4,7 +4,7 @@ title: EasyOCRBackend
 id: class:parrot_loaders.ocr.easyocr_backend.EasyOCRBackend
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: OCR backend using EasyOCR with optional GPU acceleration.
 ---
 

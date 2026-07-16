@@ -4,7 +4,7 @@ title: GetNextQuestionTool
 id: class:parrot.advisors.tools.question.GetNextQuestionTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Returns the next optimal question to ask the user.
 relates_to:
 - concept: class:parrot.advisors.tools.base.BaseAdvisorTool

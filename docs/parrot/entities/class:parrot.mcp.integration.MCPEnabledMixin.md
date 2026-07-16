@@ -4,7 +4,7 @@ title: MCPEnabledMixin
 id: class:parrot.mcp.integration.MCPEnabledMixin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Mixin to add complete MCP capabilities to agents.
 ---
 

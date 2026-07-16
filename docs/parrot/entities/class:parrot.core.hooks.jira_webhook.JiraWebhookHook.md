@@ -4,7 +4,7 @@ title: JiraWebhookHook
 id: class:parrot.core.hooks.jira_webhook.JiraWebhookHook
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Receives Jira webhook POST requests via an aiohttp route.
 relates_to:
 - concept: class:parrot.core.hooks.base.BaseHook

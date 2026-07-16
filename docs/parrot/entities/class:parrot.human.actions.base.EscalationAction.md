@@ -4,7 +4,7 @@ title: EscalationAction
 id: class:parrot.human.actions.base.EscalationAction
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Abstract base for escalation logic that triggers external systems.
 ---
 

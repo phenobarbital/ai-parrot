@@ -4,7 +4,7 @@ title: PrintPDFHandler
 id: class:parrot.handlers.print_pdf.PrintPDFHandler
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Converts HTML to PDF and returns the PDF as a binary response.
 ---
 

@@ -4,7 +4,7 @@ title: upsert_user_agent_toolkit()
 id: func:parrot.auth.oauth2.persistence.upsert_user_agent_toolkit
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Upsert an enablement record in ``user_agent_toolkits``.
 ---
 

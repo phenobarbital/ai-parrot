@@ -4,7 +4,7 @@ title: ProductAdvisorToolArgs
 id: class:parrot.advisors.tools.base.ProductAdvisorToolArgs
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Base args schema with common fields for advisor tools.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractToolArgsSchema

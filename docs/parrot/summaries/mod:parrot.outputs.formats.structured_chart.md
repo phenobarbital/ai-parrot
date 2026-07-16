@@ -4,7 +4,7 @@ title: parrot.outputs.formats.structured_chart
 id: mod:parrot.outputs.formats.structured_chart
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'FEAT-215 (FEAT-223 Module 2 / FEAT-224 Module 2): Structured Chart Output
   Mode renderer.'
 relates_to:

@@ -4,7 +4,7 @@ title: parrot.knowledge.pageindex.embedding_store
 id: mod:parrot.knowledge.pageindex.embedding_store
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Two-tier content-addressed embedding store for PageIndex trees.
 relates_to:
 - concept: class:parrot.knowledge.pageindex.embedding_store.NodeEmbeddingStore

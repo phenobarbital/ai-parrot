@@ -4,7 +4,7 @@ title: upload_file_to_slack()
 id: func:parrot.integrations.slack.files.upload_file_to_slack
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Upload file to Slack using v2 async upload flow.
 ---
 

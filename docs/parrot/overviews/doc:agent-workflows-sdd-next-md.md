@@ -4,8 +4,8 @@ title: /sdd-next — Suggest Next Tasks to Assign
 id: doc:agent-workflows-sdd-next-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Suggest next unblocked SDD tasks to assign'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Read `sdd/tasks/.index.json`, identify unblocked tasks, and suggest assignments.
 ---
 
 ---

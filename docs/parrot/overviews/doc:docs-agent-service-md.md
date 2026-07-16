@@ -4,7 +4,7 @@ title: AgentService — Standalone Runtime for Autonomous Agents
 id: doc:docs-agent-service-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Agent resolution uses `BotManager.get_bot()` — the same mechanism used by
   `TelegramBotManager` and the `AutonomyOrchestrator`.
 relates_to:

@@ -4,7 +4,7 @@ title: 4. Interaction surface — WebSockets, audio, integrations
 id: doc:docs-architecture-04-interaction-surface-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AI-Parrot speaks to humans through a deliberately polyglot front. Every
 ---
 

@@ -4,7 +4,7 @@ title: Toolbar API Documentation
 id: doc:docs-toolbar-api-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: The `Toolbar API` allows modules and pages to dynamically inject buttons
   and actions into the global Top Toolbar of the AgentUI application. This ensures
   that context-specific actions are readily available to the user without cluttering

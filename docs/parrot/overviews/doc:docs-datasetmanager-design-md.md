@@ -4,7 +4,7 @@ title: DatasetManager Implementation Walkthrough
 id: doc:docs-datasetmanager-design-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Implemented a `DatasetManager` class that acts as a data catalog and toolkit
   for `PandasAgent`, replacing the standalone `MetadataTool` with integrated functionality.
 ---

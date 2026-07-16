@@ -4,7 +4,7 @@ title: parrot.loaders.abstract
 id: mod:parrot.loaders.abstract
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Module parrot.loaders.abstract
 relates_to:
 - concept: class:parrot.loaders.abstract.AbstractLoader

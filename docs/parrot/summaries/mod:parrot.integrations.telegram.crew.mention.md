@@ -4,7 +4,7 @@ title: parrot.integrations.telegram.crew.mention
 id: mod:parrot.integrations.telegram.crew.mention
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: MentionBuilder — utilities for constructing @mention strings.
 relates_to:
 - concept: func:parrot.integrations.telegram.crew.mention.format_reply

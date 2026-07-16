@@ -4,7 +4,7 @@ title: TicketAction
 id: class:parrot.human.actions.ticket.TicketAction
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Dispatches ticket-creation escalation actions to Zammad (V1).
 relates_to:
 - concept: class:parrot.human.actions.base.EscalationAction

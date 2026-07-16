@@ -4,7 +4,7 @@ title: export_graph()
 id: func:parrot.knowledge.graphindex.export_html.export_graph
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Build the payload and write both ``graph.json`` and ``graph.html``.
 ---
 

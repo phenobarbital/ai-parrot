@@ -4,7 +4,7 @@ title: CrewExecutionHistoryHandler
 id: class:parrot.handlers.crew.execution_history_handler.CrewExecutionHistoryHandler
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: REST API Handler for saved crew execution history, replay, and scheduling.
 ---
 

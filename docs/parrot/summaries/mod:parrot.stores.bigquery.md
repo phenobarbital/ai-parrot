@@ -4,7 +4,7 @@ title: parrot.stores.bigquery
 id: mod:parrot.stores.bigquery
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Module parrot.stores.bigquery
 relates_to:
 - concept: class:parrot.stores.bigquery.BigQueryStore

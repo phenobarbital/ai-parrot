@@ -4,7 +4,7 @@ title: parrot.outputs.a2ui.deeplink
 id: mod:parrot.outputs.a2ui.deeplink
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Deep-link token service (Module 8, goal G6).
 relates_to:
 - concept: class:parrot.outputs.a2ui.deeplink.DeepLinkError

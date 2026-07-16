@@ -4,7 +4,7 @@ title: parrot_tools.codeinterpreter
 id: mod:parrot_tools.codeinterpreter
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: CodeInterpreterTool - Agent-as-Tool for comprehensive code analysis.
 relates_to:
 - concept: mod:parrot_tools

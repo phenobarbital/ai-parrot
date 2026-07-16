@@ -4,7 +4,7 @@ title: HandoffTool
 id: class:parrot.core.tools.handoff.HandoffTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Tool for handing off task execution to a human user.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractTool

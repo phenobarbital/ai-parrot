@@ -4,7 +4,7 @@ title: parrot_tools.pulumi.toolkit
 id: mod:parrot_tools.pulumi.toolkit
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pulumi Toolkit for infrastructure deployment.
 relates_to:
 - concept: class:parrot_tools.pulumi.toolkit.PulumiToolkit

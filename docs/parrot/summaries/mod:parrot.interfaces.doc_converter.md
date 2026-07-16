@@ -4,7 +4,7 @@ title: parrot.interfaces.doc_converter
 id: mod:parrot.interfaces.doc_converter
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: DocumentConverterInterface - Helper for document conversion via Docling.
 relates_to:
 - concept: class:parrot.interfaces.doc_converter.DocumentConverterInterface

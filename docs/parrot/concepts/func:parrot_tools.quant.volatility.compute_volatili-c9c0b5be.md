@@ -4,7 +4,7 @@ title: compute_volatility_term_structure()
 id: func:parrot_tools.quant.volatility.compute_volatility_term_structure
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Compute volatility across different time horizons.
 ---
 

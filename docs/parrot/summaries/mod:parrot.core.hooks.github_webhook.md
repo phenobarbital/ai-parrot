@@ -4,7 +4,7 @@ title: parrot.core.hooks.github_webhook
 id: mod:parrot.core.hooks.github_webhook
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: GitHub webhook hook — receives and parses GitHub pull_request events.
 relates_to:
 - concept: class:parrot.core.hooks.github_webhook.GitHubWebhookHook

@@ -4,7 +4,7 @@ title: reindex_node_ids()
 id: func:parrot.knowledge.pageindex.tree_ops.reindex_node_ids
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Reassign sequential 4-digit ``node_id`` values across the tree.
 ---
 

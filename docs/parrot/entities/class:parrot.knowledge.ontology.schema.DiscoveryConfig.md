@@ -4,7 +4,7 @@ title: DiscoveryConfig
 id: class:parrot.knowledge.ontology.schema.DiscoveryConfig
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Configuration for how relations are discovered in source data.
 ---
 

@@ -4,7 +4,7 @@ title: parrot.core.events
 id: pkg:parrot.core.events
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot.core.events (2 modules, 1 sub-packages).
 relates_to:
 - concept: mod:parrot.core.events.evb

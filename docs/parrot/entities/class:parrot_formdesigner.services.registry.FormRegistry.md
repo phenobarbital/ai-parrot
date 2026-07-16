@@ -4,7 +4,7 @@ title: FormRegistry
 id: class:parrot_formdesigner.services.registry.FormRegistry
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Thread-safe, multi-tenant registry for FormSchema objects.
 ---
 

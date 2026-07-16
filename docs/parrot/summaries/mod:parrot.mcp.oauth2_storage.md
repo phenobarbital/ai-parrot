@@ -4,7 +4,7 @@ title: parrot.mcp.oauth2_storage
 id: mod:parrot.mcp.oauth2_storage
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: VaultMCPTokenStorage — adapter bridging MCP SDK's TokenStorage protocol to
 relates_to:
 - concept: class:parrot.mcp.oauth2_storage.VaultMCPTokenStorage

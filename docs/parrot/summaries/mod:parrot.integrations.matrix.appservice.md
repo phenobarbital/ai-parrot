@@ -4,7 +4,7 @@ title: parrot.integrations.matrix.appservice
 id: mod:parrot.integrations.matrix.appservice
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Matrix Application Service for AI-Parrot.
 relates_to:
 - concept: class:parrot.integrations.matrix.appservice.MatrixAppService

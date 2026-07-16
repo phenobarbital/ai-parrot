@@ -4,7 +4,7 @@ title: CommandSanitizer
 id: class:parrot.security.command_sanitizer.CommandSanitizer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Multi-layered command sanitizer for shell / agent tool integration.
 ---
 

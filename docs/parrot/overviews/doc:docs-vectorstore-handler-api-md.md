@@ -4,7 +4,7 @@ title: Vector Store Handler — API Reference
 id: doc:docs-vectorstore-handler-api-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'REST API for vector store lifecycle management: create collections, load
   data (files, URLs, inline content), run test searches, and query configuration metadata.'
 ---

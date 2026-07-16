@@ -4,7 +4,7 @@ title: EditToolkit
 id: class:parrot_formdesigner.tools.edit_toolkit.EditToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Toolkit exposing FormSchema inspection and mutation as LLM-callable tools.
 relates_to:
 - concept: class:parrot.tools.toolkit.AbstractToolkit

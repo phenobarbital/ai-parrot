@@ -4,7 +4,7 @@ title: parrot.integrations.liveavatar.room_manager
 id: mod:parrot.integrations.liveavatar.room_manager
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: LiveKit room manager — BYO Cloud tokens (FEAT-242 Phase A — Module 3).
 relates_to:
 - concept: class:parrot.integrations.liveavatar.room_manager.LiveKitRoomManager

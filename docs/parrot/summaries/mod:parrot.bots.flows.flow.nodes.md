@@ -4,7 +4,7 @@ title: parrot.bots.flows.flow.nodes
 id: mod:parrot.bots.flows.flow.nodes
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: flows/flow/nodes.py — Decision + Interactive node types (FEAT-196 / TASK-1311).
 relates_to:
 - concept: class:parrot.bots.flows.flow.nodes.ApprovalDecision

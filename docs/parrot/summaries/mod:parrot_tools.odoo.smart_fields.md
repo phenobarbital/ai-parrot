@@ -4,7 +4,7 @@ title: parrot_tools.odoo.smart_fields
 id: mod:parrot_tools.odoo.smart_fields
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Smart field selection heuristic for OdooToolkit.
 relates_to:
 - concept: func:parrot_tools.odoo.smart_fields.select_smart_fields

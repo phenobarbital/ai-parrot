@@ -4,7 +4,7 @@ title: parrot.flows.dev_loop.nodes.close
 id: mod:parrot.flows.dev_loop.nodes.close
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: DevLoopCloseNode — terminal node that records a run's final state.
 relates_to:
 - concept: class:parrot.flows.dev_loop.nodes.close.DevLoopCloseNode

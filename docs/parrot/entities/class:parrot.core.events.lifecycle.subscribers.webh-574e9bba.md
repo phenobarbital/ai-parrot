@@ -4,7 +4,7 @@ title: WebhookSubscriber
 id: class:parrot.core.events.lifecycle.subscribers.webhook.WebhookSubscriber
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: EventProvider that POSTs serialized lifecycle events to an HTTPS endpoint.
 ---
 

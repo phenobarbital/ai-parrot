@@ -4,7 +4,7 @@ title: ChecklistBlock
 id: class:parrot.models.infographic.ChecklistBlock
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Visual checkbox-style list with optional checked/unchecked state.
 ---
 

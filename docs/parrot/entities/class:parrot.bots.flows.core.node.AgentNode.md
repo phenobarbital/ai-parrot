@@ -4,7 +4,7 @@ title: AgentNode
 id: class:parrot.bots.flows.core.node.AgentNode
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A graph node that wraps an ``AgentLike`` agent and an FSM.
 relates_to:
 - concept: class:parrot.bots.flows.core.node.Node

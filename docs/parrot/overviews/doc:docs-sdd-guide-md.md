@@ -4,7 +4,7 @@ title: Guía de uso de los comandos `/sdd-*`
 id: doc:docs-sdd-guide-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: SDD es nuestra forma de trabajar features con Claude Code. La regla
 ---
 

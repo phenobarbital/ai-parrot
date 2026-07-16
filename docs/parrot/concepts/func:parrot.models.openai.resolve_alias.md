@@ -4,7 +4,7 @@ title: resolve_alias()
 id: func:parrot.models.openai.resolve_alias
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Map a deprecated model ID to the recommended migration target.
 ---
 

@@ -4,7 +4,7 @@ title: AIMessage
 id: class:parrot.models.responses.AIMessage
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Unified AI message response that can handle various output types.
 ---
 

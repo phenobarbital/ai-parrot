@@ -4,7 +4,7 @@ title: Agent Configuration via `agents.yaml`
 id: doc:docs-agent-config-creation-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: The AI-Parrot `AgentRegistry` allows you to define and manage agents declaratively
   using a YAML configuration file. This approach is preferred for static agent definitions,
   enabling easy modification of models, tools, and behaviors without changing code.

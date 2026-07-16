@@ -4,8 +4,9 @@ title: /sdd-codereview — Code Review a Completed Task
 id: doc:agent-workflows-sdd-codereview-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Run a code-review analysis over a completed SDD task'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Perform a structured code review over the implementation produced by a completed
+  SDD task.
 ---
 
 ---

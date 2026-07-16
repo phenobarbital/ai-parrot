@@ -4,7 +4,7 @@ title: HTTPService
 id: class:parrot.interfaces.http.HTTPService
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HTTPService.
 relates_to:
 - concept: class:parrot.interfaces.dataframes.PandasDataframe

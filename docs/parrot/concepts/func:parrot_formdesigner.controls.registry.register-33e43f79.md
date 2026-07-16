@@ -4,7 +4,7 @@ title: register_field_control()
 id: func:parrot_formdesigner.controls.registry.register_field_control
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Register (or overwrite) a control entry in the toolbar registry.
 ---
 

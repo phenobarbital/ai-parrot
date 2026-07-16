@@ -4,7 +4,7 @@ title: PromptInjectionDetector
 id: class:parrot.security.prompt_injection.PromptInjectionDetector
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Detects and mitigates prompt injection attempts in user questions.
 ---
 

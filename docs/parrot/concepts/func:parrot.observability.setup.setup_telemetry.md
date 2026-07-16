@@ -4,7 +4,7 @@ title: setup_telemetry()
 id: func:parrot.observability.setup.setup_telemetry
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Configure OpenTelemetry + cost observability and wire to the global registry.
 ---
 

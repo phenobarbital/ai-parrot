@@ -4,7 +4,7 @@ title: ParamSpec
 id: class:parrot_tools.scraping.template_plan.ParamSpec
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Typed parameter definition for a :class:`TemplatePlan`.
 ---
 

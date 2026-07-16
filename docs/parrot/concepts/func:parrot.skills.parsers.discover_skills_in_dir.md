@@ -4,7 +4,7 @@ title: discover_skills_in_dir()
 id: func:parrot.skills.parsers.discover_skills_in_dir
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Discover single-file and composite skills in a directory (non-recursive).
 ---
 

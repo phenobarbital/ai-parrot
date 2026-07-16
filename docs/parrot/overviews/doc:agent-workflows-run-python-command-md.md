@@ -4,8 +4,8 @@ title: Run Python Command
 id: doc:agent-workflows-run-python-command-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Run a Python command inside the virtual environment'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: 1. Check if the virtual environment exists in `.venv`.
 ---
 
 ---

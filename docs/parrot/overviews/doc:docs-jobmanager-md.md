@@ -4,7 +4,7 @@ title: JobManagerMixin Architecture Documentation
 id: doc:docs-jobmanager-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: The `JobManagerMixin` is a sophisticated architectural pattern that bridges
   synchronous web views with asynchronous job execution systems. It was designed specifically
   for AI-Parrot's needs but maintains flexibility for any Python web framework.

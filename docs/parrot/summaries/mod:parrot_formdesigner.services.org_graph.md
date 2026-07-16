@@ -4,7 +4,7 @@ title: parrot_formdesigner.services.org_graph
 id: mod:parrot_formdesigner.services.org_graph
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: OrgGraphService — árbol multi-jerarquía read-only sobre auth.* + geografía.
 relates_to:
 - concept: class:parrot_formdesigner.services.org_graph.OrgGraph

@@ -4,7 +4,7 @@ title: parrot.integrations.mcp.fireflies_a2a
 id: mod:parrot.integrations.mcp.fireflies_a2a
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Fireflies.ai MCP credential adapter for the A2A per-user credential bridge.
 relates_to:
 - concept: class:parrot.integrations.mcp.fireflies_a2a.FirefliesCredentialResolver

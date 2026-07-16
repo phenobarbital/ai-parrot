@@ -4,7 +4,7 @@ title: parrot_tools.ibkr.risk
 id: mod:parrot_tools.ibkr.risk
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pre-trade risk management for IBKR agent-driven trading.
 relates_to:
 - concept: class:parrot_tools.ibkr.risk.RiskCheckResult

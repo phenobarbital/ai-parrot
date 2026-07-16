@@ -4,7 +4,7 @@ title: CallFunction
 id: class:parrot.outputs.a2ui.models.CallFunction
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: '``callFunction`` — an agent invokes a named client-side function (schema
   only).'
 relates_to:

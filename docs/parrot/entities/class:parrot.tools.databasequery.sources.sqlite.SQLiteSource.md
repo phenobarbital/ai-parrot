@@ -4,7 +4,7 @@ title: SQLiteSource
 id: class:parrot.tools.databasequery.sources.sqlite.SQLiteSource
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: SQLite database source.
 relates_to:
 - concept: class:parrot.tools.databasequery.base.AbstractDatabaseSource

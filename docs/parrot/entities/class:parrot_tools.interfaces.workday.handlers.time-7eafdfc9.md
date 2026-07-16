@@ -4,7 +4,7 @@ title: TimeOffBalanceType
 id: class:parrot_tools.interfaces.workday.handlers.time_off_balances.TimeOffBalanceType
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Handles Get_Time_Off_Plan_Balances operation for Workday Absence Management
   API.
 relates_to:

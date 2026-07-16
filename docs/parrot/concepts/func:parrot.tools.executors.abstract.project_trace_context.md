@@ -4,7 +4,7 @@ title: project_trace_context()
 id: func:parrot.tools.executors.abstract.project_trace_context
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Project a TraceContext into a JSON-safe dict.
 ---
 

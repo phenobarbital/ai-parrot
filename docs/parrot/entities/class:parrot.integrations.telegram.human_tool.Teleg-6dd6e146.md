@@ -4,7 +4,7 @@ title: TelegramHumanTool
 id: class:parrot.integrations.telegram.human_tool.TelegramHumanTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A :class:`HumanTool` that auto-resolves manager + target from Telegram context.
 relates_to:
 - concept: class:parrot.human.tool.HumanTool

@@ -4,7 +4,7 @@ title: handle_form_controls()
 id: func:parrot_formdesigner.api.controls.handle_form_controls
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: GET /api/v1/form-controls — return the registered control metadata.
 ---
 

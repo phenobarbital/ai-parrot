@@ -4,7 +4,7 @@ title: render_skills_prompt_layer()
 id: func:parrot.skills.prompt.render_skills_prompt_layer
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Build a static ``<available_skills>`` XML PromptLayer from the registry.
 ---
 

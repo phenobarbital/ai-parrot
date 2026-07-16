@@ -4,8 +4,8 @@ title: Browser Automation with agent-browser (async Playwright)
 id: doc:agent-skills-agent-browser-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: agent-browser'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: AI-Parrot adaptation of the upstream `agent-browser` Node CLI. Same command
 ---
 
 ---

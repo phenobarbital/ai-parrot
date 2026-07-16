@@ -4,7 +4,7 @@ title: parrot.embeddings.catalog
 id: mod:parrot.embeddings.catalog
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Curated catalog of supported embedding models.
 relates_to:
 - concept: class:parrot.embeddings.catalog.EmbeddingModelEntry

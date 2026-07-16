@@ -4,7 +4,7 @@ title: parrot.observability.bootstrap
 id: mod:parrot.observability.bootstrap
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ensure_observability_bootstrapped — env-driven, idempotent auto-boot.
 relates_to:
 - concept: func:parrot.observability.bootstrap.ensure_observability_bootstrapped

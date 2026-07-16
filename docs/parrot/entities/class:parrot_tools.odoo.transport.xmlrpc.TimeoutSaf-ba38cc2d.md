@@ -4,7 +4,7 @@ title: TimeoutSafeTransport
 id: class:parrot_tools.odoo.transport.xmlrpc.TimeoutSafeTransport
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HTTPS XML-RPC transport with explicit socket timeout.
 ---
 

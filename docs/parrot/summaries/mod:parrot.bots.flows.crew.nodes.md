@@ -4,7 +4,7 @@ title: parrot.bots.flows.crew.nodes
 id: mod:parrot.bots.flows.crew.nodes
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Crew-specific node type for AgentCrew orchestration.
 relates_to:
 - concept: class:parrot.bots.flows.crew.nodes.CrewAgentNode

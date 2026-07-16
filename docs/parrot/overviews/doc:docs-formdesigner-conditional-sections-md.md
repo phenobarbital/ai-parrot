@@ -4,7 +4,7 @@ title: 'Form Designer — Conditional Sections: Pre/Post Dependencies'
 id: doc:docs-formdesigner-conditional-sections-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This document is the authoritative reference for the conditional-logic system
 relates_to:
 - concept: mod:parrot.forms

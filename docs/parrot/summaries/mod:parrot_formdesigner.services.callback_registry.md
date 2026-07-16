@@ -4,7 +4,7 @@ title: parrot_formdesigner.services.callback_registry
 id: mod:parrot_formdesigner.services.callback_registry
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Tenant-scoped form callback registry for FieldType.REST (mode=callback).
 relates_to:
 - concept: func:parrot_formdesigner.services.callback_registry.get_form_callback

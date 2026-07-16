@@ -4,7 +4,7 @@ title: transition_issue_with_candidates()
 id: func:parrot.flows.dev_loop.nodes.base.transition_issue_with_candidates
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Apply the first candidate Jira transition that the workflow exposes.
 ---
 

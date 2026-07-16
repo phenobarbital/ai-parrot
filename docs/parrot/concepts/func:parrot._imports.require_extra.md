@@ -4,7 +4,7 @@ title: require_extra()
 id: func:parrot._imports.require_extra
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Verify that all required modules for an extras group are importable.
 ---
 

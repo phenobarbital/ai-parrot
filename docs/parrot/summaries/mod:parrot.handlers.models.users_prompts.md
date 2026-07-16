@@ -4,7 +4,7 @@ title: parrot.handlers.models.users_prompts
 id: mod:parrot.handlers.models.users_prompts
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Database model for per-user prompts (``navigator.users_prompts``).
 relates_to:
 - concept: class:parrot.handlers.models.users_prompts.UserPrompts

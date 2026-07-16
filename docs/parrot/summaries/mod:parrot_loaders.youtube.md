@@ -4,7 +4,7 @@ title: parrot_loaders.youtube
 id: mod:parrot_loaders.youtube
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Module parrot_loaders.youtube
 relates_to:
 - concept: class:parrot_loaders.youtube.YoutubeLoader

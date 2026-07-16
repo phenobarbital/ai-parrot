@@ -4,7 +4,7 @@ title: parrot.stores.kb.local
 id: mod:parrot.stores.kb.local
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'LocalKB: Knowledge Base from local text and markdown files with FAISS vector
   store.'
 relates_to:

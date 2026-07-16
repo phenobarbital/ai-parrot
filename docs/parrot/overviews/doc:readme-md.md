@@ -4,7 +4,7 @@ title: AI-Parrot
 id: doc:readme-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Whether you need a simple chatbot, a complex multi-agent orchestration workflow,
   or a robust production-ready AI service, AI-Parrot exposes the primitives to build
   it efficiently.

@@ -4,7 +4,7 @@ title: AI-Parrot Tools Documentation
 id: doc:docs-tools-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Complete reference guide for all available tools in the AI-parrot library.
 relates_to:
 - concept: mod:parrot.bots.agent

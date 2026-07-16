@@ -4,7 +4,7 @@ title: select_smart_fields()
 id: func:parrot_tools.odoo.smart_fields.select_smart_fields
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Select the most LLM-useful fields from an Odoo ``fields_get`` response.
 ---
 

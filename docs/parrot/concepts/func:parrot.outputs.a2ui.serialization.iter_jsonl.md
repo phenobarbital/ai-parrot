@@ -4,7 +4,7 @@ title: iter_jsonl()
 id: func:parrot.outputs.a2ui.serialization.iter_jsonl
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parse a JSONL payload into A2UI messages, one per non-empty line.
 ---
 

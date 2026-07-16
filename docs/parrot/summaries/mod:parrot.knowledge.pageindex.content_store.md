@@ -4,7 +4,7 @@ title: parrot.knowledge.pageindex.content_store
 id: mod:parrot.knowledge.pageindex.content_store
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Per-node markdown content store for PageIndex trees.
 relates_to:
 - concept: class:parrot.knowledge.pageindex.content_store.NodeContentStore

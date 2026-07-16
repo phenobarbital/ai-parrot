@@ -4,7 +4,7 @@ title: WizardWithSummaryDialog
 id: class:parrot.integrations.msteams.dialogs.presets.wizard_summary.WizardWithSummaryDialog
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Multi-step wizard with a final summary/confirmation step.
 relates_to:
 - concept: class:parrot.integrations.msteams.dialogs.presets.wizard.WizardFormDialog

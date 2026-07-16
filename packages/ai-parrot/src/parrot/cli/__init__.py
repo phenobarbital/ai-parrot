@@ -53,8 +53,8 @@ class LazyGroup(click.Group):
             return None
         module_path = self._lazy_commands[cmd_name]
         mod = importlib.import_module(module_path)
-        # The command object has the same name as the last part of the module
-        return getattr(mod, cmd_name)
+        attr_name = cmd_name.replace("-", "_")
+        return getattr(mod, attr_name, None) or getattr(mod, cmd_name, None)
 
 
 @click.group(cls=LazyGroup)
@@ -73,6 +73,7 @@ cli._lazy_commands = {
     "agent": "parrot.cli.agent_repl",
     "wiki": "parrot.knowledge.wiki.cli",
     "claude": "parrot.knowledge.wiki.claude_code.cli",
+    "generate-keys": "parrot.cli.generate_keys",
 }
 
 if __name__ == "__main__":

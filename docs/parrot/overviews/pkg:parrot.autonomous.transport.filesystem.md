@@ -4,7 +4,7 @@ title: parrot.autonomous.transport.filesystem
 id: pkg:parrot.autonomous.transport.filesystem
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot.autonomous.transport.filesystem (10 modules, 0 sub-packages).
 relates_to:
 - concept: mod:parrot.autonomous.transport.filesystem.__main__

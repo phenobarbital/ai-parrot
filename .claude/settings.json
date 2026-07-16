@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Grep|Glob|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "wikitoolkit claude-hook",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

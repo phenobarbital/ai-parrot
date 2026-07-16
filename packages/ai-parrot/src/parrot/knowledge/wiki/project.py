@@ -36,7 +36,7 @@ class ClaudeIntegrationConfig(BaseModel):
 
     nudge_cooldown_seconds: int = Field(default=300, ge=0)
     nudge_tools: list[str] = Field(
-        default_factory=lambda: ["Grep", "Glob", "Read"]
+        default_factory=lambda: ["Grep", "Glob", "Read", "Bash"]
     )
 
 

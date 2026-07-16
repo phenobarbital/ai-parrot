@@ -4,7 +4,7 @@ title: parrot.auth.permission
 id: mod:parrot.auth.permission
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Permission data models for granular tool/toolkit access control.
 relates_to:
 - concept: class:parrot.auth.permission.PermissionContext

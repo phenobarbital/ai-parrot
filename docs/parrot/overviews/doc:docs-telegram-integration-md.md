@@ -4,7 +4,7 @@ title: Telegram Bot Integration Guide
 id: doc:docs-telegram-integration-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 1. Open Telegram and search for **@BotFather**
 relates_to:
 - concept: mod:parrot.manager

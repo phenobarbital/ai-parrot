@@ -4,8 +4,9 @@ title: Skill
 id: doc:agent-skills-docstring-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: docstring'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Document a Python module and its classes using Google-style docstrings following
+  project conventions. The class name is provided as an argument.
 ---
 
 ---

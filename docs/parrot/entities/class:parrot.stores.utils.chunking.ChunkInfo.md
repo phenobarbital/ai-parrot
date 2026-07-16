@@ -4,7 +4,7 @@ title: ChunkInfo
 id: class:parrot.stores.utils.chunking.ChunkInfo
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Information about a document chunk
 ---
 

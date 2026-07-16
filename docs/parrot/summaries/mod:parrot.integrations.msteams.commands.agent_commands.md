@@ -4,7 +4,7 @@ title: parrot.integrations.msteams.commands.agent_commands
 id: mod:parrot.integrations.msteams.commands.agent_commands
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Core agent commands for MS Teams (FEAT-XXX).
 relates_to:
 - concept: class:parrot.integrations.msteams.commands.agent_commands.AgentCommandHandler

@@ -4,7 +4,7 @@ title: page_list_to_group_text()
 id: func:parrot.knowledge.pageindex.utils.page_list_to_group_text
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Split page contents into groups respecting token limits.
 ---
 

@@ -4,7 +4,7 @@ title: QueryIntent
 id: class:parrot.bots.database.models.QueryIntent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Defines the user's query intents for comprehensive database operations.
 ---
 

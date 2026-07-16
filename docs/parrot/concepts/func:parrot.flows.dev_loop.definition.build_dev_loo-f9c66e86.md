@@ -4,7 +4,7 @@ title: build_dev_loop_definition()
 id: func:parrot.flows.dev_loop.definition.build_dev_loop_definition
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return the declarative dev-loop :class:`FlowDefinition`.
 ---
 

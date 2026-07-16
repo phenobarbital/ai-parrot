@@ -4,7 +4,7 @@ title: RenderError
 id: class:parrot.knowledge.ontology.tool_dispatcher.RenderError
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Raised when Jinja2 template rendering fails (e.g., ``StrictUndefined``).
 ---
 

@@ -4,7 +4,7 @@ title: AdvisoryRecommendation
 id: class:parrot_tools.security.advisory_engine.AdvisoryRecommendation
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: One actionable recommendation tied to SOC2 controls.
 ---
 

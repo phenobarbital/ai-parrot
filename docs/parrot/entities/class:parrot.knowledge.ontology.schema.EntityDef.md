@@ -4,7 +4,7 @@ title: EntityDef
 id: class:parrot.knowledge.ontology.schema.EntityDef
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Definition of a vertex collection (entity) in the ontology.
 ---
 

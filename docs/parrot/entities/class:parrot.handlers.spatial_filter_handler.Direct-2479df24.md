@@ -4,7 +4,7 @@ title: DirectSpatialRequest
 id: class:parrot.handlers.spatial_filter_handler.DirectSpatialRequest
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Request body for the direct (deterministic) spatial filter path.
 ---
 

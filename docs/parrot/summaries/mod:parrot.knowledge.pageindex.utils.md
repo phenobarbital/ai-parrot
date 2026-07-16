@@ -4,7 +4,7 @@ title: parrot.knowledge.pageindex.utils
 id: mod:parrot.knowledge.pageindex.utils
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pure utility functions for PageIndex — no LLM dependency.
 relates_to:
 - concept: class:parrot.knowledge.pageindex.utils.ConfigLoader

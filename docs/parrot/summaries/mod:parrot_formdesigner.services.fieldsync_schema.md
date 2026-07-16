@@ -4,7 +4,7 @@ title: parrot_formdesigner.services.fieldsync_schema
 id: mod:parrot_formdesigner.services.fieldsync_schema
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: DDL canónico para el schema ``fieldsync`` — idempotente, sin migraciones.
 relates_to:
 - concept: class:parrot_formdesigner.services.fieldsync_schema.FieldsyncSchemaManager

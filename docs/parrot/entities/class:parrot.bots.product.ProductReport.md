@@ -4,7 +4,7 @@ title: ProductReport
 id: class:parrot.bots.product.ProductReport
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ProductReport is an agent designed to generate detailed product reports using
   LLMs and various tools.
 relates_to:

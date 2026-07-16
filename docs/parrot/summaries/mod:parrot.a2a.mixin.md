@@ -4,7 +4,7 @@ title: parrot.a2a.mixin
 id: mod:parrot.a2a.mixin
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A2A Client Mixin - Add A2A client capabilities to AI-Parrot agents.
 relates_to:
 - concept: class:parrot.a2a.mixin.A2AClientMixin

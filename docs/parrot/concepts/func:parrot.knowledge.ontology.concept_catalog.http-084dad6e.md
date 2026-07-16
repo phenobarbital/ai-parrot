@@ -4,7 +4,7 @@ title: list_concepts()
 id: func:parrot.knowledge.ontology.concept_catalog.http.list_concepts
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: GET /api/ontology/concepts — list concepts for a tenant.
 ---
 

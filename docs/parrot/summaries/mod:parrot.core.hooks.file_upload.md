@@ -4,7 +4,7 @@ title: parrot.core.hooks.file_upload
 id: mod:parrot.core.hooks.file_upload
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: File upload hook — HTTP POST/PUT endpoint for file ingestion.
 relates_to:
 - concept: class:parrot.core.hooks.file_upload.FileUploadHook

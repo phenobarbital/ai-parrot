@@ -4,7 +4,7 @@ title: PgVectorStore
 id: class:parrot.stores.postgres.PgVectorStore
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A PostgreSQL vector store implementation using pgvector, completely independent
   of Langchain.
 relates_to:

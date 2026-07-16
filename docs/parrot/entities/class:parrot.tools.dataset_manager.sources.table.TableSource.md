@@ -4,7 +4,7 @@ title: TableSource
 id: class:parrot.tools.dataset_manager.sources.table.TableSource
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: DataSource for a database table with INFORMATION_SCHEMA schema prefetch.
 relates_to:
 - concept: class:parrot.tools.dataset_manager.sources.base.DataSource

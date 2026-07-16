@@ -4,7 +4,7 @@ title: EpisodicMemoryMixin
 id: class:parrot.memory.episodic.mixin.EpisodicMemoryMixin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Mixin that adds automatic episodic memory to bots.
 ---
 

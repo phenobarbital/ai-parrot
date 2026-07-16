@@ -4,7 +4,7 @@ title: parrot_tools.csv_export
 id: mod:parrot_tools.csv_export
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: CSV Export Tool - Export DataFrames and structured data to CSV format.
 relates_to:
 - concept: class:parrot_tools.csv_export.CSVExportArgs

@@ -4,7 +4,7 @@ title: parrot.manager.ephemeral
 id: mod:parrot.manager.ephemeral
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Ephemeral user agent lifecycle models and registry.
 relates_to:
 - concept: class:parrot.manager.ephemeral.EphemeralAgentStatus

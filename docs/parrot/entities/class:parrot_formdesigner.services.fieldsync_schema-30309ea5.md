@@ -4,7 +4,7 @@ title: FieldsyncSchemaManager
 id: class:parrot_formdesigner.services.fieldsync_schema.FieldsyncSchemaManager
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Apply the canonical ``fieldsync`` DDL to a Postgres database.
 ---
 

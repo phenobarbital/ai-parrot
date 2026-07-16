@@ -4,7 +4,7 @@ title: HumanTool
 id: class:parrot.human.tool.HumanTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Tool that pauses agent execution to request human input.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractTool

@@ -4,7 +4,7 @@ title: parrot_loaders.ocr.paddle
 id: mod:parrot_loaders.ocr.paddle
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: PaddleOCR Backend for ImageLoader.
 relates_to:
 - concept: class:parrot_loaders.ocr.paddle.PaddleOCRBackend

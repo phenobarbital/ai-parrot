@@ -4,7 +4,7 @@ title: AuthContext
 id: class:parrot_formdesigner.services.auth_context.AuthContext
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Runtime auth context constructed by the aiohttp handler per request.
 ---
 

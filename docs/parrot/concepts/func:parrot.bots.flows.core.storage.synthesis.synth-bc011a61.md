@@ -4,7 +4,7 @@ title: synthesize_results()
 id: func:parrot.bots.flows.core.storage.synthesis.synthesize_results
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: LLM-summarize all agent responses collected in a ``FlowResult``.
 ---
 

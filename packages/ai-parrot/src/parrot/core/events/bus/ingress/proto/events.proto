@@ -1,0 +1,55 @@
+// parrot.events.v1 — gRPC ingress contract for the unified EventBus v2
+// (FEAT-310, Module 9).
+//
+// The message shape mirrors the A2UI versioned-message envelope pattern
+// (parrot/outputs/a2ui/models.py — A2UIMessageBase): an explicit protocol
+// `version` field plus a typed payload, so the wire contract can evolve
+// without breaking old clients.
+//
+// Regeneration (see README.md in this directory):
+//   python -m grpc_tools.protoc -I packages/ai-parrot/src \
+//     --python_out=packages/ai-parrot/src \
+//     --grpc_python_out=packages/ai-parrot/src \
+//     packages/ai-parrot/src/parrot/core/events/bus/ingress/proto/events.proto
+
+syntax = "proto3";
+
+package parrot.events.v1;
+
+// A single event submitted by an external system.
+//
+// Validation happens server-side at the IngressEnvelope (Pydantic)
+// boundary — the proto deliberately carries JSON strings for the open
+// dict fields (payload/metadata/trace_context) so the closed Python
+// contract stays the single source of truth.
+message PublishRequest {
+  string version = 1;          // protocol version, e.g. "1.0" (required)
+  string topic = 2;            // hierarchical topic, e.g. "orders.created"
+  string payload_json = 3;     // JSON object (defaults to "{}")
+  string event_id = 4;         // optional; server generates when empty
+  string timestamp = 5;        // optional ISO 8601; naive coerced to UTC
+  string source = 6;           // optional emitter identifier
+  // `optional` gives explicit field presence: priority=0 (LOW) and
+  // severity are distinguishable from "not provided" (absent → defaults
+  // INFO / NORMAL server-side).
+  optional int32 severity = 7; // Severity value (10..50)
+  optional int32 priority = 8; // EventPriority value (0..15; 0 = LOW)
+  string correlation_id = 9;   // optional chain-tracking id
+  string metadata_json = 10;   // optional JSON object
+  string trace_context_json = 11;  // optional JSON object
+}
+
+// Result of a publish attempt.
+message PublishResponse {
+  string version = 1;          // protocol version echoed back
+  string status = 2;           // "accepted" | "rejected"
+  string event_id = 3;         // id of the accepted envelope
+  string error = 4;            // validation error when rejected
+}
+
+// External ingress service for the Parrot event bus.
+service EventBusIngress {
+  // Publish one event; validation errors return a structured
+  // status="rejected" response and auth failures abort UNAUTHENTICATED.
+  rpc Publish(PublishRequest) returns (PublishResponse);
+}

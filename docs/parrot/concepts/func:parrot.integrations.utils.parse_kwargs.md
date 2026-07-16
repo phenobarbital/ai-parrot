@@ -4,7 +4,7 @@ title: parse_kwargs()
 id: func:parrot.integrations.utils.parse_kwargs
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parse 'key=val key2="quoted val"' into a kwargs dict.
 ---
 

@@ -4,7 +4,7 @@ title: CredentialRequired
 id: class:parrot.auth.credentials.CredentialRequired
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Raised by the tool-loop seam when the broker returns :class:`NeedsAuth`.
 ---
 

@@ -4,7 +4,7 @@ title: PostgresS3SecurityReportStore
 id: class:parrot.storage.security_reports.store.PostgresS3SecurityReportStore
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Postgres (metadata) + S3/FileManager (content) catalog implementation.
 ---
 

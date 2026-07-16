@@ -4,7 +4,7 @@ title: ImageHashPlugin
 id: class:parrot.interfaces.images.plugins.hash.ImageHashPlugin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ImageHashPlugin is a plugin for generating perceptual hashes of images.
 relates_to:
 - concept: class:parrot.interfaces.images.plugins.abstract.ImagePlugin

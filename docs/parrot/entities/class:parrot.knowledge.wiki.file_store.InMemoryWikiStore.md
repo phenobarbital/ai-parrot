@@ -4,7 +4,7 @@ title: InMemoryWikiStore
 id: class:parrot.knowledge.wiki.file_store.InMemoryWikiStore
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: RAM-indexed wiki store persisted as an OKF markdown directory.
 relates_to:
 - concept: class:parrot.knowledge.wiki.store.BaseWikiStore

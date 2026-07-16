@@ -4,7 +4,7 @@ title: MapQuery
 id: class:parrot.models.outputs.MapQuery
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Echoed spatial filter query — carries the originating search parameters (FEAT-221).
 ---
 

@@ -4,7 +4,7 @@ title: PushNotificationStore
 id: class:parrot.a2a.push_notifications.PushNotificationStore
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: In-memory store for :class:`TaskPushNotificationConfig` objects.
 ---
 

@@ -4,7 +4,7 @@ title: parrot_tools.montecarlo
 id: mod:parrot_tools.montecarlo
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: MonteCarloSimulationTool — Stochastic simulation with distributions.
 relates_to:
 - concept: class:parrot_tools.montecarlo.MonteCarloInput

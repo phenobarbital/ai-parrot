@@ -4,8 +4,9 @@ title: /sdd-start — Start an SDD Task
 id: doc:agent-workflows-sdd-start-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Start working on an SDD task by name or ID'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Pick up a task from the SDD task index by ID or slug, validate it is ready,
+  mark it in-progress,
 ---
 
 ---

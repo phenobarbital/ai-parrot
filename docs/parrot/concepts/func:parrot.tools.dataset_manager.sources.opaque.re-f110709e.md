@@ -4,7 +4,7 @@ title: resolve_opaque_source()
 id: func:parrot.tools.dataset_manager.sources.opaque.resolve_opaque_source
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Extract resource identifiers from non-SQL DataSource subclasses.
 ---
 

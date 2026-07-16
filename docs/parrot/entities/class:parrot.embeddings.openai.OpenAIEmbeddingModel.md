@@ -4,7 +4,7 @@ title: OpenAIEmbeddingModel
 id: class:parrot.embeddings.openai.OpenAIEmbeddingModel
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A wrapper class for OpenAI Embedding models.
 relates_to:
 - concept: class:parrot.embeddings.base.EmbeddingModel

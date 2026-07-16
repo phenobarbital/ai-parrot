@@ -4,7 +4,7 @@ title: load_credentials_manifest()
 id: func:parrot.auth.manifest.load_credentials_manifest
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Load credential provider configs from a YAML file.
 ---
 

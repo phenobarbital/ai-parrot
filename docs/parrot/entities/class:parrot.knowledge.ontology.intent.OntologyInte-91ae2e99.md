@@ -4,7 +4,7 @@ title: OntologyIntentResolver
 id: class:parrot.knowledge.ontology.intent.OntologyIntentResolver
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Resolve user queries into graph traversal intents.
 ---
 

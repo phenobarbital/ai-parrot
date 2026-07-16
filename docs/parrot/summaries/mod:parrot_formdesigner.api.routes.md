@@ -4,7 +4,7 @@ title: parrot_formdesigner.api.routes
 id: mod:parrot_formdesigner.api.routes
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Route registration for the JSON REST surface of parrot-formdesigner.
 relates_to:
 - concept: func:parrot_formdesigner.api.routes.setup_form_api

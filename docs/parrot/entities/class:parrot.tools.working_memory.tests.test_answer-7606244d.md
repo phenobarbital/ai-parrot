@@ -4,7 +4,7 @@ title: TestAutoInjection
 id: class:parrot.tools.working_memory.tests.test_answer_memory_bridge.TestAutoInjection
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: BasicAgent._inject_answer_memory_into_toolkits auto-wires answer_memory.
 ---
 

@@ -4,7 +4,7 @@ title: EXIFPlugin
 id: class:parrot.interfaces.images.plugins.exif.EXIFPlugin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: EXIFPlugin is a plugin for extracting EXIF data from images.
 relates_to:
 - concept: class:parrot.interfaces.images.plugins.abstract.ImagePlugin

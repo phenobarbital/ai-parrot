@@ -4,7 +4,7 @@ title: WhatsAppAgentWrapper
 id: class:parrot.integrations.whatsapp.wrapper.WhatsAppAgentWrapper
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Wraps an AI-Parrot Agent for WhatsApp integration.
 ---
 

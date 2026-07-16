@@ -4,8 +4,8 @@ title: Code Review Skill
 id: doc:agent-skills-code-review-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: code-review'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: When reviewing code, you MUST provide feedback on code style and best practices.
 ---
 
 ---

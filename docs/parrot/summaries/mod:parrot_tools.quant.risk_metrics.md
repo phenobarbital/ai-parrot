@@ -4,7 +4,7 @@ title: parrot_tools.quant.risk_metrics
 id: mod:parrot_tools.quant.risk_metrics
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Risk Metrics Engine for QuantToolkit.
 relates_to:
 - concept: func:parrot_tools.quant.risk_metrics.compute_beta

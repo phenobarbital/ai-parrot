@@ -4,7 +4,7 @@ title: NumPy 2.0 Migration Reference
 id: doc:agent-skills-cython-extensions-references-numpy2-migration-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This reference provides detailed information about deprecated types and breaking
   changes in NumPy 2.0 relevant to Cython extension builds.
 ---

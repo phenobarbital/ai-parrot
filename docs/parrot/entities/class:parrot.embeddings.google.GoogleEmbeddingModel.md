@@ -4,7 +4,7 @@ title: GoogleEmbeddingModel
 id: class:parrot.embeddings.google.GoogleEmbeddingModel
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A wrapper class for Google Embedding models using the Gemini API.
 relates_to:
 - concept: class:parrot.embeddings.base.EmbeddingModel

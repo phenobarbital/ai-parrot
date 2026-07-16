@@ -4,7 +4,7 @@ title: parrot.cli.identity
 id: mod:parrot.cli.identity
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: CLI identity bootstrap for the O365 device-code broker seam (FEAT-266).
 relates_to:
 - concept: func:parrot.cli.identity.bot_declares_o365_device_code

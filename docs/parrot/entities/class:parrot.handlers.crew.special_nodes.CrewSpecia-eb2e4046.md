@@ -4,7 +4,7 @@ title: CrewSpecialNodeCatalogHandler
 id: class:parrot.handlers.crew.special_nodes.CrewSpecialNodeCatalogHandler
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Returns the curated special-node catalog for the crew builder UI.
 ---
 

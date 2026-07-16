@@ -4,8 +4,9 @@ title: /sdd-tojira — Export Specification to Jira
 id: doc:agent-workflows-sdd-tojira-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Export an SDD Specification to a Jira Story using mcp-atlassian'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Export the content of a formal specification file (`sdd/specs/*.spec.md`)
+  to a new Jira ticket.
 ---
 
 ---

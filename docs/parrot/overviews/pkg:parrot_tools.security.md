@@ -4,7 +4,7 @@ title: parrot_tools.security
 id: pkg:parrot_tools.security
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot_tools.security (18 modules, 6 sub-packages).
 relates_to:
 - concept: mod:parrot_tools.security.advisory_engine

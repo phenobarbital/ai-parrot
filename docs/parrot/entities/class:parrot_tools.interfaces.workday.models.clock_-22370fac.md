@@ -4,7 +4,7 @@ title: ClockEventResult
 id: class:parrot_tools.interfaces.workday.models.clock_event.ClockEventResult
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Per-row submission outcome echoed back into the flow (G6).
 ---
 

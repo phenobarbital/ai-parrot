@@ -4,7 +4,7 @@ title: parrot.auth.oauth2.workiq_provider
 id: mod:parrot.auth.oauth2.workiq_provider
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Work IQ OAuth2 provider with Entra On-Behalf-Of (OBO) token exchange.
 relates_to:
 - concept: class:parrot.auth.oauth2.workiq_provider.WorkIQOAuth2Provider

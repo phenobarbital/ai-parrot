@@ -4,7 +4,7 @@ title: SQLQuerySource
 id: class:parrot.tools.dataset_manager.sources.sql.SQLQuerySource
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: DataSource backed by a user-provided SQL template with {param} interpolation.
 relates_to:
 - concept: class:parrot.tools.dataset_manager.sources.base.DataSource

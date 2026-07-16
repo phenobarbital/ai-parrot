@@ -4,7 +4,7 @@ title: 'SKILL: Extract Context from Output'
 id: doc:agent-skills-meta-prompting-extract-context-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Analyze LLM outputs to extract patterns, constraints, and success indicators
   that can improve subsequent iterations.
 ---

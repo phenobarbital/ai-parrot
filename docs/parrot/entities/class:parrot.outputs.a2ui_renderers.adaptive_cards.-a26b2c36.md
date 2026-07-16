@@ -4,7 +4,7 @@ title: AdaptiveCardsRenderer
 id: class:parrot.outputs.a2ui_renderers.adaptive_cards.AdaptiveCardsRenderer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Basic-tree → Adaptive Card JSON renderer (display subset, no actions).
 relates_to:
 - concept: class:parrot.outputs.a2ui.renderers.AbstractA2UIRenderer

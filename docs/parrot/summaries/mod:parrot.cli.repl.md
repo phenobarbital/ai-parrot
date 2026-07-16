@@ -4,7 +4,7 @@ title: parrot.cli.repl
 id: mod:parrot.cli.repl
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: REPL engine for the AI-Parrot agent CLI.
 relates_to:
 - concept: class:parrot.cli.repl.AgentREPL
