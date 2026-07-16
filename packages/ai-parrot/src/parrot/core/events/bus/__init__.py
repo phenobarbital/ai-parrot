@@ -11,11 +11,13 @@ from parrot.core.events.bus.core import (
     BusClosedError,
     BusCore,
 )
+from parrot.core.events.bus.dlq import DLQHandler
 
 __all__ = (
     "BackpressureError",
     "BusClosedError",
     "BusCore",
+    "DLQHandler",
     "EventEnvelope",
     "IngressEnvelope",
     "Severity",
