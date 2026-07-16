@@ -172,7 +172,7 @@
       "feature_id": "FEAT-310",
       "feature": "eventbus-v2",
       "spec": "sdd/specs/eventbus-v2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -182,8 +182,8 @@
       "parallelism_notes": "Own package (bus/ingress/) + pyproject extra — no file overlap with 1790/1792.",
       "assigned_to": null,
       "started_at": "2026-07-16T09:49:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1791-ws-grpc-ingress.md"
+      "completed_at": "2026-07-16T10:31:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1791-ws-grpc-ingress.md"
     },
     {
       "id": "TASK-1792",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-310 — Unified EventBus v2 — queue-based dispatch, severity, ingress channels, and notifications
 **Spec**: `sdd/specs/eventbus-v2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1786
@@ -164,8 +164,8 @@ async def test_grpc_ingress_validation(): ...
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-16
+**Notes**: `WebSocketIngress(BaseHook)`: aiohttp WS endpoint via setup_routes; every TEXT frame -> IngressEnvelope (extra=forbid) -> facade emit; malformed input answered with structured {status: rejected, error} frame, connection survives; auth REQUIRED by default (Bearer header / X-API-Key / ?token=, from kwarg or navconfig BUS_INGRESS_TOKEN; no token configured -> all refused with 401 pre-upgrade). `GrpcIngress(BaseHook)`: grpc.aio server for `parrot.events.v1.EventBusIngress` — proto mirrors the A2UI versioned-message shape (explicit `version` field + typed payload; open dict fields travel as JSON strings so the Pydantic boundary stays SSOT); auth failures abort UNAUTHENTICATED, validation failures return structured status=rejected; grpcio imported at module level of grpc.py only, exposed lazily via ingress/__init__ __getattr__ with a helpful `pip install ai-parrot[grpc]` ImportError. Generated events_pb2/_pb2_grpc COMMITTED alongside events.proto + regen README (grpcio-tools 1.74.0 / protobuf-6.31.1-compatible gencode — forward-compatible with 7.x runtimes; repo venv left at protobuf 6.31.1 per lockfile). Optional extra `grpc = [grpcio>=1.74.0, grpcio-tools>=1.74.0]` added to packages/ai-parrot/pyproject.toml — no new required runtime deps. 9 ingress tests pass incl. real in-process grpc.aio round-trip (grpc present transitively in this env; tests importorskip cleanly without it); full events+hooks regression 177 passed; ruff clean (pb2 excluded).
 
-**Deviations from spec**: none
+**Deviations from spec**: (1) validation failures return an application-level status=rejected PublishResponse over an OK transport status instead of INVALID_ARGUMENT — grpc.aio cannot both set a non-OK code and deliver the structured response; the structured contract won. (2) HookType has no WEBSOCKET/GRPC member and models.py is outside this task's file list — both adapters keep BaseHook's default hook_type; they publish directly to the bus so the enum value is cosmetic (stats only). Consider adding enum members in a follow-up.
