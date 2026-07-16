@@ -22,13 +22,40 @@ class HookManager:
     :meth:`set_event_bus` to enable distributed dual-emit: every hook
     event is forwarded to both the direct callback *and* the bus on
     channel ``hooks.<hook_type>.<event_type>``.
+
+    FEAT-310 (``route_to_bus`` mode, default OFF): when enabled and a bus
+    is attached, hook events are published as first-class
+    ``hooks.<hook_type>.<event_type>`` envelopes through the facade —
+    hook ``payload`` as the envelope payload, ``hook_id`` as the source,
+    routing hints carried in metadata, and severity mapped from the event
+    metadata (default INFO). The orchestrator direct callback is KEPT
+    untouched in both modes (permanent low-latency path — resolved in the
+    FEAT-310 brainstorm).
+
+    Args:
+        route_to_bus: Enable first-class bus routing (FEAT-310). Default
+            ``False`` — behavior identical to the legacy dual-emit.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, route_to_bus: bool = False) -> None:
         self._hooks: Dict[str, BaseHook] = {}
         self._callback: Optional[Callable] = None
         self._event_bus: Optional["EventBus"] = None
+        self._route_to_bus = route_to_bus
         self.logger = logging.getLogger("parrot.hooks.manager")
+
+    @property
+    def route_to_bus(self) -> bool:
+        """Whether first-class bus routing (FEAT-310) is enabled."""
+        return self._route_to_bus
+
+    @route_to_bus.setter
+    def route_to_bus(self, enabled: bool) -> None:
+        """Toggle first-class bus routing and re-inject hook callbacks."""
+        self._route_to_bus = bool(enabled)
+        dispatch = self._build_dispatch()
+        for hook in self._hooks.values():
+            hook.set_callback(dispatch)
 
     def set_event_callback(self, callback) -> None:
         """Set the async callback that all hooks will invoke on events.
@@ -93,20 +120,63 @@ class HookManager:
                     await cb(event)
                 else:
                     cb(event)
-            try:
-                await bus.emit(
-                    f"hooks.{event.hook_type.value}.{event.event_type}",
-                    event.model_dump(),
-                )
-            except Exception as exc:
-                self.logger.warning(
-                    "HookManager: EventBus emit failed for %s.%s: %s",
-                    event.hook_type.value,
-                    event.event_type,
-                    exc,
-                )
+            await self._publish_hook_event(bus, event)
 
         return _dual_emit
+
+    async def _publish_hook_event(self, bus: "EventBus", event) -> None:
+        """Publish one hook event to the bus (shared by both modes).
+
+        Legacy dual-emit (``route_to_bus`` off) keeps the historical wire
+        shape: ``emit(topic, event.model_dump())``. FEAT-310
+        ``route_to_bus`` publishes a first-class envelope: hook payload as
+        the envelope payload, ``hook_id`` as source, routing hints in
+        metadata, severity from ``event.metadata['severity']`` (default
+        INFO). Both paths are fire-and-forget failure-isolated — a broken
+        bus never disturbs the callback path.
+        """
+        topic = f"hooks.{event.hook_type.value}.{event.event_type}"
+        try:
+            if not self._route_to_bus:
+                # Legacy dual-emit — byte-identical to the pre-FEAT-310 path.
+                await bus.emit(topic, event.model_dump())
+                return
+            # FEAT-310 first-class routing (from_hook_event semantics).
+            from parrot.core.events.bus.envelope import Severity
+
+            metadata: Dict[str, Any] = dict(event.metadata or {})
+            metadata.setdefault("hook_id", event.hook_id)
+            if event.target_type is not None:
+                metadata.setdefault("target_type", event.target_type)
+            if event.target_id is not None:
+                metadata.setdefault("target_id", event.target_id)
+            if event.task is not None:
+                metadata.setdefault("task", event.task)
+            severity = metadata.pop("severity", None)
+            try:
+                severity = (
+                    Severity[severity.upper()]
+                    if isinstance(severity, str)
+                    else Severity(severity)
+                    if severity is not None
+                    else Severity.INFO
+                )
+            except (KeyError, ValueError):
+                severity = Severity.INFO
+            await bus.emit(
+                topic,
+                event.payload or {},
+                source=event.hook_id,
+                metadata=metadata,
+                severity=severity,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "HookManager: EventBus emit failed for %s.%s: %s",
+                event.hook_type.value,
+                event.event_type,
+                exc,
+            )
 
     def register(self, hook: BaseHook) -> str:
         """Register a hook and return its hook_id.
