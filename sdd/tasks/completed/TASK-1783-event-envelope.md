@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-310 — Unified EventBus v2 — queue-based dispatch, severity, ingress channels, and notifications
 **Spec**: `sdd/specs/eventbus-v2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -196,8 +196,8 @@ def test_converters_lifecycle_hookevent_legacy():
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-16
+**Notes**: Created `parrot/core/events/bus/` package with `Severity(IntEnum)`, frozen+slotted `EventEnvelope` (naive timestamp → ValueError; tz-aware UTC default; JSON-safe to_dict/from_dict round-trip), Pydantic `IngressEnvelope` (extra=forbid, frozen, naive-input coerced to UTC) with `to_envelope()`, and three converters (`from_legacy_event`, `from_lifecycle_dict`, `from_hook_event`) that coerce naive legacy timestamps to UTC. 11 unit tests pass; ruff clean.
 
 **Deviations from spec**: none

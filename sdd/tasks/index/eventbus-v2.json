@@ -14,7 +14,7 @@
       "feature_id": "FEAT-310",
       "feature": "eventbus-v2",
       "spec": "sdd/specs/eventbus-v2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation module — every other task imports from parrot.core.events.bus; must land first.",
       "assigned_to": null,
       "started_at": "2026-07-16T09:49:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1783-event-envelope.md"
+      "completed_at": "2026-07-16T09:53:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1783-event-envelope.md"
     },
     {
       "id": "TASK-1784",
