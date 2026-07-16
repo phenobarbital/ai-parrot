@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-310 — Unified EventBus v2 — queue-based dispatch, severity, ingress channels, and notifications
 **Spec**: `sdd/specs/eventbus-v2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1784
@@ -158,8 +158,8 @@ async def test_buscore_fanout_nonblocking(): ...
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-16
+**Notes**: `TransportBackend` runtime-checkable Protocol (publish/start_consumer/close, wire format = EventEnvelope.to_dict() JSON). `MemoryBackend` feeds on_envelope directly (at-most-once; drops when no consumer). `RedisPubSubBackend` ports the legacy listener: PUBLISH/psubscribe on `parrot:events:*` (prefix kept for rollout interop), background consumer task (BaseBrokerHook lifecycle), reconnect-with-backoff on connection errors, poison messages isolated, punsubscribe on close; supports injected client for tests. BusCore gained `backend` kwarg: fan-out is fire-and-forget create_task (never delays local dispatch); consumer envelopes enqueue locally. 30 bus tests pass; ruff clean.
 
-**Deviations from spec**: none
+**Deviations from spec**: added bounded `event_id` echo-suppression in BusCore's transport-consumer path — without it, any loopback transport (MemoryBackend, pub/sub self-echo) would double-dispatch every locally-published envelope. In-process only; cross-instance dedup remains TASK-1789's TTL set.
