@@ -29,7 +29,7 @@ Consequences:
 - **No severity model**: no DEBUG/INFO/WARNING/ERROR/CRITICAL on events, hence no severity-filtered subscriptions and **no alerting/notification pipeline** (despite `hooks/messaging.py` existing as an obvious outbound channel).
 - **No gRPC / WebSocket ingress**, and existing HTTP ingress (hooks) does not feed the bus by default.
 - **Duplicated dispatch logic**: `start_redis_listener()` re-implements `publish()`'s matching/dispatch inline (copy-paste divergence) and consumes messages sequentially inside the `async for`.
-- Minor defects: `close()` calls `unsubscribe()` while the listener uses `psubscribe()` (must be `punsubscribe()`); naive `datetime.now()` in `Event` vs `timezone.utc` in `LifecycleEvent`; `event_id` exists but nothing deduplicates on it.
+- Minor defects: naive `datetime.now()` in `Event` (evb.py:29) vs `timezone.utc` in `LifecycleEvent`; `event_id` exists but nothing deduplicates on it. (~~`close()` calling `unsubscribe()` instead of `punsubscribe()`~~ — already fixed on `dev`, evb.py:124.)
 
 Affected: the autonomy/orchestrator layer, agent lifecycle observability, all hook-driven flows, and any future feature (alerting, audit, metrics) that needs a reliable in-app event fabric.
 
@@ -230,20 +230,23 @@ No breaking changes intended in Phase 1–2. New optional extra: `parrot[grpc]`.
 # close() must use punsubscribe() because the listener uses psubscribe():
 await self._pubsub.punsubscribe()
 await self._pubsub.close()
-# NOTE: repo main still calls unsubscribe() here — bug to fix in Phase 1.
+# RESOLVED (verified 2026-07-16): dev already ships this fix at evb.py:124 —
+# no longer a Phase 1 work item.
 ```
 
 ### Verified Codebase References
 
 #### Classes & Signatures
 ```python
-# From packages/ai-parrot/src/parrot/core/events/evb.py:72
+# From packages/ai-parrot/src/parrot/core/events/evb.py:72  (line numbers re-verified on dev, 2026-07-16)
 class EventBus:
     CHANNEL_PREFIX = "parrot:events:"                    # line 83
-    def subscribe(self, pattern, handler, *, priority=0, filter_fn=None) -> str  # line 126
-    async def publish(self, event: Event) -> int         # line 185 — sequential awaits (the core defect)
-    async def emit(self, event_type: str, payload: dict, **kwargs) -> int  # line 291
-    def on(self, pattern: str, **kwargs)                 # line 305 — decorator
+    def subscribe(self, pattern, handler, *, priority=0, filter_fn=None) -> str  # line 129
+    async def publish(self, event: Event) -> int         # line 188 — sequential awaits (the core defect)
+    async def emit(self, event_type: str, payload: dict, **kwargs) -> int  # line 294
+    def on(self, pattern: str, **kwargs)                 # line 308 — decorator
+    # also: close() line 117 (punsubscribe fix landed), unsubscribe() line 171,
+    # _event_history list line 101, start_redis_listener() line 257 (duplicated dispatch)
 
 # From packages/ai-parrot/src/parrot/core/events/lifecycle/registry.py:90
 class EventRegistry:
@@ -251,7 +254,7 @@ class EventRegistry:
     async def emit(self, event: LifecycleEvent) -> None  # line 235 — never raises (model B)
     # dual-emit via asyncio.create_task(self._event_bus.emit(channel, event.to_dict()))  # lines ~280-300
 
-# From packages/ai-parrot/src/parrot/core/events/lifecycle/base.py:20
+# From packages/ai-parrot/src/parrot/core/events/lifecycle/base.py:21
 @dataclass(frozen=True)
 class LifecycleEvent(ABC):
     trace_context: TraceContext
