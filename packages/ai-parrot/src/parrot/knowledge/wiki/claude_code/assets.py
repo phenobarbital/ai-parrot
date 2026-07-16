@@ -30,6 +30,16 @@ HOOK_MATCHER = "Grep|Glob|Read|Bash"
 GIT_HOOK_BEGIN = "# >>> parrot-wiki post-commit >>>"
 GIT_HOOK_END = "# <<< parrot-wiki post-commit <<<"
 
+#: Permission allow-rules merged into .claude/settings.json so wiki
+#: queries run without a permission prompt. Covers the bare CLI, the
+#: ``parrot wiki`` alias, and the common venv-activation compound.
+PERMISSION_RULES: tuple[str, ...] = (
+    "Bash(wikitoolkit:*)",
+    "Bash(parrot wiki:*)",
+    "Bash(source .venv/bin/activate && wikitoolkit:*)",
+    "Bash(source .venv/bin/activate && parrot wiki:*)",
+)
+
 #: Filename of the slash command (under .claude/commands/).
 SLASH_COMMAND_FILENAME = "parrotwiki.md"
 
@@ -42,12 +52,13 @@ CLAUDE_MD_SECTION = f"""{CLAUDE_MD_BEGIN}
 
 This repository maintains a machine-first knowledge graph of the
 codebase (pages + typed edges over a local SQLite plane, built by
-`wikitoolkit build`). For questions about the codebase — where
-something lives, how modules relate, what a subsystem does — PREFER
-scoped wiki queries over reading whole files or grepping raw source:
+`wikitoolkit build`). For ANY question about the codebase — where
+something lives, how modules relate, what a subsystem does — you MUST
+run a scoped wiki query FIRST, before Grep/Glob/Read or any shell
+search (`grep`/`rg`/`find`/`cat` via Bash):
 
 - `wikitoolkit query "<question>"` — token-budgeted, ranked page
-  stubs for a scoped question. Start here.
+  stubs for a scoped question. ALWAYS start here.
 - `wikitoolkit page <id>` — read one page in full (file summaries,
   API outlines, content). Use the ids returned by `query`.
 - `wikitoolkit related <id>` — follow typed edges (`contains`,
@@ -56,15 +67,27 @@ scoped wiki queries over reading whole files or grepping raw source:
 - `wikitoolkit build` — refresh the graph after large changes
   (a git post-commit hook may already keep it fresh).
 
-This applies to shell searches too: prefer `wikitoolkit query` over
-`grep`/`rg`/`find` run via Bash (or the Grep/Glob/Read tools) when the
-question is "where/how/what" about the codebase.
+**Query discipline** (avoids the two most common ways the wiki
+"fails" — which are usually caller error, not missing coverage):
+
+1. **Query for the *thing*, not for your *hypothesis* about it.** The
+   ranking is lexical — extra concept words steer it toward those
+   concepts. To locate a class or feature, name the symbol/module/
+   subsystem you want (`"attestation model service"`), not your theory
+   about where it might live.
+2. **Follow the thread before falling back.** If a result scores low
+   or names a parent module, resolve it with `wikitoolkit page <id>`
+   or `wikitoolkit related <id>` — one hop usually lands the real
+   page. Do NOT jump to grep just because the first `query` didn't
+   rank the exact page first.
+
+Only fall back to Grep/Glob/Read (or shell search) once a clean query
+*and* a page/related follow-up have genuinely come up empty — and say
+so before you do. Consider `wikitoolkit build` if results look stale.
 
 The `/parrotwiki` command wraps these (e.g. `/parrotwiki query how
 does ingest work`, `/parrotwiki --wiki` to export a human-readable
-markdown wiki). Fall back to Grep/Glob/Read (or shell search) when the
-wiki has no answer, and consider `wikitoolkit build` if results look
-stale.
+markdown wiki).
 {CLAUDE_MD_END}
 """
 
@@ -124,10 +147,10 @@ GIT_HOOK_NEW_FILE = f"""#!/bin/sh
 # --------------------------------------------------------------------------
 
 NUDGE_TEXT = (
-    "This repository has an LLM-wiki knowledge graph of the codebase. "
-    "Before scanning raw files (including grep/rg/find via Bash), prefer "
-    "a scoped query: `wikitoolkit query \"<question>\"` returns ranked, "
-    "token-budgeted page stubs; follow up with `wikitoolkit page <id>` "
-    "(full page) or `wikitoolkit related <id>` (typed edges). Fall back "
-    "to direct Grep/Glob/Read or shell search when the wiki has no answer."
+    "STOP — this repository has an LLM-wiki knowledge graph and CLAUDE.md "
+    "requires querying it BEFORE raw file scans (Grep/Glob/Read or "
+    "grep/rg/find via Bash). Run `wikitoolkit query \"<question>\"` first "
+    "(ranked, token-budgeted page stubs), then `wikitoolkit page <id>` / "
+    "`wikitoolkit related <id>` to drill in. Only fall back to raw search "
+    "after a query AND a page/related follow-up came up empty."
 )

@@ -10,6 +10,7 @@ from .localllm import LocalLLMClient
 from .vllm import vLLMClient
 from .nvidia import NvidiaClient
 from .zai import ZaiClient
+from .moonshot import MoonshotClient
 
 
 def _lazy_gemma4():
@@ -80,6 +81,8 @@ SUPPORTED_CLIENTS = {
     "z.ai": ZaiClient,
     "openrouter": OpenRouterClient,
     "nvidia": NvidiaClient,
+    "moonshot": MoonshotClient,
+    "kimi": MoonshotClient,
     "local": LocalLLMClient,
     "localllm": LocalLLMClient,
     "ollama": LocalLLMClient,

@@ -50,6 +50,10 @@ from parrot.knowledge.wiki.repo_scan import (
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
 
+import logging
+
+_cli_logger = logging.getLogger("wikitoolkit.cli")
+
 
 # --------------------------------------------------------------------------
 # Shared helpers
@@ -357,6 +361,234 @@ async def _prune_removed(
 
 
 # --------------------------------------------------------------------------
+# Post-build: OKF export + graph.html
+# --------------------------------------------------------------------------
+
+_CATEGORY_TO_NODE_KIND: dict[str, str] = {
+    "module": "WIKI_PAGE",
+    "document": "DOCUMENT",
+    "config": "DOCUMENT",
+    "overview": "DOCUMENT",
+    "summary": "WIKI_PAGE",
+    "entity": "SYMBOL",
+    "concept": "SYMBOL",
+}
+
+_REL_TO_EDGE_KIND: dict[str, str] = {
+    "contains": "CONTAINS",
+    "defines": "DEFINES",
+    "references": "REFERENCES",
+    "extends": "EXTENDS",
+    "mentions": "MENTIONS",
+    "explains": "EXPLAINS",
+}
+
+
+async def _export_okf(
+    store: BaseWikiStore,
+    output_dir: Path,
+    wiki_name: str,
+) -> dict[str, Any]:
+    """Export the OKF markdown bundle and return a report dict."""
+    from parrot.knowledge.wiki.export import export_okf_bundle
+
+    report = await export_okf_bundle(store, output_dir, wiki_name=wiki_name)
+    return {
+        "files_written": report.files_written,
+        "index_generated": report.index_generated,
+    }
+
+
+async def _export_graph_html(
+    store: BaseWikiStore,
+    output_dir: Path,
+    wiki_name: str,
+    graph_kinds: frozenset[str],
+) -> dict[str, Any]:
+    """Build the interactive graph.html from the wiki store contents."""
+    try:
+        from parrot.knowledge.graphindex.assemble import GraphAssembler
+        from parrot.knowledge.graphindex.schema import (
+            EdgeKind,
+            NodeKind,
+            UniversalEdge,
+            UniversalNode,
+        )
+        from parrot.knowledge.graphindex.export_html import export_graph
+    except ImportError as exc:
+        _cli_logger.warning("graph export unavailable: %s", exc)
+        return {"exported": False, "reason": str(exc)}
+
+    pages = await store.dump_pages()
+    edges = await store.dump_edges()
+
+    kind_pages = [
+        p for p in pages
+        if p.get("category", "") in graph_kinds
+    ]
+    if not kind_pages:
+        return {"nodes": 0, "edges": 0, "exported": False}
+
+    node_ids = {p["concept_id"] for p in kind_pages}
+
+    nodes: list[UniversalNode] = []
+    for p in kind_pages:
+        nk_name = _CATEGORY_TO_NODE_KIND.get(p.get("category", ""), "WIKI_PAGE")
+        nodes.append(UniversalNode(
+            node_id=p["concept_id"],
+            kind=NodeKind[nk_name],
+            title=p.get("title", ""),
+            source_uri=p.get("source_id", "") or p.get("concept_id", ""),
+            summary=p.get("summary"),
+            domain_tags={"category": p.get("category", "")},
+        ))
+
+    graph_edges: list[UniversalEdge] = []
+    for e in edges:
+        src, dst = e.get("src", ""), e.get("dst", "")
+        if src in node_ids and dst in node_ids:
+            ek_name = _REL_TO_EDGE_KIND.get(e.get("rel", ""), "REFERENCES")
+            graph_edges.append(UniversalEdge(
+                source_id=src,
+                target_id=dst,
+                kind=EdgeKind[ek_name],
+            ))
+
+    assembler = GraphAssembler(tenant_id=wiki_name)
+    assembler.add_nodes(nodes)
+    assembler.add_edges(graph_edges)
+
+    communities = None
+    analytics = None
+    try:
+        from parrot.knowledge.graphindex.communities import detect_communities
+        communities = detect_communities(
+            graph=assembler.graph, nodes=nodes, write_back_to_nodes=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _cli_logger.warning("community detection skipped: %s", exc)
+    try:
+        from parrot.knowledge.graphindex.analytics import compute_analytics
+        analytics = compute_analytics(assembler.graph, nodes, graph_edges)
+    except Exception as exc:  # noqa: BLE001
+        _cli_logger.warning("analytics skipped: %s", exc)
+
+    try:
+        html_path, json_path = export_graph(
+            assembler.graph,
+            output_dir,
+            communities=communities,
+            analytics=analytics,
+            title=f"{wiki_name} — Knowledge Map",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _cli_logger.error("graph export failed: %s", exc)
+        return {"nodes": len(nodes), "edges": len(graph_edges), "exported": False}
+
+    result: dict[str, Any] = {
+        "nodes": len(nodes),
+        "edges": len(graph_edges),
+        "exported": True,
+        "html": str(html_path.name),
+        "json": str(json_path.name),
+    }
+    if communities:
+        result["communities"] = len(communities.communities)
+        result["modularity"] = round(communities.modularity, 4)
+    return result
+
+
+def _write_build_stats(
+    output_dir: Path,
+    wiki_name: str,
+    store_stats: dict[str, Any],
+    okf_report: Optional[dict[str, Any]],
+    graph_stats: Optional[dict[str, Any]],
+) -> None:
+    """Write wiki_stats.json and README.md into the output directory."""
+    from datetime import datetime, timezone
+
+    stats: dict[str, Any] = {
+        "wiki_name": wiki_name,
+        "generated_at": datetime.now(tz=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S+00:00"
+        ),
+        "pages": store_stats.get("pages", 0),
+        "edges": store_stats.get("edges", 0),
+        "categories": store_stats.get("categories", {}),
+        "okf": okf_report,
+        "graph": graph_stats,
+    }
+    (output_dir / "wiki_stats.json").write_text(
+        json.dumps(stats, indent=2, ensure_ascii=False), encoding="utf-8",
+    )
+
+    lines = [
+        f"# {wiki_name} — LLM Wiki",
+        "",
+        "> Machine-first knowledge base compiled from this repository by "
+        "`parrot wiki build`, using the AI-Parrot `parrot.knowledge.wiki` "
+        "retrieval plane (FEAT-260).",
+        "",
+        "## What's here",
+        "",
+        "| Artefact | Purpose |",
+        "| --- | --- |",
+        "| `wiki.db` | SQLite retrieval plane (FTS5/BM25 + typed edges). |",
+    ]
+    if okf_report and okf_report.get("files_written"):
+        lines.append(
+            "| `index.md` + category folders | OKF v0.1 markdown bundle "
+            "— the human-browsable projection of every page. |"
+        )
+    if graph_stats and graph_stats.get("exported"):
+        lines.append(
+            "| `graph.html` | Interactive, offline knowledge-graph map "
+            "(open in a browser). |"
+        )
+        lines.append(
+            "| `graph.json` | Serialized graph (nodes, edges, communities). |"
+        )
+    lines.append("| `wiki_stats.json` | Full build report. |")
+    lines += [
+        "",
+        "## Contents",
+        "",
+        f"- **{stats['pages']}** pages, **{stats['edges']}** edges",
+    ]
+    cats = stats.get("categories", {})
+    if cats:
+        lines += ["", "### Pages by category", ""]
+        lines += [f"- `{k}`: {v}" for k, v in sorted(cats.items())]
+    if graph_stats and graph_stats.get("exported"):
+        lines += [
+            "",
+            "### Knowledge map",
+            "",
+            f"- [`graph.html`](./graph.html) — {graph_stats['nodes']} nodes, "
+            f"{graph_stats['edges']} edges"
+            + (
+                f", {graph_stats.get('communities', 0)} communities "
+                f"(modularity {graph_stats.get('modularity')})"
+                if graph_stats.get("communities")
+                else ""
+            ),
+        ]
+    lines += [
+        "",
+        "## Querying",
+        "",
+        "```bash",
+        f"wikitoolkit query \"your question\" --path .",
+        "```",
+        "",
+        f"_Generated {stats['generated_at']}._",
+        "",
+    ]
+    (output_dir / "README.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+# --------------------------------------------------------------------------
 # CLI group
 # --------------------------------------------------------------------------
 
@@ -383,6 +615,22 @@ def wiki() -> None:
 @click.option("--force", is_flag=True, help="Re-ingest every file, ignoring staleness.")
 @click.option("--no-git", is_flag=True, help="Do not use git for file discovery.")
 @click.option("--quiet", "-q", is_flag=True, help="Only print the final summary line.")
+@click.option(
+    "--no-export",
+    is_flag=True,
+    help="Skip OKF markdown bundle export.",
+)
+@click.option(
+    "--no-graph",
+    is_flag=True,
+    help="Skip graph.html / graph.json generation.",
+)
+@click.option(
+    "--graph-kinds",
+    default="module,document,overview",
+    show_default=True,
+    help="Comma list of page categories included in graph.html.",
+)
 def build(
     path_: Optional[str],
     name: Optional[str],
@@ -390,12 +638,19 @@ def build(
     force: bool,
     no_git: bool,
     quiet: bool,
+    no_export: bool,
+    no_graph: bool,
+    graph_kinds: str,
 ) -> None:
     """Generate (or refresh) the KB graph from the current repository.
 
     Deterministic and offline: scans source files (respecting
     .gitignore), extracts summaries/API outlines, and writes pages +
-    typed edges into the wiki retrieval plane under .parrot/wiki.
+    typed edges into the wiki retrieval plane.
+
+    By default also produces an OKF markdown bundle (index.md +
+    per-page files), an interactive graph.html / graph.json knowledge
+    map, a wiki_stats.json build report, and a README.md entry point.
     """
     root, config = _resolve_project(path_)
     if name:
@@ -414,6 +669,8 @@ def build(
         use_git=not no_git,
     )
 
+    output_dir = config.storage_path(root)
+
     async def _pipeline() -> dict[str, Any]:
         store = _open_store(root, config)
         sources = _open_sources(root, config)
@@ -422,19 +679,60 @@ def build(
         await store.add_edges(scan.dir_edges)
         counts["removed"] = await _prune_removed(store, sources, root, scan)
         counts["stats"] = await store.stats()
+
+        okf_report: Optional[dict[str, Any]] = None
+        if not no_export:
+            okf_report = await _export_okf(
+                store, output_dir, config.wiki_name,
+            )
+            # Exclude the export output from future scans.
+            try:
+                export_rel = output_dir.resolve().relative_to(root).as_posix()
+            except ValueError:
+                export_rel = None
+            if export_rel and export_rel not in config.exclude_dirs:
+                config.exclude_dirs.append(export_rel)
+        counts["okf"] = okf_report
+
+        graph_stats: Optional[dict[str, Any]] = None
+        if not no_graph:
+            kinds = frozenset(
+                k.strip() for k in graph_kinds.split(",") if k.strip()
+            )
+            graph_stats = await _export_graph_html(
+                store, output_dir, config.wiki_name, kinds,
+            )
+        counts["graph"] = graph_stats
+
         return counts
 
     counts = _run(_pipeline())
     save_project_config(root, config)
 
     stats = counts["stats"]
+
+    # Write wiki_stats.json + README.md.
+    _write_build_stats(
+        output_dir, config.wiki_name, stats,
+        counts.get("okf"), counts.get("graph"),
+    )
+
     click.echo(
         f"Wiki '{config.wiki_name}' built at "
-        f"{config.storage_path(root)} — "
+        f"{output_dir} — "
         f"{counts['written']} ingested, {counts['unchanged']} unchanged, "
         f"{counts['removed']} removed; "
         f"{stats.get('pages', 0)} pages, {stats.get('edges', 0)} edges."
     )
+    okf = counts.get("okf")
+    if okf and not quiet:
+        click.echo(f"OKF bundle: {okf['files_written']} files exported.")
+    graph = counts.get("graph")
+    if graph and graph.get("exported") and not quiet:
+        click.echo(
+            f"Graph: {graph['nodes']} nodes, {graph['edges']} edges "
+            f"→ {graph['html']}"
+        )
     if scan.skipped and not quiet:
         click.echo(f"Skipped {len(scan.skipped)} binary/oversized files.")
 
