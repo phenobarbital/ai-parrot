@@ -1,0 +1,106 @@
+{
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/moonshot.py",
+      "symbol": "MoonshotClient",
+      "description": "New file — MoonshotClient extending OpenAIClient (same pattern as NvidiaClient)",
+      "evidence": ["F001", "F004"],
+      "exists": false
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/moonshot.py",
+      "symbol": "MoonshotModel",
+      "description": "New file — str Enum with all Moonshot model IDs",
+      "evidence": ["F001", "F004"],
+      "exists": false
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/factory.py",
+      "symbol": "SUPPORTED_CLIENTS",
+      "lines": "64-91",
+      "description": "Add 'moonshot' and 'kimi' entries pointing to MoonshotClient",
+      "evidence": ["F003"],
+      "exists": true
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/gpt.py",
+      "symbol": "OpenAIClient",
+      "description": "Parent class — inherits ask(), ask_stream(), invoke(), _chat_completion(), get_client(), tool calling, streaming, structured output, vision",
+      "evidence": ["F001"],
+      "exists": true
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/nvidia.py",
+      "symbol": "NvidiaClient",
+      "description": "Pattern analog — extend OpenAIClient, override _chat_completion(), add thinking mode via contextvars",
+      "evidence": ["F001"],
+      "exists": true
+    },
+    {
+      "path": "tests/clients/test_moonshot_client.py",
+      "symbol": null,
+      "description": "New file — unit tests for MoonshotClient",
+      "evidence": ["F003"],
+      "exists": false
+    }
+  ],
+  "constraints": [
+    {
+      "type": "api_compatibility",
+      "description": "Moonshot is OpenAI-compatible but K-series models reject temperature/top_p/n/penalties — must strip these from requests",
+      "evidence": ["F004"],
+      "confidence": "high"
+    },
+    {
+      "type": "thinking_mode",
+      "description": "Three thinking mode variants: reasoning_effort (K3), thinking dict (K2.6), always-on (K2.7-code). Must handle all three.",
+      "evidence": ["F004"],
+      "confidence": "high"
+    },
+    {
+      "type": "streaming",
+      "description": "Usage info in choices[0].usage not top-level usage — may need streaming override",
+      "evidence": ["F004"],
+      "confidence": "medium"
+    },
+    {
+      "type": "vision",
+      "description": "No HTTP URL images — only base64 and ms:// file references. Video support via video_url type.",
+      "evidence": ["F004"],
+      "confidence": "high"
+    },
+    {
+      "type": "existing_references",
+      "description": "Kimi models already available via Nvidia and Groq gateways — direct Moonshot client adds native access, newer models (K3), and Moonshot-specific features (prompt_cache_key, partial mode)",
+      "evidence": ["F002"],
+      "confidence": "high"
+    }
+  ],
+  "hypotheses": [
+    {
+      "id": "H1",
+      "statement": "MoonshotClient should extend OpenAIClient with the NvidiaClient pattern: override __init__ for base_url/api_key, override _chat_completion() for parameter stripping and thinking mode, add ask()/ask_stream() wrappers for thinking kwargs",
+      "confidence": "high",
+      "supporting_findings": ["F001", "F004"],
+      "reasoning": "NvidiaClient is 254 lines and handles identical concerns (OpenAI-compatible endpoint with thinking mode). Moonshot adds parameter stripping as the main divergence."
+    }
+  ],
+  "claims": [
+    {"text": "MoonshotClient extends OpenAIClient (not AbstractClient directly)", "confidence": "high", "evidence": ["F001"]},
+    {"text": "K-series models require parameter stripping in _chat_completion()", "confidence": "high", "evidence": ["F004"]},
+    {"text": "Thinking mode uses contextvars pattern from NvidiaClient", "confidence": "high", "evidence": ["F001", "F004"]},
+    {"text": "Context caching is automatic — no _apply_cache_hints() override needed", "confidence": "high", "evidence": ["F004"]},
+    {"text": "Vision inherits from OpenAIClient base64 handling — needs URL-blocking guard", "confidence": "medium", "evidence": ["F004"]},
+    {"text": "Factory registration adds 'moonshot' and 'kimi' keys", "confidence": "high", "evidence": ["F003"]},
+    {"text": "Model enum follows parrot/models/ pattern with str Enum", "confidence": "high", "evidence": ["F001"]},
+    {"text": "Streaming usage location difference may need _chat_completion override for stream mode", "confidence": "medium", "evidence": ["F004"]}
+  ],
+  "unknowns": [],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "args": "FEAT-311",
+    "rationale": "High-confidence localization with clear pattern analog (NvidiaClient). All API details documented. Ready for full spec."
+  }
+}
