@@ -190,6 +190,33 @@ def _install_settings_hook(root: Path) -> str:
     return ".claude/settings.json — PreToolUse wiki nudge hook added"
 
 
+def _install_permissions(root: Path) -> str:
+    """Allowlist wikitoolkit commands so queries run without prompting."""
+    path = root / ".claude" / "settings.json"
+    settings = _load_settings(path) or {}
+
+    permissions = settings.get("permissions")
+    if permissions is None:
+        permissions = settings["permissions"] = {}
+    if not isinstance(permissions, dict):
+        raise RuntimeError(f"{path}: 'permissions' is not a JSON object")
+    allow = permissions.get("allow")
+    if allow is None:
+        allow = permissions["allow"] = []
+    if not isinstance(allow, list):
+        raise RuntimeError(f"{path}: 'permissions.allow' is not a list")
+
+    missing = [r for r in assets.PERMISSION_RULES if r not in allow]
+    if not missing:
+        return ".claude/settings.json — wikitoolkit permissions already allowed"
+    allow.extend(missing)
+    _write_settings(path, settings)
+    return (
+        f".claude/settings.json — {len(missing)} wikitoolkit "
+        "permission rule(s) added"
+    )
+
+
 def _install_slash_command(root: Path) -> str:
     """Write the /parrotwiki slash command file."""
     path = root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME
@@ -350,6 +377,7 @@ def install_claude_integration(
 
     actions.append(_install_claude_md(root))
     actions.append(_install_settings_hook(root))
+    actions.append(_install_permissions(root))
     actions.append(_install_slash_command(root))
     if git_hook:
         actions.append(_install_git_hook(root))
@@ -389,6 +417,7 @@ def uninstall_claude_integration(root: Path) -> list[str]:
     except RuntimeError:
         settings = None
     if isinstance(settings, dict):
+        dirty = False
         hooks = settings.get("hooks")
         pre = hooks.get("PreToolUse", []) if isinstance(hooks, dict) else []
         if isinstance(pre, list):
@@ -402,10 +431,32 @@ def uninstall_claude_integration(root: Path) -> list[str]:
                     settings["hooks"].pop("PreToolUse")
                 if not settings["hooks"]:
                     settings.pop("hooks")
-                _write_settings(settings_path, settings)
+                dirty = True
                 actions.append(
                     ".claude/settings.json — PreToolUse hook removed"
                 )
+        permissions = settings.get("permissions")
+        allow = (
+            permissions.get("allow", [])
+            if isinstance(permissions, dict)
+            else []
+        )
+        if isinstance(allow, list):
+            kept_allow = [
+                r for r in allow if r not in assets.PERMISSION_RULES
+            ]
+            if len(kept_allow) != len(allow):
+                settings["permissions"]["allow"] = kept_allow
+                if not kept_allow:
+                    settings["permissions"].pop("allow")
+                if not settings["permissions"]:
+                    settings.pop("permissions")
+                dirty = True
+                actions.append(
+                    ".claude/settings.json — wikitoolkit permissions removed"
+                )
+        if dirty:
+            _write_settings(settings_path, settings)
 
     command_path = root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME
     if command_path.exists():

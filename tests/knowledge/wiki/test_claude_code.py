@@ -54,7 +54,7 @@ def _built_repo(repo: Path) -> Path:
 class TestInstaller:
     def test_fresh_install_writes_all_artifacts(self, repo):
         actions = install_claude_integration(repo)
-        assert len(actions) == 6
+        assert len(actions) == 7
 
         assert (repo / ".parrot" / "wiki.json").exists()
         claude_md = (repo / "CLAUDE.md").read_text(encoding="utf-8")
@@ -67,6 +67,8 @@ class TestInstaller:
         entry = settings["hooks"]["PreToolUse"][0]
         assert entry["matcher"] == assets.HOOK_MATCHER
         assert entry["hooks"][0]["command"] == assets.HOOK_COMMAND
+        for rule in assets.PERMISSION_RULES:
+            assert rule in settings["permissions"]["allow"]
 
         assert (repo / ".claude" / "commands" / "parrotwiki.md").exists()
 
@@ -161,7 +163,10 @@ class TestInstaller:
         settings = json.loads(
             (settings_dir / "settings.json").read_text(encoding="utf-8")
         )
-        assert settings["permissions"] == {"allow": ["Bash(ls:*)"]}
+        allow = settings["permissions"]["allow"]
+        assert allow[0] == "Bash(ls:*)"  # user rule preserved, first
+        for rule in assets.PERMISSION_RULES:
+            assert rule in allow
         pre = settings["hooks"]["PreToolUse"]
         assert len(pre) == 2
         assert pre[0]["hooks"][0]["command"] == "echo hi"

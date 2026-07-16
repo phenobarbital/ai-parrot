@@ -34,7 +34,7 @@ class ClaudeIntegrationConfig(BaseModel):
         nudge_tools: Tool names the PreToolUse nudge applies to.
     """
 
-    nudge_cooldown_seconds: int = Field(default=300, ge=0)
+    nudge_cooldown_seconds: int = Field(default=60, ge=0)
     nudge_tools: list[str] = Field(
         default_factory=lambda: ["Grep", "Glob", "Read", "Bash"]
     )
