@@ -14,14 +14,14 @@
       "feature_id": "FEAT-311",
       "feature": "moonshot-client-llm",
       "spec": "sdd/specs/moonshot-client-llm.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task — all other tasks depend on this",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-16T22:51:27+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1794-moonshot-model-enum.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-311",
       "feature": "moonshot-client-llm",
       "spec": "sdd/specs/moonshot-client-llm.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1794"],
+      "depends_on": [
+        "TASK-1794"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1794 for MoonshotModel import",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-16T22:51:27+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1795-moonshot-client.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-311",
       "feature": "moonshot-client-llm",
       "spec": "sdd/specs/moonshot-client-llm.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1795"],
+      "depends_on": [
+        "TASK-1795"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1795 for MoonshotClient class",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-16T22:51:27+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1796-moonshot-factory-registration.md"
     },
@@ -68,14 +72,18 @@
       "feature_id": "FEAT-311",
       "feature": "moonshot-client-llm",
       "spec": "sdd/specs/moonshot-client-llm.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1794", "TASK-1795", "TASK-1796"],
+      "depends_on": [
+        "TASK-1794",
+        "TASK-1795",
+        "TASK-1796"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on all implementation tasks being complete",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-16T22:51:27+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1797-moonshot-unit-tests.md"
     }
