@@ -92,7 +92,7 @@
       "feature_id": "FEAT-310",
       "feature": "eventbus-v2",
       "spec": "sdd/specs/eventbus-v2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Own files (subscribers/notification.py); no overlap with backends (1785), facade (1786), or DLQ (1788) beyond additive subscribers/__init__ exports.",
       "assigned_to": null,
       "started_at": "2026-07-16T09:49:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1787-notification-subscriber.md"
+      "completed_at": "2026-07-16T10:13:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1787-notification-subscriber.md"
     },
     {
       "id": "TASK-1788",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-310 — Unified EventBus v2 — queue-based dispatch, severity, ingress channels, and notifications
 **Spec**: `sdd/specs/eventbus-v2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1784
@@ -164,8 +164,8 @@ async def test_bus_internal_topics_never_alert(mock_notify): ...
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-16
+**Notes**: `NotificationSubscriber` + Pydantic `AlertRule`/`AlertsConfig` (extra=forbid). Threshold rules and sliding-window rules ("N events >= severity in M s", fire once per crossing). Spec §2 defaults: 300s dedup per (rule_id, topic_class) with repeat count appended when window closes; 10/min channel throttle with overflow folded into ONE digest per window; storm guard >25 ERROR+/30s → single CRITICAL alert, per-rule alerts suppressed until rate drops. All monotonic-clock based (loop.time()). Delivery via injected sender's send_notification (NotificationMixin-compatible) as create_task with asyncio.timeout — never stalls bus workers; failures logged only (model B). bus.* topics excluded by default (include_bus_internal knob). Config: AlertsConfig.from_navconfig() for scalar BUS_ALERTS_* knobs; AlertsConfig.from_dict() for full [bus.alerts]/[[bus.alerts]] TOML mappings incl. rules. 10 unit tests pass; ruff clean.
 
-**Deviations from spec**: none
+**Deviations from spec**: throttle window length exposed as an extra knob (`channel_throttle_window_seconds`, default 60s → 10/min as specified) for testability; storm alert uses the first rule's provider/recipients (no dedicated storm channel was specified).
