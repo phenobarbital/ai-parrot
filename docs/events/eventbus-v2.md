@@ -92,6 +92,15 @@ mitigates duplicates but cannot eliminate them. **Consumers must be
 idempotent in distributed mode.** Retention: `XADD … MAXLEN ~ 100000`
 per stream (`parrot:stream:<topic-class>`).
 
+**ACK ordering (crash-safe):** transport-delivered envelopes are
+dispatched **inline** in the consumer loop — subscribers run to
+completion (handler failures stay isolated: retry → DLQ, so they count
+as processed), then the dedup key is set, then `XACK` fires. A crash at
+any earlier point leaves the entry un-ACKed and unmarked, so
+`XAUTOCLAIM` redelivers it. Consequence: transport consumption is
+serialized per consumer in arrival order (not priority order) — the
+priority queues apply to the local `publish()` path.
+
 ### 4. Ingress / egress
 
 - **Hooks** (`HookManager`): legacy dual-emit unchanged; the FEAT-310
@@ -100,7 +109,10 @@ per stream (`parrot:stream:<topic-class>`).
 - **`WebSocketIngress` / `GrpcIngress`** (`bus/ingress/`): `BaseHook`
   adapters validating ALL external input at the `IngressEnvelope`
   boundary. gRPC ships as optional extra `ai-parrot[grpc]`
-  (`parrot.events.v1`, A2UI-style versioned messages).
+  (`parrot.events.v1`, A2UI-style versioned messages). Token comparisons
+  are constant-time; ⚠️ `GrpcIngress` binds an **insecure** port unless
+  you pass `server_credentials` — terminate TLS in front of it otherwise
+  (the bearer token travels in the RPC metadata).
 - **Egress subscribers** (`bus/subscribers/`): `NotificationSubscriber`
   (severity alerting via async-notify with dedup/throttle/storm-guard),
   `AuditSubscriber` (append-only `navigator.evb_audit`),
@@ -134,6 +146,7 @@ typed event's dict form is dual-emitted onto the bus **fire-and-forget**
 | `bus.backpressure` | a backpressure policy activated | INFO |
 | `bus.dlq` | terminal topic for dead-lettered envelopes | WARNING |
 | `bus.dlq_error` | DLQ persistence itself failed | WARNING |
+| `bus.shutdown_incomplete` | drain deadline expired on `close()`; payload carries the abandoned count (also on `BusCore.dropped_on_close`) | INFO |
 
 Internal `bus.*` topics are capped below the default alert threshold and
 excluded from alerting/audit by default — this prevents

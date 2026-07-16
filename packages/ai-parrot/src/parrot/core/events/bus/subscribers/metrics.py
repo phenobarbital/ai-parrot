@@ -64,21 +64,24 @@ class MetricsSubscriber:
         ``bus.subscriber_error`` failure observer.
 
         Args:
-            bus: The BusCore to instrument.
+            bus: The BusCore to instrument — or the ``EventBus`` facade
+                (resolved via its ``.core`` property).
 
         Returns:
             The subscriber ids created.
         """
+        core: BusCore = getattr(bus, "core", bus)
         self._subscription_ids = [
-            bus.subscribe("*", self._on_envelope),
-            bus.subscribe("bus.subscriber_error", self._on_subscriber_error),
+            core.subscribe("*", self._on_envelope),
+            core.subscribe("bus.subscriber_error", self._on_subscriber_error),
         ]
         return list(self._subscription_ids)
 
     def detach(self, bus: BusCore) -> int:
         """Remove this subscriber's registrations from *bus*."""
+        core: BusCore = getattr(bus, "core", bus)
         removed = sum(
-            1 for sid in self._subscription_ids if bus.unsubscribe(sid)
+            1 for sid in self._subscription_ids if core.unsubscribe(sid)
         )
         self._subscription_ids = []
         return removed

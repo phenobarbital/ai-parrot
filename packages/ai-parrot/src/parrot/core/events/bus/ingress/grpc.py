@@ -16,6 +16,7 @@ validation failures return a structured ``status="rejected"`` response.
 """
 from __future__ import annotations
 
+import hmac
 import json
 from datetime import datetime
 from typing import Any, Optional
@@ -102,9 +103,10 @@ def validate_publish_request(data: dict[str, Any]) -> IngressEnvelope:
             raise ValueError(f"invalid timestamp: {exc}") from exc
     if data.get("source"):
         envelope_kwargs["source"] = data["source"]
-    if data.get("severity"):
+    # `is not None` (NOT truthiness): priority=0 is a valid explicit LOW.
+    if data.get("severity") is not None:
         envelope_kwargs["severity"] = data["severity"]
-    if data.get("priority"):
+    if data.get("priority") is not None:
         envelope_kwargs["priority"] = data["priority"]
     if data.get("correlation_id"):
         envelope_kwargs["correlation_id"] = data["correlation_id"]
@@ -133,8 +135,14 @@ class _EventBusIngressServicer(events_pb2_grpc.EventBusIngressServicer):
             "event_id": request.event_id,
             "timestamp": request.timestamp,
             "source": request.source,
-            "severity": request.severity,
-            "priority": request.priority,
+            # optional proto3 fields: explicit presence check so that
+            # priority=0 (LOW) survives and "unset" maps to None.
+            "severity": (
+                request.severity if request.HasField("severity") else None
+            ),
+            "priority": (
+                request.priority if request.HasField("priority") else None
+            ),
             "correlation_id": request.correlation_id,
             "metadata_json": request.metadata_json,
             "trace_context_json": request.trace_context_json,
@@ -165,6 +173,12 @@ class GrpcIngress(BaseHook):
             (``Bearer <token>``) or ``x-api-key``. Falls back to navconfig
             ``BUS_INGRESS_TOKEN``; with NO token configured, every call is
             refused (auth required by default).
+        server_credentials: Optional ``grpc.ServerCredentials`` — when
+            provided the port is bound with ``add_secure_port`` (TLS).
+
+            ⚠️ Without credentials the port is INSECURE (cleartext): the
+            bearer token travels unencrypted, so you MUST terminate TLS in
+            front of this port (sidecar/LB) in any non-local deployment.
         name: Hook name (BaseHook).
         **kwargs: Forwarded to :class:`BaseHook`.
     """
@@ -175,6 +189,7 @@ class GrpcIngress(BaseHook):
         *,
         address: str = "0.0.0.0:50061",
         auth_token: Optional[str] = None,
+        server_credentials: Optional[Any] = None,
         name: str = "grpc_ingress",
         **kwargs: Any,
     ) -> None:
@@ -186,6 +201,7 @@ class GrpcIngress(BaseHook):
             if auth_token is not None
             else nav_config.get("BUS_INGRESS_TOKEN", fallback=None)
         )
+        self._server_credentials = server_credentials
         self._server: Optional[grpc_aio.Server] = None
 
     async def start(self) -> None:
@@ -199,7 +215,15 @@ class GrpcIngress(BaseHook):
         events_pb2_grpc.add_EventBusIngressServicer_to_server(
             _EventBusIngressServicer(self), self._server
         )
-        self._server.add_insecure_port(self.address)
+        if self._server_credentials is not None:
+            self._server.add_secure_port(self.address, self._server_credentials)
+        else:
+            self.logger.warning(
+                "GrpcIngress '%s' binding INSECURE port %s — the bearer "
+                "token travels in cleartext; terminate TLS in front of it "
+                "or pass server_credentials.", self.name, self.address,
+            )
+            self._server.add_insecure_port(self.address)
         await self._server.start()
         self.logger.info("GrpcIngress '%s' listening on %s", self.name, self.address)
 
@@ -214,15 +238,23 @@ class GrpcIngress(BaseHook):
     # Internals
     # ------------------------------------------------------------------
 
+    def _token_matches(self, candidate: Optional[str]) -> bool:
+        """Constant-time comparison against the configured token."""
+        if candidate is None:
+            return False
+        return hmac.compare_digest(
+            candidate.encode("utf-8"), self._auth_token.encode("utf-8")
+        )
+
     def _authorized(self, context: Any) -> bool:
         """Check the shared token in the invocation metadata."""
         if not self._auth_token:
             return False  # auth required by default
         metadata = dict(context.invocation_metadata() or ())
         auth = metadata.get("authorization", "")
-        if auth.startswith("Bearer ") and auth[7:] == self._auth_token:
+        if auth.startswith("Bearer ") and self._token_matches(auth[7:]):
             return True
-        return metadata.get("x-api-key") == self._auth_token
+        return self._token_matches(metadata.get("x-api-key"))
 
     async def _publish(self, ingress: IngressEnvelope) -> None:
         """Publish a validated envelope through the facade."""

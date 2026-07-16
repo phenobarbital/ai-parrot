@@ -206,6 +206,8 @@ class NotificationSubscriber:
         self._error_times: deque[float] = deque()
         self._storm_active = False
         self._subscription_id: Optional[str] = None
+        # Strong refs to fire-and-forget delivery tasks (asyncio GC gotcha).
+        self._background_tasks: set[asyncio.Task[None]] = set()
 
         self.logger = logging.getLogger(
             "parrot.core.events.bus.subscribers.notification"
@@ -223,27 +225,30 @@ class NotificationSubscriber:
         scheduling — spec G3).
 
         Args:
-            bus: The BusCore to attach to.
+            bus: The BusCore to attach to — or the ``EventBus`` facade
+                (resolved via its ``.core`` property).
 
         Returns:
             The subscriber id, or ``None`` when no rules are configured.
         """
+        core: BusCore = getattr(bus, "core", bus)
         if not self._rules:
             self.logger.warning(
                 "NotificationSubscriber has no rules — not attaching"
             )
             return None
         floor = min(rule.min_severity for rule in self._rules)
-        self._subscription_id = bus.subscribe(
+        self._subscription_id = core.subscribe(
             "*", self._on_envelope, min_severity=floor
         )
         return self._subscription_id
 
     def detach(self, bus: BusCore) -> bool:
         """Remove this alerter's subscription from *bus*."""
+        core: BusCore = getattr(bus, "core", bus)
         if self._subscription_id is None:
             return False
-        removed = bus.unsubscribe(self._subscription_id)
+        removed = core.unsubscribe(self._subscription_id)
         self._subscription_id = None
         return removed
 
@@ -392,10 +397,12 @@ class NotificationSubscriber:
             return
 
         sent.append(now)
-        asyncio.create_task(
+        task = asyncio.create_task(
             self._deliver(provider, recipients, subject, message),
             name=f"bus-alert-deliver-{provider}",
         )
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     async def _flush_digest(
         self,

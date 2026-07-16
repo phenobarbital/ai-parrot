@@ -83,8 +83,8 @@ class DLQHandler:
     Plug :meth:`on_dlq` into ``BusCore(on_dlq=handler.on_dlq)``.
 
     Args:
-        bus: The BusCore used to republish on ``bus.dlq`` (and for
-            :meth:`replay`).
+        bus: The BusCore — or ``EventBus`` facade — used to republish on
+            ``bus.dlq`` (and for :meth:`replay`).
         dsn: Postgres DSN; when ``None``, falls back to
             ``parrot.conf.default_dsn``. A missing DSN disables
             persistence with a loud warning meta-event — it never crashes
@@ -99,7 +99,9 @@ class DLQHandler:
         dsn: Optional[str] = None,
         driver: str = "pg",
     ) -> None:
-        self._bus = bus
+        # Accept the EventBus facade too (duck-typed via its .core property).
+        self._bus: BusCore = getattr(bus, "core", bus)
+        self._background_tasks: set[asyncio.Task[None]] = set()
         self.logger = logging.getLogger("parrot.core.events.bus.dlq")
         if dsn is None:
             # Lazy import — parrot.conf is heavy and env-dependent.
@@ -181,11 +183,14 @@ class DLQHandler:
             self.logger.exception("bus.dlq republication failed")
 
         # 2) Fire-and-forget persistence (dispatch path never waits on pg).
+        # Strong task reference — asyncio only keeps a weak one.
         if self._dsn:
-            asyncio.create_task(
+            task = asyncio.create_task(
                 self._persist(envelope, failure),
                 name=f"bus-dlq-persist.{envelope.event_id}",
             )
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
 
     async def _persist(
         self, envelope: EventEnvelope, failure: dict[str, Any]

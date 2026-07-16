@@ -29,8 +29,11 @@ message PublishRequest {
   string event_id = 4;         // optional; server generates when empty
   string timestamp = 5;        // optional ISO 8601; naive coerced to UTC
   string source = 6;           // optional emitter identifier
-  int32 severity = 7;          // Severity value (10..50); 0 → INFO
-  int32 priority = 8;          // EventPriority value (0..15); absent → NORMAL
+  // `optional` gives explicit field presence: priority=0 (LOW) and
+  // severity are distinguishable from "not provided" (absent → defaults
+  // INFO / NORMAL server-side).
+  optional int32 severity = 7; // Severity value (10..50)
+  optional int32 priority = 8; // EventPriority value (0..15; 0 = LOW)
   string correlation_id = 9;   // optional chain-tracking id
   string metadata_json = 10;   // optional JSON object
   string trace_context_json = 11;  // optional JSON object

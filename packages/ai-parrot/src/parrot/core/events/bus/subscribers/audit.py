@@ -122,11 +122,13 @@ class AuditSubscriber:
         """Subscribe on *bus* and start the flush task.
 
         Args:
-            bus: The BusCore to audit.
+            bus: The BusCore to audit — or the ``EventBus`` facade
+                (resolved via its ``.core`` property).
 
         Returns:
             The subscriber id, or ``None`` when auditing is disabled.
         """
+        core: BusCore = getattr(bus, "core", bus)
         if not self._dsn:
             return None
         self._running = True
@@ -134,14 +136,15 @@ class AuditSubscriber:
             self._flush_task = asyncio.create_task(
                 self._run_flusher(), name="bus-audit-flusher"
             )
-        self._subscription_id = bus.subscribe(self._pattern, self._on_envelope)
+        self._subscription_id = core.subscribe(self._pattern, self._on_envelope)
         return self._subscription_id
 
     def detach(self, bus: BusCore) -> bool:
         """Remove the subscription (flush task keeps draining until close)."""
+        core: BusCore = getattr(bus, "core", bus)
         if self._subscription_id is None:
             return False
-        removed = bus.unsubscribe(self._subscription_id)
+        removed = core.unsubscribe(self._subscription_id)
         self._subscription_id = None
         return removed
 

@@ -43,6 +43,7 @@ _VALID_POLICIES = (POLICY_BLOCK, POLICY_DROP_OLDEST, POLICY_REJECT)
 # Meta-event topics defined by this module.
 TOPIC_SUBSCRIBER_ERROR = "bus.subscriber_error"
 TOPIC_BACKPRESSURE = "bus.backpressure"
+TOPIC_SHUTDOWN_INCOMPLETE = "bus.shutdown_incomplete"
 
 # Recursion guard: True while a ``bus.*`` meta-envelope is being dispatched,
 # so a failing meta-event handler does not spawn another meta-event and loop
@@ -178,8 +179,20 @@ class BusCore:
         self._closing = False
         self._stopping = False
         self._in_flight = 0
+        # Strong references to fire-and-forget tasks (asyncio only keeps a
+        # weak ref — without this, a task can be GC'd mid-execution).
+        self._background_tasks: set[asyncio.Task[None]] = set()
+        #: Envelopes abandoned because the drain deadline expired on close().
+        self.dropped_on_close = 0
 
         self.logger = logging.getLogger("parrot.core.events.bus.core")
+
+    def _spawn(self, coro: Any, name: str) -> asyncio.Task[None]:
+        """Create a strongly-referenced fire-and-forget task."""
+        task = asyncio.create_task(coro, name=name)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -214,30 +227,47 @@ class BusCore:
             await asyncio.wait_for(self._drain(), timeout=deadline)
         except (asyncio.TimeoutError, TimeoutError):
             pending = sum(q.qsize() for q in self._queues.values())
-            self.logger.warning(
+            self.dropped_on_close += pending
+            self.logger.error(
                 "BusCore drain deadline (%.1fs) exceeded; %d envelopes "
-                "still pending", deadline, pending
+                "abandoned (dropped_on_close=%d)",
+                deadline, pending, self.dropped_on_close,
             )
-        self._stopping = True
-        # Wake every worker so it can observe _stopping and exit.
-        for _ in range(self._workers):
-            self._items.release()
-        if self._runner is not None:
-            try:
-                await asyncio.wait_for(self._runner, timeout=deadline)
-            except (asyncio.TimeoutError, TimeoutError):
-                self._runner.cancel()
+            # Best-effort observability signal — may itself go undispatched
+            # (workers are being torn down), but monitoring backends that
+            # consume the transport or read dropped_on_close still see it.
+            self._publish_meta(
+                TOPIC_SHUTDOWN_INCOMPLETE,
+                {"pending": pending, "drain_timeout": deadline},
+            )
+        try:
+            self._stopping = True
+            # Wake every worker so it can observe _stopping and exit.
+            for _ in range(self._workers):
+                self._items.release()
+            if self._runner is not None:
                 try:
-                    await self._runner
-                except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                    pass
-            self._runner = None
-        if self._backend is not None:
-            try:
-                await self._backend.close()
-            except Exception:  # noqa: BLE001 — transport teardown isolated
-                self.logger.exception("Transport backend close failed")
-        self._started = False
+                    await asyncio.wait_for(self._runner, timeout=deadline)
+                except (asyncio.TimeoutError, TimeoutError):
+                    self._runner.cancel()
+                    try:
+                        await self._runner
+                    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                        pass
+                except Exception:  # noqa: BLE001 — incl. TaskGroup groups
+                    # A worker escaping model-B isolation surfaces here as an
+                    # ExceptionGroup; never abort teardown because of it.
+                    self.logger.exception(
+                        "BusCore worker pool terminated with errors on close()"
+                    )
+                self._runner = None
+        finally:
+            if self._backend is not None:
+                try:
+                    await self._backend.close()
+                except Exception:  # noqa: BLE001 — transport teardown isolated
+                    self.logger.exception("Transport backend close failed")
+            self._started = False
         self.logger.debug("BusCore closed")
 
     async def _drain(self) -> None:
@@ -271,7 +301,7 @@ class BusCore:
         # local enqueue — fire-and-forget, never delays local dispatch.
         if self._backend is not None:
             self._remember_fanout(envelope.event_id)
-            asyncio.create_task(
+            self._spawn(
                 self._backend_publish(envelope),
                 name=f"bus-backend-publish.{envelope.topic}",
             )
@@ -298,6 +328,11 @@ class BusCore:
                 except asyncio.QueueEmpty:  # drained meanwhile
                     pass
                 queue.put_nowait(envelope)
+                # NOTE: the dropped item's original release() is now an
+                # "extra" permit — a worker burns it as one spurious wakeup
+                # (acquire → find nothing → re-wait). The skew does NOT
+                # accumulate: each extra permit is consumed exactly once,
+                # so overhead is one no-op wakeup per historical drop.
                 self._items.release()
                 return
             # POLICY_BLOCK: await until space frees up.
@@ -319,12 +354,23 @@ class BusCore:
             )
 
     async def _on_transport_envelope(self, envelope: EventEnvelope) -> None:
-        """Enqueue an envelope arriving from the transport consumer.
+        """Dispatch an envelope arriving from the transport consumer.
 
         Envelopes this process fanned out itself (loopback echoes) are
         dropped by ``event_id`` so local subscribers see each publish
         exactly once in-process. Cross-instance dedup is the Streams
         backend's job (TASK-1789).
+
+        Transport-delivered envelopes are dispatched INLINE (not enqueued)
+        so durable backends can acknowledge only AFTER handlers have fully
+        run — this is what makes Streams-mode at-least-once real: a crash
+        mid-dispatch leaves the entry un-ACKed for reclaim instead of
+        losing it from a volatile in-memory queue. The consumer loop is a
+        background task, so the emitter path is unaffected; consumption is
+        serialized per consumer in arrival order (matching consumer-group
+        semantics and the legacy pub/sub listener behavior). Handler-level
+        failures remain isolated (model B: retry → DLQ) and therefore
+        count as processed.
         """
         if envelope.event_id in self._fanned_out:
             self._fanned_out.pop(envelope.event_id, None)
@@ -334,7 +380,11 @@ class BusCore:
                 "Transport envelope %s dropped: bus closing", envelope.topic
             )
             return
-        await self._enqueue_local(envelope)
+        self._in_flight += 1
+        try:
+            await self._dispatch(envelope)
+        finally:
+            self._in_flight -= 1
 
     def _remember_fanout(self, event_id: str) -> None:
         """Record a fanned-out event_id (bounded, oldest evicted)."""
@@ -382,6 +432,21 @@ class BusCore:
             "Subscribed to '%s' with id %s", pattern, subscription.subscriber_id
         )
         return subscription.subscriber_id
+
+    def match_count(self, topic: str) -> int:
+        """Count subscriptions matching *topic* — public, cheap, no sort.
+
+        Used by the ``EventBus`` facade to report the legacy
+        "subscribers matched at enqueue time" return value without
+        reaching into private internals.
+        """
+        count = len(self._subscriptions.get(topic, ()))
+        count += sum(
+            1
+            for sub in self._pattern_subscriptions
+            if fnmatch.fnmatch(topic, sub.pattern)
+        )
+        return count
 
     def unsubscribe(self, subscriber_id: str) -> bool:
         """Remove a subscription by id.

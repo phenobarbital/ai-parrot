@@ -72,7 +72,7 @@ async def test_end_to_end_memory_mode(mock_notify):
             )
         ],
     )
-    alerter.attach(bus._core)
+    alerter.attach(bus.core)  # public facade accessor
 
     await bus.emit("orders.created", {"id": 1})                          # INFO
     await bus.emit("orders.delayed", {"id": 2}, severity=Severity.WARNING)

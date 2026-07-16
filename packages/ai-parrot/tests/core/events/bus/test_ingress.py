@@ -196,6 +196,25 @@ def test_grpc_validate_publish_request_boundary():
         validate_publish_request({"topic": "a.b", "severity": 999})
 
 
+def test_grpc_priority_zero_is_low_not_default():
+    """Explicit priority=0 (LOW) must survive; absent → NORMAL."""
+    from parrot.core.events.evb import EventPriority
+    _, validate_publish_request = _import_grpc_ingress()
+
+    low = validate_publish_request({"topic": "a.b", "priority": 0})
+    assert low.priority == EventPriority.LOW
+
+    unset = validate_publish_request({"topic": "a.b", "priority": None})
+    assert unset.priority == EventPriority.NORMAL
+
+    # Proto-level presence: unset optional field maps to None server-side.
+    from parrot.core.events.bus.ingress.proto import events_pb2
+    explicit = events_pb2.PublishRequest(version="1.0", topic="a.b", priority=0)
+    absent = events_pb2.PublishRequest(version="1.0", topic="a.b")
+    assert explicit.HasField("priority") is True
+    assert absent.HasField("priority") is False
+
+
 async def test_grpc_ingress_publish_end_to_end(bus):
     """In-process grpc.aio server round-trip with auth + validation."""
     GrpcIngress, _ = _import_grpc_ingress()

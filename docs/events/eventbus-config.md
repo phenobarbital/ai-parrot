@@ -78,7 +78,7 @@ alerter.attach(bus._core)
 | navconfig key | Default | Used by |
 |---|---|---|
 | `BUS_INGRESS_TOKEN` | *(unset ⇒ ALL ingress refused)* | `WebSocketIngress`, `GrpcIngress` — auth required by default |
-| `AUTONOMOUS_HOOKS_VIA_BUS` | `false` | orchestrator flag: also consume hook events via bus subscription |
+| `AUTONOMOUS_HOOKS_VIA_BUS` | `false` | orchestrator flag: **switches** hook consumption from the direct callback to a bus subscription (mutually exclusive — never both, or executions would double). Bus mode also picks up hook events published by other instances on a distributed backend |
 | Postgres DSN (`parrot.conf.default_dsn` / `DBHOST`…) | — | `DLQHandler` (`navigator.evb_dlq`), `AuditSubscriber` (`navigator.evb_audit`); missing DSN disables persistence with a loud warning |
 
 ## Redis Streams backend (programmatic)

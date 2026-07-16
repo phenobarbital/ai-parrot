@@ -187,6 +187,18 @@ class EventBus:
         self._started = False
         self._closed = False
 
+    @property
+    def core(self) -> "BusCore":
+        """Public accessor to the underlying :class:`BusCore`.
+
+        Use this to attach envelope-level components
+        (``NotificationSubscriber``, ``AuditSubscriber``,
+        ``MetricsSubscriber``, ``DLQHandler``) to a facade-managed bus::
+
+            alerter.attach(event_bus.core)
+        """
+        return self._core
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -309,12 +321,12 @@ class EventBus:
         envelope = from_legacy_event(
             event, severity=severity if severity is not None else _Severity.INFO
         )
-        matches = len(self._core._matching_subscriptions(event.event_type))
+        matches = self._core.match_count(event.event_type)
         await self._core.publish(envelope)
 
         self.logger.debug(
-            f"Published event {event.event_type}, "
-            f"{matches} subscribers matched"
+            "Published event %s, %d subscribers matched",
+            event.event_type, matches,
         )
         return matches
 

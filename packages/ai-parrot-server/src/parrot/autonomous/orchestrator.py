@@ -269,16 +269,23 @@ class AutonomousOrchestrator:
                 self.webhook_listener.set_event_bus(self.event_bus)
             self.logger.info("Webhook Listener initialized")
 
-        # External Hooks
-        self.hook_manager.set_event_callback(self._handle_hook_event)
-        # FEAT-310 (flag-guarded, default off): also consume hook events
-        # delivered through the bus. The direct callback above is KEPT.
+        # External Hooks — exactly ONE consumption path (never both, or
+        # every hook-triggered execution would run twice):
+        #
+        # * default: direct callback (low-latency path, kept permanently);
+        # * AUTONOMOUS_HOOKS_VIA_BUS=true (FEAT-310): `_handle_hook_event`
+        #   is re-registered as a bus subscriber instead — hook events flow
+        #   HookManager → bus → orchestrator, which also picks up hook
+        #   events published by OTHER instances on a distributed backend.
         if self._hooks_via_bus and self.event_bus is not None:
+            self.hook_manager.set_event_bus(self.event_bus)
             self.event_bus.subscribe("hooks.*", self._handle_bus_hook_event)
             self.logger.info(
-                "Hook events additionally consumed via EventBus "
-                "(AUTONOMOUS_HOOKS_VIA_BUS)"
+                "Hook events consumed via EventBus subscription "
+                "(AUTONOMOUS_HOOKS_VIA_BUS) — direct callback not wired"
             )
+        else:
+            self.hook_manager.set_event_callback(self._handle_hook_event)
         await self.hook_manager.start_all()
         self.logger.info("Hook Manager initialized")
 

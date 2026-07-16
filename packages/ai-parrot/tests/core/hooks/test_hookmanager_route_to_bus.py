@@ -67,7 +67,7 @@ async def test_route_to_bus_publishes_envelope():
 async def test_route_to_bus_severity_from_metadata():
     bus = EventBus()
     envelopes = []
-    bus._core.subscribe("hooks.*", lambda env: envelopes.append(env))
+    bus.core.subscribe("hooks.*", lambda env: envelopes.append(env))
 
     mgr = HookManager(route_to_bus=True)
     mgr.set_event_bus(bus)

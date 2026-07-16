@@ -13,7 +13,9 @@ Design (spec §2 layer 3):
 - **Consumer group** ``parrot-bus`` (configurable) with a per-instance
   consumer name (``<hostname>-<pid>``) for XAUTOCLAIM bookkeeping.
 - **Dedup**: TTL'd Redis key ``parrot:events:dedup:<event_id>``
-  (``SET NX EX``, default 24 h) checked before dispatch.
+  (default 24 h) — checked before dispatch, set only AFTER successful
+  dispatch (crash-safe: a crash mid-dispatch leaves the entry un-ACKed
+  and unmarked, so it is reclaimed and reprocessed).
 
 ⚠️ **At-least-once, NOT exactly-once** (spec §7 "Duplicate delivery"): the
 dedup set *mitigates* duplicates but cannot eliminate them (TTL expiry,
@@ -298,10 +300,19 @@ class RedisStreamsBackend:
     ) -> None:
         """Dedup-check, dispatch, and ACK one stream entry.
 
-        - fresh ``event_id`` → dispatch, then ``XACK`` on success;
-        - dispatch failure → dedup key released + NO ACK (the entry stays
-          pending and will be reclaimed/retried);
-        - duplicate ``event_id`` → skip dispatch, ``XACK`` anyway.
+        Ordering is crash-safe (at-least-once):
+
+        1. ``event_id`` already in the dedup set → skip dispatch, ``XACK``.
+        2. Dispatch via ``on_envelope`` — with ``BusCore`` this runs the
+           subscribers INLINE (handler failures are isolated inside the
+           core: retry → DLQ, so they count as processed).
+        3. ONLY on successful return: mark the dedup key, then ``XACK``.
+
+        A crash anywhere before step 3 leaves the entry un-ACKed and the
+        dedup key unset, so ``XAUTOCLAIM`` redelivers it for reprocessing.
+        The check→set window means a reclaimed entry can occasionally be
+        processed twice across consumers — that IS at-least-once;
+        consumers must be idempotent (spec §7).
         """
         raw = fields.get("envelope") or fields.get(b"envelope")
         try:
@@ -316,10 +327,8 @@ class RedisStreamsBackend:
             return
 
         dedup_key = f"{self.DEDUP_PREFIX}{envelope.event_id}"
-        fresh = await self._redis.set(
-            dedup_key, "1", nx=True, ex=self._dedup_ttl
-        )
-        if not fresh:
+        seen = await self._redis.get(dedup_key)
+        if seen:
             self.logger.debug(
                 "Duplicate event %s skipped (dedup set)", envelope.event_id
             )
@@ -329,14 +338,19 @@ class RedisStreamsBackend:
             await self._on_envelope(envelope)
         except Exception:  # noqa: BLE001 — leave pending for redelivery
             self.logger.exception(
-                "Consumer callback failed for %s — releasing dedup key, "
-                "entry stays pending for reclaim", envelope.topic,
+                "Consumer callback failed for %s — entry stays pending "
+                "(un-ACKed) for reclaim", envelope.topic,
             )
-            try:
-                await self._redis.delete(dedup_key)
-            except Exception:  # noqa: BLE001
-                self.logger.debug("dedup key release failed")
             return
+        # Success: mark seen FIRST, then ACK — a crash between the two
+        # redelivers a message the dedup check will skip (and re-ACK).
+        try:
+            await self._redis.set(dedup_key, "1", ex=self._dedup_ttl)
+        except Exception:  # noqa: BLE001 — dedup is best-effort
+            self.logger.warning(
+                "Dedup mark failed for %s (duplicates possible)",
+                envelope.event_id,
+            )
         await self._ack(stream, msg_id)
 
     async def _ack(self, stream: str, msg_id: Any) -> None:

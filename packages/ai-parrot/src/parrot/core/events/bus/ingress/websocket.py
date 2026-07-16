@@ -13,6 +13,7 @@ or navconfig ``BUS_INGRESS_TOKEN``) and presented via the
 """
 from __future__ import annotations
 
+import hmac
 import json
 from typing import Any, Optional
 
@@ -95,16 +96,24 @@ class WebSocketIngress(BaseHook):
     # Connection handling
     # ------------------------------------------------------------------
 
+    def _token_matches(self, candidate: Optional[str]) -> bool:
+        """Constant-time comparison against the configured token."""
+        if candidate is None:
+            return False
+        return hmac.compare_digest(
+            candidate.encode("utf-8"), self._auth_token.encode("utf-8")
+        )
+
     def _authorized(self, request: web.Request) -> bool:
         """Check the shared token (header bearer / X-API-Key / query)."""
         if not self._auth_token:
             return False  # auth required by default — no token, no entry
         auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer ") and auth[7:] == self._auth_token:
+        if auth.startswith("Bearer ") and self._token_matches(auth[7:]):
             return True
-        if request.headers.get("X-API-Key") == self._auth_token:
+        if self._token_matches(request.headers.get("X-API-Key")):
             return True
-        return request.query.get("token") == self._auth_token
+        return self._token_matches(request.query.get("token"))
 
     async def _handle_ws(self, request: web.Request) -> web.StreamResponse:
         """Upgrade, then validate/publish every TEXT frame."""

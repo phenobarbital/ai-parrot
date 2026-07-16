@@ -114,6 +114,9 @@ class FakeStreamsRedis:
         self.kv[key] = value
         return True
 
+    async def get(self, key):
+        return self.kv.get(key)
+
     async def delete(self, key):
         return 1 if self.kv.pop(key, None) is not None else 0
 
@@ -246,7 +249,7 @@ async def test_streams_event_id_dedup(fake_redis):
     await backend.close()
 
 
-async def test_streams_failure_releases_dedup_and_keeps_pending(fake_redis):
+async def test_streams_failure_keeps_pending_and_unmarked(fake_redis):
     backend = make_backend(fake_redis, autoclaim_interval=999)  # sweeper idle
     calls: list[str] = []
 
@@ -259,12 +262,57 @@ async def test_streams_failure_releases_dedup_and_keeps_pending(fake_redis):
     await backend.start_consumer(failing_consumer)
     await wait_until(lambda: len(calls) == 1)
     await asyncio.sleep(0.05)
-    # No ACK → stays pending for reclaim; dedup key released for retry.
+    # No ACK → stays pending for reclaim; dedup key NEVER set on failure
+    # (set-after-success ordering), so redelivery reprocesses it.
     assert fake_redis.acked == []
     pending = fake_redis.groups[("parrot:stream:app", "parrot-bus")]["pending"]
     assert "1-0" in pending
     assert f"parrot:events:dedup:{env.event_id}" not in fake_redis.kv
     await backend.close()
+
+
+async def test_streams_ack_only_after_buscore_dispatch(fake_redis, monkeypatch):
+    """The Critical-fix contract: with real BusCore wiring, XACK fires only
+    AFTER subscribers have fully run (not after a mere local enqueue)."""
+    from parrot.core.events.bus import BusCore
+
+    backend = make_backend(fake_redis, autoclaim_interval=999)
+    core = BusCore(workers=2, queue_size=16, backend=backend)
+
+    order: list[str] = []
+    release = asyncio.Event()
+
+    async def slow_handler(envelope):
+        order.append("handler-start")
+        await release.wait()
+        order.append("handler-end")
+
+    core.subscribe("remote.*", slow_handler)
+
+    real_ack = backend._ack
+
+    async def spying_ack(stream, msg_id):
+        order.append("ack")
+        await real_ack(stream, msg_id)
+
+    monkeypatch.setattr(backend, "_ack", spying_ack)
+
+    # Simulate a remote-origin entry: XADD directly (no local fan-out).
+    env = make_envelope("remote.job")
+    await fake_redis.xadd(
+        "parrot:stream:remote", {"envelope": json.dumps(env.to_dict())}
+    )
+    await core.start()  # starts the backend consumer
+
+    await wait_until(lambda: "handler-start" in order)
+    await asyncio.sleep(0.05)
+    assert "ack" not in order  # handler still running → NOT acked yet
+    release.set()
+    await wait_until(lambda: "ack" in order)
+    assert order == ["handler-start", "handler-end", "ack"]
+    # Dedup key marked only after success.
+    assert f"parrot:events:dedup:{env.event_id}" in fake_redis.kv
+    await core.close()
 
 
 async def test_streams_poison_entry_acked_and_dropped(fake_redis):
