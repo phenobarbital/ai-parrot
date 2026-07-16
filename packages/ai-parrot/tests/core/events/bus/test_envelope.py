@@ -93,13 +93,17 @@ def test_converters_lifecycle_hookevent_legacy():
 
 
 def test_converters_coerce_naive_timestamps_to_utc():
-    legacy = Event(event_type="x.y", payload={})  # naive datetime.now()
+    # Explicitly-naive timestamps (external/legacy sources may still
+    # produce them; Event's own default became tz-aware in TASK-1786).
+    naive = datetime.now()
+    legacy = Event(event_type="x.y", payload={}, timestamp=naive)
     hook = HookEvent(
         hook_id="h1",
         hook_type=HookType.SCHEDULER,
         event_type="tick",
         payload={},
-    )  # naive datetime.now()
+        timestamp=naive,
+    )
     assert legacy.timestamp.tzinfo is None
     assert hook.timestamp.tzinfo is None
 
