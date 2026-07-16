@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+import asyncio
+import signal
+import os
+import sys
+
 from navigator import Application
 from navigator.ext.memcache import Memcache
 from app import Main
@@ -10,6 +15,46 @@ mcache.setup(app)
 
 # Enable WebSockets Support
 app.add_websockets()
+
+
+async def _install_force_exit_handler(aiohttp_app) -> None:
+    """Replace Navigator's SIGINT/SIGTERM handler with one that allows force-exit.
+
+    First SIGINT triggers graceful shutdown (same as Navigator's default).
+    Second SIGINT prints a warning. Third SIGINT calls ``os._exit(1)``
+    immediately so the user is never stuck waiting for a hung shutdown.
+    """
+    loop = asyncio.get_running_loop()
+    nav = getattr(aiohttp_app, '_navigator', None) or app
+    count = [0]
+
+    def _handler(signame):
+        count[0] += 1
+        if count[0] >= 3:
+            sys.stderr.write(
+                f"\n[shutdown] Force exit after {count[0]} {signame} signals\n"
+            )
+            sys.stderr.flush()
+            os._exit(1)
+
+        if count[0] == 1:
+            if hasattr(nav, '_shutdown_in_progress'):
+                nav._shutdown_in_progress = True
+            if hasattr(nav, '_shutdown_event') and nav._shutdown_event:
+                nav._shutdown_event.set()
+        else:
+            sys.stderr.write(
+                f"\n[shutdown] Ctrl+C once more to force exit\n"
+            )
+            sys.stderr.flush()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda s=sig: _handler(s.name))
+
+
+aiohttp_app = app.get_app()
+aiohttp_app.on_startup.append(_install_force_exit_handler)
+
 
 def _hard_exit_after_graceful_shutdown() -> None:
     """Force process termination once Navigator's graceful shutdown returns.
@@ -26,8 +71,6 @@ def _hard_exit_after_graceful_shutdown() -> None:
     diagnosis, flush I/O, then hard-exit to bypass the join. This is the
     accepted remedy for third-party native-thread leaks at shutdown.
     """
-    import os
-    import sys
     import logging
     import threading
     import faulthandler
@@ -43,12 +86,8 @@ def _hard_exit_after_graceful_shutdown() -> None:
         )
         for t in survivors:
             sys.stderr.write(f"[shutdown]   - {t.name}\n")
-        # Full stacks so the exact blocking library can be pinpointed and,
-        # if desired, fixed at the source in a later pass.
         faulthandler.dump_traceback(file=sys.stderr)
 
-    # Flush the async log worker / stdout so nothing buffered is lost, since
-    # os._exit skips atexit handlers and buffer flushing.
     logging.shutdown()
     sys.stdout.flush()
     sys.stderr.flush()

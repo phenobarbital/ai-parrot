@@ -1704,3 +1704,38 @@ class ToolManager(MCPToolManagerMixin):
                 fn(tool_name, result, metadata)
             except Exception as e:
                 self.logger.warning("Result hook error in %s: %s", fn, e)
+
+    async def cleanup_toolkits(self) -> None:
+        """Close all registered toolkits that hold resources (DB pools, etc.).
+
+        Iterates the registered tools, finds unique parent toolkit instances
+        (via ``ToolkitTool.bound_method.__self__``), and calls ``cleanup()``
+        or ``stop()`` on each. Failures are logged and isolated so one
+        misbehaving toolkit cannot block the rest.
+        """
+        from .toolkit import ToolkitTool
+        seen: set[int] = set()
+        for tool in self._tools.values():
+            if not isinstance(tool, ToolkitTool):
+                continue
+            bound = getattr(tool, 'bound_method', None)
+            if bound is None:
+                continue
+            toolkit = getattr(bound, '__self__', None)
+            if toolkit is None:
+                continue
+            tk_id = id(toolkit)
+            if tk_id in seen:
+                continue
+            seen.add(tk_id)
+            cleanup_fn = getattr(toolkit, 'cleanup', None) or getattr(toolkit, 'stop', None)
+            if cleanup_fn and callable(cleanup_fn):
+                try:
+                    result = cleanup_fn()
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception as exc:
+                    self.logger.debug(
+                        "Error cleaning up toolkit %s: %s",
+                        type(toolkit).__name__, exc,
+                    )
