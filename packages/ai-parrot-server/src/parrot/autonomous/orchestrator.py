@@ -188,6 +188,13 @@ class AutonomousOrchestrator:
         self._use_webhooks = use_webhooks
         self._default_user_id = default_user_id
         self._default_session_prefix = default_session_prefix
+        # FEAT-310 (optional, default OFF): consume hook events via a bus
+        # subscription in addition to the direct callback. Guarded by
+        # navconfig flag AUTONOMOUS_HOOKS_VIA_BUS.
+        from navconfig import config as _nav_config
+        self._hooks_via_bus = str(
+            _nav_config.get("AUTONOMOUS_HOOKS_VIA_BUS", fallback="false")
+        ).lower() in ("1", "true", "yes")
         
         # Runtime state
         self._running = False
@@ -262,8 +269,23 @@ class AutonomousOrchestrator:
                 self.webhook_listener.set_event_bus(self.event_bus)
             self.logger.info("Webhook Listener initialized")
 
-        # External Hooks
-        self.hook_manager.set_event_callback(self._handle_hook_event)
+        # External Hooks — exactly ONE consumption path (never both, or
+        # every hook-triggered execution would run twice):
+        #
+        # * default: direct callback (low-latency path, kept permanently);
+        # * AUTONOMOUS_HOOKS_VIA_BUS=true (FEAT-310): `_handle_hook_event`
+        #   is re-registered as a bus subscriber instead — hook events flow
+        #   HookManager → bus → orchestrator, which also picks up hook
+        #   events published by OTHER instances on a distributed backend.
+        if self._hooks_via_bus and self.event_bus is not None:
+            self.hook_manager.set_event_bus(self.event_bus)
+            self.event_bus.subscribe("hooks.*", self._handle_bus_hook_event)
+            self.logger.info(
+                "Hook events consumed via EventBus subscription "
+                "(AUTONOMOUS_HOOKS_VIA_BUS) — direct callback not wired"
+            )
+        else:
+            self.hook_manager.set_event_callback(self._handle_hook_event)
         await self.hook_manager.start_all()
         self.logger.info("Hook Manager initialized")
 
@@ -374,6 +396,48 @@ class AutonomousOrchestrator:
             The hook_id of the registered hook.
         """
         return self.hook_manager.register(hook)
+
+    async def _handle_bus_hook_event(self, event: Event) -> None:
+        """FEAT-310 (flag-guarded): handle a hook event delivered via the bus.
+
+        Rebuilds a :class:`HookEvent` from either wire shape — the legacy
+        dual-emit payload (``HookEvent.model_dump()``) or the
+        ``route_to_bus`` first-class shape (hook payload + metadata
+        routing hints, topic ``hooks.<type>.<event>``) — and delegates to
+        :meth:`_handle_hook_event`.
+        """
+        try:
+            payload = event.payload or {}
+            if "hook_type" in payload and "event_type" in payload:
+                hook_event = HookEvent(**payload)  # legacy dual-emit shape
+            else:
+                parts = event.event_type.split(".", 2)
+                if len(parts) != 3:
+                    self.logger.warning(
+                        "Unrecognized hook bus topic: %s", event.event_type
+                    )
+                    return
+                metadata = dict(event.metadata or {})
+                hook_id = metadata.pop("hook_id", event.source or "bus")
+                target_type = metadata.pop("target_type", None)
+                target_id = metadata.pop("target_id", None)
+                task = metadata.pop("task", None)
+                hook_event = HookEvent(
+                    hook_id=hook_id,
+                    hook_type=parts[1],
+                    event_type=parts[2],
+                    payload=payload,
+                    metadata=metadata,
+                    target_type=target_type,
+                    target_id=target_id,
+                    task=task,
+                )
+            await self._handle_hook_event(hook_event)
+        except Exception as exc:
+            self.logger.error(
+                "Failed to handle bus-delivered hook event %s: %s",
+                event.event_type, exc,
+            )
 
     async def _handle_hook_event(self, event: HookEvent) -> None:
         """Convert a HookEvent into an ExecutionRequest and execute it."""
