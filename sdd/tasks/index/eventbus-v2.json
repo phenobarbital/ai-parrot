@@ -72,7 +72,7 @@
       "feature_id": "FEAT-310",
       "feature": "eventbus-v2",
       "spec": "sdd/specs/eventbus-v2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Rewrites evb.py over Modules 1-3; gate for all Phase 3 tasks.",
       "assigned_to": null,
       "started_at": "2026-07-16T09:49:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1786-eventbus-facade.md"
+      "completed_at": "2026-07-16T10:09:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1786-eventbus-facade.md"
     },
     {
       "id": "TASK-1787",

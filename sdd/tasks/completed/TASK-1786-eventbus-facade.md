@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-310 — Unified EventBus v2 — queue-based dispatch, severity, ingress channels, and notifications
 **Spec**: `sdd/specs/eventbus-v2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1785
@@ -195,8 +195,8 @@ async def test_lifecycle_dual_emit_through_facade(): ...
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-16
+**Notes**: `EventBus` rewritten as facade over `BusCore` + `MemoryBackend`/`RedisPubSubBackend` (redis_url/use_redis behavior preserved). All legacy signatures verbatim: subscribe/unsubscribe/publish/emit/on/close/connect, plus `use_redis` attr and `start_redis_listener()` (deprecated alias — consumer now starts with the bus; AutonomousOrchestrator's create_task call still works). Handlers/filter_fn keep receiving legacy `Event` objects (internal Event↔EventEnvelope conversion via TASK-1783 converters). publish/emit return int = subscribers matched at enqueue time (documented semantic shift), never await handlers. Additive kwargs: severity= (publish/emit), min_severity= (subscribe/on). `_event_history` kept as bounded deque(1000). Naive datetime.now() default in Event fixed → now(timezone.utc) (also from_dict fallback). [bus] config via navconfig flattened keys BUS_WORKERS/BUS_QUEUE_SIZE/BUS_HANDLER_TIMEOUT/BUS_RETRY_ATTEMPTS/BUS_RETRY_BASE_DELAY/BUS_DEFAULT_BACKPRESSURE/BUS_DRAIN_TIMEOUT, overridable by constructor kwargs. Bus modules imported lazily inside EventBus.__init__ (envelope/converters import evb → top-level import would be circular). Guard rails pass UNMODIFIED; events/__init__ untouched (exact four exports). 137 tests pass in tests/core/events + tests/core/hooks; ruff clean on task files.
 
-**Deviations from spec**: none
+**Deviations from spec**: (1) one TASK-1783 test (test_converters_coerce_naive_timestamps_to_utc) updated to pass explicitly-naive timestamps, since fixing Event's naive default (mandated by this task) made its old assumption stale — guard-rail tests untouched. (2) tests/unit/events/lifecycle cannot run in this environment (pre-existing ModuleNotFoundError: parrot.utils.types — uncompiled Cython module breaks tests/unit/conftest.py); unrelated to this change. (3) facade reads BusCore._matching_subscriptions() for the match count instead of adding a public count method (core.py not in this task's file list).
