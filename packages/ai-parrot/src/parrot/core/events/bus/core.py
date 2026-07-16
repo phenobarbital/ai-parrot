@@ -24,6 +24,7 @@ import asyncio
 import contextvars
 import fnmatch
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
@@ -31,6 +32,7 @@ from navconfig.logging import logging
 
 from parrot.core.events.evb import EventPriority
 from parrot.core.events.bus.envelope import EventEnvelope, Severity
+from parrot.core.events.bus.backends.base import TransportBackend
 
 # Backpressure policy names (per topic class).
 POLICY_BLOCK = "block"
@@ -108,10 +110,17 @@ class BusCore:
         on_dlq: Optional callback invoked (sync or async) when a handler
             exhausts its retries, as
             ``on_dlq(envelope, attempts=..., error=..., subscriber_id=...)``.
+        backend: Optional :class:`TransportBackend` — published envelopes
+            are fanned out to it fire-and-forget (never delays local
+            dispatch); envelopes arriving from its consumer are enqueued
+            locally (self-published echoes are suppressed by ``event_id``).
 
     Raises:
         ValueError: If a configured backpressure policy name is unknown.
     """
+
+    #: Bounded size of the fan-out echo-suppression set.
+    _FANOUT_ECHO_CAP = 2048
 
     def __init__(
         self,
@@ -125,6 +134,7 @@ class BusCore:
         default_backpressure: str = POLICY_BLOCK,
         drain_timeout: float = 5.0,
         on_dlq: Optional[DLQCallback] = None,
+        backend: Optional[TransportBackend] = None,
     ) -> None:
         for policy in [default_backpressure, *(backpressure or {}).values()]:
             if policy not in _VALID_POLICIES:
@@ -141,6 +151,10 @@ class BusCore:
         self._default_backpressure = default_backpressure
         self._drain_timeout = drain_timeout
         self._on_dlq = on_dlq
+        self._backend = backend
+        # event_ids fanned out to the backend — used to drop the loopback
+        # echo a transport may deliver back to this same process.
+        self._fanned_out: OrderedDict[str, None] = OrderedDict()
 
         # Highest priority first — workers scan in this order.
         self._priority_order: list[EventPriority] = sorted(
@@ -181,6 +195,8 @@ class BusCore:
         self._runner = asyncio.create_task(
             self._run_workers(), name="bus-core-workers"
         )
+        if self._backend is not None:
+            await self._backend.start_consumer(self._on_transport_envelope)
         self.logger.debug("BusCore started with %d workers", self._workers)
 
     async def close(self, drain_timeout: Optional[float] = None) -> None:
@@ -216,6 +232,11 @@ class BusCore:
                 except (asyncio.CancelledError, Exception):  # noqa: BLE001
                     pass
             self._runner = None
+        if self._backend is not None:
+            try:
+                await self._backend.close()
+            except Exception:  # noqa: BLE001 — transport teardown isolated
+                self.logger.exception("Transport backend close failed")
         self._started = False
         self.logger.debug("BusCore closed")
 
@@ -246,6 +267,18 @@ class BusCore:
             raise BusClosedError(
                 "BusCore is closing — publish() rejected"
             )
+        # Fan out to the transport backend BEFORE the (possibly blocking)
+        # local enqueue — fire-and-forget, never delays local dispatch.
+        if self._backend is not None:
+            self._remember_fanout(envelope.event_id)
+            asyncio.create_task(
+                self._backend_publish(envelope),
+                name=f"bus-backend-publish.{envelope.topic}",
+            )
+        await self._enqueue_local(envelope)
+
+    async def _enqueue_local(self, envelope: EventEnvelope) -> None:
+        """Enqueue *envelope* into its priority queue (backpressure-aware)."""
         queue = self._queues[envelope.priority]
         if queue.full():
             policy = self._policy_for(envelope.topic)
@@ -273,6 +306,41 @@ class BusCore:
             return
         queue.put_nowait(envelope)
         self._items.release()
+
+    async def _backend_publish(self, envelope: EventEnvelope) -> None:
+        """Fan *envelope* out to the transport backend (failures isolated)."""
+        try:
+            await self._backend.publish(envelope)
+        except Exception as exc:  # noqa: BLE001 — degraded mode, local OK
+            self.logger.warning(
+                "Transport backend publish failed for %s (%s): %s — "
+                "local dispatch unaffected",
+                envelope.topic, envelope.event_id, exc,
+            )
+
+    async def _on_transport_envelope(self, envelope: EventEnvelope) -> None:
+        """Enqueue an envelope arriving from the transport consumer.
+
+        Envelopes this process fanned out itself (loopback echoes) are
+        dropped by ``event_id`` so local subscribers see each publish
+        exactly once in-process. Cross-instance dedup is the Streams
+        backend's job (TASK-1789).
+        """
+        if envelope.event_id in self._fanned_out:
+            self._fanned_out.pop(envelope.event_id, None)
+            return
+        if self._closing:
+            self.logger.debug(
+                "Transport envelope %s dropped: bus closing", envelope.topic
+            )
+            return
+        await self._enqueue_local(envelope)
+
+    def _remember_fanout(self, event_id: str) -> None:
+        """Record a fanned-out event_id (bounded, oldest evicted)."""
+        self._fanned_out[event_id] = None
+        while len(self._fanned_out) > self._FANOUT_ECHO_CAP:
+            self._fanned_out.popitem(last=False)
 
     def subscribe(
         self,
