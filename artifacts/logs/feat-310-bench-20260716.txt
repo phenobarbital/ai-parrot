@@ -1,0 +1,18 @@
+FEAT-310 emit() overhead benchmark
+date               : 2026-07-16T15:38:03.965643+00:00
+python             : 3.11.15
+iterations         : 10000 (warmup 500)
+handler            : async, sleeps 50 ms per event (slow on purpose)
+
+mean               :      24.14 µs (       24135 ns)
+p50                :      18.61 µs (       18613 ns)
+p99                :      57.07 µs (       57070 ns)
+p99.9              :     323.82 µs (      323823 ns)
+max                :   20116.14 µs (    20116142 ns)
+
+FEAT-177 budget    :    2000.00 µs (     2000000 ns)  (0.1% of 2.0s reference LLM call)
+otel hot-path line :     200.00 µs (      200000 ns)  (~200 µs)
+
+p99 within FEAT-177 budget (2 ms) : PASS
+p99 within otel line (200 µs)     : PASS
+[33;20m[WARNING] 2026-07-16 17:38:08,965 parrot.core.events.bus.core(core.py:217) :: BusCore drain deadline (5.0s) exceeded; 10100 envelopes still pending[0m
