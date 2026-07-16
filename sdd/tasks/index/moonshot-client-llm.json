@@ -52,7 +52,7 @@
       "feature_id": "FEAT-311",
       "feature": "moonshot-client-llm",
       "spec": "sdd/specs/moonshot-client-llm.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Depends on TASK-1795 for MoonshotClient class",
       "assigned_to": null,
       "started_at": "2026-07-16T22:51:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1796-moonshot-factory-registration.md"
+      "completed_at": "2026-07-16T23:21:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1796-moonshot-factory-registration.md"
     },
     {
       "id": "TASK-1797",
