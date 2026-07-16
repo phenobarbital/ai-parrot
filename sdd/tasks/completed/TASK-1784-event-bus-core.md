@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-310 — Unified EventBus v2 — queue-based dispatch, severity, ingress channels, and notifications
 **Spec**: `sdd/specs/eventbus-v2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1783
@@ -177,8 +177,8 @@ async def test_graceful_shutdown_drain(): ...
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-16
+**Notes**: `BusCore` implemented with per-priority asyncio.Queues + counting semaphore, drained by an asyncio.TaskGroup worker pool in strict priority order. publish() is O(1) enqueue (slow-handler test proves emitter never waits). min_severity filters delivery only. Per-handler asyncio.timeout; retry-with-backoff (retry_attempts/retry_base_delay); exhausted retries emit `bus.subscriber_error` (contextvar recursion guard, mirroring EventRegistry) and invoke `on_dlq(envelope, attempts=, error=, subscriber_id=)` — signature aligned with TASK-1788's DLQHandler. Backpressure per topic (exact → topic-class → default): block (emits `bus.backpressure` meta then awaits), drop_oldest, reject (BackpressureError). Meta `bus.*` envelopes are Severity.INFO (alert-loop cap) and never DLQ'd (spec §7 loop prevention). close() drains with deadline and rejects publishes (BusClosedError). 10 unit tests pass; ruff clean.
 
 **Deviations from spec**: none

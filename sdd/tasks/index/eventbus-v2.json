@@ -32,7 +32,7 @@
       "feature_id": "FEAT-310",
       "feature": "eventbus-v2",
       "spec": "sdd/specs/eventbus-v2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Central dispatcher — TASK-1785 modifies core.py afterward; sequential.",
       "assigned_to": null,
       "started_at": "2026-07-16T09:49:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1784-event-bus-core.md"
+      "completed_at": "2026-07-16T09:58:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1784-event-bus-core.md"
     },
     {
       "id": "TASK-1785",
