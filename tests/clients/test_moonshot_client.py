@@ -15,19 +15,37 @@ import pytest
 from parrot.clients.moonshot import MoonshotClient
 from parrot.clients import moonshot as moonshot_mod
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
+from parrot.models import AIMessage, CompletionUsage
 from parrot.models.moonshot import (
     MoonshotModel,
     K_SERIES_MODELS,
     ALWAYS_THINKING_MODELS,
     REASONING_EFFORT_MODELS,
     THINKING_DICT_MODELS,
+    VISION_MODELS,
 )
+
+
+def _make_ai_message(raw_response=None, **overrides):
+    """Build a minimal real AIMessage for _capture_reasoning_content tests."""
+    fields = dict(
+        input="hi",
+        output="ok",
+        response="ok",
+        model="kimi-k3",
+        provider="moonshot",
+        usage=CompletionUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        raw_response=raw_response,
+    )
+    fields.update(overrides)
+    return AIMessage(**fields)
 
 
 def _make_moonshot_client(**attrs):
     """Create a minimal MoonshotClient instance for testing."""
     client = MoonshotClient.__new__(MoonshotClient)
     client.prompt_cache_key = None
+    client.temperature = 0  # AbstractClient.__init__ default; ask_stream() reads this
     for key, value in attrs.items():
         setattr(client, key, value)
     return client
@@ -432,3 +450,171 @@ class TestMoonshotModelEnum:
 
     def test_thinking_dict_models_frozenset(self):
         assert THINKING_DICT_MODELS == frozenset({"kimi-k2.6"})
+
+    def test_vision_models_frozenset(self):
+        assert VISION_MODELS == frozenset({
+            "kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed", "kimi-k2.6",
+            "moonshot-v1-8k-vision-preview", "moonshot-v1-128k-vision-preview",
+        })
+
+
+# ---------------------------------------------------------------------------
+# TestMoonshotReasoningContentCapture
+# ---------------------------------------------------------------------------
+
+
+class TestMoonshotReasoningContentCapture:
+    """Tests for _capture_reasoning_content and its wiring into ask()/ask_stream().
+
+    OpenAIClient's AIMessageFactory.from_openai() does not surface
+    reasoning_content (code-review finding); MoonshotClient patches this in
+    by post-processing the AIMessage's raw_response, mirroring ZaiClient's
+    getattr(message, "reasoning_content", None) idiom.
+    """
+
+    def test_capture_reasoning_content_present(self):
+        message = _make_ai_message(
+            raw_response={"choices": [{"message": {"reasoning_content": "because..."}}]},
+        )
+        MoonshotClient._capture_reasoning_content(message)
+        assert message.metadata["reasoning_content"] == "because..."
+
+    def test_capture_reasoning_content_absent(self):
+        message = _make_ai_message(raw_response={"choices": [{"message": {}}]})
+        MoonshotClient._capture_reasoning_content(message)
+        assert "reasoning_content" not in message.metadata
+
+    def test_capture_reasoning_content_no_raw_response(self):
+        message = _make_ai_message(raw_response=None)
+        MoonshotClient._capture_reasoning_content(message)  # must not raise
+        assert "reasoning_content" not in message.metadata
+
+    def test_capture_reasoning_content_no_choices(self):
+        message = _make_ai_message(raw_response={"choices": []})
+        MoonshotClient._capture_reasoning_content(message)  # must not raise
+        assert "reasoning_content" not in message.metadata
+
+    @pytest.mark.asyncio
+    async def test_ask_captures_reasoning_content(self):
+        client = _make_moonshot_client(model=MoonshotModel.KIMI_K3.value)
+
+        async def fake_ask(self, prompt, **kwargs):
+            return _make_ai_message(
+                raw_response={
+                    "choices": [{"message": {"reasoning_content": "step by step"}}]
+                },
+            )
+
+        with patch("parrot.clients.gpt.OpenAIClient.ask", new=fake_ask):
+            result = await client.ask("hi")
+
+        assert result.metadata["reasoning_content"] == "step by step"
+
+    @pytest.mark.asyncio
+    async def test_ask_stream_captures_reasoning_content_on_final_message(self):
+        client = _make_moonshot_client(model=MoonshotModel.MOONSHOT_V1_128K.value)
+
+        async def fake_ask_stream(self, prompt, **kwargs):
+            yield "chunk"
+            yield _make_ai_message(
+                model="moonshot-v1-128k",
+                raw_response={
+                    "choices": [
+                        {"message": {"reasoning_content": "final answer reasoning"}}
+                    ]
+                },
+            )
+
+        with patch("parrot.clients.gpt.OpenAIClient.ask_stream", new=fake_ask_stream):
+            chunks = [chunk async for chunk in client.ask_stream("hi")]
+
+        final = chunks[-1]
+        assert isinstance(final, AIMessage)
+        assert final.metadata["reasoning_content"] == "final answer reasoning"
+
+
+# ---------------------------------------------------------------------------
+# TestMoonshotAskStreamKSeriesSafety
+# ---------------------------------------------------------------------------
+
+
+class TestMoonshotAskStreamKSeriesSafety:
+    """Regression tests for the ask_stream() K-series temperature safety net.
+
+    OpenAIClient.ask_stream()'s Chat-Completions branch calls
+    self.client.chat.completions.create() directly and never routes
+    through _chat_completion(), so K-series parameter stripping never runs
+    for streaming. MoonshotClient.ask_stream() neutralizes self.temperature
+    (and the explicit kwarg) for K-series models as a safety net.
+    """
+
+    @pytest.mark.asyncio
+    async def test_ask_stream_neutralizes_temperature_for_k_series(self):
+        client = _make_moonshot_client(model=MoonshotModel.KIMI_K3.value)
+        captured: dict = {}
+
+        async def fake_ask_stream(self, prompt, **kwargs):
+            captured["temperature_during_call"] = self.temperature
+            captured["kwarg_temperature"] = kwargs.get("temperature", "MISSING")
+            yield "chunk"
+
+        with patch("parrot.clients.gpt.OpenAIClient.ask_stream", new=fake_ask_stream):
+            chunks = [chunk async for chunk in client.ask_stream("hi")]
+
+        assert captured["temperature_during_call"] is None
+        assert captured["kwarg_temperature"] is None
+        assert chunks == ["chunk"]
+        # Restored after the call.
+        assert client.temperature == 0
+
+    @pytest.mark.asyncio
+    async def test_ask_stream_leaves_temperature_untouched_for_legacy_models(self):
+        client = _make_moonshot_client(model=MoonshotModel.MOONSHOT_V1_128K.value)
+        captured: dict = {}
+
+        async def fake_ask_stream(self, prompt, **kwargs):
+            captured["temperature_during_call"] = self.temperature
+            yield "chunk"
+
+        with patch("parrot.clients.gpt.OpenAIClient.ask_stream", new=fake_ask_stream):
+            [chunk async for chunk in client.ask_stream("hi")]
+
+        assert captured["temperature_during_call"] == 0
+
+
+# ---------------------------------------------------------------------------
+# TestMoonshotInvokeGuard
+# ---------------------------------------------------------------------------
+
+
+class TestMoonshotInvokeGuard:
+    """Regression tests for the invoke() K-series guard.
+
+    OpenAIClient.invoke() always sends a fixed temperature with no
+    None-based omission path, so K-series models (which reject it) are
+    rejected locally with a clear ValueError instead of a doomed API call.
+    """
+
+    @pytest.mark.asyncio
+    async def test_invoke_raises_for_k_series_model_explicit_kwarg(self):
+        client = _make_moonshot_client(model=MoonshotModel.KIMI_K2_6.value)
+        with pytest.raises(ValueError, match="K-series"):
+            await client.invoke("hi", model=MoonshotModel.KIMI_K3.value)
+
+    @pytest.mark.asyncio
+    async def test_invoke_raises_using_instance_default_model(self):
+        client = _make_moonshot_client(model=MoonshotModel.KIMI_K2_6.value)
+        with pytest.raises(ValueError, match="K-series"):
+            await client.invoke("hi")  # no explicit model -> falls back to self.model
+
+    @pytest.mark.asyncio
+    async def test_invoke_delegates_for_legacy_model(self):
+        client = _make_moonshot_client(model=MoonshotModel.MOONSHOT_V1_128K.value)
+
+        async def fake_invoke(self, prompt, **kwargs):
+            return "invoked-ok"
+
+        with patch("parrot.clients.gpt.OpenAIClient.invoke", new=fake_invoke):
+            result = await client.invoke("hi", model=MoonshotModel.MOONSHOT_V1_128K.value)
+
+        assert result == "invoked-ok"

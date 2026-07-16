@@ -4,7 +4,7 @@ Extends OpenAIClient to route requests through Moonshot's OpenAI-compatible
 API at https://api.moonshot.ai/v1.
 
 Most completion, streaming, tool-calling, retry, and invoke logic is
-inherited from OpenAIClient unchanged. MoonshotClient overrides only what
+inherited from OpenAIClient unchanged. MoonshotClient overrides what
 Moonshot requires:
 
 - ``__init__`` resolves ``MOONSHOT_API_KEY`` and sets the Moonshot base URL.
@@ -15,8 +15,42 @@ Moonshot requires:
   ``prompt_cache_key`` when configured.
 - ``ask`` / ``ask_stream`` accept ``thinking`` and ``reasoning_effort``
   keywords and propagate them to ``_chat_completion`` via a context
-  variable (NvidiaClient pattern).
+  variable (NvidiaClient pattern), and post-process the returned
+  ``AIMessage``(s) to surface ``reasoning_content`` into
+  ``metadata["reasoning_content"]`` (mirroring ``ZaiClient``'s pattern,
+  since ``AIMessageFactory.from_openai`` does not extract it).
+- ``invoke`` guards against K-series models, which reject the fixed
+  ``temperature`` that ``OpenAIClient.invoke()`` always sends
+  unconditionally (see the KNOWN LIMITATIONS note below).
+
+KNOWN LIMITATIONS (FEAT-311 code review follow-up):
+    ``OpenAIClient.ask_stream()``'s Chat-Completions branch and
+    ``OpenAIClient.invoke()`` both call
+    ``self.client.chat.completions.create()`` **directly**, never routing
+    through the overridden ``_chat_completion()``. This means, on those two
+    paths, ``max_completion_tokens`` translation, thinking-mode ``extra_body``
+    injection, and ``prompt_cache_key`` injection do not apply:
+
+    - ``ask_stream()``: the actual API-rejecting bug (K-series models
+      reject a non-``null`` ``temperature``, which ``OpenAIClient`` sends
+      by default) is mitigated below by neutralizing ``self.temperature``
+      for the duration of K-series calls. The remaining gaps
+      (``max_completion_tokens``/``prompt_cache_key``/thinking injection)
+      are not hard failures (Moonshot's API is documented as accepting
+      legacy ``max_tokens``) and are left as a tracked follow-up.
+    - ``invoke()``: there is no ``None``-based omission path at all (unlike
+      ``ask_stream()``), so the fixed ``temperature`` cannot be
+      neutralized from the outside. K-series models are rejected up front
+      with a clear ``ValueError`` rather than silently sending a doomed
+      request — use ``ask()``/``ask_stream()`` for K-series models instead.
+
+    A proper fix requires widening ``OpenAIClient.ask_stream()`` /
+    ``OpenAIClient.invoke()`` to route through ``_chat_completion()`` (or
+    otherwise accept an ``extra_body``/kwargs passthrough) — shared code
+    affecting every OpenAI-compatible-gateway client (Nvidia, Moonshot),
+    out of this module's scope.
 """
+from enum import Enum
 import contextvars
 from typing import Any, AsyncIterator, Dict, Optional, Union
 
@@ -33,7 +67,6 @@ from .gpt import OpenAIClient
 from ..models.moonshot import (
     MoonshotModel,
     K_SERIES_MODELS,
-    ALWAYS_THINKING_MODELS,
     REASONING_EFFORT_MODELS,
     THINKING_DICT_MODELS,
 )
@@ -59,9 +92,10 @@ class MoonshotClient(OpenAIClient):
     the API key from the constructor argument or the ``MOONSHOT_API_KEY``
     environment variable (via ``navconfig.config``).
 
-    All inherited OpenAI machinery — ``ask``, ``ask_stream``, ``invoke``,
-    tool calling, structured output, and retry — works with minor Moonshot
-    adjustments applied in ``_chat_completion``.
+    All inherited OpenAI machinery — ``ask``, ``ask_stream``, tool calling,
+    structured output, and retry — works with minor Moonshot adjustments
+    applied in ``_chat_completion``. See the module-level "KNOWN
+    LIMITATIONS" note for the ``ask_stream()``/``invoke()`` caveats.
 
     K-series models (``kimi-k3``, ``kimi-k2.7-code``,
     ``kimi-k2.7-code-highspeed``, ``kimi-k2.6``) have fixed sampling
@@ -133,6 +167,37 @@ class MoonshotClient(OpenAIClient):
                 kwargs.pop(param, None)
         return kwargs
 
+    @staticmethod
+    def _capture_reasoning_content(message: AIMessage) -> None:
+        """Surface ``reasoning_content`` from the raw SDK response into metadata.
+
+        ``OpenAIClient.ask()``/``ask_stream()`` build their ``AIMessage`` via
+        ``AIMessageFactory.from_openai()``, which does not extract
+        ``reasoning_content`` from the response (unlike ``ZaiClient``, which
+        hand-builds its ``AIMessage`` and does the extraction itself — see
+        ``zai.py:256-260``). K-series models return ``reasoning_content``
+        (spec §7), so this mutates ``message.metadata`` in place using the
+        same ``getattr(message, "reasoning_content", None)`` idiom, applied
+        to the already-serialized ``raw_response`` dict.
+
+        This is a no-op when ``raw_response`` is absent/empty or carries no
+        ``reasoning_content`` (e.g. legacy non-reasoning models).
+
+        Args:
+            message: The ``AIMessage`` to mutate in place.
+        """
+        raw = getattr(message, "raw_response", None)
+        if not raw:
+            return
+        choices = raw.get("choices") or []
+        if not choices:
+            return
+        first_choice = choices[0] or {}
+        choice_message = first_choice.get("message") or {}
+        reasoning_content = choice_message.get("reasoning_content")
+        if reasoning_content:
+            message.metadata["reasoning_content"] = reasoning_content
+
     async def _chat_completion(
         self,
         model: str,
@@ -171,7 +236,9 @@ class MoonshotClient(OpenAIClient):
         thinking = _thinking_ctx.get()
         if model in REASONING_EFFORT_MODELS:
             # K3: uses reasoning_effort
-            effort = thinking.get("reasoning_effort") or "max"
+            effort = thinking.get("reasoning_effort")
+            if effort is None:
+                effort = "max"
             extra = dict(kwargs.get("extra_body") or {})
             extra["reasoning_effort"] = effort
             kwargs["extra_body"] = extra
@@ -187,8 +254,8 @@ class MoonshotClient(OpenAIClient):
                 elif isinstance(thinking_val, dict):
                     extra["thinking"] = thinking_val
                 kwargs["extra_body"] = extra
-        # K2.7-code / K2.7-code-highspeed: always-on — no injection needed
-        _ = model in ALWAYS_THINKING_MODELS
+        # K2.7-code / K2.7-code-highspeed (ALWAYS_THINKING_MODELS): always-on
+        # server-side — no client-supplied parameter is needed or injected.
 
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
@@ -240,16 +307,21 @@ class MoonshotClient(OpenAIClient):
                 ``system_prompt``, ``session_id``).
 
         Returns:
-            AIMessage with the model response.
+            AIMessage with the model response. When the model returned
+            ``reasoning_content``, it is captured in
+            ``metadata["reasoning_content"]`` (see
+            ``_capture_reasoning_content``).
         """
         kwargs.setdefault("model", self.model or self._default_model)
         token = _thinking_ctx.set(
             {"thinking": thinking, "reasoning_effort": reasoning_effort}
         )
         try:
-            return await super().ask(prompt, **kwargs)
+            result = await super().ask(prompt, **kwargs)
         finally:
             _thinking_ctx.reset(token)
+        self._capture_reasoning_content(result)
+        return result
 
     async def ask_stream(
         self,
@@ -262,30 +334,107 @@ class MoonshotClient(OpenAIClient):
         """Submit a prompt and stream response chunks.
 
         Identical to ``OpenAIClient.ask_stream`` with the same ``thinking``
-        and ``reasoning_effort`` shortcuts as ``ask``.
-
-        The flags are forwarded to ``_chat_completion`` via an async context
-        variable, so the parent's call signature is preserved.
+        and ``reasoning_effort`` shortcuts as ``ask``, plus a K-series safety
+        net: ``OpenAIClient.ask_stream()``'s Chat-Completions branch calls
+        ``self.client.chat.completions.create()`` directly and never routes
+        through the overridden ``_chat_completion()``, so the sanitize /
+        thinking-injection / ``max_completion_tokens`` / ``prompt_cache_key``
+        logic there never runs for streaming. K-series models reject a
+        non-``null`` ``temperature`` (the parameter ``OpenAIClient`` sends by
+        default), so this method neutralizes ``self.temperature`` for the
+        duration of K-series calls to avoid a doomed request. See the
+        module-level "KNOWN LIMITATIONS" note for what remains unaddressed
+        on this path (``max_completion_tokens`` translation, thinking-mode
+        ``extra_body`` injection, ``prompt_cache_key``).
 
         Args:
             prompt: User message text.
             thinking: For ``kimi-k2.6``. ``True``/``False`` shortcut for
                 ``{"type": "enabled"/"disabled"}``, or an explicit dict.
+                Not applied on this path — see the module-level "KNOWN
+                LIMITATIONS" note.
             reasoning_effort: For ``kimi-k3``. Effort level string (e.g.
-                ``"max"``).
+                ``"max"``). Not applied on this path — see the module-level
+                "KNOWN LIMITATIONS" note.
             **kwargs: All other keyword arguments delegated to
                 ``OpenAIClient.ask_stream`` (e.g. ``model``, ``temperature``,
                 ``system_prompt``, ``session_id``).
 
         Yields:
-            Response text chunks (same shape as ``OpenAIClient.ask_stream``).
+            Response text chunks, then a final
+            :class:`~parrot.models.responses.AIMessage` (same shape as
+            ``OpenAIClient.ask_stream``). When the final message carries
+            ``reasoning_content``, it is captured in
+            ``metadata["reasoning_content"]``.
         """
         kwargs.setdefault("model", self.model or self._default_model)
+        model_value = kwargs["model"]
+        if isinstance(model_value, Enum):
+            model_value = model_value.value
+
+        saved_temperature = self.temperature
+        if model_value in K_SERIES_MODELS:
+            # K-series models reject a non-null `temperature`.
+            # OpenAIClient.ask_stream() always sends
+            # `temperature if temperature is not None else self.temperature`,
+            # so neutralizing the instance default here is the only way to
+            # omit it from this call without modifying shared gpt.py code.
+            self.temperature = None
+            kwargs["temperature"] = None
+
         token = _thinking_ctx.set(
             {"thinking": thinking, "reasoning_effort": reasoning_effort}
         )
         try:
             async for chunk in super().ask_stream(prompt, **kwargs):
+                if isinstance(chunk, AIMessage):
+                    self._capture_reasoning_content(chunk)
                 yield chunk
         finally:
             _thinking_ctx.reset(token)
+            self.temperature = saved_temperature
+
+    async def invoke(self, prompt: str, **kwargs) -> Any:
+        """Lightweight stateless invocation — guarded for K-series models.
+
+        ``OpenAIClient.invoke()`` always sends a fixed ``temperature``
+        (default ``0.0``) with no ``None``-based omission path (unlike
+        ``ask()``/``ask_stream()``), and never routes through the
+        overridden ``_chat_completion()`` (see the module-level "KNOWN
+        LIMITATIONS" note). K-series models reject that fixed
+        ``temperature`` outright, so rather than silently forwarding a
+        doomed request, this raises immediately for K-series models.
+
+        Legacy (``moonshot-v1-*``) models are unaffected by the
+        ``temperature`` restriction and delegate to
+        ``OpenAIClient.invoke()`` unchanged (though, per the module-level
+        note, ``max_completion_tokens`` translation and ``prompt_cache_key``
+        still do not apply on this path).
+
+        Args:
+            prompt: User prompt.
+            **kwargs: Forwarded to ``OpenAIClient.invoke()`` (e.g. ``model``,
+                ``system_prompt``, ``max_tokens``, ``temperature``,
+                ``use_tools``, ``tools``, ``output_type``,
+                ``structured_output``).
+
+        Returns:
+            ``InvokeResult`` from ``OpenAIClient.invoke()``.
+
+        Raises:
+            ValueError: If the resolved model is a K-series model.
+        """
+        model_value = kwargs.get("model") or self.model or self._default_model
+        if isinstance(model_value, Enum):
+            model_value = model_value.value
+        if model_value in K_SERIES_MODELS:
+            raise ValueError(
+                f"MoonshotClient.invoke() does not support K-series model "
+                f"{model_value!r}: OpenAIClient.invoke() always sends a "
+                "fixed `temperature`, which K-series models reject, and "
+                "has no override point to omit it. Use `ask()` or "
+                "`ask_stream()` for K-series models instead (see the "
+                "module-level 'KNOWN LIMITATIONS' note in "
+                "parrot.clients.moonshot)."
+            )
+        return await super().invoke(prompt, **kwargs)
