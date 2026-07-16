@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-310 — Unified EventBus v2 — queue-based dispatch, severity, ingress channels, and notifications
 **Spec**: `sdd/specs/eventbus-v2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1785
@@ -161,8 +161,12 @@ async def test_end_to_end_streams_two_consumers(): ...
 
 *(Agent fills this in when done — MUST include the MAXLEN vs MINID retention decision and rationale)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-16
+**Notes**: `RedisStreamsBackend` satisfies the TransportBackend protocol. XADD to `parrot:stream:<topic-class>` (single `envelope` JSON field, same wire format as pub/sub). XREADGROUP loop with per-instance consumer name `<hostname>-<pid>`, block_ms timeout for prompt cancellation, group auto-create (XGROUP CREATE MKSTREAM, BUSYGROUP tolerated), SCAN-based periodic stream discovery, reconnect-with-backoff degraded mode (mirrors RedisPubSubBackend). XAUTOCLAIM sweeper task reclaims entries pending past min_idle_time. Dedup: SET NX EX on `parrot:events:dedup:<event_id>` (24h default) BEFORE dispatch; on handler failure the dedup key is released and the entry stays un-ACKed for reclaim; duplicates and poison entries are ACKed away. At-least-once loudly documented (consumers must be idempotent).
 
-**Deviations from spec**: none
+**RETENTION DECISION (spec s7, recorded as required)**: `XADD ... MAXLEN ~ 100000` (approximate trim, per-stream, configurable via `maxlen=`). Rationale: MAXLEN~ is O(1) amortized (radix-tree node granularity), bounds Memorystore/Upstash memory predictably, and needs no external trimming job; MINID would require a separate time-based trimmer process and time-ordered id bookkeeping for no benefit at our event volumes. Stream sharding stays per topic-class as spec-fixed (no per-topic sharding).
+
+Test strategy: fakeredis is NOT in the dependency set and adding it would touch pyproject outside this task's file list -> unit tier uses a hand-rolled minimal streams fake (xadd/xreadgroup/xack/xautoclaim/xgroup_create/set nx ex/scan_iter) covering ACK, autoclaim reclaim, dedup, failure-releases-dedup and poison entries; the two-consumer at-least-once test is @pytest.mark.integration against real Redis (REDIS_TEST_URL, skips when unreachable — skipped in this environment, no local Redis). 7 unit tests pass; ruff clean.
+
+**Deviations from spec**: unit tests use a hand-rolled fake instead of fakeredis (not installed; task authorized integration-only as the alternative — the fake keeps ACK/autoclaim/dedup coverage in the unit tier without touching dependency files).

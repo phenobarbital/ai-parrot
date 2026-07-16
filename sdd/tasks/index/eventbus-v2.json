@@ -132,7 +132,7 @@
       "feature_id": "FEAT-310",
       "feature": "eventbus-v2",
       "spec": "sdd/specs/eventbus-v2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Own file (backends/redis_streams.py) against the frozen TransportBackend protocol; only additive backends/__init__ export.",
       "assigned_to": null,
       "started_at": "2026-07-16T09:49:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1789-redis-streams-backend.md"
+      "completed_at": "2026-07-16T10:20:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1789-redis-streams-backend.md"
     },
     {
       "id": "TASK-1790",
