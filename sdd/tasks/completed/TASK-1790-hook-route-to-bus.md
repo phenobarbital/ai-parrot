@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-310 — Unified EventBus v2 — queue-based dispatch, severity, ingress channels, and notifications
 **Spec**: `sdd/specs/eventbus-v2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1786
@@ -156,8 +156,8 @@ async def test_orchestrator_callback_still_fires(): ...
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-16
+**Notes**: HookManager gained `route_to_bus` (constructor kwarg + property setter that re-injects hook callbacks; default OFF). Publishing unified in one `_publish_hook_event()` helper shared by both modes (kills the duplicated string formatting): legacy dual-emit stays byte-identical (`emit(topic, event.model_dump())` — guard rail asserts exact call shape), route_to_bus publishes first-class envelopes via facade kwargs (hook payload as envelope payload, hook_id as source, target_type/target_id/task routing hints in metadata, severity mapped from event.metadata['severity'] name/value with INFO default). Bus failures isolated in both modes; orchestrator callback path untouched. Orchestrator: navconfig-guarded AUTONOMOUS_HOOKS_VIA_BUS flag (default off) subscribes `_handle_bus_hook_event` to `hooks.*`, rebuilding HookEvent from either wire shape and delegating to the unchanged `_handle_hook_event`. 97 hooks tests pass incl. UNMODIFIED test_hookmanager_eventbus.py; ruff clean; orchestrator syntax verified.
 
 **Deviations from spec**: none
