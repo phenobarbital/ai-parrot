@@ -192,7 +192,7 @@
       "feature_id": "FEAT-310",
       "feature": "eventbus-v2",
       "spec": "sdd/specs/eventbus-v2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -202,8 +202,8 @@
       "parallelism_notes": "Own files (subscribers/audit.py, metrics.py); shares only additive subscribers/__init__ exports with 1787; reuses 1788's asyncdb pattern but no shared files.",
       "assigned_to": null,
       "started_at": "2026-07-16T09:49:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1792-audit-metrics-subscribers.md"
+      "completed_at": "2026-07-16T15:35:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1792-audit-metrics-subscribers.md"
     },
     {
       "id": "TASK-1793",

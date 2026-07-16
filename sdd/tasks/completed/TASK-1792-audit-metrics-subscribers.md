@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-310 — Unified EventBus v2 — queue-based dispatch, severity, ingress channels, and notifications
 **Spec**: `sdd/specs/eventbus-v2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1784
@@ -142,8 +142,8 @@ async def test_bus_meta_topics_excluded(): ...
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-16
+**Notes**: `AuditSubscriber`: append-only rows into `navigator.evb_audit` (DDL/ensure_table/lazy-AsyncDB pattern mirrored 1:1 from TASK-1788's dlq.py; BIGSERIAL PK, event_id NOT unique — duplicates allowed by design, no ON CONFLICT, no TTL). Internal bounded deque + flusher task: flush on batch_size (wakeup event) OR flush_interval, whichever first; one connection round per flush; close() drains the remainder. Overload -> drop-oldest + dropped counter in .stats + rate-limited warning — NEVER backpressures the bus. bus.* topics excluded by default (include_bus_internal knob). Missing DSN disables with loud warning (same degrade rule as DLQ). `MetricsSubscriber`: in-process counters (delivered per topic-class, per severity; failed per topic-class via bus.subscriber_error observation) + dispatch-latency histogram (wall-clock envelope.timestamp -> handler start) in fixed documented buckets [0.001..5.0]s + inf; snapshot() dict is the contract (grep confirmed the observability MetricsSubscriber is lifecycle-registry/OTel-specific, no bus-agnostic helper exists — no OTel code added, per task). attach()/detach() on BusCore; reset() supported. 10 unit tests pass (asyncdb fully mocked); ruff clean.
 
 **Deviations from spec**: none
