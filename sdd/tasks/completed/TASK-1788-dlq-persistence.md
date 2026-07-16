@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-310 — Unified EventBus v2 — queue-based dispatch, severity, ingress channels, and notifications
 **Spec**: `sdd/specs/eventbus-v2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1784
@@ -154,8 +154,8 @@ async def test_dlq_replay_republishes(mock_asyncdb): ...
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-16
+**Notes**: `DLQHandler.on_dlq` plugs into BusCore's on_dlq hook: republishes on `bus.dlq` (Severity.WARNING - capped below alert threshold per spec s7 loop guard) with failure metadata (attempts, error type/message, failed subscriber id), then persists fire-and-forget via asyncdb `pg` into `navigator.evb_dlq` (module-level DDL constant + idempotent lock-guarded ensure_table(), pattern mirrored from storage/security_reports store). INSERT uses ON CONFLICT (event_id) DO NOTHING. DSN from parrot.conf.default_dsn when not injected; missing DSN disables persistence with loud warning, never crashes. Persistence failures log + emit `bus.dlq_error` meta-event (model B). `replay(event_id|since)` re-publishes to ORIGINAL topics and marks rows replayed. No backend-conditional logic. 7 unit tests (asyncdb fully mocked) + 63-test events regression pass; ruff clean.
 
-**Deviations from spec**: none
+**Deviations from spec**: added a `replayed_at TIMESTAMPTZ` column beyond the listed schema - required to honor this task's own 'marks replayed' replay requirement.
