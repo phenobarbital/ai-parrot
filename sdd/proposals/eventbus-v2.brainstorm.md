@@ -289,7 +289,9 @@ class BaseBrokerHook(BaseHook):
 
 #### Verified Imports
 ```python
-from parrot.core.events.evb import EventBus, Event, EventPriority   # events/__init__.py re-exports; VERIFY exact __init__ names
+# events/__init__.py re-exports EXACTLY four names (verified 2026-07-16):
+from parrot.core.events import EventBus, Event, EventPriority, EventSubscription
+from parrot.core.events.evb import EventBus, Event, EventPriority   # canonical module
 from parrot.core.events.lifecycle.base import LifecycleEvent
 from parrot.core.events.lifecycle.registry import EventRegistry
 from parrot.core.hooks.base import BaseHook, HookRegistry
@@ -304,6 +306,27 @@ import redis.asyncio as aioredis                                     # already u
 - `EventRegistry` bus channel format → `f"{bus_channel_prefix}.{EventClassName}"`, default prefix `"lifecycle"` (registry.py)
 - `HookManager` bus channel format → `"hooks.<hook_type>.<event_type>"` (manager.py docstring)
 - Lifecycle subscribers: `LoggingSubscriber` (subscribers/logging.py:21), `OpenTelemetrySubscriber` (subscribers/opentelemetry.py:39), `WebhookSubscriber` (subscribers/webhook.py:38)
+
+#### EventBus Instantiation & Injection Sites (verified 2026-07-16)
+
+**Only ONE production instantiation** — everything else accepts an injected instance:
+
+| Site | Kind | Location |
+|---|---|---|
+| `AutonomousOrchestrator` | **instantiates** `EventBus(...)` | `packages/ai-parrot-server/src/parrot/autonomous/orchestrator.py:231` |
+| `EventRegistry(event_bus=...)` | injection (dual-emit) | `parrot/core/events/lifecycle/registry.py:107` |
+| `AbstractBot._init_events(event_bus=...)` | injection (via EventsMixin) | `parrot/bots/abstract.py:303,451`; `lifecycle/mixin.py:48-60` |
+| `EvalRunner(event_bus=...)` | injection — emits `lifecycle.eval.*` (TASK-1426) | `parrot/eval/runner.py:144,504` |
+| `HookManager.set_event_bus()` | injection (setter) | `parrot/core/hooks/manager.py:43` |
+| `WebhookListener.set_event_bus()` | injection (setter) | `packages/ai-parrot-server/src/parrot/autonomous/webhooks.py:65` |
+| `parrot.autonomous.evb` | pure re-export shim | `packages/ai-parrot-server/src/parrot/autonomous/evb.py:7` |
+
+No Flowtask-side instantiation found. Tests instantiate directly in
+`tests/core/hooks/test_hookmanager_eventbus.py` and
+`tests/unit/events/lifecycle/test_registry.py`.
+**Facade consequence**: the singleton construction point for the v2 core is the
+orchestrator; all injection sites work unchanged as long as `emit/subscribe/on/publish`
+signatures are preserved. The facade must also keep exporting `EventSubscription`.
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`Severity` enum anywhere in core/events~~ — does not exist; `EventPriority` is scheduling, not severity.
@@ -328,11 +351,11 @@ import redis.asyncio as aioredis                                     # already u
 
 ## Open Questions
 
-- [ ] Should the orchestrator callback path (`HookManager.set_event_callback`) be deprecated in favor of bus subscription, or kept permanently as a low-latency direct path? — *Owner: Jesus*
-- [ ] Envelope implementation: frozen `dataclass` (consistent with LifecycleEvent, faster) vs Pydantic v2 `frozen=True` (consistent with the rest of the stack, validation for ingress)? Suggestion: dataclass core + Pydantic model only at ingress boundaries. — *Owner: Jesus*
-- [ ] Redis Streams retention policy (`MAXLEN` vs `MINID`) and per-topic-class stream sharding — how many streams? — *Owner: Jesus*
-- [ ] Which app components currently instantiate `EventBus(...)`? (Sparse checkout only covered core/events + core/hooks — Claude Code must grep the full repo, incl. autonomy/orchestrator and Flowtask integration points.) — *Owner: Claude Code research*
-- [ ] Does `events/__init__.py` re-export names other than `EventBus/Event/EventPriority`? Verify before writing the facade. — *Owner: Claude Code research*
-- [ ] gRPC ingress: proto contract — reuse A2UI envelope ideas or define `parrot.events.v1.PublishRequest`? — *Owner: Jesus*
-- [ ] Notification rate-limiting/dedup window defaults (avoid alert storms on cascading failures). — *Owner: Jesus*
-- [ ] Should `bus.dlq` be persisted (asyncdb table) in in-memory mode, or only in Streams mode? — *Owner: Jesus*
+- [x] Should the orchestrator callback path (`HookManager.set_event_callback`) be deprecated in favor of bus subscription, or kept permanently as a low-latency direct path? — *Owner: Jesus*: Keep it
+- [x] Envelope implementation: frozen `dataclass` (consistent with LifecycleEvent, faster) vs Pydantic v2 `frozen=True` (consistent with the rest of the stack, validation for ingress)? Suggestion: dataclass core + Pydantic model only at ingress boundaries. — *Owner: Jesus*: accepted suggestion
+- [x] Redis Streams retention policy (`MAXLEN` vs `MINID`) and per-topic-class stream sharding — how many streams? — *Owner: Jesus*: evaluate during implementation.
+- [x] Which app components currently instantiate `EventBus(...)`? — *Owner: Claude Code research*: **Answered** — exactly one production instantiation (`AutonomousOrchestrator`, orchestrator.py:231); all other references are injection points (EventRegistry, AbstractBot, EvalRunner, HookManager, WebhookListener). No Flowtask instantiation. Full table in Code Context → "EventBus Instantiation & Injection Sites".
+- [x] Does `events/__init__.py` re-export names other than `EventBus/Event/EventPriority`? — *Owner: Claude Code research*: **Answered** — yes, one more: `EventSubscription`. `__all__ = ["EventBus", "Event", "EventPriority", "EventSubscription"]`. The facade must preserve all four exports (guarded by `tests/core/events/test_eventbus_imports.py`).
+- [x] gRPC ingress: proto contract — reuse A2UI envelope ideas or define `parrot.events.v1.PublishRequest`? — *Owner: Jesus*: re-use A2UI envelope ideas
+- [x] Notification rate-limiting/dedup window defaults (avoid alert storms on cascading failures). — *Owner: Jesus*: accept suggestions
+- [x] Should `bus.dlq` be persisted (asyncdb table) in in-memory mode, or only in Streams mode? — *Owner: Jesus*: be persisted.
