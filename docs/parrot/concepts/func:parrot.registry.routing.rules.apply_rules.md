@@ -4,7 +4,7 @@ title: apply_rules()
 id: func:parrot.registry.routing.rules.apply_rules
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Score *available_stores* for *query* using the provided *rules*.
 ---
 

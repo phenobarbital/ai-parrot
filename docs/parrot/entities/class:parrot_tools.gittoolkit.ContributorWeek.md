@@ -4,7 +4,7 @@ title: ContributorWeek
 id: class:parrot_tools.gittoolkit.ContributorWeek
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: One week's slice of a contributor's activity.
 ---
 

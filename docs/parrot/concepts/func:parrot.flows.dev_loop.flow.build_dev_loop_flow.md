@@ -4,7 +4,7 @@ title: build_dev_loop_flow()
 id: func:parrot.flows.dev_loop.flow.build_dev_loop_flow
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Build the eight-node dev-loop ``AgentsFlow`` (FEAT-132).
 ---
 

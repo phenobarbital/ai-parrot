@@ -4,7 +4,7 @@ title: SecurityAdvisor — SOC2-Oriented Read-Only Advisory Agent
 id: doc:docs-security-advisor-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: already collected by `SecurityAgent` into actionable, audit-ready intelligence.
 relates_to:
 - concept: mod:parrot_tools.security

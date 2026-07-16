@@ -4,7 +4,7 @@ title: PostgresLedgerBackend
 id: class:parrot.autonomous.ledger.PostgresLedgerBackend
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Postgres append-only implementation of ``EventLedger``.
 relates_to:
 - concept: class:parrot.autonomous.ledger.EventLedger

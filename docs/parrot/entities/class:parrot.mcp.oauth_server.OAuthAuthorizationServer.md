@@ -4,7 +4,7 @@ title: OAuthAuthorizationServer
 id: class:parrot.mcp.oauth_server.OAuthAuthorizationServer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: In-memory OAuth 2.0 authorization server for MCP transports.
 ---
 

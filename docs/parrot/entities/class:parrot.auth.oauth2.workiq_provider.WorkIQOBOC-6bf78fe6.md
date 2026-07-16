@@ -4,7 +4,7 @@ title: WorkIQOBOCredentialResolver
 id: class:parrot.auth.oauth2.workiq_provider.WorkIQOBOCredentialResolver
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Credential resolver that exchanges an Entra assertion for a Work IQ OBO token.
 relates_to:
 - concept: class:parrot.auth.credentials.CredentialResolver

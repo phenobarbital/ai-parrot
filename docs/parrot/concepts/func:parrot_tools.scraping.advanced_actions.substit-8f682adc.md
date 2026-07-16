@@ -4,7 +4,7 @@ title: substitute_template_vars()
 id: func:parrot_tools.scraping.advanced_actions.substitute_template_vars
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Recursively substitute loop template variables in *value*.
 ---
 

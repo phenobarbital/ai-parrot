@@ -4,7 +4,7 @@ title: RedisResultStorage
 id: class:parrot.bots.flows.core.storage.backends.redis.RedisResultStorage
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Persist crew/flow execution results to Redis (one key per execution).
 relates_to:
 - concept: class:parrot.bots.flows.core.storage.backends.base.ResultStorage

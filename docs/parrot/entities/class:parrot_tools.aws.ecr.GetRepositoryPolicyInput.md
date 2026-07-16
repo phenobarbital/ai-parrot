@@ -4,7 +4,7 @@ title: GetRepositoryPolicyInput
 id: class:parrot_tools.aws.ecr.GetRepositoryPolicyInput
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Input for getting an ECR repository IAM policy.
 ---
 

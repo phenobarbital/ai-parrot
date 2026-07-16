@@ -4,7 +4,7 @@ title: PageIndex — Tree-Based RAG for Document Retrieval
 id: doc:docs-pageindex-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: PageIndex builds a **hierarchical semantic tree** from PDF and Markdown documents
   using LLM reasoning, then uses that tree for **vectorless, context-aware retrieval**.
   Unlike embedding-based RAG, PageIndex navigates the document structure to find relevant

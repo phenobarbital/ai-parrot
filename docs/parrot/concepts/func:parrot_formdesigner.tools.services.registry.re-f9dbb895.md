@@ -4,7 +4,7 @@ title: register_form_service()
 id: func:parrot_formdesigner.tools.services.registry.register_form_service
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Register (or overwrite) a form-service class under ``name``.
 ---
 

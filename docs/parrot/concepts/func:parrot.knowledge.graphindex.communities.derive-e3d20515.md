@@ -4,7 +4,7 @@ title: derive_community_label()
 id: func:parrot.knowledge.graphindex.communities.derive_community_label
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Derive a deterministic, LLM-free label from member titles.
 ---
 

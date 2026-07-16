@@ -4,7 +4,7 @@ title: parrot_tools.security.cloud_posture_toolkit
 id: mod:parrot_tools.security.cloud_posture_toolkit
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Cloud Security Posture Management Toolkit.
 relates_to:
 - concept: class:parrot_tools.security.cloud_posture_toolkit.CloudPostureToolkit

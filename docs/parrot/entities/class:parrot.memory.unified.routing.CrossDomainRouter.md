@@ -4,7 +4,7 @@ title: CrossDomainRouter
 id: class:parrot.memory.unified.routing.CrossDomainRouter
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Routes memory queries to relevant agent namespaces for multi-agent sharing.
 ---
 

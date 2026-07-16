@@ -4,7 +4,7 @@ title: AgentExtension
 id: class:parrot.a2a.models.AgentExtension
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A protocol extension declared by an agent (v1.0).
 ---
 

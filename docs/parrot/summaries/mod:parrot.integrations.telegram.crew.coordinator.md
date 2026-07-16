@@ -4,7 +4,7 @@ title: parrot.integrations.telegram.crew.coordinator
 id: mod:parrot.integrations.telegram.crew.coordinator
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: CoordinatorBot — manages the pinned registry message in a crew supergroup.
 relates_to:
 - concept: class:parrot.integrations.telegram.crew.coordinator.CoordinatorBot

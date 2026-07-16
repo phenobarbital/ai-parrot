@@ -4,7 +4,7 @@ title: parrot.knowledge.pageindex
 id: pkg:parrot.knowledge.pageindex
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot.knowledge.pageindex (16 modules, 1 sub-packages).
 relates_to:
 - concept: mod:parrot.knowledge.pageindex.content_store

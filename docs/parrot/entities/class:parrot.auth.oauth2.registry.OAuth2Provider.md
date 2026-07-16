@@ -4,7 +4,7 @@ title: OAuth2Provider
 id: class:parrot.auth.oauth2.registry.OAuth2Provider
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Abstract base class for an OAuth2-capable provider.
 ---
 

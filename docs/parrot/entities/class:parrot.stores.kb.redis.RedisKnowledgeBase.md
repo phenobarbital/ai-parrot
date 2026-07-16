@@ -4,7 +4,7 @@ title: RedisKnowledgeBase
 id: class:parrot.stores.kb.redis.RedisKnowledgeBase
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Generic Redis-based Knowledge Base with CRUD operations.
 relates_to:
 - concept: class:parrot.stores.kb.abstract.AbstractKnowledgeBase

@@ -4,7 +4,7 @@ title: DatabaseQueryTool
 id: class:parrot.tools.databasequery.tool.DatabaseQueryTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Multi-language Database Query Tool for executing queries across multiple
   database systems.
 relates_to:

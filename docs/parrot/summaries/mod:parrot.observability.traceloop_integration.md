@@ -4,7 +4,7 @@ title: parrot.observability.traceloop_integration
 id: mod:parrot.observability.traceloop_integration
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: OpenLLMetry (Traceloop) backend — simple, content-rich tracing for local/dev.
 relates_to:
 - concept: func:parrot.observability.traceloop_integration.init_traceloop

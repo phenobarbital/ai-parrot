@@ -4,7 +4,7 @@ title: Jupyter Output Mode Documentation
 id: doc:docs-jupyter-mode-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: The **Jupyter Output Mode** provides specialized formatting for Jupyter notebooks
   with interactive widgets, rich markdown rendering, and collapsible sections. It
   automatically detects Jupyter environments and provides the best possible display

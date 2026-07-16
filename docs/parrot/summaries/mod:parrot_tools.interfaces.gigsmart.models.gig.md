@@ -4,7 +4,7 @@ title: parrot_tools.interfaces.gigsmart.models.gig
 id: mod:parrot_tools.interfaces.gigsmart.models.gig
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pydantic v2 models for GigSmart gigs (shifts) API surface.
 relates_to:
 - concept: class:parrot_tools.interfaces.gigsmart.models.gig.Gig

@@ -4,7 +4,7 @@ title: RoomAudioPublisher
 id: class:parrot.integrations.liveavatar.room_audio_publisher.RoomAudioPublisher
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Headless LiveKit participant that publishes a Supertonic audio track.
 ---
 

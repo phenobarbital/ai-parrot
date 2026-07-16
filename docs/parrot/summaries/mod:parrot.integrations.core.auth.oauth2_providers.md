@@ -4,7 +4,7 @@ title: parrot.integrations.core.auth.oauth2_providers
 id: mod:parrot.integrations.core.auth.oauth2_providers
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: OAuth2 provider registry for integration authentication flows.
 relates_to:
 - concept: class:parrot.integrations.core.auth.oauth2_providers.OAuth2ProviderConfig

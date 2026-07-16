@@ -4,7 +4,7 @@ title: parrot.cli.agent_repl
 id: mod:parrot.cli.agent_repl
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Click command entry point for the AI-Parrot agent REPL.
 relates_to:
 - concept: func:parrot.cli.agent_repl.agent

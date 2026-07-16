@@ -4,7 +4,7 @@ title: parrot.integrations.matrix.crew.coordinator
 id: mod:parrot.integrations.matrix.crew.coordinator
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Matrix crew coordinator bot — manages pinned status board.
 relates_to:
 - concept: class:parrot.integrations.matrix.crew.coordinator.MatrixCoordinator

@@ -4,7 +4,7 @@ title: GitHubReviewer
 id: class:parrot.bots.github_reviewer.GitHubReviewer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Reviews GitHub PRs against linked Jira ticket acceptance criteria.
 relates_to:
 - concept: class:parrot.bots.agent.Agent

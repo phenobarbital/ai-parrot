@@ -4,7 +4,7 @@ title: ProwlerExecutor
 id: class:parrot_tools.security.prowler.executor.ProwlerExecutor
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Executes Prowler security scans via Docker or direct CLI.
 relates_to:
 - concept: class:parrot_tools.security.base_executor.BaseExecutor

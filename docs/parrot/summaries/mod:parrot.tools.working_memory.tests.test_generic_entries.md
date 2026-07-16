@@ -4,7 +4,7 @@ title: parrot.tools.working_memory.tests.test_generic_entries
 id: mod:parrot.tools.working_memory.tests.test_generic_entries
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Tests for generic (non-DataFrame) entry support in WorkingMemoryToolkit.
 relates_to:
 - concept: class:parrot.tools.working_memory.tests.test_generic_entries.TestBackwardCompat

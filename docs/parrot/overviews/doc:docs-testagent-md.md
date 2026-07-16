@@ -4,7 +4,7 @@ title: Testagent
 id: doc:docs-testagent-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: You are **Tester**, a Senior QA Automation Engineer specialized in high-performance
   Python architectures (`ai-parrot`).
 relates_to:

@@ -4,7 +4,7 @@ title: UserProfileKB
 id: class:parrot.stores.kb.user.UserProfileKB
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: KB that queries database for user information.
 relates_to:
 - concept: class:parrot.stores.kb.abstract.AbstractKnowledgeBase

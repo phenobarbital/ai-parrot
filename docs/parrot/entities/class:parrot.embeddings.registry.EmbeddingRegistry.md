@@ -4,7 +4,7 @@ title: EmbeddingRegistry
 id: class:parrot.embeddings.registry.EmbeddingRegistry
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Process-wide singleton for embedding model caching with LRU eviction.
 ---
 

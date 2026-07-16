@@ -4,7 +4,7 @@ title: parrot.tools.dataset_manager.filtering.store
 id: mod:parrot.tools.dataset_manager.filtering.store
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pure validation helpers for the FilterDefinition instance store (FEAT-225
   Module 2).
 relates_to:

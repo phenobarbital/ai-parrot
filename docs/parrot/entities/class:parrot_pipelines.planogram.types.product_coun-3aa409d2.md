@@ -4,7 +4,7 @@ title: ProductCounter
 id: class:parrot_pipelines.planogram.types.product_counter.ProductCounter
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Planogram type for product-on-counter/podium displays.
 relates_to:
 - concept: class:parrot_pipelines.planogram.types.abstract.AbstractPlanogramType

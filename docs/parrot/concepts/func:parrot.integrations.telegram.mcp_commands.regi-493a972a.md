@@ -4,7 +4,7 @@ title: register_mcp_commands()
 id: func:parrot.integrations.telegram.mcp_commands.register_mcp_commands
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Wire the three MCP commands on *router*.
 ---
 

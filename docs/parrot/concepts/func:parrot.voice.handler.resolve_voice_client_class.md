@@ -4,7 +4,7 @@ title: resolve_voice_client_class()
 id: func:parrot.voice.handler.resolve_voice_client_class
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Resolve the ``AbstractClient`` subclass for a given ``VoiceProvider``.
 ---
 

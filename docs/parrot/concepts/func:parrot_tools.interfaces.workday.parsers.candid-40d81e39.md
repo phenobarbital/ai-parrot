@@ -4,7 +4,7 @@ title: save_attachment()
 id: func:parrot_tools.interfaces.workday.parsers.candidate_parsers.save_attachment
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Save attachment file from base64 content to disk.
 ---
 

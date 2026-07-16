@@ -4,7 +4,7 @@ title: parrot.core.events.evb
 id: mod:parrot.core.events.evb
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Module parrot.core.events.evb
 relates_to:
 - concept: class:parrot.core.events.evb.Event

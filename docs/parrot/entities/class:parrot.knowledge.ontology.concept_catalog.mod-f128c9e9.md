@@ -4,7 +4,7 @@ title: IsaEdgeRow
 id: class:parrot.knowledge.ontology.concept_catalog.models.IsaEdgeRow
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Represents a row in the ontology_concept_isa Postgres table.
 ---
 

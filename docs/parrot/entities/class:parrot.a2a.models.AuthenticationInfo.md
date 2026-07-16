@@ -4,7 +4,7 @@ title: AuthenticationInfo
 id: class:parrot.a2a.models.AuthenticationInfo
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Authentication details for a push notification webhook (v1.0).
 ---
 

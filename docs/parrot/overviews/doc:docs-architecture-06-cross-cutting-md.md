@@ -4,7 +4,7 @@ title: 6. Cross-cutting concerns and reference deployment
 id: doc:docs-architecture-06-cross-cutting-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: The diagram below traces a single user message from any channel down to
 ---
 

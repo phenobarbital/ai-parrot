@@ -4,7 +4,7 @@ title: SharePointToolkit
 id: class:parrot_tools.o365.bundle.SharePointToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: SharePoint file management toolkit for AI-Parrot agents.
 ---
 

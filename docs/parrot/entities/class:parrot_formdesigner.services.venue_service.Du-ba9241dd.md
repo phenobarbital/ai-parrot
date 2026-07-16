@@ -4,7 +4,7 @@ title: DuplicateVenueError
 id: class:parrot_formdesigner.services.venue_service.DuplicateVenueError
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Raised when a UNIQUE constraint on a site/location is violated.
 ---
 

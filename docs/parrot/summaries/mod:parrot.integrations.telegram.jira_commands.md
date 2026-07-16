@@ -4,7 +4,7 @@ title: parrot.integrations.telegram.jira_commands
 id: mod:parrot.integrations.telegram.jira_commands
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Telegram command handlers for the Jira OAuth 2.0 (3LO) flow.
 relates_to:
 - concept: class:parrot.integrations.telegram.jira_commands.TelegramOAuthNotifier

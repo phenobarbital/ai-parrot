@@ -4,7 +4,7 @@ title: WhatsApp + AutonomousOrchestrator Integration
 id: doc:docs-whatsapp-autonomous-orchestrator-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Complete guide for connecting WhatsApp as an input channel to AI-Parrot's
   `AutonomousOrchestrator` via the WhatsApp Bridge and Redis Pub/Sub.
 relates_to:

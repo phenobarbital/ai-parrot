@@ -4,7 +4,7 @@ title: AbstractDatabaseSource
 id: class:parrot.tools.databasequery.base.AbstractDatabaseSource
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Abstract base class for all database source implementations.
 ---
 

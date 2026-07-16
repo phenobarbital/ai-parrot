@@ -4,7 +4,7 @@ title: Create and configure agent
 id: doc:docs-mcp-session-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Fireflies MCP Server Configuration Fix
 relates_to:
 - concept: mod:parrot.bots.agent

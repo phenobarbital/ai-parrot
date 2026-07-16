@@ -4,7 +4,7 @@ title: InfographicHTMLRenderer
 id: class:parrot.outputs.formats.infographic_html.InfographicHTMLRenderer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Renders InfographicResponse as a self-contained HTML5 document.
 relates_to:
 - concept: class:parrot.outputs.formats.base.BaseRenderer

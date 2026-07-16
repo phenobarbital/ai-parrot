@@ -4,7 +4,7 @@ title: get_interactive_catalog()
 id: func:parrot.tools.interactive.catalog_registry.get_interactive_catalog
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return the process-wide catalog singleton (not yet loaded).
 ---
 

@@ -4,7 +4,7 @@ title: setup_form_api()
 id: func:parrot_formdesigner.api.routes.setup_form_api
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Mount the JSON REST surface on ``app`` under ``base_path``.
 ---
 

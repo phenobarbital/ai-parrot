@@ -4,7 +4,7 @@ title: WhatsAppTool
 id: class:parrot_tools.messaging.whatsapp.WhatsAppTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Send WhatsApp messages through the whatsmeow bridge.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractTool

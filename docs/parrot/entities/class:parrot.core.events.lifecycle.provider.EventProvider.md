@@ -4,7 +4,7 @@ title: EventProvider
 id: class:parrot.core.events.lifecycle.provider.EventProvider
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Bundles multiple subscriber callbacks for batch registration.
 ---
 

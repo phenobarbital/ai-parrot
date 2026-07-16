@@ -4,7 +4,7 @@ title: parrot.helpers.infographics
 id: mod:parrot.helpers.infographics
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Helper façade for the infographic template and theme registries.
 relates_to:
 - concept: func:parrot.helpers.infographics.get_template

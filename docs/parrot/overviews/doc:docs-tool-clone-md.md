@@ -4,7 +4,7 @@ title: AbstractTool Clone Method
 id: doc:docs-tool-clone-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: The `AbstractTool` class now includes a `clone()` method that allows you
   to create a new instance of a tool with the same configuration. This is useful when
   you need multiple instances of the same tool with identical settings.

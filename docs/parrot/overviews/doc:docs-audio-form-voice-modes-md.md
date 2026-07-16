@@ -4,7 +4,7 @@ title: Audio Form Voice Modes — Developer Guide
 id: doc:docs-audio-form-voice-modes-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 1. [What Changed in FEAT-236](#1-what-changed-in-feat-236)
 relates_to:
 - concept: mod:parrot.voice.handler

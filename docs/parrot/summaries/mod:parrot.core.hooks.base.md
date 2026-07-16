@@ -4,7 +4,7 @@ title: parrot.core.hooks.base
 id: mod:parrot.core.hooks.base
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Abstract base class for all external hooks.
 relates_to:
 - concept: class:parrot.core.hooks.base.BaseHook

@@ -4,7 +4,7 @@ title: MCPAgent
 id: class:parrot.bots.mcp.MCPAgent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: An agent with MCP (Model Context Protocol) capabilities.
 relates_to:
 - concept: class:parrot.bots.agent.BasicAgent

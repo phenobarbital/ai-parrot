@@ -4,7 +4,7 @@ title: extract_markdown_per_page()
 id: func:parrot.knowledge.pageindex.pdf_to_markdown.extract_markdown_per_page
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Extract per-physical-page markdown from a PDF.
 ---
 

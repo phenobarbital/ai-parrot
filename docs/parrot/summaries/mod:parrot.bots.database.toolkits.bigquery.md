@@ -4,7 +4,7 @@ title: parrot.bots.database.toolkits.bigquery
 id: mod:parrot.bots.database.toolkits.bigquery
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: BigQueryToolkit — BigQuery-specific overrides of ``SQLToolkit``.
 relates_to:
 - concept: class:parrot.bots.database.toolkits.bigquery.BigQueryToolkit

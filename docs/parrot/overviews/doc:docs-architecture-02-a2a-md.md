@@ -4,7 +4,7 @@ title: 2. A2A — exposing agents and orchestrators as services
 id: doc:docs-architecture-02-a2a-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'Where MCP exposes **tools**, A2A (Agent-to-Agent) exposes **agents**:'
 ---
 

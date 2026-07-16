@@ -4,7 +4,7 @@ title: parrot.auth.oauth2.persistence
 id: mod:parrot.auth.oauth2.persistence
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: DocumentDB persistence layer for the OAuth2 integration collections.
 relates_to:
 - concept: func:parrot.auth.oauth2.persistence.delete_user_agent_toolkits_by_provider

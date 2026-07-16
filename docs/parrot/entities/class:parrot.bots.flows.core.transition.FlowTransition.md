@@ -4,7 +4,7 @@ title: FlowTransition
 id: class:parrot.bots.flows.core.transition.FlowTransition
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Conditional edge between two nodes in a flow/crew DAG.
 ---
 

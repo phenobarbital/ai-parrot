@@ -4,7 +4,7 @@ title: WizardFormDialog
 id: class:parrot.integrations.msteams.dialogs.presets.wizard.WizardFormDialog
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Multi-step wizard dialog with one section per step.
 relates_to:
 - concept: class:parrot.integrations.msteams.dialogs.presets.base.BaseFormDialog

@@ -4,7 +4,7 @@ title: parrot.integrations.msagentsdk.models
 id: mod:parrot.integrations.msagentsdk.models
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Data models for Microsoft 365 Agents SDK bot configuration.
 relates_to:
 - concept: class:parrot.integrations.msagentsdk.models.MSAgentIntegrationConfig

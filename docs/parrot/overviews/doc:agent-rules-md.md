@@ -4,7 +4,7 @@ title: 🛸 Antigravity Directives (v1.0)
 id: doc:agent-rules-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: You are running inside Google Antigravity. DO NOT just write code.
 ---
 

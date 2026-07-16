@@ -4,7 +4,7 @@ title: GetOrganization
 id: class:parrot_tools.interfaces.workday.handlers.organization_single.GetOrganization
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Handler for Get_Organization operation.
 relates_to:
 - concept: class:parrot_tools.interfaces.workday.handlers.base.WorkdayTypeBase

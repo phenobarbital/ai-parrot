@@ -4,7 +4,7 @@ title: parrot_tools.messaging
 id: pkg:parrot_tools.messaging
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot_tools.messaging (1 modules, 0 sub-packages).
 relates_to:
 - concept: mod:parrot_tools.messaging.whatsapp

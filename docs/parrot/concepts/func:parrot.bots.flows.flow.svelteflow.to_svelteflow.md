@@ -4,7 +4,7 @@ title: to_svelteflow()
 id: func:parrot.bots.flows.flow.svelteflow.to_svelteflow
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Convert a ``FlowDefinition`` to SvelteFlow node/edge format.
 ---
 

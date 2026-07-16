@@ -4,7 +4,7 @@ title: SkillFileToolkit
 id: class:parrot.skills.tools.SkillFileToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Unified toolkit for file-based skills, sharing one ``SkillFileRegistry``.
 relates_to:
 - concept: class:parrot.tools.toolkit.AbstractToolkit

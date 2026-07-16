@@ -4,7 +4,7 @@ title: parrot.flows.dev_loop.nodes.bug_intake
 id: mod:parrot.flows.dev_loop.nodes.bug_intake
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: BugIntakeNode — bug-specific intake hook for the dev-loop flow.
 relates_to:
 - concept: class:parrot.flows.dev_loop.nodes.bug_intake.BugIntakeNode

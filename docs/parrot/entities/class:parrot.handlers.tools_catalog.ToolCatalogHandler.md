@@ -4,7 +4,7 @@ title: ToolCatalogHandler
 id: class:parrot.handlers.tools_catalog.ToolCatalogHandler
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Read-only handler that returns the global tool registry as JSON.
 ---
 

@@ -4,7 +4,7 @@ title: auto_detect_transport()
 id: func:parrot_tools.odoo.transport.detect.auto_detect_transport
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return the best transport for the given server.
 ---
 

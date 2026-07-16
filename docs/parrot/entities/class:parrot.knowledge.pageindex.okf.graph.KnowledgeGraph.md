@@ -4,7 +4,7 @@ title: KnowledgeGraph
 id: class:parrot.knowledge.pageindex.okf.graph.KnowledgeGraph
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: In-memory adjacency graph keyed by concept_id.
 ---
 

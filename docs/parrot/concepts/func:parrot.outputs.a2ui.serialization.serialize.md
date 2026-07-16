@@ -4,7 +4,7 @@ title: serialize()
 id: func:parrot.outputs.a2ui.serialization.serialize
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Serialize an A2UI message to a JSON-ready dict, injecting ``version``.
 ---
 

@@ -4,7 +4,7 @@ title: pulumi()
 id: func:parrot.install.cli.pulumi
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Install Pulumi CLI and optionally the Docker provider.
 ---
 

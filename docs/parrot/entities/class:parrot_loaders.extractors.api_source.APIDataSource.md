@@ -4,7 +4,7 @@ title: APIDataSource
 id: class:parrot_loaders.extractors.api_source.APIDataSource
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Base class for REST API data extraction.
 relates_to:
 - concept: class:parrot_loaders.extractors.base.ExtractDataSource

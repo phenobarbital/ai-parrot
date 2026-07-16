@@ -4,7 +4,7 @@ title: parrot.memory.episodic.models
 id: mod:parrot.memory.episodic.models
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Episodic Memory data models, enums, and namespace types.
 relates_to:
 - concept: class:parrot.memory.episodic.models.EpisodeCategory

@@ -4,7 +4,7 @@ title: Site
 id: class:parrot_formdesigner.services.venue_service.Site
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: An intermediate work-area grouping inside a Store.
 ---
 

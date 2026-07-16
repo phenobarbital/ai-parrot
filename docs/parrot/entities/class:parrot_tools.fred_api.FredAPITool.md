@@ -4,7 +4,7 @@ title: FredAPITool
 id: class:parrot_tools.fred_api.FredAPITool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Tool for fetching economic data from the Federal Reserve Economic Data (FRED)
   API.
 relates_to:

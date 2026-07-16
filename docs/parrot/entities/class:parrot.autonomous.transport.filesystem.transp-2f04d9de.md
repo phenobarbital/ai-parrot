@@ -4,7 +4,7 @@ title: FilesystemTransport
 id: class:parrot.autonomous.transport.filesystem.transport.FilesystemTransport
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Multi-agent transport over the local filesystem.
 relates_to:
 - concept: class:parrot.autonomous.transport.base.AbstractTransport

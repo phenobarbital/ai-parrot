@@ -4,7 +4,7 @@ title: register_component()
 id: func:parrot.outputs.a2ui.catalog.register_component
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Register a catalog component under ``name``.
 ---
 

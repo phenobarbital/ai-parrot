@@ -4,7 +4,7 @@ title: parrot.bots._types
 id: mod:parrot.bots._types
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Shared structural types for the ``parrot.bots`` package.
 relates_to:
 - concept: class:parrot.bots._types.AgentDispatcher

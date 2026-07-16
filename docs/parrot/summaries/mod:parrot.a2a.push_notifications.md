@@ -4,7 +4,7 @@ title: parrot.a2a.push_notifications
 id: mod:parrot.a2a.push_notifications
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Push notification configuration store for the A2A v1.0 server (FEAT-272).
 relates_to:
 - concept: class:parrot.a2a.push_notifications.PushNotificationStore

@@ -4,7 +4,7 @@ title: PlanogramCompliance
 id: class:parrot_pipelines.planogram.plan.PlanogramCompliance
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pure-LLM Planogram Compliance Pipeline with Composable Delegation.
 relates_to:
 - concept: class:parrot_pipelines.abstract.AbstractPipeline

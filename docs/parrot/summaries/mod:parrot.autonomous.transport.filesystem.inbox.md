@@ -4,7 +4,7 @@ title: parrot.autonomous.transport.filesystem.inbox
 id: mod:parrot.autonomous.transport.filesystem.inbox
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: InboxManager — point-to-point message delivery via filesystem.
 relates_to:
 - concept: class:parrot.autonomous.transport.filesystem.inbox.InboxManager

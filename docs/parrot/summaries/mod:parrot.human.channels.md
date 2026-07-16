@@ -4,7 +4,7 @@ title: parrot.human.channels
 id: mod:parrot.human.channels
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Communication channel implementations for HITL interactions.
 relates_to:
 - concept: class:parrot.human.channels.ChannelRegistry

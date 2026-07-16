@@ -4,7 +4,7 @@ title: parrot_loaders
 id: pkg:parrot_loaders
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot_loaders (33 modules, 3 sub-packages).
 relates_to:
 - concept: mod:parrot_loaders.audio

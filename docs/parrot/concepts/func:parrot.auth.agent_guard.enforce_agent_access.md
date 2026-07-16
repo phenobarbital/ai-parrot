@@ -4,7 +4,7 @@ title: enforce_agent_access()
 id: func:parrot.auth.agent_guard.enforce_agent_access
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Raise ``AgentAccessDenied`` if the request's subject cannot resolve ``bot_name``.
 ---
 

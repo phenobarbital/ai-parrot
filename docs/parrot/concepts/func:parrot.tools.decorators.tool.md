@@ -4,7 +4,7 @@ title: tool()
 id: func:parrot.tools.decorators.tool
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Decorator to mark a function as a tool with automatic schema generation.
 ---
 

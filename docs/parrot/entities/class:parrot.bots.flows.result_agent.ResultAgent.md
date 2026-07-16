@@ -4,7 +4,7 @@ title: ResultAgent
 id: class:parrot.bots.flows.result_agent.ResultAgent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Internal agent that renders a crew's ExecutionMemory into a crew_report infographic.
 relates_to:
 - concept: class:parrot.bots.agent.Agent

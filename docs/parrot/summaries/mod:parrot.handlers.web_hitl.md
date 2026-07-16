@@ -4,7 +4,7 @@ title: parrot.handlers.web_hitl
 id: mod:parrot.handlers.web_hitl
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Web HITL (Human-in-the-Loop) support for AI-Parrot.
 relates_to:
 - concept: class:parrot.handlers.web_hitl.HITLResponseBody

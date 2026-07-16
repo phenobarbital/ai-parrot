@@ -4,7 +4,7 @@ title: parrot.tools.working_memory.tests.test_thread_offload
 id: mod:parrot.tools.working_memory.tests.test_thread_offload
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Tests for the CPU-bound thread-offload optimisation in WorkingMemoryToolkit.
 relates_to:
 - concept: class:parrot.tools.working_memory.tests.test_thread_offload.TestGating

@@ -4,7 +4,7 @@ title: create_volatility_shock_scenario()
 id: func:parrot_tools.quant.stress_testing.create_volatility_shock_scenario
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Create a scenario where volatility spikes by a multiplier.
 ---
 

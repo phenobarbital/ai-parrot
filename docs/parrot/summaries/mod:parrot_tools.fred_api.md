@@ -4,7 +4,7 @@ title: parrot_tools.fred_api
 id: mod:parrot_tools.fred_api
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: FredAPITool for interacting with Federal Reserve Economic Data (FRED) API.
 relates_to:
 - concept: class:parrot_tools.fred_api.FredAPITool

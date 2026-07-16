@@ -4,7 +4,7 @@ title: parrot.integrations.msteams.graph
 id: mod:parrot.integrations.msteams.graph
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Minimal async Microsoft Graph client for the Teams HITL channel.
 relates_to:
 - concept: class:parrot.integrations.msteams.graph.GraphClient

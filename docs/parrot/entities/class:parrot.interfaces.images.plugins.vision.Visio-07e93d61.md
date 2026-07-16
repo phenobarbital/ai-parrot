@@ -4,7 +4,7 @@ title: VisionTransformerPlugin
 id: class:parrot.interfaces.images.plugins.vision.VisionTransformerPlugin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: VisionTransformerPlugin is a plugin for generating vector representations
   of images.
 relates_to:

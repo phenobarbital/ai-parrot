@@ -4,7 +4,7 @@ title: WorkdayCostCenterMapping
 id: class:parrot_formdesigner.services.project_service.WorkdayCostCenterMapping
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Mapping from an internal project to a Workday cost center code.
 ---
 

@@ -4,7 +4,7 @@ title: chunk_text()
 id: func:parrot.voice.tts.supertonic_inference.chunk_text
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Split text into synthesis-sized chunks by paragraph then sentence.
 ---
 

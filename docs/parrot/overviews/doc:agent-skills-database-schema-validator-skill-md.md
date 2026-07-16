@@ -4,8 +4,9 @@ title: Database Schema Validator Skill
 id: doc:agent-skills-database-schema-validator-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: database-schema-validator'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: This skill ensures that all SQL files provided by the user comply with our
+  strict database standards.
 ---
 
 ---

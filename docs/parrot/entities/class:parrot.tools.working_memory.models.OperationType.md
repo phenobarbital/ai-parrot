@@ -4,7 +4,7 @@ title: OperationType
 id: class:parrot.tools.working_memory.models.OperationType
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Allowed deterministic operations the agent can request.
 ---
 

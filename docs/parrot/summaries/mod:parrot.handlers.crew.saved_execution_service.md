@@ -4,7 +4,7 @@ title: parrot.handlers.crew.saved_execution_service
 id: mod:parrot.handlers.crew.saved_execution_service
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: SavedExecutionService — orchestration layer for execution history,
 relates_to:
 - concept: class:parrot.handlers.crew.saved_execution_service.CrewNotFoundError

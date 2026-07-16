@@ -4,7 +4,7 @@ title: download_slack_file()
 id: func:parrot.integrations.slack.files.download_slack_file
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Download a file from Slack using bot token authentication.
 ---
 

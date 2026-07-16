@@ -4,7 +4,7 @@ title: parrot.tools.working_memory.models
 id: mod:parrot.tools.working_memory.models
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Enums and Pydantic input models for WorkingMemoryToolkit DSL.
 relates_to:
 - concept: class:parrot.tools.working_memory.models.AggFunc

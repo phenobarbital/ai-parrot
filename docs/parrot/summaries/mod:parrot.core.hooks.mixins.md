@@ -4,7 +4,7 @@ title: parrot.core.hooks.mixins
 id: mod:parrot.core.hooks.mixins
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HookableAgent mixin — adds hook support to any agent or handler.
 relates_to:
 - concept: class:parrot.core.hooks.mixins.HookableAgent

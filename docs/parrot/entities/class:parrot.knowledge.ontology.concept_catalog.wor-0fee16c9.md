@@ -4,7 +4,7 @@ title: ConceptCatalogSyncWorker
 id: class:parrot.knowledge.ontology.concept_catalog.worker.ConceptCatalogSyncWorker
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Drain ``ontology_concept_outbox``, sync to ArangoDB, publish invalidation.
 ---
 

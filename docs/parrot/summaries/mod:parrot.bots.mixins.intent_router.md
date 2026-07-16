@@ -4,7 +4,7 @@ title: parrot.bots.mixins.intent_router
 id: mod:parrot.bots.mixins.intent_router
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: IntentRouterMixin — pre-RAG query routing for AI-Parrot bots.
 relates_to:
 - concept: class:parrot.bots.mixins.intent_router.IntentRouterMixin

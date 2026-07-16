@@ -4,7 +4,7 @@ title: Crew Tools Catalog Endpoint
 id: doc:docs-superpowers-specs-2026-07-14-crew-tools-catalog-endpoint-design-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: The frontend crew builder hardcodes the list of tools that can be assigned
   to
 relates_to:

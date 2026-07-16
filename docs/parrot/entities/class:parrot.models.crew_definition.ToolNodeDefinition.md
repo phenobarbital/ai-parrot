@@ -4,7 +4,7 @@ title: ToolNodeDefinition
 id: class:parrot.models.crew_definition.ToolNodeDefinition
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Definition of a deterministic tool-execution node in a crew.
 ---
 

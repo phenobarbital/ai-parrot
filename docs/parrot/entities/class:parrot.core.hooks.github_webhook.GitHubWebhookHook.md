@@ -4,7 +4,7 @@ title: GitHubWebhookHook
 id: class:parrot.core.hooks.github_webhook.GitHubWebhookHook
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Receives GitHub webhook POST requests via an aiohttp route.
 relates_to:
 - concept: class:parrot.core.hooks.base.BaseHook

@@ -4,7 +4,7 @@ title: WorkerPool
 id: class:parrot.services.worker_pool.WorkerPool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Limits concurrent agent executions using an asyncio semaphore.
 ---
 

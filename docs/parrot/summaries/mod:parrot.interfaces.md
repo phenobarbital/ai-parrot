@@ -4,7 +4,7 @@ title: parrot.interfaces
 id: mod:parrot.interfaces
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Interfaces package - Mixins for bot functionality.
 relates_to:
 - concept: mod:parrot

@@ -4,7 +4,7 @@ title: get_controls()
 id: func:parrot_formdesigner.controls.registry.get_controls
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return all registered controls in registration order.
 ---
 

@@ -4,7 +4,7 @@ title: render_briefing()
 id: func:parrot.auth.confirmation.render_briefing
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Render a confirmation briefing string for the tool call.
 ---
 

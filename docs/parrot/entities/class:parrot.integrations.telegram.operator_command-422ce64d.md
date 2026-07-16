@@ -4,7 +4,7 @@ title: OperatorCommandsMixin
 id: class:parrot.integrations.telegram.operator_commands.OperatorCommandsMixin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Operator-only Telegram commands for the autonomous harness.
 ---
 

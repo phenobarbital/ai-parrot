@@ -4,7 +4,7 @@ title: parrot.human.models
 id: mod:parrot.human.models
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Core data models for the Human-in-the-Loop system.
 relates_to:
 - concept: class:parrot.human.models.BusinessHours

@@ -4,7 +4,7 @@ title: parrot.human.escalation_intent
 id: mod:parrot.human.escalation_intent
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Escalation intent detector for HITL multi-tier escalation.
 relates_to:
 - concept: class:parrot.human.escalation_intent.RejectIntentDetector

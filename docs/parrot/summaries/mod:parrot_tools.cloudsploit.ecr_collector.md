@@ -4,7 +4,7 @@ title: parrot_tools.cloudsploit.ecr_collector
 id: mod:parrot_tools.cloudsploit.ecr_collector
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ECR image-scan collector for CloudSploit toolkit (FEAT-165).
 relates_to:
 - concept: class:parrot_tools.cloudsploit.ecr_collector.EcrScanCollector

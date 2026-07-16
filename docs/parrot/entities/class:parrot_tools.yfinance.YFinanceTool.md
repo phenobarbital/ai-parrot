@@ -4,7 +4,7 @@ title: YFinanceTool
 id: class:parrot_tools.yfinance.YFinanceTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Retrieve quotes, company information, and financial statements via Yahoo
   Finance.
 relates_to:

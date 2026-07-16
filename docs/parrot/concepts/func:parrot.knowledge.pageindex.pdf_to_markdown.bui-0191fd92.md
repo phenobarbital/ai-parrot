@@ -4,7 +4,7 @@ title: build_node_markdown_map()
 id: func:parrot.knowledge.pageindex.pdf_to_markdown.build_node_markdown_map
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'Walk a node tree and return ``{node_id: concatenated_markdown}``.'
 ---
 

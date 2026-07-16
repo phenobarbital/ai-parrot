@@ -4,7 +4,7 @@ title: SQLToolkit
 id: class:parrot.bots.database.toolkits.sql.SQLToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Common SQL operations with overridable dialect hooks.
 relates_to:
 - concept: class:parrot.bots.database.toolkits.base.DatabaseToolkit

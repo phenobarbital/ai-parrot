@@ -4,7 +4,7 @@ title: parrot_formdesigner.tools.field_helpers
 id: mod:parrot_formdesigner.tools.field_helpers
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Helper utilities for supported form field definitions.
 relates_to:
 - concept: func:parrot_formdesigner.tools.field_helpers.get_dependency_rule_snippets

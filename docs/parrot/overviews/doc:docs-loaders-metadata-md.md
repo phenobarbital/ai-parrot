@@ -4,7 +4,7 @@ title: Loader Metadata Standard
 id: doc:docs-loaders-metadata-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'Every `Document.metadata` dict produced by a loader follows this structure:'
 relates_to:
 - concept: mod:parrot.loaders.abstract

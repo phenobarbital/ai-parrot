@@ -4,7 +4,7 @@ title: ParrotTelemetryProvider
 id: class:parrot.observability.provider.ParrotTelemetryProvider
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Bundles trace + metrics subscribers for one-call registration.
 ---
 

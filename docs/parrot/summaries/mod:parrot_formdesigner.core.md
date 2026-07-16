@@ -4,7 +4,7 @@ title: parrot_formdesigner.core
 id: mod:parrot_formdesigner.core
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Core form models for parrot-formdesigner.
 relates_to:
 - concept: mod:parrot_formdesigner

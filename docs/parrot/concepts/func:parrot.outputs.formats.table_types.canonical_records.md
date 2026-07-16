@@ -4,7 +4,7 @@ title: canonical_records()
 id: func:parrot.outputs.formats.table_types.canonical_records
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Serialize DataFrame rows to canonical, JSON-boundary-safe dicts.
 ---
 

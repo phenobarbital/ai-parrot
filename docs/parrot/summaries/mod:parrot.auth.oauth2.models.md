@@ -4,7 +4,7 @@ title: parrot.auth.oauth2.models
 id: mod:parrot.auth.oauth2.models
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pydantic wire models for the OAuth2 integration layer.
 relates_to:
 - concept: class:parrot.auth.oauth2.models.AuthRequiredEnvelope

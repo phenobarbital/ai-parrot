@@ -4,7 +4,7 @@ title: parrot.handlers.vault_utils
 id: mod:parrot.handlers.vault_utils
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Backward-compatible redirect — vault_utils relocated to parrot.security in
   FEAT-203.
 relates_to:

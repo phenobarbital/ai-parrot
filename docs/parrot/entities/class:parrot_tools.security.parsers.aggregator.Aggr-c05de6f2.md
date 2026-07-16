@@ -4,7 +4,7 @@ title: AggregatorParser
 id: class:parrot_tools.security.parsers.aggregator.AggregatorParser
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Passthrough parser for weekly / monthly aggregated summary reports.
 ---
 

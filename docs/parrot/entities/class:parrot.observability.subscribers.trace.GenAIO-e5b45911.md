@@ -4,7 +4,7 @@ title: GenAIOpenTelemetrySubscriber
 id: class:parrot.observability.subscribers.trace.GenAIOpenTelemetrySubscriber
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Rich OTel span subscriber implementing GenAI Semantic Conventions.
 ---
 

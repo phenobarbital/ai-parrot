@@ -4,8 +4,8 @@ title: License Header Adder Skill
 id: doc:agent-skills-license-header-adder-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: license-header-adder'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: This skill ensures that all new source files have the correct copyright header.
 ---
 
 ---

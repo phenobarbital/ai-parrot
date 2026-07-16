@@ -4,7 +4,7 @@ title: 1. MCP Server — exposing tools as a service
 id: doc:docs-architecture-01-mcp-server-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AI-Parrot can act as an **MCP server** so that any MCP-compatible client
 ---
 

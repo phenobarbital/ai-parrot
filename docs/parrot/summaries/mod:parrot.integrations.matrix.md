@@ -4,7 +4,7 @@ title: parrot.integrations.matrix
 id: mod:parrot.integrations.matrix
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Matrix protocol integration for AI-Parrot.
 relates_to:
 - concept: mod:parrot.integrations

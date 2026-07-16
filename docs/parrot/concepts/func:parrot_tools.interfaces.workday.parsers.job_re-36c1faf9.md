@@ -4,7 +4,7 @@ title: parse_role_assignment_data()
 id: func:parrot_tools.interfaces.workday.parsers.job_requisition_parsers.parse_role_assignment_data
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parse Role Assignment Data to extract recruiters and other role assignees.
 ---
 

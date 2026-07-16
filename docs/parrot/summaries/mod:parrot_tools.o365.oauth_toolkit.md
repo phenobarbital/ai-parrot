@@ -4,7 +4,7 @@ title: parrot_tools.o365.oauth_toolkit
 id: mod:parrot_tools.o365.oauth_toolkit
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Office 365 toolkit with per-user OAuth 2.0 (delegated / 3LO) auth.
 relates_to:
 - concept: class:parrot_tools.o365.oauth_toolkit.Office365Toolkit

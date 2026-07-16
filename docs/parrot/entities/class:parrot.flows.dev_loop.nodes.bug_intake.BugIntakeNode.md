@@ -4,7 +4,7 @@ title: BugIntakeNode
 id: class:parrot.flows.dev_loop.nodes.bug_intake.BugIntakeNode
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Bug-specific intake hook — emits ``flow.bug_brief_validated`` event.
 relates_to:
 - concept: class:parrot.flows.dev_loop.nodes.base.DevLoopNode

@@ -4,7 +4,7 @@ title: parrot
 id: pkg:parrot
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot (49 modules, 45 sub-packages).
 relates_to:
 - concept: mod:parrot._imports

@@ -4,7 +4,7 @@ title: FormDesigner — Audio Renderer
 id: doc:docs-formdesigner-audio-renderer-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 1. [¿Qué es el Audio Renderer?](#1-qué-es-el-audio-renderer)
 relates_to:
 - concept: mod:parrot.voice.handler

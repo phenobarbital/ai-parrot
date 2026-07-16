@@ -4,7 +4,7 @@ title: parrot.knowledge.graphindex.extractors.code
 id: mod:parrot.knowledge.graphindex.extractors.code
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Code extractor — tree-sitter Python parsing for GraphIndex.
 relates_to:
 - concept: class:parrot.knowledge.graphindex.extractors.code.CodeExtractor

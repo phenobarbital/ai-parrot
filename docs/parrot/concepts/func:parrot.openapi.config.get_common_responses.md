@@ -4,7 +4,7 @@ title: get_common_responses()
 id: func:parrot.openapi.config.get_common_responses
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Common HTTP responses used across all endpoints.
 ---
 

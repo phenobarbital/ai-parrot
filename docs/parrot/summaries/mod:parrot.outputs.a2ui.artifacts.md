@@ -4,7 +4,7 @@ title: parrot.outputs.a2ui.artifacts
 id: mod:parrot.outputs.a2ui.artifacts
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Rendered-artifact and deep-link models (Module 6).
 relates_to:
 - concept: class:parrot.outputs.a2ui.artifacts.DeepLink

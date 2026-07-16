@@ -4,7 +4,7 @@ title: parrot.skills.file_registry
 id: mod:parrot.skills.file_registry
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Filesystem-based skill registry with eager loading.
 relates_to:
 - concept: class:parrot.skills.file_registry.SkillFileRegistry

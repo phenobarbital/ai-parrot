@@ -4,7 +4,7 @@ title: register_preset()
 id: func:parrot.bots.prompts.presets.register_preset
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Register a named preset.
 ---
 

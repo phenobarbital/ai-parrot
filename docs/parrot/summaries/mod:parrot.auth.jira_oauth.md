@@ -4,7 +4,7 @@ title: parrot.auth.jira_oauth
 id: mod:parrot.auth.jira_oauth
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Jira OAuth 2.0 (3LO) manager for per-user authentication.
 relates_to:
 - concept: class:parrot.auth.jira_oauth.JiraOAuthManager

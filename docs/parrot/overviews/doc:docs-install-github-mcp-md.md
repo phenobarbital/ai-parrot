@@ -4,7 +4,7 @@ title: GitHub MCP Installation and Usage
 id: doc:docs-install-github-mcp-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This guide explains how to install and use the GitHub MCP server with `ai-parrot`.
 ---
 

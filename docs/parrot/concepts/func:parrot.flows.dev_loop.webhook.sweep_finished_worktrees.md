@@ -4,7 +4,7 @@ title: sweep_finished_worktrees()
 id: func:parrot.flows.dev_loop.webhook.sweep_finished_worktrees
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Remove dev-loop worktrees whose PR is merged/closed. Best effort.
 ---
 

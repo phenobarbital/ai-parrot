@@ -4,7 +4,7 @@ title: OrchestratorAgent — Multi-Party Conferencing (`confer`)
 id: doc:docs-orchestrator-conferencing-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: LLM-driven `ask()` ReAct loop. Instead of letting an LLM pick which
 relates_to:
 - concept: mod:parrot.bots.flows.agents

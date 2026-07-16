@@ -4,7 +4,7 @@ title: get_computed_function()
 id: func:parrot.tools.dataset_manager.computed.get_computed_function
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Look up a function by name from the registry.
 ---
 

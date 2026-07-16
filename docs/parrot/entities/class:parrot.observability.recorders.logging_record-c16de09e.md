@@ -4,7 +4,7 @@ title: LoggingUsageRecorder
 id: class:parrot.observability.recorders.logging_recorder.LoggingUsageRecorder
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Record usage by emitting one structured log line per LLM call.
 relates_to:
 - concept: class:parrot.observability.recorders.base.AbstractLogger

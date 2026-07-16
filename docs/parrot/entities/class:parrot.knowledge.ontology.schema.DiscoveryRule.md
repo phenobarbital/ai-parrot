@@ -4,7 +4,7 @@ title: DiscoveryRule
 id: class:parrot.knowledge.ontology.schema.DiscoveryRule
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Rule for discovering relationships between entities in source data.
 ---
 

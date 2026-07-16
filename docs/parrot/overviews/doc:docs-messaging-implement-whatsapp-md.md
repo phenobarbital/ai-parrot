@@ -4,7 +4,7 @@ title: WhatsApp Integration - Resumen de Implementación
 id: doc:docs-messaging-implement-whatsapp-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'He implementado una integración completa de WhatsApp para AI-Parrot que
   te permite:'
 relates_to:

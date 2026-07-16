@@ -4,7 +4,7 @@ title: AI-Parrot Agent Orchestration Documentation
 id: doc:docs-orchestration-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'AI-Parrot provides powerful agent orchestration capabilities through two
   main classes:'
 relates_to:

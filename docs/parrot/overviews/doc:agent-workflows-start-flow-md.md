@@ -4,8 +4,8 @@ title: Start Flow
 id: doc:agent-workflows-start-flow-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: A fresh startup for work'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: 'description: Startup flow — sync repo then install + start dev environment'
 ---
 
 ---

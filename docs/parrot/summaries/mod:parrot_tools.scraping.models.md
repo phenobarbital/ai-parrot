@@ -4,7 +4,7 @@ title: parrot_tools.scraping.models
 id: mod:parrot_tools.scraping.models
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Browser Action System for AI-Parrot WebScrapingTool
 relates_to:
 - concept: class:parrot_tools.scraping.models.Authenticate

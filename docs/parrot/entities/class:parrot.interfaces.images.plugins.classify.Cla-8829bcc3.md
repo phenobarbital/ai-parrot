@@ -4,7 +4,7 @@ title: ClassificationPlugin
 id: class:parrot.interfaces.images.plugins.classify.ClassificationPlugin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ClassificationPlugin is a plugin for performing image classification.
 relates_to:
 - concept: class:parrot.interfaces.images.plugins.abstract.ImagePlugin

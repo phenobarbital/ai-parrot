@@ -4,7 +4,7 @@ title: parrot.observability.cost.calculator
 id: mod:parrot.observability.cost.calculator
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: CostCalculator — stateless USD cost estimation for LLM API calls.
 relates_to:
 - concept: class:parrot.observability.cost.calculator.CostCalculator

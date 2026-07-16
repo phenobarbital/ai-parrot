@@ -4,7 +4,7 @@ title: parrot.core.ws_auth
 id: mod:parrot.core.ws_auth
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: WebSocket / token authentication infrastructure.
 relates_to:
 - concept: class:parrot.core.ws_auth.AuthenticatedUser

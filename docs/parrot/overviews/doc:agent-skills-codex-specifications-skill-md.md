@@ -4,8 +4,8 @@ title: Codex Specifications Skill
 id: doc:agent-skills-codex-specifications-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: codex-specifications'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Use this skill when a user wants a bugfix or feature implemented from a
 ---
 
 ---

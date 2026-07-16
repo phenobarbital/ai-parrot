@@ -4,7 +4,7 @@ title: XFormsRenderer
 id: class:parrot_formdesigner.renderers.xforms.XFormsRenderer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Render a ``FormSchema`` as an XForms 1.1 (W3C) document.
 ---
 

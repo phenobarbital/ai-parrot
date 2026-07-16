@@ -4,7 +4,7 @@ title: RevisionHandoffNode
 id: class:parrot.flows.dev_loop.nodes.revision_handoff.RevisionHandoffNode
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Revision-path handoff — push existing branch + comment existing PR.
 relates_to:
 - concept: class:parrot.flows.dev_loop.nodes.base.DevLoopNode

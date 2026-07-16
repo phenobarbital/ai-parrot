@@ -4,7 +4,7 @@ title: DynamoDB Local (docker-compose)
 id: doc:docs-dynamodb-local-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This page documents the local DynamoDB stack we use for developing the
 relates_to:
 - concept: mod:parrot.storage.artifacts

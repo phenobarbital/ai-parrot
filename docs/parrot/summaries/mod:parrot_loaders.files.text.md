@@ -4,7 +4,7 @@ title: parrot_loaders.files.text
 id: mod:parrot_loaders.files.text
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Module parrot_loaders.files.text
 relates_to:
 - concept: class:parrot_loaders.files.text.TextFile

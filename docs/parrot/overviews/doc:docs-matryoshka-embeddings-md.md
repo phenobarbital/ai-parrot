@@ -4,7 +4,7 @@ title: Matryoshka Embedding Truncation
 id: doc:docs-matryoshka-embeddings-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Matryoshka Representation Learning (MRL) trains embedding models so that
   a
 relates_to:

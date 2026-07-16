@@ -4,7 +4,7 @@ title: parrot_tools.google.tools
 id: mod:parrot_tools.google.tools
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Migrated Google Tools using the AbstractTool framework.
 relates_to:
 - concept: class:parrot_tools.google.tools.GoogleLocationArgs

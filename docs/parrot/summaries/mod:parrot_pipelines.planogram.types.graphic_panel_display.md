@@ -4,7 +4,7 @@ title: parrot_pipelines.planogram.types.graphic_panel_display
 id: mod:parrot_pipelines.planogram.types.graphic_panel_display
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: GraphicPanelDisplay planogram type composable.
 relates_to:
 - concept: class:parrot_pipelines.planogram.types.graphic_panel_display.GraphicPanelDisplay

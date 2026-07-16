@@ -4,7 +4,7 @@ title: AsyncJobManagerMixin
 id: class:parrot.handlers.jobs.mixin.AsyncJobManagerMixin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Async-native mixin for aiohttp views with job manager functionality.
 ---
 

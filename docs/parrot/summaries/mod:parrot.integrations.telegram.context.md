@@ -4,7 +4,7 @@ title: parrot.integrations.telegram.context
 id: mod:parrot.integrations.telegram.context
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Per-request context helpers for the Telegram integration.
 relates_to:
 - concept: func:parrot.integrations.telegram.context.get_current_telegram_chat_id

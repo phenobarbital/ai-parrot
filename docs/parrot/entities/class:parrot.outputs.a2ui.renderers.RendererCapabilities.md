@@ -4,7 +4,7 @@ title: RendererCapabilities
 id: class:parrot.outputs.a2ui.renderers.RendererCapabilities
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Declared capabilities of an A2UI renderer (spec §2 Data Models).
 ---
 

@@ -4,7 +4,7 @@ title: RecallProcessor
 id: class:parrot_tools.scraping.recall_processor.RecallProcessor
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Post-extraction LLM recall for rag_text generation and gap-filling.
 ---
 

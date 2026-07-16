@@ -4,7 +4,7 @@ title: parrot.tools.dataset_manager.spatial.registry
 id: mod:parrot.tools.dataset_manager.spatial.registry
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: SPATIAL_PROFILE_REGISTRY — standalone profile store for DatasetManager spatial
   queries.
 relates_to:
