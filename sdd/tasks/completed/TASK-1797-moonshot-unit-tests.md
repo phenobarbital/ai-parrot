@@ -189,4 +189,61 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `tests/clients/test_moonshot_client.py` with 33 tests covering all
+spec §4 cases plus init/attribute coverage: client init (explicit key, env
+fallback, base_url, prompt_cache_key), class attributes, parameter
+sanitization (temperature/top_p/penalties stripped for all K-series
+models, preserved for legacy models), max_tokens translation, all three
+thinking-mode variants (K3 reasoning_effort incl. default, K2.6 thinking
+dict bool/explicit, K2.7-code always-on/no-injection), prompt_cache_key
+injection, `.create()`-not-`.parse()` usage, `ask()`/`ask_stream()`
+contextvar propagation, factory registration/creation for both
+`"moonshot"` and `"kimi"` keys, and full model-enum/frozenset value
+coverage. All 33 tests pass; `ruff check` clean.
+
+**Implementation note**: `AbstractClient.client` is a loop-local property
+(pre-existing, unrelated to this feature) that rejects direct assignment —
+tests build a real `MoonshotClient`, patch `get_client()` to return a
+mock SDK object, and prime the per-loop cache via `_ensure_client()`
+rather than assigning `client.client` directly (which raises
+`AttributeError` by design).
+
+**Regression check**: ran the full `tests/clients/` suite plus
+`test_nvidia_client.py` — 12 pre-existing failures unrelated to this
+feature (anthropic_fallback, claude_agent, client_fallback,
+test_nvidia_client's `_chat_completion`-level thinking tests), all
+attributable to the pre-existing per-loop `client` property refactor
+(verified present in the codebase before FEAT-311 work started, commit
+`f8aaa84e2`) breaking older tests that assign `self.client` directly —
+not caused by or related to MoonshotClient/factory.py changes.
+
+**Post-review update**: a code review (code-reviewer agent) of the
+completed feature found that `OpenAIClient.ask_stream()`'s
+Chat-Completions branch and `OpenAIClient.invoke()` both call
+`self.client.chat.completions.create()` directly and never route through
+the overridden `_chat_completion()` — meaning K-series parameter
+stripping, thinking injection, `max_completion_tokens` translation, and
+`prompt_cache_key` never applied on those two paths, and K-series models
+would be sent a hard-rejected `temperature` by default. Fixed in
+`clients/moonshot.py`: `ask_stream()` now neutralizes `self.temperature`
+for K-series models as a safety net (documented residual gaps for
+`max_completion_tokens`/`prompt_cache_key`/thinking-injection on that path
+in a module-level "KNOWN LIMITATIONS" note, since a full fix requires
+widening shared `OpenAIClient` code, out of this task's file scope);
+`invoke()` now raises a clear `ValueError` for K-series models instead of
+silently sending a doomed request (no safe neutralization point exists
+there). Also fixed, per the same review: `reasoning_content` is now
+captured into `AIMessage.metadata["reasoning_content"]` via a new
+`_capture_reasoning_content()` helper wired into both `ask()` and
+`ask_stream()` (closing the spec §5 AC gap flagged in TASK-1795's
+completion note); removed a dead no-op line
+(`_ = model in ALWAYS_THINKING_MODELS`); fixed
+`thinking.get("reasoning_effort") or "max"` to use an explicit `is None`
+check (a falsy-but-valid value could otherwise be silently overridden).
+Added 12 new regression tests (33 → 45 total, all passing, `ruff` clean)
+covering: `ask_stream()`'s temperature neutralization (and that legacy
+models are left untouched), `invoke()`'s K-series guard (explicit kwarg,
+instance-default fallback, and legacy-model delegation), 
+`_capture_reasoning_content()` (present/absent/no-raw-response/no-choices),
+end-to-end `reasoning_content` capture via `ask()`/`ask_stream()`, and a
+`VISION_MODELS` frozenset coverage test that was previously missing.

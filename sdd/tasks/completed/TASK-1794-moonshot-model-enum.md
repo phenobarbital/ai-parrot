@@ -148,4 +148,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `packages/ai-parrot/src/parrot/models/moonshot.py` following the
+`NvidiaModel` pattern exactly: `MoonshotModel(str, Enum)` with all 7 model
+identifiers, plus `K_SERIES_MODELS`, `ALWAYS_THINKING_MODELS`,
+`REASONING_EFFORT_MODELS`, `THINKING_DICT_MODELS`, and `VISION_MODELS`
+frozensets built from the enum's `.value`s. Verified import, enum member
+count (7), and frozenset membership via an inline script; `ruff check`
+passes clean. No deviations from the spec/task contract.

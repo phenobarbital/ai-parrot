@@ -164,4 +164,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `from .moonshot import MoonshotClient` after the `ZaiClient` import
+and `"moonshot": MoonshotClient` / `"kimi": MoonshotClient` entries to
+`SUPPORTED_CLIENTS` right after `"nvidia"`, exactly as specified. Verified
+`ruff check` clean and confirmed end-to-end via
+`LLMFactory.create("moonshot", api_key=...)` and
+`LLMFactory.create("kimi:kimi-k3", api_key=...)` both returning a
+`MoonshotClient` instance (the latter with `model == "kimi-k3"`). No
+deviations from the task contract.

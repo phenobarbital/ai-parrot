@@ -301,4 +301,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `packages/ai-parrot/src/parrot/clients/moonshot.py` following
+the `NvidiaClient` pattern exactly (contextvar-based thinking propagation,
+`__init__` API-key resolution + re-set after `super().__init__()`,
+always-`.create()` retry policy). All task-level acceptance criteria are
+met and verified via `ruff check` (clean) and an inline script confirming
+`client_type`/`client_name`/`_default_model`/`_fallback_model` and
+`_sanitize_params_for_model()` stripping behavior for K-series vs legacy
+models.
+
+**Flagged concern (not in this task's scope, noted for follow-up)**: the
+spec's top-level Acceptance Criteria (§5) requires `reasoning_content` to
+be captured in `AIMessage.metadata["reasoning_content"]`. Verified via
+codebase research that `OpenAIClient.ask()`'s call to
+`AIMessageFactory.from_openai()` (`models/responses.py:433-479`) does NOT
+extract `reasoning_content` from the SDK response — unlike `ZaiClient`,
+which builds `AIMessage` itself. Since `MoonshotClient.ask()`/`ask_stream()`
+delegate to `super().ask()`/`super().ask_stream()` unmodified (matching
+this task's specified Scope, which did not include an `AIMessage`
+post-processing override), `reasoning_content` is only reachable today via
+`AIMessage.raw_response` (the serialized SDK response dict), not via
+`metadata`. This is a pre-existing gap inherited from the NvidiaClient
+pattern this task was instructed to follow — flagging per spec §5 AC
+rather than silently expanding this task's scope to add an
+`ask()`/`ask_stream()` metadata post-processing step that wasn't listed in
+Files to Create/Modify or Scope.
