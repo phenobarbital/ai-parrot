@@ -102,6 +102,33 @@ class TestVideoGeneration:
             with pytest.raises(ValueError, match="s3_output_uri|bucket_name"):
                 await host.video_generation("a dancing robot")
 
+    async def test_resolve_s3_output_uri_named_profile_falls_back_to_default_bucket(self):
+        """Code-review regression test (FEAT-315): a named aws_id profile
+        that lacks bucket_name must fall back to the 'default' profile's
+        bucket_name (mirrors BedrockConverseBase's credential-resolution
+        fallback-to-'default' convention) instead of raising immediately."""
+        host = Host(AsyncMock())
+        host._aws_id = "monitoring"
+        with patch(
+            "parrot.clients.nova.generation.AWS_CREDENTIALS",
+            {"monitoring": {}, "default": {"bucket_name": "default-bucket"}},
+        ):
+            uri = host._resolve_s3_output_uri(None)
+        assert uri == "s3://default-bucket/nova-reel-output/"
+
+    async def test_resolve_s3_output_uri_named_profile_bucket_wins_over_default(self):
+        host = Host(AsyncMock())
+        host._aws_id = "monitoring"
+        with patch(
+            "parrot.clients.nova.generation.AWS_CREDENTIALS",
+            {
+                "monitoring": {"bucket_name": "monitoring-bucket"},
+                "default": {"bucket_name": "default-bucket"},
+            },
+        ):
+            uri = host._resolve_s3_output_uri(None)
+        assert uri == "s3://monitoring-bucket/nova-reel-output/"
+
     async def test_video_generation_polls_until_complete(self, tmp_path):
         fake_client = AsyncMock()
         fake_client.start_async_invoke.return_value = {

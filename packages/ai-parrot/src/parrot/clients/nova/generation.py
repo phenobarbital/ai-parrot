@@ -172,13 +172,18 @@ class NovaGeneration:
     def _resolve_s3_output_uri(self, s3_output_uri: Optional[str]) -> str:
         """Resolve the mandatory Nova Reel S3 output location.
 
-        Resolution order: explicit kwarg → ``AWS_CREDENTIALS[self._aws_id
-        or 'default']["bucket_name"]``.
+        Resolution order: explicit kwarg → ``AWS_CREDENTIALS[self._aws_id]
+        ["bucket_name"]`` → ``AWS_CREDENTIALS['default']["bucket_name"]``
+        (code-review fix, FEAT-315: mirrors the credential-resolution
+        fallback-to-'default' convention established for the named
+        ``aws_id`` profile in ``BedrockConverseBase.__init__`` — a named
+        profile lacking ``bucket_name`` now falls back to the default
+        profile's bucket instead of raising immediately).
 
         Raises:
             ValueError: When neither an explicit ``s3_output_uri`` nor a
-                ``bucket_name`` on the resolved credentials profile is
-                available — actionable message names both.
+                ``bucket_name`` on the resolved (or default) credentials
+                profile is available — actionable message names both.
         """
         if s3_output_uri:
             return s3_output_uri
@@ -186,6 +191,8 @@ class NovaGeneration:
         profile_name = getattr(self, "_aws_id", None) or "default"
         profile = AWS_CREDENTIALS.get(profile_name, {}) or {}
         bucket_name = profile.get("bucket_name")
+        if not bucket_name and profile_name != "default":
+            bucket_name = (AWS_CREDENTIALS.get("default", {}) or {}).get("bucket_name")
         if bucket_name:
             return f"s3://{bucket_name}/nova-reel-output/"
 
@@ -193,7 +200,7 @@ class NovaGeneration:
             "video_generation() requires an S3 output location for Nova "
             "Reel (StartAsyncInvoke has no synchronous API). Pass "
             "s3_output_uri=..., or configure bucket_name in the "
-            f"AWS_CREDENTIALS[{profile_name!r}] profile."
+            f"AWS_CREDENTIALS[{profile_name!r}] (or 'default') profile."
         )
 
     @staticmethod
