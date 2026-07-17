@@ -181,10 +181,42 @@ EOF
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-17
+**Notes**: `bots/voice.py`: both dispatch sites (`_resolve_llm_config`,
+`_create_llm_client`) now branch on `provider == 'nova'`, import
+`NovaClient` from `parrot.clients.nova`, and forward voice params
+identically; `_resolve_llm_config` defaults the voice model to
+`"nova-2-sonic"` when the caller didn't configure one (NovaClient's own
+default is the TEXT model `nova-2-lite`). `models/voice.py`: comment
+updated to document the `'nova_sonic'` → `'nova'` breaking rename.
+`ai-parrot-integrations/voice/models.py`: `VoiceProvider.NOVA_SONIC =
+"nova_sonic"` renamed to `NOVA = "nova"` (no alias). `voice/handler.py`:
+`resolve_voice_client_class`/`resolve_provider_client` + docstrings updated
+to `VoiceProvider.NOVA` → `parrot.clients.nova.NovaClient`. Deleted
+`parrot/clients/nova_sonic.py`. Created
+`docs/migration/feat-315-novaclient.md` (breaking-change note with
+before/after snippets and the lockstep-release requirement). Verified
+against the worktree's own source tree (not the editable-installed main-repo
+copy — required copying two gitignored compiled `.so` build artifacts,
+`utils/types` and `utils/parsers/toml`, into the worktree so raw `python -c`
+imports resolve correctly; not committed): `from parrot.bots.voice import
+VoiceBot`, `VoiceProvider.NOVA.value == 'nova'`, `resolve_voice_client_class
+(NOVA) is NovaClient`, and `import parrot.clients.nova_sonic` → ImportError,
+all pass. Sweep: `grep -rn "nova_sonic" packages/ --include="*.py"` outside
+`tests/` only matches historical/migration-note comments in
+`voice/models.py` (both packages) and `nova/audio.py`'s port-provenance
+docstring — no functional imports/references remain. Two pre-existing test
+files (`test_voicebot_nova_sonic_wiring.py`,
+`test_nova_sonic_provider.py`) now fail as expected (assert on the old
+`"nova_sonic"` string) — this is the documented TASK-1812 handoff, not a
+regression. `ruff check` clean on all touched files except 4 pre-existing,
+unrelated lint findings in `bots/voice.py` (unused imports/var, confirmed
+present identically on `dev` before this work).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Also corrected a stale docstring reference in
+`clients/bedrock.py` (`apply_guardrail_text`, pointed at the never-real
+`parrot.integrations.bedrock.nova_sonic.NovaSonicClient` path) to point at
+`NovaAudio._apply_pii_guardrail` — not in the task's file list, but
+required to satisfy this task's own sweep acceptance criterion (a
+production, non-test file still contained a `nova_sonic` reference).

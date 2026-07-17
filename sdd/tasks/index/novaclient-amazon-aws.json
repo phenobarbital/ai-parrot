@@ -114,7 +114,7 @@
       "feature_id": "FEAT-315",
       "feature": "novaclient-amazon-aws",
       "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,8 +125,8 @@
       "parallelism_notes": "Breaking rename ('nova_sonic' → 'nova') across two distributions; must land after the new client is complete.",
       "assigned_to": null,
       "started_at": "2026-07-17T15:48:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1811-nova-callsite-migration.md"
+      "completed_at": "2026-07-17T16:42:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1811-nova-callsite-migration.md"
     },
     {
       "id": "TASK-1812",
