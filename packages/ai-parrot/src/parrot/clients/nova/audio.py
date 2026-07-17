@@ -1,27 +1,27 @@
-"""Amazon Nova 2 Sonic experimental bidirectional voice client (FEAT-302).
+"""NovaAudio — bidirectional voice streaming mixin for NovaClient (FEAT-315).
 
-Implements :class:`NovaSonicClient`, an :class:`~parrot.clients.base.AbstractClient`
-subclass providing bidirectional speech-to-speech via Amazon Nova Sonic's
-``InvokeModelWithBidirectionalStream`` API — using the **Pre-Alpha**
-``aws_sdk_bedrock_runtime`` SDK (Python >= 3.12 only; boto3/aioboto3 do not
-support this operation).
-
-Follows the sender/receiver task architecture pioneered by
-:class:`~parrot.clients.live.GeminiLiveClient.stream_voice` (HTTP/2
-bidirectional stream instead of a WebSocket), yielding the same
-:class:`~parrot.clients.live.LiveVoiceResponse` shape so downstream
-consumers (``VoiceChatHandler``) work unchanged.
+Ports the bidirectional speech-to-speech implementation from the deleted
+FEAT-302 voice-only client module (removed in FEAT-315 — see
+``docs/migration/feat-315-novaclient.md``) into a plain capability mixin,
+composed into
+:class:`~parrot.clients.nova.client.NovaClient` alongside
+``BedrockConverseBase`` (spec ``novaclient-amazon-aws`` §2/§3 Module 3),
+mirroring how :class:`~parrot.clients.google.generation.GoogleGeneration`
+is composed into :class:`~parrot.clients.google.client.GoogleGenAIClient`.
 
 .. warning::
     **EXPERIMENTAL.** ``aws_sdk_bedrock_runtime==0.7.0`` is Pre-Alpha and its
-    API may change before GA — this module isolates every raw SDK call
-    behind three thin wrappers (:meth:`NovaSonicClient._open_stream`,
-    :meth:`NovaSonicClient._send_event`, :meth:`NovaSonicClient._iter_events`,
-    mirroring :class:`~parrot.clients.bedrock.BedrockConverseClient`'s
+    API may change before GA — every raw SDK call is isolated behind three
+    thin wrappers (:meth:`NovaAudio._open_stream`,
+    :meth:`NovaAudio._send_event`, :meth:`NovaAudio._iter_events`, mirroring
+    :class:`~parrot.clients.bedrock.BedrockConverseBase`'s
     ``_sdk_create``/``_sdk_stream`` pattern) so only those need updating if
-    the SDK's shape changes.
+    the SDK's shape changes. The Pre-Alpha SDK is imported lazily — only at
+    first :meth:`stream_voice` call, via :func:`_require_voice_sdk` — so
+    text/generation-only usage of ``NovaClient`` never requires it.
 
-See ``sdd/specs/bedrock-client-llm.spec.md`` (Module 7) for the full design.
+See ``sdd/specs/novaclient-amazon-aws.spec.md`` (§3 Module 3) for the full
+design.
 """
 from __future__ import annotations
 
@@ -30,33 +30,47 @@ import base64
 import contextlib
 import time
 import uuid
-from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional
 
-from .base import AbstractClient
-from .live import LiveCompletionUsage, LiveToolCall, LiveVoiceResponse, VoiceTurnMetadata
-from ..conf import AWS_REGION_NAME, BEDROCK_AWS_REGION
-from ..models.bedrock_models import translate as translate_bedrock_model
-from ..models.responses import AIMessage
+from ..live import LiveCompletionUsage, LiveToolCall, LiveVoiceResponse, VoiceTurnMetadata
+from ...models.bedrock_models import translate as translate_bedrock_model
 
 
-class NovaSonicClient(AbstractClient):
-    """Experimental Amazon Nova 2 Sonic bidirectional speech-to-speech client.
+def _require_voice_sdk() -> None:
+    """Raise an actionable ``ImportError`` if the Pre-Alpha voice SDK is missing.
 
-    Handles PCM 16kHz mono audio input and PCM 24kHz mono audio output over
-    an ``aws_sdk_bedrock_runtime`` bidirectional stream. Text-only
-    ``ask()``/``ask_stream()`` calls delegate to an internally-managed
-    :class:`~parrot.clients.bedrock.BedrockConverseClient` (lazily
-    constructed) rather than reimplementing text completion here.
+    Called at the top of :meth:`NovaAudio.stream_voice` (NOT at import time,
+    NOT in any ``__init__``) so that text/generation-only usage of
+    ``NovaClient`` never requires the experimental
+    ``aws_sdk_bedrock_runtime`` package or Python >= 3.12.
 
-    Connections are limited to ~8 minutes by the Nova Sonic service;
-    :meth:`stream_voice` proactively yields a ``reconnect_required`` signal
-    frame and closes the stream shortly before the limit so callers can
-    open a new session and replay recent context.
+    Raises:
+        ImportError: When ``aws_sdk_bedrock_runtime`` is not installed.
     """
+    try:
+        import aws_sdk_bedrock_runtime  # noqa: F401 — presence check only
+    except ImportError as exc:
+        raise ImportError(
+            "NovaClient.stream_voice() requires the Pre-Alpha "
+            "'aws_sdk_bedrock_runtime' package (==0.7.0, Python >= 3.12 "
+            "only). This voice path is EXPERIMENTAL. Install with: "
+            "pip install 'aws_sdk_bedrock_runtime==0.7.0'"
+        ) from exc
 
-    client_type: str = "nova-sonic"
-    client_name: str = "nova-sonic"
-    _default_model: str = "amazon.nova-2-sonic-v1:0"
+
+class NovaAudio:
+    """Bidirectional voice-streaming mixin (Nova Sonic / Nova 2 Sonic).
+
+    Plain mixin — defines NO ``__init__`` (MRO constraint, spec §7) and
+    reads the following attributes from the composed client (set by
+    :class:`~parrot.clients.nova.client.NovaClient` / inherited from
+    ``BedrockConverseBase``): ``self.voice_id``, ``self._region``,
+    ``self.model``, ``self.default_model``, ``self.logger``,
+    ``self._execute_tool(name, input)``,
+    ``self.apply_guardrail_text(text, source)``. Deliberately does NOT
+    read ``self._region_prefix`` for model resolution — Nova Sonic has no
+    cross-region inference profiles (see :meth:`stream_voice`).
+    """
 
     # Nova Sonic's hard limit is ~8 minutes; reconnect with a safety margin
     # so a turn in progress is not cut off mid-stream.
@@ -66,124 +80,31 @@ class NovaSonicClient(AbstractClient):
     INPUT_SAMPLE_RATE_HZ: int = 16000
     OUTPUT_SAMPLE_RATE_HZ: int = 24000
 
-    def __init__(
-        self,
-        region: Optional[str] = None,
-        profile: Optional[str] = None,
-        region_prefix: Optional[str] = None,
-        guardrail_id: Optional[str] = None,
-        guardrail_version: Optional[str] = None,
-        text_fallback_model: Optional[str] = None,
-        voice_id: str = "matthew",
-        **kwargs
-    ):
-        """Initialise a Nova Sonic client.
-
-        Args:
-            region: AWS region for the Bedrock Runtime endpoint. Resolution
-                order: explicit kwarg → ``BEDROCK_AWS_REGION`` →
-                ``AWS_REGION_NAME`` → ``"us-east-1"``.
-            profile: Optional named AWS profile, forwarded to the internal
-                text-fallback :class:`~parrot.clients.bedrock.BedrockConverseClient`.
-            region_prefix: Cross-region inference-profile prefix applied by
-                :func:`~parrot.models.bedrock_models.translate`.
-            guardrail_id: Bedrock guardrail identifier, used by
-                :meth:`_apply_pii_guardrail` (transcription PII filtering)
-                and forwarded to the internal text-fallback client.
-            guardrail_version: Bedrock guardrail version. See
-                ``guardrail_id``.
-            text_fallback_model: Model ID used by the internal text-fallback
-                :class:`~parrot.clients.bedrock.BedrockConverseClient`
-                (``ask()``/``ask_stream()``). Defaults to
-                ``BedrockConverseClient._default_model``.
-            voice_id: Nova Sonic synthesis voice (e.g. ``"matthew"``,
-                ``"tiffany"``, ``"amy"``).
-            **kwargs: Forwarded to
-                :class:`~parrot.clients.base.AbstractClient`.
-
-        Raises:
-            ImportError: When ``aws_sdk_bedrock_runtime`` (Pre-Alpha,
-                Python >= 3.12 only) is not installed. Raised eagerly at
-                construction time (rather than deferred to first use) so
-                misconfiguration surfaces immediately with an actionable
-                install hint.
-        """
-        try:
-            import aws_sdk_bedrock_runtime  # noqa: F401 — presence check only
-        except ImportError as exc:
-            raise ImportError(
-                "NovaSonicClient requires the Pre-Alpha 'aws_sdk_bedrock_runtime' "
-                "package (==0.7.0, Python >= 3.12 only). This client is "
-                "EXPERIMENTAL. Install with: "
-                "pip install 'aws_sdk_bedrock_runtime==0.7.0'"
-            ) from exc
-
-        self._region = region or BEDROCK_AWS_REGION or AWS_REGION_NAME or "us-east-1"
-        self._profile = profile
-        self._region_prefix = region_prefix
-        self._guardrail_id = guardrail_id
-        self._guardrail_version = guardrail_version
-        self._text_fallback_model = text_fallback_model
-        self.voice_id = voice_id
-        self._text_client: Any = None  # lazy BedrockConverseClient delegate
-        super().__init__(**kwargs)
-
-    # ------------------------------------------------------------------
-    # Session & client management
-    # ------------------------------------------------------------------
-
-    async def get_client(self) -> Any:
-        """Build the Nova Sonic bidirectional-stream SDK client.
-
-        Returns:
-            A ``BedrockAgentRuntimeClient`` (or equivalent) scoped to
-            ``self._region``.
-        """
-        from aws_sdk_bedrock_runtime import BedrockAgentRuntimeClient
-        return BedrockAgentRuntimeClient(region=self._region)
-
-    def _translate_model(self, model: Optional[str]) -> str:
-        """Resolve a public/Bedrock model ID via ``bedrock_models.translate()``."""
-        raw = model or self.model or self.default_model
-        return translate_bedrock_model(raw, self._region_prefix)
-
-    def _get_text_client(self):
-        """Lazily construct the internal text-fallback client.
-
-        Returns:
-            A cached :class:`~parrot.clients.bedrock.BedrockConverseClient`
-            instance sharing this client's region/profile/guardrail config.
-        """
-        if self._text_client is None:
-            from .bedrock import BedrockConverseClient
-            self._text_client = BedrockConverseClient(
-                model=self._text_fallback_model,
-                region=self._region,
-                profile=self._profile,
-                region_prefix=self._region_prefix,
-                guardrail_id=self._guardrail_id,
-                guardrail_version=self._guardrail_version,
-            )
-        return self._text_client
-
     # ------------------------------------------------------------------
     # Thin SDK wrappers — isolate the Pre-Alpha bidirectional-stream API
-    # (pattern: BedrockConverseClient._sdk_create/_sdk_stream)
+    # (pattern: BedrockConverseBase._sdk_create/_sdk_stream)
     # ------------------------------------------------------------------
 
     async def _open_stream(self, model_id: str) -> Any:
         """Open the Nova Sonic bidirectional stream for *model_id*.
 
+        Builds its own ``aws_sdk_bedrock_runtime`` client directly — this
+        is NOT ``self._ensure_client()``/``self.get_client()`` (those are
+        the ``aioboto3`` Bedrock Runtime client used by the inherited
+        text engine and are cached per event loop by
+        :class:`~parrot.clients.bedrock.BedrockConverseBase`).
+
         Returns:
-            The SDK's bidirectional stream handle, expected to expose an
+            The SDK's bidirectional stream handle, exposing an
             ``input_stream.send(event: dict)`` coroutine for sending event
-            frames and an ``output_stream`` async iterator of response event
-            frames (see :meth:`_send_event` / :meth:`_iter_events`).
+            frames and an ``output_stream`` async iterator of response
+            event frames (see :meth:`_send_event` / :meth:`_iter_events`).
         """
+        from aws_sdk_bedrock_runtime import BedrockAgentRuntimeClient
         from aws_sdk_bedrock_runtime.models import (
             InvokeModelWithBidirectionalStreamOperationInput,
         )
-        client = await self._ensure_client()
+        client = BedrockAgentRuntimeClient(region=self._region)
         return await client.invoke_model_with_bidirectional_stream(
             InvokeModelWithBidirectionalStreamOperationInput(model_id=model_id)
         )
@@ -197,17 +118,19 @@ class NovaSonicClient(AbstractClient):
         return stream.output_stream
 
     # ------------------------------------------------------------------
-    # Guardrails (delegates to the text-fallback client, TASK-1746)
+    # Guardrails (calls the inherited BedrockConverseBase method directly —
+    # no _get_text_client delegate, per FEAT-315)
     # ------------------------------------------------------------------
 
     async def _apply_pii_guardrail(self, text: str) -> str:
         """Filter PII from a transcription via the configured guardrail.
 
-        Delegates to
-        :meth:`~parrot.clients.bedrock.BedrockConverseClient.apply_guardrail_text`
-        (returns *text* unmodified when no guardrail is configured).
+        Calls :meth:`~parrot.clients.bedrock.BedrockConverseBase.apply_guardrail_text`
+        directly (returns *text* unmodified when no guardrail is
+        configured) — the ``_get_text_client()`` delegate pattern from the
+        deleted legacy voice-only client module no longer exists.
         """
-        return await self._get_text_client().apply_guardrail_text(text, source="INPUT")
+        return await self.apply_guardrail_text(text, source="INPUT")
 
     # ------------------------------------------------------------------
     # Voice streaming
@@ -237,17 +160,32 @@ class NovaSonicClient(AbstractClient):
             system_prompt: Optional system instructions for the session.
             session_id: Session identifier for tracking.
             user_id: User identifier.
-            **kwargs: Reserved for future configuration (tool overrides,
-                etc.).
+            **kwargs: ``voice_id`` (per-call synthesis voice override, e.g.
+                ``"matthew"``, ``"tiffany"``, ``"amy"`` — falls back to the
+                ``voice_id`` passed to the client's constructor; spec §8
+                resolved: expose ``voice_id`` per-call too) plus reserved
+                slots for future configuration (tool overrides, etc.).
 
         Yields:
             :class:`LiveVoiceResponse` objects with audio, text, tool-call,
             and usage metadata — the same shape ``VoiceChatHandler``
             already consumes from ``GeminiLiveClient``.
         """
+        _require_voice_sdk()
+
         session_id = session_id or str(uuid.uuid4())
         turn_id = str(uuid.uuid4())
-        resolved_model = self._translate_model(None)
+        # Code-review fix (FEAT-315): Nova Sonic / Nova 2 Sonic have NO
+        # cross-region inference profiles (spec §6 "Verified AWS Facts") —
+        # unlike the text/Converse path, the voice model ID must NEVER be
+        # prefixed, even though the composed client (NovaClient) defaults
+        # region_prefix="us" for the unrelated Nova 2 Lite/Premier text
+        # models. region_prefix=None here bypasses self._region_prefix
+        # entirely (mirrors NovaGeneration._translate_in_region_model).
+        resolved_model = translate_bedrock_model(
+            self.model or self.default_model, region_prefix=None
+        )
+        resolved_voice_id = kwargs.get("voice_id") or self.voice_id
         prompt_name = str(uuid.uuid4())
         content_name = str(uuid.uuid4())
 
@@ -275,7 +213,7 @@ class NovaSonicClient(AbstractClient):
                 "sampleRateHertz": self.OUTPUT_SAMPLE_RATE_HZ,
                 "sampleSizeBits": 16,
                 "channelCount": 1,
-                "voiceId": self.voice_id,
+                "voiceId": resolved_voice_id,
                 "encoding": "base64",
             },
         }}})
@@ -479,40 +417,3 @@ class NovaSonicClient(AbstractClient):
             raise
         except Exception as exc:
             self.logger.error("Nova Sonic audio sender error: %s", exc)
-
-    # ------------------------------------------------------------------
-    # Text-only fallback (delegates to BedrockConverseClient)
-    # ------------------------------------------------------------------
-
-    async def ask(self, prompt: str, **kwargs) -> AIMessage:
-        """Text-only fallback — delegates to an internal
-        :class:`~parrot.clients.bedrock.BedrockConverseClient`.
-
-        NovaSonicClient's primary interface is :meth:`stream_voice`; this
-        method exists so text-only interactions (and the
-        ``AbstractClient.ask`` contract) still work without requiring
-        callers to manage a separate client instance.
-        """
-        return await self._get_text_client().ask(prompt, **kwargs)
-
-    async def ask_stream(self, prompt: str, **kwargs) -> AsyncIterator[Union[str, AIMessage]]:
-        """Text-only streaming fallback — delegates to the internal
-        :class:`~parrot.clients.bedrock.BedrockConverseClient`."""
-        async for chunk in self._get_text_client().ask_stream(prompt, **kwargs):
-            yield chunk
-
-    async def invoke(self, prompt: str, **kwargs):
-        """Text-only lightweight fallback — delegates to the internal
-        :class:`~parrot.clients.bedrock.BedrockConverseClient`."""
-        return await self._get_text_client().invoke(prompt, **kwargs)
-
-    async def resume(self, session_id: str, user_input: str, state: Dict[str, Any]):
-        """Not supported: NovaSonicClient has no suspend/resume concept for
-        voice sessions (mirrors ``GeminiLiveClient.resume``'s precedent).
-
-        Raises:
-            NotImplementedError: Always.
-        """
-        raise NotImplementedError(
-            "NovaSonicClient does not support suspend/resume for voice sessions."
-        )

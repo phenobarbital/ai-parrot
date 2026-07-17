@@ -157,10 +157,20 @@ def test_create_with_model():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-17
+**Notes**: Added `"nova-premier"`, `"nova-canvas"`, `"nova-reel"` to
+`PUBLIC_TO_BEDROCK` in `bedrock_models.py` (kept the existing Nova section
+grouping/comments, with inline notes on Premier's geo-only inference and
+Canvas/Reel's in-region-only constraint). Added `_lazy_nova()` to
+`factory.py` (mirroring `_lazy_bedrock_converse`'s docstring/return
+pattern) and registered `"nova": _lazy_nova` in `SUPPORTED_CLIENTS` — did
+NOT add `"nova"` to `PROVIDER_BACKEND` (FEAT-232/Anthropic-specific, out
+of scope). Extended `tests/models/test_bedrock_models.py` with 5 new
+tests for the map entries (incl. `region_prefix` interaction). Created
+`tests/clients/test_factory_nova.py` (4 tests: lazy registration,
+`LLMFactory.create("nova")` → `NovaClient`, `LLMFactory.create("nova:nova-micro")`
+sets `model`, confirms `"nova"` absent from `PROVIDER_BACKEND`). All 17
+new/changed tests pass; `ruff check` clean on both modified source files.
 
 **Deviations from spec**: none

@@ -187,10 +187,25 @@ class TestNovaClientComposition:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-17
+**Notes**: Created `nova/client.py` with
+`class NovaClient(BedrockConverseBase, NovaAudio, NovaGeneration)`
+(`client_type="nova"`, `client_name="nova"`, `_default_model="nova-2-lite"`,
+`_fallback_model="nova-lite"`). `__init__` stores `voice_id` (default
+`"matthew"`) then forwards everything else (`region_prefix` defaulting to
+`"us"`) to `super().__init__(...)` → `BedrockConverseBase.__init__`,
+preserving its `kwargs.setdefault('fallback_model', ...)` workaround.
+Finalized `nova/__init__.py` (`from .client import NovaClient; __all__ =
+["NovaClient"]`, mirroring `google/__init__.py`). Verified: `NovaClient.ask
+is BedrockConverseBase.ask` (no delegate), no `_text_client`/
+`_get_text_client` attributes, `NovaClient()._translate_model(None) ==
+"us.amazon.nova-2-lite-v1:0"`, `region_prefix=None` opt-out works,
+`stream_voice`/`generate_image`/`video_generation` all present and
+callable. Added `tests/clients/test_nova_client.py` (9 tests, all
+passing). Full `tests/clients/` suite re-run: 127 passed, 2 pre-existing
+failures in `test_google_computer_use.py` unrelated to this feature
+(confirmed failing identically on `dev` before this work). `ruff check`
+clean.
 
 **Deviations from spec**: none

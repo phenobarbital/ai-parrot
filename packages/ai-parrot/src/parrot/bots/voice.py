@@ -160,22 +160,32 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         Resolve the voice-provider LLM configuration.
 
         VoiceBot is provider-aware via ``self.voice_config.provider``
-        (FEAT-302): ``"google_live"`` (default) resolves to
-        ``GeminiLiveClient``; ``"nova_sonic"`` (experimental) resolves to
-        ``NovaSonicClient``. The provider selection is independent of
-        whatever ``llm``/text-only provider string was passed to the bot —
-        voice interactions always go through one of the two voice clients.
+        (FEAT-302, renamed FEAT-315): ``"google_live"`` (default) resolves
+        to ``GeminiLiveClient``; ``"nova"`` (experimental) resolves to
+        :class:`~parrot.clients.nova.NovaClient` (unified Nova client —
+        supersedes the now-deleted ``NovaSonicClient``). The provider
+        selection is independent of whatever ``llm``/text-only provider
+        string was passed to the bot — voice interactions always go
+        through one of the two voice clients.
         """
         from ..clients.models import LLMConfig
 
         provider = getattr(self.voice_config, 'provider', 'google_live')
 
-        if provider == 'nova_sonic':
-            from ..clients.nova_sonic import NovaSonicClient
+        if provider == 'nova':
+            from ..clients.nova import NovaClient
+            # NovaClient's default model (nova-2-lite) is the TEXT model —
+            # voice sessions need the Sonic model explicitly unless the
+            # caller already configured one (spec §3 Module 6).
+            resolved_model = model or (
+                self.voice_config.model
+                if self.voice_config.model != GoogleVoiceModel.DEFAULT
+                else "nova-2-sonic"
+            )
             return LLMConfig(
-                provider='nova_sonic',
-                client_class=NovaSonicClient,
-                model=model or self.voice_config.model,
+                provider='nova',
+                client_class=NovaClient,
+                model=resolved_model,
                 temperature=kwargs.get('temperature', self.voice_config.temperature),
                 max_tokens=kwargs.get('max_tokens', self.voice_config.max_tokens),
                 extra={
@@ -207,8 +217,8 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         conversation_memory=None
     ) -> AbstractClient:
         """
-        Create the voice-provider client (GeminiLiveClient or, per FEAT-302,
-        NovaSonicClient) with voice-specific parameters.
+        Create the voice-provider client (GeminiLiveClient or, per FEAT-315,
+        NovaClient) with voice-specific parameters.
 
         This integrates with the standard configure() flow in AbstractBot,
         ensuring self._llm is a properly configured voice client matching
@@ -220,9 +230,9 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             current_tools = list(self.tool_manager.get_all_tools())
         use_tools = bool(current_tools or (self.tool_manager and self.tool_manager.tool_count() > 0))
 
-        if config.provider == 'nova_sonic':
-            from ..clients.nova_sonic import NovaSonicClient
-            return NovaSonicClient(
+        if config.provider == 'nova':
+            from ..clients.nova import NovaClient
+            return NovaClient(
                 model=config.model,
                 voice_id=config.extra.get('voice_id', 'matthew'),
                 tools=current_tools,

@@ -34,6 +34,24 @@ def _lazy_bedrock_converse():
     return BedrockConverseClient
 
 
+def _lazy_nova():
+    """Lazy loader for :class:`NovaClient` (FEAT-315).
+
+    Importing :mod:`parrot.clients.nova` is cheap — the text/generation
+    paths only import ``aioboto3`` lazily inside ``get_client()``, and the
+    Pre-Alpha voice SDK (``aws_sdk_bedrock_runtime``) is imported lazily
+    inside ``stream_voice()`` — but this loader keeps the same pattern as
+    :func:`_lazy_bedrock_converse` / :func:`_lazy_gemma4` for consistency
+    and to defer the import until the client is actually requested via the
+    factory.
+
+    Returns:
+        The :class:`NovaClient` class.
+    """
+    from .nova import NovaClient
+    return NovaClient
+
+
 def _lazy_claude_agent():
     """Lazy loader for :class:`ClaudeAgentClient`.
 
@@ -72,6 +90,10 @@ SUPPORTED_CLIENTS = {
     # FEAT-302: native Bedrock Converse API client — distinct key, coexists
     # with "bedrock" above (AnthropicClient's Bedrock backend, FEAT-232).
     "bedrock-converse": _lazy_bedrock_converse,
+    # FEAT-315: unified client for all Amazon Nova models (text/voice/image/
+    # video) on Bedrock — distinct key, coexists with "bedrock-converse"
+    # above (non-Nova families: Claude/Llama/Mistral/...).
+    "nova": _lazy_nova,
     "google": GoogleGenAIClient,
     "openai": OpenAIClient,
     "groq": GroqClient,

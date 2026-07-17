@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-17T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-17T17:05:03+00:00",
   "tasks": [
     {
       "id": "TASK-1806",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-315",
       "feature": "novaclient-amazon-aws",
       "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Root of the dependency chain; every other task builds on the extracted base.",
       "assigned_to": null,
       "started_at": "2026-07-17T15:48:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1806-bedrock-converse-base-extraction.md"
+      "completed_at": "2026-07-17T15:59:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1806-bedrock-converse-base-extraction.md"
     },
     {
       "id": "TASK-1807",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-315",
       "feature": "novaclient-amazon-aws",
       "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Shares no files with TASK-1808 and could technically run beside it, but the spec's worktree strategy is per-spec sequential (single worktree).",
       "assigned_to": null,
       "started_at": "2026-07-17T15:48:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1807-nova-audio-mixin.md"
+      "completed_at": "2026-07-17T16:08:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1807-nova-audio-mixin.md"
     },
     {
       "id": "TASK-1808",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-315",
       "feature": "novaclient-amazon-aws",
       "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Shares no files with TASK-1807 and could technically run beside it, but per-spec sequential worktree strategy applies.",
       "assigned_to": null,
       "started_at": "2026-07-17T15:48:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1808-nova-generation-mixin.md"
+      "completed_at": "2026-07-17T16:18:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1808-nova-generation-mixin.md"
     },
     {
       "id": "TASK-1809",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-315",
       "feature": "novaclient-amazon-aws",
       "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "Composition point — imports all three predecessors.",
       "assigned_to": null,
       "started_at": "2026-07-17T15:48:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1809-nova-client-core.md"
+      "completed_at": "2026-07-17T16:21:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1809-nova-client-core.md"
     },
     {
       "id": "TASK-1810",
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-315",
       "feature": "novaclient-amazon-aws",
       "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Factory loader imports NovaClient (TASK-1809).",
       "assigned_to": null,
       "started_at": "2026-07-17T15:48:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1810-nova-catalog-factory.md"
+      "completed_at": "2026-07-17T16:23:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1810-nova-catalog-factory.md"
     },
     {
       "id": "TASK-1811",
@@ -114,7 +114,7 @@
       "feature_id": "FEAT-315",
       "feature": "novaclient-amazon-aws",
       "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,8 +125,8 @@
       "parallelism_notes": "Breaking rename ('nova_sonic' → 'nova') across two distributions; must land after the new client is complete.",
       "assigned_to": null,
       "started_at": "2026-07-17T15:48:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1811-nova-callsite-migration.md"
+      "completed_at": "2026-07-17T16:42:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1811-nova-callsite-migration.md"
     },
     {
       "id": "TASK-1812",
@@ -135,7 +135,7 @@
       "feature_id": "FEAT-315",
       "feature": "novaclient-amazon-aws",
       "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -145,8 +145,8 @@
       "parallelism_notes": "Closing task; validates the whole chain including the bedrock regression gate.",
       "assigned_to": null,
       "started_at": "2026-07-17T15:48:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1812-nova-test-migration.md"
+      "completed_at": "2026-07-17T17:05:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1812-nova-test-migration.md"
     }
   ]
 }

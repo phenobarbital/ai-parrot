@@ -166,10 +166,67 @@ def test_voice_provider_renamed():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-17
+**Notes**: Migrated all 5 named suites: `test_nova_sonic.py` →
+`test_nova.py` (19 tests: voice protocol preserved verbatim + inherited-
+not-delegated text coverage + PII-guardrail direct-call coverage + new
+`test_no_nova_sonic_module`/per-call `voice_id` override/live-integration
+test), `test_voicebot_nova_sonic_wiring.py` → `test_voicebot_nova_wiring.py`
+(6 tests, provider `'nova'`), `test_voice_config.py` (provider literal
+`'nova_sonic'` → `'nova'`), `test_bedrock_models.py` (TASK-1810's 5 new
+entries already present, verified — no gaps), `test_nova_sonic_provider.py`
+→ `test_nova_provider.py` (8 tests, `VoiceProvider.NOVA` + new import path
++ `test_voice_provider_renamed`).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Spec §4 unit-test-table coverage map:
+- `test_converse_base_public_surface_unchanged` → `test_bedrock_converse.py` (TASK-1806, unmodified)
+- `test_aws_id_resolves_correct_keys` / `test_aws_id_missing_falls_back_to_default` → `test_bedrock_credentials.py` (TASK-1806)
+- `test_nova_client_mro_and_defaults` → `test_nova_client.py::test_defaults` (TASK-1809)
+- `test_nova_ask_inherited_not_delegated` → `test_nova.py::TestTextInheritedNotDelegated` (this task)
+- `test_stream_voice_event_protocol` → `test_nova.py::TestStreamVoice` (this task, ported)
+- `test_stream_voice_lazy_sdk_guard` → `test_nova_audio_guard.py` (TASK-1807)
+- `test_generate_image_payload_and_decode` / `test_video_generation_polls_and_downloads` → `test_nova_generation.py` (TASK-1808)
+- `test_translate_new_nova_ids` → `test_bedrock_models.py::TestBedrockModelTranslateNovaFeat315` (TASK-1810)
+- `test_factory_nova_key` → `test_factory_nova.py` (TASK-1810)
+- `test_voice_provider_renamed` / `test_no_nova_sonic_module` → `test_nova_provider.py` / `test_nova.py` (this task)
+- `test_voicebot_nova_wiring` → `test_voicebot_nova_wiring.py` (this task)
+- `test_bedrock_suite_regression` → ran unmodified, see below
+- `test_nova_ask_live` → `test_nova.py::test_nova_ask_live` (this task, `@pytest.mark.integration`, opt-in gated)
 
-**Deviations from spec**: none
+Regression gate: `test_bedrock_advanced.py`/`test_bedrock_converse.py`/
+`test_bedrock_errors.py`/`test_bedrock_integration.py`/`test_factory_bedrock.py`
+ran UNMODIFIED and pass. Full affected-suite run (core + bots wiring +
+models): 120 passed, 1 skipped (live test, no opt-in). Integrations suite:
+8 passed. Full `tests/clients/` + `tests/models/` sweep: 217 passed, 1
+skipped, 3 pre-existing failures unrelated to this feature (confirmed
+identically failing on `dev`: 2 in `test_google_computer_use.py`, 1 in
+`test_dataset_models.py`). Evidence saved to
+`artifacts/logs/feat-315-tests-{core,integrations,full}.log` (gitignored
+local evidence per CLAUDE.md workflow — not committed). `ruff check` clean
+on all touched files.
+
+Final sweep: `grep -rn "nova_sonic" packages/ --include="*.py"` no longer
+matches ANY production source file (cleaned up 3 comment-only mentions in
+files owned by earlier FEAT-315 tasks: `voice/models.py` ×2,
+`nova/audio.py`). It still matches migrated/added TEST files whose entire
+purpose is to assert the absence of `nova_sonic` (e.g.
+`test_no_nova_sonic_module`, `test_voice_provider_renamed`,
+`test_resolve_llm_config_no_nova_sonic_reference`) plus migration-provenance
+docstrings (`"migrated from test_nova_sonic.py"`) and one unrelated,
+pre-existing, coincidental match (`test_nova_sonic_v1` in
+`test_bedrock_models.py`, which tests the *model ID* `"nova-sonic"` — a
+still-valid, non-deleted Bedrock model — not the deleted client). This is
+consistent with the spec's own (authoritative) §5 acceptance criterion:
+"`grep -r nova_sonic packages/` → only historical docs/specs" — a self-
+referential absence-guard test is definitionally a "historical/spec"
+reference, not a functional one. Treating this task's file-level phrasing
+("returns NOTHING") as a stricter shorthand for the spec's own wording
+would be self-contradicting, since the task's own Test Specification
+mandates writing `test_no_nova_sonic_module` (which must contain the
+literal string to test for its absence).
+
+**Deviations from spec**: Touched 3 files not in this task's own file
+table (`voice/models.py` ×2, `nova/audio.py`) — comment-only cleanup to
+reduce sweep noise, permitted by this task's own scope note ("trivial
+fixes allowed only in files owned by earlier FEAT-315 tasks with a note").
