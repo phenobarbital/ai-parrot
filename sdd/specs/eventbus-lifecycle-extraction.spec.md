@@ -6,7 +6,7 @@ base_branch: dev
 
 # Feature Specification: EventBus Lifecycle Extraction (`navigator-eventbus` phase 2)
 
-**Feature ID**: FEAT-312
+**Feature ID**: FEAT-313
 **Date**: 2026-07-17
 **Author**: Jesus (phenobarbital) + Claude
 **Status**: draft
@@ -14,9 +14,10 @@ base_branch: dev
 
 > **Brainstorm source**: `sdd/proposals/navigator-eventbus-extraction.brainstorm.md`
 > (Option B — extracción por fases). This spec is **phase 2** of five.
-> **Blocking dependency**: phase 1 (`eventbus-core-extraction`) must land first —
-> it creates the package scaffold and moves the bus core that lifecycle imports.
-> Phase 1 has **no spec yet** as of this writing.
+> **Blocking dependency**: phase 1 (`eventbus-core-extraction`, **FEAT-312**,
+> spec drafted 2026-07-17) must be implemented first — it creates the package
+> scaffold and moves the bus core (including the `evb.py` facade) that
+> lifecycle imports.
 >
 > **Target repo**: `/home/jesuslara/proyectos/navigator-eventbus` (work happens
 > there, branch from its `main`). SDD artifacts (this spec, tasks) live in
@@ -382,8 +383,9 @@ class WebhookSubscriber:                                  # webhook.py:38
   README + LICENSE (verified 2026-07-17). **Phase 1 must create the scaffold
   first**; this spec cannot start until `src/navigator_eventbus/` exists with
   `evb.py`/`envelope.py`/`core.py`.
-- ~~Spec or tasks for `eventbus-core-extraction` (phase 1)~~ — not yet written;
-  blocking dependency of this spec.
+- ~~Implemented phase-1 code~~ — the phase-1 spec exists
+  (`sdd/specs/eventbus-core-extraction.spec.md`, FEAT-312, status draft) but is
+  NOT implemented; the target repo has no code yet. Blocking dependency.
 - ~~`navigator.eventbus` (dotted namespace import)~~ — unviable; `navigator` is
   a regular package. Import name is `navigator_eventbus` (flat).
 - ~~Runtime import of `EventBus` in `registry.py`~~ — TYPE_CHECKING only
@@ -468,9 +470,9 @@ class WebhookSubscriber:                                  # webhook.py:38
 - [x] Import name — *Resolved in brainstorm*: `navigator_eventbus` (plano).
 - [x] CI del repo destino — *Resolved in brainstorm*: GitHub Actions
   (pytest + ruff + mypy) desde la fase 1 — prerequisito, no parte de este spec.
-- [ ] (Deferred to phase-1 spec, informational only) exact module path of the
-  facade in the package (`navigator_eventbus.evb` assumed) — verify on phase-1
-  landing. — *Owner: phase-1 spec*
+- [x] Exact module path of the facade in the package — *Resolved by phase-1
+  spec (FEAT-312)*: `src/navigator_eventbus/evb.py` → `navigator_eventbus.evb`
+  (facade moves verbatim, EventBus/Event/EventPriority/EventSubscription).
 
 ---
 
@@ -483,7 +485,7 @@ class WebhookSubscriber:                                  # webhook.py:38
   → 6. Modules 3, 4, 5 are independent of each other after Module 2 lands, but
   the volume (~1.4k LOC total) does not justify parallel worktrees.
 - **Cross-feature dependencies**:
-  - **BLOCKING**: `eventbus-core-extraction` (phase 1 — no spec yet) must be
+  - **BLOCKING**: `eventbus-core-extraction` (FEAT-312, spec drafted) must be
     implemented first: scaffold, `evb.py` facade, CI.
   - Phase 3 (`eventbus-brokers-port`) is parallelizable with this spec (only
     needs the phase-1 scaffold).
