@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-315
 **Date**: 2026-07-17
 **Author**: Jesus (jlara@trocglobal.com)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Proposal**: `sdd/proposals/novaclient-amazon-aws.proposal.md` (research audit: `sdd/state/FEAT-315/`)
 
@@ -619,12 +619,12 @@ async def _audio_sender(self, stream, audio_iterator, prompt_name, content_name)
 
 ### Unresolved (defer to implementation)
 
-- [ ] Reel S3 housekeeping: should `video_generation()` delete the S3 object
+- [x] Reel S3 housekeeping: should `video_generation()` delete the S3 object
   after downloading it locally? — *Owner: implementer* (default: keep; add a
-  `cleanup_s3: bool = False` kwarg if trivial).
-- [ ] Whether `NovaClient` should expose `voice_id` per-call in
+  `cleanup_s3: bool = False` kwarg if trivial): keep
+- [x] Whether `NovaClient` should expose `voice_id` per-call in
   `stream_voice(**kwargs)` in addition to the constructor — *Owner:
-  implementer* (nova_sonic.py only supports constructor today).
+  implementer* (nova_sonic.py only supports constructor today): yes, expose voice_id per-call
 
 ---
 
