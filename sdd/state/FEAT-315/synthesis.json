@@ -1,0 +1,276 @@
+{
+  "feat_id": "FEAT-315",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "summary": "Refactor the experimental NovaSonicClient (voice-only, text-by-delegation) into a unified NovaClient subpackage at packages/ai-parrot/src/parrot/clients/nova/, mirroring the GoogleGenAIClient architecture: client.py (core text via Bedrock Converse: Nova 2 Lite/Micro/Pro/Premier), audio.py (Nova Sonic bidirectional voice, InvokeModelWithBidirectionalStream), generation.py (Nova Canvas image + Nova Reel video). Credentials resolve via aws_id against parrot.conf AWS_CREDENTIALS (fixing the key-name bug the current bedrock.py aws_id branch has), with explicit-credential and env fallbacks like BedrockConverseClient.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/nova_sonic.py",
+      "symbol": "NovaSonicClient",
+      "role": "source of the refactor — voice streaming code moves to nova/audio.py; text fallback delegation is replaced by first-class text methods",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/google/client.py",
+      "symbol": "GoogleGenAIClient",
+      "role": "reference architecture: AbstractClient + capability mixins, lazy SDK guard, per-loop client cache",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/google/generation.py",
+      "symbol": "GoogleGeneration",
+      "role": "reference for the generation mixin shape (image/video methods) to mirror for Canvas/Reel",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/bedrock.py",
+      "symbol": "BedrockConverseClient",
+      "role": "text engine (Converse API already supports Nova text models) + aws_id credential precedent (buggy — see constraints)",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/conf.py",
+      "symbol": "AWS_CREDENTIALS",
+      "role": "credential profiles keyed by aws_id; keys are aws_key/aws_secret/region_name",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/bedrock_models.py",
+      "symbol": "PUBLIC_TO_BEDROCK",
+      "role": "model-ID translation map — needs nova-premier, nova-canvas, nova-reel (and any missing nova-2-*) entries",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/factory.py",
+      "symbol": "SUPPORTED_CLIENTS",
+      "role": "register a 'nova' provider key via the lazy-loader pattern (NovaSonicClient was never factory-registered)",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/voice.py",
+      "symbol": "provider 'nova_sonic'",
+      "role": "call site to migrate to NovaClient",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/voice/handler.py",
+      "symbol": "NovaSonicClient import",
+      "role": "cross-distribution call site — needs compat shim or coordinated migration",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "constraints": [
+    {
+      "claim": "NovaClient must implement AbstractClient's five abstract methods: get_client, ask, ask_stream, resume, invoke",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high"
+    },
+    {
+      "claim": "Voice streaming must keep the Pre-Alpha aws_sdk_bedrock_runtime SDK (Python >= 3.12): boto3/aioboto3 do not support InvokeModelWithBidirectionalStream; the thin-wrapper isolation (_open_stream/_send_event/_iter_events) and lazy import guard must be preserved",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high"
+    },
+    {
+      "claim": "The aws_id branch in bedrock.py reads access_key/secret_key/region but AWS_CREDENTIALS profiles define aws_key/aws_secret/region_name, and leaves credential attributes unbound when the profile is missing — NovaClient must use the correct keys (interfaces/aws.py:46-56 is the canonical resolver) and the bedrock.py bug should be fixed in the same feature",
+      "evidence": [
+        "F004",
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "claim": "stream_voice must keep yielding LiveVoiceResponse (from clients/live.py) with the 8-minute reconnect_required convention so VoiceChatHandler and the integrations voice package keep working",
+      "evidence": [
+        "F002",
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "claim": "Five-plus test files pin the current module path and wiring (test_nova_sonic.py, test_voicebot_nova_sonic_wiring.py, integrations test_nova_sonic_provider.py, ...) and ai-parrot-integrations is a separate distribution — removing parrot.clients.nova_sonic without a shim is a cross-package breaking change",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "claim": "Google's subpackage exposes an alias (GoogleClient = GoogleGenAIClient) from __init__.py; nova/__init__.py should follow the same export style",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "claim": "The 'wip: nova model' commit (3672eb2f4) already added aws_id to BedrockConverseClient and nova-2-lite to the model map — FEAT-315 continues this in-flight direction",
+      "evidence": [
+        "F009",
+        "F006"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "hypotheses": [
+    {
+      "statement": "Create packages/ai-parrot/src/parrot/clients/nova/ with client.py (NovaClient core: ask/ask_stream/invoke over the Bedrock Converse API for Nova 2 Lite/Micro/Pro/Premier, reusing BedrockConverseClient's text engine), audio.py (NovaAudio mixin: stream_voice + sender/receiver tasks moved verbatim from nova_sonic.py), generation.py (NovaGeneration mixin: Nova Canvas image + Nova Reel video via invoke_model/start_async_invoke), composed as class NovaClient(AbstractClient, NovaAudio, NovaGeneration) — mirroring GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis). Credentials: aws_id against AWS_CREDENTIALS (correct keys, 'default' fallback like interfaces/aws.py) plus explicit kwargs/env fallback. Register 'nova' in SUPPORTED_CLIENTS via lazy loader; extend PUBLIC_TO_BEDROCK; keep parrot.clients.nova_sonic as a deprecation shim re-exporting from the new subpackage.",
+      "confidence": "high",
+      "evidence": [
+        "F002",
+        "F003",
+        "F004",
+        "F005",
+        "F006",
+        "F007",
+        "F008",
+        "F009"
+      ]
+    }
+  ],
+  "confidence_map": [
+    {
+      "claim": "Target layout nova/{client,audio,generation,__init__}.py mirrors google/",
+      "confidence": "high",
+      "basis": "directly cited",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "claim": "Voice code ports to audio.py with no protocol changes",
+      "confidence": "high",
+      "basis": "directly cited",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "claim": "Text modes ride the Converse API already proven by BedrockConverseClient",
+      "confidence": "high",
+      "basis": "directly cited",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "claim": "Credential resolution via aws_id/AWS_CREDENTIALS with bugfix",
+      "confidence": "high",
+      "basis": "directly cited",
+      "evidence": [
+        "F004",
+        "F005"
+      ]
+    },
+    {
+      "claim": "Model map + factory additions are small, well-bounded edits",
+      "confidence": "high",
+      "basis": "directly cited",
+      "evidence": [
+        "F006",
+        "F007"
+      ]
+    },
+    {
+      "claim": "Canvas uses invoke_model and Reel uses start_async_invoke/get_async_invoke (async job polling) on bedrock-runtime",
+      "confidence": "low",
+      "basis": "external AWS API knowledge — no existing Canvas/Reel code in the repo to cite; must be verified against AWS docs during spec",
+      "evidence": []
+    },
+    {
+      "claim": "Exact Bedrock IDs for nova-premier/canvas/reel (and Nova 2 tiers beyond lite/sonic)",
+      "confidence": "low",
+      "basis": "not present in the codebase; verify against AWS docs during spec",
+      "evidence": [
+        "F006"
+      ]
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "How should NovaClient implement the text methods (ask/ask_stream/invoke) for Nova 2 Lite/Micro/Pro/Premier?",
+      "resolves": [
+        "hypothesis-1"
+      ],
+      "options": [
+        "a) Subclass BedrockConverseClient (NovaClient(BedrockConverseClient, NovaAudio, NovaGeneration)) — inherits the full Converse tool-use loop, guardrails, streaming for free",
+        "b) Keep internal delegation to a composed BedrockConverseClient instance (like today's text fallback)",
+        "c) Reimplement the Converse calls natively inside nova/client.py (most code duplication)"
+      ],
+      "user_answer": "Migrate BedrockConverseClient into new NovaClient — NovaClient is the unique multi-modal client (one client covering all features). Follow-up clarified: KEEP BOTH — migrate/refactor the shared Converse engine so NovaClient owns its text path, while BedrockConverseClient survives for non-Nova Bedrock families (possibly via a shared Converse base)."
+    },
+    {
+      "id": "U2",
+      "question": "Backward compatibility: what happens to parrot.clients.nova_sonic and the 'nova_sonic' voice-provider key used by bots/voice.py and ai-parrot-integrations?",
+      "resolves": [
+        "constraint-5"
+      ],
+      "options": [
+        "a) Keep nova_sonic.py as a thin deprecation shim (NovaSonicClient = NovaClient alias or subclass pinning the sonic model) and keep the 'nova_sonic' provider key working",
+        "b) Migrate all call sites (core + integrations + tests) in this same feature and delete nova_sonic.py",
+        "c) Shim now, delete in a follow-up feature"
+      ],
+      "user_answer": "Migrate everything now — update bots/voice.py, ai-parrot-integrations, and all tests in this feature; delete nova_sonic.py."
+    },
+    {
+      "id": "U3",
+      "question": "Factory naming and default model: register 'nova' as the provider key (e.g. LLMFactory.create('nova:nova-2-lite')) — and which model is NovaClient's _default_model?",
+      "resolves": [
+        "hypothesis-1"
+      ],
+      "options": [
+        "a) Key 'nova', default nova-2-lite (cheapest current-gen text)",
+        "b) Key 'nova', default nova-pro (balanced)",
+        "c) Also add alias keys ('amazon', 'nova-sonic') — specify"
+      ],
+      "user_answer": "Factory key 'nova', default model nova-2-lite (amazon.nova-2-lite-v1:0), lazy-loader registration."
+    },
+    {
+      "id": "U4",
+      "question": "Scope of nova/generation.py: minimal Canvas (generate_image) + Reel (video_generation) only, or mirror more of GoogleGeneration's surface (batch generation, reel assembly, speech)?",
+      "resolves": [
+        "hypothesis-1"
+      ],
+      "options": [
+        "a) Minimal: generate_image (Canvas) + video_generation (Reel), matching Google method names for drop-in parity",
+        "b) Minimal + batch variants",
+        "c) Full parity with GoogleGeneration where AWS offers an equivalent"
+      ],
+      "user_answer": "Minimal parity — generate_image() for Nova Canvas + video_generation() for Nova Reel, mirroring GoogleGeneration method names; batch/reel-assembly deferred."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "target": "FEAT-315",
+    "rationale": "Localization is fully verified (all edit sites identified with high confidence), the reference architecture exists in-repo, and the only open items are design decisions (U1-U4), not research gaps — ready for a spec once the unknowns are answered."
+  }
+}

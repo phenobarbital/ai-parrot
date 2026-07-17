@@ -1,0 +1,134 @@
+{
+  "feat_id": "FEAT-315",
+  "mode": "enrichment",
+  "wiki_available": true,
+  "note": "Repo is a monorepo: client code lives under packages/ai-parrot/src/parrot/clients/ (the top-level parrot/clients/ holds only stale __pycache__). All paths below use the packages/ prefix.",
+  "queries": [
+    {
+      "id": "Q001",
+      "type": "wiki_query",
+      "params": { "question": "NovaSonicClient Nova Sonic bidirectional voice client" },
+      "intent": "Orient on the existing Nova Sonic client page and its neighbours",
+      "priority": 1
+    },
+    {
+      "id": "Q002",
+      "type": "wiki_query",
+      "params": { "question": "GoogleClient google client multimodal generation architecture" },
+      "intent": "Orient on the Google client reference architecture",
+      "priority": 1
+    },
+    {
+      "id": "Q003",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot/src/parrot/clients/nova_sonic.py" },
+      "intent": "Full understanding of current NovaSonicClient: modes, fallback to Nova text, credentials, streaming",
+      "priority": 1
+    },
+    {
+      "id": "Q004",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot/src/parrot/clients/google/client.py" },
+      "intent": "Reference architecture: how GoogleClient unifies text/audio/generation modes",
+      "priority": 1
+    },
+    {
+      "id": "Q005",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot/src/parrot/clients/google/generation.py" },
+      "intent": "Reference for the generation.py mixin/module pattern (image/video) to mirror for Canvas/Reel",
+      "priority": 1
+    },
+    {
+      "id": "Q006",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot/src/parrot/clients/google/__init__.py" },
+      "intent": "How the google subpackage exports its client",
+      "priority": 2
+    },
+    {
+      "id": "Q007",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot/src/parrot/clients/bedrock.py" },
+      "intent": "Bedrock client: AWS_CREDENTIALS/aws_id credential resolution pattern to reuse",
+      "priority": 1
+    },
+    {
+      "id": "Q008",
+      "type": "grep",
+      "params": { "pattern": "AWS_CREDENTIALS", "glob": "**/*.py" },
+      "intent": "Where AWS_CREDENTIALS is defined/consumed (parrot.conf and clients)",
+      "priority": 1
+    },
+    {
+      "id": "Q009",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot/src/parrot/clients/base.py", "focus": "ask/ask_stream/invoke signatures and AbstractClient contract" },
+      "intent": "AbstractClient contract the new NovaClient must satisfy",
+      "priority": 1
+    },
+    {
+      "id": "Q010",
+      "type": "grep",
+      "params": { "pattern": "NovaSonicClient|nova_sonic", "glob": "**/*.py" },
+      "intent": "All usage sites of the current client (handlers, bots, factory, exports) to size the refactor blast radius",
+      "priority": 1
+    },
+    {
+      "id": "Q011",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot/src/parrot/clients/factory.py" },
+      "intent": "Client registration/dispatch — how NovaClient gets registered and discovered",
+      "priority": 2
+    },
+    {
+      "id": "Q012",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot/src/parrot/clients/models.py" },
+      "intent": "Model catalog structures — where Nova model IDs (lite/micro/pro/premier/sonic/reel/canvas) would be declared",
+      "priority": 2
+    },
+    {
+      "id": "Q013",
+      "type": "grep",
+      "params": { "pattern": "InvokeModelWithBidirectionalStream|invoke_model_with_bidirectional_stream", "glob": "**/*.py" },
+      "intent": "Existing bidirectional-stream plumbing (aws_sdk_bedrock_runtime / experimental SDK usage)",
+      "priority": 2
+    },
+    {
+      "id": "Q014",
+      "type": "grep",
+      "params": { "pattern": "class .*Client\\(AbstractClient\\)", "glob": "packages/ai-parrot/src/parrot/clients/**" },
+      "intent": "Inventory of sibling clients for naming/registration conventions",
+      "priority": 3
+    },
+    {
+      "id": "Q015",
+      "type": "git_log",
+      "params": { "path": "packages/ai-parrot/src/parrot/clients/nova_sonic.py", "since": "6 months" },
+      "intent": "Recent activity/authors on the Sonic client",
+      "priority": 3
+    },
+    {
+      "id": "Q016",
+      "type": "tree",
+      "params": { "path": "packages/ai-parrot/tests", "filter": "nova|bedrock|google" },
+      "intent": "Existing test coverage for nova_sonic / bedrock / google clients",
+      "priority": 2
+    },
+    {
+      "id": "Q017",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot/src/parrot/clients/__init__.py" },
+      "intent": "Public export surface — lazy imports, __all__, where NovaClient must be exposed",
+      "priority": 2
+    },
+    {
+      "id": "Q018",
+      "type": "grep",
+      "params": { "pattern": "amazon.nova|us\\.amazon\\.nova|nova-", "glob": "**/*.py" },
+      "intent": "Nova model-id strings already present in the codebase (including wip nova model commit 3672eb2f4)",
+      "priority": 2
+    }
+  ]
+}
