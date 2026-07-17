@@ -8,7 +8,7 @@
   "completed_at": null,
   "tasks": [
     {
-      "id": "TASK-1820",
+      "id": "TASK-1826",
       "slug": "add-navigator-eventbus-dependency",
       "title": "Add navigator-eventbus dependency + configure legacy Redis prefixes",
       "feature_id": "FEAT-317",
@@ -23,10 +23,10 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1820-add-navigator-eventbus-dependency.md"
+      "file": "sdd/tasks/active/TASK-1826-add-navigator-eventbus-dependency.md"
     },
     {
-      "id": "TASK-1821",
+      "id": "TASK-1827",
       "slug": "delete-rewire-events-bus-core",
       "title": "Delete bus core (evb.py + bus/) and minimize events/__init__.py",
       "feature_id": "FEAT-317",
@@ -35,16 +35,16 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1820"],
+      "depends_on": ["TASK-1826"],
       "parallel": false,
-      "parallelism_notes": "Deletes shared bus core that lifecycle (1822) and hooks (1823) depend on being gone; must land before them.",
+      "parallelism_notes": "Deletes shared bus core that lifecycle (1828) and hooks (1829) depend on being gone; must land before them.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1821-delete-rewire-events-bus-core.md"
+      "file": "sdd/tasks/active/TASK-1827-delete-rewire-events-bus-core.md"
     },
     {
-      "id": "TASK-1822",
+      "id": "TASK-1828",
       "slug": "delete-rewire-lifecycle-machinery",
       "title": "Delete lifecycle machinery, rewire typed events + lifecycle/__init__.py facade",
       "feature_id": "FEAT-317",
@@ -53,16 +53,16 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1821"],
+      "depends_on": ["TASK-1827"],
       "parallel": false,
-      "parallelism_notes": "Theoretically parallelizable with TASK-1823 (disjoint dirs: events/lifecycle vs core/hooks), but spec Worktree Strategy mandates a single sequential worktree. Kept sequential.",
+      "parallelism_notes": "Theoretically parallelizable with TASK-1829 (disjoint dirs: events/lifecycle vs core/hooks), but spec Worktree Strategy mandates a single sequential worktree. Kept sequential.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1822-delete-rewire-lifecycle-machinery.md"
+      "file": "sdd/tasks/active/TASK-1828-delete-rewire-lifecycle-machinery.md"
     },
     {
-      "id": "TASK-1823",
+      "id": "TASK-1829",
       "slug": "delete-rewire-hooks-generic",
       "title": "Delete generic hooks + brokers, rewire integration hooks + hooks/__init__.py",
       "feature_id": "FEAT-317",
@@ -71,16 +71,16 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1821"],
+      "depends_on": ["TASK-1827"],
       "parallel": false,
-      "parallelism_notes": "Theoretically parallelizable with TASK-1822 (disjoint dirs), but spec mandates single sequential worktree. Kept sequential.",
+      "parallelism_notes": "Theoretically parallelizable with TASK-1828 (disjoint dirs), but spec mandates single sequential worktree. Kept sequential.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1823-delete-rewire-hooks-generic.md"
+      "file": "sdd/tasks/active/TASK-1829-delete-rewire-hooks-generic.md"
     },
     {
-      "id": "TASK-1824",
+      "id": "TASK-1830",
       "slug": "rewire-bots-clients",
       "title": "Rewire imports in bots and clients",
       "feature_id": "FEAT-317",
@@ -89,16 +89,16 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1822", "TASK-1823"],
+      "depends_on": ["TASK-1828", "TASK-1829"],
       "parallel": false,
-      "parallelism_notes": "Consumer rewiring; disjoint file set from 1825/1826 (theoretically parallel) but sequential per spec Worktree Strategy.",
+      "parallelism_notes": "Consumer rewiring; disjoint file set from 1831/1832 (theoretically parallel) but sequential per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1824-rewire-bots-clients.md"
+      "file": "sdd/tasks/active/TASK-1830-rewire-bots-clients.md"
     },
     {
-      "id": "TASK-1825",
+      "id": "TASK-1831",
       "slug": "rewire-observability-eval-registry-auth",
       "title": "Rewire imports in observability, eval, registry, auth",
       "feature_id": "FEAT-317",
@@ -107,16 +107,16 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1822", "TASK-1823"],
+      "depends_on": ["TASK-1828", "TASK-1829"],
       "parallel": false,
-      "parallelism_notes": "Consumer rewiring; disjoint file set from 1824/1826 (theoretically parallel) but sequential per spec Worktree Strategy.",
+      "parallelism_notes": "Consumer rewiring; disjoint file set from 1830/1832 (theoretically parallel) but sequential per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1825-rewire-observability-eval-registry-auth.md"
+      "file": "sdd/tasks/active/TASK-1831-rewire-observability-eval-registry-auth.md"
     },
     {
-      "id": "TASK-1826",
+      "id": "TASK-1832",
       "slug": "rewire-server-integrations",
       "title": "Rewire ai-parrot-server and ai-parrot-integrations",
       "feature_id": "FEAT-317",
@@ -125,16 +125,16 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1822", "TASK-1823"],
+      "depends_on": ["TASK-1828", "TASK-1829"],
       "parallel": false,
-      "parallelism_notes": "Consumer rewiring across the server/integrations packages; includes the sole EventBus() prefix config. Disjoint from 1824/1825 (theoretically parallel) but sequential per spec.",
+      "parallelism_notes": "Consumer rewiring across the server/integrations packages; includes the sole EventBus() prefix config. Disjoint from 1830/1831 (theoretically parallel) but sequential per spec.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1826-rewire-server-integrations.md"
+      "file": "sdd/tasks/active/TASK-1832-rewire-server-integrations.md"
     },
     {
-      "id": "TASK-1827",
+      "id": "TASK-1833",
       "slug": "migrate-test-suite",
       "title": "Migrate test suite + examples + migration guard tests",
       "feature_id": "FEAT-317",
@@ -143,16 +143,16 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1821", "TASK-1822", "TASK-1823", "TASK-1824", "TASK-1825", "TASK-1826"],
+      "depends_on": ["TASK-1827", "TASK-1828", "TASK-1829", "TASK-1830", "TASK-1831", "TASK-1832"],
       "parallel": false,
       "parallelism_notes": "Needs all production rewiring done so tests exercise the final import graph.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1827-migrate-test-suite.md"
+      "file": "sdd/tasks/active/TASK-1833-migrate-test-suite.md"
     },
     {
-      "id": "TASK-1828",
+      "id": "TASK-1834",
       "slug": "regression-benchmark",
       "title": "Full regression, neutrality grep guard, and FEAT-177 benchmark",
       "feature_id": "FEAT-317",
@@ -161,13 +161,13 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1827"],
+      "depends_on": ["TASK-1833"],
       "parallel": false,
       "parallelism_notes": "Final gate — full suite + grep guards + clean-venv install + emit-overhead benchmark.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1828-regression-benchmark.md"
+      "file": "sdd/tasks/active/TASK-1834-regression-benchmark.md"
     }
   ]
 }
