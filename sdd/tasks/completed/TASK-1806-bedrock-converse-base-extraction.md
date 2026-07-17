@@ -213,10 +213,19 @@ class TestAwsIdResolution:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-17
+**Notes**: Split `BedrockConverseClient` into `BedrockConverseBase`
+(engine) + thin `BedrockConverseClient(BedrockConverseBase)` (Claude/Llama/
+Mistral family defaults only) in `bedrock.py`. Fixed the `aws_id`
+credential branch to read `aws_key`/`aws_secret`/`region_name` (tolerating
+`aws_access_key_id`/`aws_secret_access_key`), fall back to the `'default'`
+profile when the named profile is missing, and always bind
+`_aws_access_key`/`_aws_secret_key`/`_aws_session_token`/`_region`.
+Resolution order implemented per spec §1 Goals: explicit kwargs → `aws_id`
+profile → env constants → SDK chain. Added
+`tests/clients/test_bedrock_credentials.py` (6 tests, all passing). Full
+existing Bedrock suite (57 tests across `test_bedrock_*.py` +
+`test_factory_bedrock.py`) passes unmodified. `ruff check` clean.
 
 **Deviations from spec**: none
