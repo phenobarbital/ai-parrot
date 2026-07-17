@@ -151,10 +151,21 @@ def test_serialization_jsoncontent_roundtrip():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-17
+**Notes**: envelope.py/serialization.py/_imports.py were already committed
+to navigator-eventbus (commit 2dfd57b "wip: FEAT-312 new navigator Event
+Bus") from an earlier partial pass; this close-out verified them against
+the origin `packages/ai-parrot/src/parrot/core/events/bus/envelope.py`
+line-for-line (frozen dataclass, tz-aware validation, `to_dict`/`from_dict`
+unchanged) and confirmed `serialization.py` (JSONContent/orjson default +
+lazy-guarded cloudpickle opt-in) and `_imports.py` (local `lazy_import`
+replica) match the task's Codebase Contract. Added the migrated test
+suite (`tests/test_envelope.py`, `tests/test_serialization.py`) and
+confirmed `ruff check src/`/`mypy src/` clean and
+`from navigator_eventbus import EventEnvelope, Severity` resolves —
+committed in navigator-eventbus as
+505d5ff "feat: reconcile envelope/serialization + bus core/facade/
+converters/dlq/ingress-models (FEAT-312 TASK-1799, TASK-1800)".
 
 **Deviations from spec**: none

@@ -150,10 +150,28 @@ def test_streams_prefixes_override():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-17
+**Notes**: Implemented `backends/{base,memory,redis_pubsub,redis_streams}.py`
++ `backends/__init__.py` fresh (only placeholder `__init__.py` existed
+before this pass). Verified each file against the origin
+`packages/ai-parrot/src/parrot/core/events/bus/backends/` line-for-line.
+Applied the two spec decouplings: `RedisPubSubBackend` gained a
+`channel_prefix` constructor kwarg (default `"evb:events:"`, replacing the
+hardcoded `CHANNEL_PREFIX = "parrot:events:"`, wired from
+`EventBus.channel_prefix`); `RedisStreamsBackend` gained `stream_prefix`/
+`dedup_prefix`/`group` constructor kwargs with neutral defaults
+(`"evb:stream:"`/`"evb:events:dedup:"`/`"evb-bus"`), each also overridable
+via navconfig (`BUS_STREAM_PREFIX`, `BUS_DEDUP_PREFIX`, `BUS_GROUP`). Zero
+changes to XADD/XREADGROUP/XACK/XAUTOCLAIM/dedup logic. Migrated
+`tests/core/events/bus/{test_backends,test_redis_streams}.py` to
+`tests/test_backends.py` / `tests/test_backends_streams.py`, updated wire
+assertions to the neutral defaults, and added `test_end_to_end_memory_bus`
+(spec §4) plus prefix/group default+override tests (constructor and
+navconfig-patched). `ruff check src/`/`mypy src/` clean; `pytest tests/ -m
+"not integration and not redis"` green (70 passed across the whole suite).
+Committed in navigator-eventbus as c692199 "feat: transport backends —
+memory, redis pub/sub, redis streams (FEAT-312 TASK-1801)"; pushed to
+origin.
 
 **Deviations from spec**: none
