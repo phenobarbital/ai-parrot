@@ -26,12 +26,14 @@ class VoiceProvider(Enum):
     GOOGLE_LIVE = "google_live"
     OPENAI_REALTIME = "openai_realtime"
     WHISPER_TTS = "whisper_tts"  # Fallback: Whisper STT + LLM + TTS
-    # FEAT-302: Amazon Nova 2 Sonic bidirectional voice (experimental) —
-    # backed by parrot.clients.nova_sonic.NovaSonicClient (core ai-parrot).
-    # Audio format compatibility: Nova Sonic's PCM 16kHz in / 24kHz out
-    # matches the existing AudioFormat.PCM_16K / AudioFormat.PCM_24K values
-    # above exactly — no new AudioFormat entries needed.
-    NOVA_SONIC = "nova_sonic"
+    # FEAT-302/FEAT-315: Amazon Nova 2 Sonic bidirectional voice
+    # (experimental) — backed by parrot.clients.nova.NovaClient (core
+    # ai-parrot; supersedes the now-deleted parrot.clients.nova_sonic
+    # module). Audio format compatibility: Nova Sonic's PCM 16kHz in /
+    # 24kHz out matches the existing AudioFormat.PCM_16K / AudioFormat.PCM_24K
+    # values above exactly — no new AudioFormat entries needed. FEAT-315
+    # breaking change: renamed from NOVA_SONIC = "nova_sonic"; no alias.
+    NOVA = "nova"
 
 
 class SessionState(Enum):

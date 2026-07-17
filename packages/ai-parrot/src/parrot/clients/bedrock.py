@@ -447,8 +447,9 @@ class BedrockConverseBase(AbstractClient):
         Calls Bedrock's ``apply_guardrail()`` API directly (not via
         ``converse()``) — useful for filtering text that did not originate
         from a Converse call (e.g. transcriptions, as used by
-        :class:`~parrot.integrations.bedrock.nova_sonic.NovaSonicClient`,
-        TASK-1748).
+        :class:`~parrot.clients.nova.audio.NovaAudio` via
+        :meth:`~parrot.clients.nova.audio.NovaAudio._apply_pii_guardrail`,
+        TASK-1748/FEAT-315).
 
         Args:
             text: The text to filter.
