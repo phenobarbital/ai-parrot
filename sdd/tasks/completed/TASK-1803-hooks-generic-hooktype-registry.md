@@ -250,7 +250,28 @@ broker hooks' `Optional[...]`-narrowing on lazily-connected clients);
 as 23504f8 "feat: generic hooks — base, manager, mixins, scheduler,
 file_watchdog, brokers (FEAT-312 TASK-1803)"; pushed to origin.
 
-**Deviations from spec — FLAGGED FOR USER REVIEW**: this task's own
+**UPDATE 2026-07-17 — user resolution received**: the user reviewed this
+flag and directed the opposite resolution — pre-register all 18 legacy
+hook types, not just the 11 generics. The parent spec's §2 decision #2
+was formally amended (v0.2 in Revision History) to reflect this. Code
+changed in `navigator-eventbus`: `hooks/models.py` now registers
+`_LEGACY_APP_SPECIFIC_HOOK_TYPES` (the 8 ai-parrot-specific types)
+alongside `_GENERIC_HOOK_TYPES` at import time. Tests updated:
+`test_hook_type_registry.py` (`test_app_specific_types_not_prepopulated`
+→ `test_app_specific_types_prepopulated`, asserting registration instead
+of its absence; `test_registering_app_specific_type_enables_it` → split
+into `test_app_specific_type_usable_out_of_the_box` +
+`test_new_custom_app_specific_type_still_requires_registration`, since
+the types are now pre-registered and "enabling" them is no longer a
+thing a caller needs to do), `test_hooks_manager.py` (removed the
+`jira_webhook_registered` fixture's `register`/`unregister` dance — with
+the type now permanently pre-registered, that teardown would have
+deregistered it globally for the rest of the test session), and a stale
+docstring in `test_envelope.py`. Full suite re-verified green (197
+passed), `ruff`/`mypy` clean, neutrality grep still empty. Committed in
+navigator-eventbus and on ai-parrot `dev` following this update.
+
+**Original flag (superseded by the above) — Deviations from spec**: this task's own
 Scope/Acceptance-Criteria text ("los 18 miembros actuales se pre-registran
 para compatibilidad total") directly contradicts the PARENT SPEC's closed
 decision #2 (`eventbus-core-extraction.spec.md` §2, explicitly marked "no
