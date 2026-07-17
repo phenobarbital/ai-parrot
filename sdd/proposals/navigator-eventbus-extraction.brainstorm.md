@@ -16,6 +16,12 @@ base_branch: dev
 > **dentro de ai-parrot** por FEAT-310 (`eventbus-v2`, 11 tareas done, completado
 > 2026-07-16). Este brainstorm ejecuta la parte pendiente: la **extracción física** del
 > código al repo `/home/jesuslara/proyectos/navigator-eventbus` y el refit de ai-parrot.
+>
+> **Ampliación (2026-07-17)**: también se muda **`navigator.brokers`** (~2.2k LOC del
+> framework navigator) a este paquete, aplicando de paso los tres fixes del PR
+> [phenobarbital/navigator#393](https://github.com/phenobarbital/navigator/pull/393)
+> (RedisConsumer kwargs TypeError, redelivery PEL vía XAUTOCLAIM, credenciales
+> posicionales de BrokerProducer). navigator borra `brokers/` y sus consumidores migran.
 
 ---
 
@@ -33,6 +39,19 @@ El repo destino `navigator-eventbus` existe pero está vacío (solo README/LICEN
 
 Afectados: los cuatro consumidores del ecosistema; en ai-parrot, los ~30 archivos de
 producción y ~70 de tests/examples que importan `parrot.core.events` / `parrot.core.hooks`.
+
+Además, la capa de brokers del framework navigator (`navigator.brokers.*`, de la que
+dependen los hooks de brokers de parrot y consumidores externos como FieldSync) tiene
+**tres defectos declarados** en el PR abierto
+[navigator#393](https://github.com/phenobarbital/navigator/pull/393) (contribuidor
+`hacu9`, reproducidos contra 3.1.2): (1) `RedisConsumer(queue_name=..., group_name=...,
+consumer_name=...)` siempre lanza `TypeError` (kwargs leídos con `.get()` y reenviados
+duplicados al `super().__init__`); (2) las entradas no-ACKed quedan en la Pending
+Entries List para siempre — no existe `XCLAIM`/`XAUTOCLAIM` en el paquete, pérdida
+silenciosa de mensajes en workloads at-least-once; (3) `BrokerProducer.__init__` exige
+`credentials` posicional, rompiendo la construcción de `RedisProducer`. Migrar
+`navigator.brokers` al paquete nuevo resuelve el bug en el destino definitivo y
+consolida TODO el fabric de eventos (bus + lifecycle + hooks + brokers) en un solo lugar.
 
 ## Constraints & Requirements
 
@@ -57,6 +76,17 @@ producción y ~70 de tests/examples que importan `parrot.core.events` / `parrot.
     publicar a PyPI solo cuando la suite de ai-parrot pase completa con el paquete.
   - **Rama `copilot/complete-event-bus-implementation`** del repo navigator-eventbus:
     se ignora/descarta; FEAT-310 es la fuente canónica.
+- **Decisiones de la ampliación `navigator.brokers` (Ronda 4, 2026-07-17):**
+  - Se muda **todo** `navigator/brokers/` (connection, consumer, producer, wrapper,
+    pickle + redis/rabbitmq/sqs), **desacoplando `producer.py`** de
+    `navigator_session`/`navigator_auth.conf` (auth inyectable u opcional) para que el
+    paquete quede autocontenido.
+  - En el framework navigator: **borrar `brokers/` y migrar sus consumidores** a
+    `navigator_eventbus.brokers` — sin shim de re-export, coherente con la migración
+    dura de parrot. Requiere coordinar el release de navigator con sus apps.
+  - Los fixes del **PR navigator#393** se aplican **directamente en el paquete** durante
+    el port (junto con los tests del PR); el PR en navigator se cierra referenciando la
+    migración o se mergea después sin urgencia.
 - API pública preservada: `EventBus.emit/subscribe/on/publish`, `EventRegistry.subscribe/emit`,
   `HookManager.set_event_bus/route_to_bus` mantienen firma — solo cambia el módulo de origen.
 - Presupuesto de rendimiento FEAT-177 intacto (< 0.1% overhead en dual-emit lifecycle).
@@ -100,9 +130,10 @@ añade la dependencia y reescribe los ~100 archivos importadores en un solo PR p
 
 ---
 
-### Option B: Extracción por fases — tres cortes verticales, cada uno shippable
+### Option B: Extracción por fases — cortes verticales, cada uno shippable
 
-Tres specs secuenciales, cada uno deja ambos repos verdes:
+Cinco specs (tres en navigator-eventbus, uno en ai-parrot, uno en navigator), cada uno
+deja sus repos verdes:
 
 1. **`eventbus-core-extraction`** (repo navigator-eventbus): scaffold del paquete
    (pyproject uv, src-layout `src/navigator_eventbus/`, CI) + mudanza del **bus core**:
@@ -117,39 +148,60 @@ Tres specs secuenciales, cada uno deja ambos repos verdes:
    maquinaria lifecycle: `base` (LifecycleEvent), `trace` (TraceContext), `meta`,
    `registry` (EventRegistry), `global_registry`, `provider`, `mixin` (sin el auto-boot
    de observability — se reemplaza por hook inyectable), subscribers `logging` y
-   `webhook`. Publica `0.1.0rc` interno (editable) al cierre.
-3. **`parrot-eventbus-migration`** (repo ai-parrot, base `dev`): añade la dependencia,
+   `webhook`.
+3. **`eventbus-brokers-port`** (repo navigator-eventbus; paralelizable con la fase 2):
+   port de `navigator/brokers/` (~2.2k LOC) a `navigator_eventbus.brokers` — connection,
+   consumer, producer, wrapper, pickle + redis/rabbitmq/sqs — aplicando los tres fixes
+   del PR navigator#393 (con sus tests) y desacoplando `producer.py` de
+   `navigator_session`/`navigator_auth.conf`. Los hooks `brokers/{redis,rabbitmq,sqs}.py`
+   ya mudados en la fase 1 cambian su lazy-import de `navigator.brokers.*` a
+   `navigator_eventbus.brokers.*` (el extra `[brokers]` deja de depender del framework
+   navigator). Publica `0.1.0rc` interno (editable) al cierre.
+4. **`parrot-eventbus-migration`** (repo ai-parrot, base `dev`): añade la dependencia,
    borra el código mudado, reescribe imports en los ~30 archivos prod + tests, conserva
    y recablea lo parrot-específico: eventos tipados (subclasean
    `navigator_eventbus.LifecycleEvent`), `legacy_bridge`, `yaml_loader`,
    `OpenTelemetrySubscriber` (importa eventos tipados → se queda), hooks de integración
    (jira/github/sharepoint/whatsapp/matrix/imap/messaging/postgres/file_upload) y
    `parrot.notifications`. Regression: suite completa + benchmark FEAT-177.
+5. **`navigator-brokers-removal`** (repo navigator): elimina `navigator/brokers/`,
+   navigator gana la dependencia `navigator-eventbus[brokers]` donde haga falta y sus
+   consumidores internos migran imports; release coordinado con las apps que importan
+   `navigator.brokers.*` (Flowtask, FieldSync). El PR #393 se cierra referenciando la
+   migración.
 
 ✅ **Pros:**
 - Cada fase es reviewable y bisecable; navigator-eventbus queda usable (core) desde la fase 1.
-- Los dos únicos desacoples con riesgo (mixin/observability, HookType extensible) se
-  resuelven en fases tempranas sin bloquear la migración masiva.
+- Los desacoples con riesgo (mixin/observability, HookType extensible, producer/auth de
+  brokers) se resuelven en fases tempranas sin bloquear las migraciones masivas.
 - La ventana de "dos copias" existe pero controlada: ai-parrot sigue usando su copia
-  hasta la fase 3; nadie consume las dos a la vez.
+  hasta la fase 4; navigator la suya hasta la fase 5; nadie consume dos a la vez.
 - Flowtask/QuerySource pueden empezar a probar el paquete tras la fase 1, antes de que
   ai-parrot migre.
+- El fix del PR #393 aterriza una sola vez, en el destino definitivo, con los tests del
+  contribuidor; el extra `[brokers]` deja de arrastrar el framework navigator entero.
 
 ❌ **Cons:**
-- Tres flows SDD en dos repos — más ceremonia que la Opción A.
-- Durante las fases 1–2 cualquier fix al bus en ai-parrot debe replicarse a mano en la
-  copia extraída (ventana de divergencia; mitigable congelando `parrot/core/events/`).
+- Cinco flows SDD en tres repos — más ceremonia que la Opción A.
+- Durante las fases 1–3 cualquier fix al bus/brokers en origen debe replicarse a mano en
+  la copia extraída (ventana de divergencia; mitigable congelando `parrot/core/events/`
+  y `navigator/brokers/`).
+- La fase 5 rompe a los consumidores de `navigator.brokers.*` (sin shim, por decisión) —
+  exige release coordinado de navigator + Flowtask/FieldSync.
 
-📊 **Effort:** High (distribuido; fase 3 es la más ancha)
+📊 **Effort:** High (distribuido; las fases 4 y 5 son las más anchas)
 
-📦 **Libraries / Tools:** (idéntico a la Opción A)
+📦 **Libraries / Tools:**
 | Package | Purpose | Notes |
 |---|---|---|
 | `navconfig[default]` >=2.2.2 | config + logging | dep directa |
 | `asyncdb` >=2.11 | DLQ/audit | dep directa (decisión Ronda 1) |
 | `async-notify` >=1.5.2 | notificaciones | extra `[notify]` |
-| `redis`, `grpcio`, `aiohttp` | transportes/ingress | extras `[redis]`, `[grpc]`; aiohttp dep directa (WS + webhook subscriber) |
-| `watchdog`, `apscheduler`, `gmqtt`, `navigator` | hooks opcionales | extras `[watchdog]`, `[scheduler]`, `[mqtt]`, `[brokers]` — todos ya lazy-imported |
+| `redis`, `grpcio`, `aiohttp` | transportes/ingress | extras `[redis]`, `[grpc]`; aiohttp dep directa (WS + webhook subscriber + consumers de brokers) |
+| `watchdog`, `apscheduler`, `gmqtt` | hooks opcionales | extras `[watchdog]`, `[scheduler]`, `[mqtt]` — todos ya lazy-imported |
+| `datamodel`, `msgpack`, `cloudpickle` | serialización de brokers (`pickle.py`) | vienen con el port de navigator.brokers; evaluar extra `[serializer]` |
+| `aiormq` | broker RabbitMQ | extra `[rabbitmq]` (hoy transitivo vía navigator) |
+| `aioboto3` | broker SQS | extra `[sqs]` (hoy transitivo vía navigator) |
 
 🔗 **Existing Code to Reuse:**
 - `packages/ai-parrot/src/parrot/core/events/bus/` — íntegro (~2.6k LOC, casi sin acople).
@@ -157,6 +209,8 @@ Tres specs secuenciales, cada uno deja ambos repos verdes:
 - `packages/ai-parrot/src/parrot/core/events/lifecycle/{base,trace,meta,registry,global_registry,provider,mixin}.py` + `subscribers/{logging,webhook}.py`.
 - `packages/ai-parrot/src/parrot/core/hooks/{base,manager,models,mixins}.py`, `brokers/*`, `scheduler.py`, `file_watchdog.py`.
 - `packages/ai-parrot/tests/core/events/` — la suite del bus se muda; `tests/unit/events/lifecycle/` se parte (maquinaria → paquete; typed events → parrot).
+- `/home/jesuslara/proyectos/navigator/navigator/brokers/` — íntegro (~2.2k LOC), con los
+  fixes + tests del PR navigator#393 aplicados durante el port.
 
 ---
 
@@ -203,9 +257,15 @@ funciona porque `parrot.embeddings` sí es namespace-mergeable; `parrot.core` no
   `parrot.observability`, ya guarded; `hooks/scheduler.py:8` → `parrot._imports`) más
   dos lazy-guarded (`dlq.py:109`, `audit.py:89` → `parrot.conf.default_dsn`). Todo lo
   demás son imports intra-subsistema que viajan juntos.
-- Trade-off aceptado: ventana de divergencia entre fases 1–3. Mitigación: freeze
-  declarado de `parrot/core/events/` y `parrot/core/hooks/` en ai-parrot durante la
-  extracción (cualquier fix va primero al paquete nuevo).
+- La ampliación de brokers refuerza B frente a A: el port de `navigator.brokers` es un
+  corte vertical natural (fase 3, paralelizable con lifecycle) con su propio riesgo
+  aislado (desacople de producer/auth) y un beneficio inmediato medible: los tres bugs
+  del PR #393 quedan corregidos en el destino definitivo y el extra `[brokers]` deja de
+  depender del framework navigator.
+- Trade-off aceptado: ventana de divergencia entre fases 1–3 y breaking change en
+  navigator (fase 5, sin shim). Mitigación: freeze declarado de `parrot/core/events/`,
+  `parrot/core/hooks/` y `navigator/brokers/` durante la extracción (cualquier fix va
+  primero al paquete nuevo), y release de navigator coordinado con Flowtask/FieldSync.
 
 ---
 
@@ -239,6 +299,14 @@ funciona porque `parrot.embeddings` sí es namespace-mergeable; `parrot.core` no
   - `lifecycle/` (base, trace, meta, registry, global_registry, provider, mixin,
     subscribers/logging, subscribers/webhook)
   - `hooks/` (base, manager, models, mixins, brokers/*, scheduler, file_watchdog)
+  - `brokers/` (port de `navigator.brokers`: connection, consumer, producer, wrapper,
+    pickle + redis/rabbitmq/sqs) — con los fixes del PR #393: `RedisConsumer.__init__`
+    hace `pop()` de queue/group/consumer antes de reenviar kwargs; sweep opt-in
+    `reclaim_pending_messages()` vía XAUTOCLAIM para redelivery de la PEL;
+    `BrokerProducer` con credenciales keyword/opcionales. `producer.py` pierde el acople
+    a `navigator_session`/`navigator_auth.conf` (autenticación del endpoint inyectable).
+    Los hooks `hooks/brokers/{redis,rabbitmq,sqs}.py` consumen esta capa interna en vez
+    del framework navigator.
   - Desacoples: DSN por parámetro/navconfig (sin `parrot.conf`); `lazy_import` local;
     hook de bootstrap inyectable en `EventEmitterMixin` en vez del import de
     `parrot.observability`; prefijos y consumer-group configurables.
@@ -278,6 +346,20 @@ funciona porque `parrot.embeddings` sí es namespace-mergeable; `parrot.core` no
 - **Fallo de instalación editable en CI**: mientras no haya release PyPI, el CI de
   ai-parrot necesita el paquete como git-dep o path-dep temporal; se retira al publicar
   `0.1.0`.
+- **Redelivery PEL (PR #393)**: el sweep `reclaim_pending_messages` es opt-in — los
+  callers programan la pasada; entradas cuyo callback vuelve a fallar permanecen en la
+  PEL para la siguiente pasada (sin pérdida, sin loop caliente). Coexiste con el sweeper
+  XAUTOCLAIM que `RedisStreamsBackend` ya trae para los streams del bus
+  (redis_streams.py:269) — son planos distintos (colas de brokers vs topics del bus);
+  unificarlos es una pregunta abierta.
+- **Consumidores de `navigator.brokers.*` durante la transición**: hasta la fase 5,
+  navigator sigue shippeando su copia (congelada); tras la fase 5, importar
+  `navigator.brokers` es ImportError — la migración de Flowtask/FieldSync debe estar
+  lista antes del release de navigator.
+- **Producer sin auth del framework**: `BrokerProducer` hoy resuelve sesión/credenciales
+  vía `navigator_session`/`navigator_auth.conf` (producer.py:7-8); tras el desacople,
+  la protección del endpoint web se inyecta (callable/middleware) — navigator puede
+  seguir pasándole la suya al construirlo.
 
 ---
 
@@ -290,9 +372,15 @@ funciona porque `parrot.embeddings` sí es namespace-mergeable; `parrot.core` no
 - `eventbus-lifecycle-extraction` (**navigator-eventbus**): mudanza de la maquinaria
   lifecycle (LifecycleEvent, TraceContext, EventRegistry, global registry, provider,
   mixin con bootstrap inyectable, subscribers logging/webhook).
+- `eventbus-brokers-port` (**navigator-eventbus**): port de `navigator.brokers` completo
+  con los fixes del PR navigator#393 y el desacople de producer respecto a
+  `navigator_session`/`navigator_auth`; extras `[rabbitmq]`, `[sqs]`; los hooks de
+  brokers pasan a consumir la capa interna.
 - `parrot-eventbus-migration` (**ai-parrot**): dependencia nueva, borrado del código
   mudado, reescritura de imports (~30 archivos prod + tests/examples), recableado de
   eventos tipados, otel subscriber, hooks de integración y observability bootstrap.
+- `navigator-brokers-removal` (**navigator**): eliminación de `navigator/brokers/`,
+  migración de consumidores internos, release coordinado; cierre del PR #393.
 
 ### Modified Capabilities
 - `eventbus-v2` (FEAT-310): el código entregado se convierte en el contenido del paquete
@@ -308,7 +396,9 @@ funciona porque `parrot.embeddings` sí es namespace-mergeable; `parrot.core` no
 
 | Affected Component | Impact Type | Notes |
 |---|---|---|
-| `navigator-eventbus` (repo) | new | recibe ~6.5k LOC + tests; pyproject uv, CI propio, extras `[redis][grpc][notify][scheduler][watchdog][mqtt][brokers]` |
+| `navigator-eventbus` (repo) | new | recibe ~8.7k LOC + tests (6.5k de parrot + 2.2k de navigator.brokers); pyproject uv, CI propio, extras `[redis][grpc][notify][scheduler][watchdog][mqtt][rabbitmq][sqs]` |
+| `navigator` (framework) | modifies (breaking) | fase 5: `navigator/brokers/` se elimina; consumidores migran a `navigator_eventbus.brokers`; PR #393 se cierra referenciando la migración |
+| Flowtask / FieldSync (consumidores de navigator.brokers) | modifies | migran imports antes del release de navigator fase 5; FieldSync elimina su shim local del bug #393 |
 | `packages/ai-parrot/src/parrot/core/events/` | modifies (se vacía parcialmente) | quedan typed events, legacy_bridge, yaml_loader, otel subscriber |
 | `packages/ai-parrot/src/parrot/core/hooks/` | modifies | quedan hooks de integración; base/manager/models/brokers se van |
 | `packages/ai-parrot/pyproject.toml` | extends | + `navigator-eventbus`; extras `grpc` migran de dueño |
@@ -403,6 +493,22 @@ class HookManager:
 # hooks/scheduler.py:8 from parrot._imports import lazy_import ← ÚNICO acople duro #2
 # hooks/models.py:9 HookType(str, Enum) — 18 miembros incl. parrot-específicos (:11-28)
 # hooks/models.py:31 HookEvent(BaseModel)
+
+# ── navigator.brokers (repo /home/jesuslara/proyectos/navigator, ~2.197 LOC) ──
+# navigator/brokers/connection.py:14  class BaseConnection(ABC)
+# navigator/brokers/wrapper.py:10     class BaseWrapper (retry/queued/debug/id props)
+# navigator/brokers/pickle.py:12,34   ModelHandler(BaseHandler), DataSerializer
+#   (encode/decode/serialize/unserialize/pack/unpack — msgpack+cloudpickle+datamodel)
+# navigator/brokers/producer.py:29-36 BrokerProducer.__init__(self, credentials: Union[str,dict],
+#   queue_size=None, num_workers=4, timeout=5, **kwargs)  ← BUG #3 PR#393: credentials
+#   posicional obligatorio rompe la construcción de RedisProducer
+# navigator/brokers/redis/consumer.py:30-33  ← BUG #1 PR#393 verificado:
+#   self._queue_name = kwargs.get('queue_name', ...)   # .get() NO saca la key
+#   super().__init__(...)                              # reenvía kwargs duplicados → TypeError
+# BUG #2 PR#393 verificado: grep xautoclaim|XCLAIM en navigator/brokers/ → 0 resultados
+#   (entradas no-ACKed quedan en la PEL para siempre; el fix del PR añade
+#   RedisConnection.reclaim_pending_messages(queue_name, callback, min_idle_time=30000, count=10))
+# Subpaquetes: redis/, rabbitmq/, sqs/ — cada uno connection/consumer/producer
 ```
 
 #### Verified Imports
@@ -414,11 +520,21 @@ from parrot.conf import default_dsn                                           # 
 from parrot.core.hooks.models import HookEvent                                 # bus/converters.py:22 (intra-alcance: hooks.models se muda)
 from parrot.core.hooks.base import BaseHook                                    # bus/ingress/websocket.py:25, grpc.py:28 (intra-alcance)
 
-# Brokers: deps fuera del set permitido, todas lazy (extras del paquete):
+# Brokers-hooks de parrot: lazy-imports que en la fase 3 pasan a navigator_eventbus.brokers:
 from navigator.brokers.redis import RedisConnection        # hooks/brokers/redis.py:21
 from navigator.brokers.rabbitmq import RabbitMQConnection  # hooks/brokers/rabbitmq.py:23
 from navigator.brokers.sqs import SQSConnection            # hooks/brokers/sqs.py:22
-from gmqtt import Client as MQTTClient                     # hooks/brokers/mqtt.py:22
+from gmqtt import Client as MQTTClient                     # hooks/brokers/mqtt.py:22 (sin equivalente en navigator.brokers — extra propio)
+
+# Deps de navigator.brokers (verificadas en el repo navigator):
+from aiohttp import web                    # connection.py:8, producer.py:5, */consumer.py
+from navigator_session import get_session  # producer.py:7  ← acople a DESACOPLAR
+from navigator_auth.conf import (...)      # producer.py:8  ← acople a DESACOPLAR
+from datamodel import Model, BaseModel     # pickle.py:9, redis/connection.py:10, sqs/connection.py:10
+import msgpack; import cloudpickle         # pickle.py:7-8
+import aiormq                              # rabbitmq/connection.py:8, rabbitmq/consumer.py:9
+import aioboto3                            # sqs/connection.py:9
+from navconfig import config               # sqs/connection.py:11
 
 # Ecosistema (verificado instalado en .venv):
 import navigator      # REGULAR package (__init__.py) → PEP 420 navigator.eventbus INVIABLE
@@ -448,7 +564,10 @@ import notify         # async-notify 1.5.7
 - `async-notify` NO es dep core de ai-parrot — solo extras `notify-all` (pyproject:119)
   e `integrations` (:407-408); no existe extra `redis` ni `events` en ai-parrot
 - LOC a mudar: bus+evb ≈ 3.993; lifecycle machinery ≈ 1.400 (sin typed events ≈ 625 que quedan);
-  hooks genéricos ≈ 1.500. Total paquete ≈ 6.5k LOC + tests
+  hooks genéricos ≈ 1.500; navigator.brokers ≈ 2.197. Total paquete ≈ 8.7k LOC + tests
+- PR navigator#393: OPEN, autor `hacu9` (externo), toca producer.py,
+  redis/{connection,consumer}.py + tests/brokers/test_redis_consumer.py; contexto:
+  FieldSync FEAT-373 corre consumers durables sobre este módulo con un shim local
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`navigator.eventbus` como namespace importable~~ — descartado: `navigator` es paquete
@@ -466,21 +585,33 @@ import notify         # async-notify 1.5.7
 - ~~`aiomqtt`/`paho` en brokers/mqtt~~ — usa `gmqtt`.
 - ~~PEP 420 merge en `parrot.core.*`~~ — `parrot/core/__init__.py` es regular; un satélite
   no puede contribuir módulos bajo `parrot.core` (a diferencia de `parrot.embeddings`).
+- ~~`XCLAIM`/`XAUTOCLAIM` en `navigator.brokers`~~ — no existe en master (bug #2 del
+  PR #393); el único XAUTOCLAIM del ecosistema hoy es el sweeper de
+  `RedisStreamsBackend` (`bus/backends/redis_streams.py:269`).
+- ~~Broker MQTT en `navigator.brokers`~~ — no existe; el hook mqtt de parrot usa `gmqtt`
+  directo, sin capa navigator.
+- ~~`RedisConsumer(queue_name=..., group_name=..., consumer_name=...)` funcional~~ —
+  lanza `TypeError` en master de navigator (bug #1 del PR #393, verificado en
+  redis/consumer.py:30-33).
 
 ---
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: Moderada. Las fases 1→2→3 son secuenciales (lifecycle importa
-  el envelope/bus; la migración de parrot requiere el paquete completo). Dentro de la
-  fase 1, tras el scaffold + envelope, las tareas (backends / subscribers / ingress /
-  hooks genéricos) son paralelizables en worktrees del repo navigator-eventbus. La fase 3
-  es un cambio ancho y transversal en ai-parrot — un solo worktree, tareas secuenciales
-  por área (clients → bots → observability → server/integrations → tests).
-- **Cross-feature independence**: en ai-parrot, la fase 3 toca `bots/`, `clients/`,
+- **Internal parallelism**: Moderada. Fases 1→2 secuenciales (lifecycle importa
+  envelope/bus); la **fase 3 (brokers-port) es paralelizable con la fase 2** — solo
+  necesita el scaffold de la fase 1. La fase 4 requiere el paquete completo (1+2+3); la
+  fase 5 requiere la 3. Dentro de la fase 1, tras scaffold + envelope, las tareas
+  (backends / subscribers / ingress / hooks genéricos) son paralelizables en worktrees
+  del repo navigator-eventbus. La fase 4 es un cambio ancho y transversal en ai-parrot —
+  un solo worktree, tareas secuenciales por área (clients → bots → observability →
+  server/integrations → tests).
+- **Cross-feature independence**: en ai-parrot, la fase 4 toca `bots/`, `clients/`,
   `observability/`, `eval/` — verificar flows en vuelo sobre esos módulos antes de
   arrancarla (hoy: FEAT-311 moonshot-client-llm toca `clients/` — coordinar). Declarar
-  freeze de `parrot/core/events|hooks` desde el inicio de la fase 1.
+  freeze de `parrot/core/events|hooks` (ai-parrot) y `navigator/brokers/` (navigator)
+  desde el inicio de la fase 1. En navigator, el PR #393 abierto toca los mismos
+  archivos que la fase 3 — resolverlo (cerrar referenciando o mergear) antes de portar.
 - **Recommended isolation**: `per-spec` (un worktree por fase, cada una en su repo).
 - **Rationale**: los contratos entre fases son explícitos (API del paquete, versión
   editable); el riesgo dominante es la ventana de divergencia, que se minimiza con el
@@ -515,6 +646,18 @@ import notify         # async-notify 1.5.7
   ai-parrot migre (fase 3 verde)? ¿Publicación PyPI pública o índice privado? — *Owner: Jesus*
 - [ ] `TOPICS.md` (governanza de namespaces `agent.*`/`task.*`/`auth.*` propuesta en
   brainstorm-eventbus-v2): ¿nace con la fase 1 en el repo nuevo? — *Owner: Jesus*
+- [ ] ¿Unificar a futuro el consumer de streams de `brokers/redis` con
+  `RedisStreamsBackend` del bus (ambos harán XREADGROUP+XACK+XAUTOCLAIM en el mismo
+  paquete)? Propuesta: portar tal cual en la fase 3 y consolidar en una iteración
+  posterior — no bloquear la migración. — *Owner: Jesus*
+- [ ] Diseño del desacople de `BrokerProducer`: ¿auth-callable inyectable, middleware
+  aiohttp opcional, o subclase `NavigatorBrokerProducer` que quede en navigator con el
+  acople a navigator_session/navigator_auth? — *Owner: Jesus (spec fase 3)*
+- [ ] `datamodel`/`msgpack`/`cloudpickle` (serialización de pickle.py): ¿deps directas
+  del paquete o extra `[serializer]` con fallback a JSON? — *Owner: Jesus*
+- [ ] Coordinación de la fase 5: ¿quién migra Flowtask y FieldSync a
+  `navigator_eventbus.brokers`, y en qué release de navigator se elimina `brokers/`?
+  ¿Se le comunica a `hacu9` (autor del PR #393) el plan de migración? — *Owner: Jesus*
 - [x] ¿Import name? — *Owner: Jesus*: `navigator_eventbus` (plano); `navigator.eventbus`
   PEP 420 inviable por `navigator/__init__.py` regular.
 - [x] ¿Dónde vive NotificationSubscriber? — *Owner: Jesus*: en el core, con sender por
@@ -523,3 +666,11 @@ import notify         # async-notify 1.5.7
   (`uv pip install -e`); PyPI al pasar la suite completa de ai-parrot.
 - [x] ¿Qué se hace con la rama copilot del repo destino? — *Owner: Jesus*: ignorarla;
   FEAT-310 es la fuente canónica.
+- [x] ¿Se muda `navigator.brokers` también? — *Owner: Jesus*: sí, completo (connection/
+  consumer/producer/wrapper/pickle + redis/rabbitmq/sqs), desacoplando producer de
+  navigator_session/navigator_auth.
+- [x] ¿Shim de compatibilidad en navigator tras la mudanza? — *Owner: Jesus*: no —
+  borrar `navigator/brokers/` y migrar consumidores (migración dura, release coordinado).
+- [x] ¿Cómo aterrizan los fixes del PR navigator#393? — *Owner: Jesus*: directamente en
+  el port dentro de navigator-eventbus (con los tests del PR); el PR se cierra
+  referenciando la migración o se mergea después sin urgencia.
