@@ -646,10 +646,12 @@ import notify         # async-notify 1.5.7
   ai-parrot migre (fase 3 verde)? ¿Publicación PyPI pública o índice privado? — *Owner: Jesus*
 - [ ] `TOPICS.md` (governanza de namespaces `agent.*`/`task.*`/`auth.*` propuesta en
   brainstorm-eventbus-v2): ¿nace con la fase 1 en el repo nuevo? — *Owner: Jesus*
-- [ ] ¿Unificar a futuro el consumer de streams de `brokers/redis` con
-  `RedisStreamsBackend` del bus (ambos harán XREADGROUP+XACK+XAUTOCLAIM en el mismo
-  paquete)? Propuesta: portar tal cual en la fase 3 y consolidar en una iteración
-  posterior — no bloquear la migración. — *Owner: Jesus*
+- [x] ¿Unificar el consumer de streams de `brokers/redis` con `RedisStreamsBackend` del
+  bus (ambos harán XREADGROUP+XACK+XAUTOCLAIM en el mismo paquete)? — *Owner: Jesus*:
+  sí — es una de las razones de traer brokers al paquete: hay dos consumers y la meta es
+  UN solo consumer de Redis Streams. Se porta tal cual en la fase 3 (no bloquea la
+  migración) y la consolidación se hace post-migración como spec propio
+  (`eventbus-streams-consolidation`) en navigator-eventbus.
 - [ ] Diseño del desacople de `BrokerProducer`: ¿auth-callable inyectable, middleware
   aiohttp opcional, o subclase `NavigatorBrokerProducer` que quede en navigator con el
   acople a navigator_session/navigator_auth? — *Owner: Jesus (spec fase 3)*
