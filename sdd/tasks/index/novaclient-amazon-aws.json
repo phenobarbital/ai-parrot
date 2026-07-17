@@ -94,7 +94,7 @@
       "feature_id": "FEAT-315",
       "feature": "novaclient-amazon-aws",
       "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Factory loader imports NovaClient (TASK-1809).",
       "assigned_to": null,
       "started_at": "2026-07-17T15:48:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1810-nova-catalog-factory.md"
+      "completed_at": "2026-07-17T16:23:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1810-nova-catalog-factory.md"
     },
     {
       "id": "TASK-1811",
