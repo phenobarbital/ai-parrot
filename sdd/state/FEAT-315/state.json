@@ -55,7 +55,7 @@
     "output": {
       "proposal_path": "sdd/proposals/novaclient-amazon-aws.proposal.md",
       "status": "review",
-      "commit_sha": "ea21c8d9b2945cfdf9b30cd111410eb436f81bdd"
+      "commit_sha": "5d64b15ee15ee70b84b8d801add4cf8fba1ad8f9"
     }
   },
   "errors": []
