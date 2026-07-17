@@ -171,10 +171,45 @@ async def test_injected_sender_still_works(bus_with_worker):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-17
+**Notes**: Implemented `subscribers/{notification,audit,metrics}.py` +
+`subscribers/__init__.py` fresh (only placeholder `__init__.py` existed
+before this pass). Verified each file against the origin
+`packages/ai-parrot/src/parrot/core/events/bus/subscribers/` line-for-line.
+`NotificationSubscriber.__init__`'s `sender` param relaxed to
+`sender=None`; a new `_DefaultNotifySender` class lazily wraps `notify`
+(async-notify) when no sender is injected — a thin wrapper over
+`notify.providers.{email,slack,telegram,teams}` implementing only
+`send_notification(message, recipients, provider, subject)`, NOT a port
+of ai-parrot's `parrot.notifications.NotificationMixin` (which pulls in
+mimetypes file classification, Teams Graph API upload via
+`parrot.integrations.msteams.graph`, and `..conf` TEAMS_NOTIFY_* — all
+out of scope/parrot-coupled; the task's Codebase Contract only asked to
+verify the real `notify` API, not to port the mixin). Verified the real
+`notify.providers.{email,slack,telegram}.send()` signature in the venv
+before writing the wrapper. Discovered and fixed an environmental gap:
+`notify.notify` builds a Jinja2 `TemplateParser` over a `templates/`
+directory relative to cwd at import time and raises `RuntimeError` if
+absent — added an empty `templates/README.md` placeholder (mirrors
+ai-parrot's own top-level `templates/`) so `import notify` (and therefore
+the default sender) works out of the box for `[notify]` consumers.
+`audit.py`'s DSN fallback reads navconfig `DB*` keys directly via a local
+`_navconfig_default_dsn()` (independent copy of `dlq.py`'s, per each
+module's own self-contained lookup pattern in the origin) — zero
+`parrot.conf` reference. `metrics.py` needed only an import-path change.
+Migrated both test files, adapting `test_audit_missing_dsn_disabled` to
+patch navconfig instead of `parrot.conf`, and added default-sender
+precedence/construction/RuntimeError tests. `ruff check src/`/`mypy src/`
+clean; `pytest tests/ -m "not integration and not redis"` green (93
+passed across the whole suite); `grep -r "from parrot\|import parrot"
+src/` empty. Committed in navigator-eventbus as b8d0ffa "feat:
+subscribers — notification, audit, metrics (FEAT-312 TASK-1802)"; pushed
+to origin.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: the default notify sender is a minimal, purpose-
+built wrapper (`_DefaultNotifySender`) rather than a port of
+`parrot.notifications.NotificationMixin` — the mixin's file-attachment/
+Teams-Graph-upload machinery is deeply parrot-coupled and out of this
+phase's scope (neutrality requirement); the task's own Implementation
+Notes only sketch a lazy-guarded factory pattern, not a mixin port.
