@@ -451,7 +451,17 @@ class AbstractBot(
         self._init_events(event_bus=event_bus, forward_to_global=True)
         self.events.add_provider(_LegacyEventBridge(self))
 
-        # Definition of LLM Client
+        # Definition of LLM Client.
+        # Agents commonly declare the client as a class attribute
+        # (``llm = 'google:gemini-3.5-flash'``), which shadows the base
+        # ``llm`` property. Honor that declaration when no explicit ``llm``
+        # argument arrives — otherwise the agent silently falls back to the
+        # provider default model. The isinstance guard skips the base-class
+        # property on subclasses that do NOT redeclare ``llm``.
+        if llm is None:
+            _cls_llm = getattr(type(self), 'llm', None)
+            if _cls_llm is not None and not isinstance(_cls_llm, property):
+                llm = _cls_llm
         self._llm_raw = llm
         # ``model_config`` (JSONB) is the canonical source for all LLM
         # settings — model, temperature, max_tokens, top_k, top_p — mirroring
@@ -1358,6 +1368,12 @@ class AbstractBot(
                         **self._llm_kwargs
                     )
                     self._llm_config = config
+                    # Mirror the resolved model onto _llm_model so ask()/
+                    # conversation() call sites that read it (e.g.
+                    # ``kwargs.get('model', self._llm_model)``) send the
+                    # declared model instead of None.
+                    if not self._llm_model and config.model:
+                        self._llm_model = config.model
                     # Default LLM instance:
                     self._llm = self._create_llm_client(config, self.conversation_memory)
                     if self.tool_manager and hasattr(self._llm, 'tool_manager'):
