@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-313
 **Date**: 2026-07-17
 **Author**: Jesus (phenobarbital) + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: navigator-eventbus 0.1.0
 
 > **Brainstorm source**: `sdd/proposals/navigator-eventbus-extraction.brainstorm.md`
@@ -379,13 +379,9 @@ class WebhookSubscriber:                                  # webhook.py:38
 
 ### Does NOT Exist (Anti-Hallucination)
 
-- ~~`navigator_eventbus.lifecycle` today~~ — the target repo contains only
-  README + LICENSE (verified 2026-07-17). **Phase 1 must create the scaffold
-  first**; this spec cannot start until `src/navigator_eventbus/` exists with
-  `evb.py`/`envelope.py`/`core.py`.
-- ~~Implemented phase-1 code~~ — the phase-1 spec exists
-  (`sdd/specs/eventbus-core-extraction.spec.md`, FEAT-312, status draft) but is
-  NOT implemented; the target repo has no code yet. Blocking dependency.
+- ~~`navigator_eventbus.lifecycle` today~~ — the target repo has the phase-1
+  scaffold (FEAT-312, completed 2026-07-17) but NO `lifecycle/` subpackage yet.
+  This spec creates it under `src/navigator_eventbus/lifecycle/`.
 - ~~`navigator.eventbus` (dotted namespace import)~~ — unviable; `navigator` is
   a regular package. Import name is `navigator_eventbus` (flat).
 - ~~Runtime import of `EventBus` in `registry.py`~~ — TYPE_CHECKING only
@@ -422,9 +418,10 @@ class WebhookSubscriber:                                  # webhook.py:38
 
 ### Known Risks / Gotchas
 
-- **Phase-1 drift**: this spec assumes phase 1 moved `evb.py` and established
-  the scaffold. Re-verify the facade's module path (`navigator_eventbus.evb`)
-  when phase 1's spec lands — adjust the TYPE_CHECKING ref if it differs.
+- **Phase-1 drift**: ~~risk resolved~~ — FEAT-312 completed 2026-07-17; facade
+  confirmed at `navigator_eventbus.evb` (EventBus/Event/EventPriority/
+  EventSubscription). Channel prefix default is `evb:events:` (neutral).
+  `_imports.py` utility exists at `navigator_eventbus._imports`.
 - **Divergence window**: `parrot/core/events/lifecycle/` is frozen in ai-parrot
   dev during extraction; any fix lands in the package first (brainstorm
   mitigation). Check for commits touching the source tree since 2026-07-17
@@ -485,8 +482,9 @@ class WebhookSubscriber:                                  # webhook.py:38
   → 6. Modules 3, 4, 5 are independent of each other after Module 2 lands, but
   the volume (~1.4k LOC total) does not justify parallel worktrees.
 - **Cross-feature dependencies**:
-  - **BLOCKING**: `eventbus-core-extraction` (FEAT-312, spec drafted) must be
-    implemented first: scaffold, `evb.py` facade, CI.
+  - ~~BLOCKING~~: `eventbus-core-extraction` (FEAT-312) — **completed 2026-07-17**.
+    Scaffold, `evb.py` facade, CI, hooks, backends all in place on branch
+    `feat-FEAT-312-eventbus-core-extraction`.
   - Phase 3 (`eventbus-brokers-port`) is parallelizable with this spec (only
     needs the phase-1 scaffold).
   - Phase 4 (`parrot-eventbus-migration`) consumes this spec's output.
@@ -499,3 +497,4 @@ class WebhookSubscriber:                                  # webhook.py:38
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Jesus + Claude | Initial draft from navigator-eventbus-extraction brainstorm (phase 2) |
+| 0.2 | 2026-07-18 | Claude | Updated post-FEAT-312 completion: resolved phase-1 drift risk, refreshed Does NOT Exist section, status → approved |
