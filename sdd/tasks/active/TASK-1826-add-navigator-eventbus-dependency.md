@@ -1,4 +1,4 @@
-# TASK-1820: Add navigator-eventbus dependency + configure legacy Redis prefixes
+# TASK-1826: Add navigator-eventbus dependency + configure legacy Redis prefixes
 
 **Feature**: FEAT-317 — Parrot EventBus Migration
 **Spec**: `sdd/specs/parrot-eventbus-migration.spec.md`
@@ -24,8 +24,8 @@ legacy Redis prefixes so deployed streams (`parrot:stream:*`, group
 
 The package's `lifecycle/` and `brokers/` subpackages did **not** exist as of
 2026-07-18 (only `backends/`, `hooks/`, `ingress/`, `subscribers/` and the
-top-level modules were present). This task's later siblings (TASK-1822,
-TASK-1823) depend on them. Verify all three subsystems resolve before the
+top-level modules were present). This task's later siblings (TASK-1828,
+TASK-1829) depend on them. Verify all three subsystems resolve before the
 feature proceeds:
 
 ```bash
@@ -53,14 +53,14 @@ with the feature.
   (`AutonomousOrchestrator`, orchestrator.py:231) passes the **legacy**
   Redis prefixes so existing deployments keep working. This is the one
   place a running system instantiates the bus. (The actual import rewrite
-  of orchestrator.py happens in TASK-1826; here only add/prepare the prefix
+  of orchestrator.py happens in TASK-1832; here only add/prepare the prefix
   kwargs plumbing — coordinate so the two edits do not conflict, or defer
-  the orchestrator edit to TASK-1826 and only add the pyproject dependency +
+  the orchestrator edit to TASK-1832 and only add the pyproject dependency +
   document the required kwargs here.)
 - Verify the editable install resolves in a clean venv.
 
-**NOT in scope**: deleting any source files (TASK-1821+); rewriting import
-statements across consumers (TASK-1824–1826); test changes (TASK-1827).
+**NOT in scope**: deleting any source files (TASK-1827+); rewriting import
+statements across consumers (TASK-1830–1826); test changes (TASK-1833).
 
 ---
 
@@ -69,7 +69,7 @@ statements across consumers (TASK-1824–1826); test changes (TASK-1827).
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/pyproject.toml` | MODIFY | add `navigator-eventbus` dep; point `grpc` extra at `navigator-eventbus[grpc]` |
-| `packages/ai-parrot-server/src/parrot/autonomous/orchestrator.py` | MODIFY (optional) | pass `channel_prefix="parrot:events:"` etc. to `EventBus(...)` — may be deferred to TASK-1826 |
+| `packages/ai-parrot-server/src/parrot/autonomous/orchestrator.py` | MODIFY (optional) | pass `channel_prefix="parrot:events:"` etc. to `EventBus(...)` — may be deferred to TASK-1832 |
 
 ---
 

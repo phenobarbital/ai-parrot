@@ -1,11 +1,11 @@
-# TASK-1822: Delete lifecycle machinery, rewire typed events + `lifecycle/__init__.py` facade
+# TASK-1828: Delete lifecycle machinery, rewire typed events + `lifecycle/__init__.py` facade
 
 **Feature**: FEAT-317 — Parrot EventBus Migration
 **Spec**: `sdd/specs/parrot-eventbus-migration.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: L (4-8h)
-**Depends-on**: TASK-1821
+**Depends-on**: TASK-1827
 **Assigned-to**: unassigned
 
 ---
@@ -74,8 +74,8 @@ paths FIRST, then implement.
 - Rebuild `subscribers/__init__.py`: `OpenTelemetrySubscriber` local;
   `LoggingSubscriber`/`WebhookSubscriber` re-exported from package.
 
-**NOT in scope**: bus core (TASK-1821); hooks (TASK-1823); external consumers
-in bots/clients/observability/server (TASK-1824–1826); tests (TASK-1827).
+**NOT in scope**: bus core (TASK-1827); hooks (TASK-1829); external consumers
+in bots/clients/observability/server (TASK-1830–1826); tests (TASK-1833).
 
 ---
 
@@ -208,7 +208,7 @@ PY
 ## Agent Instructions
 
 1. Run **Preflight**; if lifecycle paths differ, fix the Contract first.
-2. Verify TASK-1821 completed.
+2. Verify TASK-1827 completed.
 3. Update index → `in-progress`.
 4. Delete machinery; rewire events/bridge/loader/otel; rebuild both `__init__.py`.
 5. Verify acceptance criteria; move to completed; update index; fill note.

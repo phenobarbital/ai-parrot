@@ -1,11 +1,11 @@
-# TASK-1821: Delete bus core (`evb.py` + `bus/`) and minimize `events/__init__.py`
+# TASK-1827: Delete bus core (`evb.py` + `bus/`) and minimize `events/__init__.py`
 
 **Feature**: FEAT-317 — Parrot EventBus Migration
 **Spec**: `sdd/specs/parrot-eventbus-migration.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-1820
+**Depends-on**: TASK-1826
 **Assigned-to**: unassigned
 
 ---
@@ -16,7 +16,7 @@ Module 2 of spec §3. The bus core (facade `evb.py` + entire `bus/` package)
 was copied to `navigator-eventbus` in FEAT-312. This task **deletes** the
 ai-parrot copy and reduces `parrot/core/events/__init__.py` to a minimal stub
 (hard migration — no re-export of `EventBus` etc. from parrot). Consumers of
-these symbols are rewired in TASK-1824–1827.
+these symbols are rewired in TASK-1830–1827.
 
 ---
 
@@ -33,13 +33,13 @@ these symbols are rewired in TASK-1824–1827.
   reachable via `parrot.core.events.lifecycle`, untouched here).
 - Confirm nothing INSIDE the surviving `parrot/core/events/` tree still
   imports the deleted modules at import time (lifecycle machinery imports are
-  handled in TASK-1822; if `lifecycle/__init__.py` transitively fails, that is
+  handled in TASK-1828; if `lifecycle/__init__.py` transitively fails, that is
   expected and fixed there — but verify the events package top-level import
   itself does not hard-fail on deleted `evb`).
 
-**NOT in scope**: lifecycle machinery deletion (TASK-1822); hooks (TASK-1823);
-rewiring external consumers in bots/clients/observability/server (TASK-1824+);
-tests (TASK-1827).
+**NOT in scope**: lifecycle machinery deletion (TASK-1828); hooks (TASK-1829);
+rewiring external consumers in bots/clients/observability/server (TASK-1830+);
+tests (TASK-1833).
 
 ---
 
@@ -88,13 +88,13 @@ __all__ = ["EventBus", "Event", "EventPriority", "EventSubscription"]
 
 ### Import sites that will break until later tasks rewire them (informational)
 
-These are handled in TASK-1824–1827 — do NOT edit them here, just be aware:
+These are handled in TASK-1830–1827 — do NOT edit them here, just be aware:
 - `autonomous/{evb,orchestrator,webhooks}.py`, `eval/runner.py`
   (import `parrot.core.events.EventBus` / `.evb`)
 - `core/events/lifecycle/registry.py` (`TYPE_CHECKING` import of
-  `parrot.core.events.evb.EventBus`) — fixed in TASK-1822 when registry is deleted.
+  `parrot.core.events.evb.EventBus`) — fixed in TASK-1828 when registry is deleted.
 - `core/hooks/manager.py` (`TYPE_CHECKING` import of `evb.EventBus`; lazy
-  `bus.envelope.Severity`) — fixed in TASK-1823 when manager is deleted.
+  `bus.envelope.Severity`) — fixed in TASK-1829 when manager is deleted.
 
 ### Does NOT Exist
 
@@ -129,7 +129,7 @@ These are handled in TASK-1824–1827 — do NOT edit them here, just be aware:
 ## Test Specification
 
 ```bash
-# After deletion (import of lifecycle may still fail until TASK-1822 — that is expected):
+# After deletion (import of lifecycle may still fail until TASK-1828 — that is expected):
 python -c "import parrot.core.events" 2>&1 | grep -qi "evb\|bus" && echo "FAIL: still references deleted bus" || echo "events top-level OK w.r.t. bus"
 test ! -e packages/ai-parrot/src/parrot/core/events/evb.py && echo "evb.py deleted"
 test ! -d packages/ai-parrot/src/parrot/core/events/bus && echo "bus/ deleted"
@@ -139,7 +139,7 @@ test ! -d packages/ai-parrot/src/parrot/core/events/bus && echo "bus/ deleted"
 
 ## Agent Instructions
 
-1. Verify TASK-1820 is completed (dependency installed).
+1. Verify TASK-1826 is completed (dependency installed).
 2. Verify the Codebase Contract.
 3. Update index → `in-progress`.
 4. Delete with `git rm`; minimize `__init__.py`.

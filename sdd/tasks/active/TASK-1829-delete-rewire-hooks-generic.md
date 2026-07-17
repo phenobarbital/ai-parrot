@@ -1,11 +1,11 @@
-# TASK-1823: Delete generic hooks + brokers, rewire integration hooks + `hooks/__init__.py`
+# TASK-1829: Delete generic hooks + brokers, rewire integration hooks + `hooks/__init__.py`
 
 **Feature**: FEAT-317 — Parrot EventBus Migration
 **Spec**: `sdd/specs/parrot-eventbus-migration.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-1821
+**Depends-on**: TASK-1827
 **Assigned-to**: unassigned
 
 ---
@@ -62,8 +62,8 @@ python -c "from navigator_eventbus.hooks.base import BaseHook, HookRegistry"
     → local submodules.
   - Preserve the existing `__all__` (see Contract).
 
-**NOT in scope**: bus core (TASK-1821); lifecycle (TASK-1822); consumers in
-bots/server/integrations (TASK-1824/1826); tests (TASK-1827).
+**NOT in scope**: bus core (TASK-1827); lifecycle (TASK-1828); consumers in
+bots/server/integrations (TASK-1830/1826); tests (TASK-1833).
 
 ---
 
@@ -147,7 +147,7 @@ create_multi_agent_whatsapp_hook, create_crew_whatsapp_hook`.
   resolve to the local `.` package. Keep the `MessagingHook` base eager from the
   package.
 - `matrix.py` in `core/hooks/` is a thin re-export/stub; the real hook is in
-  `ai-parrot-integrations` (rewired in TASK-1826). Only fix its imports here.
+  `ai-parrot-integrations` (rewired in TASK-1832). Only fix its imports here.
 
 ### References in Codebase
 - Spec §3 Module 4, §7 "Known Risks" (relative-import + lazy-map split).
@@ -185,7 +185,7 @@ PY
 ## Agent Instructions
 
 1. Run **Preflight**.
-2. Verify TASK-1821 completed and the Codebase Contract.
+2. Verify TASK-1827 completed and the Codebase Contract.
 3. Update index → `in-progress`.
 4. Delete generics + brokers; rewire 9 integration hooks; rebuild `__init__.py`.
 5. Verify acceptance criteria; move to completed; update index; fill note.
