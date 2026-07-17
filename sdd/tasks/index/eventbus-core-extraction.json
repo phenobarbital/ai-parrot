@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-17T16:30:00+02:00",
-  "completed_at": null,
+  "completed_at": "2026-07-17T16:36:06+00:00",
   "notes": "Fase 1 de la extracción navigator-eventbus. El código se implementa en el repo /home/jesuslara/proyectos/navigator-eventbus (rama feat-FEAT-312-eventbus-core-extraction desde su main); en ai-parrot solo viven los artefactos SDD. Ver spec §Worktree Strategy.",
   "tasks": [
     {
@@ -154,7 +154,7 @@
       "feature_id": "FEAT-312",
       "feature": "eventbus-core-extraction",
       "spec": "sdd/specs/eventbus-core-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -167,8 +167,8 @@
       "parallelism_notes": "Cierre de fase — requiere todo el paquete completo.",
       "assigned_to": null,
       "started_at": "2026-07-17T14:47:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1805-test-suite-neutrality-bench.md"
+      "completed_at": "2026-07-17T16:36:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1805-test-suite-neutrality-bench.md"
     }
   ]
 }
