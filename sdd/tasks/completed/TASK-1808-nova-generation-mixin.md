@@ -207,10 +207,22 @@ async def test_video_generation_failed_job_raises(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-17
+**Notes**: Created `nova/generation.py` with `class NovaGeneration` (plain
+mixin, no `__init__`). `generate_image()` builds the Canvas `TEXT_IMAGE`
+payload (`textToImageParams`, `imageGenerationConfig` incl.
+`negativeText`/`seed`), calls `invoke_model` via `self._ensure_client()`,
+decodes base64 images, saves them (async `aiofiles`) when
+`output_directory` is given, returns `AIMessageFactory.from_imagen(...)`.
+`video_generation()` resolves the mandatory S3 output URI (kwarg →
+`AWS_CREDENTIALS[self._aws_id or 'default']["bucket_name"]` → actionable
+`ValueError`), runs `start_async_invoke` → `get_async_invoke` polling
+(`Completed`/`Failed`/timeout → `InvokeError`), downloads the finished MP4
+from S3 (own `aioboto3` s3 client, same resolved credentials) to
+`output_directory`, keeping the S3 object (spec §8 resolved: default keep).
+Model IDs always resolved through `self._translate_model(...)`. Added
+`tests/clients/test_nova_generation.py` (7 tests, all mocked — no AWS
+calls, all passing). `ruff check` clean.
 
 **Deviations from spec**: none
