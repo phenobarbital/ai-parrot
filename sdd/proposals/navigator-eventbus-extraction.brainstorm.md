@@ -621,45 +621,77 @@ import notify         # async-notify 1.5.7
 
 ## Open Questions
 
-- [ ] `HookType` en el paquete neutral: ¿enum cerrado con los 18 miembros actuales
+- [x] `HookType` en el paquete neutral: ¿enum cerrado con los 18 miembros actuales
   (incluye JIRA/SHAREPOINT/WHATSAPP...) o tipo abierto (str validado + registro) para que
   cada app añada los suyos sin tocar el core? Afecta a `HookEvent.hook_type` y a los
-  config models. — *Owner: Jesus*
-- [ ] `hooks/models.py` mezcla modelos genéricos (HookEvent, SchedulerHookConfig,
+  config models. — *Owner: Jesus*: tipo abierto (str validado + registry) — cada app
+  registra sus hook types sin tocar el core; el paquete provee los genéricos
+  (WEBHOOK, BROKER, SCHEDULER, FILE_WATCHER, etc.) y ai-parrot registra los suyos
+  (JIRA_WEBHOOK, SHAREPOINT, WHATSAPP_REDIS, etc.) al importar.
+- [x] `hooks/models.py` mezcla modelos genéricos (HookEvent, SchedulerHookConfig,
   BrokerHookConfig...) con configs de integraciones parrot (Jira/GitHub/SharePoint/
   WhatsApp/Matrix): ¿se muda entero (simple) o se parte (configs de integración quedan
-  en parrot)? — *Owner: Jesus*
-- [ ] Prefijos Redis: ¿default del paquete neutro (`nav:events:`/`nav:stream:`) con
+  en parrot)? — *Owner: Jesus*: se mudan los modelos enteros al paquete; cada app los
+  importa y usa desde `navigator_eventbus.hooks.models`. Los config models de
+  integración parrot-específicos (Jira/GitHub/SharePoint/WhatsApp/Matrix) viajan
+  también — son modelos de datos, no lógica de integración.
+- [x] Prefijos Redis: ¿default del paquete neutro (`nav:events:`/`nav:stream:`) con
   override `parrot:*` en ai-parrot, o conservar `parrot:*` como default para cero-config
-  en despliegues actuales? — *Owner: Jesus*
-- [ ] `yaml_loader`: ¿mudar el motor de wiring al paquete (con tabla de eventos
-  inyectable) o dejarlo entero en parrot en la primera iteración? — *Owner: Jesus*
-- [ ] Módulo destino de los typed events en parrot post-migración: ¿mantener
+  en despliegues actuales? — *Owner: Jesus*: default neutro en el paquete
+  (`evb:events:`/`evb:stream:` o similar) con override configurable per-app;
+  ai-parrot configura `parrot:events:`/`parrot:stream:` explícitamente para
+  compatibilidad con streams existentes.
+- [x] `yaml_loader`: ¿mudar el motor de wiring al paquete (con tabla de eventos
+  inyectable) o dejarlo entero en parrot en la primera iteración? — *Owner: Jesus*:
+  mover el motor de wiring al paquete para que sea re-usable por otros consumidores
+  (Flowtask, etc.); la tabla de nombres de eventos concretos es inyectable per-app
+  (ai-parrot registra sus typed events, Flowtask los suyos).
+- [x] Módulo destino de los typed events en parrot post-migración: ¿mantener
   `parrot.core.events.lifecycle.events` (mínimo diff) o promover a `parrot.events`?
-  — *Owner: Jesus*
-- [ ] Repo navigator-eventbus: ¿CI con GitHub Actions replicando la matriz de ai-parrot
-  (pytest + ruff + mypy) desde la fase 1? ¿Se borra la rama copilot? — *Owner: Jesus*
-- [ ] ¿Preservar historia git de los archivos mudados (git filter-repo / subtree) o copia
+  — *Owner: Jesus*: mantener `parrot.core.events.lifecycle` (mínimo diff); los typed
+  events siguen donde están, subclaseando `navigator_eventbus.lifecycle.LifecycleEvent`.
+- [x] Repo navigator-eventbus: ¿CI con GitHub Actions replicando la matriz de ai-parrot
+  (pytest + ruff + mypy) desde la fase 1? ¿Se borra la rama copilot? — *Owner: Jesus*:
+  sí a ambos — CI con GitHub Actions replicando la infra de navigator y ai-parrot
+  (pytest + ruff + mypy) desde la fase 1; la rama `copilot/complete-event-bus-implementation`
+  se borra (FEAT-310 es la fuente canónica).
+- [x] ¿Preservar historia git de los archivos mudados (git filter-repo / subtree) o copia
   fresca con commit de referencia al SHA de origen en ai-parrot? Propuesta: copia fresca
-  (simple, la historia queda en ai-parrot). — *Owner: Jesus*
-- [ ] Versionado del paquete: ¿arrancar en `0.1.0` con la fase 1 y `1.0.0` cuando
-  ai-parrot migre (fase 3 verde)? ¿Publicación PyPI pública o índice privado? — *Owner: Jesus*
-- [ ] `TOPICS.md` (governanza de namespaces `agent.*`/`task.*`/`auth.*` propuesta en
-  brainstorm-eventbus-v2): ¿nace con la fase 1 en el repo nuevo? — *Owner: Jesus*
+  (simple, la historia queda en ai-parrot). — *Owner: Jesus*: copia fresca — no se
+  preserva historia de git. La historia queda en ai-parrot y navigator como referencia;
+  el commit inicial del paquete nuevo referencia el SHA de origen.
+- [x] Versionado del paquete: ¿arrancar en `0.1.0` con la fase 1 y `1.0.0` cuando
+  ai-parrot migre (fase 3 verde)? ¿Publicación PyPI pública o índice privado? — *Owner: Jesus*:
+  arrancar en `0.1.0` como versión base; publicación PyPI pública.
+- [x] `TOPICS.md` (governanza de namespaces `agent.*`/`task.*`/`auth.*` propuesta en
+  brainstorm-eventbus-v2): ¿nace con la fase 1 en el repo nuevo? — *Owner: Jesus*:
+  sí — nace con la fase 1. Se documenta el vocabulario base de namespaces y la
+  convención de registro; cada app añade sus topics al adoptar el paquete.
 - [x] ¿Unificar el consumer de streams de `brokers/redis` con `RedisStreamsBackend` del
   bus (ambos harán XREADGROUP+XACK+XAUTOCLAIM en el mismo paquete)? — *Owner: Jesus*:
   sí — es una de las razones de traer brokers al paquete: hay dos consumers y la meta es
   UN solo consumer de Redis Streams. Se porta tal cual en la fase 3 (no bloquea la
   migración) y la consolidación se hace post-migración como spec propio
   (`eventbus-streams-consolidation`) en navigator-eventbus.
-- [ ] Diseño del desacople de `BrokerProducer`: ¿auth-callable inyectable, middleware
+- [x] Diseño del desacople de `BrokerProducer`: ¿auth-callable inyectable, middleware
   aiohttp opcional, o subclase `NavigatorBrokerProducer` que quede en navigator con el
-  acople a navigator_session/navigator_auth? — *Owner: Jesus (spec fase 3)*
-- [ ] `datamodel`/`msgpack`/`cloudpickle` (serialización de pickle.py): ¿deps directas
-  del paquete o extra `[serializer]` con fallback a JSON? — *Owner: Jesus*
-- [ ] Coordinación de la fase 5: ¿quién migra Flowtask y FieldSync a
+  acople a navigator_session/navigator_auth? — *Owner: Jesus (spec fase 3)*:
+  auth-callable inyectable — `BrokerProducer.__init__` acepta un `auth_callable`
+  opcional (async callable que recibe request y retorna credentials/None); navigator
+  le pasa su resolver de `navigator_session`/`navigator_auth.conf` al construirlo.
+  El paquete no depende de navigator para autenticación.
+- [x] `datamodel`/`msgpack`/`cloudpickle` (serialización de pickle.py): ¿deps directas
+  del paquete o extra `[serializer]` con fallback a JSON? — *Owner: Jesus*:
+  serialización en JSON usando `JSONContent` (orjson) como formato por defecto; cloudpickle
+  como serialización opcional (extra `[pickle]` o `[serializer]`). `msgpack` también
+  opcional. El fallback siempre es JSON vía orjson.
+- [x] Coordinación de la fase 5: ¿quién migra Flowtask y FieldSync a
   `navigator_eventbus.brokers`, y en qué release de navigator se elimina `brokers/`?
-  ¿Se le comunica a `hacu9` (autor del PR #393) el plan de migración? — *Owner: Jesus*
+  ¿Se le comunica a `hacu9` (autor del PR #393) el plan de migración? — *Owner: Jesus*:
+  Jesus es owner de todos los paquetes y realiza la migración de cada uno personalmente
+  (Flowtask, FieldSync, navigator). La eliminación de `brokers/` en navigator se
+  coordina con el release que incluya la dep a `navigator-eventbus[brokers]`. Se le
+  comunica a `hacu9` que el fix aterriza en el paquete nuevo.
 - [x] ¿Import name? — *Owner: Jesus*: `navigator_eventbus` (plano); `navigator.eventbus`
   PEP 420 inviable por `navigator/__init__.py` regular.
 - [x] ¿Dónde vive NotificationSubscriber? — *Owner: Jesus*: en el core, con sender por
