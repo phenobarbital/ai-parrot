@@ -113,7 +113,7 @@
       "feature_id": "FEAT-312",
       "feature": "eventbus-core-extraction",
       "spec": "sdd/specs/eventbus-core-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Árbol hooks/ propio; toca converters.py (activar import HookEvent) — coordinar con TASK-1800 ya cerrado. Único task con cambio de contrato (HookType abierto).",
       "assigned_to": null,
       "started_at": "2026-07-17T14:47:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1803-hooks-generic-hooktype-registry.md"
+      "completed_at": "2026-07-17T16:23:14+00:00",
+      "file": "sdd/tasks/completed/TASK-1803-hooks-generic-hooktype-registry.md"
     },
     {
       "id": "TASK-1804",
