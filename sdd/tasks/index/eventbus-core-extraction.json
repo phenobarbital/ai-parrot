@@ -15,7 +15,7 @@
       "feature_id": "FEAT-312",
       "feature": "eventbus-core-extraction",
       "spec": "sdd/specs/eventbus-core-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -23,8 +23,8 @@
       "parallelism_notes": "Raíz del grafo — crea el esqueleto que todos los demás tasks tocan.",
       "assigned_to": null,
       "started_at": "2026-07-17T14:47:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1798-eventbus-package-scaffold.md"
+      "completed_at": "2026-07-17T16:49:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1798-eventbus-package-scaffold.md"
     },
     {
       "id": "TASK-1799",

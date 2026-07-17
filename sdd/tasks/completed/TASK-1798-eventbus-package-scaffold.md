@@ -159,10 +159,19 @@ def test_package_imports():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude), formally closed retroactively during FEAT-312 wrap-up
+**Date**: 2026-07-17
+**Notes**: The scaffold work itself was completed and committed correctly
+in an earlier session (`navigator-eventbus@6ec6cf2`, "feat: package
+scaffold (FEAT-312 TASK-1798) — source ai-parrot@686aba1fe") but this
+task file/index entry was never formally closed out at the time. Closing
+it now, at the end of FEAT-312, after re-verifying all acceptance
+criteria still hold against the final state of the repo: `pyproject.toml`
+src-layout present, `uv pip install -e .` / package imports verified
+transitively by the full test suite (197 tests passing across all 8
+FEAT-312 tasks), `TOPICS.md` present, `.github/workflows/ci.yml` present,
+remote branch `copilot/complete-event-bus-implementation` confirmed
+deleted (absent from `git ls-remote origin`), initial commit references
+source SHA `ai-parrot@686aba1fe`.
 
 **Deviations from spec**: none
