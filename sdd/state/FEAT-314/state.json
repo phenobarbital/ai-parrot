@@ -1,0 +1,34 @@
+{
+  "feat_id": "FEAT-314",
+  "slug": "novaclient-amazon-aws",
+  "phase": "source_resolved",
+  "mode": "enrichment",
+  "type": "feature",
+  "base_branch": "dev",
+  "started_at": "2026-07-17T00:00:00Z",
+  "updated_at": "2026-07-17T00:00:00Z",
+  "wiki_available": false,
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "path": "sdd/state/FEAT-314/source.md",
+    "summary_oneline": "Refactor NovaSonicClient into a unified NovaClient (parrot/clients/nova/) covering all Amazon Nova models, styled after the Google client package"
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {"files_read": 0, "grep_calls": 0, "git_calls": 0, "depth_reached": 0},
+  "phases": {
+    "plan": {"status": "pending"},
+    "research": {"status": "pending"},
+    "synthesis": {"status": "pending"},
+    "qa": {"status": "pending"},
+    "output": {"status": "pending"}
+  },
+  "errors": []
+}
