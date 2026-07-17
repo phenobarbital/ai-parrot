@@ -1,8 +1,14 @@
-"""Native AWS Bedrock Converse API client for AI-Parrot (FEAT-302).
+"""Native AWS Bedrock Converse API client for AI-Parrot (FEAT-302, FEAT-315).
 
-Implements :class:`BedrockConverseClient`, an async-first
-:class:`~parrot.clients.base.AbstractClient` subclass that talks to the AWS
-Bedrock Runtime *Converse* API directly via ``aioboto3`` — as opposed to
+Implements :class:`BedrockConverseBase`, the model-family-agnostic Converse
+API engine (session/client management, message/tool conversion, the
+tool-use loop, streaming, guardrails, structured output, and credential
+resolution), and :class:`BedrockConverseClient`, a thin
+:class:`BedrockConverseBase` subclass that keeps the historical Claude/
+Llama/Mistral-oriented public surface byte-compatible.
+
+``BedrockConverseBase`` talks to the AWS Bedrock Runtime *Converse* API
+directly via ``aioboto3`` — as opposed to
 :class:`~parrot.clients.claude.AnthropicClient`'s ``backend="bedrock"``,
 which routes through the Anthropic SDK's ``AsyncAnthropicBedrock`` transport
 (FEAT-232) and is therefore limited to Claude models.
@@ -15,7 +21,13 @@ structured output, guardrails (``apply_guardrail_text()``), and the
 ``_invoke_native()`` fallback for models without ARN-versioned IDs.
 Factory registration is Module 6 (TASK-1747).
 
-See ``sdd/specs/bedrock-client-llm.spec.md`` for the full design.
+FEAT-315 (TASK-1806) extracted the engine into ``BedrockConverseBase`` so
+that :class:`~parrot.clients.nova.NovaClient` can inherit it directly
+instead of delegating to a second internal client object, and fixed the
+``aws_id`` credential-resolution bug described below.
+
+See ``sdd/specs/bedrock-client-llm.spec.md`` and
+``sdd/specs/novaclient-amazon-aws.spec.md`` for the full design.
 """
 from __future__ import annotations
 
@@ -42,23 +54,21 @@ from ..models.outputs import StructuredOutputConfig
 from ..tools.manager import ToolFormat
 
 
-class BedrockConverseClient(AbstractClient):
-    """Client for AWS Bedrock's native Converse API.
+class BedrockConverseBase(AbstractClient):
+    """Model-family-agnostic engine for AWS Bedrock's native Converse API.
 
-    Uses ``aioboto3`` to call ``bedrock-runtime`` directly, supporting any
-    Bedrock-hosted model family (Claude, Nova, Llama, Mistral, ...) — not
-    just Claude, which is all :class:`~parrot.clients.claude.AnthropicClient`
-    (``backend="bedrock"``) exposes.
+    Carries everything that does NOT vary by model family: credential/
+    region resolution, ``aioboto3`` session/client management, message and
+    tool-schema conversion, the Converse tool-use loop, streaming,
+    ``resume()``, ``invoke()``, guardrails, and structured output.
+
+    Concrete subclasses (e.g. :class:`BedrockConverseClient`,
+    :class:`~parrot.clients.nova.NovaClient`) set the family-specific class
+    attributes (``client_type``, ``client_name``, ``_default_model``,
+    ``_fallback_model``, ...) and inherit the rest verbatim — no
+    delegation object, no reimplementation (spec ``novaclient-amazon-aws``
+    §2/§3 Module 1).
     """
-
-    client_type: str = "bedrock-converse"
-    client_name: str = "bedrock-converse"
-    _default_model: str = "claude-sonnet-4-5"
-    _fallback_model: str = "claude-haiku-4-5"
-    _lightweight_model: str = "claude-haiku-4-5-20251001"
-    # FEAT-181: minimum token count for provider-side prompt caching
-    # (Bedrock Anthropic models share Anthropic's 1024-token threshold).
-    _min_cache_tokens: int = 1024
 
     def __init__(
         self,
@@ -78,9 +88,15 @@ class BedrockConverseClient(AbstractClient):
         """Initialise a Bedrock Converse API client.
 
         Args:
-            aws_id: Optional AWS account ID. Resolution: kwarg → ``AWS_ID`` → SDK credential chain.
+            aws_id: Optional ``AWS_CREDENTIALS`` profile name (spec
+                ``novaclient-amazon-aws`` §1/§2.2). Resolution: kwarg →
+                named profile in ``parrot.conf::AWS_CREDENTIALS`` (falls
+                back to the ``'default'`` profile when the named profile is
+                missing) → explicit ``aws_access_key``/``aws_secret_key`` →
+                env constants → SDK credential chain.
             region: AWS region for the Bedrock Runtime endpoint. Resolution
-                order: explicit kwarg → ``BEDROCK_AWS_REGION`` →
+                order: explicit kwarg → ``AWS_CREDENTIALS`` profile
+                ``region_name`` → ``BEDROCK_AWS_REGION`` →
                 ``AWS_REGION_NAME`` → ``"us-east-1"``.
             profile: Optional named AWS profile, passed to
                 ``aioboto3.Session``.
@@ -105,17 +121,45 @@ class BedrockConverseClient(AbstractClient):
                 :class:`~parrot.clients.base.AbstractClient`.
         """
         self._aws_id = aws_id
+        # FEAT-315 (TASK-1806) fix: the previous implementation read
+        # ``access_key``/``secret_key``/``session_token``/``region`` from
+        # ``AWS_CREDENTIALS`` profiles — those keys are the BUG, not the
+        # schema (real keys are ``aws_key``/``aws_secret``/``region_name``,
+        # per ``interfaces/aws.py:52-64``) — and left the credential
+        # attributes unbound entirely when the named profile was missing.
+        # This canonical resolver always binds the four attributes, in the
+        # priority order from spec §1 Goals: explicit kwargs → ``aws_id``
+        # profile (fallback to 'default') → env constants → SDK chain
+        # (attributes may end up ``None``, but are never unbound).
+        credentials: Dict[str, Any] = {}
         if self._aws_id:
-            if credentials := AWS_CREDENTIALS.get(self._aws_id):
-                self._aws_access_key = credentials.get("access_key")
-                self._aws_secret_key = credentials.get("secret_key")
-                self._aws_session_token = credentials.get("session_token")
-                self._region = credentials.get("region") or region or BEDROCK_AWS_REGION or AWS_REGION_NAME or "us-east-1"
-        else:
-            self._aws_access_key = aws_access_key or AWS_ACCESS_KEY
-            self._aws_secret_key = aws_secret_key or AWS_SECRET_KEY
-            self._aws_session_token = aws_session_token or AWS_SESSION_TOKEN
-            self._region = region or BEDROCK_AWS_REGION or AWS_REGION_NAME or "us-east-1"
+            credentials = AWS_CREDENTIALS.get(self._aws_id) or {}
+            if not credentials:
+                credentials = AWS_CREDENTIALS.get('default', {})
+        self._aws_access_key = (
+            aws_access_key
+            or credentials.get('aws_key')
+            or credentials.get('aws_access_key_id')
+            or AWS_ACCESS_KEY
+        )
+        self._aws_secret_key = (
+            aws_secret_key
+            or credentials.get('aws_secret')
+            or credentials.get('aws_secret_access_key')
+            or AWS_SECRET_KEY
+        )
+        self._aws_session_token = (
+            aws_session_token
+            or credentials.get('aws_session_token')
+            or AWS_SESSION_TOKEN
+        )
+        self._region = (
+            region
+            or credentials.get('region_name')
+            or BEDROCK_AWS_REGION
+            or AWS_REGION_NAME
+            or "us-east-1"
+        )
         self._profile = profile
         self._region_prefix = region_prefix
         self._guardrail_id = guardrail_id
@@ -1128,3 +1172,24 @@ class BedrockConverseClient(AbstractClient):
             raise
         except Exception as exc:
             raise self._handle_invoke_error(exc)
+
+
+class BedrockConverseClient(BedrockConverseBase):
+    """Client for AWS Bedrock's native Converse API — non-Nova families.
+
+    Thin :class:`BedrockConverseBase` subclass carrying only the
+    family-specific defaults (Claude/Llama/Mistral/... on Bedrock). All
+    behavior (``ask``/``ask_stream``/``resume``/``invoke``, credential
+    resolution, guardrails, structured output) is inherited unchanged from
+    :class:`BedrockConverseBase` — this class's public surface is
+    byte-compatible with the pre-FEAT-315 monolithic implementation.
+    """
+
+    client_type: str = "bedrock-converse"
+    client_name: str = "bedrock-converse"
+    _default_model: str = "claude-sonnet-4-5"
+    _fallback_model: str = "claude-haiku-4-5"
+    _lightweight_model: str = "claude-haiku-4-5-20251001"
+    # FEAT-181: minimum token count for provider-side prompt caching
+    # (Bedrock Anthropic models share Anthropic's 1024-token threshold).
+    _min_cache_tokens: int = 1024
