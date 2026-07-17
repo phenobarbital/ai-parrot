@@ -27,6 +27,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Union
 
 from .base import AbstractClient
 from ..conf import (
+    AWS_CREDENTIALS,
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
     AWS_SESSION_TOKEN,
@@ -61,6 +62,7 @@ class BedrockConverseClient(AbstractClient):
 
     def __init__(
         self,
+        aws_id: Optional[str] = None,
         region: Optional[str] = None,
         profile: Optional[str] = None,
         region_prefix: Optional[str] = None,
@@ -76,6 +78,7 @@ class BedrockConverseClient(AbstractClient):
         """Initialise a Bedrock Converse API client.
 
         Args:
+            aws_id: Optional AWS account ID. Resolution: kwarg → ``AWS_ID`` → SDK credential chain.
             region: AWS region for the Bedrock Runtime endpoint. Resolution
                 order: explicit kwarg → ``BEDROCK_AWS_REGION`` →
                 ``AWS_REGION_NAME`` → ``"us-east-1"``.
@@ -101,16 +104,24 @@ class BedrockConverseClient(AbstractClient):
             **kwargs: Forwarded to
                 :class:`~parrot.clients.base.AbstractClient`.
         """
-        self._region = region or BEDROCK_AWS_REGION or AWS_REGION_NAME or "us-east-1"
+        self._aws_id = aws_id
+        if self._aws_id:
+            if credentials := AWS_CREDENTIALS.get(self._aws_id):
+                self._aws_access_key = credentials.get("access_key")
+                self._aws_secret_key = credentials.get("secret_key")
+                self._aws_session_token = credentials.get("session_token")
+                self._region = credentials.get("region") or region or BEDROCK_AWS_REGION or AWS_REGION_NAME or "us-east-1"
+        else:
+            self._aws_access_key = aws_access_key or AWS_ACCESS_KEY
+            self._aws_secret_key = aws_secret_key or AWS_SECRET_KEY
+            self._aws_session_token = aws_session_token or AWS_SESSION_TOKEN
+            self._region = region or BEDROCK_AWS_REGION or AWS_REGION_NAME or "us-east-1"
         self._profile = profile
         self._region_prefix = region_prefix
         self._guardrail_id = guardrail_id
         self._guardrail_version = guardrail_version
         self._max_retries = max_retries
         self._read_timeout = read_timeout
-        self._aws_access_key = aws_access_key or AWS_ACCESS_KEY
-        self._aws_secret_key = aws_secret_key or AWS_SECRET_KEY
-        self._aws_session_token = aws_session_token or AWS_SESSION_TOKEN
         # Code-review fix (FEAT-302): AbstractClient.__init__ unconditionally
         # does ``self._fallback_model = kwargs.get('fallback_model', None)``,
         # which shadows this class's ``_fallback_model`` class attribute with
