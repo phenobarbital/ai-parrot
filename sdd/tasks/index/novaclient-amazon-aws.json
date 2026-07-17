@@ -32,7 +32,7 @@
       "feature_id": "FEAT-315",
       "feature": "novaclient-amazon-aws",
       "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Shares no files with TASK-1808 and could technically run beside it, but the spec's worktree strategy is per-spec sequential (single worktree).",
       "assigned_to": null,
       "started_at": "2026-07-17T15:48:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1807-nova-audio-mixin.md"
+      "completed_at": "2026-07-17T16:08:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1807-nova-audio-mixin.md"
     },
     {
       "id": "TASK-1808",

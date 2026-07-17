@@ -203,10 +203,24 @@ def test_no_init_defined():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-17
+**Notes**: Created `parrot/clients/nova/` (placeholder `__init__.py`,
+finalized in TASK-1809) and `nova/audio.py` with `class NovaAudio` (plain
+mixin, no `__init__`), porting `stream_voice`/`_audio_sender`/
+`_open_stream`/`_send_event`/`_iter_events`/`_apply_pii_guardrail` from
+`nova_sonic.py` verbatim in behavior. `_apply_pii_guardrail` now calls
+`self.apply_guardrail_text` directly (inherited from `BedrockConverseBase`,
+TASK-1806) instead of the removed `_get_text_client()` delegate. Added
+`_require_voice_sdk()` lazy guard invoked at the top of `stream_voice()`
+(not at import/`__init__`) raising an actionable `ImportError` naming
+`aws_sdk_bedrock_runtime==0.7.0`/Python>=3.12. `_open_stream` builds its
+own `BedrockAgentRuntimeClient` directly rather than via
+`self._ensure_client()` (that seam is reserved for the aioboto3 text
+engine). Resolved spec §8 open question: `voice_id` is now also readable
+per-call via `stream_voice(**kwargs)` (`kwargs.get("voice_id")`), falling
+back to `self.voice_id`, while keeping the contracted signature intact.
+Added `tests/clients/test_nova_audio_guard.py` (3 tests, all passing).
+`ruff check` clean.
 
 **Deviations from spec**: none
