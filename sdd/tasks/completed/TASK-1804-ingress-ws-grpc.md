@@ -138,10 +138,39 @@ from navigator_eventbus.hooks.base import BaseHook         # TASK-1803
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-17
+**Notes**: Implemented `ingress/{websocket,grpc}.py` + regenerated
+`ingress/proto/{events.proto,events_pb2.py,events_pb2_grpc.py,README.md}`
+under the new package root (`ingress/proto/__init__.py` already existed
+from the TASK-1798 scaffold — verified it satisfies the "add `__init__.py`
+missing in origin" acceptance criterion). Verified both ingress files
+line-for-line against `packages/ai-parrot/src/parrot/core/events/bus/
+ingress/{websocket,grpc}.py` — zero behavior changes, only imports
+(EventBus/IngressEnvelope/BaseHook resolve intra-package) and the
+regenerated absolute import inside `events_pb2_grpc.py` (now
+`navigator_eventbus.ingress.proto.events_pb2` instead of the old
+`parrot.core.events.bus.ingress.proto` path). Used `grpcio-tools`
+(installed via the `[grpc]` extra) to regenerate the stubs for real
+rather than hand-editing generated code, per the proto README's own "DO
+NOT EDIT" convention. The proto wire package (`parrot.events.v1`) is
+preserved verbatim — confirmed with the user's own note in the spec that
+this is a protocol contract, not a Python import path. `BUS_INGRESS_TOKEN`
+auth (header Bearer / X-API-Key / query token for WS; `authorization`/
+`x-api-key` metadata for gRPC) copied unchanged. Added `pytest-aiohttp` to
+the `dev` extra (needed for the `aiohttp_client` fixture the migrated WS
+tests use — confirmed ai-parrot has it installed transitively but
+undeclared) and excluded the generated `events_pb2*.py` from ruff/mypy
+(task's own acceptance criterion explicitly permits this). Migrated
+`tests/core/events/bus/test_ingress.py`, split into
+`tests/test_ingress_websocket.py` and `tests/test_ingress_grpc.py`
+(gRPC tests import-skip via `pytest.importorskip("grpc")`, matching the
+origin). `ruff check src/`/`mypy src/` clean; `pytest tests/ -m "not
+integration and not redis"` green (162 passed across the whole suite);
+`grep -r "from parrot\|import parrot" src/` empty. Committed in
+navigator-eventbus as 6537fbd "feat: WS/gRPC ingress + proto package fix
+(FEAT-312 TASK-1804)"; pushed to origin.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none — the task's own acceptance criteria and
+the parent spec agree on this module; no contradiction encountered (unlike
+TASK-1803's HookType pre-registration issue).

@@ -133,7 +133,7 @@
       "feature_id": "FEAT-312",
       "feature": "eventbus-core-extraction",
       "spec": "sdd/specs/eventbus-core-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Necesita BaseHook (TASK-1803); tras eso solo toca ingress/ — paralelizable con TASK-1801/1802 si siguen abiertos.",
       "assigned_to": null,
       "started_at": "2026-07-17T14:47:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1804-ingress-ws-grpc.md"
+      "completed_at": "2026-07-17T16:29:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1804-ingress-ws-grpc.md"
     },
     {
       "id": "TASK-1805",
