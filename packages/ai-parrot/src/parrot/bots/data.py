@@ -2154,6 +2154,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # Safe format handling
                 content = None
                 wrapped = None
+                format_error: Optional[str] = None
 
                 # Check for empty response/content before formatting
                 if response and (response.content or response.output):
@@ -2167,12 +2168,36 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                             )
                          except Exception as e:
                             self.logger.error("Error extracting content on formatter: %s", e)
+                            format_error = str(e)
                             content = f"Error extracting content: {e}"
                             wrapped = content
                 else:
                     self.logger.warning("Agent response was empty or None - skipping formatting")
                     content = "No response generated"
                     wrapped = content
+
+                # Structured renderers signal failure by returning
+                # (None, error_message) instead of raising. Publishing that
+                # message via response.response would surface an internal
+                # renderer error as the user-visible reply — degrade to
+                # DEFAULT instead, preserving the plain-text answer the LLM
+                # already produced in response.response.
+                _structured_modes = (
+                    OutputMode.STRUCTURED_CHART,
+                    OutputMode.STRUCTURED_MAP,
+                    OutputMode.STRUCTURED_TABLE,
+                )
+                if output_mode in _structured_modes and (
+                    content is None or format_error is not None
+                ):
+                    self.logger.warning(
+                        "%s renderer failed (%s) — falling back to DEFAULT "
+                        "text response",
+                        output_mode.value if hasattr(output_mode, "value") else output_mode,
+                        format_error or wrapped,
+                    )
+                    output_mode = OutputMode.DEFAULT
+                    response.output_mode = OutputMode.DEFAULT
 
                 if output_mode != OutputMode.DEFAULT and output_mode not in [OutputMode.TELEGRAM, OutputMode.MSTEAMS]:
                     response.output = content
