@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-317
 **Date**: 2026-07-18
 **Author**: Jesus (phenobarbital) + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot 0.26.0
 
 > **Phase 4 of 5** of the extraction plan defined in
