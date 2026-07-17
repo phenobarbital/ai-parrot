@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-316
 **Date**: 2026-07-17
 **Author**: Jesus (phenobarbital) + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: navigator-eventbus 0.1.0
 
 ---
