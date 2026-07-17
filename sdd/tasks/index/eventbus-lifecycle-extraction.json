@@ -15,14 +15,14 @@
       "feature_id": "FEAT-313",
       "feature": "eventbus-lifecycle-extraction",
       "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Root of the dependency graph — creates the base classes everything else imports.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-17T23:51:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1820-lifecycle-core-move.md"
     },
@@ -33,14 +33,16 @@
       "feature_id": "FEAT-313",
       "feature": "eventbus-lifecycle-extraction",
       "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1820"],
+      "depends_on": [
+        "TASK-1820"
+      ],
       "parallel": false,
       "parallelism_notes": "Core dispatch engine — mixin/yaml_loader/subscribers all depend on EventRegistry. Must land before the fan-out.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-17T23:51:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1821-registry-global-provider.md"
     },
@@ -51,14 +53,16 @@
       "feature_id": "FEAT-313",
       "feature": "eventbus-lifecycle-extraction",
       "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1821"],
+      "depends_on": [
+        "TASK-1821"
+      ],
       "parallel": true,
       "parallelism_notes": "After TASK-1821, independent of TASK-1823/1824 — touches only mixin.py. Parallelizable with yaml_loader and subscribers.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-17T23:51:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1822-mixin-bootstrap-hook.md"
     },
@@ -69,14 +73,16 @@
       "feature_id": "FEAT-313",
       "feature": "eventbus-lifecycle-extraction",
       "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1821"],
+      "depends_on": [
+        "TASK-1821"
+      ],
       "parallel": true,
       "parallelism_notes": "After TASK-1821, independent of TASK-1822/1824 — touches only yaml_loader.py. Parallelizable with mixin and subscribers.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-17T23:51:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1823-yaml-loader-injectable-table.md"
     },
@@ -87,14 +93,16 @@
       "feature_id": "FEAT-313",
       "feature": "eventbus-lifecycle-extraction",
       "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1820"],
+      "depends_on": [
+        "TASK-1820"
+      ],
       "parallel": true,
       "parallelism_notes": "Only depends on TASK-1820 (base classes). Independent of registry consumers (mixin/yaml_loader). Parallelizable after TASK-1820, but sequential execution recommended (single implementor).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-17T23:51:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1824-generic-subscribers.md"
     },
@@ -105,14 +113,18 @@
       "feature_id": "FEAT-313",
       "feature": "eventbus-lifecycle-extraction",
       "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1822", "TASK-1823", "TASK-1824"],
+      "depends_on": [
+        "TASK-1822",
+        "TASK-1823",
+        "TASK-1824"
+      ],
       "parallel": false,
       "parallelism_notes": "Closure task — requires all modules complete. Curates __init__.py, runs full suite, integration tests with phase-1 EventBus.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-17T23:51:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1825-public-api-and-tests.md"
     }
