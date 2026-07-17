@@ -1,8 +1,9 @@
 """NovaAudio — bidirectional voice streaming mixin for NovaClient (FEAT-315).
 
-Ports the bidirectional speech-to-speech implementation from
-``parrot.clients.nova_sonic.NovaSonicClient`` (FEAT-302) into a plain
-capability mixin, composed into
+Ports the bidirectional speech-to-speech implementation from the deleted
+FEAT-302 voice-only client module (removed in FEAT-315 — see
+``docs/migration/feat-315-novaclient.md``) into a plain capability mixin,
+composed into
 :class:`~parrot.clients.nova.client.NovaClient` alongside
 ``BedrockConverseBase`` (spec ``novaclient-amazon-aws`` §2/§3 Module 3),
 mirroring how :class:`~parrot.clients.google.generation.GoogleGeneration`
@@ -124,8 +125,8 @@ class NovaAudio:
 
         Calls :meth:`~parrot.clients.bedrock.BedrockConverseBase.apply_guardrail_text`
         directly (returns *text* unmodified when no guardrail is
-        configured) — the ``_get_text_client()`` delegate pattern from
-        ``nova_sonic.py`` no longer exists.
+        configured) — the ``_get_text_client()`` delegate pattern from the
+        deleted legacy voice-only client module no longer exists.
         """
         return await self.apply_guardrail_text(text, source="INPUT")
 

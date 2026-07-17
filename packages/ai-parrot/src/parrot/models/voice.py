@@ -31,8 +31,9 @@ class VoiceConfig:
     # ai-parrot-integrations satellite package, which depends on core
     # ai-parrot — not the other way around. Values are expected to match
     # VoiceProvider.value from that enum when both are in play. FEAT-315
-    # breaking change: the provider key was renamed from "nova_sonic" to
-    # "nova" (VoiceProvider.NOVA_SONIC → VoiceProvider.NOVA); there is no
+    # breaking change: the previous snake-case provider key was renamed to
+    # "nova" (VoiceProvider's matching member was renamed to NOVA — see
+    # docs/migration/feat-315-novaclient.md); there is no
     # backward-compatible alias.
     provider: str = "google_live"
 
