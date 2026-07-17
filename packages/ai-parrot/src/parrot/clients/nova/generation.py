@@ -34,6 +34,7 @@ import aiofiles
 from ...conf import AWS_CREDENTIALS
 from ...exceptions import InvokeError
 from ...models.basic import CompletionUsage
+from ...models.bedrock_models import translate as translate_bedrock_model
 from ...models.responses import AIMessage, AIMessageFactory
 
 
@@ -52,6 +53,23 @@ class NovaGeneration:
 
     _default_image_model: str = "nova-canvas"
     _default_video_model: str = "nova-reel"
+
+    @staticmethod
+    def _translate_in_region_model(model: str) -> str:
+        """Resolve a Canvas/Reel model ID WITHOUT a region-prefix.
+
+        Code-review fix (FEAT-315): Nova Canvas and Nova Reel are
+        **in-region only** — they have no cross-region inference profiles
+        (spec §6 "Verified AWS Facts") — so, unlike the text/Converse path
+        (``self._translate_model``, which applies ``self._region_prefix``
+        unconditionally), generation model IDs must NEVER be prefixed even
+        when the composed client defaults ``region_prefix="us"`` (as
+        :class:`~parrot.clients.nova.client.NovaClient` does, for the
+        unrelated Nova 2 Lite/Premier text models). Calls
+        :func:`~parrot.models.bedrock_models.translate` directly with
+        ``region_prefix=None``, bypassing ``self._region_prefix`` entirely.
+        """
+        return translate_bedrock_model(model, region_prefix=None)
 
     # ------------------------------------------------------------------
     # Nova Canvas — synchronous image generation
@@ -92,7 +110,7 @@ class NovaGeneration:
             ``output_directory`` was given) and ``output`` (base64 strings
             or file paths per ``as_base64``).
         """
-        resolved_model = self._translate_model(model or self._default_image_model)
+        resolved_model = self._translate_in_region_model(model or self._default_image_model)
 
         image_generation_config: Dict[str, Any] = {
             "numberOfImages": number_of_images,
@@ -227,14 +245,14 @@ class NovaGeneration:
             InvokeError: When the Reel job reaches ``Failed`` status or
                 does not complete within *timeout*.
         """
-        resolved_model = self._translate_model(model or self._default_video_model)
+        resolved_model = self._translate_in_region_model(model or self._default_video_model)
         resolved_s3_output_uri = self._resolve_s3_output_uri(s3_output_uri)
 
         video_generation_config: Dict[str, Any] = {"durationSeconds": duration}
         text_to_video_params: Dict[str, Any] = {"text": prompt}
         if reference_image:
-            with open(reference_image, "rb") as f:
-                image_bytes = f.read()
+            async with aiofiles.open(reference_image, "rb") as f:
+                image_bytes = await f.read()
             text_to_video_params["images"] = [
                 {"format": "png", "source": {"bytes": base64.b64encode(image_bytes).decode("ascii")}}
             ]

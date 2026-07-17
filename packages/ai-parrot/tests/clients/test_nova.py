@@ -126,6 +126,31 @@ class TestStreamVoice:
         assert responses[-1].is_complete is True
 
     @pytest.mark.asyncio
+    async def test_stream_voice_model_id_has_no_region_prefix(self, nova_client):
+        """Code-review regression test (FEAT-315): NovaClient defaults
+        region_prefix="us" for the unrelated Nova 2 Lite/Premier TEXT
+        models — that must NOT leak into the Sonic voice model resolved
+        by stream_voice() (Nova Sonic has no cross-region inference
+        profiles, spec §6 "Verified AWS Facts"). Captures the real
+        model_id argument passed to _open_stream(), unlike the other
+        TestStreamVoice tests, which never assert it."""
+        assert nova_client._region_prefix == "us"  # the default that must NOT leak
+        captured_model_ids = []
+
+        async def capture_open_stream(model_id):
+            captured_model_ids.append(model_id)
+            return AsyncMock()
+
+        with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
+             patch.object(nova_client, '_open_stream', new=capture_open_stream), \
+             patch.object(nova_client, '_send_event', new=AsyncMock()), \
+             patch.object(nova_client, '_iter_events', return_value=_empty_events()):
+            async for _ in nova_client.stream_voice(_fake_audio_iterator()):
+                pass
+
+        assert captured_model_ids == ["amazon.nova-2-sonic-v1:0"]
+
+    @pytest.mark.asyncio
     async def test_stream_voice_audio_output_decodes_base64(self, nova_client):
         """Code-review regression test: audioOutputConfiguration declares
         "encoding": "base64" (stream_voice()'s promptStart event), so

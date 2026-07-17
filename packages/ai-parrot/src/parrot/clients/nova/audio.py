@@ -65,9 +65,11 @@ class NovaAudio:
     reads the following attributes from the composed client (set by
     :class:`~parrot.clients.nova.client.NovaClient` / inherited from
     ``BedrockConverseBase``): ``self.voice_id``, ``self._region``,
-    ``self._region_prefix``, ``self.model``, ``self.default_model``,
-    ``self.logger``, ``self._execute_tool(name, input)``,
-    ``self.apply_guardrail_text(text, source)``.
+    ``self.model``, ``self.default_model``, ``self.logger``,
+    ``self._execute_tool(name, input)``,
+    ``self.apply_guardrail_text(text, source)``. Deliberately does NOT
+    read ``self._region_prefix`` for model resolution — Nova Sonic has no
+    cross-region inference profiles (see :meth:`stream_voice`).
     """
 
     # Nova Sonic's hard limit is ~8 minutes; reconnect with a safety margin
@@ -173,8 +175,15 @@ class NovaAudio:
 
         session_id = session_id or str(uuid.uuid4())
         turn_id = str(uuid.uuid4())
+        # Code-review fix (FEAT-315): Nova Sonic / Nova 2 Sonic have NO
+        # cross-region inference profiles (spec §6 "Verified AWS Facts") —
+        # unlike the text/Converse path, the voice model ID must NEVER be
+        # prefixed, even though the composed client (NovaClient) defaults
+        # region_prefix="us" for the unrelated Nova 2 Lite/Premier text
+        # models. region_prefix=None here bypasses self._region_prefix
+        # entirely (mirrors NovaGeneration._translate_in_region_model).
         resolved_model = translate_bedrock_model(
-            self.model or self.default_model, self._region_prefix
+            self.model or self.default_model, region_prefix=None
         )
         resolved_voice_id = kwargs.get("voice_id") or self.voice_id
         prompt_name = str(uuid.uuid4())

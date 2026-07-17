@@ -50,3 +50,34 @@ class TestNovaClientComposition:
 
     def test_client_name(self):
         assert NovaClient().client_name == "nova"
+
+
+class TestInRegionModelsNeverGetRegionPrefix:
+    """Code-review regression guard (FEAT-315): NovaClient's default
+    region_prefix="us" (needed for the Nova 2 Lite/Premier TEXT models,
+    which have no in-region access) must NOT leak into Nova Canvas / Nova
+    Reel / Nova Sonic model-ID resolution — those three families are
+    in-region only and have no cross-region inference profiles (spec §6
+    "Verified AWS Facts"). Exercises the REAL (non-stubbed) NovaClient
+    default, unlike test_nova_generation.py's Host stub (which hardcodes
+    _translate_model to ignore region_prefix) and test_nova.py's
+    stream_voice tests (which mock _open_stream, never asserting the
+    resolved model_id argument)."""
+
+    def test_generate_image_default_model_has_no_region_prefix(self):
+        c = NovaClient()
+        assert c._translate_in_region_model(
+            c._default_image_model
+        ) == "amazon.nova-canvas-v1:0"
+
+    def test_video_generation_default_model_has_no_region_prefix(self):
+        c = NovaClient()
+        assert c._translate_in_region_model(
+            c._default_video_model
+        ) == "amazon.nova-reel-v1:0"
+
+    def test_text_model_still_gets_region_prefix(self):
+        """Sanity check: the fix must not remove the prefix from the TEXT
+        path, which genuinely needs it (Nova 2 Lite has no in-region access)."""
+        c = NovaClient()
+        assert c._translate_model(None) == "us.amazon.nova-2-lite-v1:0"
