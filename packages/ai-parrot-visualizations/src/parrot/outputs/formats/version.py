@@ -4,7 +4,7 @@ __title__ = "ai-parrot-visualizations"
 __description__ = (
     "Visualization renderers for AI-Parrot outputs."
 )
-__version__ = "0.1.20"
+__version__ = "0.1.21"
 __author__ = "Jesus Lara"
 __author_email__ = "jesuslara@phenobarbital.info"
 __license__ = "MIT"

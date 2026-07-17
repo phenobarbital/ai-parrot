@@ -4,7 +4,7 @@ __title__ = "ai-parrot-embeddings"
 __description__ = (
     "Concrete embedding, vector-store, and reranker backends for AI-Parrot."
 )
-__version__ = "0.1.20"
+__version__ = "0.1.21"
 __author__ = "Jesus Lara"
 __author_email__ = "jesuslara@phenobarbital.info"
 __license__ = "MIT"
