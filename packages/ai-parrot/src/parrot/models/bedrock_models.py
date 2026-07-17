@@ -66,10 +66,13 @@ PUBLIC_TO_BEDROCK: dict[str, str] = {
 
     # ── Amazon Nova (multi-provider, FEAT-302) ─────────────────────────────
     "nova-sonic":   "amazon.nova-sonic-v1:0",
-    "nova-2-sonic": "amazon.nova-2-sonic-v1:0",
     "nova-pro":     "amazon.nova-pro-v1:0",
     "nova-lite":    "amazon.nova-lite-v1:0",
     "nova-micro":   "amazon.nova-micro-v1:0",
+
+    # ── Amazon Nova 2 ─────────────────────────────────────────────────────
+    "nova-2-sonic": "amazon.nova-2-sonic-v1:0",
+    "nova-2-lite":  "amazon.nova-2-lite-v1:0",
 }
 
 

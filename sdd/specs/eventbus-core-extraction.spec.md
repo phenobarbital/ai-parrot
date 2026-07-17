@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-312
 **Date**: 2026-07-17
 **Author**: Jesus (phenobarbital) + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: `navigator-eventbus` 0.1.0
 
 > **Fase 1 de 5** del plan de extracción definido en
@@ -108,12 +108,20 @@ Decisiones de diseño ya resueltas (brainstorm, no re-abrir):
    PEP 420 es inviable (`navigator/__init__.py` es paquete regular).
 2. **`HookType` abierto**: deja de ser `str, Enum` cerrado. Pasa a tipo
    abierto — un `str` validado contra un **registry de hook types** con
-   registro dinámico. El paquete registra los genéricos (scheduler,
-   file_watchdog, postgres_listen, imap_watchdog, file_upload, broker_redis,
-   broker_rabbitmq, broker_mqtt, broker_sqs, filesystem, webhook genérico);
-   cada app registra los suyos al importar (ai-parrot: jira_webhook,
+   registro dinámico. **[AMENDED 2026-07-17 post-implementation, ver
+   Revision History]**: el paquete pre-registra en `HOOK_TYPES`, a import
+   time, los **18 hook types del enum cerrado pre-FEAT-312** (los 10
+   genéricos originales: scheduler, file_watchdog, postgres_listen,
+   imap_watchdog, file_upload, broker_redis, broker_rabbitmq, broker_mqtt,
+   broker_sqs, filesystem; más los 8 específicos de ai-parrot: jira_webhook,
    github_webhook, sharepoint, telegram, whatsapp, msteams, whatsapp_redis,
-   matrix). `HookEvent.hook_type` y los config models pasan a `str` validado.
+   matrix) **más** el nuevo genérico `webhook` que introduce el paquete —
+   compatibilidad retro total con FEAT-310, cero wiring de registro
+   necesario para reproducir su comportamiento. Cualquier app puede seguir
+   registrando dinámicamente tipos NUEVOS (no incluidos en esos 18+1) via
+   `HOOK_TYPES.register(...)` a su propio import time — el registry sigue
+   siendo abierto, solo cambia qué viene pre-poblado de fábrica.
+   `HookEvent.hook_type` y los config models pasan a `str` validado.
 3. **`hooks/models.py` se muda entero**: modelos genéricos Y configs de
    integraciones (Jira/GitHub/SharePoint/WhatsApp/Matrix) viajan al paquete
    — son modelos de datos, no lógica de integración. Las apps los importan
@@ -213,13 +221,14 @@ class HookType(str, Enum):
 
 # DESPUÉS (navigator_eventbus/hooks/models.py) — tipo abierto + registry
 class HookTypeRegistry:
-    """Registro dinámico de hook types. El paquete registra los genéricos;
-    cada app registra los suyos en import-time."""
+    """Registro dinámico de hook types. El paquete pre-registra los 18
+    legacy (10 genéricos + 8 específicos de ai-parrot) + `webhook`
+    (AMENDED, v0.2); cada app puede registrar tipos NUEVOS en import-time."""
     def register(self, name: str) -> str: ...      # valida slug, idempotente
     def is_registered(self, name: str) -> bool: ...
     def all(self) -> frozenset[str]: ...
 
-HOOK_TYPES = HookTypeRegistry()  # singleton de módulo, pre-poblado con genéricos
+HOOK_TYPES = HookTypeRegistry()  # singleton de módulo, pre-poblado con los 18 legacy + webhook
 
 class HookEvent(BaseModel):
     hook_type: str  # validado contra HOOK_TYPES (validator Pydantic)
@@ -298,9 +307,9 @@ RedisStreamsBackend(stream_prefix="evb:stream:",
 - **Responsibility**: mudar HookRegistry/BaseHook/HookManager/mixins/
   scheduler/file_watchdog y los hooks de brokers (lazy-imports a
   `navigator.brokers` intactos en esta fase); `models.py` entero con
-  `hook_type` abierto + `HookTypeRegistry` (genéricos pre-registrados;
-  documentar el registro per-app); `scheduler.py` usa `_imports.lazy_import`
-  local.
+  `hook_type` abierto + `HookTypeRegistry` (18 legacy + `webhook`
+  pre-registrados — AMENDED v0.2; documentar el registro per-app para
+  tipos NUEVOS); `scheduler.py` usa `_imports.lazy_import` local.
 - **Depends on**: Module 3
 
 ### Module 7: Ingress WS/gRPC
@@ -374,9 +383,11 @@ def custom_hook_type():
       FEAT-310 (diff de firmas documentado = vacío).
 - [ ] `__init__.py` re-exporta al menos `EventBus, Event, EventPriority,
       EventSubscription` (paridad con `parrot.core.events.__all__`).
-- [ ] `HookType` reemplazado por tipo abierto: `HookTypeRegistry` con
-      genéricos pre-registrados; `HookEvent.hook_type: str` validado;
-      registro dinámico probado.
+- [ ] `HookType` reemplazado por tipo abierto: `HookTypeRegistry` con los
+      18 hook types legacy (10 genéricos + 8 específicos de ai-parrot) más
+      el nuevo genérico `webhook` pre-registrados a import time (AMENDED,
+      ver Revision History); `HookEvent.hook_type: str` validado; registro
+      dinámico de tipos nuevos probado.
 - [ ] Prefijos Redis y consumer-group con defaults neutros (`evb:*`,
       `evb-bus`) y override por constructor + navconfig
       (`BUS_CHANNEL_PREFIX`, `BUS_STREAM_PREFIX`, `BUS_DEDUP_PREFIX`, `BUS_GROUP`).
@@ -592,7 +603,12 @@ from parrot._imports import lazy_import             # línea 8 ← DESACOPLAR (u
 
 - [x] `HookType`: ¿enum cerrado o tipo abierto? — *Resolved in brainstorm*:
   tipo abierto (str validado + registry); el paquete provee los genéricos y
-  cada app registra los suyos al importar.
+  cada app registra los suyos al importar. **AMENDED 2026-07-17
+  (post-implementation, ver Revision History)**: el paquete pre-registra
+  los 18 hook types legacy completos (10 genéricos + 8 específicos de
+  ai-parrot) más `webhook`, por compatibilidad retro total con FEAT-310;
+  apps siguen registrando dinámicamente cualquier tipo NUEVO no incluido
+  en esos 19.
 - [x] `hooks/models.py`: ¿mudar entero o partir? — *Resolved in brainstorm*:
   se muda entero; las apps importan los modelos desde el paquete.
 - [x] Prefijos Redis: ¿default neutro o `parrot:*`? — *Resolved in brainstorm*:
@@ -646,3 +662,4 @@ from parrot._imports import lazy_import             # línea 8 ← DESACOPLAR (u
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-17 | Jesus + Claude | Initial draft desde brainstorm navigator-eventbus-extraction (fase 1) |
+| 0.2 | 2026-07-17 | Jesus + Claude | Post-implementation amendment to §2 decision #2 (re-opened by explicit user directive after TASK-1803 flagged the contradiction between its own scope text and the closed decision): `HOOK_TYPES` now pre-registers ALL 18 legacy hook types (10 generics + 8 ai-parrot-specific integration types) plus the new `webhook` generic, for full FEAT-310 backward compatibility — not just the 11 generics. Apps still register any genuinely NEW hook type dynamically. Code + tests updated accordingly in `navigator-eventbus` (`hooks/models.py`, `tests/test_hook_type_registry.py`, `tests/test_hooks_manager.py`, `tests/test_envelope.py`). |

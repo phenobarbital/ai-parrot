@@ -1,0 +1,152 @@
+{
+  "feature": "novaclient-amazon-aws",
+  "feature_id": "FEAT-315",
+  "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-17T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1806",
+      "slug": "bedrock-converse-base-extraction",
+      "title": "Extract BedrockConverseBase + fix aws_id credential resolution",
+      "feature_id": "FEAT-315",
+      "feature": "novaclient-amazon-aws",
+      "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Root of the dependency chain; every other task builds on the extracted base.",
+      "assigned_to": null,
+      "started_at": "2026-07-17T15:48:17+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1806-bedrock-converse-base-extraction.md"
+    },
+    {
+      "id": "TASK-1807",
+      "slug": "nova-audio-mixin",
+      "title": "NovaAudio mixin — port Nova Sonic voice streaming to nova/audio.py",
+      "feature_id": "FEAT-315",
+      "feature": "novaclient-amazon-aws",
+      "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1806"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Shares no files with TASK-1808 and could technically run beside it, but the spec's worktree strategy is per-spec sequential (single worktree).",
+      "assigned_to": null,
+      "started_at": "2026-07-17T15:48:17+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1807-nova-audio-mixin.md"
+    },
+    {
+      "id": "TASK-1808",
+      "slug": "nova-generation-mixin",
+      "title": "NovaGeneration mixin — Nova Canvas image + Nova Reel video",
+      "feature_id": "FEAT-315",
+      "feature": "novaclient-amazon-aws",
+      "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1806"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Shares no files with TASK-1807 and could technically run beside it, but per-spec sequential worktree strategy applies.",
+      "assigned_to": null,
+      "started_at": "2026-07-17T15:48:17+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1808-nova-generation-mixin.md"
+    },
+    {
+      "id": "TASK-1809",
+      "slug": "nova-client-core",
+      "title": "NovaClient core — compose base + mixins in nova/client.py",
+      "feature_id": "FEAT-315",
+      "feature": "novaclient-amazon-aws",
+      "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1806",
+        "TASK-1807",
+        "TASK-1808"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Composition point — imports all three predecessors.",
+      "assigned_to": null,
+      "started_at": "2026-07-17T15:48:17+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1809-nova-client-core.md"
+    },
+    {
+      "id": "TASK-1810",
+      "slug": "nova-catalog-factory",
+      "title": "Model catalog entries + 'nova' factory registration",
+      "feature_id": "FEAT-315",
+      "feature": "novaclient-amazon-aws",
+      "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1809"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Factory loader imports NovaClient (TASK-1809).",
+      "assigned_to": null,
+      "started_at": "2026-07-17T15:48:17+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1810-nova-catalog-factory.md"
+    },
+    {
+      "id": "TASK-1811",
+      "slug": "nova-callsite-migration",
+      "title": "Migrate all call sites to NovaClient and delete nova_sonic.py",
+      "feature_id": "FEAT-315",
+      "feature": "novaclient-amazon-aws",
+      "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1809",
+        "TASK-1810"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Breaking rename ('nova_sonic' → 'nova') across two distributions; must land after the new client is complete.",
+      "assigned_to": null,
+      "started_at": "2026-07-17T15:48:17+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1811-nova-callsite-migration.md"
+    },
+    {
+      "id": "TASK-1812",
+      "slug": "nova-test-migration",
+      "title": "Migrate test suites to NovaClient + close coverage gaps",
+      "feature_id": "FEAT-315",
+      "feature": "novaclient-amazon-aws",
+      "spec": "sdd/specs/novaclient-amazon-aws.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1811"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Closing task; validates the whole chain including the bedrock regression gate.",
+      "assigned_to": null,
+      "started_at": "2026-07-17T15:48:17+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1812-nova-test-migration.md"
+    }
+  ]
+}
