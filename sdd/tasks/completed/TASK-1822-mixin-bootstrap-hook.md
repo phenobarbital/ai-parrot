@@ -230,10 +230,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-18
+**Notes**: Created `src/navigator_eventbus/lifecycle/mixin.py` in the
+navigator-eventbus worktree
+`.claude/worktrees/feat-FEAT-313-eventbus-lifecycle-extraction`. Replaced
+the `parrot.observability.bootstrap.ensure_observability_bootstrapped`
+auto-boot block with the module-level `set_bootstrap_hook()` /
+`_bootstrap_hook` mechanism; the hook is invoked per-`_init_events()` call
+(no call-once logic added) inside the same guarded try/except, so a
+raising hook never breaks construction. Added `tests/lifecycle/test_mixin.py`
+(8 tests; 48 total passing in `tests/lifecycle/`).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the task's own example Test Specification
+included `test_events_property_without_init_raises` asserting
+`self.events` raises `AttributeError` when accessed before
+`_init_events()`. This contradicts the task's own verified Codebase
+Contract / Existing Signatures section and the actual ai-parrot source
+(`mixin.py:83-94`), both of which are explicit that the `events` property
+lazily creates a default, globally-forwarding registry instead of
+raising. Preserved the verified (non-raising) behavior per the spec's
+"preserve API signatures exactly" acceptance criterion, and wrote
+`test_events_property_without_init_lazily_creates_registry` instead,
+documenting the discrepancy inline. `ruff check` clean.
+`grep -r "from parrot\|import parrot"` on the new src file → 0 hits.
+Committed in navigator-eventbus as `631fbf1` (source
+ai-parrot@886bd30cee2d12f1e7cb582d1acb54ed33bb23ea).
