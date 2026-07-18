@@ -53,7 +53,7 @@
       "feature_id": "FEAT-316",
       "feature": "eventbus-brokers-port",
       "spec": "sdd/specs/eventbus-brokers-port.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "No comparte archivos con 1816/1817 (subpaquetes disjuntos); paralelizable tras 1814. Nota: 1816 también toca brokers/_conf.py — coordinar ese archivo si corren en worktrees separados.",
       "assigned_to": null,
       "started_at": "2026-07-18T00:02:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1815-redis-broker-port.md"
+      "completed_at": "2026-07-18T00:35:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1815-redis-broker-port.md"
     },
     {
       "id": "TASK-1816",
