@@ -33,7 +33,7 @@
       "feature_id": "FEAT-313",
       "feature": "eventbus-lifecycle-extraction",
       "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -43,8 +43,8 @@
       "parallelism_notes": "Core dispatch engine — mixin/yaml_loader/subscribers all depend on EventRegistry. Must land before the fan-out.",
       "assigned_to": null,
       "started_at": "2026-07-17T23:51:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1821-registry-global-provider.md"
+      "completed_at": "2026-07-18T00:08:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1821-registry-global-provider.md"
     },
     {
       "id": "TASK-1822",

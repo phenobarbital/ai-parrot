@@ -247,10 +247,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-18
+**Notes**: Created `src/navigator_eventbus/lifecycle/{registry,global_registry,provider}.py`
+in the navigator-eventbus worktree
+`.claude/worktrees/feat-FEAT-313-eventbus-lifecycle-extraction`. Changed
+only the intra-package imports plus the `TYPE_CHECKING` `EventBus` ref
+(`parrot.core.events.evb` → `navigator_eventbus.evb`); all three lazy
+in-method imports in `registry.py` (provider at what was :218,
+global_registry at :354/:432) kept lazy. Logger renamed to
+`navigator_eventbus.lifecycle.registry`. Added
+`tests/lifecycle/{test_registry,test_registry_fire_and_forget,
+test_global_registry,test_provider}.py` (25 new tests; 40 total passing
+in `tests/lifecycle/`). Verified during testing that `SubscriberErrorEvent`
+is always routed through `get_global_registry()` (never the emitting
+registry itself) — tests use `scope()` accordingly. `ruff check` clean.
+`grep -r "from parrot\|import parrot"` on the three new src files → 0
+hits. Committed in navigator-eventbus as `35b289f` (source
+ai-parrot@3357bf4a4096959c2c8d96025b15d8e44b5b94bf).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
