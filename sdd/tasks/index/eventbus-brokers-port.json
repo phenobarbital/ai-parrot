@@ -113,7 +113,7 @@
       "feature_id": "FEAT-316",
       "feature": "eventbus-brokers-port",
       "spec": "sdd/specs/eventbus-brokers-port.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -125,8 +125,8 @@
       "parallelism_notes": "Punto de convergencia — requiere los tres brokers portados; toca hooks y pyproject.",
       "assigned_to": null,
       "started_at": "2026-07-18T00:02:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1818-hooks-rewire-and-extras.md"
+      "completed_at": "2026-07-18T01:18:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1818-hooks-rewire-and-extras.md"
     },
     {
       "id": "TASK-1819",
