@@ -33,7 +33,7 @@
       "feature_id": "FEAT-316",
       "feature": "eventbus-brokers-port",
       "spec": "sdd/specs/eventbus-brokers-port.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -43,8 +43,8 @@
       "parallelism_notes": "Importa serializers (1813); los tres brokers (1815-1817) importan sus clases.",
       "assigned_to": null,
       "started_at": "2026-07-18T00:02:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1814-brokers-base-abstractions.md"
+      "completed_at": "2026-07-18T00:17:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1814-brokers-base-abstractions.md"
     },
     {
       "id": "TASK-1815",
