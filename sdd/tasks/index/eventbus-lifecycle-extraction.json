@@ -73,7 +73,7 @@
       "feature_id": "FEAT-313",
       "feature": "eventbus-lifecycle-extraction",
       "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "After TASK-1821, independent of TASK-1822/1824 — touches only yaml_loader.py. Parallelizable with mixin and subscribers.",
       "assigned_to": null,
       "started_at": "2026-07-17T23:51:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1823-yaml-loader-injectable-table.md"
+      "completed_at": "2026-07-18T00:16:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1823-yaml-loader-injectable-table.md"
     },
     {
       "id": "TASK-1824",

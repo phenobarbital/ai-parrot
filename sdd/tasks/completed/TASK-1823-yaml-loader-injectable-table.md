@@ -238,10 +238,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-18
+**Notes**: Created `src/navigator_eventbus/lifecycle/yaml_loader.py` in the
+navigator-eventbus worktree
+`.claude/worktrees/feat-FEAT-313-eventbus-lifecycle-extraction`. Removed
+the hard import of the typed-event taxonomy; replaced the static
+`EVENT_CLASSES` dict with a mutable module-level dict pre-seeded with
+only `LifecycleEvent` (wildcard), plus the new `register_event_names()`
+public function (additive, later calls override same-name keys).
+`_wire_handler` now raises a `ValueError` (not `KeyError`) naming the
+missing registration and pointing at `register_event_names()` when an
+event name is unknown. `_resolve`, `_make_where`, `wire_events`,
+`_wire_provider` moved unchanged. `navconfig.logging` import kept
+(already a direct package dep). Added `tests/lifecycle/test_yaml_loader.py`
+(12 tests: registration additivity/override, unknown-name error mode,
+`wire_events` handler/provider wiring, wildcard subscription, end-to-end
+emit); 60 total passing in `tests/lifecycle/`. `ruff check` clean.
+`grep -r "from parrot\|import parrot"` on the new src file → 0 hits; no
+typed-event class imports present (only docstring prose mentions).
+Committed in navigator-eventbus as `2ee1500` (source
+ai-parrot@e03be66c8784eae0751c430d81083e8b754fbaa8).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
