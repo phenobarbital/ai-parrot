@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-318
 **Date**: 2026-07-18
 **Author**: Jesus (phenobarbital) + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: navigator (framework) — next minor release
 
 > **Phase 5 of 5** of the EventBus extraction plan defined in
