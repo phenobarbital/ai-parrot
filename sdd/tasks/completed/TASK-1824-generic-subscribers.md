@@ -224,10 +224,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-18
+**Notes**: Created
+`src/navigator_eventbus/lifecycle/subscribers/{__init__,logging,webhook}.py`
+in the navigator-eventbus worktree
+`.claude/worktrees/feat-FEAT-313-eventbus-lifecycle-extraction`, changing
+only intra-package import paths (`OpenTelemetrySubscriber` excluded from
+`__init__.py`, as specified). Two minor Codebase Contract corrections
+verified against the actual ai-parrot source (not the task's own
+transcription): `LoggingSubscriber.__init__`'s `logger_name` default is
+`"parrot.lifecycle"` (task doc said `"lifecycle.events"`), and
+`WebhookSubscriber.__init__`'s `url` parameter is keyword-only (`*, url:
+str`, task doc showed it positional) — preserved the verified actual
+signatures per the "preserve API signatures exactly" AC. Added
+`tests/lifecycle/{test_logging_subscriber,test_webhook_subscriber}.py`
+(12 tests, including a real aiohttp-server round-trip for HMAC signing
+and 4xx no-retry behavior via the `aiohttp_client` fixture); 72 total
+passing in `tests/lifecycle/`. `ruff check` clean.
+`grep -r "from parrot\|import parrot"` on the new src files → 0 hits;
+`OpenTelemetrySubscriber` confirmed absent (only a docstring note).
+Committed in navigator-eventbus as `cd43ea7` (source
+ai-parrot@8087a10ac3c973b50713b5df4cfe3dc6b7a81734).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (two Codebase Contract corrections noted above)
