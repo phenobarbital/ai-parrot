@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-18T01:35:54+02:00",
-  "completed_at": null,
+  "completed_at": "2026-07-18T01:27:00+00:00",
   "notes": "Fase 3 de la extracción navigator-eventbus. El código se implementa en el repo /home/jesuslara/proyectos/navigator-eventbus (worktree .claude/worktrees/feat-FEAT-316-eventbus-brokers-port, ramificado desde feat-FEAT-312-eventbus-core-extraction porque FEAT-312 aún no está mergeado a main de ese repo); en ai-parrot solo viven los artefactos SDD. Fuente del port: /home/jesuslara/proyectos/navigator/navigator/brokers/. Ver spec §Worktree Strategy.",
   "tasks": [
     {
@@ -135,7 +135,7 @@
       "feature_id": "FEAT-316",
       "feature": "eventbus-brokers-port",
       "spec": "sdd/specs/eventbus-brokers-port.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -145,8 +145,8 @@
       "parallelism_notes": "Cierre secuencial — sweep de aceptación sobre el árbol completo + bump de versión.",
       "assigned_to": null,
       "started_at": "2026-07-18T00:02:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1819-brokers-integration-and-release.md"
+      "completed_at": "2026-07-18T01:27:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1819-brokers-integration-and-release.md"
     }
   ]
 }
