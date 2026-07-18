@@ -73,7 +73,7 @@
       "feature_id": "FEAT-316",
       "feature": "eventbus-brokers-port",
       "spec": "sdd/specs/eventbus-brokers-port.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Subpaquete disjunto de 1815/1817; modifica brokers/_conf.py (añade RABBITMQ_*) — único punto de contacto con 1815.",
       "assigned_to": null,
       "started_at": "2026-07-18T00:02:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1816-rabbitmq-broker-port.md"
+      "completed_at": "2026-07-18T00:56:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1816-rabbitmq-broker-port.md"
     },
     {
       "id": "TASK-1817",
