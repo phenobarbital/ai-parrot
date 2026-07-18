@@ -259,10 +259,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-18
+**Notes**: Created `src/navigator_eventbus/lifecycle/{__init__,trace,base,meta}.py`
+in the navigator-eventbus repo, worktree
+`.claude/worktrees/feat-FEAT-313-eventbus-lifecycle-extraction` (branch
+`feat-FEAT-313-eventbus-lifecycle-extraction`, branched from
+`feat-FEAT-312-eventbus-core-extraction` since FEAT-312 is not yet merged
+to that repo's `main` — same pattern as FEAT-316). `trace.py` copied
+verbatim (only ruff import-sort/f-string autofixes applied); `base.py`
+and `meta.py` changed only their one intra-package import each. Added
+`tests/lifecycle/{__init__,conftest,test_trace_context,test_base,test_meta}.py`
+(15 tests, all passing). `conftest.py`'s `fresh_global_registry` fixture
+does a lazy import of `global_registry.scope()` inside the fixture body
+so this conftest collects cleanly before Module 2 (TASK-1821) lands.
+`ruff check` clean. `grep -r "from parrot\|import parrot"` on the three
+new src files → 0 hits. Committed in navigator-eventbus as
+`ad2c636` (source ai-parrot@8556d516cc4dea8d87041cd06a105ef0ff9f5975).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

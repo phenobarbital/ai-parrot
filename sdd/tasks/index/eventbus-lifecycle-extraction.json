@@ -15,7 +15,7 @@
       "feature_id": "FEAT-313",
       "feature": "eventbus-lifecycle-extraction",
       "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -23,8 +23,8 @@
       "parallelism_notes": "Root of the dependency graph — creates the base classes everything else imports.",
       "assigned_to": null,
       "started_at": "2026-07-17T23:51:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1820-lifecycle-core-move.md"
+      "completed_at": "2026-07-18T00:01:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1820-lifecycle-core-move.md"
     },
     {
       "id": "TASK-1821",

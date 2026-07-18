@@ -46,7 +46,7 @@ Rewrite imports per the Import Rewiring Table:
   moved import (doc-only; optional but preferred for accuracy).
 
 **NOT in scope**: bots/clients (TASK-1830); server & integrations (TASK-1832);
-core/events|hooks source (TASK-1827–1823); tests (TASK-1833).
+core/events|hooks source (TASK-1827–1829); tests (TASK-1833).
 
 ---
 

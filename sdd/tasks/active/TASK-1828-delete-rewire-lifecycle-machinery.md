@@ -75,7 +75,7 @@ paths FIRST, then implement.
   `LoggingSubscriber`/`WebhookSubscriber` re-exported from package.
 
 **NOT in scope**: bus core (TASK-1827); hooks (TASK-1829); external consumers
-in bots/clients/observability/server (TASK-1830–1826); tests (TASK-1833).
+in bots/clients/observability/server (TASK-1830–1832); tests (TASK-1833).
 
 ---
 

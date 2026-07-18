@@ -111,7 +111,7 @@ from navigator_eventbus import EventBus, EventEnvelope, Severity
 
 ### Key Constraints
 - `source .venv/bin/activate` before any python/uv/pytest command.
-- If a test failure reveals a MISSING rewire (a file TASK-1830–1827 forgot),
+- If a test failure reveals a MISSING rewire (a file TASK-1830–1833 forgot),
   fix the import here and note which task under-covered it — do NOT redesign.
 - Keep the clean-venv verify isolated in `/tmp` so it does not disturb `.venv`.
 

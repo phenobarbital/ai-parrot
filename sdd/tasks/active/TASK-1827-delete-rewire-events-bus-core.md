@@ -16,7 +16,7 @@ Module 2 of spec §3. The bus core (facade `evb.py` + entire `bus/` package)
 was copied to `navigator-eventbus` in FEAT-312. This task **deletes** the
 ai-parrot copy and reduces `parrot/core/events/__init__.py` to a minimal stub
 (hard migration — no re-export of `EventBus` etc. from parrot). Consumers of
-these symbols are rewired in TASK-1830–1827.
+these symbols are rewired in TASK-1830–1833.
 
 ---
 
@@ -88,7 +88,7 @@ __all__ = ["EventBus", "Event", "EventPriority", "EventSubscription"]
 
 ### Import sites that will break until later tasks rewire them (informational)
 
-These are handled in TASK-1830–1827 — do NOT edit them here, just be aware:
+These are handled in TASK-1830–1833 — do NOT edit them here, just be aware:
 - `autonomous/{evb,orchestrator,webhooks}.py`, `eval/runner.py`
   (import `parrot.core.events.EventBus` / `.evb`)
 - `core/events/lifecycle/registry.py` (`TYPE_CHECKING` import of

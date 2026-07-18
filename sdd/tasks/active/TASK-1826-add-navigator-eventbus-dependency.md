@@ -60,7 +60,7 @@ with the feature.
 - Verify the editable install resolves in a clean venv.
 
 **NOT in scope**: deleting any source files (TASK-1827+); rewriting import
-statements across consumers (TASK-1830–1826); test changes (TASK-1833).
+statements across consumers (TASK-1830–1832); test changes (TASK-1833).
 
 ---
 

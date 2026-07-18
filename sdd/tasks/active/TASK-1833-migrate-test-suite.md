@@ -58,7 +58,7 @@ modules.
   `navconfig` that `navigator_eventbus` imports at import time.
 - **Update** `examples/dev_loop/e2e_demo.py` imports.
 
-**NOT in scope**: production source (TASK-1827–1826); running the full
+**NOT in scope**: production source (TASK-1827–1832); running the full
 regression/benchmark (TASK-1834).
 
 ---
@@ -190,7 +190,7 @@ def test_facade_reexports():
 
 ## Agent Instructions
 
-1. Verify TASK-1827–1826 completed.
+1. Verify TASK-1827–1832 completed.
 2. Regenerate the live importer list; verify the Codebase Contract.
 3. Update index → `in-progress`.
 4. Delete migrated tests; rewire remaining; add guard tests; fix conftest/example.

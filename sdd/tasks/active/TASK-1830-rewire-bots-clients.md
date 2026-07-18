@@ -48,7 +48,7 @@ Rewrite imports in the following files per the Import Rewiring Table:
 
 **NOT in scope**: observability/eval/registry/auth (TASK-1831); server &
 integrations (TASK-1832); deleting/creating source in core/events|hooks
-(TASK-1827–1823); tests (TASK-1833).
+(TASK-1827–1829); tests (TASK-1833).
 
 ---
 

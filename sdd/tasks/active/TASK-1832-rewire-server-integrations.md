@@ -41,7 +41,7 @@ production `EventBus()` construction site (orchestrator).
   `MatrixHookConfig` → package.
 
 **NOT in scope**: bots/clients (TASK-1830); observability/eval/registry/auth
-(TASK-1831); core source deletions (TASK-1827–1823); tests (TASK-1833).
+(TASK-1831); core source deletions (TASK-1827–1829); tests (TASK-1833).
 
 ---
 
