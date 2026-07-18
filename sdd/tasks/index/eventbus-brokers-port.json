@@ -15,14 +15,14 @@
       "feature_id": "FEAT-316",
       "feature": "eventbus-brokers-port",
       "spec": "sdd/specs/eventbus-brokers-port.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Raíz del grafo — DataSerializer es instanciado por BaseConnection, todos los demás módulos dependen de él.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-18T00:02:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1813-brokers-serializers.md"
     },
@@ -33,14 +33,16 @@
       "feature_id": "FEAT-316",
       "feature": "eventbus-brokers-port",
       "spec": "sdd/specs/eventbus-brokers-port.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1813"],
+      "depends_on": [
+        "TASK-1813"
+      ],
       "parallel": false,
       "parallelism_notes": "Importa serializers (1813); los tres brokers (1815-1817) importan sus clases.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-18T00:02:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1814-brokers-base-abstractions.md"
     },
@@ -51,14 +53,16 @@
       "feature_id": "FEAT-316",
       "feature": "eventbus-brokers-port",
       "spec": "sdd/specs/eventbus-brokers-port.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1814"],
+      "depends_on": [
+        "TASK-1814"
+      ],
       "parallel": true,
       "parallelism_notes": "No comparte archivos con 1816/1817 (subpaquetes disjuntos); paralelizable tras 1814. Nota: 1816 también toca brokers/_conf.py — coordinar ese archivo si corren en worktrees separados.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-18T00:02:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1815-redis-broker-port.md"
     },
@@ -69,14 +73,16 @@
       "feature_id": "FEAT-316",
       "feature": "eventbus-brokers-port",
       "spec": "sdd/specs/eventbus-brokers-port.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1814"],
+      "depends_on": [
+        "TASK-1814"
+      ],
       "parallel": true,
       "parallelism_notes": "Subpaquete disjunto de 1815/1817; modifica brokers/_conf.py (añade RABBITMQ_*) — único punto de contacto con 1815.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-18T00:02:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1816-rabbitmq-broker-port.md"
     },
@@ -87,14 +93,16 @@
       "feature_id": "FEAT-316",
       "feature": "eventbus-brokers-port",
       "spec": "sdd/specs/eventbus-brokers-port.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1814"],
+      "depends_on": [
+        "TASK-1814"
+      ],
       "parallel": true,
       "parallelism_notes": "Subpaquete totalmente disjunto (no toca _conf.py — las creds AWS ya se leen vía navconfig en el propio módulo).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-18T00:02:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1817-sqs-broker-port.md"
     },
@@ -105,14 +113,18 @@
       "feature_id": "FEAT-316",
       "feature": "eventbus-brokers-port",
       "spec": "sdd/specs/eventbus-brokers-port.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1815", "TASK-1816", "TASK-1817"],
+      "depends_on": [
+        "TASK-1815",
+        "TASK-1816",
+        "TASK-1817"
+      ],
       "parallel": false,
       "parallelism_notes": "Punto de convergencia — requiere los tres brokers portados; toca hooks y pyproject.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-18T00:02:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1818-hooks-rewire-and-extras.md"
     },
@@ -123,14 +135,16 @@
       "feature_id": "FEAT-316",
       "feature": "eventbus-brokers-port",
       "spec": "sdd/specs/eventbus-brokers-port.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1818"],
+      "depends_on": [
+        "TASK-1818"
+      ],
       "parallel": false,
       "parallelism_notes": "Cierre secuencial — sweep de aceptación sobre el árbol completo + bump de versión.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-18T00:02:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1819-brokers-integration-and-release.md"
     }
