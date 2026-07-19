@@ -206,7 +206,19 @@ class TestConfig:
 def test_lazy_exports():
     import parrot.integrations.msagentsdk as m
 
-    assert "SemanticUIResult" in m.__all__
-    assert "UIAction" in m.__all__
-    assert "render_card" in m.__all__
-    assert "render_text" in m.__all__
+    for name in (
+        "SemanticUIResult",
+        "UIAction",
+        "UIField",
+        "UIMetric",
+        "TablePayload",
+        "MetricsPayload",
+        "DetailPayload",
+        "StatusPayload",
+        "render_card",
+        "render_text",
+        "build_card_attachment",
+        "CardRenderError",
+    ):
+        assert name in m.__all__
+        assert getattr(m, name) is not None
