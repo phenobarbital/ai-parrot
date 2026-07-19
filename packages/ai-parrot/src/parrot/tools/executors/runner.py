@@ -10,12 +10,73 @@ on the caller side (or will, when the result returns).
 from __future__ import annotations
 
 import importlib
+import json
 import logging
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 from .abstract import ToolExecutionEnvelope
 
+if TYPE_CHECKING:
+    from ..abstract import ToolResult
+
 logger = logging.getLogger(__name__)
+
+# Sentinel markers emitted by ``parrot.cli.tool_worker`` around the
+# ToolResult JSON so executors can extract the payload from arbitrary
+# stdout/stderr chatter. Kept in sync with the worker module.
+RESULT_BEGIN_MARKER = "__PARROT_TOOL_RESULT_BEGIN__"
+RESULT_END_MARKER = "__PARROT_TOOL_RESULT_END__"
+
+
+def parse_sentinel_output(
+    output: str, *, metadata: Dict[str, Any]
+) -> "ToolResult":
+    """Extract the worker's marker-delimited ToolResult from *output*.
+
+    The worker writes the JSON result between
+    ``__PARROT_TOOL_RESULT_BEGIN__`` and ``__PARROT_TOOL_RESULT_END__``
+    so unrelated log chatter is ignored. Shared by every executor that
+    reads worker stdout (K8s pod logs, Docker container logs / exec
+    streams).
+
+    Args:
+        output: Raw combined stdout/stderr captured from the worker.
+        metadata: Executor-identifying keys stamped onto the result's
+            metadata in every branch (success and error) so observers
+            can correlate.
+    """
+    from ..abstract import ToolResult
+
+    if RESULT_BEGIN_MARKER not in output or RESULT_END_MARKER not in output:
+        return ToolResult(
+            success=False,
+            status="error",
+            result=None,
+            error=(
+                "Worker did not emit a result block. Last 4KB of logs: "
+                + (output[-4096:] if output else "<empty>")
+            ),
+            metadata=dict(metadata),
+        )
+    payload = (
+        output.split(RESULT_BEGIN_MARKER, 1)[1]
+        .split(RESULT_END_MARKER, 1)[0]
+        .strip()
+    )
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        return ToolResult(
+            success=False,
+            status="error",
+            result=None,
+            error=f"Worker emitted invalid JSON: {exc}",
+            metadata={**metadata, "payload": payload[:512]},
+        )
+    stamped = dict(data.get("metadata") or {})
+    stamped.update(metadata)
+    data["metadata"] = stamped
+    return ToolResult(**data)
 
 
 def _import_class(import_path: str) -> type:
@@ -66,7 +127,22 @@ async def run_envelope_inprocess(envelope: ToolExecutionEnvelope) -> Any:
     # the responsibility of whoever signed/transported the envelope.
     init_kwargs: Dict[str, Any] = dict(envelope.tool_init_kwargs or {})
 
-    instance = cls(**init_kwargs)
+    # Agents-as-Tools: an ``agent_ref`` marks an AgentTool envelope. The
+    # wrapped agent is reconstructed from the agent registry (which also
+    # runs its async configure()) and handed to the tool constructor.
+    agent_ref = init_kwargs.pop("agent_ref", None)
+    if agent_ref is not None:
+        from ...registry import agent_registry
+
+        agent = await agent_registry.get_instance(agent_ref)
+        if agent is None:
+            raise ValueError(
+                f"Agent {agent_ref!r} is not registered in this worker's "
+                "agent registry; cannot reconstruct the AgentTool."
+            )
+        instance = cls(agent=agent, **init_kwargs)
+    else:
+        instance = cls(**init_kwargs)
 
     arguments = dict(envelope.arguments or {})
 

@@ -242,6 +242,7 @@ class ToolManager(MCPToolManagerMixin):
         debug: bool = False,
         include_search_tool: bool = False,
         resolver: Optional["AbstractPermissionResolver"] = None,
+        execution_policy: Optional[Any] = None,
     ):
         """
         Initialize tool manager.
@@ -254,6 +255,11 @@ class ToolManager(MCPToolManagerMixin):
                 dynamic tool discovery. Default is True.
             resolver: Optional permission resolver for Layer 2 enforcement.
                 If None, no permission enforcement is applied (backward compatible).
+            execution_policy: Optional
+                :class:`~parrot.tools.executors.ExecutionPolicy` (or a dict
+                coercible to one) that routes matching tools/toolkits to
+                remote executors at registration time. Tools constructed
+                with an explicit ``executor=`` are never overridden.
         """
         self._shared: Dict[str, Any] = {"dataframes": {}}  # name -> (df, meta)
         self._registered_agents: Dict[str, RegisteredAgent] = {}
@@ -280,6 +286,11 @@ class ToolManager(MCPToolManagerMixin):
 
         # Confirmation guard for per-call HITL review (optional — FEAT-235)
         self._confirmation_guard: Optional["ConfirmationGuard"] = None
+
+        # Execution policy: declarative tool → remote-executor routing.
+        self._execution_policy = None
+        if execution_policy is not None:
+            self.set_execution_policy(execution_policy)
 
         # Initialize MCP capabilities (from Mixin)
         self._init_mcp()
@@ -333,6 +344,62 @@ class ToolManager(MCPToolManagerMixin):
         self.logger.debug(
             "Permission resolver set: %s", resolver.__class__.__name__
         )
+
+    # ── Execution Policy Methods ───────────────────────────────────────────────
+
+    @property
+    def execution_policy(self):
+        """Return the active ExecutionPolicy, or None."""
+        return self._execution_policy
+
+    def set_execution_policy(self, policy: Any) -> None:
+        """Set the execution policy and apply it to already-registered tools.
+
+        Args:
+            policy: An :class:`~parrot.tools.executors.ExecutionPolicy`
+                instance or a dict coercible to one (e.g.
+                ``{"rules": {"python_repl": "docker"}}``).
+        """
+        from .executors.policy import ExecutionPolicy
+        if isinstance(policy, dict):
+            policy = ExecutionPolicy.model_validate(policy)
+        if not isinstance(policy, ExecutionPolicy):
+            raise TypeError(
+                f"execution_policy must be an ExecutionPolicy or dict, "
+                f"got {type(policy).__name__}"
+            )
+        self._execution_policy = policy
+        for tool in self._tools.values():
+            self._apply_execution_policy(tool)
+        self.logger.debug(
+            "Execution policy set with %d rule(s)", len(policy.rules)
+        )
+
+    def _apply_execution_policy(self, tool: Any) -> None:
+        """Route *tool* through the policy, if one is set and it matches.
+
+        Only :class:`AbstractTool` instances participate — plain
+        ``ToolDefinition`` functions have no remote-execution seam.
+        Failures are logged, never raised: a broken rule must not stop
+        tool registration.
+        """
+        if self._execution_policy is None or not isinstance(tool, AbstractTool):
+            return
+        try:
+            self._execution_policy.apply_to_tool(tool)
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(
+                "Error applying execution policy to tool %r: %s",
+                getattr(tool, 'name', tool), e,
+            )
+
+    async def close_executors(self) -> None:
+        """Close every executor the execution policy instantiated.
+
+        Called from the owning bot's shutdown path. Idempotent.
+        """
+        if self._execution_policy is not None:
+            await self._execution_policy.close()
 
     # ── Credential Broker Methods (FEAT-264) ─────────────────────────────────────
 
@@ -498,6 +565,7 @@ class ToolManager(MCPToolManagerMixin):
         tool_name = name or getattr(tool, 'name', None) or tool.__class__.__name__
         if isinstance(tool, AbstractTool) or isinstance(tool, ToolDefinition):
             self._tools[tool_name] = tool
+            self._apply_execution_policy(tool)
             self.logger.debug(
                 "Registered tool: %s", tool_name
             )
@@ -559,6 +627,7 @@ class ToolManager(MCPToolManagerMixin):
                 self._tools[tool_name] = tool
                 # Auto-wire ToolManager for ToolkitTool instances
                 self._auto_wire_toolkit(tool)
+                self._apply_execution_policy(tool)
             elif callable(tool) and getattr(tool, '_is_tool', False) and hasattr(tool, '_tool_metadata'):
                 # @tool()-decorated function — convert to ToolDefinition.
                 # Use meta['function'] (the original async fn) so that

@@ -529,6 +529,7 @@ dev = [
 # via the agents extra.
 remote-tools = [
     "kubernetes_asyncio>=29.0.0",
+    "aiodocker>=0.24.0",
 ]
 
 # Visualizations satellite — heavy chart/infographic renderers (FEAT-200)

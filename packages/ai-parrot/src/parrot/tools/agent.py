@@ -69,6 +69,7 @@ class AgentTool(AbstractTool):
         use_conversation_method: bool = True,
         context_filter: Optional[Callable[[AgentContext], AgentContext]] = None,
         execution_memory: Optional[Any] = None,
+        **kwargs,
     ):
 
         self.agent = agent
@@ -100,10 +101,14 @@ class AgentTool(AbstractTool):
         self.call_count = 0
         self.last_response = None
 
+        # Forward extra kwargs (executor=, remote_timeout_seconds=, ...)
+        # so Agents-as-Tools can be routed to a remote executor like any
+        # other tool.
         super().__init__(
             name=self.name,
             description=self.description,
-            args_schema=QuestionInput  # Uses the modified schema
+            args_schema=QuestionInput,  # Uses the modified schema
+            **kwargs,
         )
 
         # Build schema in the correct format for Google GenAI
