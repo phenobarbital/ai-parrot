@@ -22,6 +22,10 @@ via a fifth, optional attribute:
 
 Also accessed via ``getattr`` with a safe default of ``True``, so hosts
 that have not been wired for per-agent persistence keep working unchanged.
+
+Hosts may also expose an optional ``self._execution_wiki`` (an
+``ExecutionWikiRecorder``) — ``aclose()`` closes it when present, again via
+``getattr`` so unwired hosts keep working unchanged.
 """
 from __future__ import annotations
 
@@ -203,6 +207,16 @@ class PersistenceMixin:
                 logger.warning("Failed to close result storage: %s", exc)
             finally:
                 self._result_storage = None  # type: ignore[attr-defined]
+
+        # Execution wiki recorder (optional host attribute — AgentCrew).
+        wiki = getattr(self, "_execution_wiki", None)
+        if wiki is not None:
+            try:
+                await wiki.aclose()
+            except Exception as exc:
+                logger.warning("Failed to close execution wiki: %s", exc)
+            finally:
+                self._execution_wiki = None  # type: ignore[attr-defined]
 
     async def __aenter__(self) -> "PersistenceMixin":
         """Enter the async context manager — returns self."""

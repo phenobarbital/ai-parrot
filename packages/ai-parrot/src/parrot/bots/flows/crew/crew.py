@@ -22,9 +22,11 @@ from typing import (
     TYPE_CHECKING,
 )
 from datetime import datetime
+from pathlib import Path
 
 if TYPE_CHECKING:
     from ....models.crew_definition import CrewDefinition
+    from ....knowledge.wiki.execution import ExecutionWikiRecorder
 from ....models.crew_definition import ExecutionMode
 import contextlib
 import asyncio
@@ -53,6 +55,8 @@ from ..core.result import (
     FlowResult,
     NodeExecutionInfo,
     NodeResult,
+    _serialise_result_value,
+    _serialise_tool_calls,
     build_node_metadata,
     determine_run_status,
 )
@@ -156,6 +160,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         persist_results: bool = True,
         result_storage: Union[str, "ResultStorage", None] = None,
         persist_agent_results: bool = True,
+        enable_execution_wiki: bool = True,
+        execution_wiki_path: Union[str, "Path", None] = None,
         tenant: Optional[str] = None,
         generate_infographic: bool = False,
         result_agent_name: str = "result-agent",
@@ -174,6 +180,14 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             persist_agent_results: Granular opt-out for per-agent incremental
                 persistence only (FEAT-306); has no effect when
                 ``persist_results`` is already ``False``.
+            enable_execution_wiki: Granular opt-out for the execution wiki —
+                a per-crew WikiStore SQLite plane recording the run, every
+                intermediate agent result, and every tool-call result as
+                searchable pages (BM25 + optional embeddings). Active only
+                when ``persist_results`` is also ``True``.
+            execution_wiki_path: Storage directory for the execution wiki
+                (holds ``wiki.db``). Defaults to
+                ``{cwd}/.parrot/crew_wiki/<crew-slug>``.
             tenant: Tenant identifier for multi-tenant isolation (FEAT-307).
                 Persisted on every saved execution (see ``_save_result()``
                 call sites in ``run_*``). Defaults to ``"global"`` when not
@@ -220,9 +234,11 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             dimension=dimension,
             index_type=index_type
         )
-        # Register Retrieval Tool
+        # Register Retrieval Tool — wiki_provider resolves lazily because the
+        # execution wiki recorder is created on first use.
         self.retrieval_tool = ResultRetrievalTool(
-            self.execution_memory
+            self.execution_memory,
+            wiki_provider=self._ensure_execution_wiki,
         )
         if self._llm:
             try:
@@ -250,6 +266,11 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         self._persist_tasks: set[asyncio.Task] = set()
         # Granular per-agent persistence opt-out (FEAT-306)
         self._persist_agent_results: bool = persist_agent_results
+        # Execution wiki — searchable plane of runs / intermediate results /
+        # tool-call results. Recorder is created lazily on first write.
+        self._enable_execution_wiki: bool = enable_execution_wiki
+        self._execution_wiki_path: Union[str, "Path", None] = execution_wiki_path
+        self._execution_wiki: Optional["ExecutionWikiRecorder"] = None
         # Tenant identifier for multi-tenant isolation (FEAT-307)
         self._tenant: str = tenant or "global"
 
@@ -377,6 +398,107 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     "Error in crew lifecycle hook %r: %s", hook, exc
                 )
 
+    def _ensure_execution_wiki(self) -> Optional["ExecutionWikiRecorder"]:
+        """Lazily resolve the per-crew execution wiki recorder.
+
+        Mirrors ``PersistenceMixin._ensure_result_storage``: the recorder is
+        created on first use and cached. Returns ``None`` (and disables
+        further attempts on construction failure) when the execution wiki is
+        inactive — either ``persist_results`` or ``enable_execution_wiki``
+        is ``False``.
+
+        Returns:
+            The shared ``ExecutionWikiRecorder``, or ``None`` when disabled.
+        """
+        if not (self._persist_results and self._enable_execution_wiki):
+            return None
+        if self._execution_wiki is None:
+            try:
+                from ....knowledge.wiki.execution import (
+                    ExecutionWikiRecorder,
+                    default_wiki_dir,
+                )
+
+                storage_dir = (
+                    Path(self._execution_wiki_path)
+                    if self._execution_wiki_path
+                    else default_wiki_dir(self.name)
+                )
+                self._execution_wiki = ExecutionWikiRecorder(
+                    storage_dir,
+                    self.name,
+                    embedding_model=self.embedding_model,
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    "Execution wiki unavailable, disabling: %s", exc
+                )
+                self._enable_execution_wiki = False
+                return None
+        return self._execution_wiki
+
+    def _schedule_wiki_write(self, coro) -> None:
+        """Schedule a wiki write as a FIFO-chained, tracked background task.
+
+        Wiki writes must not run concurrently: SQLite allows a single
+        writer (concurrent tasks would trip "database is locked"), and the
+        run lifecycle depends on ordering (``record_run_end`` appends to
+        the page written by ``record_run_start``). Each write therefore
+        awaits the previously scheduled one — errors in the predecessor
+        are swallowed so the chain never stalls. Tasks join the standard
+        ``_persist_tasks`` set so ``aclose()`` drains them.
+        """
+        prev = getattr(self, '_wiki_write_chain', None)
+
+        async def _chained():
+            if prev is not None:
+                # wait() never propagates the predecessor's exception or
+                # cancellation, so a failed write cannot stall the chain.
+                await asyncio.wait([prev])
+            await coro
+
+        _task = asyncio.get_running_loop().create_task(_chained())
+        self._wiki_write_chain = _task
+        self._persist_tasks.add(_task)
+        _task.add_done_callback(self._persist_tasks.discard)
+
+    def _schedule_wiki_run_start(
+        self,
+        execution_id: str,
+        method: str,
+        task: Any,
+        user_id: Optional[str],
+        session_id: Optional[str],
+    ) -> None:
+        """Record the start of a run in the execution wiki (fire-and-forget)."""
+        wiki = self._ensure_execution_wiki()
+        if wiki is None:
+            return
+        self._schedule_wiki_write(
+            wiki.record_run_start(
+                execution_id,
+                method=method,
+                task=task,
+                user_id=user_id,
+                session_id=session_id,
+                tenant=getattr(self, '_tenant', 'global'),
+            )
+        )
+
+    def _schedule_wiki_run_end(
+        self,
+        execution_id: str,
+        result: Any,
+        method: str,
+    ) -> None:
+        """Record the completion of a run in the execution wiki (fire-and-forget)."""
+        wiki = self._ensure_execution_wiki()
+        if wiki is None:
+            return
+        self._schedule_wiki_write(
+            wiki.record_run_end(execution_id, result, method=method)
+        )
+
     def _schedule_agent_persist(
         self,
         agent_result: "NodeResult",
@@ -392,6 +514,12 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         used for the final crew-level persist, so ``aclose()`` drains both
         planes of writes.
 
+        Also extracts the agent's intermediate tool-call records (name,
+        arguments, result, error, timing) from ``agent_result.ai_message``
+        so they are (a) stored on the persisted ``crew_agent_results``
+        document and (b) recorded as searchable ``tool_result`` pages in
+        the execution wiki alongside the ``agent_result`` page.
+
         Args:
             agent_result: The ``NodeResult`` that was just added to
                 ``execution_memory``.
@@ -400,6 +528,13 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             user_id: User identifier propagated to the stored document.
             session_id: Session identifier propagated to the stored document.
         """
+        # AgentResponse nests the AIMessage under `.response` — check both.
+        _raw_message = agent_result.ai_message
+        _raw_tc = getattr(_raw_message, 'tool_calls', None)
+        if not _raw_tc:
+            _inner = getattr(_raw_message, 'response', None)
+            _raw_tc = getattr(_inner, 'tool_calls', None)
+        tool_calls = _serialise_result_value(_serialise_tool_calls(_raw_tc))
         _agent_task = asyncio.get_running_loop().create_task(
             self._save_agent_result(
                 agent_result,
@@ -407,10 +542,19 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 method=method,
                 user_id=user_id,
                 session_id=session_id,
+                tool_calls=tool_calls,
             )
         )
         self._persist_tasks.add(_agent_task)
         _agent_task.add_done_callback(self._persist_tasks.discard)
+
+        wiki = self._ensure_execution_wiki()
+        if wiki is not None:
+            self._schedule_wiki_write(
+                wiki.record_agent_result(
+                    execution_id, agent_result, tool_calls=tool_calls
+                )
+            )
 
     async def _finalize_infographic(self, result: FlowResult) -> None:
         """Populate ``result.infographic``; swallow+log on failure (FEAT-308).
@@ -673,6 +817,16 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             "result_agent_name",
             getattr(crew_def, "result_agent_name", "result-agent"),
         )
+        # Execution wiki wiring — read from the definition, allow call-time
+        # overrides via kwargs (mirrors the infographic wiring above).
+        enable_execution_wiki = kwargs.pop(
+            "enable_execution_wiki",
+            getattr(crew_def, "enable_execution_wiki", True),
+        )
+        execution_wiki_path = kwargs.pop(
+            "execution_wiki_path",
+            getattr(crew_def, "execution_wiki_path", None),
+        )
         crew = cls(
             name=crew_def.name,
             agents=agents,
@@ -680,6 +834,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             tenant=tenant,
             generate_infographic=generate_infographic,
             result_agent_name=result_agent_name,
+            enable_execution_wiki=enable_execution_wiki,
+            execution_wiki_path=execution_wiki_path,
             **kwargs,
         )
 
@@ -1282,6 +1438,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                         node_name=node.agent.name,
                         task=agent_input,
                         result=output,
+                        ai_message=raw_response,
                         metadata={
                             'success': True,
                             'mode': 'flow',
@@ -1693,6 +1850,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         # Crew-level execution id (FEAT-306) — links this run's per-agent
         # writes to the consolidated CrewExecutionDocument.
         execution_id = str(uuid.uuid4())
+        self._schedule_wiki_run_start(
+            execution_id, 'run_sequential', query, user_id, session_id
+        )
 
         # Initialize execution memory
         self.execution_memory = ExecutionMemory(
@@ -1823,6 +1983,7 @@ Current task: {current_input}"""
                     node_name=agent.name,
                     task=agent_input,
                     result=result,
+                    ai_message=response,
                     metadata={
                         'success': True,
                         'mode': 'sequential',
@@ -1986,6 +2147,7 @@ Current task: {current_input}"""
         )
         self._persist_tasks.add(_persist_task)
         _persist_task.add_done_callback(self._persist_tasks.discard)
+        self._schedule_wiki_run_end(execution_id, result, 'run_sequential')
 
         return result
 
@@ -2068,6 +2230,9 @@ Current task: {current_input}"""
         # to avoid shadowing the per-iteration `execution_id` local variable
         # used below (f"{agent_id}#iteration{n}", an ExecutionMemory node key).
         crew_execution_id = str(uuid.uuid4())
+        self._schedule_wiki_run_start(
+            crew_execution_id, 'run_loop', initial_task, user_id, session_id
+        )
 
         # Initialize execution memory
         self.execution_memory = ExecutionMemory(
@@ -2300,6 +2465,7 @@ Current task: {current_input}"""
                         node_name=agent.name,
                         task=agent_input,
                         result=result,
+                        ai_message=response,
                         metadata={
                             'success': True,
                             'mode': 'loop',
@@ -2498,6 +2664,7 @@ Current task: {current_input}"""
         )
         self._persist_tasks.add(_persist_task)
         _persist_task.add_done_callback(self._persist_tasks.discard)
+        self._schedule_wiki_run_end(crew_execution_id, result, 'run_loop')
 
         return result
 
@@ -2548,6 +2715,9 @@ Current task: {current_input}"""
         # Crew-level execution id (FEAT-306).
         execution_id = str(uuid.uuid4())
         original_query = tasks[0]['query'] if tasks else ""
+        self._schedule_wiki_run_start(
+            execution_id, 'run_parallel', original_query, user_id, session_id
+        )
 
         # initialize execution log
         self.execution_memory = ExecutionMemory(
@@ -2728,6 +2898,7 @@ Current task: {current_input}"""
                     node_name=agent_name,
                     task=_query,
                     result=extracted_result,
+                    ai_message=result,
                     metadata={
                         'success': True,
                         'mode': 'parallel',
@@ -2855,6 +3026,7 @@ Current task: {current_input}"""
         )
         self._persist_tasks.add(_persist_task)
         _persist_task.add_done_callback(self._persist_tasks.discard)
+        self._schedule_wiki_run_end(execution_id, result, 'run_parallel')
 
         return result
 
@@ -2927,6 +3099,9 @@ Current task: {current_input}"""
         user_id = user_id or 'crew_user'
         # Crew-level execution id (FEAT-306).
         execution_id = str(uuid.uuid4())
+        self._schedule_wiki_run_start(
+            execution_id, 'run_flow', initial_task, user_id, session_id
+        )
 
         # Initialize execution memory
         self.execution_memory = ExecutionMemory(
@@ -3120,6 +3295,7 @@ Current task: {current_input}"""
         )
         self._persist_tasks.add(_persist_task)
         _persist_task.add_done_callback(self._persist_tasks.discard)
+        self._schedule_wiki_run_end(execution_id, result, 'run_flow')
 
         return result
 
@@ -3398,21 +3574,65 @@ Create a clear, well-structured response."""
             "execution_order": self.execution_memory.execution_order
         }
 
+    @property
+    def execution_wiki(self) -> Optional["ExecutionWikiRecorder"]:
+        """The crew's execution wiki recorder (``None`` when disabled)."""
+        return self._ensure_execution_wiki()
+
+    async def search_execution(
+        self,
+        query: str,
+        top_k: int = 10,
+        category: Optional[str] = None,
+        execution_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Search the execution wiki — runs, intermediate agent results, and
+        tool-call results across ALL recorded runs of this crew.
+
+        Combines FTS5/BM25 lexical search with an embedding-cosine leg when
+        the crew was built with an ``embedding_model``.
+
+        Args:
+            query: Natural-language query.
+            top_k: Maximum merged results.
+            category: Optional filter — ``"crew_run"``, ``"agent_result"``,
+                or ``"tool_result"``.
+            execution_id: Optional filter to a single run.
+
+        Returns:
+            Result dicts (``concept_id``, ``title``, ``category``,
+            ``summary``, ``score`` in [0, 1], ...), best first. Empty list
+            when the execution wiki is disabled.
+        """
+        wiki = self._ensure_execution_wiki()
+        if wiki is None:
+            return []
+        return await wiki.search(
+            query,
+            top_k=top_k,
+            category=category,
+            execution_id=execution_id,
+        )
+
     def _build_ask_context(
         self,
         semantic_results: List[Tuple[str, NodeResult, float]],
         textual_context: Dict[str, Any],
-        question: str
+        question: str,
+        research_matches: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Construye el contexto combinado para el LLM principal.
 
         Integra resultados de búsqueda semántica (FAISS), contexto textual
-        del CrewResult, información de agentes disponibles, y metadata de ejecución.
+        del CrewResult, matches del execution wiki (BM25 sobre resultados
+        intermedios y tool calls), información de agentes disponibles, y
+        metadata de ejecución.
         """
         context = {
             'question': question,
             'semantic_matches': [],
+            'research_matches': research_matches or [],
             'crew_summary': {},
             'agents_available': [],
             'execution_metadata': {}
@@ -3489,7 +3709,9 @@ You have access to:
 
 1. **Execution History**: Detailed results from each agent's previous execution
 2. **Semantic Search**: Relevant content chunks from agent outputs based on similarity
-3. **Crew Metadata**: Execution times, status, and workflow information
+3. **Research Wiki**: Matches from the execution wiki — intermediate agent
+   results and raw tool-call results recorded across runs
+4. **Crew Metadata**: Execution times, status, and workflow information
 
 **IMPORTANT GUIDELINES:**
 
@@ -3598,6 +3820,36 @@ analyze, and present information in the most helpful way for the user.
                 "*No semantically similar content found. Answering based on crew summary.*",
                 ""
             ])
+
+        # 1b. Matches del execution wiki (BM25 sobre resultados intermedios
+        # y tool calls de todas las ejecuciones registradas)
+        if research_matches := context.get('research_matches'):
+            prompt_parts.extend([
+                "---",
+                "",
+                "# Research Wiki Matches (intermediate results & tool calls)",
+                ""
+            ])
+            for i, match in enumerate(research_matches, 1):
+                prompt_parts.extend([
+                    f"## Research Match {i}: {match.get('title', '')} "
+                    f"[{match.get('category', '')}] "
+                    f"(Score: {match.get('score', 0)})",
+                    f"**Page**: {match.get('concept_id', '')}",
+                ])
+                if match.get('summary'):
+                    prompt_parts.append(
+                        f"**Summary**: {self._coerce_prompt_text(match['summary'])}"
+                    )
+                if match.get('content'):
+                    prompt_parts.extend([
+                        "",
+                        "**Content**:",
+                        "```",
+                        self._coerce_prompt_text(match['content']),
+                        "```",
+                    ])
+                prompt_parts.append("")
 
         # 2. Resumen del crew (si existe)
         crew_summary = context.get('crew_summary', {})
@@ -3818,11 +4070,27 @@ analyze, and present information in the most helpful way for the user.
             crew_result=self.last_crew_result
         )
 
+        # 3b. Búsqueda en el execution wiki (BM25 sobre resultados
+        # intermedios y tool-call results de todas las ejecuciones).
+        research_matches = await self.search_execution(question, top_k=top_k)
+        # Hydrate the top matches' bodies so tool outputs are answerable.
+        wiki = self._ensure_execution_wiki()
+        if wiki is not None:
+            for match in research_matches[:3]:
+                page = await wiki.get_page(match.get('concept_id', ''))
+                if page and page.get('body'):
+                    body = str(page['body'])
+                    match['content'] = (
+                        body[:2000] + "\n... [truncated]"
+                        if len(body) > 2000 else body
+                    )
+
         # 4. Construir contexto combinado
         context = self._build_ask_context(
             semantic_results=semantic_results,
             textual_context=textual_context,
-            question=question
+            question=question,
+            research_matches=research_matches,
         )
 
         # 5. Construir prompts
@@ -3878,6 +4146,15 @@ analyze, and present information in the most helpful way for the user.
                     {result.agent_id for _, result, _ in semantic_results}
                 ),
                 'textual_context_used': bool(textual_context.get('relevant_logs')),
+                'research_matches_count': len(research_matches),
+                'research_matches': [
+                    {
+                        'concept_id': m.get('concept_id'),
+                        'category': m.get('category'),
+                        'score': m.get('score'),
+                    }
+                    for m in research_matches
+                ],
                 'reexecution_enabled': enable_agent_reexecution,
                 'crew_name': self.name,
             }
