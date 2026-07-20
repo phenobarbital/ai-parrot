@@ -6,7 +6,7 @@
 		generate-registry check-registry \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
 		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor \
-		install-supertonic
+		install-supertonic docker-tool-worker
 
 # Python version to use
 PYTHON_VERSION := 3.11
@@ -637,6 +637,15 @@ run-whatsapp-bridge: build-whatsapp-bridge
 	@echo "Starting WhatsApp Bridge..."
 	@mkdir -p data/whatsapp
 	@./bin/whatsapp-bridge
+
+# Build the parrot-tools worker image used by the remote tool executors
+# (DockerToolExecutor / K8sToolExecutor — see docs/executors/docker-executor.md).
+# Customize with e.g.:
+#   make docker-tool-worker TOOL_WORKER_BUILD_ARGS='--build-arg PARROT_EXTRAS=llms --build-arg TOOLS_EXTRAS=pdf,jira'
+docker-tool-worker:
+	@echo "Building parrot-tools tool-worker image..."
+	@docker build -f docker/tool-worker/Dockerfile $(TOOL_WORKER_BUILD_ARGS) -t parrot-tools:latest .
+	@echo "✅ parrot-tools:latest built (worker for DockerToolExecutor / K8sToolExecutor)"
 
 # Docker targets for WhatsApp Bridge
 docker-whatsapp-bridge:

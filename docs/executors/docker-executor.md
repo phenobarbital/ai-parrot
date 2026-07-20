@@ -124,6 +124,37 @@ Requirements:
 
 Unregistered agents fail fast with a `ValueError` at envelope-build time.
 
+## Building the worker image
+
+`docker/tool-worker/Dockerfile` builds the `parrot-tools:latest` image the
+executors reference (shared by `DockerToolExecutor` and `K8sToolExecutor`):
+
+```bash
+# from the repository root
+make docker-tool-worker
+# or directly:
+docker build -f docker/tool-worker/Dockerfile -t parrot-tools:latest .
+```
+
+The image ships `ai-parrot` + `ai-parrot-tools` and runs
+`python -m parrot.cli.tool_worker` as an unprivileged user under tini.
+Build args:
+
+| Arg | Default | Purpose |
+|---|---|---|
+| `PARROT_EXTRAS` | `llms` | ai-parrot extras — the default bakes in the OpenAI/Google/Groq/Anthropic SDKs so Agents-as-Tools work; pass `""` for a lean tools-only image. |
+| `TOOLS_EXTRAS` | *(empty)* | ai-parrot-tools per-tool extras, e.g. `pdf,jira,aws,analysis`. |
+| `EXTRA_PIP_PACKAGES` | `qworker` | Extra PyPI packages baked in (the default lets the same image serve as a Qworker runtime). |
+| `PYTHON_VERSION` | `3.11` | Base image Python. |
+
+Private wheels (e.g. a proprietary `qclient` build) dropped into
+`docker/tool-worker/wheels/` before building are installed automatically.
+
+The image bakes **no secrets**: navconfig is scaffolded with an empty env
+file so every setting (LLM API keys, `QWORKER_*`, DSNs) is read from
+environment variables — supply them per-executor via the `env` option, or
+at the k8s Job / compose level.
+
 ## Notes
 
 - [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`

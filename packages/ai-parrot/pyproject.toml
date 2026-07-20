@@ -43,6 +43,10 @@ dependencies = [
     "nh3>=0.2.14",
     "python-datamodel>=0.10.17",
     "backoff==2.2.1",
+    # parrot.clients.base → clients/gpt.py imports tenacity unconditionally,
+    # so it must be a core dependency (a bare install could not import
+    # parrot.clients without it).
+    "tenacity>=8.2",
     "typing-extensions>=4.14.1,<5",
     "pydantic==2.12.5",
     "PyYAML>=6.0.2",
