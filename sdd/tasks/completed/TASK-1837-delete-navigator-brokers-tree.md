@@ -152,10 +152,37 @@ be done). Code commit (the `git rm`) lands in navigator; SDD state commit
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: Claude (Opus 4.8) via `/sdd-start`
+**Date**: 2026-07-20
 **Notes**:
+- Deleted the entire `navigator/brokers/` tree via `git rm -r` in the navigator
+  worktree `.claude/worktrees/feat-318-navigator-brokers-removal` (commit
+  `e56762e`). **19 files** removed (18 `.py` + `py.typed`) — the spec's "18"
+  count omitted `py.typed`.
+- **Import-neutrality verified via `git grep`** (tracked-file exact search):
+  zero `navigator.brokers` importers remain; `navigator/__init__.py` has no
+  broker re-export.
+- `import navigator` from the worktree loads the top-level package; the
+  `navigator.Application unavailable: No module named 'navigator.types'` warning
+  is a **pre-existing unbuilt-worktree artifact** (`navigator.types` is a Cython
+  module — `types.pyx`, no compiled `.so` in a fresh checkout), unrelated to the
+  brokers deletion. The built site-packages navigator (ai-parrot venv) imports
+  `navigator.types` + `Application` cleanly, confirming the package is healthy.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec** (all corrected in spec v0.3):
+- **Inventory was wrong — 5 importers, not 3.** The pre-flight neutrality guard
+  exposed two importers the 2026-07-18 inventory missed (it scanned only
+  `examples/brokers/`): `examples/test_sqs_consumer.py` and
+  `examples/test_sqs_producer.py`, both `from navigator.brokers.sqs import
+  SQSConnection`. Per the task's STOP condition, I stopped, surfaced the finding,
+  and — on the user's decision ("migrate now under 1837") — migrated both with
+  the same 1:1 `navigator_eventbus.brokers.sqs` swap in the same commit. The
+  spec §1/§5/§6 and this feature's records were corrected to reflect 5 importers.
+- **File count 18 → 19** (`py.typed`).
+- **Full `pytest` suite NOT run here.** The worktree is an unbuilt Cython tree
+  (`navigator.types` `.so` absent), so a suite run there fails for reasons
+  unrelated to this change, and running against built site-packages would not
+  reflect the worktree deletion. Import-neutrality is proven statically
+  (`git grep` zero + clean `__init__`). **Recommend running the full navigator
+  suite once in navigator's own built venv/CI as the final gate** (also covers
+  TASK-1836's `uv pip install -e .[brokers]`).

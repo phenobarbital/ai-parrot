@@ -74,10 +74,11 @@ The migration is intentionally *hard*: consumers must move to
 
 ### Goals
 
-- Delete the complete `navigator/brokers/` package (18 files, ~2,197 LOC) from
-  the `navigator` framework repo.
-- Migrate the three in-repo consumers
-  (`examples/brokers/nav_{redis,rabbitmq,sqs}_consumer.py`) to import from
+- Delete the complete `navigator/brokers/` package (19 files: 18 `.py` +
+  `py.typed`, ~2,197 LOC) from the `navigator` framework repo.
+- Migrate the **five** in-repo consumers (corrected 2026-07-20 from "three")
+  — `examples/brokers/nav_{redis,rabbitmq,sqs}_consumer.py` plus
+  `examples/test_sqs_{consumer,producer}.py` — to import from
   `navigator_eventbus.brokers.*` and keep them runnable.
 - Add `navigator-eventbus` (extra `[brokers]`) as an **optional extra** in
   navigator's `pyproject.toml` so example/consumer usage opts in explicitly.
@@ -183,7 +184,7 @@ None. The public broker interface now lives in `navigator_eventbus.brokers`
 - **Depends on**: Module 1 (examples now consume the extra).
 
 ### Module 3: Delete the origin brokers tree
-- **Path**: `navigator/brokers/` (whole directory — 18 `.py` files)
+- **Path**: `navigator/brokers/` (whole directory — 19 files: 18 `.py` + `py.typed`)
 - **Responsibility**: `git rm -r navigator/brokers/`. Verify no remaining import
   of `navigator.brokers` anywhere in the repo after deletion.
 - **Depends on**: Modules 1 & 2 (nothing in-repo imports it anymore).
@@ -228,10 +229,13 @@ when no broker is available, matching the navigator repo's existing convention).
 
 > This feature is complete when ALL of the following are true:
 
-- [ ] `navigator/brokers/` is deleted from the navigator repo (all 18 files gone).
+- [ ] `navigator/brokers/` is deleted from the navigator repo (all 19 files gone:
+      18 `.py` + `py.typed`).
 - [ ] No file under `navigator/` or `examples/` imports `navigator.brokers.*`
-      (verified by grep guard returning zero matches).
-- [ ] The three `examples/brokers/nav_*_consumer.py` import from
+      (verified by `git grep` guard returning zero matches — use `git grep`, not a
+      loose `grep -r`, which proved unreliable here).
+- [ ] All **five** in-repo importers — `examples/brokers/nav_*_consumer.py` and
+      `examples/test_sqs_{consumer,producer}.py` — import from
       `navigator_eventbus.brokers.*` and run/import cleanly.
 - [ ] `navigator`'s `pyproject.toml` no longer lists `aiormq` as a direct
       dependency; the `aiormq.*` tooling override (if any) is removed.
@@ -289,15 +293,23 @@ navigator/brokers/sqs/__init__.py
 navigator/brokers/sqs/connection.py
 navigator/brokers/sqs/consumer.py
 navigator/brokers/sqs/producer.py
-# total: 18 files, ~2,197 LOC (verified via wc -l on 2026-07-18)
+# total: 19 files (18 .py + py.typed), ~2,197 LOC. NOTE: the 2026-07-18 count
+# of "18" omitted navigator/brokers/py.typed; the deletion (TASK-1837) removed
+# all 19. Corrected 2026-07-20.
 ```
 
-### In-repo Consumers to Migrate (verified — the ONLY in-repo importers)
+### In-repo Consumers to Migrate (CORRECTED 2026-07-20 — there are FIVE, not three)
 ```
-examples/brokers/nav_redis_consumer.py
-examples/brokers/nav_rabbitmq_consumer.py
-examples/brokers/nav_sqs_consumer.py
+examples/brokers/nav_redis_consumer.py       # migrated in TASK-1835
+examples/brokers/nav_rabbitmq_consumer.py    # migrated in TASK-1835
+examples/brokers/nav_sqs_consumer.py         # migrated in TASK-1835
+examples/test_sqs_consumer.py                # MISSED by 2026-07-18 inventory; migrated in TASK-1837
+examples/test_sqs_producer.py                # MISSED by 2026-07-18 inventory; migrated in TASK-1837
 ```
+> The original "verified — the ONLY in-repo importers" claim scanned only
+> `examples/brokers/`, missing two `navigator.brokers.sqs` importers directly
+> under `examples/`. The deletion in TASK-1837 exposed them via the neutrality
+> guard; both were migrated (same 1:1 `SQSConnection` swap) in the same commit.
 
 ### Integration Points
 | New Component | Connects To | Via | Verified At |
@@ -311,7 +323,10 @@ examples/brokers/nav_sqs_consumer.py
   `broker` mention in `navigator/__init__.py`); deletion does not break the
   package's public `__init__`.
 - ~~production internal consumers of `navigator.brokers.*` inside navigator~~ —
-  do not exist; only `examples/brokers/*` import it.
+  do not exist. **CORRECTION (2026-07-20)**: in-repo importers are all under
+  `examples/` — FIVE of them (`examples/brokers/nav_{redis,rabbitmq,sqs}_consumer.py`
+  plus `examples/test_sqs_{consumer,producer}.py`), not the three originally
+  inventoried. No *production* consumer exists; all five are example scripts.
 - ~~a `navigator-eventbus` dependency already in navigator `pyproject.toml`~~ —
   does not exist yet; this phase adds it as the `[brokers]` extra.
 - ~~`aiormq` usage outside `navigator/brokers/`~~ — none (safe to drop).
@@ -432,3 +447,4 @@ examples/brokers/nav_sqs_consumer.py
 |---|---|---|---|
 | 0.1 | 2026-07-18 | Jesus + Claude | Initial draft — phase 5 of eventbus extraction; scope resolved via brainstorm carry-forward + navigator-repo research + clarifying round |
 | 0.2 | 2026-07-20 | Jesus + Claude | Scope refinement: `navigator-eventbus 0.1.0rc1` published to PyPI (verified live). Pinned `[brokers]` extra to `>=0.1.0rc1`, dropped editable-install caveat, resolved the §8 version-pin open question. RC intentional — awaiting end-to-end testing; stable `0.1.0` bump tracked as follow-up |
+| 0.3 | 2026-07-20 | Jesus + Claude | Inventory correction during TASK-1837: the "only 3 in-repo importers" / "18 files" claims were wrong. Reality: **5 importers** (added `examples/test_sqs_{consumer,producer}.py`, missed because the 2026-07-18 scan only covered `examples/brokers/`) and **19 deleted files** (`py.typed` was uncounted). The two stragglers were migrated in the TASK-1837 commit. Full navigator `pytest` gate deferred to navigator's built venv/CI (worktree is unbuilt — Cython `navigator.types` absent) |
