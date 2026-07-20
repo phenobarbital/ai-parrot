@@ -15,7 +15,7 @@ node) so flow spans stitch with the client/tool spans emitted inside nodes.
 """
 from dataclasses import dataclass
 
-from parrot.core.events.lifecycle.base import LifecycleEvent
+from navigator_eventbus.lifecycle.base import LifecycleEvent
 
 
 @dataclass(frozen=True)
