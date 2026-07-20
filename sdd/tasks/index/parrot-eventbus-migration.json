@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-18T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-20T13:06:23+00:00",
   "tasks": [
     {
       "id": "TASK-1826",
@@ -180,7 +180,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -190,8 +190,8 @@
       "parallelism_notes": "Final gate — full suite + grep guards + clean-venv install + emit-overhead benchmark.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1834-regression-benchmark.md"
+      "completed_at": "2026-07-20T13:06:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1834-regression-benchmark.md"
     }
   ]
 }

@@ -157,9 +157,71 @@ grep -rn "from parrot.core.hooks.base\|from parrot.core.hooks.models\|from parro
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-20
 **Notes**:
-**Deviations from spec**: none | describe if any
+- All 3 neutrality/lingering-reference grep guards (bus, evb, hooks
+  base/models/manager) return empty across `packages/*/src`.
+- All 17 deleted source paths (evb.py, bus/, 7 lifecycle machinery files,
+  2 lifecycle subscriber files, 6 generic hook files, brokers/) confirmed
+  absent.
+- Clean-venv install proof succeeded (`uv venv` + editable installs +
+  smoke import of `EventBus`/`BeforeInvokeEvent`/`BaseHook`). Hit and
+  resolved a `navconfig` environment-scaffold requirement (needs an
+  `env/<ENV>/.env` file relative to its resolved site root) — pre-existing
+  operational characteristic of the whole navconfig/navigator stack,
+  unrelated to this migration; satisfied with a minimal throwaway scaffold.
+- FEAT-177 benchmark: found the script at the exact path the spec cited
+  (`scripts/bench/feat310_emit_overhead.py`). It needed one mechanical
+  fix — `from parrot.core.events import EventBus` (deleted, hard
+  migration) → `from navigator_eventbus import EventBus` — not covered by
+  any prior task's census since it's neither a test nor production/example
+  file. Compared against the stored FEAT-310 baseline
+  (`feat-310-bench-20260716.txt`, same machine): p99 45.05µs vs baseline
+  50.03µs — ~10% faster, well within noise, both budget lines (2ms FEAT-177
+  budget, 200µs otel line) PASS. New run saved to
+  `feat-317-bench-20260720.txt`.
+- Full test suite: sequential runs hit 3 separate pre-existing hangs in
+  unrelated network/OAuth-dependent tests (Telegram OAuth2 callback,
+  Telegram voice transcription, AWS Nova client false-alarm) — each
+  independently reproduced on unmodified `dev` before routing around them
+  with `pytest-xdist -n 8 --dist=worksteal` (ai-parrot) or targeted
+  `--ignore`s (ai-parrot-integrations) to get complete results:
+  - ai-parrot: 213 failed / 213 failed — **identical failure count** vs.
+    unmodified `dev`; small passed/error deltas (3651 vs 3654, 149 vs 146)
+    traced to xdist output-capture artifacts under 8-way parallelism (one
+    diffed "test" path doesn't exist in either checkout — a worker
+    interleaving artifact, not a real test). Grepped all FAILED/ERROR
+    lines for event/hook/bus/lifecycle keywords — zero genuine hits (only
+    unrelated AgentCrew/storage and scraping-plan "lifecycle" naming
+    collisions).
+  - ai-parrot-server: 513 passed, 4 failed, 1 skipped, 2 collection
+    errors — all 4 failures + both errors reproduced identically on `dev`
+    (auth `CredentialBroker` tuple-vs-instance bug, unrelated handler
+    namespace hygiene check, missing `fakeredis` dependency).
+  - ai-parrot-integrations: 1034 passed, 17 failed, 1 skipped (telegram
+    dir + 1 crash-inducing file excluded, each individually verified
+    pre-existing) — 6 are the TASK-1833-flagged `test_matrix_hook.py`
+    shim bug; the remaining 11 (jira-oauth, telegram-photo, telegram-
+    wrapper-send, slack, telegram-integration) individually re-verified
+    against unmodified `dev` — all 11 reproduce identically.
+  - Excluded-and-verified: 2 indefinite hangs (Telegram OAuth2 web-app
+    data route, Telegram voice download/transcribe — both reproduce on
+    `dev`) and 1 xdist-worker-crashing collection error
+    (`test_matrix_collaborative_config.py` — traced to the third-party
+    `notify` package's Jinja2 template loader hitting a non-UTF8 template
+    file in this venv's site-packages; a machine-local dependency-data
+    encoding quirk, unrelated to this migration).
+- `ruff check`: diffed all 153 `.py` files touched across the entire
+  feature (TASK-1826-1834) against their pre-feature version — zero new
+  findings anywhere; two files strictly improved (`bots/abstract.py`
+  13→12; `core/hooks/__init__.py` 18→0, resolving a pre-existing `F822`
+  false-positive by switching relative→absolute dotted lazy-import paths).
+  No `mypy` gate exists in this project's CI, so it was not run.
+- Evidence written to `artifacts/logs/feat317-regression.md` (force-added
+  past the global `artifacts/` gitignore rule, following the existing
+  precedent set by `feat-310-bench-20260716.txt` from FEAT-310/TASK-1793).
+**Deviations from spec**: none of substance — one mechanical import fix in
+`scripts/bench/feat310_emit_overhead.py` (a benchmark script, outside any
+prior task's file census) was required to even run the FEAT-177 benchmark;
+documented above and in the evidence file.
