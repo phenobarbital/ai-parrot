@@ -100,6 +100,8 @@ dependencies = [
     # Episodic memory default backend (FAISS) — required whenever an agent
     # enables episodic memory without an explicit pgvector DSN.
     "faiss-cpu>=1.9.0",
+    # TODO: switch to navigator-eventbus>=0.1.0 after PyPI publish (FEAT-317 close)
+    "navigator-eventbus @ file:///home/jesuslara/proyectos/navigator-eventbus",
 ]
 
 [project.scripts]
@@ -409,13 +411,12 @@ integrations = [
     # azure-teambots moved to ai-parrot-integrations[msteams]
 ]
 
-# FEAT-310: gRPC ingress adapter (parrot.events.v1 — GrpcIngress).
-# grpcio-tools included for regenerating the committed pb2 modules
-# (see parrot/core/events/bus/ingress/proto/README.md). Keep versions
-# compatible with the protobuf 6.x runtime used by the committed gencode.
+# FEAT-310/FEAT-317: gRPC ingress adapter now lives in navigator-eventbus
+# (parrot.core.events.bus.ingress moved there in phase 1). Pull the
+# package's own grpc extra so grpcio/grpcio-tools versions stay in lockstep
+# with the committed pb2 gencode it ships.
 grpc = [
-    "grpcio>=1.74.0",
-    "grpcio-tools>=1.74.0",
+    "navigator-eventbus[grpc]",
 ]
 
 # milvus extra MOVED to ai-parrot-embeddings[milvus] in FEAT-201.
