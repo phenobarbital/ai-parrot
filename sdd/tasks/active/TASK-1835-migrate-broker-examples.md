@@ -14,8 +14,10 @@
 > This task file and the SDD index live in ai-parrot.
 >
 > **HARD BLOCKER**: do not start until FEAT-316 (`eventbus-brokers-port`) is
-> complete and `navigator-eventbus[brokers]` is installable (editable `0.1.0rc`
-> is sufficient). Verify: `python -c "import navigator_eventbus.brokers"`.
+> complete and `navigator-eventbus[brokers]` is installable. SATISFIED —
+> `navigator-eventbus 0.1.0rc1` is published on PyPI (2026-07-20), so
+> `pip install "navigator-eventbus[brokers]>=0.1.0rc1"` resolves from the index.
+> Verify: `python -c "import navigator_eventbus.brokers"`.
 
 ---
 
@@ -90,7 +92,8 @@ from navigator_eventbus.brokers.sqs import SQSConnection
 - ~~a production internal consumer of `navigator.brokers.*` besides the 3 examples~~
 - ~~a `navigator.brokers` re-export in `navigator/__init__.py`~~ — absent
 - ~~a `navigator-eventbus` dependency already declared in navigator~~ — added in
-  TASK-1836; for THIS task install it editable to test the examples
+  TASK-1836; for THIS task install `navigator-eventbus[brokers]>=0.1.0rc1` from
+  PyPI to test the examples
 
 ---
 

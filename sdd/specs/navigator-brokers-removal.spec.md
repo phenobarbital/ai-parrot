@@ -26,9 +26,14 @@ base_branch: dev
 >
 > **Blocking dependency**: this phase deletes the *origin* copy of the brokers
 > and therefore MUST NOT start until **FEAT-316 is complete and
-> `navigator-eventbus[brokers]` is installable** (editable `0.1.0rc` is
-> sufficient). FEAT-317 does not block this phase technically (different repo),
-> but the coordinated release ordering below assumes it is done or in flight.
+> `navigator-eventbus[brokers]` is installable**. This condition is now
+> **satisfied**: `navigator-eventbus 0.1.0rc1` was published to PyPI on
+> 2026-07-20 (wheel + sdist), so the `[brokers]` extra resolves from the index
+> — the editable local install is no longer required. The release stays a
+> **release candidate** pending end-to-end testing after the migration; a bump
+> to a stable `0.1.0` is expected once that testing passes. FEAT-317 does not
+> block this phase technically (different repo), but the coordinated release
+> ordering below assumes it is done or in flight.
 >
 > **Cross-repo note**: this spec artifact lives in ai-parrot's SDD tree for
 > continuity with phases 1–4, but **all code changes land in the sibling
@@ -173,7 +178,8 @@ None. The public broker interface now lives in `navigator_eventbus.brokers`
 - **Path**: `pyproject.toml`
 - **Responsibility**: Remove the `aiormq>=6.8.1` direct dependency (used only by
   the deleted brokers); remove/clean the `aiormq.*` mypy override if present; add
-  an optional extra `[brokers]` pinning `navigator-eventbus[brokers]`.
+  an optional extra `[brokers]` pinning `navigator-eventbus[brokers]>=0.1.0rc1`
+  (published on PyPI — see §6/§7).
 - **Depends on**: Module 1 (examples now consume the extra).
 
 ### Module 3: Delete the origin brokers tree
@@ -230,8 +236,8 @@ when no broker is available, matching the navigator repo's existing convention).
 - [ ] `navigator`'s `pyproject.toml` no longer lists `aiormq` as a direct
       dependency; the `aiormq.*` tooling override (if any) is removed.
 - [ ] `navigator`'s `pyproject.toml` exposes an optional extra `[brokers]`
-      resolving to `navigator-eventbus[brokers]`; `uv pip install -e .[brokers]`
-      succeeds.
+      resolving to `navigator-eventbus[brokers]>=0.1.0rc1` (from PyPI);
+      `uv pip install -e .[brokers]` succeeds and pulls the published RC.
 - [ ] `aioboto3` and `redis` remain present and functional (still used by
       `navigator/utils/file/s3.py`, `navigator/ext/redis/`,
       `navigator/background/tracker/redis.py`).
@@ -255,8 +261,9 @@ when no broker is available, matching the navigator repo's existing convention).
 
 ### Verified Imports (post-migration target — from `navigator-eventbus`, FEAT-316)
 ```python
-# Destination package (delivered by FEAT-316). Exact symbol names to be
-# confirmed against the installed navigator-eventbus 0.1.0rc before rewiring:
+# Destination package (delivered by FEAT-316; published to PyPI as
+# navigator-eventbus 0.1.0rc1 on 2026-07-20). Exact symbol names to be
+# confirmed against the published 0.1.0rc1 wheel before rewiring:
 from navigator_eventbus.brokers.redis import RedisConnection      # port of navigator.brokers.redis
 from navigator_eventbus.brokers.rabbitmq import RabbitMQConnection
 from navigator_eventbus.brokers.sqs import SQSConnection
@@ -338,9 +345,13 @@ examples/brokers/nav_sqs_consumer.py
 - **`aiormq` mypy/tooling override**: navigator's `pyproject.toml` has an
   `aiormq.*` entry (line ~293) likely in a mypy overrides block — remove it
   alongside the dependency to avoid a dead override.
-- **navigator-eventbus availability**: the `[brokers]` extra must resolve. During
-  development this is the editable `0.1.0rc`; ensure the version pin in
-  navigator's pyproject matches what FEAT-316 publishes (editable or PyPI).
+- **navigator-eventbus availability**: RESOLVED — `navigator-eventbus 0.1.0rc1`
+  is published on PyPI (2026-07-20), so the `[brokers]` extra resolves from the
+  index with no editable install needed. Pin `navigator-eventbus[brokers]>=0.1.0rc1`
+  (PEP 440 permits the RC because the specifier itself names a pre-release). The
+  pin intentionally tracks the **release candidate** — it is awaiting end-to-end
+  testing after migration; bump the pin to the stable `0.1.0` once that testing
+  passes (a small follow-up edit, not a blocker for this phase).
 - **Symbol-name drift**: confirm the exact exported class names in
   `navigator_eventbus.brokers.*` against the installed package before rewriting
   example imports — the port may have renamed on the way in.
@@ -348,7 +359,7 @@ examples/brokers/nav_sqs_consumer.py
 ### External Dependencies
 | Package | Version | Reason |
 |---|---|---|
-| `navigator-eventbus[brokers]` | `>=0.1.0rc` (match FEAT-316) | new optional extra `[brokers]`; provides the ported brokers |
+| `navigator-eventbus[brokers]` | `>=0.1.0rc1` (published on PyPI 2026-07-20) | new optional extra `[brokers]`; provides the ported brokers. RC pending end-to-end testing — bump to stable `0.1.0` when it passes |
 | `aiormq` | — | **removed** from navigator (only brokers used it) |
 | `aioboto3`, `redis` | unchanged | retained — used outside `brokers/` |
 
@@ -374,9 +385,11 @@ examples/brokers/nav_sqs_consumer.py
   `navigator-eventbus` dependency? — *Resolved 2026-07-18*: **migrate** the three
   examples to `navigator_eventbus.brokers.*` and add `navigator-eventbus[brokers]`
   as an optional extra in navigator's `pyproject.toml`; drop `aiormq`.
-- [ ] Exact version pin for the `[brokers]` extra — depends on whether FEAT-316
-  publishes to PyPI before this phase runs (editable `0.1.0rc` vs released
-  version). — *Owner: Jesus* (decide at implementation time).
+- [x] Exact version pin for the `[brokers]` extra — *Resolved 2026-07-20*:
+  FEAT-316 published `navigator-eventbus 0.1.0rc1` to PyPI, so pin
+  `navigator-eventbus[brokers]>=0.1.0rc1`. It is deliberately a **release
+  candidate** pending end-to-end testing after migration; bump to stable `0.1.0`
+  once that testing passes (tracked as a follow-up, not blocking this phase).
 - [ ] Release-coordination window with Flowtask/FieldSync — who cuts the
   navigator release and confirms both consumers have migrated. — *Owner: Jesus*.
 
@@ -418,3 +431,4 @@ examples/brokers/nav_sqs_consumer.py
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-18 | Jesus + Claude | Initial draft — phase 5 of eventbus extraction; scope resolved via brainstorm carry-forward + navigator-repo research + clarifying round |
+| 0.2 | 2026-07-20 | Jesus + Claude | Scope refinement: `navigator-eventbus 0.1.0rc1` published to PyPI (verified live). Pinned `[brokers]` extra to `>=0.1.0rc1`, dropped editable-install caveat, resolved the §8 version-pin open question. RC intentional — awaiting end-to-end testing; stable `0.1.0` bump tracked as follow-up |
