@@ -32,7 +32,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Deletes shared bus core that lifecycle (1828) and hooks (1829) depend on being gone; must land before them.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1827-delete-rewire-events-bus-core.md"
+      "completed_at": "2026-07-20T11:57:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1827-delete-rewire-events-bus-core.md"
     },
     {
       "id": "TASK-1828",

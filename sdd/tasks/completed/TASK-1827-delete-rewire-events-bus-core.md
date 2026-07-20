@@ -149,9 +149,21 @@ test ! -d packages/ai-parrot/src/parrot/core/events/bus && echo "bus/ deleted"
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-20
 **Notes**:
-**Deviations from spec**: none | describe if any
+- Deleted `evb.py` and the entire `bus/` directory (23 files, ~4066 LOC)
+  via `git rm`, matching the Codebase Contract's file list exactly
+  (core, envelope, converters, dlq, ingress_models, backends/*,
+  subscribers/*, ingress/{websocket,grpc,proto/*}).
+- Rewrote `events/__init__.py` to a minimal docstring-only stub (no
+  `EventBus`/`Event`/`EventPriority`/`EventSubscription` re-exports, no
+  `__all__`) pointing consumers at `navigator_eventbus` — hard migration,
+  no compat shim, per spec §2 decision #2.
+- Verified: `evb.py` and `bus/` gone; `__init__.py` has zero references to
+  `.evb`/`.bus`; `ruff check` clean; `import parrot.core.events` succeeds
+  cleanly (the stub does not eagerly import `lifecycle`, so it does not
+  hard-fail even though lifecycle/hooks rewiring — TASK-1828/1829 — hasn't
+  happened yet).
+- Left `parrot/core/events/lifecycle/` completely untouched, as scoped.
+**Deviations from spec**: none.
