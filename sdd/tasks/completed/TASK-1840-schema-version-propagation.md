@@ -201,10 +201,17 @@ def test_converters_emit_schema_version():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-21
+**Notes**: Implemented in the same `navigator-eventbus` worktree/branch as
+TASK-1839 (`feat-FEAT-319-eventbus-consolidation`). Applied legacy→1 rule
+in `dlq.py:_row_to_envelope` (explicit `schema_version=row.get("schema_version", 1)`);
+added `schema_version: int = 1` field + pass-through to `IngressEnvelope`/
+`to_envelope()`; verified all three converters already emit `schema_version=1`
+via the dataclass default (no code change needed — none bypass it). Added
+`tests/test_schema_version_propagation.py` (5 tests) plus mixed
+legacy+v1 roundtrip tests to `tests/test_backends_streams.py` and
+`tests/test_backends.py`. Full suite green: 317 passed, 1 skipped.
+Ruff clean on touched files. Commit: `07a02f9`.
 
 **Deviations from spec**: none
