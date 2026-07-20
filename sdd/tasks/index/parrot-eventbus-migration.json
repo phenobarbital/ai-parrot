@@ -113,7 +113,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Consumer rewiring; disjoint file set from 1830/1832 (theoretically parallel) but sequential per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1831-rewire-observability-eval-registry-auth.md"
+      "completed_at": "2026-07-20T12:12:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1831-rewire-observability-eval-registry-auth.md"
     },
     {
       "id": "TASK-1832",

@@ -166,9 +166,38 @@ PY
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-20
 **Notes**:
-**Deviations from spec**: none | describe if any
+- All import sites matched the Codebase Contract's verified current-state
+  table exactly (line numbers included). Rewired all machinery imports to
+  the `parrot.core.events.lifecycle` facade (preferred per Implementation
+  Notes) rather than direct `navigator_eventbus.lifecycle.*` paths.
+- `eval/runner.py` also needed its TYPE_CHECKING `EventBus` import fixed
+  (`from parrot.core.events.evb import EventBus` → `from navigator_eventbus
+  import EventBus`), consistent with the Contract's "eval/runner.py:32
+  (TYPE_CHECKING) ...events.evb import EventBus → navigator_eventbus" line.
+- `bootstrap.py`/`setup.py`/`traceloop_integration.py`'s multi-line
+  `global_registry` import blocks (2 sites each, `# noqa: PLC0415` lazy
+  imports) rewired via a scripted regex substitution to guarantee
+  byte-identical formatting/indentation across all 6 occurrences.
+- `registry/registry.py` verified unchanged, as specified — its
+  `wire_events` import path (`parrot.core.events.lifecycle.yaml_loader`)
+  was untouched by TASK-1828 (yaml_loader stayed in parrot).
+- `observability/README.md:171` doc snippet updated (optional item) for
+  accuracy.
+- Typed-event imports (attributes.py, recorders/subscriber.py,
+  subscribers/{metrics,trace}.py) verified unchanged/local, as required.
+- Verified: this task's own Test Specification passes end-to-end
+  (`observability/eval/registry/auth import OK`). Additionally re-ran
+  TASK-1830's previously-deferred acceptance check (`import
+  parrot.bots.abstract, parrot.clients.base` etc.) — now succeeds, since
+  this task unblocked the eager `clients/base.py` →
+  `observability/context` → `observability/subscribers/trace.py` import
+  chain, confirming the strict-sequential Worktree Strategy assumption was
+  correct.
+- `ruff check` clean on every file this task modified; `registry/registry.py`
+  has 2 pre-existing, unrelated lint findings (`F841`, `F811`) — confirmed
+  via `git diff --stat` that the file was not touched by this task (0
+  insertions/deletions), so these are out of scope.
+**Deviations from spec**: none.
