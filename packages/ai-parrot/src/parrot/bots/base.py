@@ -255,6 +255,10 @@ class BaseBot(AbstractBot):
                 output_mode = _resolved_mode
                 if ctx is not None:
                     ctx.output_mode = _resolved_mode
+            else:
+                # Agent-level default (constructor output_mode=...) applies when
+                # neither the caller nor the router picked a mode.
+                output_mode = self._apply_default_output_mode(output_mode)
         warnings.warn(
             "BaseBot.conversation() is deprecated and will be removed in a "
             "future release. Use BaseBot.ask() instead.",
@@ -976,6 +980,10 @@ class BaseBot(AbstractBot):
                     output_mode = _resolved_mode
                     if ctx is not None:
                         ctx.output_mode = _resolved_mode
+                else:
+                    # Agent-level default (constructor output_mode=...) applies
+                    # when neither the caller nor the router picked a mode.
+                    output_mode = self._apply_default_output_mode(output_mode)
             # Generate session ID if not provided
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
@@ -1602,6 +1610,10 @@ class BaseBot(AbstractBot):
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
+            # Agent-level default output mode (constructor output_mode=...)
+            # applies when the caller did not specify one. ask_stream has no
+            # router pass, so the agent default is the only fallback here.
+            output_mode = self._apply_default_output_mode(output_mode)
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
             # Maintain turn identifier generation for parity with ask()

@@ -53,6 +53,40 @@ class TestRenderCard:
         assert card["type"] == "AdaptiveCard"
         assert card["version"] == "1.4"
 
+    def test_table_columns_align_across_rows(self, table_result):
+        # Header and every row must use the same column count and equal
+        # "stretch" widths — "auto" would let each ColumnSet size its
+        # columns independently, misaligning the grid.
+        card = render_card(table_result)
+        column_sets = [b for b in card["body"] if b["type"] == "ColumnSet"]
+        assert column_sets
+        for column_set in column_sets:
+            assert len(column_set["columns"]) == 2
+            assert all(c["width"] == "stretch" for c in column_set["columns"])
+
+    def test_table_ragged_rows_normalized(self):
+        result = SemanticUIResult(
+            title="Ragged",
+            payload=TablePayload(
+                result_type="table",
+                columns=["a", "b", "c"],
+                rows=[["1"], ["1", "2", "3", "4"]],
+            ),
+        )
+        card = render_card(result)
+        column_sets = [b for b in card["body"] if b["type"] == "ColumnSet"]
+        # Header + 2 rows, all normalized to exactly 3 columns.
+        assert len(column_sets) == 3
+        assert all(len(cs["columns"]) == 3 for cs in column_sets)
+        short_row_cells = [
+            c["items"][0]["text"] for c in column_sets[1]["columns"]
+        ]
+        assert short_row_cells == ["1", "", ""]
+        long_row_cells = [
+            c["items"][0]["text"] for c in column_sets[2]["columns"]
+        ]
+        assert long_row_cells == ["1", "2", "3"]
+
     def test_render_metrics_card(self):
         result = SemanticUIResult(
             title="KPIs",
@@ -119,6 +153,27 @@ class TestRenderCard:
             if b.get("type") == "TextBlock" and "Showing" in b.get("text", "")
         ]
         assert not note_blocks
+
+    def test_truncation_note_when_upstream_capped(self):
+        # The producer already capped the rows (10 of 1000): the card must
+        # still carry the "Showing N of M" note, matching render_text().
+        result = SemanticUIResult(
+            title="Capped",
+            payload=TablePayload(
+                result_type="table",
+                columns=["id"],
+                rows=[[str(i)] for i in range(10)],
+                total_rows=1000,
+            ),
+        )
+        card = render_card(result, max_table_rows=15)
+        note_blocks = [
+            b
+            for b in card["body"]
+            if b.get("type") == "TextBlock" and "Showing" in b.get("text", "")
+        ]
+        assert note_blocks
+        assert "Showing 10 of 1000" in note_blocks[0]["text"]
 
     def test_card_size_guard(self, table_result):
         with pytest.raises(CardRenderError):

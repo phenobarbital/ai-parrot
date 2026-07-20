@@ -88,12 +88,16 @@ def _render_table(result: SemanticUIResult, *, max_table_rows: int) -> dict:
         return {"type": "AdaptiveCard", "version": "1.4", "body": body, "actions": []}
 
     rows = payload.rows[:max_table_rows]
-    truncated = len(payload.rows) > max_table_rows
 
+    # Every column uses width "stretch": separate ColumnSets lay out
+    # independently, and "auto" would size each set's columns to their own
+    # content — misaligning header and rows. Equal-stretch columns split the
+    # card width identically in every ColumnSet, so the grid stays aligned.
+    n_cols = len(payload.columns)
     header_columns = [
         {
             "type": "Column",
-            "width": "auto",
+            "width": "stretch",
             "items": [
                 {"type": "TextBlock", "text": col, "wrap": True, "weight": "Bolder"}
             ],
@@ -103,20 +107,24 @@ def _render_table(result: SemanticUIResult, *, max_table_rows: int) -> dict:
     body.append({"type": "ColumnSet", "columns": header_columns})
 
     for row in rows:
+        # Ragged rows would change the column count and break alignment —
+        # normalize each row to exactly n_cols cells.
+        cells = [str(cell) for cell in row[:n_cols]]
+        cells += [""] * (n_cols - len(cells))
         row_columns = [
             {
                 "type": "Column",
-                "width": "auto",
+                "width": "stretch",
                 "items": [{"type": "TextBlock", "text": cell, "wrap": True}],
             }
-            for cell in row
+            for cell in cells
         ]
         body.append({"type": "ColumnSet", "columns": row_columns})
 
-    if truncated:
-        total = payload.total_rows if payload.total_rows is not None else len(
-            payload.rows
-        )
+    total = payload.total_rows if payload.total_rows is not None else len(
+        payload.rows
+    )
+    if total > len(rows):
         body.append(
             {
                 "type": "TextBlock",
