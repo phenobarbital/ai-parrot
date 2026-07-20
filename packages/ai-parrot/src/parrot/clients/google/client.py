@@ -1663,9 +1663,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         active_tool_names: Optional[set] = None,
         session_id: Optional[str] = None,
         messages: Optional[List[Dict[str, Any]]] = None,
+        stop_tools: Optional[set] = None,
     ) -> Any:
         """
         Simple multi-turn function calling - just keep going until no more function calls.
+
+        Args:
+            stop_tools: Tool names that signal the loop should end. When a
+                stop tool executes successfully its result is still sent back
+                to the model, but further tool-calling is disabled so the
+                model must produce a final text answer on the next turn.
         """
         current_response = initial_response
         current_config = config
@@ -1840,6 +1847,30 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             fcc = getattr(getattr(current_config, "tool_config", None), "function_calling_config", None)
             if fcc is not None and getattr(fcc, "mode", None) == types.FunctionCallingConfigMode.ANY:
                 fcc.mode = types.FunctionCallingConfigMode.AUTO
+
+            # Stop-tool check: if a stop tool executed successfully, disable
+            # further tool-calling so the model produces a final text answer
+            # on the next turn (its result is still sent back for synthesis).
+            stop_tool_fired = False
+            if stop_tools:
+                for tc in tool_call_objects:
+                    if tc.name in stop_tools and tc.error is None:
+                        stop_tool_fired = True
+                        self.logger.info(
+                            "Stop tool '%s' fired — disabling further tool calls.",
+                            tc.name,
+                        )
+                        break
+                if stop_tool_fired:
+                    fcc = getattr(
+                        getattr(current_config, "tool_config", None),
+                        "function_calling_config",
+                        None,
+                    )
+                    if fcc is not None:
+                        fcc.mode = types.FunctionCallingConfigMode.NONE
+                    else:
+                        current_config.tools = None
 
             is_computer_use = self._is_computer_use_model(model)
             function_response_parts = []
@@ -2657,6 +2688,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         file_search_store_names: Optional[List[str]] = None,
         lazy_loading: bool = False,
         max_iterations: int = 15,
+        stop_tools: Optional[set] = None,
         **kwargs,
     ) -> AIMessage:
         """
@@ -2679,6 +2711,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             deep_research (bool): If True, use Google's deep research agent.
             file_search_store_names (Optional[List[str]]): Names of file search stores for deep research.
             max_iterations (int): Maximum number of tool-calling rounds (default 15).
+            stop_tools: Tool names that signal the loop should end. When a
+                stop tool executes successfully, further tool-calling is
+                disabled and the model must produce a final text answer.
         """
         max_retries = kwargs.pop("max_retries", 2)
         retry_on_fail = kwargs.pop("retry_on_fail", True)
@@ -3157,6 +3192,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             active_tool_names=active_tool_names,
             session_id=session_id,
             messages=messages,
+            stop_tools=stop_tools,
         )
         self.logger.debug(
             "Google ask timing: function_loop_ms=%.1f tool_calls=%d",

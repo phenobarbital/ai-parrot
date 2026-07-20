@@ -80,18 +80,6 @@ DEFAULT_RETRY_PROMPTS = {
 
 **Task:** Return ONLY the corrected, valid JSON inside a ```json code block. No explanations.""",
 
-    OutputMode.PLOTLY: """You are a Python code repair assistant. The previous response attempted to generate Plotly visualization code but it failed.
-
-**Original Code:**
-```python
-{original_output}
-```
-
-**Error:**
-{error_message}
-
-**Task:** Fix the Python code to create a valid Plotly figure. Return ONLY the corrected code inside a ```python code block.""",
-
     OutputMode.YAML: """You are a YAML repair assistant. The previous response contained malformed YAML.
 
 **Original Output:**
@@ -316,7 +304,7 @@ class OutputFormatter:
                 logger.warning(f"Failed to save debug HTML output: {e}")
         
         # Debug: Save complete HTML to file for inspection in Table, Chart, and Plot modes
-        if mode in (OutputMode.TABLE, OutputMode.ECHARTS, OutputMode.PLOTLY, OutputMode.MATPLOTLIB, OutputMode.SEABORN, OutputMode.ALTAIR) and kwargs.get("output_format") == "html" and kwargs.get("html_mode") == "complete":
+        if mode in (OutputMode.TABLE, OutputMode.ECHARTS) and kwargs.get("output_format") == "html" and kwargs.get("html_mode") == "complete":
              try:
                  # Create debug directory if it doesn't exist
                  debug_dir = "static/html/tests"

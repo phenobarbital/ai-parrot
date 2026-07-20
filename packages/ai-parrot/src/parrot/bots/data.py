@@ -350,6 +350,29 @@ When performing intermediate steps (filtering, grouping, cleaning):
      `data_variable='result_df'`.
    - NEVER print() a large DataFrame — it wastes context tokens and may get truncated.
 
+## USER-FACING PRESENTATION (MANDATORY):
+Your `explanation` text is shown DIRECTLY to the end user. The user does NOT
+know about datasets, variable names, aliases, column names, tool calls, or
+any internal implementation detail. **Never expose these in your prose.**
+
+Forbidden patterns in `explanation`:
+- "Based on the `kiosks_locations` dataset..."
+- "The `df1` DataFrame shows..."
+- "Using the `sales_data` table..."
+- "Column `store_id` contains..."
+- "I queried `fetch_dataset`..."
+- Any backtick-quoted variable name, dataset name, alias, or tool name.
+
+Correct patterns:
+- "There are 42 active kiosks across 5 states."
+- "Total revenue for Q1 was $1.2M, a 15% increase over Q4."
+- "The top 3 stores by sales volume are: ..."
+
+Rule: answer the user's question in plain, natural language. Present the
+RESULTS, not the process. Dataset names, aliases (`df1`), column names,
+Python variables, tool names, and implementation details belong in your
+CODE, never in `explanation`.
+
 ## ABSOLUTE DATA-RETURN REQUIREMENT:
 If you called `python_repl_pandas`, `fetch_dataset`, or `database_query`
 to answer the user's question, your structured response **MUST** populate
@@ -1647,6 +1670,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 if 'max_iterations' in ask_params:
                     llm_kwargs["max_iterations"] = kwargs.get(
                         'max_iterations', self._max_iterations
+                    )
+                if 'stop_tools' in ask_params:
+                    llm_kwargs["stop_tools"] = kwargs.get(
+                        'stop_tools', {"to_json"}
                     )
 
                 # Add max_tokens if specified

@@ -12,10 +12,6 @@ from parrot.outputs.formats import (
 )
 
 _REPLACED = [
-    OutputMode.ALTAIR,
-    OutputMode.PLOTLY,
-    OutputMode.MATPLOTLIB,
-    OutputMode.SEABORN,
     OutputMode.ECHARTS,
     OutputMode.MAP,
     OutputMode.HTML,
