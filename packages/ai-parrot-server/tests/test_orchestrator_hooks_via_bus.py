@@ -10,7 +10,7 @@ import time
 import pytest
 
 from parrot.autonomous.orchestrator import AutonomousOrchestrator
-from parrot.core.hooks.models import HookEvent, HookType
+from navigator_eventbus.hooks.models import HookEvent, HookType
 
 
 async def wait_until(condition, timeout: float = 2.0) -> None:

@@ -16,8 +16,8 @@ from parrot.core.events.lifecycle.events import (
     AfterToolCallEvent,
     ToolCallFailedEvent,
 )
-from parrot.core.events.lifecycle.registry import EventRegistry
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.trace import TraceContext
 from parrot.auth.permission import PermissionContext, UserSession
 from parrot.tools.abstract import AbstractTool, ToolResult
 

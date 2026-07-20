@@ -17,9 +17,9 @@ from parrot.eval.evaluators.base import AbstractEvaluator
 from parrot.eval.models import EvalResult, MetricScore, Trajectory
 from parrot.eval.rollout import RolloutStrategy
 from parrot.eval.sandbox.base import NoopSandboxProvider
-from parrot.core.events.lifecycle.base import LifecycleEvent
-from parrot.core.events.lifecycle.registry import EventRegistry
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.base import LifecycleEvent
+from navigator_eventbus.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.trace import TraceContext
 
 
 # ---------------------------------------------------------------------------

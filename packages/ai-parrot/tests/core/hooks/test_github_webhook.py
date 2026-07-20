@@ -6,7 +6,7 @@ import hmac
 from unittest.mock import MagicMock
 
 from parrot.core.hooks.github_webhook import GitHubWebhookHook
-from parrot.core.hooks.models import GitHubWebhookConfig
+from navigator_eventbus.hooks.models import GitHubWebhookConfig
 
 
 def _build_hook(secret: str | None = None) -> GitHubWebhookHook:
