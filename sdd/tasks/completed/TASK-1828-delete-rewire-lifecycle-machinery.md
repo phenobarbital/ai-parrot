@@ -217,9 +217,52 @@ PY
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-20
 **Notes**:
-**Deviations from spec**: none | describe if any
+- Preflight: all 9 projected `navigator_eventbus.lifecycle.*` import paths
+  verified to resolve exactly as specified in the Contract; also confirmed
+  `navigator_eventbus.lifecycle.yaml_loader` exposes the generic engine
+  (`wire_events`, `register_event_names`, injectable `EVENT_CLASSES`) —
+  FEAT-313 did move the wiring engine, so `yaml_loader.py` delegates fully
+  rather than keeping a local engine.
+- Deleted the 9 machinery files (`base`, `trace`, `meta`, `registry`,
+  `global_registry`, `provider`, `mixin`, `subscribers/{logging,webhook}.py`)
+  via `git rm`.
+- Rewired the 6 typed-event files (`events/{agent,client,flow,invoke,
+  message,tool}.py`) — single-line `LifecycleEvent` import change each,
+  nothing else touched. `events/__init__.py` needed no change (no direct
+  `LifecycleEvent`/machinery import there — it only re-exports from its
+  own local submodules).
+- Rewired `legacy_bridge.py` (TYPE_CHECKING `EventRegistry` import) and
+  `subscribers/opentelemetry.py` (`LifecycleEvent` + TYPE_CHECKING
+  `EventRegistry` imports) — typed-event imports stayed local in both, as
+  specified.
+- Rewrote `yaml_loader.py`: kept the parrot event-name table (`EVENT_CLASSES`,
+  same 15 classes as before) but now registers it via the package's
+  `register_event_names()` and re-exports the package's `wire_events`
+  directly — dropped the local `_resolve`/`_wire_handler`/`_wire_provider`/
+  `_make_where` implementations entirely (now live only in the package).
+  `registry/registry.py`'s `from parrot.core.events.lifecycle.yaml_loader
+  import wire_events` call site needed no change, per spec.
+- Rebuilt `lifecycle/__init__.py` as a re-export facade: machinery from
+  `navigator_eventbus.lifecycle`, typed events + `OpenTelemetrySubscriber`
+  local, `LoggingSubscriber`/`WebhookSubscriber` from the package. New
+  `__all__` is identical to the previous one (same 30 names) — no dropped
+  symbols.
+- Rebuilt `subscribers/__init__.py` analogously (OTel local; logging/webhook
+  from package).
+- Verified: all Test Specification assertions pass (`lifecycle facade OK`,
+  `issubclass(BeforeInvokeEvent, PkgLE)` True, `LifecycleEvent is PkgLE`
+  True); `ruff check` clean on every modified file (one pre-existing,
+  out-of-scope `F401 Optional unused` in `events/agent.py` predates this
+  migration — left untouched per "mechanical rewiring only, no unrelated
+  fixes").
+- Heads-up for TASK-1833 (test migration): `tests/unit/registry/
+  test_events_yaml.py` imports `_resolve`/`_make_where` directly from
+  `parrot.core.events.lifecycle.yaml_loader` — those private helpers no
+  longer exist there (moved to the package); that test file will need to
+  import them from `navigator_eventbus.lifecycle.yaml_loader` instead.
+**Deviations from spec**: none — the yaml_loader wiring-engine delegation
+happened via full re-export (not a hybrid local/package split) because
+FEAT-313 did deliver the engine as specified.

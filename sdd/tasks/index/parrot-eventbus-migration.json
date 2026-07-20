@@ -52,7 +52,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Theoretically parallelizable with TASK-1829 (disjoint dirs: events/lifecycle vs core/hooks), but spec Worktree Strategy mandates a single sequential worktree. Kept sequential.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1828-delete-rewire-lifecycle-machinery.md"
+      "completed_at": "2026-07-20T12:01:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1828-delete-rewire-lifecycle-machinery.md"
     },
     {
       "id": "TASK-1829",
