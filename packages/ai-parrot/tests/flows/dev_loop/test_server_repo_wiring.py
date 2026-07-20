@@ -280,6 +280,73 @@ async def test_server_zai_agent_startup(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_server_moonshot_agent_startup(monkeypatch) -> None:
+    """With DEV_LOOP_DEVELOPMENT_AGENT=moonshot, _on_startup builds MoonshotCodeDispatcher."""
+    captured: dict[str, Any] = {}
+
+    def fake_build_flow(**kwargs: Any) -> MagicMock:
+        captured.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(conf, "DEV_LOOP_REPOS", [])
+
+    class _MockConfig:
+        def get(self, name: str, fallback: Any = None) -> Any:
+            if name == "DEV_LOOP_DEVELOPMENT_AGENT":
+                return "moonshot"
+            if name == "DEV_LOOP_MOONSHOT_MODEL":
+                return "kimi-k3"
+            if name == "DEV_LOOP_MOONSHOT_REASONING_EFFORT":
+                return "max"
+            return fallback
+
+        def getint(self, name: str, fallback: Any = None) -> Any:
+            return fallback
+
+        def getboolean(self, name: str, fallback: Any = None) -> Any:
+            return fallback
+
+    monkeypatch.setattr(conf, "config", _MockConfig())
+
+    server_mod = _load_server_module()
+
+    monkeypatch.setattr(server_mod, "build_dev_loop_flow", fake_build_flow)
+    monkeypatch.setattr(server_mod, "_build_log_toolkits", lambda: {})
+    monkeypatch.setattr(server_mod, "_build_jira_toolkit", lambda: MagicMock())
+    monkeypatch.setattr(
+        server_mod.aioredis,
+        "from_url",
+        lambda url, **kw: _make_fake_redis(),
+    )
+    monkeypatch.setattr(
+        server_mod,
+        "ClaudeCodeDispatcher",
+        MagicMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(
+        server_mod,
+        "DevLoopRunner",
+        MagicMock(return_value=MagicMock(max_concurrent_runs=1)),
+    )
+
+    app = _FakeApp()
+    app["redis_url"] = "redis://localhost:6379/0"
+    await server_mod._on_startup(app)
+
+    assert "development_dispatcher" in captured
+    assert "development_profile" in captured
+    assert isinstance(
+        captured["development_dispatcher"], server_mod.MoonshotCodeDispatcher
+    )
+    assert isinstance(
+        captured["development_profile"], server_mod.MoonshotCodeDispatchProfile
+    )
+    assert captured["development_profile"].model == "kimi-k3"
+    assert captured["development_profile"].llm == "moonshot:kimi-k3"
+    assert captured["development_profile"].reasoning_effort == "max"
+
+
+@pytest.mark.asyncio
 async def test_server_invalid_agent_lists_zai(monkeypatch) -> None:
     """An unknown DEV_LOOP_DEVELOPMENT_AGENT raises RuntimeError mentioning 'zai'."""
     monkeypatch.setattr(conf, "DEV_LOOP_REPOS", [])
