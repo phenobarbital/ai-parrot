@@ -14,14 +14,14 @@
       "feature_id": "FEAT-318",
       "feature": "navigator-brokers-removal",
       "spec": "sdd/specs/navigator-brokers-removal.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Sequential: all FEAT-318 tasks operate on the same navigator repo in a strict order (examples -> deps -> delete -> coordinate). Hard-blocked externally on FEAT-316 (navigator-eventbus[brokers] must be installable). Executes in ../navigator, not ai-parrot.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-20T14:36:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1835-migrate-broker-examples.md"
     },
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1835"],
+      "depends_on": [
+        "TASK-1835"
+      ],
       "parallel": false,
       "parallelism_notes": "Must follow TASK-1835 so no live importer of navigator.brokers remains when aiormq is dropped. Keep aioboto3/redis (used outside brokers/). Executes in ../navigator.",
       "assigned_to": null,
@@ -53,7 +55,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1835", "TASK-1836"],
+      "depends_on": [
+        "TASK-1835",
+        "TASK-1836"
+      ],
       "parallel": false,
       "parallelism_notes": "Destructive step; runs only after examples migrated and deps pruned so the neutrality guard passes. Single clean git rm for bisectability. No shim. Executes in ../navigator.",
       "assigned_to": null,
@@ -71,7 +76,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1837"],
+      "depends_on": [
+        "TASK-1837"
+      ],
       "parallel": false,
       "parallelism_notes": "Closing task: changelog note + PR #393 closure + external-consumer (Flowtask/FieldSync) release coordination. Depends on the deletion being done. Executes in ../navigator + GitHub.",
       "assigned_to": null,
