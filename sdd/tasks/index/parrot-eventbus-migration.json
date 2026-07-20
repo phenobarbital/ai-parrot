@@ -155,7 +155,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -170,8 +170,8 @@
       "parallelism_notes": "Needs all production rewiring done so tests exercise the final import graph.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1833-migrate-test-suite.md"
+      "completed_at": "2026-07-20T12:33:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1833-migrate-test-suite.md"
     },
     {
       "id": "TASK-1834",
