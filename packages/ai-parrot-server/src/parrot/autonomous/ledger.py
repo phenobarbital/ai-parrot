@@ -37,8 +37,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from parrot.core.events.lifecycle.base import LifecycleEvent
-from parrot.core.events.lifecycle.global_registry import get_global_registry
+from parrot.core.events.lifecycle import LifecycleEvent, get_global_registry
 
 # ---------------------------------------------------------------------------
 # DDL — idempotent Postgres schema for the ledger
