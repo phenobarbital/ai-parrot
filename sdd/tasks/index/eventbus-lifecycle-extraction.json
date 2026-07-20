@@ -1,0 +1,132 @@
+{
+  "feature": "eventbus-lifecycle-extraction",
+  "feature_id": "FEAT-313",
+  "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-18T10:00:00+02:00",
+  "completed_at": "2026-07-18T00:47:31+00:00",
+  "notes": "Phase 2 of navigator-eventbus extraction. Code implemented in /home/jesuslara/proyectos/navigator-eventbus (branch from its main); ai-parrot only holds SDD artifacts. Blocking dep FEAT-312 completed 2026-07-17.",
+  "tasks": [
+    {
+      "id": "TASK-1820",
+      "slug": "lifecycle-core-move",
+      "title": "Move core lifecycle machinery (base, trace, meta)",
+      "feature_id": "FEAT-313",
+      "feature": "eventbus-lifecycle-extraction",
+      "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Root of the dependency graph — creates the base classes everything else imports.",
+      "assigned_to": null,
+      "started_at": "2026-07-17T23:51:20+00:00",
+      "completed_at": "2026-07-18T00:01:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1820-lifecycle-core-move.md"
+    },
+    {
+      "id": "TASK-1821",
+      "slug": "registry-global-provider",
+      "title": "Move registry, global_registry, and provider",
+      "feature_id": "FEAT-313",
+      "feature": "eventbus-lifecycle-extraction",
+      "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1820"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Core dispatch engine — mixin/yaml_loader/subscribers all depend on EventRegistry. Must land before the fan-out.",
+      "assigned_to": null,
+      "started_at": "2026-07-17T23:51:20+00:00",
+      "completed_at": "2026-07-18T00:08:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1821-registry-global-provider.md"
+    },
+    {
+      "id": "TASK-1822",
+      "slug": "mixin-bootstrap-hook",
+      "title": "Move EventEmitterMixin with injectable bootstrap hook",
+      "feature_id": "FEAT-313",
+      "feature": "eventbus-lifecycle-extraction",
+      "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1821"
+      ],
+      "parallel": true,
+      "parallelism_notes": "After TASK-1821, independent of TASK-1823/1824 — touches only mixin.py. Parallelizable with yaml_loader and subscribers.",
+      "assigned_to": null,
+      "started_at": "2026-07-17T23:51:20+00:00",
+      "completed_at": "2026-07-18T00:13:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1822-mixin-bootstrap-hook.md"
+    },
+    {
+      "id": "TASK-1823",
+      "slug": "yaml-loader-injectable-table",
+      "title": "Move yaml_loader engine with injectable event-name table",
+      "feature_id": "FEAT-313",
+      "feature": "eventbus-lifecycle-extraction",
+      "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1821"
+      ],
+      "parallel": true,
+      "parallelism_notes": "After TASK-1821, independent of TASK-1822/1824 — touches only yaml_loader.py. Parallelizable with mixin and subscribers.",
+      "assigned_to": null,
+      "started_at": "2026-07-17T23:51:20+00:00",
+      "completed_at": "2026-07-18T00:16:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1823-yaml-loader-injectable-table.md"
+    },
+    {
+      "id": "TASK-1824",
+      "slug": "generic-subscribers",
+      "title": "Move generic subscribers (LoggingSubscriber, WebhookSubscriber)",
+      "feature_id": "FEAT-313",
+      "feature": "eventbus-lifecycle-extraction",
+      "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1820"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only depends on TASK-1820 (base classes). Independent of registry consumers (mixin/yaml_loader). Parallelizable after TASK-1820, but sequential execution recommended (single implementor).",
+      "assigned_to": null,
+      "started_at": "2026-07-17T23:51:20+00:00",
+      "completed_at": "2026-07-18T00:18:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1824-generic-subscribers.md"
+    },
+    {
+      "id": "TASK-1825",
+      "slug": "public-api-and-tests",
+      "title": "Curate public API and complete test suite migration",
+      "feature_id": "FEAT-313",
+      "feature": "eventbus-lifecycle-extraction",
+      "spec": "sdd/specs/eventbus-lifecycle-extraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1822",
+        "TASK-1823",
+        "TASK-1824"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Closure task — requires all modules complete. Curates __init__.py, runs full suite, integration tests with phase-1 EventBus.",
+      "assigned_to": null,
+      "started_at": "2026-07-17T23:51:20+00:00",
+      "completed_at": "2026-07-18T00:47:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1825-public-api-and-tests.md"
+    }
+  ]
+}
