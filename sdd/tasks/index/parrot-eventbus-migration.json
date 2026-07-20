@@ -134,7 +134,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -145,8 +145,8 @@
       "parallelism_notes": "Consumer rewiring across the server/integrations packages; includes the sole EventBus() prefix config. Disjoint from 1830/1831 (theoretically parallel) but sequential per spec.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1832-rewire-server-integrations.md"
+      "completed_at": "2026-07-20T12:16:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1832-rewire-server-integrations.md"
     },
     {
       "id": "TASK-1833",

@@ -151,9 +151,51 @@ python -c "import parrot.integrations.matrix.hook; print('matrix hook import OK'
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-20
 **Notes**:
-**Deviations from spec**: none | describe if any
+- `autonomous/evb.py`: checked for consumers of `autonomous.evb import` /
+  `autonomous\.evb` across `packages/` — none found — but per the task's
+  default ("default to keeping it repointed"), kept the shim and repointed
+  its source to `navigator_eventbus.evb`.
+- `autonomous/ledger.py`: `LifecycleEvent` + `get_global_registry` now
+  imported from the `parrot.core.events.lifecycle` facade (single
+  combined import line, matching the Implementation Notes' facade
+  preference).
+- `autonomous/orchestrator.py`: `EventBus`/`Event`/`EventPriority` now
+  from `navigator_eventbus` directly (hard migration — `parrot.core.events`
+  has no bus re-export per TASK-1827); `BaseHook`/`HookManager`/`HookEvent`
+  left importing via the existing `parrot.core.hooks` facade (unchanged
+  line — it already re-exports from the package since TASK-1829). Added
+  `channel_prefix="parrot:events:"` to the sole production `EventBus()`
+  call. Verified orchestrator.py builds only a `RedisPubSubBackend`
+  (`use_redis=True` path) — no `RedisStreamsBackend`/consumer-group usage
+  anywhere in the file — so `stream_prefix`/`dedup_prefix`/`group` legacy
+  kwargs do not apply at this call site (the task's own wording was
+  conditional: "if it builds a RedisStreamsBackend"). Coordinated with
+  TASK-1826, which deferred this exact edit here.
+- `autonomous/webhooks.py`: TYPE_CHECKING `EventBus` → `navigator_eventbus`.
+- `autonomous/transport/filesystem/hook.py`: `BaseHook`/`FilesystemHookConfig`/
+  `HookType` → `navigator_eventbus.hooks.{base,models}` (absolute, package
+  no longer routes through parrot).
+- `integrations/matrix/hook.py`: `BaseHook`/`HookRegistry`/`HookType`/
+  `MatrixHookConfig` → `navigator_eventbus.hooks.{base,models}`. Also
+  updated the two docstring cross-references (`:class:` roles) that named
+  the now-deleted `parrot.core.hooks.base` path, per spec §7 "update any
+  string referencing a removed module path."
+- **Test-environment fix (not a code change)**: `ai-parrot-server` and
+  `ai-parrot-integrations` were still editable-installed from the *main
+  repo* path in the shared venv (only `ai-parrot` core had been
+  reinstalled from the worktree, in TASK-1826). Ran `uv pip install -e
+  packages/ai-parrot-server -e packages/ai-parrot-integrations` from
+  inside the worktree so the Test Specification actually exercises this
+  task's changes rather than stale main-repo files.
+- Verified: full Test Specification passes (`evb shim OK`, `orchestrator
+  import OK`, `matrix hook import OK`) plus the two extra files
+  (`ledger`, `webhooks`, `filesystem hook` import OK); legacy
+  `channel_prefix` construction verified programmatically
+  (`EventBus(channel_prefix="parrot:events:").channel_prefix ==
+  "parrot:events:"`). `ruff check` clean on all 6 modified files.
+**Deviations from spec**: none — all decisions (shim repointed not
+deleted; no stream/dedup/group kwargs since orchestrator doesn't use
+Streams) were explicitly permitted by the task's own conditional wording.
