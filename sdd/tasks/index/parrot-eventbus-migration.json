@@ -14,7 +14,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Entry point. Externally blocked on FEAT-313 (lifecycle) + FEAT-316 (brokers) being delivered in navigator-eventbus; Preflight verifies. Must precede all deletions.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1826-add-navigator-eventbus-dependency.md"
+      "completed_at": "2026-07-20T11:55:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1826-add-navigator-eventbus-dependency.md"
     },
     {
       "id": "TASK-1827",
