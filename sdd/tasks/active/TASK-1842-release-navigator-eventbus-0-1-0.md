@@ -131,10 +131,38 @@ print('0.1.0 OK')"
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+*(Agent fills this in when done — NOT YET, see Progress Note below)*
 
 **Completed by**:
 **Date**:
 **Notes**:
 
 **Deviations from spec**: none
+
+---
+
+## Progress Note (2026-07-21, sdd-worker — task still in-progress, human gate pending)
+
+Prep work done in the `navigator-eventbus` worktree/branch
+`feat-FEAT-319-eventbus-consolidation` (same branch as TASK-1839/1840/1841,
+pushed to `origin/feat-FEAT-319-eventbus-consolidation`):
+
+- `src/navigator_eventbus/version.py` verified: `__version__ = "0.1.0"`
+  (already edited locally before this session per the task's heads-up;
+  not duplicated).
+- Created `CHANGELOG.md` (repo had none) with a `[0.1.0] — Unreleased`
+  entry covering M1 (envelope `schema_version`) and M2 (`HookManager`
+  tri-state `route_to_bus`), including the required latent-behavior-change
+  note for consumers that call `set_event_bus`. Commit `866e6ea`.
+- Full test suite green at this commit: 324 passed, 1 skipped.
+- `.github/workflows/release.yml` (locally modified before this session,
+  now on `main` @ `8ef73b3`) triggers on `release: types: [created]` — i.e.
+  publishing requires creating a **GitHub Release** (not just pushing a
+  git tag) for the build+deploy (PyPI, OIDC trusted publishing) job to run.
+
+**NOT done (human action required, per this task's explicit gate)**:
+tag `0.1.0`, creating the GitHub Release to trigger the publish workflow,
+and the post-publish PyPI verification. The branch above is ready for
+Jesus to review/merge to `main` and then cut the release. TASK-1843 in
+ai-parrot is hard-blocked until `navigator-eventbus==0.1.0` is confirmed
+live on PyPI.
