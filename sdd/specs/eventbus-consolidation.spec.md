@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-319
 **Date**: 2026-07-20
 **Author**: Jesus (phenobarbital) + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: navigator-eventbus 0.1.0 (final) / ai-parrot next minor
 
 > **Cross-repo spec**: Modules 1–2 land in `navigator-eventbus`; Module 3 is the
@@ -240,6 +240,9 @@ UnsupportedSchemaVersion
     `"navigator-eventbus>=0.1.0,<0.2"`; delete the FEAT-317 TODO comment.
   - Verify the `grpc` extra (`navigator-eventbus[grpc]`, line ~419) still
     resolves against the PyPI release.
+  - Add an ai-parrot changelog entry noting the `route_to_bus` auto-routing
+    behavior change inherited from navigator-eventbus 0.1.0 (latent today —
+    zero call sites — but relevant for any future `set_event_bus` consumer).
   - Add `test_no_internal_bus_copy` to the existing migration-guard tests:
     asserts `packages/ai-parrot/src/parrot/core/events/bus/` does not exist on
     disk AND no importable `parrot.*` module defines a class named `BusCore` or
@@ -335,6 +338,7 @@ def legacy_dlq_row():
   and no git URL for it; FEAT-317 TODO comment removed.
 - [ ] M4: `test_no_internal_bus_copy` in ai-parrot CI; full ai-parrot suite
   green against the PyPI package.
+- [ ] M4: ai-parrot changelog entry documents the auto-routing behavior change.
 - [ ] No breaking changes: `EventBus.emit/subscribe/on/publish` signatures
   unchanged; no new required dependencies in navigator-eventbus.
 
@@ -503,7 +507,7 @@ No new dependencies in navigator-eventbus.
 - [x] Release version target — *Resolved in brainstorm discovery*: M1+M2 land in `0.1.0` final (from `0.1.0rc2`), NOT `0.2.0`; ai-parrot pins `>=0.1.0,<0.2`.
 - [x] Auto-activation logging — *Resolved in brainstorm discovery*: one-time INFO log per attachment; flag resets on detach.
 - [x] `evb.py` shim strategy (keep permanently vs. deprecate)? — *Resolved (moot)*: FEAT-317 deleted `evb.py` entirely; consumers import from `navigator_eventbus` directly. Closed.
-- [ ] Should `route_to_bus` auto-activation be announced in ai-parrot's changelog too (beyond the navigator-eventbus 0.1.0 changelog)? Latent today, relevant for future `set_event_bus` consumers — *Owner: Jesus* (does not block implementation; M3 changelog covers the package side).
+- [x] Should `route_to_bus` auto-activation be announced in ai-parrot's changelog too (beyond the navigator-eventbus 0.1.0 changelog)? — *Resolved by Jesus (2026-07-20)*: yes — M4 adds an ai-parrot changelog entry noting the auto-routing behavior change.
 
 ---
 
