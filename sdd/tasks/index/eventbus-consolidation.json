@@ -14,7 +14,7 @@
       "feature_id": "FEAT-319",
       "feature": "eventbus-consolidation",
       "spec": "sdd/specs/eventbus-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Cross-repo task (navigator-eventbus checkout). Touches only envelope.py + __init__.py; shares no files with TASK-1841 (hooks/manager.py) — both can run in parallel. TASK-1840 depends on this task's constant/exception.",
       "assigned_to": null,
       "started_at": "2026-07-20T22:24:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1839-envelope-schema-version-core.md"
+      "completed_at": "2026-07-20T23:08:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1839-envelope-schema-version-core.md"
     },
     {
       "id": "TASK-1840",

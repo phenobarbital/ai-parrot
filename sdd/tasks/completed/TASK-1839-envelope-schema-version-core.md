@@ -181,10 +181,16 @@ def test_roundtrip_preserves_version():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-21
+**Notes**: Implemented in `navigator-eventbus` worktree
+`.claude/worktrees/feat-FEAT-319-eventbus-consolidation` (branch
+`feat-FEAT-319-eventbus-consolidation`, off `main` @ 8ef73b3). Added
+`ENVELOPE_SCHEMA_VERSION`/`UnsupportedSchemaVersion` to `envelope.py`,
+`schema_version` as trailing field, `to_dict`/`from_dict` version rules,
+exports in `__init__.py`, and `tests/test_envelope_schema_version.py`
+(6 new tests). Full suite green: 311 passed, 1 skipped. Ruff clean on
+touched files (pre-existing unrelated F401/I001 findings in rabbitmq
+brokers files untouched by this task). Commit: `74a9ccc`.
 
 **Deviations from spec**: none
