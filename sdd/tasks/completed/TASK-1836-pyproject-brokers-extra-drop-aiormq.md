@@ -134,10 +134,32 @@ Standard SDD flow. Verify the contract against the live `pyproject.toml` first
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: Claude (Opus 4.8) via `/sdd-start`
+**Date**: 2026-07-20
 **Notes**:
+- Edited `pyproject.toml` in the navigator worktree
+  `.claude/worktrees/feat-318-navigator-brokers-removal` (commit `0373f2e`):
+  - Removed `aiormq>=6.8.1` from `[project.dependencies]` (was line 72).
+  - Removed the dead `aiormq.*` entry from the `[[tool.mypy.overrides]]` block
+    (was line 293).
+  - Added a `brokers` extra to `[project.optional-dependencies]` pinning
+    `navigator-eventbus[brokers]>=0.1.0rc1` (placed after `qworker`, with a
+    descriptive comment matching repo style).
+- **Verification**: TOML parses; `aiormq` absent from deps and mypy overrides;
+  `brokers` extra equals `["navigator-eventbus[brokers]>=0.1.0rc1"]`; the pin
+  resolves from PyPI (`uv pip install --dry-run` → "Would make no changes",
+  satisfied by the installed 0.1.0rc1); `import navigator_eventbus.brokers` OK.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: 
+- The task/spec AC "`aioboto3` and `redis` remain present in `pyproject.toml`"
+  is imprecise: **neither is a direct entry** in navigator's `pyproject.toml`
+  (`aioboto3` arrives transitively via `asyncdb[uvloop,default,boto3]`; `redis`
+  is not listed, only mentioned in a comment). So the AC's literal
+  `grep aioboto3 pyproject.toml` would false-FAIL. The real invariant — do not
+  remove them — holds trivially, since only the `aiormq` lines were touched.
+  Flagged rather than "fixed" to avoid gaming the grep.
+- Full `uv pip install -e .[brokers]` into a clean navigator venv (which would
+  trigger a Cython/setuptools_scm build of navigator itself) was **not** run to
+  avoid mutating/clobbering an environment for a metadata-only change; the
+  extra's target is proven installable (exact 0.1.0rc1 already resolved from
+  PyPI). Recommend running it once in navigator's own CI/venv as a final gate.

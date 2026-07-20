@@ -33,7 +33,7 @@
       "feature_id": "FEAT-318",
       "feature": "navigator-brokers-removal",
       "spec": "sdd/specs/navigator-brokers-removal.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -43,8 +43,9 @@
       "parallelism_notes": "Must follow TASK-1835 so no live importer of navigator.brokers remains when aiormq is dropped. Keep aioboto3/redis (used outside brokers/). Executes in ../navigator.",
       "assigned_to": null,
       "started_at": "2026-07-20T15:51:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1836-pyproject-brokers-extra-drop-aiormq.md"
+      "completed_at": "2026-07-20T15:57:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1836-pyproject-brokers-extra-drop-aiormq.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1837",
