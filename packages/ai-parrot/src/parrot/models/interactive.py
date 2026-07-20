@@ -25,7 +25,7 @@ The catalog itself (loading entries from disk) lives in
 """
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -163,6 +163,7 @@ class InteractiveRenderResult(BaseModel):
     theme: Optional[str] = None
     libraries_used: List[str] = Field(default_factory=list)
     enhanced: bool = False
+    a2ui_envelope: Optional[Dict[str, Any]] = None
 
 
 def _indent(text: str, prefix: str) -> str:

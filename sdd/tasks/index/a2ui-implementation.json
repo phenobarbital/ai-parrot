@@ -19,7 +19,7 @@
       "effort": "L",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation module — every other task imports these models.",
+      "parallelism_notes": "Foundation module \u2014 every other task imports these models.",
       "assigned_to": null,
       "started_at": "2026-07-11T00:48:04+00:00",
       "completed_at": "2026-07-11T01:11:17+00:00",
@@ -59,7 +59,7 @@
         "TASK-1720"
       ],
       "parallel": true,
-      "parallelism_notes": "Throwaway spike under artifacts/spikes/ — shares no production files.",
+      "parallelism_notes": "Throwaway spike under artifacts/spikes/ \u2014 shares no production files.",
       "assigned_to": null,
       "started_at": "2026-07-11T00:48:04+00:00",
       "completed_at": "2026-07-11T01:41:23+00:00",
@@ -278,7 +278,7 @@
     {
       "id": "TASK-1733",
       "slug": "delivery-bridge-slack-url",
-      "title": "Delivery bridge: RenderedArtifact → send_notification + Slack URL downgrade",
+      "title": "Delivery bridge: RenderedArtifact \u2192 send_notification + Slack URL downgrade",
       "feature_id": "FEAT-273",
       "feature": "a2ui-implementation",
       "spec": "sdd/specs/a2ui-implementation.spec.md",
@@ -289,7 +289,7 @@
         "TASK-1728"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies parrot/notifications/__init__.py — shared with TASK-1734; keep sequential.",
+      "parallelism_notes": "Modifies parrot/notifications/__init__.py \u2014 shared with TASK-1734; keep sequential.",
       "assigned_to": null,
       "started_at": "2026-07-11T00:48:04+00:00",
       "completed_at": "2026-07-11T02:07:05+00:00",
@@ -342,7 +342,7 @@
       "feature_id": "FEAT-273",
       "feature": "a2ui-implementation",
       "spec": "sdd/specs/a2ui-implementation.spec.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -406,7 +406,7 @@
       "feature_id": "FEAT-273",
       "feature": "a2ui-implementation",
       "spec": "sdd/specs/a2ui-implementation.spec.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
