@@ -476,7 +476,10 @@ class AutonomousOrchestrator:
             session_id=session_id,
             metadata={
                 "hook_id": event.hook_id,
-                "hook_type": event.hook_type.value,
+                # FEAT-317: navigator_eventbus.hooks.models.HookEvent.hook_type
+                # is a plain str (HookType is an open registry of string
+                # constants, not an Enum) — no `.value` attribute.
+                "hook_type": event.hook_type,
                 "event_type": event.event_type,
                 **event.metadata,
             },

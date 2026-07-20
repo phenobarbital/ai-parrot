@@ -101,7 +101,7 @@ dependencies = [
     # enables episodic memory without an explicit pgvector DSN.
     "faiss-cpu>=1.9.0",
     # TODO: switch to navigator-eventbus>=0.1.0 after PyPI publish (FEAT-317 close)
-    "navigator-eventbus @ file:///home/jesuslara/proyectos/navigator-eventbus",
+    "navigator-eventbus @ git+https://github.com/phenobarbital/navigator-eventbus.git@17b99c22faf44bcf92fdf299a6e9a021d678a970",
 ]
 
 [project.scripts]

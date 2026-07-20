@@ -53,6 +53,38 @@ async def test_flag_on_uses_bus_subscription_only():
         await orch.stop()
 
 
+async def test_handle_hook_event_builds_metadata_without_crashing():
+    """Real _handle_hook_event (not monkey-patched) must not crash on
+    hook_type — navigator_eventbus.hooks.models.HookEvent.hook_type is a
+    plain str (HookType is an open registry of string constants, not an
+    Enum, since FEAT-312), so `.value` is not available (FEAT-317
+    regression guard).
+    """
+    orch = make_orchestrator(hooks_via_bus=False)
+    captured_requests = []
+
+    async def fake_execute(request):
+        captured_requests.append(request)
+        return None
+
+    orch._execute = fake_execute  # type: ignore[method-assign]
+
+    event = HookEvent(
+        hook_id="h-test",
+        hook_type=HookType.SCHEDULER,
+        event_type="tick",
+        payload={"n": 1},
+        target_type="agent",
+        target_id="dummy-agent",
+    )
+    await orch._handle_hook_event(event)
+
+    assert len(captured_requests) == 1
+    assert captured_requests[0].metadata["hook_type"] == HookType.SCHEDULER
+    assert captured_requests[0].metadata["hook_id"] == "h-test"
+    assert captured_requests[0].metadata["event_type"] == "tick"
+
+
 async def test_flag_on_hook_event_executes_exactly_once():
     orch = make_orchestrator(hooks_via_bus=True)
     await orch.start()
