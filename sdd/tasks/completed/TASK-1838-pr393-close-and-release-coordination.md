@@ -136,10 +136,32 @@ file move) lands in ai-parrot on `dev`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: Claude (Opus 4.8) via `/sdd-start`
+**Date**: 2026-07-20
 **Notes**:
+- **`navigator/__init__.py` verified free of `broker` references** (`git grep`) —
+  no-op as expected.
+- **CHANGELOG breaking-change note** added under a new `## [Unreleased]` section
+  (Keep-a-Changelog format; exact release version is an open decision) in the
+  navigator worktree (commit `558f8fb`). Covers: `navigator.brokers.*` removed,
+  **no shim**, replacement path `navigator_eventbus.brokers.*`, the new
+  `navigator-api[brokers]` extra + `aiormq` drop, and the coordinated-release
+  requirement for **Flowtask** and **FieldSync** (FieldSync must drop its local
+  PR #393 shim).
+- **PR navigator#393 annotated + CLOSED** (verified `state: CLOSED`) with a
+  "superseded — fixes ported to navigator-eventbus" comment crediting @hacu9 and
+  referencing FEAT-316 (port) + FEAT-318 (removal). Done via `gh` authed as
+  `phenobarbital`; **outward-facing action was explicitly approved by the user**
+  before posting. PR base was `master`; closed as not-merged since the target
+  code no longer exists here.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
+
+**Follow-ups (owner, outside this task's scope)**:
+- Cut the actual navigator release (open question — release-coordination window
+  owner). The CHANGELOG entry is `[Unreleased]`; stamp it with the version at
+  release time.
+- Confirm Flowtask + FieldSync have migrated their imports before shipping.
+- Run the full navigator `pytest` suite + `uv pip install -e .[brokers]` in
+  navigator's own built venv/CI (deferred from TASK-1836/1837 — worktree is an
+  unbuilt Cython tree).
