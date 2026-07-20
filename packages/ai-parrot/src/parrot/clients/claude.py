@@ -375,7 +375,7 @@ class AnthropicClient(AbstractClient):
             when segments are present; unchanged otherwise.
         """
         import hashlib as _hashlib
-        from parrot.core.events.lifecycle.trace import TraceContext as _TC
+        from parrot.core.events.lifecycle import TraceContext as _TC
         tc = trace_context if trace_context is not None else _TC.new_root()
         if not segments:
             self.events.emit_nowait(PromptCacheSkippedEvent(

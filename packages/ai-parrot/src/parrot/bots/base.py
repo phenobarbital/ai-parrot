@@ -46,7 +46,9 @@ def _get_infographic_result_class() -> Optional[type]:
     except ImportError:
         return None
 # FEAT-176: Lifecycle Events
-from parrot.core.events.lifecycle.trace import TraceContext
+# FEAT-317: TraceContext moved to navigator_eventbus.lifecycle; imported here
+# via the parrot.core.events.lifecycle re-export facade.
+from parrot.core.events.lifecycle import TraceContext
 from parrot.core.events.lifecycle.events import (
     BeforeInvokeEvent,
     AfterInvokeEvent,
