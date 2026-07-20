@@ -299,6 +299,30 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         return True
 
     # =========================================================================
+    # A2UI Deep-Link Resume
+    # =========================================================================
+
+    def _get_deeplink_resume(self):
+        """Lazily construct the A2UI deep-link resume helper.
+
+        Returns None when Redis is unavailable (deep links degrade silently).
+        """
+        if hasattr(self, "_deeplink_resume"):
+            return self._deeplink_resume
+        redis = self.app.get("redis") if self.app else None
+        if redis is None:
+            self._deeplink_resume = None
+            return None
+        from parrot.outputs.a2ui.deeplink import DeepLinkService
+        from parrot.integrations.a2ui_resume import ChannelDeepLinkResume
+
+        service = DeepLinkService(redis)
+        self._deeplink_resume = ChannelDeepLinkResume(
+            service, channel="msteams", logger=self.logger
+        )
+        return self._deeplink_resume
+
+    # =========================================================================
     # Card Submission Handling
     # =========================================================================
 
@@ -326,6 +350,36 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             return
 
         self.logger.info("Card submission: %s", submitted_data)
+
+        # A2UI deep-link resume: card Submit carries {"a2ui_token": "<token>"}
+        a2ui_token = submitted_data.get("a2ui_token")
+        if a2ui_token:
+            resume_helper = self._get_deeplink_resume()
+            if resume_helper is not None:
+                async def inject(*, session_id, user_id, agent_id, query):
+                    result = await self.form_orchestrator.process_message(
+                        message=query,
+                        conversation_id=conversation_id,
+                        context={"user_id": user_id, "session_id": session_id},
+                    )
+                    return result
+
+                outcome = await resume_helper.resume(a2ui_token, inject=inject)
+                if outcome["ok"]:
+                    result = outcome["result"]
+                    if result and result.raw_response is not None:
+                        parsed = self._parse_response(result.raw_response)
+                        await self._send_parsed_response(parsed, turn_context)
+                    elif result and result.response_text:
+                        await self.send_text(result.response_text, turn_context)
+                    else:
+                        await self.send_text("Action resumed.", turn_context)
+                else:
+                    await self.send_text(outcome["reply"], turn_context)
+                return
+            self.logger.warning(
+                "A2UI deep-link token in card submission but Redis unavailable."
+            )
 
         # Slash-style commands embedded in Adaptive Card Submit actions — e.g.
         # the Jira menu card buttons send {"command": "/connect_jira"}. These
