@@ -3,7 +3,7 @@
 FEAT-181 — Provider-Agnostic Prompt Caching (TASK-1225).
 """
 import pytest
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.trace import TraceContext
 from parrot.core.events.lifecycle.events.client import (
     PromptCacheAppliedEvent,
     PromptCacheSkippedEvent,

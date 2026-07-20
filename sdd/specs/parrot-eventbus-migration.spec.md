@@ -19,17 +19,20 @@ base_branch: dev
 > - Phase 1: `eventbus-core-extraction` (**FEAT-312**, status: done) — bus
 >   core, facade, hooks generic, subscribers, ingress extracted to
 >   `navigator-eventbus`.
-> - Phase 2: `eventbus-lifecycle-extraction` (**FEAT-313**, status: draft) —
+> - Phase 2: `eventbus-lifecycle-extraction` (**FEAT-313**, status: done) —
 >   lifecycle machinery (LifecycleEvent, TraceContext, EventRegistry, mixin,
 >   subscribers logging/webhook, yaml_loader wiring engine) extracted.
-> - Phase 3: `eventbus-brokers-port` (**FEAT-316**, status: draft) — port
+> - Phase 3: `eventbus-brokers-port` (**FEAT-316**, status: done) — port
 >   of `navigator.brokers` to `navigator-eventbus.brokers` with PR#393
 >   fixes.
 >
-> **Blocking dependencies**: phases 1, 2, and 3 must be complete before
-> this spec can execute. The `navigator-eventbus` package must export the
-> full public surface (bus core + lifecycle + brokers) as an editable
-> install.
+> **Blocking dependencies (resolved)**: phases 1, 2, and 3 completed
+> before this spec's implementation started; the sdd-worker's Preflight
+> (TASK-1826) verified the `navigator-eventbus` package exports the full
+> public surface (bus core + lifecycle + brokers) before any deletion
+> began. **This phase (4) has since been implemented — see
+> `sdd/tasks/index/parrot-eventbus-migration.json` (all 9 tasks done) and
+> `artifacts/logs/feat317-regression.md` for regression evidence.**
 >
 > **Next phase**: `navigator-brokers-removal` (phase 5) — deletes
 > `navigator/brokers/` from the navigator framework.
@@ -59,9 +62,12 @@ across three distribution packages (`ai-parrot`, `ai-parrot-server`,
 ### Goals
 
 - Add `navigator-eventbus` as a dependency of `ai-parrot` in
-  `pyproject.toml`. Configure legacy Redis prefixes (`parrot:events:`,
-  `parrot:stream:`, `parrot:events:dedup:`, consumer-group `parrot-bus`)
-  to maintain compatibility with deployed streams.
+  `pyproject.toml`. Configure legacy Redis prefixes to maintain
+  compatibility with deployed streams — **as implemented, only
+  `channel_prefix="parrot:events:"` applies** (see §2 decision #3
+  resolution note); `parrot:stream:`/`parrot:events:dedup:`/`parrot-bus`
+  are `RedisStreamsBackend`-specific and unused by any current ai-parrot
+  call site.
 - Delete all code that was migrated to `navigator-eventbus` in phases 1–3:
   - `parrot/core/events/bus/` (entire directory)
   - `parrot/core/events/evb.py`
@@ -123,6 +129,17 @@ All resolved brainstorm decisions carry forward verbatim:
    (`parrot:events:`, `parrot:stream:`, `parrot:events:dedup:`,
    `parrot-bus`) via `EventBus` constructor kwargs or navconfig
    overrides — the package defaults are neutral (`evb:*`).
+   **Resolution (as implemented, TASK-1826/1832)**: `navigator_eventbus.
+   evb.EventBus.__init__` only accepts `channel_prefix` — it builds
+   either `RedisPubSubBackend` (when `use_redis=True`) or `MemoryBackend`,
+   never `RedisStreamsBackend` directly. `stream_prefix`/`dedup_prefix`/
+   `group` are `RedisStreamsBackend`-specific kwargs; a full-repo grep
+   confirmed `RedisStreamsBackend(` is never instantiated anywhere in
+   `ai-parrot`/`ai-parrot-server`/`ai-parrot-integrations`. Only
+   `channel_prefix="parrot:events:"` applies to the actual production
+   `EventBus()` call site (`AutonomousOrchestrator`); if a future consumer
+   adopts the Streams backend directly, it must pass `stream_prefix`/
+   `dedup_prefix`/`group` explicitly at that call site.
 4. **HookType open registry**: integration hooks in parrot register
    their types at import time via `HOOK_TYPES.register(...)` — the 18
    legacy types + `webhook` are already pre-registered by the package
@@ -509,8 +526,11 @@ def eventbus_with_parrot_prefixes():
       OpenTelemetrySubscriber, AND lifecycle machinery from
       `navigator_eventbus.lifecycle` — preserving the public surface of
       `from parrot.core.events.lifecycle import X`.
-- [ ] `AutonomousOrchestrator` constructs `EventBus` with legacy Redis
-      prefixes (`parrot:events:`, `parrot:stream:`, `parrot-bus`).
+- [ ] `AutonomousOrchestrator` constructs `EventBus` with the legacy
+      Redis `channel_prefix` (`parrot:events:`) — the only prefix kwarg
+      that applies to its actual `RedisPubSubBackend`/`MemoryBackend`
+      usage (see §2 decision #3 resolution note; `stream_prefix`/
+      `dedup_prefix`/`group` are `RedisStreamsBackend`-only and unused).
 - [ ] Full test suite green: `pytest` across ai-parrot, ai-parrot-server,
       ai-parrot-integrations.
 - [ ] FEAT-177 emit-overhead benchmark: < 0.1% LLM-latency, no regression.
@@ -746,10 +766,12 @@ from parrot.core.events.lifecycle.subscribers.opentelemetry import OpenTelemetry
 
 ### Known Risks / Gotchas
 
-- **Phase 2/3 not yet delivered**: this spec cannot execute until
-  FEAT-313 (lifecycle extraction) and FEAT-316 (brokers port) are
-  complete. The lifecycle import paths in §6 are projected — verify
-  against the actual package before implementing.
+- **Phase 2/3 dependency (resolved)**: this spec could not execute until
+  FEAT-313 (lifecycle extraction) and FEAT-316 (brokers port) were
+  complete — both are now `status: done` (see header). The lifecycle
+  import paths in §6 were projected at spec-writing time; TASK-1826's
+  Preflight verified them against the actual package before any
+  deletion, and TASK-1828 confirmed the exact paths delivered.
 - **`lifecycle/__init__.py` re-export surface**: the current
   `parrot.core.events.lifecycle.__init__` re-exports ~30 symbols.
   After migration, it must re-export the same symbols (sourced from
@@ -768,10 +790,15 @@ from parrot.core.events.lifecycle.subscribers.opentelemetry import OpenTelemetry
   all broker hooks) must lazy-import from `navigator_eventbus.hooks`
   submodules. Integration hooks (JiraWebhookHook, etc.) stay local.
   The map must be carefully split.
-- **Streams compatibility**: deployed Redis instances may have data in
-  `parrot:stream:*` streams with consumer-group `parrot-bus`. The
-  `EventBus` constructor must explicitly pass these legacy prefixes —
-  the package defaults are `evb:*`.
+- **Streams compatibility (resolved — does not apply)**: deployed Redis
+  instances may have data in `parrot:stream:*` streams with consumer-group
+  `parrot-bus`, but `AutonomousOrchestrator`'s `EventBus()` call site never
+  constructs a `RedisStreamsBackend` (only `RedisPubSubBackend`/
+  `MemoryBackend`, confirmed via repo-wide grep for
+  `RedisStreamsBackend(` — zero call sites). Only `channel_prefix=
+  "parrot:events:"` was needed/passed. `stream_prefix`/`dedup_prefix`/
+  `group` remain the package's neutral `evb:*` defaults — irrelevant
+  until/unless a future consumer adopts the Streams backend directly.
 - **`autonomous/evb.py` shim**: this file re-exports EventBus from
   `parrot.core.events.evb` for backward compatibility. After `evb.py`
   is deleted, the shim must point to `navigator_eventbus.evb` (or be
@@ -858,3 +885,4 @@ features.)
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-18 | Jesus + Claude | Initial draft from brainstorm navigator-eventbus-extraction (phase 4) |
+| 0.2 | 2026-07-20 | Claude (sdd-worker, post-implementation code review) | Marked phases 2/3 (FEAT-313, FEAT-316) `status: done` in the header (were still `draft`); noted this spec's own 9 tasks are implemented and regression evidence recorded; resolved the Redis-streams-prefix decision text (§2 decision #3, Goals, Acceptance Criteria, Known Risks) to reflect that only `channel_prefix` applies in practice — `AutonomousOrchestrator` never constructs a `RedisStreamsBackend`, so `stream_prefix`/`dedup_prefix`/`group` were correctly left unset. No architectural or scope change — spec-hygiene only. |

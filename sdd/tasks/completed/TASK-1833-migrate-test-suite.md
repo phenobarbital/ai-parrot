@@ -200,9 +200,95 @@ def test_facade_reexports():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-20
 **Notes**:
-**Deviations from spec**: none | describe if any
+- Regenerated the live importer list per the task's own command; found 64
+  files (vs. the spec's ~65 estimate) plus one extra companion
+  (`ai-parrot-integrations/tests/test_matrix_hook.py`, found by widening the
+  grep to that package — same category as TASK-1830's spec-gap deviation,
+  since TASK-1832 rewired its production counterpart).
+- Deleted `tests/core/events/bus/` (11 files) and
+  `tests/core/events/test_eventbus_imports.py` via `git rm`.
+- Rewired the remaining ~50 test files mechanically per the Import
+  Rewiring Table — machinery imports (`base`/`trace`/`meta`/`registry`/
+  `global_registry`/`provider`/`mixin`/subscribers `logging`/`webhook`) →
+  `navigator_eventbus.lifecycle.*`; hooks (`base`/`manager`/`models`/
+  `mixins`/`scheduler`/`file_watchdog`) → `navigator_eventbus.hooks.*`;
+  typed events and integration-hook submodule imports left untouched
+  (stay local).
+- Created `tests/core/events/test_migration_guard.py` with the 4 guard/
+  smoke/facade tests from the Test Specification (parametrized guard test
+  covers both `test_no_bus_core_in_parrot` and `test_no_old_hooks_modules`
+  from the Scope bullets in one test, matching the task's own Test
+  Specification code block verbatim).
+- `conftest.py`: verified no stub references any deleted `parrot.core.
+  events.*`/`parrot.core.hooks.*` path (only `navconfig`/`navigator.*`
+  stubs, unrelated) — no changes needed, confirmed by the full test run
+  exercising `navigator_eventbus` (which imports navconfig at its own
+  import time) without conflict.
+- `examples/dev_loop/e2e_demo.py`: `LifecycleEvent`/`get_global_registry`
+  now imported from the `parrot.core.events.lifecycle` facade.
+- **Test-logic fixes beyond pure import rewiring** (each is a "legitimately
+  changed" case per the Implementation Notes exception, not scope creep):
+  - `test_webhook_subscriber.py` / `test_registry.py`: two tests use
+    `unittest.mock.patch(...)` / `sys.modules` injection targeting the
+    OLD dotted module path (`parrot.core.events.lifecycle.subscribers.
+    webhook.asyncio.sleep`, `parrot.core.events.lifecycle.global_registry`)
+    to intercept a lazy import — these targets had to be repointed to the
+    new `navigator_eventbus.lifecycle.*` paths, since patching/injecting
+    under the old (now-nonexistent) module name silently no-ops instead of
+    raising, which is why these failures only surfaced at runtime, not at
+    collection.
+  - `test_registry.py::TestDualEmit` (4 tests): inline `from parrot.core.
+    events.evb import EventBus` → `from navigator_eventbus.evb import
+    EventBus`.
+  - `test_events_yaml.py`: `_resolve`/`_make_where` (private helpers) no
+    longer exist in `parrot.core.events.lifecycle.yaml_loader` — the
+    engine fully moved to the package per TASK-1828. Split the import:
+    `EVENT_CLASSES`/`wire_events` stay from the parrot module (re-exported
+    unchanged); `_resolve`/`_make_where` now from
+    `navigator_eventbus.lifecycle.yaml_loader`. Exactly the heads-up TASK-
+    1828's completion note flagged for this task.
+  - `test_matrix_hook.py::test_matrix_hook_type_exists`: removed a
+    `HookType.MATRIX.value == "matrix"` assertion — `navigator_eventbus.
+    hooks.models.HookType` is a plain open-registry class of str
+    constants (FEAT-312 decision), not an `Enum`, so `.value` no longer
+    exists; the `HookType.MATRIX == "matrix"` assertion above it already
+    covers the real invariant.
+- **Pre-existing, unrelated failures confirmed and left untouched** (root-
+  caused by diffing against unmodified `dev`, not introduced by this
+  migration):
+  - `test_matrix_hook.py::TestMatrixHook` (6 tests): `_make_hook()` always
+    imported the `parrot.core.hooks.matrix.MatrixHook` *compatibility shim*
+    (not the concrete `parrot.integrations.matrix.hook.MatrixHook`), which
+    lacks `_on_room_message` — reproduced identically on `dev` before any
+    migration changes; out of scope (NO SCOPE CREEP).
+  - `test_botmanager_flags.py` (2 tests, `IntegrationBotManager` missing
+    attribute) and `tests/manager/test_bot_cleanup_lifecycle.py` /
+    `tests/interfaces/test_file_shim.py` (collection errors: missing
+    `parrot.tools.pythonrepl` / `parrot.interfaces`) and 19 other
+    collection errors (missing optional-extra packages like coingecko/
+    cryptoquant toolkits) — reproduced byte-identically on unmodified
+    `dev` (22 collection errors, same file set).
+- Verified: all explicitly-listed test clusters green (`tests/unit/events/
+  lifecycle/` + `tests/core/hooks/`: 283 passed; `tests/unit/
+  observability/`: 111 passed; the scattered cluster — benchmarks, flows,
+  eval, integration, transport, root jira/google/prompt-cache tests,
+  unit/{auth,bots,clients,tools,registry}: 328 passed, 3 pre-existing
+  skips; `test_google_client.py`: 61 passed; server ledger/orchestrator
+  tests: 47 passed; migration guard: 7 passed; matrix hook: 14 passed / 6
+  pre-existing failures). Acceptance-criteria greps (bus/evb, hooks base/
+  models/manager) → empty across all three packages' test trees. `ruff
+  check`: confirmed byte-identical error counts before/after on every
+  modified file (diffed against `HEAD~30`); the one new file
+  (`test_migration_guard.py`) is ruff-clean.
+- **Test-environment note**: had to temporarily editable-reinstall
+  `ai-parrot-server`/`ai-parrot-integrations` from the worktree (not just
+  `ai-parrot`) to exercise these packages' own tests against this
+  feature's changes, then restored them after cross-checking pre-existing
+  failures against unmodified `dev`.
+**Deviations from spec**: added `ai-parrot-integrations/tests/
+test_matrix_hook.py` (not in the spec's file census, found via widened
+live-grep) and the test-logic fixes enumerated above (all within the
+"legitimately changed" exception, not scope creep).

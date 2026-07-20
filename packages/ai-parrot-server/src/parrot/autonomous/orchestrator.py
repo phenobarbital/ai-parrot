@@ -24,7 +24,11 @@ from enum import Enum
 import asyncio
 import uuid
 from navconfig.logging import logging
-from parrot.core.events import EventBus, Event, EventPriority
+# FEAT-317: EventBus/Event/EventPriority and BaseHook/HookManager/HookEvent
+# moved to navigator_eventbus (bus core + hooks now live in the package;
+# parrot.core.hooks re-exports the hooks facade, but the bus symbols are a
+# hard migration with no re-export from parrot.core.events).
+from navigator_eventbus import EventBus, Event, EventPriority
 from parrot.core.hooks import BaseHook, HookManager, HookEvent
 from .redis_jobs import RedisJobInjector
 from .webhooks import WebhookListener
@@ -235,9 +239,13 @@ class AutonomousOrchestrator:
 
         # Event Bus
         if self._use_event_bus:
+            # FEAT-317: legacy Redis channel prefix so deployed streams/
+            # subscribers under `parrot:events:*` keep working after the
+            # migration to navigator_eventbus (package default is `evb:*`).
             self.event_bus = EventBus(
                 redis_url=self.redis_url,
-                use_redis=bool(self.redis_url)
+                use_redis=bool(self.redis_url),
+                channel_prefix="parrot:events:",
             )
             await self.event_bus.connect()
             self._setup_internal_event_handlers()
@@ -468,7 +476,10 @@ class AutonomousOrchestrator:
             session_id=session_id,
             metadata={
                 "hook_id": event.hook_id,
-                "hook_type": event.hook_type.value,
+                # FEAT-317: navigator_eventbus.hooks.models.HookEvent.hook_type
+                # is a plain str (HookType is an open registry of string
+                # constants, not an Enum) — no `.value` attribute.
+                "hook_type": event.hook_type,
                 "event_type": event.event_type,
                 **event.metadata,
             },

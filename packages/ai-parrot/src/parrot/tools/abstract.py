@@ -14,8 +14,11 @@ from datamodel.parsers.json import json_decoder, json_encoder, JSONContent  # no
 from navconfig.logging import logging
 from ..conf import BASE_STATIC_URL, STATIC_DIR, OUTPUT_DIR
 # FEAT-176: Lifecycle Events System
-from ..core.events.lifecycle.mixin import EventEmitterMixin
-from ..core.events.lifecycle.trace import TraceContext
+# FEAT-317: EventEmitterMixin/TraceContext moved to navigator_eventbus.lifecycle;
+# imported here via the parrot.core.events.lifecycle re-export facade. (Not in
+# spec's Module 5 census — same mechanical pattern as bots/clients; fixed here
+# because it blocks import of every AbstractTool subclass. See Completion Note.)
+from ..core.events.lifecycle import EventEmitterMixin, TraceContext
 from ..core.events.lifecycle.events import (
     BeforeToolCallEvent, AfterToolCallEvent, ToolCallFailedEvent,
 )

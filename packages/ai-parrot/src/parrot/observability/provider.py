@@ -20,7 +20,7 @@ from parrot.observability.subscribers.metrics import MetricsSubscriber
 from parrot.observability.subscribers.trace import GenAIOpenTelemetrySubscriber
 
 if TYPE_CHECKING:
-    from parrot.core.events.lifecycle.registry import EventRegistry
+    from parrot.core.events.lifecycle import EventRegistry
 
 
 class ParrotTelemetryProvider:

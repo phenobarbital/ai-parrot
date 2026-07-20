@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from parrot.core.events.lifecycle.base import TraceContext
+from navigator_eventbus.lifecycle.base import TraceContext
 from parrot.core.events.lifecycle.events import (
     BeforeToolCallEvent,
     ClientStreamChunkEvent,

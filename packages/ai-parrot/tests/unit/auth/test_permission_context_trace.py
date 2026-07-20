@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from parrot.auth.permission import PermissionContext, UserSession
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.trace import TraceContext
 
 
 @pytest.fixture

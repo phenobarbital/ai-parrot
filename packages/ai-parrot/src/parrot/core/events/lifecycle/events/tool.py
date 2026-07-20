@@ -5,7 +5,7 @@ FEAT-176 — Lifecycle Events System.
 Covers: before/after/failed AbstractTool.execute() calls.
 """
 from dataclasses import dataclass, field
-from parrot.core.events.lifecycle.base import LifecycleEvent
+from navigator_eventbus.lifecycle.base import LifecycleEvent
 
 
 @dataclass(frozen=True)

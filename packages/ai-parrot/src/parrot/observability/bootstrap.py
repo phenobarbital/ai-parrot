@@ -144,7 +144,7 @@ def _do_bootstrap() -> None:
         cost_calculator=cost_calc,
         service_name=config.service_name,
     )
-    from parrot.core.events.lifecycle.global_registry import (  # noqa: PLC0415
+    from parrot.core.events.lifecycle import (  # noqa: PLC0415
         get_global_registry,
     )
 
@@ -217,7 +217,7 @@ def shutdown_usage_recording() -> None:
     global _SUBSCRIBER  # noqa: PLW0603
     if _SUBSCRIPTION_IDS:
         try:
-            from parrot.core.events.lifecycle.global_registry import (  # noqa: PLC0415
+            from parrot.core.events.lifecycle import (  # noqa: PLC0415
                 get_global_registry,
             )
 

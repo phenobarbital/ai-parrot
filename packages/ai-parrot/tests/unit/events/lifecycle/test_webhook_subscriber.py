@@ -14,10 +14,10 @@ import pytest
 from aiohttp import web
 
 from parrot.core.events.lifecycle.events import AfterInvokeEvent
-from parrot.core.events.lifecycle.provider import EventProvider
-from parrot.core.events.lifecycle.registry import EventRegistry
-from parrot.core.events.lifecycle.subscribers.webhook import WebhookSubscriber
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.provider import EventProvider
+from navigator_eventbus.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.subscribers.webhook import WebhookSubscriber
+from navigator_eventbus.lifecycle.trace import TraceContext
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +136,7 @@ class TestWebhookSubscriber:
 
         # Patch asyncio.sleep to speed up the test (don't actually wait).
         import unittest.mock
-        with unittest.mock.patch("parrot.core.events.lifecycle.subscribers.webhook.asyncio.sleep"):
+        with unittest.mock.patch("navigator_eventbus.lifecycle.subscribers.webhook.asyncio.sleep"):
             await reg.emit(AfterInvokeEvent(trace_context=TraceContext.new_root()))
 
         await sub.aclose()

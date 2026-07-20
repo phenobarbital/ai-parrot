@@ -28,7 +28,7 @@ sys.path.insert(0, "packages/ai-parrot/src")
 # Keep evidence output clean AND avoid measuring log-handler I/O.
 logging.disable(logging.INFO)
 
-from parrot.core.events import EventBus  # noqa: E402
+from navigator_eventbus import EventBus  # noqa: E402
 
 ITERATIONS = 10_000
 WARMUP = 500

@@ -194,9 +194,39 @@ PY
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-20
 **Notes**:
-**Deviations from spec**: none | describe if any
+- Preflight verified: `navigator_eventbus.hooks` top-level, `.models`, and
+  `.base` all resolve exactly per the Codebase Contract, including
+  `HookTypeRegistry`/`HOOK_TYPES`/`FilesystemHookConfig` (not in the
+  original preflight snippet but present in the Contract's fuller import
+  list) and the `brokers.{base,redis,rabbitmq,mqtt,sqs}` submodule
+  structure mirroring parrot's old layout.
+- Deleted the 6 generic files (`base`, `manager`, `models`, `mixins`,
+  `scheduler`, `file_watchdog`) plus the entire `brokers/` dir (5 files)
+  via `git rm`.
+- Rewired all 9 integration hooks' relative `.base`/`.models` imports to
+  absolute `navigator_eventbus.hooks.{base,models}` — one-for-one line
+  substitution per the Contract's verified current-state table, nothing
+  else touched in any of the 9 files.
+- Rebuilt `hooks/__init__.py`: eager imports (`BaseHook`, `HookRegistry`,
+  `MessagingHook`, `HookManager`, `HookableAgent`, all config models,
+  `TransitionAction(Type)`, the 3 `create_*_whatsapp_hook` factories) now
+  come from `navigator_eventbus.hooks`. Split the lazy `__getattr__` map:
+  `SchedulerHook`/`FileWatchdogHook`/broker hooks resolve via
+  `importlib.import_module("navigator_eventbus.hooks.<mod>")` (absolute,
+  no `package=` kwarg needed); the 11 local integration/messaging hooks
+  keep resolving via the local relative `.` package as before. `__all__`
+  is unchanged (same 34 names) from the pre-migration version.
+- Verified: task's own Test Specification passes (`BaseHook is
+  nh.BaseHook`; `JiraWebhookHook` lazy-loads and
+  `issubclass(JiraWebhookHook, nh.BaseHook)`); additionally spot-checked
+  `SchedulerHook`/`RedisBrokerHook` lazy-resolve to the exact package
+  objects, and all remaining local integration/messaging hooks
+  (`GitHubWebhookHook`, `SharePointHook`, `FileUploadHook`,
+  `PostgresListenHook`, `IMAPWatchdogHook`, `MatrixHook`,
+  `WhatsAppRedisHook`, `TelegramHook`, `WhatsAppHook`, `MSTeamsHook`)
+  still lazy-load without error. `ruff check` clean on every modified
+  file (facade `__init__.py` + all 9 rewired hook files).
+**Deviations from spec**: none.

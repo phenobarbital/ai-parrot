@@ -12,7 +12,7 @@ from parrot.core.events.lifecycle.events import (
     BeforeClientCallEvent,
     BeforeInvokeEvent,
 )
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.trace import TraceContext
 from parrot.observability.attributes import (
     PROVIDER_TO_GEN_AI_SYSTEM,
     _reset_warned_unknown_for_tests,

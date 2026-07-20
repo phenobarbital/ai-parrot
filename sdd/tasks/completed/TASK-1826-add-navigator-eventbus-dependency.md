@@ -179,9 +179,41 @@ python -c "from navigator_eventbus import EventBus; b=EventBus(channel_prefix='p
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-20
 **Notes**:
-**Deviations from spec**: none | describe if any
+- Preflight verified: `navigator-eventbus` editable install resolves
+  `EventBus`, `EventEnvelope`, `Severity` (top-level), `lifecycle.base.LifecycleEvent`
+  (FEAT-313), and `hooks.{BaseHook,HookManager,HookEvent}` (FEAT-316).
+- Added `navigator-eventbus` to `packages/ai-parrot/pyproject.toml`
+  `[project.dependencies]` as a direct `file://` reference to the local
+  checkout (`/home/jesuslara/proyectos/navigator-eventbus`) with a TODO to
+  switch to the PyPI form (`>=0.1.0`) once published. This form doesn't
+  require touching the root workspace `pyproject.toml`'s `[tool.uv.sources]`
+  (out of task scope) — `uv pip install -e packages/ai-parrot` resolves it
+  directly.
+- `grpc` extra now points to `navigator-eventbus[grpc]` (which itself pins
+  `grpcio`/`grpcio-tools>=1.74`) instead of declaring grpcio directly —
+  keeps versions in lockstep with the package's committed gRPC ingress
+  gencode, per the module 1 responsibility ("Migrate ai-parrot's grpc
+  extra to depend on navigator-eventbus[grpc]").
+- Verified: `uv pip install -e packages/ai-parrot` succeeds;
+  `from navigator_eventbus import EventBus` works;
+  `EventBus(channel_prefix="parrot:events:").channel_prefix == "parrot:events:"`.
+  `ruff check` clean (no Python files touched, only pyproject.toml).
+- Legacy prefix plumbing for the singleton `EventBus()` construction site
+  (`AutonomousOrchestrator`, `autonomous/orchestrator.py` — currently around
+  line 238, not 231 as the spec's Codebase Contract states) is **deferred to
+  TASK-1832** per this task's own scope note ("...or defer the orchestrator
+  edit to TASK-1832..."), to avoid two tasks editing the same
+  import-rewrite site. Required kwargs for that future edit:
+  `EventBus(channel_prefix="parrot:events:", ...)` plus
+  `stream_prefix="parrot:stream:"`, `dedup_prefix="parrot:events:dedup:"`,
+  `group="parrot-bus"` wherever the Redis-streams backend is configured.
+**Deviations from spec**: Orchestrator edit deferred to TASK-1832 (permitted
+alternative explicitly offered by this task's Scope section). Local
+dependency declared via direct `file://` URL in
+`packages/ai-parrot/pyproject.toml` rather than `[tool.uv.sources]` path
+entry in the root workspace pyproject — kept edits scoped to the one file
+listed in this task; both approaches are supported uv patterns and this one
+required no out-of-scope file changes.

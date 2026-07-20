@@ -8,8 +8,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 
-from parrot.core.events.lifecycle.provider import EventProvider
-from parrot.core.events.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.provider import EventProvider
+from navigator_eventbus.lifecycle.registry import EventRegistry
 from parrot.observability import ParrotTelemetryProvider
 
 

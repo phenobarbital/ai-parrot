@@ -29,8 +29,8 @@ from parrot.eval.rollout import RolloutStrategy
 from parrot.eval.sandbox.base import AgentFactory, Sandbox, SandboxProvider, SandboxSpec
 
 if TYPE_CHECKING:
-    from parrot.core.events.evb import EventBus
-    from parrot.core.events.lifecycle.registry import EventRegistry
+    from navigator_eventbus import EventBus
+    from parrot.core.events.lifecycle import EventRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -448,7 +448,7 @@ class EvalRunner:
             core.events is not available).
         """
         try:
-            from parrot.core.events.lifecycle.trace import TraceContext
+            from parrot.core.events.lifecycle import TraceContext
             return TraceContext.new_root()
         except Exception:
             return None
@@ -477,7 +477,7 @@ class EvalRunner:
             event_cls = getattr(_ev_module, event_class_name, None)
             if event_cls is None:
                 return
-            from parrot.core.events.lifecycle.trace import TraceContext
+            from parrot.core.events.lifecycle import TraceContext
             tc = trace_ctx if isinstance(trace_ctx, TraceContext) else TraceContext.new_root()
             # Filter kwargs to only those accepted by the dataclass
             import dataclasses

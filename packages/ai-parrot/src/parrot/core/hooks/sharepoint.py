@@ -5,8 +5,8 @@ from typing import Any, Dict, Optional
 
 from aiohttp import web
 
-from .base import BaseHook
-from .models import HookType, SharePointHookConfig
+from navigator_eventbus.hooks.base import BaseHook
+from navigator_eventbus.hooks.models import HookType, SharePointHookConfig
 
 
 class SharePointHook(BaseHook):

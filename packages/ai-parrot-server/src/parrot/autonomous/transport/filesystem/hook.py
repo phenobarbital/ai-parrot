@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, Optional
 
-from parrot.core.hooks.base import BaseHook
-from parrot.core.hooks.models import FilesystemHookConfig, HookType
+from navigator_eventbus.hooks.base import BaseHook
+from navigator_eventbus.hooks.models import FilesystemHookConfig, HookType
 
 from .config import FilesystemTransportConfig
 from .transport import FilesystemTransport
