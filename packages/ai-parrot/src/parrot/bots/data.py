@@ -1633,6 +1633,14 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         "2. Provide only a clear textual summary and analysis.\n"
                         "3. The data table will be displayed separately."
                     )
+                elif output_mode == OutputMode.TEXT:
+                    system_prompt += (
+                        "\nPLAIN TEXT RULES:\n"
+                        "- Do NOT use markdown tables (| col | col |), headers (#), "
+                        "bold (**text**), or any markdown formatting.\n"
+                        "- Present tabular facts as 'Label: value' lines, one per line.\n"
+                        "- Use short sentences and paragraphs.\n"
+                    )
                 else:
                     system_prompt += (
                         "\nMARKDOWN FORMATTING RULES:\n"
@@ -2230,6 +2238,16 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     response.output = content
                     response.response = wrapped
                     response.output_mode = output_mode
+
+                # TEXT mode: also strip markdown from the structured
+                # output's explanation so consumers reading the
+                # PandasAgentResponse directly get clean plain text.
+                if output_mode == OutputMode.TEXT and data_response is not None:
+                    if data_response.explanation:
+                        from ..outputs.formats.text import markdown_to_plain
+                        data_response.explanation = markdown_to_plain(
+                            data_response.explanation
+                        )
 
                 # FEAT-224 (G1): Build the canonical artifacts[] envelope for the
                 # three structured output modes.  A typed artifact entry is appended to
