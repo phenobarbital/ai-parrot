@@ -3,6 +3,46 @@
 Date: 2026-07-20
 Author: sdd-worker (Claude)
 
+## Addendum — post-TASK-1834 code review round
+
+A code review (`code-reviewer` agent) of the full `809473d9e..HEAD` diff
+found two blocking issues before this branch was fit to PR against `dev`.
+Both are fixed in a follow-up commit
+(`fix(parrot-eventbus-migration): address code-review findings for FEAT-317`):
+
+1. **`packages/ai-parrot-server/src/parrot/autonomous/orchestrator.py:479`
+   — `event.hook_type.value` raised `AttributeError` for every dispatched
+   hook event.** `navigator_eventbus.hooks.models.HookEvent.hook_type` is
+   a plain `str` (HookType became an open registry of string constants,
+   not an `Enum`, per the FEAT-312 package redesign) — no `.value`
+   attribute. The existing test suite didn't catch this because
+   `test_orchestrator_hooks_via_bus.py`'s only "real dispatch" test
+   monkey-patches `_handle_hook_event` entirely, so the actual metadata
+   dict construction was never exercised. Fixed the call site
+   (`event.hook_type` — already a string) and added
+   `test_handle_hook_event_builds_metadata_without_crashing`, which calls
+   the real method (mocking only the downstream `_execute`) — verified it
+   fails against the pre-fix code and passes against the fix.
+2. **`packages/ai-parrot/pyproject.toml` — the `navigator-eventbus`
+   dependency was a hardcoded `file:///home/jesuslara/proyectos/
+   navigator-eventbus` path**, which resolves on this machine only and
+   would fail dependency resolution in CI (`.github/workflows/ci.yml`,
+   `ubuntu-latest` runners) and on any other contributor's checkout.
+   Replaced with a pinned `git+https://github.com/phenobarbital/
+   navigator-eventbus.git@17b99c22faf44bcf92fdf299a6e9a021d678a970`
+   reference — the public repo at the exact commit this feature was
+   developed and tested against. Re-verified: `uv pip install -e
+   packages/ai-parrot` resolves it from the git remote, and the
+   `from navigator_eventbus import EventBus; ... ; print('OK')` smoke
+   import still passes.
+
+Both non-blocking review notes (spec's Redis-streams-prefix kwargs not
+applying to the orchestrator's actual `RedisPubSubBackend`-only usage;
+spec header phase-2/3 status staleness) were confirmed correct
+architectural calls already documented in TASK-1826/1832's completion
+notes — no code change needed, left as follow-up spec-hygiene items for
+`navigator-eventbus`'s own SDD tracking.
+
 ## 1. Neutrality / lingering-reference grep guard
 
 All three commands return empty (excluding the two facades, which
