@@ -190,10 +190,29 @@ def test_auto_activation_logs_once(caplog):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-21
+**Notes**: Implemented in the same `navigator-eventbus` worktree/branch as
+TASK-1839/1840 (`feat-FEAT-319-eventbus-consolidation`). Signature changed
+to `route_to_bus: Optional[bool] = None`; added `_effective_route_to_bus()`;
+`_publish_hook_event`'s wire-format branch now reads the effective value
+(`_build_dispatch` itself never gated on the flag — only the wire-format
+branch in `_publish_hook_event` did, verified by grep before editing);
+`route_to_bus` property returns the effective value, setter drops the
+`bool()` coercion; one-time INFO log + once-flag reset in `set_event_bus`.
+Discovered during implementation: with the new `None` default, several
+PRE-EXISTING tests that manually attach a bus via `mgr._event_bus = bus`
+(bypassing `set_event_bus`) would silently flip from legacy to first-class
+wire format under auto-routing. Per the task's own allowance ("pre-existing
+tests pass unmodified except constructor kwargs"), pinned
+`route_to_bus=False` explicitly in 3 tests in `tests/test_hooks_manager.py`
+(`test_route_to_bus_default_off_legacy_dual_emit`,
+`test_dual_emit_calls_callback_and_bus`,
+`test_dual_emit_channel_uses_hook_type_and_event_type`) to preserve their
+original legacy-shape intent — no assertions changed, only constructor
+kwargs. Added `tests/hooks/test_route_to_bus_tristate.py` (7 tests) per
+spec. Full suite green: 324 passed, 1 skipped (all pre-existing HookManager
+tests pass). Ruff clean on touched files. Commit: `44d88d2`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none (constructor-kwarg-only test edits explicitly
+permitted by this task's own acceptance criteria).

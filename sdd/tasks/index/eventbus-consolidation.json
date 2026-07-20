@@ -52,7 +52,7 @@
       "feature_id": "FEAT-319",
       "feature": "eventbus-consolidation",
       "spec": "sdd/specs/eventbus-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "Cross-repo task (navigator-eventbus checkout). Touches only hooks/manager.py — no file overlap with TASK-1839/1840; parallel with both.",
       "assigned_to": null,
       "started_at": "2026-07-20T22:24:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1841-hookmanager-tristate-routing.md"
+      "completed_at": "2026-07-20T23:28:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1841-hookmanager-tristate-routing.md"
     },
     {
       "id": "TASK-1842",
