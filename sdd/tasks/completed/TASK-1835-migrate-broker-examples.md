@@ -79,13 +79,16 @@ examples/brokers/nav_rabbitmq_consumer.py   # imports navigator.brokers.rabbitmq
 examples/brokers/nav_sqs_consumer.py        # imports navigator.brokers.sqs.*
 ```
 
-### Target imports (from navigator-eventbus, delivered by FEAT-316)
+### Target imports (VERIFIED against installed navigator-eventbus 0.1.0rc1, 2026-07-20)
 ```python
-# Confirm exact exported symbol names against the INSTALLED navigator-eventbus
-# before rewriting — the port may have renamed symbols on the way in.
-from navigator_eventbus.brokers.redis import RedisConnection      # was navigator.brokers.redis
-from navigator_eventbus.brokers.rabbitmq import RabbitMQConnection
-from navigator_eventbus.brokers.sqs import SQSConnection
+# The examples import the *Consumer classes (not *Connection). Symbol names are
+# IDENTICAL between navigator.brokers.* and navigator_eventbus.brokers.* — the
+# port preserved them, so migration is a pure module-path swap, no renames.
+from navigator_eventbus.brokers.redis import RedisConsumer      # was navigator.brokers.redis.RedisConsumer
+from navigator_eventbus.brokers.rabbitmq import RMQConsumer     # was navigator.brokers.rabbitmq.RMQConsumer
+from navigator_eventbus.brokers.sqs import SQSConsumer          # was navigator.brokers.sqs.SQSConsumer
+# Consumer __init__(self, credentials=None, timeout=5, callback=None, **kwargs)
+# — examples pass only callback=<fn>, so no constructor edits are needed.
 ```
 
 ### Does NOT Exist
@@ -159,10 +162,27 @@ ai-parrot on `dev`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: Claude (Opus 4.8) via `/sdd-start`
+**Date**: 2026-07-20
 **Notes**:
+- Rewired the import line in all three `examples/brokers/nav_{redis,rabbitmq,sqs}_consumer.py`
+  from `navigator.brokers.*` → `navigator_eventbus.brokers.*`. Verified against the
+  installed `navigator-eventbus 0.1.0rc1` (published to PyPI 2026-07-20) that the
+  class names `RedisConsumer` / `RMQConsumer` / `SQSConsumer` are **preserved** by
+  the FEAT-316 port, so this was a pure 1:1 module-path swap — no symbol renames.
+- **No constructor edits needed**: consumer `__init__` is
+  `(credentials=None, timeout=5, callback=None, **kwargs)` and the examples pass
+  only `callback=<fn>`, so the PR #393 "credentials now keyword" fix is already
+  satisfied. (Task scope allowed for constructor edits; none were required.)
+- Corrected the task's `## Codebase Contract` Target-imports block, which had
+  guessed `*Connection` names; replaced with the verified `*Consumer` names
+  (per `/sdd-start` step 7.2, stale-contract correction before implementation).
+- **Acceptance**: neutrality guard → 0 `navigator.brokers` matches; all 3 examples
+  import + construct (via `runpy`, `app.run()` skipped) with no `TypeError`.
+- Code committed in the navigator repo worktree
+  `.claude/worktrees/feat-318-navigator-brokers-removal` (commit `1124885`).
+  SDD state (this file + index) committed in ai-parrot on `dev`.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — symbol names differed from the spec's §6 *guess*
+(`RedisConnection`), but the spec explicitly flagged those as unverified and to be
+confirmed against the installed package; the verified `*Consumer` names were used.

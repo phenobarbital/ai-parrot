@@ -14,7 +14,7 @@
       "feature_id": "FEAT-318",
       "feature": "navigator-brokers-removal",
       "spec": "sdd/specs/navigator-brokers-removal.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Sequential: all FEAT-318 tasks operate on the same navigator repo in a strict order (examples -> deps -> delete -> coordinate). Hard-blocked externally on FEAT-316 (navigator-eventbus[brokers] must be installable). Executes in ../navigator, not ai-parrot.",
       "assigned_to": null,
       "started_at": "2026-07-20T14:36:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1835-migrate-broker-examples.md"
+      "completed_at": "2026-07-20T14:38:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1835-migrate-broker-examples.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1836",
