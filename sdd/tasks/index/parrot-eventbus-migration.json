@@ -72,7 +72,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Theoretically parallelizable with TASK-1828 (disjoint dirs), but spec mandates single sequential worktree. Kept sequential.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1829-delete-rewire-hooks-generic.md"
+      "completed_at": "2026-07-20T12:04:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1829-delete-rewire-hooks-generic.md"
     },
     {
       "id": "TASK-1830",
