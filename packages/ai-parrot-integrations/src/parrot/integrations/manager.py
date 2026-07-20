@@ -583,6 +583,7 @@ class IntegrationBotManager:
             base_path=base_path,
             tags=config.tags,
             broker=broker,
+            output_mode=getattr(config, "output_mode", "text"),
         )
 
         has_security = bool(
@@ -792,6 +793,7 @@ class IntegrationBotManager:
                 base_path=companion_path,
                 tags=config.tags,
                 broker=broker,
+                output_mode=getattr(config, "output_mode", "text"),
             )
             # Register the single ``/.well-known/agent.json`` route only if no
             # earlier A2A agent (or companion) already claimed it on this app.

@@ -23,13 +23,15 @@ back to a service identity (OQ#1 is resolved: identity IS present in Copilot
 A2A messages; absence means an unexpected client).
 """
 from __future__ import annotations
-from typing import Dict, List, Optional, Any, TYPE_CHECKING
+from typing import Dict, List, Optional, Any, Union, TYPE_CHECKING
 import uuid
 import json
 import contextlib
 import asyncio
 from aiohttp import web
 from navconfig.logging import logging
+from parrot.models.outputs import OutputMode
+from parrot.outputs.formats.text import markdown_to_plain
 from parrot.a2a.models import (
     AgentCard,
     AgentInterface,
@@ -123,6 +125,7 @@ class A2AServer:
         suspended_store: Optional[Any] = None,
         audit_ledger: Optional[Any] = None,
         push_store: Optional["PushNotificationStore"] = None,
+        output_mode: Union[OutputMode, str, None] = OutputMode.TEXT,
     ):
         """Initialize A2A server wrapper.
 
@@ -133,6 +136,14 @@ class A2AServer:
             capabilities: Override auto-detected capabilities
             extra_skills: Additional skills beyond auto-discovered tools
             tags: Tags for the AgentCard
+            output_mode: :class:`~parrot.models.outputs.OutputMode` requested
+                from the agent for every A2A turn. Defaults to
+                ``OutputMode.TEXT`` (markdown-free plain text) because A2A
+                consumers — notably Microsoft Copilot — render ``TextPart``
+                content literally, so markdown arrives as raw ``**bold**``
+                and pipe tables. Pass ``OutputMode.DEFAULT``/``None`` (or the
+                string ``"default"``) to restore the agent's native
+                (typically markdown) output.
             broker: Optional :class:`~parrot.auth.broker.CredentialBroker`
                 (FEAT-264).  When supplied, per-user credentials are resolved
                 through the broker; missing credentials suspend the task and
@@ -158,6 +169,7 @@ class A2AServer:
         self.capabilities = capabilities or AgentCapabilities(streaming=True)
         self.extra_skills = extra_skills or []
         self.tags = tags or []
+        self._output_mode: OutputMode = self._coerce_output_mode(output_mode)
 
         # Runtime state
         self._tasks: Dict[str, Task] = {}
@@ -1201,6 +1213,10 @@ class A2AServer:
         kwargs = {}
         if message.context_id:
             kwargs["session_id"] = message.context_id
+        # Prompt-level lever: the mode's system prompt asks the model for
+        # plain text, so streamed chunks come out markdown-free.
+        if self._output_mode != OutputMode.DEFAULT:
+            kwargs["output_mode"] = self._output_mode
 
         collected_text = []
         artifact_id = str(uuid.uuid4())
@@ -1254,8 +1270,12 @@ class A2AServer:
             # Flush remaining
             await flush_buffer()
 
-            # Final artifact with complete text
+            # Final artifact with complete text. Streamed chunks bypass the
+            # bot's post-formatter, so in TEXT mode apply the deterministic
+            # markdown→plain cleanup to the final artifact here.
             full_text = "".join(collected_text)
+            if self._output_mode == OutputMode.TEXT:
+                full_text = markdown_to_plain(full_text)
             artifact = Artifact(
                 artifact_id=artifact_id,
                 name="response",
@@ -1321,6 +1341,27 @@ class A2AServer:
             }
         })
 
+    @staticmethod
+    def _coerce_output_mode(value: Union[OutputMode, str, None]) -> OutputMode:
+        """Coerce an ``output_mode`` config value into an :class:`OutputMode`.
+
+        Accepts an ``OutputMode`` member, its string value (e.g. ``"text"``,
+        ``"markdown"``), or ``None`` (→ ``DEFAULT``). Unknown strings log a
+        warning and fall back to ``DEFAULT`` (the agent's native output).
+        """
+        if value is None:
+            return OutputMode.DEFAULT
+        if isinstance(value, OutputMode):
+            return value
+        try:
+            return OutputMode(str(value).lower())
+        except ValueError:
+            logging.getLogger(__name__).warning(
+                "A2AServer: unknown output_mode %r — falling back to 'default'",
+                value,
+            )
+            return OutputMode.DEFAULT
+
     def _build_ask_kwargs(self, message: Message) -> Dict[str, Any]:
         """Build kwargs for ask/ask_stream methods."""
         kwargs = {}
@@ -1334,6 +1375,11 @@ class A2AServer:
         # Pass context_id as session_id
         if message.context_id:
             kwargs["session_id"] = message.context_id
+
+        # Request the configured output mode (TEXT by default so Copilot and
+        # other A2A consumers get markdown-free plain text).
+        if self._output_mode != OutputMode.DEFAULT:
+            kwargs["output_mode"] = self._output_mode
 
         return kwargs
 

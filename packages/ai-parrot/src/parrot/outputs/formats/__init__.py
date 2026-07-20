@@ -51,6 +51,7 @@ _PROMPTS: Dict[OutputMode, str] = {}
 
 # Module-level dispatch table — maps OutputMode → module name(s) to import
 _MODULE_MAP: dict = {
+    OutputMode.TEXT:            ('.text',),
     OutputMode.TERMINAL:        ('.terminal',),          # no renderer; TerminalGenerator is in generators/
     OutputMode.HTML:            ('.html',),
     OutputMode.JSON:            ('.json',),

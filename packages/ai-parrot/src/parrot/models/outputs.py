@@ -36,6 +36,7 @@ class OutputType(str, Enum):
 class OutputMode(str, Enum):
     """Output mode enumeration"""
     DEFAULT = "default"          # Keep as-is (BaseModel/dataclass)
+    TEXT = "text"               # Plain conversational text — markdown-free (A2A/Copilot)
     JSON = "json"               # Serialize to JSON (using orjson)
     TERMINAL = "terminal"       # Render for terminal display (using Rich)
     MARKDOWN = "markdown"       # Convert to markdown
