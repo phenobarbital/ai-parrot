@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-18T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-20T17:33:10+00:00",
   "tasks": [
     {
       "id": "TASK-1835",
@@ -76,7 +76,7 @@
       "feature_id": "FEAT-318",
       "feature": "navigator-brokers-removal",
       "spec": "sdd/specs/navigator-brokers-removal.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -86,8 +86,9 @@
       "parallelism_notes": "Closing task: changelog note + PR #393 closure + external-consumer (Flowtask/FieldSync) release coordination. Depends on the deletion being done. Executes in ../navigator + GitHub.",
       "assigned_to": null,
       "started_at": "2026-07-20T17:23:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1838-pr393-close-and-release-coordination.md"
+      "completed_at": "2026-07-20T17:33:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1838-pr393-close-and-release-coordination.md",
+      "verification": "verified"
     }
   ]
 }

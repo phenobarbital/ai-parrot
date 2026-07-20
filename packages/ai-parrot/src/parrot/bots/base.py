@@ -1368,12 +1368,17 @@ class BaseBot(AbstractBot):
                     getattr(response, "tool_calls", None)
                 )
                 if interactive_envelope is not None:
-                    self._finalize_interactive_response(response, interactive_envelope)
+                    if getattr(interactive_envelope, "a2ui_envelope", None) is not None:
+                        response.a2ui_envelope = interactive_envelope.a2ui_envelope
+                        finalize_a2ui_response(response)
+                    else:
+                        self._finalize_interactive_response(response, interactive_envelope)
                     self.logger.info(
                         "InteractiveRenderResult detected — bypassing formatter: "
-                        "artifact_id=%s enhanced=%s",
+                        "artifact_id=%s enhanced=%s a2ui=%s",
                         interactive_envelope.artifact_id,
                         interactive_envelope.enhanced,
+                        interactive_envelope.a2ui_envelope is not None,
                     )
                 elif output_mode == OutputMode.INTERACTIVE:
                     # Interactive mode was requested but no artifact was produced
@@ -1397,11 +1402,16 @@ class BaseBot(AbstractBot):
                     getattr(response, "tool_calls", None)
                 )
                 if infographic_envelope is not None:
-                    self._finalize_infographic_response(response, infographic_envelope)
+                    if getattr(infographic_envelope, "a2ui_envelope", None) is not None:
+                        response.a2ui_envelope = infographic_envelope.a2ui_envelope
+                        finalize_a2ui_response(response)
+                    else:
+                        self._finalize_infographic_response(response, infographic_envelope)
                     self.logger.info(
                         "InfographicRenderResult detected — bypassing formatter: "
-                        "artifact_id=%s",
+                        "artifact_id=%s a2ui=%s",
                         infographic_envelope.artifact_id,
+                        infographic_envelope.a2ui_envelope is not None,
                     )
                 elif output_mode == OutputMode.INFOGRAPHIC:
                     self.logger.warning(

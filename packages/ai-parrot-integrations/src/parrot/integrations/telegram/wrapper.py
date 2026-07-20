@@ -1618,8 +1618,12 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
     async def _handle_deeplink_resume(
         self, message: Message, token: str
-    ) -> None:
-        """Consume an A2UI deep-link token and inject the action into the original session."""
+    ) -> bool:
+        """Consume an A2UI deep-link token and inject the action into the original session.
+
+        Returns True if the deep link was handled (success or error), False if the
+        caller should fall through to normal /start behavior.
+        """
         chat_id = message.chat.id
         resume_helper = self._get_deeplink_resume()
         if resume_helper is None:
@@ -1627,7 +1631,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 "A2UI deep-link token received but Redis is unavailable; "
                 "falling back to normal /start."
             )
-            return
+            return False
 
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
         try:
@@ -1654,6 +1658,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             await message.answer(
                 "Something went wrong resuming your action. Please try again."
             )
+        return True
 
     async def handle_start(self, message: Message) -> None:
         """Handle /start command with welcome message."""
@@ -1667,8 +1672,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         parts = (message.text or "").split(maxsplit=1)
         if len(parts) > 1:
             token = parts[1].strip()
-            if token:
-                await self._handle_deeplink_resume(message, token)
+            if token and await self._handle_deeplink_resume(message, token):
                 return
 
         # Clear any existing conversation
