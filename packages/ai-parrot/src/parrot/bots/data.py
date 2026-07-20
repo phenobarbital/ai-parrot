@@ -1562,6 +1562,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     if ctx is not None:
                         ctx.output_mode = _resolved_mode
 
+            # Apply agent-level default (e.g. output_mode=TEXT in constructor)
+            # when neither the caller nor the router resolved a specific mode.
+            output_mode = self._apply_default_output_mode(output_mode)
+
             # Build context from different sources (no vector context for PandasAgent)
             vector_metadata = {'activated_kbs': []}
 
