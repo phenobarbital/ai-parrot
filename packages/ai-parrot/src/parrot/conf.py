@@ -951,6 +951,17 @@ K8S_NAMESPACE: str = config.get("K8S_NAMESPACE", fallback="parrot-tools")
 K8S_TOOL_IMAGE: str = config.get("K8S_TOOL_IMAGE", fallback="parrot-tools:latest")
 K8S_JOB_TTL_SECONDS: int = config.getint("K8S_JOB_TTL_SECONDS", fallback=60)
 
+# Docker — used by DockerToolExecutor. DOCKER_HOST empty means the
+# client auto-detects (DOCKER_HOST env var, then the default unix
+# socket). DOCKER_TOOL_IMAGE shares the worker image with the K8s
+# executor. Mode "warm" reuses one container across calls; "ephemeral"
+# creates one per call.
+DOCKER_HOST: str = config.get("DOCKER_HOST", fallback="")
+DOCKER_TOOL_IMAGE: str = config.get("DOCKER_TOOL_IMAGE", fallback="parrot-tools:latest")
+DOCKER_EXECUTOR_MODE: str = config.get("DOCKER_EXECUTOR_MODE", fallback="warm")
+DOCKER_IDLE_TTL_SECONDS: int = config.getint("DOCKER_IDLE_TTL_SECONDS", fallback=300)
+DOCKER_NETWORK_MODE: str = config.get("DOCKER_NETWORK_MODE", fallback="bridge")
+
 # Base URL the worker posts opt-in webhook deliveries to. Empty string
 # disables async delivery.
 TOOL_EXECUTOR_WEBHOOK_BASE_URL: str = config.get(

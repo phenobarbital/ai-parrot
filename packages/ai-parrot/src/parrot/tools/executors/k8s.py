@@ -14,7 +14,6 @@ never use the K8s executor are not forced to install the client.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 import uuid
@@ -330,53 +329,17 @@ class K8sToolExecutor(AbstractToolExecutor):
         ``__PARROT_TOOL_RESULT_END__`` so unrelated stdout/stderr
         chatter is ignored.
         """
-        from ..abstract import ToolResult
+        from .runner import parse_sentinel_output
 
-        begin = "__PARROT_TOOL_RESULT_BEGIN__"
-        end = "__PARROT_TOOL_RESULT_END__"
-        if begin not in logs or end not in logs:
-            return ToolResult(
-                success=False,
-                status="error",
-                result=None,
-                error=(
-                    "Worker did not emit a result block. Last 4KB of logs: "
-                    + (logs[-4096:] if logs else "<empty>")
-                ),
-                metadata={
-                    "executor": "k8s",
-                    "job_name": job_name,
-                    "pod_name": pod_name,
-                },
-            )
-        payload = logs.split(begin, 1)[1].split(end, 1)[0].strip()
-        try:
-            data = json.loads(payload)
-        except json.JSONDecodeError as exc:
-            return ToolResult(
-                success=False,
-                status="error",
-                result=None,
-                error=f"Worker emitted invalid JSON: {exc}",
-                metadata={
-                    "executor": "k8s",
-                    "job_name": job_name,
-                    "pod_name": pod_name,
-                    "payload": payload[:512],
-                },
-            )
-        # Stamp metadata so observers can correlate.
-        metadata = dict(data.get("metadata") or {})
-        metadata.update(
-            {
+        return parse_sentinel_output(
+            logs,
+            metadata={
                 "executor": "k8s",
                 "namespace": self.namespace,
                 "job_name": job_name,
                 "pod_name": pod_name,
-            }
+            },
         )
-        data["metadata"] = metadata
-        return ToolResult(**data)
 
     async def close(self) -> None:
         if self._api_client is not None:
