@@ -194,3 +194,26 @@ touched files (pre-existing unrelated F401/I001 findings in rabbitmq
 brokers files untouched by this task). Commit: `74a9ccc`.
 
 **Deviations from spec**: none
+
+---
+
+## Addendum (2026-07-21) — code review follow-up fix
+
+Independent code review (via `code-reviewer` agent) of the full FEAT-319
+diff found that `from_dict`'s forward-version check
+(`schema_version > ENVELOPE_SCHEMA_VERSION`) didn't validate type or
+range: a string value raised a raw `TypeError` instead of
+`UnsupportedSchemaVersion`; negative/zero values passed silently. Fixed
+by extracting a shared `_validate_schema_version()` helper in
+`envelope.py` (also reused by TASK-1840's `DLQHandler._row_to_envelope`)
+that enforces `int` (excluding `bool`) `>= 1` before the upper-bound
+check. Added `test_from_dict_non_int_version_raises_cleanly`,
+`test_from_dict_negative_version_raises`, `test_from_dict_zero_version_raises`,
+`test_from_dict_bool_version_raises`. Also: `redis_streams.py`/
+`redis_pubsub.py` (previously "verify only, no code change expected"
+per spec Integration Points) now catch `UnsupportedSchemaVersion`
+distinctly from generic decode failures so operators can tell
+rolling-upgrade version skew apart from corrupt/poison data — a
+genuine scope addition beyond the original task, explicitly requested
+by the user after reviewing the findings. Commit: `a50c1f8` (same
+worktree/branch). Full suite green: 334 passed, 1 skipped.

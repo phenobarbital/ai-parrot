@@ -216,3 +216,21 @@ tests pass). Ruff clean on touched files. Commit: `44d88d2`.
 
 **Deviations from spec**: none (constructor-kwarg-only test edits explicitly
 permitted by this task's own acceptance criteria).
+
+---
+
+## Addendum (2026-07-21) — code review confirmation + doc wording fix
+
+Independent code review (via `code-reviewer` agent) independently
+re-verified (not just trusted this note) that `_build_dispatch()` never
+read `self._route_to_bus` in either the pre- or post-diff code — only
+`_publish_hook_event()`'s wire-format branch did — confirming the
+observation already recorded above. The parent spec
+(`sdd/specs/eventbus-consolidation.spec.md` §3 Module 2) has been
+corrected accordingly (revision 0.2) since it had claimed both methods
+needed the swap. Also tightened `set_event_bus`'s docstring/comment
+wording: "resets when the bus is detached/replaced" → clarified that
+there is no separate detach method — the flag resets on every
+`set_event_bus` call (a replace is the only way attachment changes
+today). No behavior change, no new tests needed (pure wording). Commit:
+`a50c1f8` (same worktree/branch).

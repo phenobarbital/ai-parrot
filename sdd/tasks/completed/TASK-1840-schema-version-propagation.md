@@ -215,3 +215,42 @@ legacy+v1 roundtrip tests to `tests/test_backends_streams.py` and
 Ruff clean on touched files. Commit: `07a02f9`.
 
 **Deviations from spec**: none
+
+---
+
+## Addendum (2026-07-21) — code review critical fix (DLQ persistence gap)
+
+Independent code review (via `code-reviewer` agent) found a critical gap:
+the original implementation only handled the READ side (defaulting
+`schema_version` to `1` in `_row_to_envelope` when absent) — the
+`evb_dlq` table had no `schema_version` column and `_persist()` never
+wrote `envelope.schema_version`, so DLQ replay would silently downgrade
+EVERY row to version `1` forever, not just legacy (pre-M1) ones. This
+was invisible today only because `ENVELOPE_SCHEMA_VERSION == 1`; it
+would have silently violated the spec's "never downgrade" rule the
+moment a future version bump landed.
+
+Fixed (user-approved, "fix all items"):
+- `DLQ_DDL` gains a `schema_version INTEGER NOT NULL DEFAULT 1` column,
+  plus `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` so tables created
+  before this fix are retrofitted automatically on the next
+  `ensure_table()` call (`CREATE TABLE IF NOT EXISTS` alone would not
+  touch an existing table).
+- `_persist()` now writes `envelope.schema_version` (`_INSERT_SQL`
+  gained a 13th placeholder).
+- `_row_to_envelope` now raises `UnsupportedSchemaVersion` (via the
+  shared `_validate_schema_version()` helper, TASK-1839 addendum) for a
+  stored version greater than `ENVELOPE_SCHEMA_VERSION`, instead of
+  silently downgrading.
+- `replay()` now isolates per-row failures (try/except per row, logs +
+  skips, leaves the row un-replayed) instead of letting one bad row
+  abort the entire batch.
+
+Added tests: `test_ddl_retrofits_schema_version_column`,
+`test_dlq_replay_preserves_stored_schema_version`,
+`test_row_to_envelope_raises_for_future_schema_version`,
+`test_dlq_replay_skips_unsupported_schema_version_row`; updated
+`test_retry_exhaustion_persists_to_dlq`'s arg-index assertions (the new
+column shifted `failure_reason`/`attempts` positions in `_INSERT_SQL`).
+Commit: `a50c1f8` (same worktree/branch). Full suite green: 334 passed,
+1 skipped. Ruff clean.

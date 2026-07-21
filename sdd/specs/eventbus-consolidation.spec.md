@@ -213,8 +213,12 @@ UnsupportedSchemaVersion
   - Signature change: `def __init__(self, *, route_to_bus: Optional[bool] = None)`.
   - New `_effective_route_to_bus() -> bool`:
     `self._route_to_bus if self._route_to_bus is not None else (self._event_bus is not None)`.
-  - `_build_dispatch()` (line 92–130) and `_publish_hook_event()` (line 132–177)
-    consult `_effective_route_to_bus()` instead of reading `self._route_to_bus`.
+  - `_publish_hook_event()` (line 132–177) consults `_effective_route_to_bus()`
+    instead of reading `self._route_to_bus` directly. *(Correction, verified
+    during implementation: `_build_dispatch()` never read `self._route_to_bus`
+    in either the pre- or post-spec code — it only branches on whether a bus
+    is attached at all; only `_publish_hook_event()`'s wire-format branch
+    needed the swap. See TASK-1841 Completion Note.)*
   - `route_to_bus` property returns the *effective* value; setter keeps accepting
     `Optional[bool]` and re-injects callbacks (existing behavior at line 57–63).
   - One-time INFO log on first auto-activation
@@ -530,3 +534,4 @@ No new dependencies in navigator-eventbus.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-20 | Jesus + Claude | Initial draft from brainstorm Option B; supersedes proposal draft (FEAT-320 provisional) after FEAT-316/317/318 closed its M3/M4 |
+| 0.2 | 2026-07-21 | Claude (code review fixes) | Corrected §3 Module 2 bullet: `_build_dispatch()` never consulted `route_to_bus` (only `_publish_hook_event()` did) — verified by grep during TASK-1841 implementation and independently confirmed by code review. Also: TASK-1840's DLQ persistence was found (post-implementation code review) to never have written `schema_version` to the `evb_dlq` table, only defaulting it on read — fixed with a DDL column + migration, `_persist()` write, strict-forward check in `_row_to_envelope`, and per-row isolation in `replay()`. `envelope.py:from_dict` and `_row_to_envelope` also gained explicit int/range validation for `schema_version` (previously a non-int value raised a raw `TypeError` instead of `UnsupportedSchemaVersion`). `redis_streams.py`/`redis_pubsub.py` now log `UnsupportedSchemaVersion` distinctly from generic undecodable-message drops. |
