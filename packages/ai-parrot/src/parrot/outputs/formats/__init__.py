@@ -125,6 +125,11 @@ def get_infographic_html_renderer():
 
     Returns:
         Type[InfographicHTMLRenderer]: The concrete renderer class.
+
+    Raises:
+        ImportError: If the ``ai-parrot-visualizations`` package is not
+            installed — the renderer moved there in FEAT-200; the message
+            names the exact pip extra to install.
     """
     # FEAT-273 (G7): the infographic-HTML path is superseded; the JSON path is kept.
     warnings.warn(
@@ -134,9 +139,21 @@ def get_infographic_html_renderer():
         DeprecationWarning,
         stacklevel=2,
     )
-    from .infographic_html import InfographicHTMLRenderer  # noqa: F401 — ensure registered
+    try:
+        from .infographic_html import InfographicHTMLRenderer as _Cls
+    except ModuleNotFoundError as exc:
+        # FEAT-200 moved this module to the ai-parrot-visualizations satellite;
+        # only translate the error when the renderer module itself is missing,
+        # not when one of its own dependencies fails to import.
+        if exc.name and exc.name.endswith('infographic_html'):
+            raise ImportError(
+                "Infographic HTML rendering requires the 'ai-parrot-visualizations' "
+                "package (renderers moved out of core in FEAT-200). Install it with: "
+                "pip install 'ai-parrot-visualizations[infographic]' "
+                "(or reinstall the host with the extra: pip install 'ai-parrot[charts]')."
+            ) from exc
+        raise
     get_renderer(OutputMode.INFOGRAPHIC)  # trigger lazy-load + registration
-    from .infographic_html import InfographicHTMLRenderer as _Cls
     return _Cls
 
 
