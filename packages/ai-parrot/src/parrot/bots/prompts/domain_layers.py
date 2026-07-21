@@ -167,6 +167,23 @@ in <agent_identity>.
 )
 
 
+# ── Capabilities (FEAT-321: PromptBuilder identity capability) ──
+# Renders $capabilities for non-RAG agents that adopt the composable prompt
+# path. IDENTITY_LAYER intentionally omits $capabilities (see comment above);
+# KNOWLEDGE_SCOPE_LAYER already covers the RAG case. Priority IDENTITY + 1
+# (= 11) slots this layer between IDENTITY_LAYER (10) and AGENT_CONTEXT_LAYER
+# (12).
+CAPABILITIES_LAYER = PromptLayer(
+    name="capabilities",
+    priority=LayerPriority.IDENTITY + 1,
+    phase=RenderPhase.CONFIGURE,
+    template="""<capabilities>
+$capabilities
+</capabilities>""",
+    condition=lambda ctx: bool(ctx.get("capabilities", "").strip()),
+)
+
+
 # ── RAG grounding (replaces strict_grounding for RAG-only agents) ──
 # Priority KNOWLEDGE-6 = 24 places this layer immediately before
 # KNOWLEDGE_SCOPE_LAYER (25) and the actual <knowledge_context> (30),
@@ -584,6 +601,7 @@ _DOMAIN_LAYERS: Dict[str, PromptLayer] = {
     "rag_grounding": RAG_GROUNDING_LAYER,
     "jira_grounding": JIRA_GROUNDING_LAYER,
     "jira_workflow": JIRA_WORKFLOW_LAYER,
+    "capabilities": CAPABILITIES_LAYER,
 }
 
 
