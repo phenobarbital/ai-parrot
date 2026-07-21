@@ -226,10 +226,67 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-21
+**Notes**: Split the ~122-line inline `BACKSTORY` constant into five files
+under `agents/porygon/identity/` (role/goal/capabilities/backstory/
+rationale), content-preserving (no prose rewrites beyond the split — role
+statement → `role.md`, the dataset/tool-usage sentence → `goal.md`, the "KPI
+Definitions and Tool Usage" section → `capabilities.md`, the "Analysis
+Guidelines" section → `rationale.md`, and the `$current_date`/`$local_time`
+line + "Business Domain" section (org hierarchy, replenishment cycle) →
+`backstory.md`). Modified `agents/porygon.py`: `IdentityMixin` added FIRST
+in bases, `enable_identity: bool = True`, explicit
+`identity_dir = Path(__file__).parent / "porygon" / "identity"` (required —
+Porygon is a top-level module file with a sibling assets dir, so the
+mixin's module-relative default would resolve to `agents/identity`, which is
+wrong), `BACKSTORY` constant and `backstory=BACKSTORY` kwarg removed, and
+`await self._configure_identity()` added to `configure()` alongside the
+existing `_configure_episodic_memory()` / `_configure_skill_registry()`
+calls. Created `docs/prompts/identity-capability.md` covering the
+directory convention, mixin adoption, the `"identity"` preset path, hot
+reload, precedence (including the documented `PandasAgent.capabilities`
+kwarg-swallowing exception), silent-missing-file behavior, and
+`$`-placeholder semantics. Created the structural regression test
+(4 tests, all pass) — guarded to source/file assertions per the task's own
+guidance, since Porygon's runtime deps are heavy and it cannot be safely
+imported in a test process (see below).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**IMPORTANT — gitignore finding**: `agents/` is repo-root-gitignored
+(`.gitignore:270`, confirmed via `git check-ignore -v`), and
+`agents/porygon.py` / `agents/porygon/` are genuinely untracked (`git status
+--ignored` shows `!!`) — they did not exist in this worktree at all until I
+copied them in from the main repo checkout (`/home/jesuslara/proyectos/
+ai-parrot/agents/porygon.py`), since git worktrees only replicate *tracked*
+content. This matches an established precedent
+(`sdd/tasks/completed/TASK-1116-security-agent-wiring.md`: "MODIFY (local,
+gitignored)" for `agents/security.py`) — gitignored agent files are edited
+locally and never travel through the normal commit/PR flow. Consequently:
+  - `agents/porygon.py` and `agents/porygon/identity/*.md` are **NOT** part
+    of the `git add`/commit for this task (git would silently refuse them
+    without `-f`, and forcing them in would be wrong — they're intentionally
+    excluded from version control, likely for confidentiality of TROC's
+    business data).
+  - Since this worktree is expected to be removed after the feature merges
+    (per the standard cleanup flow), I copied the modified `porygon.py` and
+    the new `identity/*.md` files back to the main repo's working directory
+    (`/home/jesuslara/proyectos/ai-parrot/agents/...`) so the local-only
+    change survives worktree cleanup. Verified byte-identical via `diff`.
+  - Only `docs/prompts/identity-capability.md` and
+    `packages/ai-parrot/tests/bots/test_porygon_identity_migration.py` are
+    committed on the feature branch — both are genuinely tracked, in-repo
+    deliverables.
+  - An ad-hoc smoke import of `agents/porygon.py` in this environment
+    revealed that `import parrot` triggers `AgentRegistry` auto-discovery
+    against the **main repo's** `agents_dir` (env/settings-configured
+    absolute path, independent of cwd), which pre-populates
+    `sys.modules['porygon']` before any explicit import — an environmental
+    artifact, not a code defect, and exactly why the task specifies
+    structural (not import-based) testing.
 
-**Deviations from spec**: none
+**Deviations from spec**: none in the code/docs themselves. The
+gitignore-driven handling above (local-only edit + manual copy-back to the
+main repo instead of a git commit for `agents/porygon.py` and
+`agents/porygon/identity/*.md`) is a process deviation forced by the repo's
+`.gitignore` policy, not a design choice — flagging it explicitly per the
+"when in doubt, note it in the Completion Note" rule.
