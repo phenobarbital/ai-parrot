@@ -1,0 +1,21 @@
+{
+  "feature_id": "FEAT-322",
+  "mode": "enrichment",
+  "queries": [
+    { "id": "Q001", "type": "web_fetch", "target": "https://microsoft.github.io/agent-host-protocol/specification/overview.html", "intent": "Ground the AHP simil: host/session/channel model, serverSeq, snapshot semantics", "priority": 1 },
+    { "id": "Q002", "type": "web_fetch", "target": "https://microsoft.github.io/agent-host-protocol/reference/common.html", "intent": "AHP common wire types: ActionEnvelope, Snapshot, channel URIs, action shapes", "priority": 1 },
+    { "id": "Q003", "type": "wiki_query", "target": "dev_loop DevLoopRunner orchestration runner sessions", "intent": "Orient on runner/host structure via knowledge graph", "priority": 1 },
+    { "id": "Q004", "type": "read", "target": "packages/ai-parrot/src/parrot/flows/dev_loop/runner.py", "intent": "Re-verify DevLoopRunner (:100), FLOW_MAX_CONCURRENT_RUNS, run lifecycle, command surface", "priority": 1 },
+    { "id": "Q005", "type": "read", "target": "packages/ai-parrot/src/parrot/flows/dev_loop/flow.py", "intent": "Re-verify FlowEventPublisher (:71/:94), event names, never-break-a-run guarantee", "priority": 1 },
+    { "id": "Q006", "type": "read", "target": "packages/ai-parrot/src/parrot/flows/dev_loop/streaming.py", "intent": "Re-verify FlowStreamMultiplexer (:51), stream keys, view modes, WS replay loop", "priority": 1 },
+    { "id": "Q007", "type": "read", "target": "packages/ai-parrot/src/parrot/flows/dev_loop/dispatcher.py", "intent": "Multi-agent layer: dispatcher contract, DispatchEvent emission, subagent binding", "priority": 1 },
+    { "id": "Q008", "type": "read", "target": "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/qa.py", "intent": "Re-verify _merge_manual_results (:301) and QANode.execute gate insertion point", "priority": 1 },
+    { "id": "Q009", "type": "read", "target": "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/deployment_handoff.py", "intent": "Re-verify DeploymentHandoffNode.execute (:89) Jira transition point", "priority": 1 },
+    { "id": "Q010", "type": "grep", "target": "escalation_assignee|FLOW_MAX_CONCURRENT_RUNS|DispatchEvent|class QAReport|class ManualCriterion", "intent": "Re-verify models.py line anchors at current HEAD", "priority": 2 },
+    { "id": "Q011", "type": "read", "target": "packages/ai-parrot/src/parrot/flows/dev_loop/webhook.py", "intent": "aiohttp command/wiring patterns — where client commands (resolve_gate) would land", "priority": 2 },
+    { "id": "Q012", "type": "read", "target": "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py", "intent": "Multi-agent roster (research/development/qa/code-review subagents) for orchestration mapping", "priority": 2 },
+    { "id": "Q013", "type": "git_log", "target": "packages/ai-parrot/src/parrot/flows/dev_loop/", "intent": "In-flight FEAT-250/270 follow-ups touching the same files (parallelism risk)", "priority": 2 },
+    { "id": "Q014", "type": "read", "target": "packages/ai-parrot/src/parrot/flows/dev_loop/definition.py", "intent": "Flow graph definition — node roster to validate NodeId Literal in sketch", "priority": 3 },
+    { "id": "Q015", "type": "wiki_query", "target": "FlowStreamMultiplexer websocket snapshot replay Redis streams", "intent": "Cross-check streaming integration points", "priority": 3 }
+  ]
+}

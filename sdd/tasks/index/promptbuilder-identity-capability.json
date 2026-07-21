@@ -1,0 +1,88 @@
+{
+  "feature": "promptbuilder-identity-capability",
+  "feature_id": "FEAT-321",
+  "spec": "sdd/specs/promptbuilder-identity-capability.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-21T22:21:58+02:00",
+  "completed_at": "2026-07-21T21:09:56+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1844",
+      "slug": "capabilities-layer-identity-preset",
+      "title": "CAPABILITIES_LAYER + \"identity\" PromptBuilder preset",
+      "feature_id": "FEAT-321",
+      "feature": "promptbuilder-identity-capability",
+      "spec": "sdd/specs/promptbuilder-identity-capability.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only domain_layers.py/presets.py + its own test file; shares no files with TASK-1845. Could run in a separate worktree, though per-spec sequential execution is the recommended isolation (spec Worktree Strategy).",
+      "assigned_to": null,
+      "started_at": "2026-07-21T20:31:02+00:00",
+      "completed_at": "2026-07-21T20:46:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1844-capabilities-layer-identity-preset.md"
+    },
+    {
+      "id": "TASK-1845",
+      "slug": "identity-loader-cached-reader",
+      "title": "File-based identity loader + public cached reader",
+      "feature_id": "FEAT-321",
+      "feature": "promptbuilder-identity-capability",
+      "spec": "sdd/specs/promptbuilder-identity-capability.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only prompts/identity.py (new) + agent_context.py + its own test file; shares no files with TASK-1844. Could run in a separate worktree, though per-spec sequential execution is the recommended isolation.",
+      "assigned_to": null,
+      "started_at": "2026-07-21T20:31:02+00:00",
+      "completed_at": "2026-07-21T20:49:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1845-identity-loader-cached-reader.md"
+    },
+    {
+      "id": "TASK-1846",
+      "slug": "identity-mixin-hot-reload",
+      "title": "IdentityMixin — field injection + mtime hot reload",
+      "feature_id": "FEAT-321",
+      "feature": "promptbuilder-identity-capability",
+      "spec": "sdd/specs/promptbuilder-identity-capability.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1844",
+        "TASK-1845"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports CAPABILITIES_LAYER (TASK-1844) and load_identity (TASK-1845); must run after both.",
+      "assigned_to": null,
+      "started_at": "2026-07-21T20:31:02+00:00",
+      "completed_at": "2026-07-21T21:02:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1846-identity-mixin-hot-reload.md"
+    },
+    {
+      "id": "TASK-1847",
+      "slug": "porygon-identity-migration",
+      "title": "Porygon reference migration + docs",
+      "feature_id": "FEAT-321",
+      "feature": "promptbuilder-identity-capability",
+      "spec": "sdd/specs/promptbuilder-identity-capability.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1846"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes IdentityMixin from TASK-1846; final integration + docs task.",
+      "assigned_to": null,
+      "started_at": "2026-07-21T20:31:02+00:00",
+      "completed_at": "2026-07-21T21:09:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1847-porygon-identity-migration.md"
+    }
+  ]
+}
