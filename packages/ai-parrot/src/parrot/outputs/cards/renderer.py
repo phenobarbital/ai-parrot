@@ -357,6 +357,106 @@ def _serialize_to_element(obj: Any) -> ACElement:
     return TextBlock(text=str(obj))
 
 
+# ── Auto-collapse ─────────────────────────────────────────────────────
+
+def _apply_auto_collapse(
+    sections: list[CardSection],
+    policy: AutoCollapsePolicy,
+) -> list[CardSection]:
+    """Wrap oversized section content in auto-generated toggle groups.
+
+    Runs after the caller confirms auto-collapse is enabled and before
+    section expansion. Walks ``sections`` and, for any ``TableSection``,
+    ``TextSection``, or ``CodeSection`` whose content exceeds the
+    corresponding ``policy`` threshold, splits it into a truncated
+    preview section plus a ``ToggleSection`` holding the overflow.
+    Sections under threshold (or of other types) pass through unchanged.
+
+    Args:
+        sections: The card's sections, pre-expansion.
+        policy: Auto-collapse thresholds.
+
+    Returns:
+        A new list of sections with oversized ones replaced by a
+        preview + toggle pair.
+    """
+    result: list[CardSection] = []
+    counter = 0
+    for section in sections:
+        if (
+            isinstance(section, TableSection)
+            and len(section.rows) > policy.table_row_threshold
+        ):
+            threshold = policy.table_row_threshold
+            preview_rows = section.rows[:threshold]
+            overflow_rows = section.rows[threshold:]
+
+            preview = section.model_copy(update={
+                "rows": preview_rows,
+                "max_display_rows": threshold,
+                "total_rows": threshold,
+            })
+            overflow_section = TableSection(
+                columns=section.columns,
+                rows=overflow_rows,
+                max_display_rows=len(overflow_rows),
+                total_rows=len(overflow_rows),
+                first_row_as_header=section.first_row_as_header,
+                show_grid_lines=section.show_grid_lines,
+            )
+            overflow_elements, _ = _expand_table(overflow_section)
+            toggle = ToggleGroup(
+                content=overflow_elements,
+                label_collapsed=f"Show {len(overflow_rows)} more rows",
+                label_expanded="Hide extra rows",
+                group_id=f"tg_auto_{counter}",
+            )
+            counter += 1
+            result.append(preview)
+            result.append(ToggleSection(toggle=toggle))
+            continue
+
+        if (
+            isinstance(section, TextSection)
+            and len(section.text) > policy.text_char_threshold
+        ):
+            threshold = policy.text_char_threshold
+            preview_text = section.text[:threshold].rstrip() + "..."
+            preview = section.model_copy(update={"text": preview_text})
+            toggle = ToggleGroup(
+                content=[TextBlock(text=section.text)],
+                label_collapsed="Show full text",
+                label_expanded="Hide full text",
+                group_id=f"tg_auto_{counter}",
+            )
+            counter += 1
+            result.append(preview)
+            result.append(ToggleSection(toggle=toggle))
+            continue
+
+        if (
+            isinstance(section, CodeSection)
+            and len(section.code.splitlines()) > policy.code_line_threshold
+        ):
+            threshold = policy.code_line_threshold
+            lines = section.code.splitlines()
+            preview_code = "\n".join(lines[:threshold])
+            preview = section.model_copy(update={"code": preview_code})
+            toggle = ToggleGroup(
+                content=[TextBlock(text=section.code, font_type="Monospace")],
+                label_collapsed=f"Show all {len(lines)} lines",
+                label_expanded="Hide code",
+                group_id=f"tg_auto_{counter}",
+            )
+            counter += 1
+            result.append(preview)
+            result.append(ToggleSection(toggle=toggle))
+            continue
+
+        result.append(section)
+    return result
+
+
 # ── Serialization ─────────────────────────────────────────────────────
 
 def _snake_to_camel(name: str) -> str:
@@ -468,9 +568,14 @@ def render(spec: CardSpec, *, max_card_bytes: int = 28_000) -> dict[str, Any]:
     if spec.summary:
         body.append(_serialize_element(TextBlock(text=spec.summary)))
 
+    # Auto-collapse oversized sections before expansion
+    sections = spec.sections
+    if spec.auto_collapse is not None and spec.auto_collapse.enabled:
+        sections = _apply_auto_collapse(sections, spec.auto_collapse)
+
     # Expand sections
     toggle_counter = 0
-    for section in spec.sections:
+    for section in sections:
         expander = _SECTION_EXPANDERS.get(section.section_type)
         if expander is None:
             logger.warning("Unknown section type: %s", section.section_type)
