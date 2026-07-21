@@ -27,6 +27,17 @@ from parrot.outputs.a2ui.renderers import (
     RendererCapabilities,
     register_a2ui_renderer,
 )
+from parrot.outputs.cards import (
+    CardSpec,
+    Column,
+    ColumnSet,
+    Container,
+    Image,
+    RawElementsSection,
+    TextBlock,
+    render as render_card,
+)
+from parrot.outputs.cards.elements import ACElement
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +61,7 @@ _HEADING_ROLES = {"heading", "subtitle", "label"}
     ),
 )
 class AdaptiveCardsRenderer(AbstractA2UIRenderer):
-    """Basic-tree → Adaptive Card JSON renderer (display subset, no actions)."""
+    """Basic-tree -> Adaptive Card JSON renderer (display subset, no actions)."""
 
     async def render(
         self,
@@ -61,26 +72,18 @@ class AdaptiveCardsRenderer(AbstractA2UIRenderer):
     ) -> RenderedArtifact:
         """Render an envelope to a baked Adaptive Card ``RenderedArtifact``."""
         baked_components = bake_envelope(envelope)
-        body: list[dict[str, Any]] = []
+        elements: list[ACElement] = []
         for bc in baked_components:
-            body.append(self._element_for_component(bc))
+            elements.append(self._element_for_component(bc))
 
         for link in deep_links or []:
             # Deep links are rendered as DISPLAY text (never Action.OpenUrl) in v1.
-            body.append(
-                {
-                    "type": "TextBlock",
-                    "text": f"{link.action_label}: {link.url}",
-                    "wrap": True,
-                }
+            elements.append(
+                TextBlock(text=f"{link.action_label}: {link.url}")
             )
 
-        card = {
-            "$schema": _AC_SCHEMA,
-            "type": "AdaptiveCard",
-            "version": _AC_VERSION,
-            "body": body,
-        }
+        spec = CardSpec(sections=[RawElementsSection(elements=elements)])
+        card = render_card(spec)
         content = json.dumps(card, sort_keys=True).encode("utf-8")
         return RenderedArtifact(
             artifact_id=f"{_SURFACE_NAME}-{envelope.surface_id}",
@@ -94,7 +97,7 @@ class AdaptiveCardsRenderer(AbstractA2UIRenderer):
 
     # -- internal mapping ---------------------------------------------------
 
-    def _element_for_component(self, comp: dict[str, Any]) -> dict[str, Any]:
+    def _element_for_component(self, comp: dict[str, Any]) -> ACElement:
         """Lower a baked component to a Basic tree and map it to an AC element."""
         name = comp["component"]
         try:
@@ -113,7 +116,7 @@ class AdaptiveCardsRenderer(AbstractA2UIRenderer):
         )
         return self._map_node(lowered)
 
-    def _map_node(self, node: BasicNode) -> dict[str, Any]:
+    def _map_node(self, node: BasicNode) -> ACElement:
         """Map a Basic Catalog node to an Adaptive Card display element."""
         component = node.component
         props = node.properties or {}
@@ -121,40 +124,39 @@ class AdaptiveCardsRenderer(AbstractA2UIRenderer):
         if component == "Text":
             role = props.get("role", "")
             text = props.get("text")
-            element: dict[str, Any] = {
-                "type": "TextBlock",
-                "text": "" if text is None else str(text),
-                "wrap": True,
-            }
+            kwargs: dict[str, Any] = {}
             if role in _TITLE_ROLES:
-                element["size"] = "Large"
-                element["weight"] = "Bolder"
+                kwargs["size"] = "Large"
+                kwargs["weight"] = "Bolder"
             elif role in _HEADING_ROLES:
-                element["weight"] = "Bolder"
-            return element
+                kwargs["weight"] = "Bolder"
+            return TextBlock(
+                text="" if text is None else str(text),
+                **kwargs,
+            )
 
         if component == "Image":
             src = str(props.get("src", ""))
-            return {"type": "Image", "url": src}
+            return Image(url=src)
 
         if component == "Row":
-            return {
-                "type": "ColumnSet",
-                "columns": [
-                    {"type": "Column", "items": [self._map_node(child)]}
+            return ColumnSet(
+                columns=[
+                    Column(items=[self._map_node(child)])
                     for child in node.children
                 ],
-            }
+            )
 
         if component in ("Column", "Card"):
-            container: dict[str, Any] = {
-                "type": "Container",
-                "items": [self._map_node(child) for child in node.children],
-            }
-            if component == "Card":
-                container["style"] = "emphasis"
-            return container
+            style = "Emphasis" if component == "Card" else None
+            return Container(
+                items=[self._map_node(child) for child in node.children],
+                style=style,
+            )
 
-        # Unmappable Basic element → deterministic fallback (never a silent drop).
-        logger.warning("A2UI adaptive_cards: unmapped Basic element %r; using fallback", component)
-        return {"type": "TextBlock", "text": component, "wrap": True}
+        # Unmappable Basic element -> deterministic fallback (never a silent drop).
+        logger.warning(
+            "A2UI adaptive_cards: unmapped Basic element %r; using fallback",
+            component,
+        )
+        return TextBlock(text=component)

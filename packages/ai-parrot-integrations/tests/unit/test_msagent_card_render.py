@@ -18,7 +18,9 @@ from parrot.integrations.msagentsdk.semantic import (
     UIMetric,
 )
 
-ALLOWED_ELEMENTS = {"TextBlock", "ColumnSet", "Column", "FactSet", "Container"}
+ALLOWED_ELEMENTS = {
+    "TextBlock", "ColumnSet", "Column", "FactSet", "Container", "Table",
+}
 ALLOWED_ACTIONS = {"Action.Submit", "Action.OpenUrl"}
 
 
@@ -51,18 +53,25 @@ class TestRenderCard:
     def test_render_table_card(self, table_result):
         card = render_card(table_result)
         assert card["type"] == "AdaptiveCard"
-        assert card["version"] == "1.4"
+        assert card["version"] == "1.5"
 
-    def test_table_columns_align_across_rows(self, table_result):
-        # Header and every row must use the same column count and equal
-        # "stretch" widths — "auto" would let each ColumnSet size its
-        # columns independently, misaligning the grid.
+    def test_table_uses_native_table_element(self, table_result):
+        """The shared builder renders tables as native AC 1.5 Table elements
+        with equal-width column definitions and firstRowAsHeader=True."""
         card = render_card(table_result)
-        column_sets = [b for b in card["body"] if b["type"] == "ColumnSet"]
-        assert column_sets
-        for column_set in column_sets:
-            assert len(column_set["columns"]) == 2
-            assert all(c["width"] == "stretch" for c in column_set["columns"])
+        tables = [b for b in card["body"] if b.get("type") == "Table"]
+        assert tables
+        table = tables[0]
+        # 2 columns, equal width
+        assert len(table["columns"]) == 2
+        assert all(c["width"] == "1" for c in table["columns"])
+        # Header row + data rows
+        assert table["firstRowAsHeader"] is True
+        # Header cells carry bold weight
+        header_cells = table["rows"][0]["cells"]
+        assert all(
+            cell["items"][0]["weight"] == "Bolder" for cell in header_cells
+        )
 
     def test_table_ragged_rows_normalized(self):
         result = SemanticUIResult(
@@ -74,16 +83,21 @@ class TestRenderCard:
             ),
         )
         card = render_card(result)
-        column_sets = [b for b in card["body"] if b["type"] == "ColumnSet"]
-        # Header + 2 rows, all normalized to exactly 3 columns.
-        assert len(column_sets) == 3
-        assert all(len(cs["columns"]) == 3 for cs in column_sets)
+        tables = [b for b in card["body"] if b.get("type") == "Table"]
+        assert len(tables) == 1
+        table = tables[0]
+        # Header + 2 data rows
+        assert len(table["rows"]) == 3
+        # All rows normalized to exactly 3 cells
+        assert all(len(row["cells"]) == 3 for row in table["rows"])
+        # Short row padded with empty strings
         short_row_cells = [
-            c["items"][0]["text"] for c in column_sets[1]["columns"]
+            c["items"][0]["text"] for c in table["rows"][1]["cells"]
         ]
         assert short_row_cells == ["1", "", ""]
+        # Long row truncated to column count
         long_row_cells = [
-            c["items"][0]["text"] for c in column_sets[2]["columns"]
+            c["items"][0]["text"] for c in table["rows"][2]["cells"]
         ]
         assert long_row_cells == ["1", "2", "3"]
 
@@ -127,7 +141,7 @@ class TestRenderCard:
         card = render_card(table_result)
         found = set(_walk_types(card))
         assert found <= ALLOWED_ELEMENTS | ALLOWED_ACTIONS | {"AdaptiveCard"}
-        assert card["version"] == "1.4"
+        assert card["version"] == "1.5"
 
     def test_table_truncation(self, table_result):
         card = render_card(table_result, max_table_rows=15)
