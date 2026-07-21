@@ -1345,6 +1345,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 )
             )
 
+    def _maybe_scrub(self, value, tool_name: str):
+        """Scrub *value* only when this client's agent opted into redaction.
+
+        FEAT-252 follow-up: redaction is opt-in per agent (``enable_redaction``
+        flag, stamped by the owning bot). Unflagged agents pass through.
+        """
+        if getattr(self, "enable_redaction", False):
+            return self._scrubber.scrub(value, tool_name=tool_name)
+        return value
+
     def _process_tool_result_for_api(self, result) -> dict:
         """Process tool result for Google Function Calling API compatibility.
 
@@ -1366,7 +1376,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Handle string results early (no conversion needed)
         if isinstance(result, str):
-            result = self._scrubber.scrub(result, tool_name="tool_result")  # FEAT-252
+            if getattr(self, "enable_redaction", False):  # FEAT-252: opt-in per agent
+                result = self._scrubber.scrub(result, tool_name="tool_result")
             if not result.strip():
                 return {"result": "Code executed successfully (no output)"}
             if len(result) > self.MAX_TOOL_RESULT_CHARS:
@@ -1400,7 +1411,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             clean_result = result.dict()
 
         clean_result = self._coerce_json_keys_to_str(clean_result)
-        clean_result = self._scrubber.scrub(clean_result, tool_name="tool_result")  # FEAT-252
+        clean_result = self._maybe_scrub(clean_result, tool_name="tool_result")  # FEAT-252
 
         # 4. Attempt to serialize the processed result
         try:
@@ -1419,7 +1430,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 f"Could not serialize result of type {type(clean_result)} to JSON: {e}. "
                 "Falling back to string representation."
             )
-            fallback = self._scrubber.scrub(str(clean_result), tool_name="tool_result")  # FEAT-252
+            fallback = self._maybe_scrub(str(clean_result), tool_name="tool_result")  # FEAT-252
             if len(fallback) > self.MAX_TOOL_RESULT_CHARS:
                 fallback = fallback[: self.MAX_TOOL_RESULT_CHARS] + "\n...[TRUNCATED]"
             json_compatible_result = fallback
@@ -1462,7 +1473,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         except Exception as exc:  # pylint: disable=broad-except
             summary = f"Unable to summarize result: {exc}"
 
-        summary = self._scrubber.scrub(summary.strip() or "returned no data", tool_name="tool_summary")  # FEAT-252
+        summary = self._maybe_scrub(summary.strip() or "returned no data", tool_name="tool_summary")  # FEAT-252
         if len(summary) > max_length:
             summary = summary[:max_length].rstrip() + "…"
         return summary
@@ -1839,7 +1850,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     tc.error = str(result)
                     self.logger.error(f"Tool {tc.name} failed: {result}")
                 else:
-                    tc.result = self._scrubber.scrub(result, tool_name=tc.name)  # FEAT-252
+                    # FEAT-252: redaction is opt-in per agent
+                    tc.result = (
+                        self._scrubber.scrub(result, tool_name=tc.name)
+                        if getattr(self, "enable_redaction", False)
+                        else result
+                    )
                     # self.logger.info(f"Tool {tc.name} result: {result}")
 
             all_tool_calls.extend(tool_call_objects)
@@ -1894,6 +1910,24 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         part = self._build_computer_use_function_response_part(tool_id, fc.name, result)
                     else:
                         response_content = self._process_tool_result_for_api(result)
+                        # In-band loop nudge (from round 2 onward): long
+                        # prompts dilute the "be direct" system rules, so the
+                        # reminder rides INSIDE the tool response payload —
+                        # the part of context the model actually attends to.
+                        # (A separate text part is NOT safe here: Gemini can
+                        # echo it verbatim — see _create_tool_summary_part.)
+                        if iteration >= 2 and isinstance(response_content, dict):
+                            response_content = {
+                                **response_content,
+                                "loop_note": (
+                                    f"[{iteration}/{max_iterations} tool calls used this turn] "
+                                    "If the requested result is already computed, STOP "
+                                    "calling tools and write your final answer now. If your "
+                                    "response format includes data_variable, set it to the "
+                                    "exact variable name your executed code assigned the "
+                                    "result to."
+                                ),
+                            }
                         part = Part(
                             function_response=types.FunctionResponse(
                                 id=tool_id,
@@ -3517,9 +3551,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             elif tc.name in self._sensitive_tool_result_names and isinstance(tc.result, dict):
                 return f"Tool {tc.name} completed; output withheld for safety."
             elif tc.result and isinstance(tc.result, dict) and "expression" in tc.result:
-                return self._scrubber.scrub(str(tc.result["expression"]), tool_name=tc.name)  # FEAT-252
+                return self._maybe_scrub(str(tc.result["expression"]), tool_name=tc.name)  # FEAT-252
             elif tc.result and isinstance(tc.result, dict) and "result" in tc.result:
-                return f"Result: {self._scrubber.scrub(str(tc.result['result']), tool_name=tc.name)}"  # FEAT-252
+                return f"Result: {self._maybe_scrub(str(tc.result['result']), tool_name=tc.name)}"  # FEAT-252
         if len(all_tool_calls) >= 1:
             # Multiple calls - show the final result
             final_tc = all_tool_calls[-1]
@@ -3532,9 +3566,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 return f"Final tool {final_tc.name} completed; output withheld for safety."
             if final_tc.result and isinstance(final_tc.result, dict):
                 if "result" in final_tc.result:
-                    return f"Final result: {self._scrubber.scrub(str(final_tc.result['result']), tool_name=final_tc.name)}"  # FEAT-252
+                    return f"Final result: {self._maybe_scrub(str(final_tc.result['result']), tool_name=final_tc.name)}"  # FEAT-252
                 elif "expression" in final_tc.result:
-                    return self._scrubber.scrub(str(final_tc.result["expression"]), tool_name=final_tc.name)  # FEAT-252
+                    return self._maybe_scrub(str(final_tc.result["expression"]), tool_name=final_tc.name)  # FEAT-252
             # Plain strings from intermediate tools (e.g. load_skill body) must not
             # be surfaced as the final answer — fall through to the sentinel below.
 
@@ -3936,7 +3970,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                 tc.error = str(result)
                                 self.logger.error(f"Tool {tc.name} failed: {result}")
                             else:
-                                tc.result = self._scrubber.scrub(result, tool_name=tc.name)  # FEAT-252
+                                tc.result = self._maybe_scrub(result, tool_name=tc.name)  # FEAT-252
 
                         all_tool_calls_history.extend(tool_call_objects)
 
@@ -5127,7 +5161,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     if isinstance(result, Exception):
                         tc.error = str(result)
                     else:
-                        tc.result = self._scrubber.scrub(result, tool_name=tc.name)  # FEAT-252
+                        tc.result = self._maybe_scrub(result, tool_name=tc.name)  # FEAT-252
 
                 all_tool_calls.extend(tool_call_objects)
                 pass  # We're not doing a multi-turn here for stateless

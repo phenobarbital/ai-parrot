@@ -184,7 +184,19 @@ class OutputFormatter:
     def _detect_environment(self) -> str:
         if self._is_ipython:
             return "jupyter" if self._is_notebook else "ipython"
-        return "terminal"
+        # Only claim 'terminal' (Rich ANSI rendering) when stdout is a real
+        # TTY. A server/daemon process — aiohttp handlers, Teams/Slack/WhatsApp
+        # delivery, web APIs — has no terminal, so emitting ANSI escape codes
+        # there leaks raw "\x1b[34m" sequences into chat messages. When stdout
+        # is not a terminal, fall back to 'default' (plain passthrough) so
+        # MARKDOWN output stays markdown. Mirrors the standard convention of
+        # disabling colour when output is piped/redirected.
+        try:
+            if sys.stdout is not None and sys.stdout.isatty():
+                return "terminal"
+        except Exception:
+            pass
+        return "default"
 
     def _detect_ipython(self) -> bool:
         try:
@@ -237,7 +249,7 @@ class OutputFormatter:
         Returns:
             System prompt string or None if mode has no specific prompt
         """
-        print(f"Getting system prompt for mode: {mode}")
+        logger.debug("Getting system prompt for mode: %s", mode)
         return get_output_prompt(mode)
 
     def has_system_prompt(self, mode: OutputMode) -> bool:

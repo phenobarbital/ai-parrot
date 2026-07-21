@@ -455,6 +455,28 @@ class IntegrationBotManager:
         policy_kwargs = dict(security_policy or {})
         default_policy = SecurityPolicy(**policy_kwargs)
 
+        # Populate the credential provider with the configured secrets so
+        # that inbound requests carrying x-api-key / HMAC / basic-auth
+        # can actually be validated. Without this the provider stays empty
+        # and every API-key check returns None → 401.
+        # register_agent() is async but only does dict ops — populate
+        # the internal dicts directly to avoid event-loop nesting.
+        if credential_provider is not None:
+            agent_name = getattr(config, "name", None) or "a2a-agent"
+            agent_data: Dict[str, Any] = {
+                "permissions": [],
+                "roles": [],
+                "scopes": [],
+                "metadata": {},
+            }
+            credential_provider._agents[agent_name] = agent_data
+            if api_key:
+                agent_data["api_key"] = api_key
+                credential_provider._api_keys[api_key] = agent_name
+            if hmac_secret:
+                agent_data["hmac_secret"] = hmac_secret
+                credential_provider._hmac_secrets[agent_name] = hmac_secret
+
         middleware = A2ASecurityMiddleware(
             jwt_authenticator=jwt_authenticator,
             mtls_authenticator=mtls_authenticator,
@@ -577,6 +599,17 @@ class IntegrationBotManager:
         if base_path in used_base_paths:
             base_path = f"{config.base_path}/{name.lower()}"
         used_base_paths.add(base_path)
+
+        # Dynamically exclude this agent's A2A surface from the
+        # navigator auth/ABAC middleware chain — A2A endpoints use their
+        # own security (A2ASecurityMiddleware), not the session-based
+        # ABAC chain. Covers any base_path, including non-default values
+        # and collision-avoidance suffixes.
+        from navigator_auth.conf import AUTH_EXCLUDE_LIST_KEY  # noqa: E402
+        exclude_list: list = app.setdefault(AUTH_EXCLUDE_LIST_KEY, [])
+        for pattern in (base_path, f"{base_path}/*"):
+            if pattern not in exclude_list:
+                exclude_list.append(pattern)
 
         a2a_server = A2AServer(
             agent=agent,
@@ -780,6 +813,15 @@ class IntegrationBotManager:
                 app["a2a_directory_registered"] = True
 
             companion_path = f"/a2a/{name.lower()}"
+
+            # Exclude this companion's A2A surface from the navigator
+            # auth/ABAC chain — same rationale as _start_a2a_bot().
+            from navigator_auth.conf import AUTH_EXCLUDE_LIST_KEY  # noqa: E402
+            exclude_list: list = app.setdefault(AUTH_EXCLUDE_LIST_KEY, [])
+            for pattern in (companion_path, f"{companion_path}/*"):
+                if pattern not in exclude_list:
+                    exclude_list.append(pattern)
+
             # Wire security when ANY auth field is configured — not just
             # ``jwt_secret``. ``MSAgentIntegrationConfig`` carries ``jwt_secret``
             # and ``api_key``; gating on ``jwt_secret`` alone would leave an

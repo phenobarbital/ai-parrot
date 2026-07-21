@@ -324,16 +324,11 @@ class Main(AppHandler):
         # via the navigator session/ABAC chain.
         auth.add_exclude_list('/api/msagentsdk/*')
         auth.add_exclude_list('/api/messages')
-        # A2A protocol + discovery surface. Authenticated A2A routes
-        # (/a2a[/<name>]/message|tasks|rpc) are guarded by the per-agent
-        # A2ASecurityMiddleware (JWT/mTLS/API-key), and the discovery routes
-        # (/a2a/directory plus the ``/.well-known`` agent-card URIs) are public
-        # — none of them use the navigator session/ABAC chain, so exclude the
-        # whole surface. ``/a2a`` (root, no trailing slash) and ``/a2a/*`` cover
-        # the directory + per-agent routes; the ``/.well-known/*`` wildcard
-        # covers every agent-card discovery variant clients probe
-        # (agent-card.json, agent.json, agentcard.json, agentCard.json,
-        # agent_card.json), which fnmatch's single ``*`` would otherwise miss.
+        # A2A protocol + discovery surface. These static patterns cover the
+        # default ``/a2a`` base_path and the root-level well-known URIs.
+        # Non-default base_paths (custom config or collision-avoidance
+        # suffixes) are added dynamically by IntegrationBotManager when each
+        # A2A agent is mounted — see ``_start_a2a_bot()`` in manager.py.
         auth.add_exclude_list('/a2a')
         auth.add_exclude_list('/a2a/*')
         auth.add_exclude_list('/.well-known/*')

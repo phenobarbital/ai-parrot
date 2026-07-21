@@ -348,6 +348,104 @@ def render_text(result: SemanticUIResult) -> str:
         return "Unable to render result."
 
 
+def render_text_card(text: str) -> dict:
+    """Wrap a plain/markdown text string in a minimal Adaptive Card 1.4.
+
+    Teams renders markdown inside a ``TextBlock`` when ``markdown`` style
+    is used, giving proper formatting (bold, lists, tables, code blocks)
+    that ``TextFormatTypes.plain`` strips away.
+
+    Args:
+        text: The markdown/plain text to wrap.
+
+    Returns:
+        The Adaptive Card as a plain dict (``type``, ``version``, ``body``).
+    """
+    return {
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "body": [
+            {
+                "type": "TextBlock",
+                "text": text,
+                "wrap": True,
+            },
+        ],
+    }
+
+
+def render_data_card(
+    text: str,
+    columns: list[str],
+    rows: list[list],
+    *,
+    max_table_rows: int = 15,
+) -> dict:
+    """Build an Adaptive Card with an explanation block and a data table.
+
+    Used when the agent response carries structured tabular data (e.g.
+    ``PandasAgentResponse`` with a ``data`` field) that should be rendered
+    as a ColumnSet-based table in Teams rather than discarded.
+
+    Args:
+        text: Explanation / summary text shown above the table.
+        columns: Column header names.
+        rows: Row data as lists of scalars aligned with *columns*.
+        max_table_rows: Maximum rows rendered before a truncation note.
+
+    Returns:
+        The Adaptive Card as a plain dict.
+    """
+    body: list[dict] = []
+    if text:
+        body.append({"type": "TextBlock", "text": text, "wrap": True})
+
+    if not columns or not rows:
+        body.append({"type": "TextBlock", "text": "No data.", "wrap": True})
+        return {"type": "AdaptiveCard", "version": "1.4", "body": body}
+
+    display_rows = rows[:max_table_rows]
+    n_cols = len(columns)
+
+    header_columns = [
+        {
+            "type": "Column",
+            "width": "stretch",
+            "items": [
+                {"type": "TextBlock", "text": col, "wrap": True, "weight": "Bolder"}
+            ],
+        }
+        for col in columns
+    ]
+    body.append({"type": "ColumnSet", "columns": header_columns})
+
+    for row in display_rows:
+        cells = [str(cell) for cell in row[:n_cols]]
+        cells += [""] * (n_cols - len(cells))
+        row_columns = [
+            {
+                "type": "Column",
+                "width": "stretch",
+                "items": [{"type": "TextBlock", "text": cell, "wrap": True}],
+            }
+            for cell in cells
+        ]
+        body.append({"type": "ColumnSet", "columns": row_columns})
+
+    total = len(rows)
+    if total > len(display_rows):
+        body.append(
+            {
+                "type": "TextBlock",
+                "text": f"Showing {len(display_rows)} of {total}",
+                "wrap": True,
+                "isSubtle": True,
+            }
+        )
+
+    return {"type": "AdaptiveCard", "version": "1.4", "body": body}
+
+
 def build_card_attachment(card: dict) -> dict:
     """Wrap card JSON in the Bot Framework attachment envelope.
 

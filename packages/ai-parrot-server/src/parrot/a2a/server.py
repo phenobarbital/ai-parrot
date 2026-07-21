@@ -254,6 +254,27 @@ class A2AServer:
             app.router.add_get("/.well-known/agent-card.json", self._handle_agent_card)
             app.router.add_get("/.well-known/agent.json", self._handle_agent_card)
 
+        # Per-agent agent-card under the base_path: clients (e.g. Copilot
+        # Studio) often probe {base_path}/.well-known/agent-card.json when
+        # the agent URL already includes the base_path prefix. Always
+        # registered (not gated on register_well_known) so every agent's
+        # card is reachable at its own prefix.
+        app.router.add_get(f"{bp}/.well-known/agent-card.json", self._handle_agent_card)
+        app.router.add_get(f"{bp}/.well-known/agent.json", self._handle_agent_card)
+
+        # When the base_path is nested (e.g. /a2a/concierge due to
+        # collision avoidance or companion naming), also register the
+        # agent-card at the parent prefix (/a2a/.well-known/...).
+        # Clients like Copilot Studio probe the generic A2A prefix
+        # without the agent name suffix.
+        parent = bp.rsplit("/", 1)[0]  # "/a2a/concierge" → "/a2a"
+        if parent and parent != bp:
+            a2a_wk_key = f"a2a_well_known_parent_{parent}"
+            if not app.get(a2a_wk_key):
+                app.router.add_get(f"{parent}/.well-known/agent-card.json", self._handle_agent_card)
+                app.router.add_get(f"{parent}/.well-known/agent.json", self._handle_agent_card)
+                app[a2a_wk_key] = True
+
         # A2A HTTP+JSON Binding endpoints (v0.3 compat surface).
         app.router.add_post(f"{bp}/message/send", self._handle_send_message)
         app.router.add_post(f"{bp}/message/stream", self._handle_stream_message)
@@ -333,13 +354,18 @@ class A2AServer:
         # `supported_interfaces` entry instead of the flat v0.3 `url`. Version
         # negotiation at serialization time (to_dict(version=)) reproduces the
         # flat shape for v0.3 clients.
+        # The advertised URL must include the base_path so clients send
+        # requests to the correct prefix (e.g. /a2a/concierge/message/send).
+        card_url = self._url
+        if card_url and self.base_path and not card_url.rstrip("/").endswith(self.base_path):
+            card_url = card_url.rstrip("/") + self.base_path
         self._agent_card = AgentCard(
             name=self.agent.name,
             description=description,
             version=self.version,
             supported_interfaces=[
                 AgentInterface(
-                    url=self._url,
+                    url=card_url,
                     protocol_binding="JSONRPC",
                     protocol_version="1.0",
                 )
