@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from parrot.core.events.lifecycle.global_registry import get_global_registry, scope
-from parrot.core.events.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.global_registry import get_global_registry, scope
+from navigator_eventbus.lifecycle.registry import EventRegistry
 
 
 class TestGlobalRegistry:

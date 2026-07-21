@@ -11,7 +11,7 @@ on the subscription.
 from dataclasses import dataclass
 from typing import Literal, Optional
 
-from parrot.core.events.lifecycle.base import LifecycleEvent
+from navigator_eventbus.lifecycle.base import LifecycleEvent
 
 
 @dataclass(frozen=True)

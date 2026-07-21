@@ -18,6 +18,18 @@ _LAZY_EXPORTS = {
     "MSAgentSDKConfig": ".models",
     "ParrotM365Agent": ".agent",
     "MSAgentSDKWrapper": ".wrapper",
+    "SemanticUIResult": ".semantic",
+    "UIAction": ".semantic",
+    "UIField": ".semantic",
+    "UIMetric": ".semantic",
+    "TablePayload": ".semantic",
+    "MetricsPayload": ".semantic",
+    "DetailPayload": ".semantic",
+    "StatusPayload": ".semantic",
+    "render_card": ".cards",
+    "render_text": ".cards",
+    "build_card_attachment": ".cards",
+    "CardRenderError": ".cards",
 }
 
 __all__ = list(_LAZY_EXPORTS.keys())
@@ -41,3 +53,19 @@ if TYPE_CHECKING:
     from .models import MSAgentSDKConfig  # noqa: F401
     from .agent import ParrotM365Agent  # noqa: F401
     from .wrapper import MSAgentSDKWrapper  # noqa: F401
+    from .semantic import (  # noqa: F401
+        DetailPayload,
+        MetricsPayload,
+        SemanticUIResult,
+        StatusPayload,
+        TablePayload,
+        UIAction,
+        UIField,
+        UIMetric,
+    )
+    from .cards import (  # noqa: F401
+        CardRenderError,
+        build_card_attachment,
+        render_card,
+        render_text,
+    )

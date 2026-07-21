@@ -251,7 +251,7 @@ def setup_telemetry(
         )
 
         # --- 6. Bundle + register -------------------------------------------------
-        from parrot.core.events.lifecycle.global_registry import (  # noqa: PLC0415
+        from parrot.core.events.lifecycle import (  # noqa: PLC0415
             get_global_registry,
         )
 
@@ -319,7 +319,7 @@ def shutdown_telemetry() -> None:
 
     if _SUBSCRIPTION_IDS:
         try:
-            from parrot.core.events.lifecycle.global_registry import (  # noqa: PLC0415
+            from parrot.core.events.lifecycle import (  # noqa: PLC0415
                 get_global_registry,
             )
 

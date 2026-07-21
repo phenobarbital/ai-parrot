@@ -32,7 +32,7 @@ for _mod_name, _attrs in _CYTHON_STUBS.items():
             setattr(_stub, _attr, _val)
         sys.modules[_mod_name] = _stub
 
-from parrot.core.hooks.models import (  # noqa: E402
+from navigator_eventbus.hooks.models import (  # noqa: E402
     HookEvent,
     HookType,
     TransitionAction,

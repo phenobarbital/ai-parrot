@@ -426,3 +426,28 @@ class TestSearchWithExpansion:
 
         assert result["budget_limit"] == 4000
         assert isinstance(result["nodes"], list)
+
+
+class TestExportGraphHtml:
+    @pytest.mark.asyncio
+    async def test_export_writes_html_and_json(self, tmp_path):
+        tk = make_toolkit()
+        result = await tk.export_graph_html(str(tmp_path))
+        assert "error" not in result
+        assert (tmp_path / "graph.html").exists()
+        assert (tmp_path / "graph.json").exists()
+        assert result["node_count"] == 4
+        assert result["edge_count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_export_empty_graph_returns_error(self, tmp_path):
+        import rustworkx
+        import faiss
+        tk = GraphIndexToolkit(
+            graph=rustworkx.PyDiGraph(),
+            faiss_index=faiss.IndexFlatIP(8),
+            node_map={},
+            node_id_list=[],
+        )
+        result = await tk.export_graph_html(str(tmp_path))
+        assert "error" in result

@@ -1,0 +1,37 @@
+{
+  "feat_id": "FEAT-311",
+  "phase": "source_resolved",
+  "started_at": "2026-07-16T12:00:00Z",
+  "updated_at": "2026-07-16T12:00:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 0,
+    "grep_calls": 0,
+    "git_calls": 0,
+    "depth_reached": 0
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Create MoonshotClient for Kimi Moonshot LLM (OpenAI-compatible API)"
+  },
+  "wiki_available": false,
+  "truncated": false,
+  "truncation_reason": null,
+  "phases": {
+    "plan": {},
+    "research": {},
+    "synthesis": {},
+    "qa": {},
+    "output": {}
+  },
+  "errors": []
+}

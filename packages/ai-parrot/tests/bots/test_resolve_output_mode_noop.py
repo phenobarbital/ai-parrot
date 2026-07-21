@@ -50,3 +50,37 @@ def test_precedence_guard_semantics():
     # explicit non-DEFAULT caller mode is never passed to the router.
     explicit = OutputMode.TABLE
     assert explicit != OutputMode.DEFAULT
+
+
+# ── Agent-level default output mode fallback (_apply_default_output_mode) ──
+
+
+class _StubBot:
+    """Duck-typed stand-in: the helper only reads ``default_output_mode``."""
+
+    def __init__(self, default_mode):
+        self.default_output_mode = default_mode
+
+
+def _apply(abstract_bot_cls, bot, mode):
+    return abstract_bot_cls._apply_default_output_mode(bot, mode)
+
+
+def test_default_mode_fallback_applies(abstract_bot_cls):
+    bot = _StubBot(OutputMode.TEXT)
+    assert _apply(abstract_bot_cls, bot, OutputMode.DEFAULT) == OutputMode.TEXT
+
+
+def test_explicit_caller_mode_wins_over_agent_default(abstract_bot_cls):
+    bot = _StubBot(OutputMode.TEXT)
+    assert _apply(abstract_bot_cls, bot, OutputMode.JSON) == OutputMode.JSON
+
+
+def test_default_agent_mode_is_noop(abstract_bot_cls):
+    bot = _StubBot(OutputMode.DEFAULT)
+    assert _apply(abstract_bot_cls, bot, OutputMode.DEFAULT) == OutputMode.DEFAULT
+
+
+def test_missing_attribute_is_noop(abstract_bot_cls):
+    # Stubbed bots without the attribute must not break the ask() path.
+    assert _apply(abstract_bot_cls, object(), OutputMode.DEFAULT) == OutputMode.DEFAULT

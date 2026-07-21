@@ -19,8 +19,8 @@ from parrot.core.events.lifecycle.events import (
     ClientStreamChunkEvent,
     MessageAddedEvent,
 )
-from parrot.core.events.lifecycle.registry import EventRegistry
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.trace import TraceContext
 from parrot.observability.subscribers.trace import GenAIOpenTelemetrySubscriber
 
 

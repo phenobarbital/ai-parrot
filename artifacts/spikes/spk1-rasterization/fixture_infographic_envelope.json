@@ -1,0 +1,41 @@
+{
+  "messageType": "createSurface",
+  "surfaceId": "spk1-infographic",
+  "catalogId": "https://parrot.dev/catalogs/v1",
+  "components": [
+    {
+      "id": "blk-000",
+      "component": "Infographic",
+      "properties": {
+        "title": "Q1 2026 Performance",
+        "subtitle": "Regional revenue overview",
+        "sections": [
+          {
+            "heading": "Key metrics",
+            "components": [
+              {"component": "KPICard", "properties": {"label": "Revenue", "value": "1.2M", "unit": "USD", "trend": "up"}},
+              {"component": "KPICard", "properties": {"label": "Growth", "value": "12", "unit": "%", "trend": "up"}}
+            ]
+          },
+          {
+            "heading": "Revenue by region",
+            "text": "Bar chart of Q1 revenue per region (pre-rendered as static SVG for weasyprint).",
+            "components": [
+              {"component": "Chart", "properties": {"type": "bar", "x": "region", "y": ["revenue"], "title": "Revenue"}}
+            ]
+          }
+        ]
+      },
+      "children": []
+    }
+  ],
+  "dataModel": {
+    "charts": {
+      "blk-000": [
+        {"region": "EU", "revenue": 520},
+        {"region": "NA", "revenue": 430},
+        {"region": "APAC", "revenue": 250}
+      ]
+    }
+  }
+}

@@ -85,58 +85,91 @@ Predict whether the synthesis agent will resolve mode to `investigation` or
 
 Each query has a clear **intent** and one of these types:
 
-| Type      | Use for                                                    | Counts against budget |
-|-----------|------------------------------------------------------------|-----------------------|
-| `grep`    | Locating named entities, finding usages of a symbol        | grep_calls            |
-| `glob`    | Listing files matching a pattern                           | grep_calls            |
-| `read`    | Reading a specific file or line range                      | files_read            |
-| `git_log` | Recent commit history on a path                            | git_calls             |
-| `tree`    | Listing the structure of a directory                       | grep_calls            |
+| Type           | Use for                                                    | Counts against budget |
+|----------------|------------------------------------------------------------|-----------------------|
+| `wiki_query`   | Semantic search for modules/subsystems in the knowledge graph | **free** (0)       |
+| `wiki_page`    | Read a specific wiki page by ID (full summary + API outline)  | **free** (0)       |
+| `wiki_related` | Follow typed edges to neighbouring files/modules              | **free** (0)       |
+| `grep`         | Locating named entities, finding usages of a symbol        | grep_calls            |
+| `glob`         | Listing files matching a pattern                           | grep_calls            |
+| `read`         | Reading a specific file or line range                      | files_read            |
+| `git_log`      | Recent commit history on a path                            | git_calls             |
+| `tree`         | Listing the structure of a directory                       | grep_calls            |
+
+Wiki queries use the ``wikitoolkit`` CLI (``wikitoolkit query``,
+``wikitoolkit page``, ``wikitoolkit related``). They are **free** — they
+do not count against any budget counter — and they return token-budgeted,
+ranked results that are faster and more precise than broad grep sweeps.
 
 **Query design rules**:
 
-1. **Start broad, then narrow.** First grep finds candidates; later reads
-   inspect them. Don't read files you haven't located.
-2. **Every query has a specific intent.** "Look around the codebase" is not
+1. **Wiki first, grep second.** Always start with 1-2 `wiki_query` calls
+   to orient. Use the returned page IDs + scores to decide which modules
+   matter. Follow up with `wiki_page` or `wiki_related` for the top
+   results. Only then fall back to `grep`/`glob`/`read` for details the
+   wiki cannot answer (line-level content, exact symbol usages, runtime
+   config). If ``wikitoolkit`` is not available (wiki not built), skip
+   wiki queries and fall through to grep-first as before.
+2. **Start broad, then narrow.** After wiki orientation, grep narrows to
+   specific symbols; later reads inspect them. Don't read files you
+   haven't located.
+3. **Every query has a specific intent.** "Look around the codebase" is not
    an intent. "Locate the entrypoint where Nextstop generates a PDF" is.
-3. **No catch-all queries.** A grep for "pdf" alone will return hundreds of
+4. **No catch-all queries.** A grep for "pdf" alone will return hundreds of
    hits. Pair it: `grep "generate_pdf|render_pdf"` or scope by path:
    `grep "pdf" -- app/modules/nextstop/`.
-4. **Budget-aware ordering.** Place high-value, low-cost queries first
-   (grep before read, broad before deep). The executor stops when budget
+5. **Budget-aware ordering.** Place high-value, low-cost queries first.
+   Wiki queries are free, so they always come first (priority 0). Then
+   grep before read, broad before deep. The executor stops when budget
    runs out — your plan must front-load the most informative queries.
-5. **Stay within budget.** Total queries should target ~70% of budget so
+6. **Stay within budget.** Total queries should target ~70% of budget so
    the executor has headroom for recursive follow-ups (depth > 1).
+   Wiki queries are excluded from budget arithmetic.
 
 **Query categories to consider** (not all required):
 
-- **Localization**: where does the named entity live? (1-3 greps)
+- **Wiki orientation** (ALWAYS first): semantic search for the affected
+  module/subsystem. (1-2 wiki_query + 1-3 wiki_page/wiki_related)
+  This replaces the initial grep-based localization when the wiki is
+  available. The wiki returns file summaries, API outlines, and typed
+  relationships (contains, references) — use these to skip broad greps.
+- **Localization**: where does the named entity live? Use wiki results
+  first; only add greps (1-3) if the wiki didn't surface the entity.
 - **Functionality**: what symbols/functions implement the behavior? (1-3 greps)
-- **Existing patterns**: are there similar features done elsewhere? (1-2 greps)
+- **Existing patterns**: are there similar features done elsewhere? (1-2 greps
+  or wiki_query for the pattern name)
 - **Tests**: what test files exist for this area? (1 glob + 1 read)
 - **Recent history**: what changed recently in the affected paths? (1-2 git_log)
 - **Configuration**: are there settings/env vars relevant? (1 grep)
-- **Callers / dependents**: who uses the affected symbols? (1-2 greps)
-- **Contracts**: are there public APIs or interfaces involved? (1-2 reads)
+- **Callers / dependents**: who uses the affected symbols? (1-2 greps or
+  wiki_related to follow `references` edges)
+- **Contracts**: are there public APIs or interfaces involved? (1-2 reads
+  or wiki_page for the module's API outline)
 
 ## Step 4 — Order by priority.
 
-Assign each query a `priority` from 1 (highest) to 5 (lowest).
+Assign each query a `priority` from 0 (wiki orientation) to 5 (lowest).
+Priority 0: wiki queries — always run first, free, no budget cost.
 Priority 1: queries that must run; without them, no synthesis is possible.
 Priority 5: optional follow-ups that add color but aren't blocking.
 
-The executor walks priority 1 → 5 and stops at budget exhaustion.
+The executor walks priority 0 → 5. Wiki queries (priority 0) always
+execute. Budget exhaustion only stops priority 1-5 queries.
 
 ## Step 5 — Self-check.
 
 Before emitting JSON:
 
-- Total query count ≤ ~70% of budget for each resource type.
+- The plan starts with at least one `wiki_query` (priority 0) unless the
+  wiki is known to be unavailable. Wiki queries are free and do not count
+  toward budget limits.
+- Total non-wiki query count ≤ ~70% of budget for each resource type.
 - Every query has a non-empty `intent` that explains *why* this query.
 - No two queries are duplicates (same type + same parameters).
 - The plan addresses BOTH localization AND context, not just one.
 - For investigation mode: at least one `git_log` query is included.
-- For enrichment mode: at least one "existing patterns" grep is included.
+- For enrichment mode: at least one "existing patterns" grep or
+  `wiki_query` is included.
 
 ---
 
@@ -152,19 +185,34 @@ After `</thinking>`, emit a single JSON object. No prose, no markdown fences.
   "queries": [
     {
       "id": "Q001",
-      "intent": "Locate the Nextstop module in the codebase.",
-      "type": "grep",
-      "priority": 1,
+      "intent": "Orient: find the Nextstop module and its relationships in the knowledge graph.",
+      "type": "wiki_query",
+      "priority": 0,
       "params": {
-        "pattern": "nextstop|Nextstop|NextStop",
-        "path": ".",
-        "case_sensitive": false,
-        "max_results": 50
+        "question": "Nextstop module PDF generation"
       }
     },
     {
       "id": "Q002",
-      "intent": "Find PDF generation entrypoints in the project.",
+      "intent": "Read the wiki page for the Nextstop module to get its API outline and file summary.",
+      "type": "wiki_page",
+      "priority": 0,
+      "params": {
+        "page_id": "<id from Q001 top result>"
+      }
+    },
+    {
+      "id": "Q003",
+      "intent": "Discover modules that reference or are referenced by Nextstop.",
+      "type": "wiki_related",
+      "priority": 0,
+      "params": {
+        "page_id": "<id from Q001 top result>"
+      }
+    },
+    {
+      "id": "Q004",
+      "intent": "Find PDF generation entrypoints — narrowed by wiki findings.",
       "type": "grep",
       "priority": 1,
       "params": {
@@ -175,16 +223,7 @@ After `</thinking>`, emit a single JSON object. No prose, no markdown fences.
       }
     },
     {
-      "id": "Q003",
-      "intent": "List all files inside the Nextstop module to understand its structure.",
-      "type": "glob",
-      "priority": 1,
-      "params": {
-        "pattern": "**/nextstop/**/*.py"
-      }
-    },
-    {
-      "id": "Q004",
+      "id": "Q005",
       "intent": "Recent commits touching the Nextstop module — looks for regressions.",
       "type": "git_log",
       "priority": 1,
@@ -195,7 +234,7 @@ After `</thinking>`, emit a single JSON object. No prose, no markdown fences.
       }
     },
     {
-      "id": "Q005",
+      "id": "Q006",
       "intent": "Read the existing PDF tests to understand expected behavior and discover skip markers.",
       "type": "read",
       "priority": 2,
@@ -205,7 +244,7 @@ After `</thinking>`, emit a single JSON object. No prose, no markdown fences.
       }
     },
     {
-      "id": "Q006",
+      "id": "Q007",
       "intent": "Locate the shared PDF renderer to understand the contract Nextstop depends on.",
       "type": "grep",
       "priority": 2,
@@ -217,7 +256,7 @@ After `</thinking>`, emit a single JSON object. No prose, no markdown fences.
       }
     },
     {
-      "id": "Q007",
+      "id": "Q008",
       "intent": "Find PDF-related configuration / env vars (template paths, storage).",
       "type": "grep",
       "priority": 3,
@@ -230,7 +269,8 @@ After `</thinking>`, emit a single JSON object. No prose, no markdown fences.
     }
   ],
   "expected_findings": [
-    "Localization of Nextstop module",
+    "Wiki orientation: module location, API outline, relationships",
+    "Localization of Nextstop module (refined by wiki)",
     "Path of PDF entrypoint and shared renderer",
     "Recent change(s) potentially related to the bug",
     "Existing test coverage and any skip markers",
@@ -243,8 +283,9 @@ After `</thinking>`, emit a single JSON object. No prose, no markdown fences.
       "polarity": "negative"
     },
     "estimated_budget_use": {
+      "wiki_queries": 3,
       "files_read": 1,
-      "grep_calls": 5,
+      "grep_calls": 4,
       "git_calls": 1
     }
   }
@@ -255,20 +296,28 @@ After `</thinking>`, emit a single JSON object. No prose, no markdown fences.
 
 # Hard rules
 
-1. **No query may reference a path that doesn't plausibly exist.** Use
-   directory listings from `<repo_root><dirs>` to ground path parameters.
-   If you don't know whether `app/modules/nextstop/` exists, your first query
-   must be a glob/grep to find it — not a read of a guessed path.
+1. **Wiki-first orientation is mandatory.** Every plan MUST start with at
+   least one `wiki_query` (priority 0) to orient before any grep/read.
+   Wiki queries are free and don't count against budget. The only
+   exception is when the wiki is known to be unavailable (not built).
 
-2. **`read` queries must have specific paths.** `read .` is not allowed.
-   Use grep or glob first to find the path, then read.
+2. **No query may reference a path that doesn't plausibly exist.** Use
+   wiki results or directory listings from `<repo_root><dirs>` to ground
+   path parameters. If you don't know whether `app/modules/nextstop/`
+   exists, use `wiki_query` or a glob/grep to find it first — not a read
+   of a guessed path.
 
-3. **Budget arithmetic must hold.** Sum of (grep + glob + tree) queries
+3. **`read` queries must have specific paths.** `read .` is not allowed.
+   Use wiki_query, grep, or glob first to find the path, then read.
+
+4. **Budget arithmetic must hold.** Sum of (grep + glob + tree) queries
    ≤ 0.7 × max_grep_calls. Same for files_read and git_calls.
+   Wiki queries (wiki_query, wiki_page, wiki_related) are excluded from
+   all budget counters.
 
-4. **Output must be valid JSON.** No trailing commas, no comments, no
+5. **Output must be valid JSON.** No trailing commas, no comments, no
    markdown fencing.
 
-5. **Plan must produce at least one finding even if mostly empty repo.**
+6. **Plan must produce at least one finding even if mostly empty repo.**
    Include at least one "what does the repo look like at all" query
-   (`tree` or `glob`) as a fallback for ambiguous sources.
+   (`wiki_query` preferred, or `tree`/`glob` fallback) for ambiguous sources.

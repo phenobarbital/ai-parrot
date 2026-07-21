@@ -8,11 +8,11 @@ import asyncio
 import logging
 import pytest
 
-from parrot.core.events.lifecycle.global_registry import scope
-from parrot.core.events.lifecycle.mixin import EventEmitterMixin
-from parrot.core.events.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.global_registry import scope
+from navigator_eventbus.lifecycle.mixin import EventEmitterMixin
+from navigator_eventbus.lifecycle.registry import EventRegistry
 from parrot.core.events.lifecycle.events import BeforeInvokeEvent
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.trace import TraceContext
 
 
 # ---------------------------------------------------------------------------

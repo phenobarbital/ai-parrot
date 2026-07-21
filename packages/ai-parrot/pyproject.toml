@@ -43,6 +43,10 @@ dependencies = [
     "nh3>=0.2.14",
     "python-datamodel>=0.10.17",
     "backoff==2.2.1",
+    # parrot.clients.base → clients/gpt.py imports tenacity unconditionally,
+    # so it must be a core dependency (a bare install could not import
+    # parrot.clients without it).
+    "tenacity>=8.2",
     "typing-extensions>=4.14.1,<5",
     "pydantic==2.12.5",
     "PyYAML>=6.0.2",
@@ -100,10 +104,16 @@ dependencies = [
     # Episodic memory default backend (FAISS) — required whenever an agent
     # enables episodic memory without an explicit pgvector DSN.
     "faiss-cpu>=1.9.0",
+    # TODO: switch to navigator-eventbus>=0.1.0 after PyPI publish (FEAT-317 close)
+    "navigator-eventbus @ git+https://github.com/phenobarbital/navigator-eventbus.git@17b99c22faf44bcf92fdf299a6e9a021d678a970",
 ]
 
 [project.scripts]
 parrot = "parrot.cli:cli"
+# GraphIndex CLI — build an interactive knowledge graph from a code repo.
+parrot-graphindex = "parrot.knowledge.graphindex.cli:main"
+# LLM Wiki CLI — machine-first codebase KB for coding assistants (FEAT-260).
+wikitoolkit = "parrot.knowledge.wiki.cli:main"
 # parrot-fs moved to ai-parrot-server in FEAT-203
 
 [project.optional-dependencies]
@@ -352,6 +362,17 @@ bedrock = [
     "anthropic[aiohttp,aws]>=0.109.0,<1.0.0",
 ]
 
+# FEAT-302: native Bedrock Converse API client (BedrockConverseClient) —
+# opt-in extra pulling aioboto3, distinct from the `bedrock` extra above
+# (anthropic[aws], used by AnthropicClient's Bedrock backend, FEAT-232).
+# Named `bedrock-native` per the spec (sdd/specs/bedrock-client-llm.spec.md
+# Module 6 / Acceptance Criteria) — NOT the same as the `bedrock-converse`
+# factory/client_type key (parrot.clients.factory.SUPPORTED_CLIENTS,
+# BedrockConverseClient.client_type), which is unrelated and unchanged.
+bedrock-native = [
+    "aioboto3>=13.0.0",
+]
+
 claude-agent = [
     "claude-agent-sdk>=0.1.68",
 ]
@@ -394,6 +415,14 @@ integrations = [
     # azure-teambots moved to ai-parrot-integrations[msteams]
 ]
 
+# FEAT-310/FEAT-317: gRPC ingress adapter now lives in navigator-eventbus
+# (parrot.core.events.bus.ingress moved there in phase 1). Pull the
+# package's own grpc extra so grpcio/grpcio-tools versions stay in lockstep
+# with the committed pb2 gencode it ships.
+grpc = [
+    "navigator-eventbus[grpc]",
+]
+
 # milvus extra MOVED to ai-parrot-embeddings[milvus] in FEAT-201.
 # chroma extra MOVED to ai-parrot-embeddings[chroma] in FEAT-201.
 
@@ -405,7 +434,10 @@ eda = [
 ]
 
 security = [
-    "pytector[gguf]==0.2.0",
+    # `gguf` extra dropped: it pulls llama-cpp-python (native compile) only to
+    # load GGUF models via llama.cpp, but we only use the deBERTa detector
+    # (torch/transformers). See abstract.py PromptInjectionDetector("deberta").
+    "pytector==0.2.0",
 ]
 
 xai = [
@@ -502,6 +534,7 @@ dev = [
 # via the agents extra.
 remote-tools = [
     "kubernetes_asyncio>=29.0.0",
+    "aiodocker>=0.24.0",
 ]
 
 # Visualizations satellite — heavy chart/infographic renderers (FEAT-200)

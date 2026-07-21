@@ -197,6 +197,11 @@ class BuildResult(BaseModel):
         projection_report: Summary of the OKF projection stage (FEAT-239).
             ``None`` when the builder has no ``output_dir`` or projection
             was skipped.
+        graph_html_path: Path to the interactive ``graph.html`` map, if the
+            HTML export stage ran. ``None`` when export was disabled or no
+            ``output_dir`` was configured.
+        graph_json_path: Path to the serialized ``graph.json`` written
+            alongside ``graph.html``. ``None`` when export was skipped.
     """
 
     model_config = {"arbitrary_types_allowed": True}
@@ -211,6 +216,8 @@ class BuildResult(BaseModel):
         default=None,
         description="OKF projection summary; None when projection was skipped.",
     )
+    graph_html_path: Optional[Path] = None
+    graph_json_path: Optional[Path] = None
 
 
 class IngestResult(BaseModel):

@@ -5,7 +5,7 @@ FEAT-176 — Lifecycle Events System.
 Covers: messages entering the agent's conversation history.
 """
 from dataclasses import dataclass
-from parrot.core.events.lifecycle.base import LifecycleEvent
+from navigator_eventbus.lifecycle.base import LifecycleEvent
 
 
 @dataclass(frozen=True)

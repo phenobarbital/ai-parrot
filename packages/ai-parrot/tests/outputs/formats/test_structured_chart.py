@@ -745,17 +745,14 @@ def test_envelope_serializes_degraded_structured_chart():
 
 
 @satellite_available
-def test_echarts_altair_unchanged():
-    """ECHARTS and ALTAIR renderers + prompts resolve unchanged (regression guard)."""
+def test_echarts_unchanged():
+    """ECHARTS renderer + prompt resolves unchanged (regression guard)."""
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer, get_output_prompt
     from parrot.outputs.formats.echarts import EChartsRenderer
-    from parrot.outputs.formats.altair import AltairRenderer
 
     assert get_renderer(OutputMode.ECHARTS) is EChartsRenderer
-    assert get_renderer(OutputMode.ALTAIR) is AltairRenderer
     assert get_output_prompt(OutputMode.ECHARTS) is not None
-    assert get_output_prompt(OutputMode.ALTAIR) is not None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

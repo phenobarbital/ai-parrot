@@ -1,0 +1,42 @@
+{
+  "feat_id": "FEAT-305",
+  "slug": "companyresearch-tool",
+  "phase": "committed",
+  "mode": "enrichment",
+  "type": "feature",
+  "base_branch": "dev",
+  "started_at": "2026-07-13T22:37:03+00:00",
+  "updated_at": "2026-07-13T22:37:03+00:00",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "path": "sdd/state/FEAT-305/source.md",
+    "summary_oneline": "CompanyResearchTool — agent tool to extract structured company info from LeadIQ, RocketReach, SICCode, VisualVisitor, ZoomInfo, Explorium; port of flowtask CompanyScraper."
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 14,
+    "grep_calls": 9,
+    "git_calls": 1,
+    "depth_reached": 1
+  },
+  "phases": {
+    "plan": { "status": "done", "approved_by_user": true },
+    "research": { "status": "done", "findings": 8, "queries_skipped": 1, "truncated": false },
+    "synthesis": { "status": "done", "claims_high": 6, "claims_medium": 3, "claims_low": 1, "unknowns": 3, "lint": "pass" },
+    "qa": { "status": "done", "questions_total": 3, "questions_answered": 3 },
+    "output": { "proposal_path": "sdd/proposals/companyresearch-tool.proposal.md", "commit_sha": "8cf6c1e32" }
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "Run /sdd-spec FEAT-305"
+  }
+}

@@ -2783,6 +2783,11 @@ class AgentTalk(BaseView):
                         for t in getattr(ai_message, 'tool_calls', [])
                     ] if format_kwargs.get('include_tool_calls', True) else [],
                 }
+                # FEAT-273: envelope-complete per output — carry the A2UI envelope in
+                # the final stream dict only (defensive getattr for legacy messages).
+                a2ui_envelope = getattr(ai_message, 'a2ui_envelope', None)
+                if a2ui_envelope is not None:
+                    envelope['a2ui_envelope'] = a2ui_envelope
                 separator = b'\n\x00'
                 await stream_resp.write(
                     separator + json_encoder(envelope).encode('utf-8')
@@ -2895,6 +2900,17 @@ class AgentTalk(BaseView):
 
         if isinstance(response, AgentResponse):
             response = response.response
+
+        # FEAT-273: A2UI mode — surface the declarative envelope in the JSON response.
+        if getattr(response, "output_mode", None) == OutputMode.A2UI:
+            return self.json_response(
+                {
+                    "input": getattr(response, "input", None),
+                    "output": response.response or "",
+                    "output_mode": OutputMode.A2UI.value,
+                    "a2ui_envelope": getattr(response, "a2ui_envelope", None),
+                }
+            )
 
         # FEAT-197: Infographic mode — return the documented JSON envelope
         # (or text/html for Accept: text/html / ?format=html requests).

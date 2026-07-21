@@ -3204,12 +3204,13 @@ class DatasetManager(AbstractToolkit):
         """
         Store a computed DataFrame from python_repl_pandas into the catalog.
 
-        Use this ONLY when you have created a genuinely new DataFrame from
-        computation (e.g., a filtered subset, aggregation, or join) and want
-        to make it available for future queries.
+        Use this ONLY when the user explicitly asks to save/persist a result
+        for reuse in future questions. Storing is NEVER required to answer
+        the current question — to return a result, assign it to a variable
+        and declare it in `data_variable` instead.
 
-        Do NOT call this for intermediate variables or for datasets that
-        already exist in the catalog.
+        Do NOT call this for intermediate variables, for one-off answers, or
+        for datasets that already exist in the catalog.
 
         Args:
             name: Variable name as it exists in python_repl_pandas.

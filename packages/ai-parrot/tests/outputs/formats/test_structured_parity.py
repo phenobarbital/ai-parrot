@@ -266,14 +266,10 @@ def test_all_structured_modes_exist():
 
 @satellite_available
 class TestLibraryModesRemain:
-    """FEAT-223 Non-Goal: library-specific OutputModes stay — retired next release only."""
+    """Remaining library-specific OutputModes still resolve to their renderers."""
 
     @pytest.mark.parametrize("mode_value,expected_cls", [
-        ("altair",      "AltairRenderer"),
         ("echarts",     "EChartsRenderer"),
-        ("plotly",      "PlotlyRenderer"),
-        ("matplotlib",  "MatplotlibRenderer"),
-        ("seaborn",     "SeabornRenderer"),
         ("table",       "TableRenderer"),
     ])
     def test_library_mode_still_resolves(self, mode_value, expected_cls):

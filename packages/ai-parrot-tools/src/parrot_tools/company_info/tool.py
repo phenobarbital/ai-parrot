@@ -9,14 +9,18 @@ This toolkit extends AbstractToolkit and provides methods to scrape company data
 - zoominfo.com
 
 Each public async method becomes a tool that:
-1. Performs a Google site search for the company
-2. Fetches the first result using Selenium
+1. Searches for the company (DDG-first, Google CSE fallback; see
+   `_search_company_url`)
+2. Fetches the first validated result via the Playwright driver stack
+   (`driver_context` + `DriverConfig(driver_type="playwright")`)
 3. Parses the page with BeautifulSoup
 4. Extracts company information
 5. Returns structured data (CompanyInfo model or JSON)
 
 Dependencies:
-    - selenium
+    - playwright (fetch layer; scraping extra)
+    - rapidfuzz (fuzzy company-name validation; scraping extra)
+    - ddgs (DDG-first search)
     - beautifulsoup4
     - pydantic
     - google-api-python-client
@@ -44,28 +48,21 @@ import json
 import re
 import time
 from typing import Dict, List, Any, Optional, Union
+from urllib.parse import urlparse
+import backoff
 from bs4 import BeautifulSoup as bs
+from ddgs import DDGS
+from ddgs.exceptions import RatelimitException
+from rapidfuzz import fuzz
 from pydantic import BaseModel, Field
 from googleapiclient.discovery import build
 from navconfig import config
 from navconfig.logging import logging
-try:
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.common.exceptions import (
-        TimeoutException,
-        NoSuchElementException,
-        WebDriverException
-    )
-except ImportError as e:
-    raise ImportError("Please install selenium: pip install selenium") from e
 
 from ..toolkit import AbstractToolkit
 from ..decorators import tool_schema
-from ..scraping.driver import SeleniumSetup
+from ..scraping.driver_context import driver_context
+from ..scraping.toolkit_models import DriverConfig
 
 
 # ===========================
@@ -79,6 +76,22 @@ class CompanyInput(BaseModel):
         False,
         description="If True, return JSON string instead of CompanyInfo object"
     )
+
+
+class ResearchCompanyInput(BaseModel):
+    """Input model for the `research_company` aggregate tool."""
+    company_name: str = Field(..., description="Name of the company to research")
+    sources: Optional[List[str]] = Field(
+        None,
+        description="Optional subset/order of source names to try (defaults "
+        "to the full priority order: leadiq, rocketreach, explorium, "
+        "siccode, visualvisitor, zoominfo)"
+    )
+    return_json: bool = Field(
+        False,
+        description="If True, return JSON string instead of CompanyInfo object"
+    )
+
 
 class CompanyInfo(BaseModel):
     """
@@ -156,6 +169,88 @@ class GoogleSearchResult(BaseModel):
     total_results: int = Field(0, description="Total results found")
 
 
+class SourceConfig(BaseModel):
+    """
+    Internal per-source search configuration.
+
+    NOT a tool schema — used by `_search_company_url`/`_validate_search_hit`
+    to know how to search and validate hits for a given source. Templates and
+    title keywords are ported from flowtask's `CompanyScraper` parsers.
+    """
+    name: str = Field(description="Source identifier (e.g. 'leadiq')")
+    site: str = Field(description="Site domain to search within (e.g. 'leadiq.com')")
+    search_template: str = Field(
+        description="DDG/Google search query template with a single '{}' "
+        "placeholder for the (standardized) company name, e.g. 'site:leadiq.com {}'"
+    )
+    title_keywords: List[str] = Field(
+        description="Title keywords used to locate/validate the company-name "
+        "portion of a search-result title for this source"
+    )
+
+
+# Registry of all 6 supported sources, ported from flowtask's per-source
+# parsers (parsers/leadiq.py, rocket.py, explorium.py, siccode.py,
+# visualvisitor.py, zoominfo.py). Keyed by source name; used by
+# `_search_company_url` and (eventually) `research_company`'s priority loop.
+COMPANY_SOURCES: Dict[str, SourceConfig] = {
+    "leadiq": SourceConfig(
+        name="leadiq",
+        site="leadiq.com",
+        search_template="site:leadiq.com {}",
+        title_keywords=[
+            "Email Formats & Email Address",
+            "Company Overview",
+            "Employee Directory",
+            "Contact Details & Competitors",
+            "Email Format",
+        ],
+    ),
+    "rocketreach": SourceConfig(
+        name="rocketreach",
+        site="rocketreach.co",
+        search_template="site:rocketreach.co '{}'",
+        title_keywords=[
+            " Information",
+            " Information - ",
+            " Information - RocketReach",
+            ": Contact Details",
+        ],
+    ),
+    "explorium": SourceConfig(
+        name="explorium",
+        site="explorium.ai",
+        search_template="site:explorium.ai {}",
+        title_keywords=["overview - services"],
+    ),
+    "siccode": SourceConfig(
+        name="siccode",
+        site="siccode.com",
+        search_template="site:siccode.com '{}' +NAICS",
+        title_keywords=[" - ZIP", " - ZIP "],
+    ),
+    "visualvisitor": SourceConfig(
+        name="visualvisitor",
+        site="visualvisitor.com",
+        search_template="site:visualvisitor.com '{}'",
+        title_keywords=[" Phone", " - Phone"],
+    ),
+    "zoominfo": SourceConfig(
+        name="zoominfo",
+        site="zoominfo.com",
+        search_template="site:zoominfo.com {} Overview",
+        title_keywords=[" - Overview, News", "Overview, News"],
+    ),
+}
+
+
+# Default priority order for `research_company`'s first-success loop: cheap,
+# HTTP-friendly sources first, browser-heavy ZoomInfo last (spec §2).
+DEFAULT_SOURCE_PRIORITY: List[str] = [
+    "leadiq", "rocketreach", "explorium", "siccode", "visualvisitor", "zoominfo"
+]
+
+
 # ===========================
 # Main Toolkit Class
 # ===========================
@@ -183,6 +278,7 @@ class CompanyInfoToolkit(AbstractToolkit):
         mobile: bool = False,
         mobile_device: Optional[str] = None,
         use_undetected: bool = False,
+        custom_user_agent: Optional[str] = None,
         **kwargs
     ):
         """
@@ -191,14 +287,27 @@ class CompanyInfoToolkit(AbstractToolkit):
         Args:
             google_api_key: Google Custom Search API key
             google_cse_id: Google Custom Search Engine ID
-            browser: Browser type ('chrome', 'firefox', 'edge', 'safari', 'undetected')
-            headless: Run browser in headless mode
-            timeout: Default timeout for page loads (seconds)
-            auto_install: Auto-install webdriver if not found
-            mobile: Enable mobile emulation (Chrome only)
-            mobile_device: Specific mobile device to emulate
-            use_undetected: Use undetected-chromedriver (requires package)
-            **kwargs: Additional arguments passed to AbstractToolkit and SeleniumSetup
+            browser: Browser type ('chrome', 'firefox', 'edge', 'safari',
+                'undetected', 'webkit'). Mapped onto `DriverConfig.browser`
+                for the Playwright fetch layer ('undetected' has no
+                Playwright equivalent; see `use_undetected`).
+            headless: Run browser in headless mode. Mapped onto
+                `DriverConfig.headless`.
+            timeout: Default timeout for page loads (seconds). Mapped onto
+                `DriverConfig.default_timeout`.
+            auto_install: Auto-install webdriver if not found. Mapped onto
+                `DriverConfig.auto_install`.
+            mobile: Enable mobile emulation. Mapped onto `DriverConfig.mobile`.
+            mobile_device: Specific mobile device to emulate. Mapped onto
+                `DriverConfig.mobile_device`.
+            use_undetected: Deprecated. Legacy Selenium-only
+                undetected-chromedriver flag, kept for back-compat; it has
+                no effect on the Playwright fetch layer (logs a deprecation
+                warning instead of being applied).
+            custom_user_agent: Optional custom User-Agent string used for
+                headless-hardening (e.g. ZoomInfo). Mapped onto
+                `DriverConfig.custom_user_agent`.
+            **kwargs: Additional arguments passed to `AbstractToolkit`.
         """
         super().__init__(**kwargs)
 
@@ -208,60 +317,54 @@ class CompanyInfoToolkit(AbstractToolkit):
         # Service Selection:
         self.service = build("customsearch", "v1", developerKey=self.google_api_key)
 
-        # Browser configuration for SeleniumSetup
-        self.browser_config = {
-            'browser': 'undetected' if use_undetected else browser,
-            'headless': headless,
-            'auto_install': auto_install,
-            'mobile': mobile,
-            'mobile_device': mobile_device,
-            'timeout': timeout,
-            **kwargs  # Pass through any additional kwargs
-        }
-        # Selenium setup instance and driver
-        self._selenium_setup: Optional[SeleniumSetup] = None
-
-        # Current driver instance
-        self._driver = None
-
         # Logger
         self.logger = logging.getLogger(self.__class__.__name__)
+
+        if use_undetected:
+            self.logger.warning(
+                "CompanyInfoToolkit(use_undetected=True) is deprecated: it "
+                "was a Selenium-only undetected-chromedriver flag with no "
+                "Playwright equivalent and has no effect on the current "
+                "driver_context/Playwright fetch layer."
+            )
+
+        if browser == 'undetected':
+            self.logger.warning(
+                "CompanyInfoToolkit(browser='undetected') has no Playwright "
+                "equivalent: DriverConfig.browser is passed through as a "
+                "Playwright `browser_type`, and 'undetected' is not a valid "
+                "value, so every _fetch_page call will fail (degrading to "
+                "scrape_status='error'/'no_data'). Use browser='chrome' "
+                "(mapped to Chromium) or another supported value instead."
+            )
+
+        # Browser configuration mapped onto the scraping stack's DriverConfig
+        # (replaces the legacy SeleniumSetup-based `browser_config` dict).
+        self._driver_config = DriverConfig(
+            driver_type="playwright",
+            browser=browser,
+            headless=headless,
+            mobile=mobile,
+            mobile_device=mobile_device,
+            auto_install=auto_install,
+            default_timeout=timeout,
+            custom_user_agent=custom_user_agent,
+        )
 
     # ===========================
     # Core Utility Methods
     # ===========================
-    async def _get_driver(self) -> webdriver.Chrome:
-        """Get or create Selenium WebDriver instance using SeleniumSetup."""
-        if self._driver is None:
-            if SeleniumSetup is None:
-                raise ImportError(
-                    "SeleniumSetup not available. Please ensure parrot.tools.scraping.driver is installed."
-                )
+    async def _close_driver(self) -> None:
+        """
+        No-op kept for back-compat.
 
-            self.logger.info("Initializing Selenium WebDriver...")
-
-            # Create SeleniumSetup instance
-            self._selenium_setup = SeleniumSetup(**self.browser_config)
-
-            # Get driver using SeleniumSetup's async method
-            self._driver = await self._selenium_setup.get_driver()
-
-            self.logger.info("Selenium WebDriver initialized successfully")
-
-        return self._driver
-
-    async def _close_driver(self):
-        """Close the Selenium driver if open."""
-        if self._driver is not None:
-            try:
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, self._driver.quit)
-                self.logger.info("Selenium WebDriver closed")
-            except Exception as e:
-                self.logger.warning(f"Error closing driver: {e}")
-            finally:
-                self._driver = None
-                self._selenium_setup = None
+        The Playwright fetch layer (`_fetch_page`) creates and tears down a
+        fresh browser per call via `driver_context`, so there is no
+        persistent driver instance to close anymore. Existing
+        `finally: await self._close_driver()` call sites keep working
+        unchanged.
+        """
+        return None
 
     async def _google_site_search(
         self,
@@ -331,42 +434,250 @@ class CompanyInfoToolkit(AbstractToolkit):
                 total_results=0
             )
 
-    async def _fetch_page_with_selenium(self, url: str) -> Optional[bs]:
+    # ===========================
+    # Search layer: DDG-first + validation (FEAT-305)
+    # ===========================
+
+    @backoff.on_exception(backoff.expo, RatelimitException, max_tries=3)
+    async def _ddg_search(
+        self,
+        query: str,
+        max_results: int = 5
+    ) -> List[Dict[str, Any]]:
         """
-        Fetch a page using Selenium and return BeautifulSoup object.
+        Run a DuckDuckGo text search, retrying with backoff on rate limits.
+
+        Mirrors `ddgo.py`'s pattern: the sync `ddgs.DDGS` client is run in an
+        executor so the event loop is never blocked.
 
         Args:
-            url: URL to fetch
+            query: Search query string.
+            max_results: Maximum number of results to request.
 
         Returns:
-            BeautifulSoup object or None if failed
+            List of raw DDG hit dictionaries (each with `title`/`href`/`body`).
+
+        Raises:
+            RatelimitException: propagated after `max_tries` backoff attempts
+                are exhausted, so the caller can fall back to Google CSE.
         """
-        driver = await self._get_driver()
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: list(DDGS().text(query, max_results=max_results))
+        )
+
+    def _clean_search_url(self, url: str) -> str:
+        """
+        Strip noisy suffixes from a candidate search-result URL.
+
+        Mirrors flowtask's URL cleanup (scrapper.py:919-922): search hits
+        sometimes point at a sub-page (employee directory, email format)
+        instead of the company's main profile page.
+
+        Args:
+            url: Raw candidate URL.
+
+        Returns:
+            The cleaned URL.
+        """
+        if '/employee-directory' in url:
+            url = url.replace('/employee-directory', '')
+        elif '/email-format' in url:
+            url = url.replace('/email-format', '')
+        return url
+
+    def _validate_search_hit(
+        self,
+        title: str,
+        url: str,
+        company_name: str,
+        keywords: List[str],
+        site: Optional[str] = None
+    ) -> bool:
+        """
+        Validate a search hit before it is accepted for scraping.
+
+        Mirrors flowtask's `_check_company_name` (scrapper.py:741-770): the
+        result `title` must contain at least one of `keywords`; the portion
+        of the title preceding that keyword match is then compared against
+        `company_name` via exact match, first-token match, or `rapidfuzz`
+        fuzzy ratio (accepted when strictly greater than 85).
+
+        Before any title/name comparison, `url`'s host is checked against
+        `site` (when provided): a hit whose title happens to match but that
+        points at a host outside the expected source domain is rejected.
+        This closes a gap where a DDG/Google CSE result could otherwise
+        pass keyword+fuzzy validation while pointing at an arbitrary,
+        untrusted host that Playwright would then navigate to and fetch.
+
+        Args:
+            title: Search-result title.
+            url: Search-result URL. Its host must match `site` (or a
+                subdomain of it) when `site` is given.
+            company_name: The company name being searched for.
+            keywords: Title keywords for the source being validated.
+            site: Expected site domain for this source (e.g. 'leadiq.com').
+                When omitted, no domain check is performed (back-compat for
+                direct callers that already trust `url`).
+
+        Returns:
+            True if the hit is considered a valid match for `company_name`.
+        """
+        if not title or not keywords or not url:
+            return False
+
+        if site:
+            host = (urlparse(url).netloc or '').lower().split('@')[-1].split(':')[0]
+            expected = site.lower()
+            if host != expected and not host.endswith('.' + expected):
+                return False
+
+        pattern = r'\b(' + '|'.join(re.escape(kw) for kw in keywords) + r')\b'
+        match = re.search(pattern, title, re.IGNORECASE)
+        if not match:
+            return False
+
+        candidate = title[:match.start()].strip()
+        if not candidate:
+            return False
+
+        company = company_name.strip()
+
+        # 1. Exact match
+        if company.lower() == candidate.lower():
+            return True
+
+        # 2. First-token match
+        company_tokens = company.split()
+        candidate_tokens = candidate.split()
+        if company_tokens and candidate_tokens:
+            if company_tokens[0].lower() == candidate_tokens[0].lower():
+                return True
+
+        # 3. Fuzzy match (strictly > 85, per flowtask semantics)
+        score = fuzz.ratio(company.lower(), candidate.lower())
+        return score > 85
+
+    async def _search_company_url(
+        self,
+        company_name: str,
+        site_config: SourceConfig
+    ) -> Optional[str]:
+        """
+        Resolve the first validated result URL for a company on a source.
+
+        DDG-first strategy (G3): tries `ddgs.DDGS` first (free, no quota);
+        falls back to the existing `_google_site_search` (quota-billed) when
+        DDG fails or is rate-limited. Every candidate hit — from either
+        engine — is validated via `_validate_search_hit` (G4) before being
+        accepted, and accepted URLs are cleaned via `_clean_search_url`.
+
+        Args:
+            company_name: Company name to search for.
+            site_config: `SourceConfig` describing the target source.
+
+        Returns:
+            The first validated, cleaned candidate URL, or `None` if no
+            validated hit was found via either engine.
+        """
+        query = site_config.search_template.format(company_name)
 
         try:
-            self.logger.info(f"Fetching URL: {url}")
-
-            # Navigate to URL
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, driver.get, url)
-
-            # Wait for page to load
-            await asyncio.sleep(2)
-
-            # Get page source
-            page_source = await loop.run_in_executor(
-                None,
-                lambda: driver.page_source
-            )
-            # Parse with BeautifulSoup
-            return bs(page_source, 'html.parser')
-
-        except TimeoutException:
-            self.logger.error(f"Timeout fetching: {url}")
-            return None
+            hits = await self._ddg_search(query, max_results=5)
+            for hit in hits:
+                title = hit.get('title') or ''
+                hit_url = hit.get('href') or hit.get('url') or ''
+                if not hit_url:
+                    continue
+                if self._validate_search_hit(
+                    title, hit_url, company_name, site_config.title_keywords,
+                    site=site_config.site
+                ):
+                    return self._clean_search_url(hit_url)
         except Exception as e:
-            self.logger.error(f"Error fetching page: {e}")
+            self.logger.warning(f"DDG search failed for '{query}': {e}")
+
+        # Fallback: Google CSE (costs quota — log at INFO)
+        self.logger.info(
+            f"Falling back to Google CSE for '{query}' (source={site_config.name})"
+        )
+        try:
+            search_result = await self._google_site_search(
+                company_name=company_name,
+                site=site_config.site
+            )
+            if search_result.url and self._validate_search_hit(
+                search_result.title or '',
+                search_result.url,
+                company_name,
+                site_config.title_keywords,
+                site=site_config.site
+            ):
+                return self._clean_search_url(search_result.url)
+        except Exception as e:
+            self.logger.error(f"Google CSE fallback failed for '{query}': {e}")
+
+        return None
+
+    async def _fetch_page(
+        self,
+        url: str,
+        custom_user_agent: Optional[str] = None
+    ) -> Optional[bs]:
+        """
+        Fetch a page via the Playwright driver stack and parse it with BeautifulSoup.
+
+        Uses the shared scraping-stack lifecycle (`driver_context` +
+        `DriverConfig(driver_type="playwright")`), replacing the previous
+        direct Selenium usage. A fresh browser instance is created and torn
+        down per fetch (mirrors `scraping/toolkit.py:750`).
+
+        Args:
+            url: URL to fetch.
+            custom_user_agent: Optional per-call User-Agent override (e.g.
+                ZoomInfo's headless-hardening). Defaults to the toolkit's
+                `_driver_config.custom_user_agent` when not provided.
+
+        Returns:
+            BeautifulSoup object, or None if the fetch failed.
+        """
+        driver_config = self._driver_config
+        if custom_user_agent:
+            driver_config = driver_config.merge({"custom_user_agent": custom_user_agent})
+
+        try:
+            self.logger.info(f"Fetching URL via Playwright: {url}")
+            async with driver_context(driver_config) as drv:
+                await drv.navigate(url, timeout=driver_config.default_timeout)
+                page_source = await drv.get_page_source()
+            return bs(page_source, 'html.parser')
+        except Exception as e:
+            self.logger.error(f"Error fetching page {url}: {e}")
             return None
+
+    async def _fetch_page_with_selenium(
+        self,
+        url: str,
+        custom_user_agent: Optional[str] = None
+    ) -> Optional[bs]:
+        """
+        Legacy alias for `_fetch_page` (back-compat).
+
+        Deprecated: kept temporarily so existing internal callers keep
+        working; delegates entirely to the new Playwright-based
+        `_fetch_page`. No Selenium is used here despite the method name.
+
+        Args:
+            url: URL to fetch.
+            custom_user_agent: Optional per-call User-Agent override,
+                forwarded to `_fetch_page` (e.g. ZoomInfo's
+                headless-hardening; see `scrape_zoominfo`).
+
+        Returns:
+            BeautifulSoup object, or None if the fetch failed.
+        """
+        return await self._fetch_page(url, custom_user_agent=custom_user_agent)
 
     def _parse_address(self, address_text: str) -> Dict[str, Optional[str]]:
         """
@@ -421,6 +732,27 @@ class CompanyInfoToolkit(AbstractToolkit):
 
         return cleaned.strip()
 
+    def _extract_codes(self, value: Any) -> List[str]:
+        """
+        Extract NAICS/SIC codes from a company-info table cell.
+
+        Ported from flowtask's `_extract_codes` helper (used by both
+        `parsers/rocket.py` and `parsers/visualvisitor.py`): scans the
+        cell's `<a>` tags for the first run of digits in each link's text.
+
+        Args:
+            value: BeautifulSoup tag for the table cell containing the code
+                links.
+
+        Returns:
+            List of extracted code strings (may be empty).
+        """
+        codes: List[str] = []
+        for link in value.find_all("a"):
+            if match := re.search(r"\b\d+\b", link.text):
+                codes.append(match.group())
+        return codes
+
     # ===========================
     # Platform-Specific Methods (Tools)
     # ===========================
@@ -441,34 +773,32 @@ class CompanyInfoToolkit(AbstractToolkit):
         Returns:
             CompanyInfo object or JSON string with company data
         """
-        site = "zoominfo.com"
-        search_term = f"site:zoominfo.com {company_name} Overview"
+        site_config = COMPANY_SOURCES["zoominfo"]
 
         # Initialize result
         result = CompanyInfo(
-            search_term=search_term,
+            search_term=site_config.search_template.format(company_name),
             source_platform='zoominfo',
             scrape_status='pending',
             timestamp=str(time.time())
         )
 
         try:
-            # 1. Google site search
-            search_result = await self._google_site_search(
-                company_name=company_name,
-                site=site,
-                additional_terms="Overview"
-            )
+            # 1. Search (DDG-first, Google CSE fallback + hit validation)
+            url = await self._search_company_url(company_name, site_config)
 
-            if not search_result.url:
+            if not url:
                 result.scrape_status = 'no_data'
                 result.error_message = 'No search results found'
                 return result.to_json() if return_json else result
 
-            result.search_url = search_result.url
+            result.search_url = url
 
-            # 2. Fetch page with Selenium
-            document = await self._fetch_page_with_selenium(search_result.url)
+            # 2. Fetch page (Playwright; keeps headless-hardening custom UA
+            #    override for ZoomInfo per spec Module 2)
+            document = await self._fetch_page_with_selenium(
+                url, custom_user_agent=self._driver_config.custom_user_agent
+            )
 
             if not document:
                 result.scrape_status = 'error'
@@ -566,33 +896,28 @@ class CompanyInfoToolkit(AbstractToolkit):
         Returns:
             CompanyInfo object or JSON string with company data
         """
-        site = "explorium.ai"
-        search_term = f"site:explorium.ai {company_name}"
+        site_config = COMPANY_SOURCES["explorium"]
 
         result = CompanyInfo(
-            search_term=search_term,
+            search_term=site_config.search_template.format(company_name),
             source_platform='explorium',
             scrape_status='pending',
             timestamp=str(time.time())
         )
 
         try:
-            # Google site search
-            search_result = await self._google_site_search(
-                company_name=company_name,
-                site=site,
-                additional_terms="overview - services"
-            )
+            # Search (DDG-first, Google CSE fallback + hit validation)
+            url = await self._search_company_url(company_name, site_config)
 
-            if not search_result.url:
+            if not url:
                 result.scrape_status = 'no_data'
                 result.error_message = 'No search results found'
                 return result.to_json() if return_json else result
 
-            result.search_url = search_result.url
+            result.search_url = url
 
             # Fetch page
-            document = await self._fetch_page_with_selenium(search_result.url)
+            document = await self._fetch_page_with_selenium(url)
 
             if not document:
                 result.scrape_status = 'error'
@@ -688,34 +1013,29 @@ class CompanyInfoToolkit(AbstractToolkit):
         Returns:
             CompanyInfo object or JSON string with company data
         """
-        site = "leadiq.com"
+        site_config = COMPANY_SOURCES["leadiq"]
         standardized_name = self._standardize_name(company_name)
-        search_term = f"site:leadiq.com {standardized_name}"
 
         result = CompanyInfo(
-            search_term=search_term,
+            search_term=site_config.search_template.format(standardized_name),
             source_platform='leadiq',
             scrape_status='pending',
             timestamp=str(time.time())
         )
 
         try:
-            # Google site search
-            search_result = await self._google_site_search(
-                company_name=standardized_name,
-                site=site,
-                additional_terms="Company Overview"
-            )
+            # Search (DDG-first, Google CSE fallback + hit validation)
+            url = await self._search_company_url(standardized_name, site_config)
 
-            if not search_result.url:
+            if not url:
                 result.scrape_status = 'no_data'
                 result.error_message = 'No search results found'
                 return result.to_json() if return_json else result
 
-            result.search_url = search_result.url
+            result.search_url = url
 
             # Fetch page
-            document = await self._fetch_page_with_selenium(search_result.url)
+            document = await self._fetch_page_with_selenium(url)
 
             if not document:
                 result.scrape_status = 'error'
@@ -848,33 +1168,28 @@ class CompanyInfoToolkit(AbstractToolkit):
         Returns:
             CompanyInfo object or JSON string with company data
         """
-        site = "rocketreach.co"
-        search_term = f"site:rocketreach.co '{company_name}'"
+        site_config = COMPANY_SOURCES["rocketreach"]
 
         result = CompanyInfo(
-            search_term=search_term,
+            search_term=site_config.search_template.format(company_name),
             source_platform='rocketreach',
             scrape_status='pending',
             timestamp=str(time.time())
         )
 
         try:
-            # Google site search
-            search_result = await self._google_site_search(
-                company_name=company_name,
-                site=site,
-                additional_terms=" Information - RocketReach"
-            )
+            # Search (DDG-first, Google CSE fallback + hit validation)
+            url = await self._search_company_url(company_name, site_config)
 
-            if not search_result.url:
+            if not url:
                 result.scrape_status = 'no_data'
                 result.error_message = 'No search results found'
                 return result.to_json() if return_json else result
 
-            result.search_url = search_result.url
+            result.search_url = url
 
             # Fetch page
-            document = await self._fetch_page_with_selenium(search_result.url)
+            document = await self._fetch_page_with_selenium(url)
 
             if not document:
                 result.scrape_status = 'error'
@@ -978,33 +1293,28 @@ class CompanyInfoToolkit(AbstractToolkit):
         Returns:
             CompanyInfo object or JSON string with company data
         """
-        site = "siccode.com"
-        search_term = f"site:siccode.com '{company_name}' +NAICS"
+        site_config = COMPANY_SOURCES["siccode"]
 
         result = CompanyInfo(
-            search_term=search_term,
+            search_term=site_config.search_template.format(company_name),
             source_platform='siccode',
             scrape_status='pending',
             timestamp=str(time.time())
         )
 
         try:
-            # Google site search
-            search_result = await self._google_site_search(
-                company_name=company_name,
-                site=site,
-                additional_terms="+NAICS"
-            )
+            # Search (DDG-first, Google CSE fallback + hit validation)
+            url = await self._search_company_url(company_name, site_config)
 
-            if not search_result.url:
+            if not url:
                 result.scrape_status = 'no_data'
                 result.error_message = 'No search results found'
                 return result.to_json() if return_json else result
 
-            result.search_url = search_result.url
+            result.search_url = url
 
             # Fetch page
-            document = await self._fetch_page_with_selenium(search_result.url)
+            document = await self._fetch_page_with_selenium(url)
 
             if not document:
                 result.scrape_status = 'error'
@@ -1088,6 +1398,119 @@ class CompanyInfoToolkit(AbstractToolkit):
         return result.to_json() if return_json else result
 
     @tool_schema(CompanyInput)
+    async def scrape_visualvisitor(
+        self,
+        company_name: str,
+        return_json: bool = False
+    ) -> Union[CompanyInfo, str]:
+        """
+        Scrape company information from VisualVisitor.
+
+        Args:
+            company_name: Name of the company to search for
+            return_json: If True, return JSON string instead of CompanyInfo object
+
+        Returns:
+            CompanyInfo object or JSON string with company data
+        """
+        site_config = COMPANY_SOURCES["visualvisitor"]
+
+        result = CompanyInfo(
+            search_term=site_config.search_template.format(company_name),
+            source_platform='visualvisitor',
+            scrape_status='pending',
+            timestamp=str(time.time())
+        )
+
+        try:
+            # Search (DDG-first, Google CSE fallback + hit validation)
+            url = await self._search_company_url(company_name, site_config)
+
+            if not url:
+                result.scrape_status = 'no_data'
+                result.error_message = 'No search results found'
+                return result.to_json() if return_json else result
+
+            result.search_url = url
+
+            # Fetch page (Playwright driver stack)
+            document = await self._fetch_page(url)
+
+            if not document:
+                result.scrape_status = 'error'
+                result.error_message = 'Failed to fetch page'
+                return result.to_json() if return_json else result
+
+            # Parse data (selectors ported from flowtask
+            # parsers/visualvisitor.py:32-125 — NOTE: flowtask's version
+            # mislabels source_platform as 'rocketreach' at :42; fixed here)
+            if company_header := document.select_one(".company-header"):
+                img_tag = company_header.select_one(".company-logo")
+                result.logo_url = img_tag["src"] if img_tag else None
+
+                if title_tag := company_header.select_one(".company-title"):
+                    result.company_name = title_tag.text.replace(" Information", "").strip()
+
+            headline_summary = document.select_one(".headline-summary p")
+            result.company_description = headline_summary.text.strip() if headline_summary else None
+
+            info_table = document.select(".headline-summary table tbody tr")
+            for row in info_table:
+                key = row.select_one("td strong")
+                value = row.select_one("td:nth-of-type(2)")
+
+                if key and value:
+                    key_text = key.text.strip().lower()
+                    value_text = value.text.strip()
+
+                    if "website" in key_text:
+                        result.website = value.select_one("a")["href"] if value.select_one("a") else value_text
+                    elif "ticker" in key_text:
+                        result.stock_symbol = value_text
+                    elif "revenue" in key_text:
+                        result.revenue_range = value_text
+                    elif "funding" in key_text:
+                        result.funding = value_text
+                    elif "employees" in key_text:
+                        result.employee_count = value_text.split()[0]
+                        result.number_employees = value_text
+                    elif "founded" in key_text:
+                        result.founded = value_text
+                    elif "address" in key_text:
+                        result.headquarters = value.select_one("a").text.strip() if value.select_one("a") else value_text
+                    elif "phone" in key_text:
+                        result.phone_number = value.select_one("a").text.strip() if value.select_one("a") else value_text
+                    elif "industry" in key_text:
+                        result.industry = [i.strip() for i in value_text.split(",")]
+                    elif "keywords" in key_text:
+                        result.keywords = [i.strip() for i in value_text.split(",")]
+                    elif "sic" in key_text:
+                        codes = self._extract_codes(value)
+                        result.sic_code = ', '.join(codes) if codes else None
+                    elif "naics" in key_text:
+                        codes = self._extract_codes(value)
+                        result.naics_code = ', '.join(codes) if codes else None
+
+            has_data = any([
+                result.company_name,
+                result.logo_url,
+                result.headquarters,
+                result.phone_number,
+                result.website
+            ])
+
+            result.scrape_status = 'success' if has_data else 'no_data'
+
+        except Exception as e:
+            self.logger.error(f"Error scraping VisualVisitor: {e}")
+            result.scrape_status = 'error'
+            result.error_message = str(e)[:100]
+        finally:
+            await self._close_driver()
+
+        return result.to_json() if return_json else result
+
+    @tool_schema(CompanyInput)
     async def scrape_all_sources(
         self,
         company_name: str,
@@ -1135,3 +1558,77 @@ class CompanyInfoToolkit(AbstractToolkit):
             )
 
         return valid_results
+
+    @tool_schema(ResearchCompanyInput)
+    async def research_company(
+        self,
+        company_name: str,
+        sources: Optional[List[str]] = None,
+        return_json: bool = False
+    ) -> Union[CompanyInfo, str]:
+        """
+        Research a company across sources, returning the first successful profile.
+
+        Tries each source in priority order (default: leadiq, rocketreach,
+        explorium, siccode, visualvisitor, zoominfo — cheap HTTP-friendly
+        sources first, browser-heavy ZoomInfo last) by calling the matching
+        `scrape_<source>` method, and returns the FIRST `CompanyInfo` whose
+        `scrape_status == "success"`. Later sources are never called once a
+        success is found. If every source fails, returns a `CompanyInfo`
+        with `scrape_status="no_data"` and an `error_message` summarizing
+        each source's failure. This method never raises into the agent loop.
+
+        Args:
+            company_name: Name of the company to research.
+            sources: Optional subset/order of source names to try (must be
+                a subset of leadiq, rocketreach, explorium, siccode,
+                visualvisitor, zoominfo). `None` (default) uses the full
+                priority order; an explicit empty list (`[]`) tries no
+                sources and returns a `no_data` result immediately.
+            return_json: If True, return a JSON string instead of a
+                `CompanyInfo` object.
+
+        Returns:
+            CompanyInfo object (or JSON string) for the first successful
+            source, or a `no_data`/`error` CompanyInfo if none succeeded.
+        """
+        # `sources is None` -> full default priority order. An explicit
+        # empty list is a deliberate "try nothing" request (distinct from
+        # "unset"), not a fallback to the default order.
+        order = DEFAULT_SOURCE_PRIORITY if sources is None else sources
+
+        unknown = [name for name in order if name not in COMPANY_SOURCES]
+        if unknown:
+            info = CompanyInfo(
+                search_term=company_name,
+                scrape_status='error',
+                error_message=(
+                    f"Unknown source(s) {unknown}; valid sources: "
+                    f"{list(COMPANY_SOURCES.keys())}"
+                ),
+                timestamp=str(time.time())
+            )
+            return info.to_json() if return_json else info
+
+        failures: Dict[str, str] = {}
+        for name in order:
+            scrape_method = getattr(self, f"scrape_{name}")
+            try:
+                result = await scrape_method(company_name, return_json=False)
+            except Exception as e:
+                self.logger.error(f"research_company: {name} raised unexpectedly: {e}")
+                failures[name] = f"error: {e}"
+                continue
+
+            if isinstance(result, CompanyInfo) and result.scrape_status == 'success':
+                return result.to_json() if return_json else result
+
+            failures[name] = result.scrape_status if isinstance(result, CompanyInfo) else 'error'
+
+        info = CompanyInfo(
+            search_term=company_name,
+            scrape_status='no_data',
+            error_message=f"All sources failed: {failures}",
+            timestamp=str(time.time())
+        )
+        return info.to_json() if return_json else info

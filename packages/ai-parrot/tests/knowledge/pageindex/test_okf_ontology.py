@@ -52,8 +52,9 @@ class TestConceptType:
         assert ConceptType.CONTROL.value == "Control"
 
     def test_all_values_count(self):
-        """FEAT-239 extended to 16 values (11 original + 5 graph-native)."""
-        assert len(list(ConceptType)) == 16
+        """11 original + 5 graph-native (FEAT-239) + 5 wiki (FEAT-260)
+        + OTHER (FEAT-216 open-vocabulary fallback) = 22."""
+        assert len(list(ConceptType)) == 22
 
     def test_case_sensitive_values(self):
         """Values use Title-Case as per spec."""
@@ -93,8 +94,9 @@ class TestRelationType:
         assert RelationType.REFERENCES.value == "references"
 
     def test_all_values_count(self):
-        """FEAT-239 extended to 12 values (8 original + 4 graph edge kinds)."""
-        assert len(list(RelationType)) == 12
+        """8 original + 4 graph edge kinds (FEAT-239) + extends (FEAT-240)
+        + summarizes/contradicts (FEAT-260) = 15."""
+        assert len(list(RelationType)) == 15
 
     def test_str_enum_equality(self):
         """str, Enum values compare equal to plain strings."""

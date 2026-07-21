@@ -1,0 +1,28 @@
+# Build context hygiene for docker/tool-worker/Dockerfile (and any other
+# image built from the repository root). Keep packages/ and docker/ in;
+# keep VCS, caches, envs, and docs out.
+.git
+.github
+.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.egg-info
+**/build/
+**/dist/
+node_modules
+env/
+etc/
+docs/
+tests/
+sdd/
+artifacts/
+notebooks/
+examples/
+services/
+.claude/
+.agent/
+*.log
+.env

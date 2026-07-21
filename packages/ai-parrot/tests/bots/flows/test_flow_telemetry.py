@@ -23,7 +23,7 @@ from parrot.bots.flows import AgentsFlow, FlowLifecycleAdapter
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.fsm import AgentTaskMachine
 from parrot.bots.flows.core.node import Node
-from parrot.core.events.lifecycle.base import LifecycleEvent
+from navigator_eventbus.lifecycle.base import LifecycleEvent
 from parrot.core.events.lifecycle.events.flow import (
     FlowCompletedEvent,
     FlowStartedEvent,
@@ -32,8 +32,8 @@ from parrot.core.events.lifecycle.events.flow import (
     NodeSkippedEvent,
     NodeStartedEvent,
 )
-from parrot.core.events.lifecycle.registry import EventRegistry
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.trace import TraceContext
 
 
 class StubNode(Node):

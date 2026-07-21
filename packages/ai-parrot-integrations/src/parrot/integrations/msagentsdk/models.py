@@ -62,6 +62,15 @@ class MSAgentSDKConfig:
             Microsoft-cluster APIs that require on-behalf-of token exchange.
             Example: ``{"o365": ["https://graph.microsoft.com/.default"]}``.
             Only relevant when ``oauth_connections`` is non-empty.
+        enable_semantic_cards: If True (default), a ``SemanticUIResult``
+            returned by the agent (FEAT-303) is rendered as an Adaptive Card;
+            if False, the plain-text path is always used even when the model
+            is present.
+        max_table_rows: Maximum number of table rows rendered in a Semantic
+            UI table card before truncating with a "showing N of M" note
+            (FEAT-303).
+        max_card_bytes: Maximum serialized Semantic UI card size in bytes;
+            exceeding it triggers the plain-text fallback (FEAT-303).
     """
 
     name: str
@@ -80,6 +89,9 @@ class MSAgentSDKConfig:
     endpoint: Optional[str] = None
     oauth_connections: Dict[str, str] = field(default_factory=dict)
     obo_scopes: Dict[str, List[str]] = field(default_factory=dict)
+    enable_semantic_cards: bool = True
+    max_table_rows: int = 15
+    max_card_bytes: int = 25_000
 
     def __post_init__(self) -> None:
         """
@@ -229,6 +241,9 @@ class MSAgentIntegrationConfig:
     # A2A companion (always on)
     url: Optional[str] = None
     tags: List[str] = field(default_factory=list)
+    # Output mode requested from the agent on A2A companion turns
+    # ("text" = markdown-free plain text for Copilot; "default" = native output).
+    output_mode: str = "text"
 
     # Credential broker
     enable_credential_broker: bool = False
@@ -328,6 +343,7 @@ class MSAgentIntegrationConfig:
             obo_scopes=data.get("obo_scopes", {}),
             url=data.get("url"),
             tags=data.get("tags", []),
+            output_mode=data.get("output_mode", "text"),
             enable_credential_broker=data.get("enable_credential_broker", False),
             credentials=data.get("credentials", []),
             o365_client_id=data.get("o365_client_id"),

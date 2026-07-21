@@ -1,28 +1,32 @@
-"""Combined search across PageIndex and GraphIndex for the LLM Wiki (FEAT-260).
+"""Combined search for the LLM Wiki (FEAT-260 + WikiStore plane).
 
-Implements unified search that merges results from:
+Preferred path — when a :class:`WikiStore` is provided, every query is
+answered directly from the single-file SQLite plane (no toolkit
+fan-out, no markdown parsing at query time):
 
-- **PageIndex** ``HybridPageIndexSearch`` (BM25 + LLM walk) via
-  ``PageIndexToolkit.search()``.
-- **GraphIndex** ``GraphExpandedRetriever`` via
-  ``GraphIndexToolkit.search_hybrid()``.
+- **lexical** — FTS5/BM25 over title/summary/body.
+- **vector** — cosine over stored page embeddings (requires an
+  ``embedder`` callable).
+- ``"combined"`` (default) merges both with configurable weights.
+  Legacy mode names map onto the plane: ``"pageindex"`` → lexical,
+  ``"graphindex"`` → vector.
 
-Results from each backend are min-max normalised to [0, 1], weighted by
-the configurable ``search_weights`` dictionary, deduplicated by ``node_id``,
-and returned as a sorted :class:`WikiSearchResult` list.
+Legacy path — without a store, results are merged from
+``PageIndexToolkit.search()`` and ``GraphIndexToolkit.search_hybrid()``
+exactly as before (kept for one release).
 
-Search modes:
-- ``"pageindex"`` — PageIndex only; GraphIndex is not called.
-- ``"graphindex"`` — GraphIndex only; PageIndex is not called.
-- ``"combined"`` (default) — both backends, weights applied.
+Results from each group are min-max normalised to [0, 1], weighted by
+the configurable ``search_weights`` dictionary, deduplicated by
+``node_id``, and returned as a sorted :class:`WikiSearchResult` list.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional
 
-from parrot.knowledge.wiki.models import WikiSearchResult
+from parrot.knowledge.wiki.models import WikiPageCategory, WikiSearchResult
+from parrot.knowledge.wiki.store import WikiStore
 
 
 class WikiCombinedSearch:
@@ -45,18 +49,29 @@ class WikiCombinedSearch:
         pageindex_toolkit: Any,
         graphindex_toolkit: Any,
         default_weights: Optional[dict[str, float]] = None,
+        store: Optional[WikiStore] = None,
+        embedder: Optional[Callable[[str], Awaitable[list[float]]]] = None,
     ) -> None:
-        """Initialise combined search with two toolkit backends.
+        """Initialise combined search.
 
         Args:
-            pageindex_toolkit: A ``PageIndexToolkit`` instance.
-            graphindex_toolkit: A ``GraphIndexToolkit`` instance.
-            default_weights: Optional weighting dict with keys
-                ``"pageindex"`` and ``"graphindex"``.  Defaults to
+            pageindex_toolkit: A ``PageIndexToolkit`` instance (legacy
+                path only — unused when ``store`` is provided).
+            graphindex_toolkit: A ``GraphIndexToolkit`` instance (legacy
+                path only).
+            default_weights: Optional weighting dict.  Accepts the new
+                keys ``"lexical"`` / ``"vector"`` or the legacy aliases
+                ``"pageindex"`` / ``"graphindex"``.  Defaults to
                 ``{"pageindex": 0.6, "graphindex": 0.4}``.
+            store: :class:`WikiStore` retrieval plane.  When provided,
+                all searches run against it (preferred path).
+            embedder: Optional async ``text -> vector`` callable used
+                for the vector leg of store-backed search.
         """
         self._pi = pageindex_toolkit
         self._gi = graphindex_toolkit
+        self._store = store
+        self._embedder = embedder
         self._weights: dict[str, float] = default_weights or {
             "pageindex": 0.6,
             "graphindex": 0.4,
@@ -94,6 +109,11 @@ class WikiCombinedSearch:
         effective_weights = weights or self._weights
         mode = mode.lower()
 
+        if self._store is not None:
+            return await self._search_store(
+                query, mode=mode, top_k=top_k, weights=effective_weights
+            )
+
         pi_results: list[WikiSearchResult] = []
         gi_results: list[WikiSearchResult] = []
 
@@ -110,6 +130,107 @@ class WikiCombinedSearch:
 
         merged = self._merge_results(pi_results, gi_results, effective_weights)
         return merged[:top_k]
+
+    async def _search_store(
+        self,
+        query: str,
+        mode: str,
+        top_k: int,
+        weights: dict[str, float],
+    ) -> list[WikiSearchResult]:
+        """Answer a search entirely from the WikiStore SQLite plane.
+
+        Args:
+            query: Natural-language query.
+            mode: ``"combined"``, ``"lexical"`` (alias ``"pageindex"``),
+                or ``"vector"`` (alias ``"graphindex"``).
+            top_k: Maximum merged results.
+            weights: Weight mapping (new or legacy key names).
+
+        Returns:
+            Sorted, deduplicated :class:`WikiSearchResult` list.
+        """
+        lex_weight = weights.get("lexical", weights.get("pageindex", 0.6))
+        vec_weight = weights.get("vector", weights.get("graphindex", 0.4))
+
+        want_lexical = mode in ("combined", "lexical", "pageindex")
+        want_vector = mode in ("combined", "vector", "graphindex")
+
+        lexical_results: list[WikiSearchResult] = []
+        if want_lexical:
+            try:
+                rows = await self._store.search_fts(query, limit=top_k)
+                lexical_results = [
+                    self._store_row_to_wiki(r, source="lexical")
+                    for r in self._normalize_rows(rows)
+                ]
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("WikiStore FTS search failed: %s", exc)
+
+        vector_results: list[WikiSearchResult] = []
+        if want_vector and self._embedder is not None:
+            try:
+                embedding = await self._embedder(query)
+                rows = await self._store.search_vector(embedding, limit=top_k)
+                vector_results = [
+                    self._store_row_to_wiki(r, source="vector")
+                    for r in self._normalize_rows(rows)
+                ]
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("WikiStore vector search failed: %s", exc)
+
+        # When only one leg produced results, give it full weight so
+        # scores stay meaningful in [0, 1].
+        if lexical_results and not vector_results:
+            lex_weight = 1.0
+        elif vector_results and not lexical_results:
+            vec_weight = 1.0
+
+        merged = self._merge_groups(
+            [(lexical_results, lex_weight), (vector_results, vec_weight)]
+        )
+        return merged[:top_k]
+
+    @staticmethod
+    def _normalize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Min-max normalise raw store scores into [0, 1] per group.
+
+        Raw scores (``-bm25`` or cosine) are unbounded / signed, but
+        :class:`WikiSearchResult` enforces ``score ∈ [0, 1]`` — so the
+        normalisation must happen before model construction.
+        """
+        if not rows:
+            return []
+        scores = [float(r.get("score") or 0.0) for r in rows]
+        min_s, max_s = min(scores), max(scores)
+        span = max_s - min_s
+        out = []
+        for row, raw in zip(rows, scores):
+            item = dict(row)
+            item["score"] = (raw - min_s) / span if span > 0 else 1.0
+            out.append(item)
+        return out
+
+    @staticmethod
+    def _store_row_to_wiki(
+        row: dict[str, Any], source: str
+    ) -> WikiSearchResult:
+        """Convert a WikiStore result row to a :class:`WikiSearchResult`."""
+        raw_category = row.get("category")
+        try:
+            category = WikiPageCategory(raw_category) if raw_category else None
+        except ValueError:
+            category = None
+        token_count = row.get("token_count")
+        return WikiSearchResult(
+            node_id=str(row.get("concept_id") or row.get("node_id") or ""),
+            title=str(row.get("title") or ""),
+            score=min(max(float(row.get("score") or 0.0), 0.0), 1.0),
+            source=source,
+            snippet=str(row.get("summary") or ""),
+            category=category,
+            token_count=int(token_count) if token_count is not None else None,
+        )
 
     async def find_related(
         self,
@@ -130,6 +251,8 @@ class WikiCombinedSearch:
         Returns:
             A list of neighbour node dicts.  Returns an empty list on error.
         """
+        if self._store is not None:
+            return await self._find_related_store(page_id, depth=depth)
         try:
             gn_method = getattr(self._gi, "get_neighborhood", None)
             if callable(gn_method):
@@ -153,6 +276,47 @@ class WikiCombinedSearch:
                 page_id,
                 depth,
                 exc,
+            )
+            return []
+
+    async def _find_related_store(
+        self,
+        page_id: str,
+        depth: int = 2,
+    ) -> list[dict[str, Any]]:
+        """BFS over the WikiStore edges table up to ``depth`` hops.
+
+        Args:
+            page_id: Seed concept_id.
+            depth: Maximum number of hops from the seed.
+
+        Returns:
+            Neighbour dicts (each includes ``concept_id``, ``rel``,
+            ``direction``, ``hops``, and page stub fields when the
+            target is a known page).  Empty list on error.
+        """
+        try:
+            seen: set[str] = {page_id}
+            frontier = [page_id]
+            related: list[dict[str, Any]] = []
+            for hop in range(1, max(1, depth) + 1):
+                next_frontier: list[str] = []
+                for cid in frontier:
+                    for item in await self._store.neighbors(cid):
+                        target = str(item.get("concept_id") or "")
+                        if not target or target in seen:
+                            continue
+                        seen.add(target)
+                        item["hops"] = hop
+                        related.append(item)
+                        next_frontier.append(target)
+                frontier = next_frontier
+                if not frontier:
+                    break
+            return related
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "find_related(%s) via WikiStore failed: %s", page_id, exc
             )
             return []
 
@@ -268,21 +432,33 @@ class WikiCombinedSearch:
         """
         pi_weight = weights.get("pageindex", 0.6)
         gi_weight = weights.get("graphindex", 0.4)
+        return self._merge_groups(
+            [(pi_results, pi_weight), (gi_results, gi_weight)]
+        )
 
-        # Normalise each group and apply weight
-        weighted_pi = self._apply_weight(pi_results, pi_weight)
-        weighted_gi = self._apply_weight(gi_results, gi_weight)
+    def _merge_groups(
+        self,
+        groups: list[tuple[list[WikiSearchResult], float]],
+    ) -> list[WikiSearchResult]:
+        """Weight, deduplicate, and sort result groups.
 
-        # Merge, keeping highest-scored duplicate by node_id
+        Each group is min-max normalised and multiplied by its weight;
+        when the same ``node_id`` appears in several groups the entry
+        with the higher weighted score is kept.
+
+        Args:
+            groups: ``(results, weight)`` pairs.
+
+        Returns:
+            Deduplicated list sorted by weighted score (descending).
+        """
         seen: dict[str, WikiSearchResult] = {}
-        for result in weighted_pi + weighted_gi:
-            existing = seen.get(result.node_id)
-            if existing is None or result.score > existing.score:
-                seen[result.node_id] = result
-
-        # Sort descending by weighted score
-        merged = sorted(seen.values(), key=lambda r: r.score, reverse=True)
-        return merged
+        for results, weight in groups:
+            for result in self._apply_weight(results, weight):
+                existing = seen.get(result.node_id)
+                if existing is None or result.score > existing.score:
+                    seen[result.node_id] = result
+        return sorted(seen.values(), key=lambda r: r.score, reverse=True)
 
     def _apply_weight(
         self,
@@ -316,14 +492,5 @@ class WikiCombinedSearch:
                 normalised = 1.0
 
             weighted_score = min(max(normalised * weight, 0.0), 1.0)
-            weighted.append(
-                WikiSearchResult(
-                    node_id=r.node_id,
-                    title=r.title,
-                    score=weighted_score,
-                    source=r.source,
-                    snippet=r.snippet,
-                    category=r.category,
-                )
-            )
+            weighted.append(r.model_copy(update={"score": weighted_score}))
         return weighted

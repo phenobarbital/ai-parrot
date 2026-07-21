@@ -97,6 +97,8 @@ from parrot.flows.dev_loop import (
     LLMCodeDispatchProfile,
     GrokCodeDispatcher,
     GrokCodeDispatchProfile,
+    MoonshotCodeDispatcher,
+    MoonshotCodeDispatchProfile,
     ZaiCodeDispatcher,
     ZaiCodeDispatchProfile,
     DevLoopRunner,
@@ -554,10 +556,31 @@ async def _on_startup(app: web.Application) -> None:
             development_profile.model,
             development_profile.enable_thinking,
         )
+    elif development_agent == "moonshot":
+        development_dispatcher = MoonshotCodeDispatcher(
+            max_concurrent=conf.config.getint(
+                "MOONSHOT_CODE_MAX_CONCURRENT_DISPATCHES",
+                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+            ),
+            redis_url=redis_url,
+            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+        )
+        development_profile = MoonshotCodeDispatchProfile(
+            model=conf.config.get("DEV_LOOP_MOONSHOT_MODEL", fallback="kimi-k3"),
+            reasoning_effort=conf.config.get(
+                "DEV_LOOP_MOONSHOT_REASONING_EFFORT", fallback="max"
+            ),
+        )
+        logger.info(
+            "Development node using Moonshot code dispatcher (model=%s, "
+            "reasoning_effort=%s)",
+            development_profile.model,
+            development_profile.reasoning_effort,
+        )
     elif development_agent not in {"claude", "claude-code"}:
         raise RuntimeError(
             "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', "
-            "'gemini', 'nvidia', 'grok', or 'zai', "
+            "'gemini', 'nvidia', 'grok', 'zai', or 'moonshot', "
             f"got {development_agent!r}"
         )
 

@@ -1,0 +1,141 @@
+{
+  "feature": "companyresearch-tool",
+  "feature_id": "FEAT-305",
+  "spec": "sdd/specs/companyresearch-tool.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-13T23:56:57Z",
+  "completed_at": "2026-07-14T00:50:40+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1759",
+      "slug": "deps-playwright-rapidfuzz-ddgs",
+      "title": "Declare playwright + rapidfuzz (and verify ddgs) in satellite pyproject",
+      "feature_id": "FEAT-305",
+      "feature": "companyresearch-tool",
+      "spec": "sdd/specs/companyresearch-tool.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Root dependency task; every impl task imports rapidfuzz/ddgs and needs playwright at runtime. Must land first.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T23:59:27+00:00",
+      "completed_at": "2026-07-14T00:50:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1759-deps-playwright-rapidfuzz-ddgs.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1760",
+      "slug": "search-layer-ddg-first-validation",
+      "title": "Search layer — SourceConfig registry, DDG-first _search_company_url, hit validation",
+      "feature_id": "FEAT-305",
+      "feature": "companyresearch-tool",
+      "spec": "sdd/specs/companyresearch-tool.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1759"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits company_info/tool.py — shared file with all other impl tasks; sequential per spec Worktree Strategy.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T23:59:27+00:00",
+      "completed_at": "2026-07-14T00:50:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1760-search-layer-ddg-first-validation.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1761",
+      "slug": "playwright-fetch-layer",
+      "title": "Playwright fetch layer — replace Selenium internals with driver_context/DriverConfig",
+      "feature_id": "FEAT-305",
+      "feature": "companyresearch-tool",
+      "spec": "sdd/specs/companyresearch-tool.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1759"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits company_info/tool.py — shared file; must be serialized with TASK-1760. Independent of the search layer logically but conflicts on the same file.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T23:59:27+00:00",
+      "completed_at": "2026-07-14T00:50:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1761-playwright-fetch-layer.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1762",
+      "slug": "scrape-visualvisitor",
+      "title": "scrape_visualvisitor per-source extractor",
+      "feature_id": "FEAT-305",
+      "feature": "companyresearch-tool",
+      "spec": "sdd/specs/companyresearch-tool.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1760",
+        "TASK-1761"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Uses _search_company_url (TASK-1760) and _fetch_page (TASK-1761); edits shared tool.py.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T23:59:27+00:00",
+      "completed_at": "2026-07-14T00:50:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1762-scrape-visualvisitor.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1763",
+      "slug": "research-company-aggregate-wiring",
+      "title": "research_company first-success aggregate + wire existing scrapers to new search",
+      "feature_id": "FEAT-305",
+      "feature": "companyresearch-tool",
+      "spec": "sdd/specs/companyresearch-tool.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1760",
+        "TASK-1761",
+        "TASK-1762"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Aggregates all per-source methods and repoints existing scrapers; edits shared tool.py; needs all prior impl tasks.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T23:59:27+00:00",
+      "completed_at": "2026-07-14T00:50:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1763-research-company-aggregate-wiring.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1764",
+      "slug": "tests-fixtures",
+      "title": "Tests + recorded-HTML fixtures for company_info",
+      "feature_id": "FEAT-305",
+      "feature": "companyresearch-tool",
+      "spec": "sdd/specs/companyresearch-tool.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1760",
+        "TASK-1761",
+        "TASK-1762",
+        "TASK-1763"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches only the new tests/ dir (no tool.py conflict) but validates the full feature, so it runs last after all impl tasks.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T23:59:27+00:00",
+      "completed_at": "2026-07-14T00:50:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1764-tests-fixtures.md",
+      "verification": "verified"
+    }
+  ]
+}

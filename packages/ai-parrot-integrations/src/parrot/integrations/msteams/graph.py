@@ -32,7 +32,8 @@ import asyncio
 import logging
 import re
 import time
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
 
 import aiohttp
 from pydantic import BaseModel, Field
@@ -366,4 +367,81 @@ class GraphClient:
                 return None
         except Exception:  # noqa: BLE001
             self.logger.exception("Exception calling Graph /users/%s/manager", upn)
+            return None
+
+    async def upload_file(
+        self,
+        file_path: Union[str, Path],
+        *,
+        user: str,
+        folder: str = "A2UI-Artifacts",
+    ) -> Optional[str]:
+        """Upload a local file to a user's OneDrive and return an org-view share link.
+
+        FEAT-273 (Module 7): app-only (client-credentials) file delivery for Teams.
+        The file is uploaded to ``{user}``'s OneDrive under ``{folder}`` via a Graph
+        simple upload, then an organization-scoped *view* sharing link is created and
+        returned for embedding in a Teams message.
+
+        Requires the ``Files.ReadWrite.All`` application permission (see module docs).
+        Follows the class error contract: returns ``None`` (never raises) on any error.
+
+        Args:
+            file_path: Local path of the file to upload.
+            user: UPN / object id of the drive owner (e.g. the notify service account).
+            folder: Destination folder within the drive root.
+
+        Returns:
+            A shareable ``webUrl`` string, or ``None`` on any failure.
+        """
+        token = await self._get_access_token()
+        if not token:
+            return None
+
+        path = Path(file_path)
+        try:
+            data = await asyncio.to_thread(path.read_bytes)
+        except OSError:
+            self.logger.exception("Graph upload: cannot read local file %s", file_path)
+            return None
+
+        filename = path.name
+        upload_url = f"{_GRAPH_BASE}/users/{user}/drive/root:/{folder}/{filename}:/content"
+        binary_headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/octet-stream",
+        }
+        try:
+            session = await self._get_session()
+            async with session.put(upload_url, headers=binary_headers, data=data) as resp:
+                if resp.status not in (200, 201):
+                    body = await resp.text()
+                    self.logger.error(
+                        "Graph OneDrive upload failed (HTTP %s): %s", resp.status, body[:200]
+                    )
+                    return None
+                item = await resp.json()
+
+            item_id = item.get("id")
+            if not item_id:
+                return item.get("webUrl")
+
+            link_url = f"{_GRAPH_BASE}/users/{user}/drive/items/{item_id}/createLink"
+            async with session.post(
+                link_url,
+                headers=self._auth_headers(token),
+                json={"type": "view", "scope": "organization"},
+            ) as resp:
+                if resp.status not in (200, 201):
+                    body = await resp.text()
+                    self.logger.warning(
+                        "Graph createLink failed (HTTP %s): %s; falling back to webUrl.",
+                        resp.status,
+                        body[:200],
+                    )
+                    return item.get("webUrl")
+                link = await resp.json()
+            return (link.get("link") or {}).get("webUrl") or item.get("webUrl")
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Exception during Graph OneDrive upload of %s", filename)
             return None

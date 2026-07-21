@@ -91,6 +91,10 @@ class EpisodicMemoryMixin:
         episodic_inject_warnings: Whether to inject failure warnings pre-LLM.
         episodic_max_warnings: Maximum warnings to inject.
         episodic_trivial_tools: Tools to skip when recording.
+        episodic_flush_on_start: Delete persisted episodes (FAISS files +
+            Redis episode cache) when the agent configures, starting each
+            process with a clean episodic slate. Useful while iterating on
+            agent behavior so stale lessons don't reinforce old patterns.
     """
 
     enable_episodic_memory: bool = False
@@ -101,11 +105,49 @@ class EpisodicMemoryMixin:
     episodic_reflection_enabled: bool = True
     episodic_inject_warnings: bool = True
     episodic_max_warnings: int = 3
+    episodic_flush_on_start: bool = False
     episodic_trivial_tools: set[str] = frozenset({
         "get_time", "get_date", "get_current_time",
     })
 
     _episodic_store: EpisodicMemoryStore | None = None
+
+    async def flush_episodic_memory(self) -> None:
+        """Delete persisted episodic memory for this agent.
+
+        Removes the FAISS persistence files (``episodes.faiss``,
+        ``episodes.jsonl``, ``id_order.json``) and every ``episodic:*`` Redis
+        cache key scoped to this agent. Safe to call when nothing is
+        persisted. Only covers the FAISS backend — PgVector-backed agents
+        must truncate the episodes table instead.
+        """
+        # 1. FAISS disk persistence
+        path = self._resolve_episodic_path()
+        if path:
+            base = Path(path)
+            for fname in ("episodes.faiss", "episodes.jsonl", "id_order.json"):
+                target = base / fname
+                if target.exists():
+                    target.unlink()
+                    logger.info("Episodic flush: removed %s", target)
+
+        # 2. Redis episode cache (episodic:{tenant}:{agent_id}...)
+        redis_client = getattr(self, "redis", None)
+        if redis_client is not None:
+            agent_id = self._get_agent_id()
+            pattern = f"episodic:*{agent_id}*"
+            try:
+                deleted = 0
+                async for key in redis_client.scan_iter(match=pattern):
+                    await redis_client.delete(key)
+                    deleted += 1
+                if deleted:
+                    logger.info(
+                        "Episodic flush: removed %d Redis cache keys (%s)",
+                        deleted, pattern,
+                    )
+            except Exception as e:  # non-fatal — cache keys expire via TTL anyway
+                logger.warning("Episodic flush: Redis cleanup failed: %s", e)
 
     def _resolve_episodic_path(self) -> str | None:
         """Resolve the FAISS persistence path for episodic memory.
@@ -165,6 +207,11 @@ class EpisodicMemoryMixin:
         try:
             from .embedding import EpisodeEmbeddingProvider
             from .reflection import ReflectionEngine
+
+            # Optional clean slate: drop persisted episodes BEFORE the store
+            # loads them, so stale lessons don't get re-injected.
+            if self.episodic_flush_on_start:
+                await self.flush_episodic_memory()
 
             embedding = EpisodeEmbeddingProvider()
 

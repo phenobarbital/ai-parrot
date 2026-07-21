@@ -5,8 +5,8 @@ from typing import Any, List
 
 from aiohttp import web
 
-from .base import BaseHook
-from .models import FileUploadHookConfig, HookType
+from navigator_eventbus.hooks.base import BaseHook
+from navigator_eventbus.hooks.models import FileUploadHookConfig, HookType
 
 
 class FileUploadHook(BaseHook):

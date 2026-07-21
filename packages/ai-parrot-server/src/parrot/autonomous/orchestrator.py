@@ -21,9 +21,14 @@ from typing import (
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+import asyncio
 import uuid
 from navconfig.logging import logging
-from parrot.core.events import EventBus, Event, EventPriority
+# FEAT-317: EventBus/Event/EventPriority and BaseHook/HookManager/HookEvent
+# moved to navigator_eventbus (bus core + hooks now live in the package;
+# parrot.core.hooks re-exports the hooks facade, but the bus symbols are a
+# hard migration with no re-export from parrot.core.events).
+from navigator_eventbus import EventBus, Event, EventPriority
 from parrot.core.hooks import BaseHook, HookManager, HookEvent
 from .redis_jobs import RedisJobInjector
 from .webhooks import WebhookListener
@@ -187,9 +192,20 @@ class AutonomousOrchestrator:
         self._use_webhooks = use_webhooks
         self._default_user_id = default_user_id
         self._default_session_prefix = default_session_prefix
+        # FEAT-310 (optional, default OFF): consume hook events via a bus
+        # subscription in addition to the direct callback. Guarded by
+        # navconfig flag AUTONOMOUS_HOOKS_VIA_BUS.
+        from navconfig import config as _nav_config
+        self._hooks_via_bus = str(
+            _nav_config.get("AUTONOMOUS_HOOKS_VIA_BUS", fallback="false")
+        ).lower() in ("1", "true", "yes")
         
         # Runtime state
         self._running = False
+        # Background task running the EventBus Redis receive loop. Only spawned
+        # when the bus is backed by Redis (cross-process distribution); stays
+        # None for the in-memory bus.
+        self._evb_listener_task: Optional[asyncio.Task] = None
         self._agent_cache: Dict[str, "AbstractBot"] = {}
         self._execution_history: List[ExecutionResult] = []
         self._max_history = 1000
@@ -223,12 +239,27 @@ class AutonomousOrchestrator:
 
         # Event Bus
         if self._use_event_bus:
+            # FEAT-317: legacy Redis channel prefix so deployed streams/
+            # subscribers under `parrot:events:*` keep working after the
+            # migration to navigator_eventbus (package default is `evb:*`).
             self.event_bus = EventBus(
                 redis_url=self.redis_url,
-                use_redis=bool(self.redis_url)
+                use_redis=bool(self.redis_url),
+                channel_prefix="parrot:events:",
             )
             await self.event_bus.connect()
             self._setup_internal_event_handlers()
+            # When the bus is Redis-backed, publish() mirrors events to Redis
+            # but inbound events from other processes are only delivered while
+            # the receive loop runs. Spawn it as a background task so this
+            # orchestrator actually consumes distributed events, not just emits
+            # them. connect() has already created the pubsub object.
+            if self.event_bus.use_redis:
+                self._evb_listener_task = asyncio.create_task(
+                    self.event_bus.start_redis_listener(),
+                    name="eventbus-redis-listener",
+                )
+                self.logger.info("Event Bus Redis listener started")
             self.logger.info("Event Bus initialized")
 
         # Redis Job Injector
@@ -246,8 +277,23 @@ class AutonomousOrchestrator:
                 self.webhook_listener.set_event_bus(self.event_bus)
             self.logger.info("Webhook Listener initialized")
 
-        # External Hooks
-        self.hook_manager.set_event_callback(self._handle_hook_event)
+        # External Hooks — exactly ONE consumption path (never both, or
+        # every hook-triggered execution would run twice):
+        #
+        # * default: direct callback (low-latency path, kept permanently);
+        # * AUTONOMOUS_HOOKS_VIA_BUS=true (FEAT-310): `_handle_hook_event`
+        #   is re-registered as a bus subscriber instead — hook events flow
+        #   HookManager → bus → orchestrator, which also picks up hook
+        #   events published by OTHER instances on a distributed backend.
+        if self._hooks_via_bus and self.event_bus is not None:
+            self.hook_manager.set_event_bus(self.event_bus)
+            self.event_bus.subscribe("hooks.*", self._handle_bus_hook_event)
+            self.logger.info(
+                "Hook events consumed via EventBus subscription "
+                "(AUTONOMOUS_HOOKS_VIA_BUS) — direct callback not wired"
+            )
+        else:
+            self.hook_manager.set_event_callback(self._handle_hook_event)
         await self.hook_manager.start_all()
         self.logger.info("Hook Manager initialized")
 
@@ -268,6 +314,20 @@ class AutonomousOrchestrator:
         self._running = False
 
         await self.hook_manager.stop_all()
+
+        # Stop the Redis receive loop before closing the bus. The loop blocks in
+        # pubsub.listen(), so cancel it explicitly rather than relying on the
+        # _running flag (which only takes effect on the next inbound message).
+        if self._evb_listener_task is not None:
+            self._evb_listener_task.cancel()
+            try:
+                await self._evb_listener_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                self.logger.exception("EventBus Redis listener errored on stop")
+            finally:
+                self._evb_listener_task = None
 
         if self.event_bus:
             await self.event_bus.close()
@@ -345,6 +405,48 @@ class AutonomousOrchestrator:
         """
         return self.hook_manager.register(hook)
 
+    async def _handle_bus_hook_event(self, event: Event) -> None:
+        """FEAT-310 (flag-guarded): handle a hook event delivered via the bus.
+
+        Rebuilds a :class:`HookEvent` from either wire shape — the legacy
+        dual-emit payload (``HookEvent.model_dump()``) or the
+        ``route_to_bus`` first-class shape (hook payload + metadata
+        routing hints, topic ``hooks.<type>.<event>``) — and delegates to
+        :meth:`_handle_hook_event`.
+        """
+        try:
+            payload = event.payload or {}
+            if "hook_type" in payload and "event_type" in payload:
+                hook_event = HookEvent(**payload)  # legacy dual-emit shape
+            else:
+                parts = event.event_type.split(".", 2)
+                if len(parts) != 3:
+                    self.logger.warning(
+                        "Unrecognized hook bus topic: %s", event.event_type
+                    )
+                    return
+                metadata = dict(event.metadata or {})
+                hook_id = metadata.pop("hook_id", event.source or "bus")
+                target_type = metadata.pop("target_type", None)
+                target_id = metadata.pop("target_id", None)
+                task = metadata.pop("task", None)
+                hook_event = HookEvent(
+                    hook_id=hook_id,
+                    hook_type=parts[1],
+                    event_type=parts[2],
+                    payload=payload,
+                    metadata=metadata,
+                    target_type=target_type,
+                    target_id=target_id,
+                    task=task,
+                )
+            await self._handle_hook_event(hook_event)
+        except Exception as exc:
+            self.logger.error(
+                "Failed to handle bus-delivered hook event %s: %s",
+                event.event_type, exc,
+            )
+
     async def _handle_hook_event(self, event: HookEvent) -> None:
         """Convert a HookEvent into an ExecutionRequest and execute it."""
         target_type_str = event.target_type or "agent"
@@ -374,7 +476,10 @@ class AutonomousOrchestrator:
             session_id=session_id,
             metadata={
                 "hook_id": event.hook_id,
-                "hook_type": event.hook_type.value,
+                # FEAT-317: navigator_eventbus.hooks.models.HookEvent.hook_type
+                # is a plain str (HookType is an open registry of string
+                # constants, not an Enum) — no `.value` attribute.
+                "hook_type": event.hook_type,
                 "event_type": event.event_type,
                 **event.metadata,
             },
@@ -1138,10 +1243,13 @@ class AutonomousOrchestrator:
             )
         
         crew_data = await self.bot_manager.get_crew(crew_id)
-        
-        if not crew_data:
+
+        # get_crew() returns the truthy tuple (None, None) on a miss, so a
+        # plain `not crew_data` check misses it and `crew.agents` below would
+        # raise. Validate the resolved instance/definition explicitly.
+        if not crew_data or crew_data[0] is None or crew_data[1] is None:
             raise ValueError(f"Crew '{crew_id}' not found")
-        
+
         crew, crew_def = crew_data
         
         # Auto-configure agents in crew

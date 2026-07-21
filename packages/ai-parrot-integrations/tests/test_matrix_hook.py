@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 
-from parrot.core.hooks.base import BaseHook
-from parrot.core.hooks.models import (
+from navigator_eventbus.hooks.base import BaseHook
+from navigator_eventbus.hooks.models import (
     HookEvent,
     HookType,
     MatrixHookConfig,
@@ -117,11 +117,12 @@ class TestMatrixHookConfig:
 
 
 class TestMatrixHookType:
-    """Verify MATRIX is in the HookType enum."""
+    """Verify MATRIX is a registered HookType (FEAT-317: navigator_eventbus.hooks
+    HookType is a plain open-registry class of str constants, not an Enum —
+    ``.value`` no longer applies)."""
 
     def test_matrix_hook_type_exists(self):
         assert HookType.MATRIX == "matrix"
-        assert HookType.MATRIX.value == "matrix"
 
 
 # ---------------------------------------------------------------------------
@@ -317,5 +318,5 @@ class TestMatrixHookAutoRegistration:
 
     def test_auto_registration(self):
         import parrot.integrations.matrix.hook  # trigger import and auto-registration
-        from parrot.core.hooks.base import HookRegistry
+        from navigator_eventbus.hooks.base import HookRegistry
         assert HookRegistry.get("matrix") is not None

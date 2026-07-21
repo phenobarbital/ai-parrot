@@ -127,6 +127,32 @@ class TestFromDefinition:
         assert crew is not None
         assert crew.max_parallel_tasks == 5
 
+    def test_tenant_wired_from_crew_definition(self):
+        """from_definition() wires CrewDefinition.tenant onto the crew (FEAT-307).
+
+        Regression test: self._tenant previously had no assignment site
+        anywhere, so every persisted execution silently got tenant='global'
+        regardless of the crew's real tenant.
+        """
+        crew_def = make_crew_def(tenant="acme")
+        crew = AgentCrew.from_definition(crew_def, class_resolver=dummy_resolver)
+        assert crew._tenant == "acme"
+
+    def test_tenant_kwarg_overrides_crew_definition(self):
+        """An explicit tenant= kwarg takes precedence over CrewDefinition.tenant."""
+        crew_def = make_crew_def(tenant="acme")
+        crew = AgentCrew.from_definition(
+            crew_def,
+            class_resolver=dummy_resolver,
+            tenant="override-tenant",
+        )
+        assert crew._tenant == "override-tenant"
+
+    def test_tenant_defaults_to_global_without_definition(self):
+        """AgentCrew() built directly (no CrewDefinition) defaults tenant to 'global'."""
+        crew = AgentCrew(name="ad-hoc-crew")
+        assert crew._tenant == "global"
+
     def test_config_forwarded_to_agent_constructor(self):
         """AgentDefinition.config is forwarded as **kwargs to the agent constructor."""
         class ConfigCapturingAgent(BasicAgent):

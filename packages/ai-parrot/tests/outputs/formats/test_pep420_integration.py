@@ -33,10 +33,6 @@ CORE_MODES = [
 
 # Modes that moved to satellite (require ai-parrot-visualizations)
 SATELLITE_MODES = [
-    OutputMode.MATPLOTLIB,
-    OutputMode.SEABORN,
-    OutputMode.PLOTLY,
-    OutputMode.ALTAIR,
     OutputMode.ECHARTS,
     OutputMode.MAP,
     OutputMode.INFOGRAPHIC,
@@ -170,10 +166,6 @@ def test_renderer_class_name(mode, expected_name):
 
 @satellite_available
 @pytest.mark.parametrize("mode,expected_name", [
-    (OutputMode.MATPLOTLIB, "MatplotlibRenderer"),
-    (OutputMode.SEABORN, "SeabornRenderer"),
-    (OutputMode.PLOTLY, "PlotlyRenderer"),
-    (OutputMode.ALTAIR, "AltairRenderer"),
     (OutputMode.ECHARTS, "EChartsRenderer"),
     (OutputMode.MAP, "FoliumRenderer"),
     (OutputMode.INFOGRAPHIC, "InfographicHTMLRenderer"),

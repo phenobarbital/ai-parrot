@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from parrot.core.events.lifecycle.events import AfterClientCallEvent
-from parrot.core.events.lifecycle.registry import EventRegistry
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.trace import TraceContext
 from parrot.observability.cost.calculator import (
     CostCalculator,
     _reset_pricing_cache_for_tests,

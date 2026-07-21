@@ -16,8 +16,12 @@ Public API:
   ``batch/v1 Job`` against a Kubernetes cluster
 * :class:`QworkerToolExecutor` — dispatches the tool to the Qworker
   service via its HTTP client or via Redis Streams
+* :class:`DockerToolExecutor` — runs the tool in a Docker container
+  (warm reuse with idle TTL, or ephemeral per call)
 * :class:`ToolExecutionEnvelope` — the serializable contract that
   travels over the wire to the remote runtime
+* :class:`ExecutionPolicy` / :class:`ExecutorSpec` — declarative
+  agent-level routing of tools/toolkits to named executors
 """
 from __future__ import annotations
 
@@ -38,9 +42,13 @@ __all__ = (
     "project_permission_context",
     "project_trace_context",
     # Lazily imported below to avoid pulling kubernetes_asyncio / aiohttp
-    # into processes that never use them.
+    # / aiodocker into processes that never use them.
     "K8sToolExecutor",
     "QworkerToolExecutor",
+    "DockerToolExecutor",
+    "ExecutionPolicy",
+    "ExecutorSpec",
+    "build_executor",
 )
 
 
@@ -54,4 +62,12 @@ def __getattr__(name: str):
         from .qworker import QworkerToolExecutor
 
         return QworkerToolExecutor
+    if name == "DockerToolExecutor":
+        from .docker import DockerToolExecutor
+
+        return DockerToolExecutor
+    if name in ("ExecutionPolicy", "ExecutorSpec", "build_executor"):
+        from . import policy
+
+        return getattr(policy, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

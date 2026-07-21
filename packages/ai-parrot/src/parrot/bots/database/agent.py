@@ -292,13 +292,32 @@ class DatabaseAgent(BasicAgent):
         await super().configure(app=app)
 
     async def cleanup(self) -> None:
-        """Stop all toolkits and close the cache manager."""
+        """Stop all toolkits, close the cache manager, then run base cleanup.
+
+        The database-specific resources (toolkit asyncdb pools + the
+        ``CacheManager``'s Redis pool and owned vector-store engine) are torn
+        down first, then ``super().cleanup()`` releases the resources owned by
+        the base agent — LLM client/session, ``self.store``, knowledge bases,
+        and MCP client sessions. Each phase is isolated so a failure in one
+        does not prevent the others from running (teardown must not raise).
+        """
         for tk in self.toolkits:
             try:
                 await tk.stop()
             except Exception as exc:
                 self.logger.debug("Error stopping toolkit: %s", exc)
-        await self.cache_manager.close()
+        try:
+            await self.cache_manager.close()
+        except Exception as exc:
+            self.logger.debug("Error closing cache manager: %s", exc)
+        # Chain base-agent cleanup (LLM, self.store, KBs, MCP). Guarded because
+        # test stubs may substitute a base class without an async ``cleanup``.
+        parent_cleanup = getattr(super(), "cleanup", None)
+        if callable(parent_cleanup):
+            try:
+                await parent_cleanup()
+            except Exception as exc:
+                self.logger.debug("Error during base agent cleanup: %s", exc)
 
     # ------------------------------------------------------------------
     # Public API

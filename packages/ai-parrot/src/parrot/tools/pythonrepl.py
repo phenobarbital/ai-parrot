@@ -2,8 +2,9 @@
 PythonREPLTool migrated to use AbstractTool framework with matplotlib fixes.
 """
 
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, List, Union
 import ast
+import types
 import re
 import sys
 import asyncio
@@ -131,7 +132,6 @@ class PythonREPLTool(AbstractTool):
         "breakpoint",
         "compile",
         "delattr",
-        "dir",
         "eval",
         "exec",
         "getattr",
@@ -143,6 +143,12 @@ class PythonREPLTool(AbstractTool):
         "setattr",
         "vars",
     }
+    # NOTE: attribute blocking is name-based (no type info), so names that
+    # collide with core pandas / builtin idioms must NOT be listed here.
+    # ``rename`` / ``replace`` / ``remove`` were meant for os/pathlib file ops,
+    # but those modules are categorically un-importable in the sandbox anyway,
+    # while df.rename(), df.replace(), str.replace() and list.remove() are
+    # everyday data-analysis calls.
     BLOCKED_ATTRIBUTES: set = {
         "__class__",
         "__dict__",
@@ -165,9 +171,6 @@ class PythonREPLTool(AbstractTool):
         "popen",
         "read_bytes",
         "read_text",
-        "remove",
-        "rename",
-        "replace",
         "request",
         "resolve",
         "rglob",
@@ -415,6 +418,46 @@ class PythonREPLTool(AbstractTool):
                 self.logger.error(f"Error clearing plots: {e}")
                 return f"Error clearing plots: {str(e)}"
 
+        def store_result(key: str, value: Any) -> str:
+            """Store a result under ``key`` in the REPL namespace.
+
+            The system prompt has always advertised this function; it now
+            actually exists. The stored value becomes a regular namespace
+            variable, so DataFrames stored here are resolvable via the
+            ``data_variable``/``data_variables`` response fields.
+            """
+            key = str(key)
+            self.locals[key] = value
+            self.locals.setdefault("execution_results", {})[key] = value
+            desc = type(value).__name__
+            if isinstance(value, pd.DataFrame):
+                desc += f" shape={value.shape}"
+            return f"stored '{key}' ({desc})"
+
+        def list_variables() -> List[Dict[str, Any]]:
+            """List user-visible variables in the REPL namespace.
+
+            Safe replacement for ``globals()``/``locals()`` (which the sandbox
+            denies): returns name, type and shape info for data variables —
+            modules, callables and private names are skipped.
+            """
+            entries: List[Dict[str, Any]] = []
+            for var_name, value in sorted(self.locals.items()):
+                if var_name.startswith("_"):
+                    continue
+                if isinstance(value, types.ModuleType) or callable(value):
+                    continue
+                entry: Dict[str, Any] = {"name": var_name, "type": type(value).__name__}
+                if isinstance(value, pd.DataFrame):
+                    entry["shape"] = value.shape
+                    entry["columns"] = list(value.columns)[:50]
+                elif isinstance(value, pd.Series):
+                    entry["shape"] = value.shape
+                elif isinstance(value, (list, tuple, set, dict, str)):
+                    entry["len"] = len(value)
+                entries.append(entry)
+            return entries
+
         # Update locals with essential libraries and tools
         self.locals.update(
             {
@@ -439,6 +482,8 @@ class PythonREPLTool(AbstractTool):
                 "save_current_plot": save_current_plot,
                 "get_plot_as_base64": get_plot_as_base64,
                 "clear_plots": clear_plots,
+                "list_variables": list_variables,
+                "store_result": store_result,
                 "execute_safely": lambda code: self.execute_code_safely(code),
             }
         )
@@ -529,8 +574,33 @@ print("Use 'execution_results' dict to store intermediate results.")
                 return f"BlockedOperationError: access to attribute '{node.attr}' " "is blocked in python_repl."
         return None
 
+    def _execution_error_message(self, e: Exception) -> str:
+        """Build the ``ExecutionError:`` message returned to the LLM.
+
+        ``NameError`` gets extra guidance: models frequently try to call the
+        agent's OTHER tools (``dataset_store_dataframe``, ``wm_store_result``,
+        …) as Python functions inside the REPL. Those are function-calling
+        tools, not namespace symbols — steer the model instead of dead-ending.
+        """
+        msg = f"ExecutionError: {type(e).__name__}: {str(e)}"
+        if isinstance(e, NameError):
+            msg += (
+                ". Hint: only variables/functions visible via list_variables() "
+                "exist inside python_repl. Agent tools (e.g. dataset_*, wm_*) "
+                "are NOT Python functions — invoke them as separate tool calls. "
+                "To hand a DataFrame back, assign it to a variable and declare "
+                "it in data_variables."
+            )
+        return msg
+
     def _redact_execution_output(self, output: str) -> str:
-        """Redact secret-like values before tool output reaches logs or LLMs."""
+        """Redact secret-like values before tool output reaches logs or LLMs.
+
+        Redaction is opt-in per agent (``enable_redaction`` flag) — unflagged
+        agents get their REPL output verbatim.
+        """
+        if not self.enable_redaction:
+            return output
         return redact_text(output)
 
     def _auto_save_plots_if_enabled(self) -> Optional[Dict[str, Any]]:
@@ -662,7 +732,13 @@ print("Use 'execution_results' dict to store intermediate results.")
                 _allowlist_result = self._code_sanitizer.validate(query)
                 if _allowlist_result.is_denied:
                     _reasons = "; ".join(_allowlist_result.reasons[:3])
-                    return f"SecurityError: code denied by allowlist gate — {_reasons}"
+                    return (
+                        f"SecurityError: code denied by allowlist gate — {_reasons}. "
+                        "Hint: call list_variables() to inspect available variables/"
+                        "DataFrames (globals()/locals()/vars() are not permitted); "
+                        "dir(obj) and try/except are allowed; file, network and os "
+                        "access are blocked."
+                    )
 
                 # Existing denylist as defence-in-depth layer (keep, do NOT remove)
                 security_error = self._check_ast_security(tree)
@@ -696,7 +772,7 @@ print("Use 'execution_results' dict to store intermediate results.")
                         module = ast.Module(tree.body[:-1], type_ignores=[])
                         exec(ast.unparse(module), ns, ns)
                     except Exception as e:
-                        return f"ExecutionError: {type(e).__name__}: {str(e)}"
+                        return self._execution_error_message(e)
 
                 # Handle the last statement
                 last_statement = tree.body[-1]
@@ -765,7 +841,7 @@ print("Use 'execution_results' dict to store intermediate results.")
                             output += report
                         return self._redact_execution_output(output)
                     except Exception as e:
-                        return f"ExecutionError: {type(e).__name__}: {str(e)}"
+                        return self._execution_error_message(e)
 
             # Return everything that was captured
             output = io_buffer.getvalue() or ""

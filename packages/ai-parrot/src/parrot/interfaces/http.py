@@ -325,9 +325,14 @@ class HTTPService(CredentialsInterface, PandasDataframe):
             self.headers["Content-Type"] = "application/octet-stream"
             if self.use_streams is True:
                 self.headers["Transfer-Encoding"] = "chunked"
-        headers = self.headers
         if headers is not None and isinstance(headers, dict):
+            # Merge call-supplied headers on top of the instance defaults —
+            # do NOT overwrite `headers` with `self.headers` first, or the
+            # caller-supplied dict (e.g. an Authorization header built
+            # per-call) is silently discarded before this merge ever runs.
             headers = {**self.headers, **headers}
+        else:
+            headers = self.headers
         timeout = httpx.Timeout(self.timeout)
         args = {"timeout": timeout, "headers": headers, "cookies": cookies}
         if auth is not None:

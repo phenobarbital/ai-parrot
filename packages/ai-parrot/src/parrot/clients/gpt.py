@@ -149,7 +149,7 @@ class OpenAIClient(AbstractClient):
             PromptCacheAppliedEvent as _PCApplied,
             PromptCacheSkippedEvent as _PCSkipped,
         )
-        from parrot.core.events.lifecycle.trace import TraceContext as _TC
+        from parrot.core.events.lifecycle import TraceContext as _TC
 
         tc = trace_context if trace_context is not None else _TC.new_root()
         if not segments:

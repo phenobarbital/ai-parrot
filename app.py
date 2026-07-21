@@ -38,6 +38,8 @@ from parrot.handlers.lyria_music import LyriaMusicHandler
 from parrot.handlers.understanding import UnderstandingHandler
 from parrot.handlers.mediagen import MediaGen
 from parrot.handlers.stores import VectorStoreHandler
+# AgentCrew handlers are registered inside BotManager.setup() (gated on
+# ENABLE_CREWS); no direct import/registration is needed here.
 ## Jira Integration:
 from parrot.auth.jira_oauth import JiraOAuthManager
 from parrot.integrations.telegram.combined_callback import setup_combined_auth_routes
@@ -213,6 +215,13 @@ class Main(AppHandler):
         VideoReelHandler.setup(self.app)
         ## Vector Store Handler API:
         VectorStoreHandler.setup(self.app)
+        # AgentCrew Handlers are registered by BotManager.setup() when
+        # ENABLE_CREWS is True (see manager.py). It owns the full crew route
+        # set — CrewHandler (/api/v1/crew), CrewExecutionHandler
+        # (/api/v1/crews), plus /api/v1/crew/tools and
+        # /api/v1/crew/special_nodes registered *before* CrewHandler's
+        # `{id:.*}` catch-all so they aren't shadowed. Registering them here
+        # too would double-add the routes and raise at startup.
         # Lyria:
         self.app.router.add_view(
             "/api/v1/google/generation/music", LyriaMusicHandler
@@ -309,15 +318,20 @@ class Main(AppHandler):
         # canonical route (/api/msagentsdk/<safe_id>/messages) plus the fixed
         # ``/api/messages`` path that Microsoft Copilot Studio requires (the
         # standard Bot Framework endpoint a bot exposes via ``endpoint``).
-        auth.add_exclude_list('/api/msagentsdk/*/messages')
+        # Exclude the whole MS Agent SDK surface, not just the messaging
+        # endpoints: health/manifest/card probes and any future sub-routes
+        # authenticate themselves (Bot Framework JWT / x-api-key) rather than
+        # via the navigator session/ABAC chain.
+        auth.add_exclude_list('/api/msagentsdk/*')
         auth.add_exclude_list('/api/messages')
-        # A2A protocol + discovery surface. Authenticated A2A routes
-        # (/a2a[/<name>]/message|tasks|rpc) are guarded by the per-agent
-        # A2ASecurityMiddleware (JWT/mTLS/API-key), and the discovery routes
-        # (/a2a/directory, /.well-known/agent.json) are public — none of them
-        # use the navigator session/ABAC chain, so exclude the whole surface.
+        # A2A protocol + discovery surface. These static patterns cover the
+        # default ``/a2a`` base_path and the root-level well-known URIs.
+        # Non-default base_paths (custom config or collision-avoidance
+        # suffixes) are added dynamically by IntegrationBotManager when each
+        # A2A agent is mounted — see ``_start_a2a_bot()`` in manager.py.
+        auth.add_exclude_list('/a2a')
         auth.add_exclude_list('/a2a/*')
-        auth.add_exclude_list('/.well-known/agent.json')
+        auth.add_exclude_list('/.well-known/*')
 
         # PBAC setup — navigator-auth Rust evaluator bug is now fixed.
         # setup_pbac() MUST be called BEFORE BotManager.setup(app) so that

@@ -1,0 +1,43 @@
+{
+  "feat_id": "FEAT-302",
+  "phase": "proposal_drafted",
+  "started_at": "2026-07-11T00:00:00Z",
+  "updated_at": "2026-07-11T00:00:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 28,
+    "grep_calls": 12,
+    "git_calls": 2,
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "truncated": false
+  },
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "summary_oneline": "Native Bedrock client (Converse API) + Nova 2 Sonic voice for ai-parrot"
+  },
+  "phases": {
+    "plan": { "approved_by_user": true },
+    "research": {
+      "completed_at": "2026-07-11T00:00:00Z",
+      "files_read": 28,
+      "findings_count": 11,
+      "research_agents": 4
+    },
+    "synthesis": {
+      "completed_at": "2026-07-11T00:00:00Z",
+      "overall_confidence": "high",
+      "claims_high": 16,
+      "claims_medium": 2,
+      "claims_low": 2
+    },
+    "qa": { "status": "pending" },
+    "output": {
+      "proposal_path": "sdd/proposals/bedrock-client-llm.proposal.md",
+      "commit_sha": null
+    }
+  }
+}

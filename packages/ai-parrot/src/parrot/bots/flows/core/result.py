@@ -18,9 +18,15 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, TYPE_CHECKING
 
 from .types import FlowStatus
+
+if TYPE_CHECKING:
+    # Avoid a hard import cycle: infographic_toolkit imports from parrot.models.*,
+    # not from bots.flows.core.result — this is import-safe, but kept lazy/forward
+    # to keep FlowResult's module import light. (FEAT-308)
+    from parrot.tools.infographic_toolkit import InfographicRenderResult
 
 # ResponseType alias — mirrors the one in parrot.models.crew
 try:
@@ -28,6 +34,54 @@ try:
     ResponseType = Any  # Union[AIMessage, AgentResponse, Any] but avoids heavy import
 except ImportError:
     ResponseType = Any
+
+
+# ---------------------------------------------------------------------------
+# Serialisation helpers
+# ---------------------------------------------------------------------------
+
+
+def _serialise_result_value(value: Any) -> Any:
+    """Recursively serialise a value into a JSON-safe representation.
+
+    Used by ``NodeResult.to_dict()`` to guarantee the returned dict always
+    survives ``json.dumps(d, default=str)``, regardless of what the node
+    produced (``DataFrame``, arbitrary object, nested dict/list, etc.).
+    This function MUST NOT raise for any input.
+
+    Args:
+        value: Arbitrary value produced by a node's execution.
+
+    Returns:
+        A JSON-safe value: primitives pass through, dict/list are
+        recursively serialised, ``pandas.DataFrame`` becomes a bounded
+        string preview, and everything else falls back to ``str()``.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    if isinstance(value, dict):
+        return {str(k): _serialise_result_value(v) for k, v in value.items()}
+
+    if isinstance(value, list):
+        return [_serialise_result_value(v) for v in value]
+
+    try:
+        from pandas import DataFrame  # noqa: F401  (lazy import)
+
+        if isinstance(value, DataFrame):
+            return (
+                f"DataFrame {value.shape[0]}x{value.shape[1]} "
+                f"cols=[{', '.join(map(str, value.columns))}]\n"
+                f"{value.head(10).to_string()}"
+            )
+    except ImportError:
+        pass
+
+    try:
+        return str(value)
+    except Exception:  # noqa: BLE001 - to_dict() must never raise
+        return "<unserialisable value>"
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +138,32 @@ class NodeResult:
         return self.node_name
 
     # ── Vectorization support ────────────────────────────────────────────
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialise to a plain, JSON-safe dictionary.
+
+        Never raises, regardless of what ``result`` holds (``DataFrame``,
+        arbitrary object, dict, list, etc.). ``ai_message`` is deliberately
+        excluded — it is a raw LLM object and not JSON-safe.
+
+        Returns:
+            Dictionary with node identity, task, safely-serialised result,
+            metadata, timing, and correlation ids.
+        """
+        return {
+            "node_id": self.node_id,
+            "node_name": self.node_name,
+            # Backward-compat aliases in output dict
+            "agent_id": self.agent_id,
+            "agent_name": self.agent_name,
+            "task": self.task,
+            "result": _serialise_result_value(self.result),
+            "metadata": _serialise_result_value(self.metadata),
+            "execution_time": self.execution_time,
+            "timestamp": self.timestamp.isoformat(),
+            "parent_execution_id": self.parent_execution_id,
+            "execution_id": self.execution_id,
+        }
 
     def to_text(self) -> str:
         """Convert execution result to rich text for FAISS vectorization.
@@ -312,6 +392,13 @@ class FlowResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
     """Additional metadata (mode, iterations, etc.)."""
 
+    infographic: Optional["InfographicRenderResult"] = None
+    """Multi-tab infographic artifact populated by
+    ``AgentCrew._finalize_infographic`` when ``generate_infographic=True``
+    (FEAT-308). ``None`` by default and on any render/synthesis failure.
+    Kept as the LAST field to preserve existing positional/keyword
+    construction and ``build_*`` helpers."""
+
     # ── __setattr__ override (preserve summary contract) ─────────────────
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -486,6 +573,11 @@ class FlowResult:
             "errors": self.errors,
             "execution_log": self.execution_log,
             "metadata": self.metadata,
+            "infographic": (
+                self.infographic.model_dump()
+                if self.infographic is not None and hasattr(self.infographic, "model_dump")
+                else self.infographic
+            ),
         }
 
 

@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 from parrot.core.events.lifecycle.events import AgentStatusChangedEvent
 
 if TYPE_CHECKING:
-    from parrot.core.events.lifecycle.registry import EventRegistry
+    from navigator_eventbus.lifecycle.registry import EventRegistry
 
 logger = logging.getLogger("parrot.lifecycle.legacy_bridge")
 

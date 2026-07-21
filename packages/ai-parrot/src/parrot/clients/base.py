@@ -61,8 +61,9 @@ from ..tools.manager import (
 )
 # FEAT-176: Lifecycle Events System
 import hashlib
-from parrot.core.events.lifecycle.mixin import EventEmitterMixin
-from parrot.core.events.lifecycle.trace import TraceContext
+# FEAT-317: EventEmitterMixin/TraceContext moved to navigator_eventbus.lifecycle;
+# imported here via the parrot.core.events.lifecycle re-export facade.
+from parrot.core.events.lifecycle import EventEmitterMixin, TraceContext
 from parrot.core.events.lifecycle.events import (
     BeforeClientCallEvent,
     AfterClientCallEvent,
@@ -1864,7 +1865,35 @@ $backstory
         system_prompt: Optional[str],
         stateless: bool = False
     ) -> tuple[List[Dict[str, Any]], Optional[ConversationHistory], Optional[str]]:
-        """Prepare conversation context and return messages, session, and system prompt."""
+        """Prepare conversation context and return messages, session, and system prompt.
+
+        Code-review fix (FEAT-302): this method previously built the
+        current-turn message *twice* (once via ``_prepare_messages()``
+        immediately after loading history, once more via a hand-rolled,
+        cruder ``{"type": "file", "file_path": ...}`` block appended at the
+        very end) and — when a conversation history was present — *also*
+        replayed every historical turn twice: once via
+        ``conversation_history.get_messages_for_api()`` and once more via an
+        inline per-turn loop building the same blocks with a different
+        content shape. The net result for any stateful call
+        (``user_id``/``session_id`` both set) was a message list ordered as
+        ``[history(v1), current(v1), history(v2, duplicate), current(v2,
+        duplicate)]`` — duplicated content *and* the current turn placed
+        before the historical replay instead of after it. Providers that
+        validate strict role alternation (e.g. AWS Bedrock's Converse API)
+        can reject this outright; providers that tolerate it still waste
+        tokens and confuse the model with out-of-order turns.
+
+        Fixed to build the message list exactly once, in the correct
+        order: ``[history..., current]``. File attachments are now encoded
+        exclusively via ``_prepare_messages()`` -> ``_encode_file()``
+        (base64 ``document`` blocks — richer than the removed duplicate's
+        placeholder ``{"type": "file", "file_path": ...}``, which most
+        providers never understood in the first place); the missing-file
+        existence check + logged skip from the removed block is preserved
+        here so a missing attachment still degrades gracefully instead of
+        raising.
+        """
         messages = []
         conversation_history = None
 
@@ -1881,30 +1910,20 @@ $backstory
                     chatbot_id=self._get_chatbot_key()
                 )
 
-        # Get recent conversation messages for context
+        # Get recent conversation messages for context (historical turns
+        # only — the current turn is appended once, below, after this).
         if conversation_history:
             messages = conversation_history.get_messages_for_api()
-        new_user_message = self._prepare_messages(prompt, files)[0]
-        messages.append(new_user_message)
 
-        # Convert stored conversation turns to messages format and create system prompt:
+        # Build a system-prompt summary from history when the caller didn't
+        # supply one. This is the only remaining purpose of the
+        # ``not stateless`` branch; the message-building loop that used to
+        # live here duplicated ``get_messages_for_api()`` above and has been
+        # removed.
         if conversation_history and not stateless:
             self.logger.debug(
                 f"Found {len(conversation_history.turns)} previous turns"
             )
-            for turn in conversation_history.turns:
-                # Add user message
-                messages.append({
-                    "role": "user",
-                    "content": [{"type": "text", "text": turn.user_message}]
-                })
-
-                # Add assistant message
-                messages.append({
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": turn.assistant_response}]
-                })
-
             if not system_prompt and len(conversation_history.turns) > 0:
                 # Create a summary of the conversation context
                 recent_context = []
@@ -1925,25 +1944,28 @@ $backstory
                 )
                 self.logger.debug("Created contextual system prompt from conversation history")
 
-        # Handle file attachments if provided
-        current_message_parts = [{"type": "text", "text": prompt}]
+        # Build and append the current-turn message exactly once. Filter out
+        # nonexistent files defensively (mirrors the removed duplicate
+        # block's behavior) so a missing attachment logs and is skipped
+        # rather than raising from _encode_file()'s open().
+        safe_files: Optional[List[Union[str, Path]]] = None
         if files:
+            safe_files = []
             for file_path in files:
                 try:
-                    file_path = Path(file_path)
-                    if file_path.exists():
-                        current_message_parts.append({
-                            "type": "file",
-                            "file_path": str(file_path)
-                        })
+                    path_obj = Path(file_path)
+                    if path_obj.exists():
+                        safe_files.append(file_path)
+                    else:
+                        self.logger.error(
+                            f"Error processing file {file_path}: file does not exist"
+                        )
                 except Exception as e:
                     self.logger.error(f"Error processing file {file_path}: {e}")
+            safe_files = safe_files or None
 
-        # Add the current user message
-        messages.append({
-            "role": "user",
-            "content": current_message_parts
-        })
+        new_user_message = self._prepare_messages(prompt, safe_files)[0]
+        messages.append(new_user_message)
 
         # self.logger.debug(f"Prepared {len(messages)} messages for conversation context")
         return messages, conversation_history, system_prompt

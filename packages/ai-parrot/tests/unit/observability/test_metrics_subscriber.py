@@ -14,8 +14,8 @@ from parrot.core.events.lifecycle.events import (
     BeforeClientCallEvent,
     ClientCallFailedEvent,
 )
-from parrot.core.events.lifecycle.registry import EventRegistry
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.trace import TraceContext
 from parrot.observability.subscribers.metrics import MetricsSubscriber, _DEFAULT_BUCKETS
 
 

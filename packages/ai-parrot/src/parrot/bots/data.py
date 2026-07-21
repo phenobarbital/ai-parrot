@@ -192,8 +192,10 @@ class PandasAgentResponse(BaseModel):
     explanation: str = Field(
         description=(
             "Clear, text-based explanation of the analysis performed. "
-            "Include insights, findings, and interpretation of the data."
-            "If data is tabular, also generate a markdown table representation. "
+            "Include insights, findings, and interpretation of the data. "
+            "Do NOT embed the full result table here — the table is delivered "
+            "separately via 'data'/'data_variable'. A short highlight of a few "
+            "rows is acceptable when it aids the narrative."
         )
     )
     data: Optional[PandasTable] = Field(
@@ -201,6 +203,9 @@ class PandasAgentResponse(BaseModel):
         description=(
             "The resulting DataFrame in split format. "
             "Use this format: {'columns': [...], 'rows': [[...], [...], ...]}.\n"
+            "FALLBACK only: prefer 'data_variable' whenever the result is held "
+            "in a Python variable; use 'data' for small computed tables that "
+            "are not backed by a variable.\n"
             "Set to null if the response doesn't produce tabular data.\n"
             "CRITICAL: All numeric values in rows MUST be raw numbers. "
             "NEVER include currency symbols ($, €, £), percent signs (%), "
@@ -210,7 +215,14 @@ class PandasAgentResponse(BaseModel):
     )
     data_variable: Optional[str] = Field(
         default=None,
-        description="The variable name holding the result DataFrame (e.g. 'result_df'). Use this for large datasets instead of 'data'."
+        description=(
+            "PREFERRED way to return tabular results: the exact variable name "
+            "your executed Python code assigned the result DataFrame to "
+            "(e.g. 'result_df'). ALWAYS set this when your code produced a "
+            "result DataFrame this turn, regardless of its size — the system "
+            "retrieves the full DataFrame from memory automatically. Only "
+            "declare variables your executed code actually created."
+        )
     )
     data_variables: Optional[List[str]] = Field(
         default=None,
@@ -313,6 +325,26 @@ dataframe context above), it does **not exist** for this agent.
   suggest they register the dataset with the DatasetManager. Do not
   improvise an alternative source.
 
+## EFFORT CALIBRATION & STOPPING (STRICT):
+Match your effort to the question. More tool calls is **not** more thorough —
+once you can answer, answer.
+
+1. **Simple lookups** ("list the X", "how many Y", "what is Z") must be
+   answered in **one or two** tool calls. Do not turn a lookup into an
+   investigation.
+2. **STOP as soon as the tool output answers the question.** The first correct
+   result IS the answer — do NOT re-run, re-verify, cross-check against another
+   dataset, or "clean it up" once you already have it.
+3. **Do NOT investigate data anomalies** (duplicates, mismatched counts, a
+   value that looks odd, differences between datasets) unless the user asked,
+   or the anomaly genuinely blocks you from answering. If you happen to notice
+   one, mention it in a single sentence and move on — never launch a
+   multi-dataset reconciliation on your own initiative.
+4. **One result DataFrame per question.** Do not spawn several competing
+   intermediates (`raw`, `filtered`, `agg`, `result`, ...) in one turn. Besides
+   wasting budget, it makes `data_variable` ambiguous (see ABSOLUTE DATA-RETURN
+   REQUIREMENT below) and returns empty data to the user.
+
 ## TOOL FAILURE & RETRY POLICY (STRICT):
 You have a **limited tool-calling budget**. If a tool returns an error,
 an empty result, or otherwise does not give you what you need:
@@ -349,6 +381,29 @@ When performing intermediate steps (filtering, grouping, cleaning):
    - If you computed a new result (e.g., `result_df = df[df['active'] == True]`), set
      `data_variable='result_df'`.
    - NEVER print() a large DataFrame — it wastes context tokens and may get truncated.
+
+## USER-FACING PRESENTATION (MANDATORY):
+Your `explanation` text is shown DIRECTLY to the end user. The user does NOT
+know about datasets, variable names, aliases, column names, tool calls, or
+any internal implementation detail. **Never expose these in your prose.**
+
+Forbidden patterns in `explanation`:
+- "Based on the `kiosks_locations` dataset..."
+- "The `df1` DataFrame shows..."
+- "Using the `sales_data` table..."
+- "Column `store_id` contains..."
+- "I queried `fetch_dataset`..."
+- Any backtick-quoted variable name, dataset name, alias, or tool name.
+
+Correct patterns:
+- "There are 42 active kiosks across 5 states."
+- "Total revenue for Q1 was $1.2M, a 15% increase over Q4."
+- "The top 3 stores by sales volume are: ..."
+
+Rule: answer the user's question in plain, natural language. Present the
+RESULTS, not the process. Dataset names, aliases (`df1`), column names,
+Python variables, tool names, and implementation details belong in your
+CODE, never in `explanation`.
 
 ## ABSOLUTE DATA-RETURN REQUIREMENT:
 If you called `python_repl_pandas`, `fetch_dataset`, or `database_query`
@@ -1539,6 +1594,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     if ctx is not None:
                         ctx.output_mode = _resolved_mode
 
+            # Apply agent-level default (e.g. output_mode=TEXT in constructor)
+            # when neither the caller nor the router resolved a specific mode.
+            output_mode = self._apply_default_output_mode(output_mode)
+
             # Build context from different sources (no vector context for PandasAgent)
             vector_metadata = {'activated_kbs': []}
 
@@ -1610,6 +1669,14 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         "2. Provide only a clear textual summary and analysis.\n"
                         "3. The data table will be displayed separately."
                     )
+                elif output_mode == OutputMode.TEXT:
+                    system_prompt += (
+                        "\nPLAIN TEXT RULES:\n"
+                        "- Do NOT use markdown tables (| col | col |), headers (#), "
+                        "bold (**text**), or any markdown formatting.\n"
+                        "- Present tabular facts as 'Label: value' lines, one per line.\n"
+                        "- Use short sentences and paragraphs.\n"
+                    )
                 else:
                     system_prompt += (
                         "\nMARKDOWN FORMATTING RULES:\n"
@@ -1647,6 +1714,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 if 'max_iterations' in ask_params:
                     llm_kwargs["max_iterations"] = kwargs.get(
                         'max_iterations', self._max_iterations
+                    )
+                if 'stop_tools' in ask_params:
+                    llm_kwargs["stop_tools"] = kwargs.get(
+                        'stop_tools', {"to_json"}
                     )
 
                 # Add max_tokens if specified
@@ -2154,6 +2225,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # Safe format handling
                 content = None
                 wrapped = None
+                format_error: Optional[str] = None
 
                 # Check for empty response/content before formatting
                 if response and (response.content or response.output):
@@ -2167,6 +2239,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                             )
                          except Exception as e:
                             self.logger.error("Error extracting content on formatter: %s", e)
+                            format_error = str(e)
                             content = f"Error extracting content: {e}"
                             wrapped = content
                 else:
@@ -2174,10 +2247,43 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     content = "No response generated"
                     wrapped = content
 
+                # Structured renderers signal failure by returning
+                # (None, error_message) instead of raising. Publishing that
+                # message via response.response would surface an internal
+                # renderer error as the user-visible reply — degrade to
+                # DEFAULT instead, preserving the plain-text answer the LLM
+                # already produced in response.response.
+                _structured_modes = (
+                    OutputMode.STRUCTURED_CHART,
+                    OutputMode.STRUCTURED_MAP,
+                    OutputMode.STRUCTURED_TABLE,
+                )
+                if output_mode in _structured_modes and (
+                    content is None or format_error is not None
+                ):
+                    self.logger.warning(
+                        "%s renderer failed (%s) — falling back to DEFAULT "
+                        "text response",
+                        output_mode.value if hasattr(output_mode, "value") else output_mode,
+                        format_error or wrapped,
+                    )
+                    output_mode = OutputMode.DEFAULT
+                    response.output_mode = OutputMode.DEFAULT
+
                 if output_mode != OutputMode.DEFAULT and output_mode not in [OutputMode.TELEGRAM, OutputMode.MSTEAMS]:
                     response.output = content
                     response.response = wrapped
                     response.output_mode = output_mode
+
+                # TEXT mode: also strip markdown from the structured
+                # output's explanation so consumers reading the
+                # PandasAgentResponse directly get clean plain text.
+                if output_mode == OutputMode.TEXT and data_response is not None:
+                    if data_response.explanation:
+                        from ..outputs.formats.text import markdown_to_plain
+                        data_response.explanation = markdown_to_plain(
+                            data_response.explanation
+                        )
 
                 # FEAT-224 (G1): Build the canonical artifacts[] envelope for the
                 # three structured output modes.  A typed artifact entry is appended to
@@ -2594,12 +2700,49 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     tree = ast.parse(code)
                 except SyntaxError:
                     continue
-                for node in tree.body:
+                # Walk the WHOLE tree, not just tree.body: assignments inside
+                # try/except, if, for and with blocks are just as much "produced
+                # this turn" as top-level ones. Handles plain, annotated,
+                # augmented and walrus assignments plus tuple/list unpacking.
+                for node in ast.walk(tree):
                     if isinstance(node, ast.Assign):
                         for target in node.targets:
-                            if isinstance(target, ast.Name):
-                                candidates.add(target.id)
+                            candidates.update(self._assignment_target_names(target))
+                    elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+                        candidates.update(self._assignment_target_names(node.target))
+                    elif isinstance(node, ast.NamedExpr):
+                        candidates.update(self._assignment_target_names(node.target))
+                    elif (
+                        isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name)
+                        and node.func.id == 'store_result'
+                    ):
+                        # store_result("key", value) binds `key` in the REPL
+                        # namespace — treat it as produced this turn.
+                        key_arg = node.args[0] if node.args else next(
+                            (kw.value for kw in node.keywords if kw.arg == 'key'), None
+                        )
+                        if isinstance(key_arg, ast.Constant) and isinstance(key_arg.value, str):
+                            candidates.add(key_arg.value)
         return candidates
+
+    @staticmethod
+    def _assignment_target_names(target: Any) -> set:
+        """Extract variable names from an assignment target node.
+
+        Supports ``ast.Name``, tuple/list unpacking and starred targets.
+        Attribute/subscript targets (``obj.attr = …``) are ignored — they do
+        not create new REPL variables.
+        """
+        names: set = set()
+        if isinstance(target, ast.Name):
+            names.add(target.id)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for elt in target.elts:
+                names.update(PandasAgent._assignment_target_names(elt))
+        elif isinstance(target, ast.Starred):
+            names.update(PandasAgent._assignment_target_names(target.value))
+        return names
 
     def _filter_declared_variables(
         self, declared: Optional[List[str]], tool_calls: Optional[List[Any]]

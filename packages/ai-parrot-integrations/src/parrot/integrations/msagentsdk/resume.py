@@ -312,7 +312,9 @@ async def proactive_resume(
                 user_id=user_id,
                 permission_context=resume_pctx,
             )
-            reply_text = str(response.content) if response else "(no response)"
+            from .agent import render_reply_text
+
+            reply_text = render_reply_text(response) if response else "(no response)"
             await turn_context.send_activity(
                 Activity(
                     type=ActivityTypes.message,

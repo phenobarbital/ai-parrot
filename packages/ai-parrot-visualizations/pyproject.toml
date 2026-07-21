@@ -26,7 +26,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=0.25.17",
+    "ai-parrot>=0.25.22",
 ]
 
 [project.optional-dependencies]
@@ -44,8 +44,18 @@ messaging = []  # card/slack/whatsapp renderers — no heavy Python dependencies
 charts = [
     "ai-parrot-visualizations[matplotlib,seaborn,plotly,altair,echarts]",
 ]
+# FEAT-273: A2UI rendering backends. jsonpointer resolves data-model bindings in
+# the bake pass (core never depends on it — G8).
+a2ui = [
+    "jsonpointer>=2.4",
+    "ai-parrot-visualizations[map,jinja2,echarts]",
+]
+a2ui-pdf = [
+    "ai-parrot-visualizations[a2ui]",
+    "weasyprint>=68.0",
+]
 all = [
-    "ai-parrot-visualizations[charts,map,infographic,jinja2,streamlit,panel,messaging]",
+    "ai-parrot-visualizations[charts,map,infographic,jinja2,streamlit,panel,messaging,a2ui]",
 ]
 
 [project.urls]

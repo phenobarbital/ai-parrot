@@ -26,8 +26,9 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=0.25.17",
+    "ai-parrot>=0.25.22",
     "PyGithub>=2.1",
+    "ddgs>=9.5.2",
 ]
 
 [project.optional-dependencies]
@@ -60,7 +61,9 @@ pulumi = ["pulumi>=3.0"]
 kubernetes = ["kubernetes-asyncio>=24.2", "pyyaml>=6.0"]
 sitesearch = ["beautifulsoup4>=4.12", "html2text>=2024.0", "markitdown>=0.1.2"]
 office365 = ["msgraph-sdk>=1.8", "azure-identity>=1.18", "microsoft-kiota-authentication-azure>=1.2"]
-scraping = ["selenium>=4.35", "undetected-chromedriver>=3.5", "webdriver-manager>=4.0"]
+scraping = ["selenium>=4.35", "undetected-chromedriver>=3.5", "webdriver-manager>=4.0", "playwright>=1.52", "rapidfuzz>=3.0"]
+# Selenium fallback for JS-heavy article pages reuses the `scraping` extra.
+rss = ["feedparser>=6.0.11", "trafilatura>=1.12"]
 finance = ["ta-lib>=0.4.32", "pandas-datareader>=0.10.0", "yfinance>=0.2.54", "alpaca-py>=0.43"]
 db = ["querysource>=4.1.11", "psycopg-binary>=3.2"]
 # 5.12.3 relaxes its requests pin (==2.32.4 -> >=2.33.0), compatible with
@@ -73,7 +76,7 @@ weather = ["pyowm>=3.3"]
 messaging = ["gmqtt>=0.6", "aioimaplib>=1.1"]
 security = []  # cloudsploit is a Docker/Node.js tool, not a PyPI package
 all = [
-    "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,kubernetes,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security]"
+    "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,kubernetes,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security,rss]"
 ]
 
 [project.urls]
