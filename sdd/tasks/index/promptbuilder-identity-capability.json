@@ -32,7 +32,7 @@
       "feature_id": "FEAT-321",
       "feature": "promptbuilder-identity-capability",
       "spec": "sdd/specs/promptbuilder-identity-capability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches only prompts/identity.py (new) + agent_context.py + its own test file; shares no files with TASK-1844. Could run in a separate worktree, though per-spec sequential execution is the recommended isolation.",
       "assigned_to": null,
       "started_at": "2026-07-21T20:31:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1845-identity-loader-cached-reader.md"
+      "completed_at": "2026-07-21T20:49:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1845-identity-loader-cached-reader.md"
     },
     {
       "id": "TASK-1846",
