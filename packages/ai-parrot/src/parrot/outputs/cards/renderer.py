@@ -18,8 +18,6 @@ from .actions import (
 )
 from .elements import (
     ACElement,
-    Column,
-    ColumnSet,
     Container,
     Fact,
     FactSet,
@@ -592,7 +590,11 @@ def render(spec: CardSpec, *, max_card_bytes: int = 28_000) -> dict[str, Any]:
             continue
 
         if isinstance(section, ToggleSection) and section.toggle.group_id is None:
-            section.toggle.group_id = f"tg_{toggle_counter}"
+            section = section.model_copy(
+                update={"toggle": section.toggle.model_copy(
+                    update={"group_id": f"tg_{toggle_counter}"}
+                )}
+            )
             toggle_counter += 1
 
         elements, actions = expander(section)
