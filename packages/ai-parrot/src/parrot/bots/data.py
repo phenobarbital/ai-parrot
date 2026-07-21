@@ -33,7 +33,11 @@ from ..conf import STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..bots.prompts.builder import PromptBuilder
 from ..bots.prompts.layers import PromptLayer, LayerPriority, RenderPhase
-from ..bots.prompts.domain_layers import DATAFRAME_CONTEXT_LAYER, STRICT_GROUNDING_LAYER
+from ..bots.prompts.domain_layers import (
+    DATA_INSTRUCTIONS_LAYER,
+    DATAFRAME_CONTEXT_LAYER,
+    STRICT_GROUNDING_LAYER,
+)
 from parrot_tools.whatif import WhatIfTool, WHATIF_SYSTEM_PROMPT
 from parrot_tools.prophetforecast import ProphetForecastTool
 
@@ -201,12 +205,11 @@ class PandasAgentResponse(BaseModel):
     data: Optional[PandasTable] = Field(
         default=None,
         description=(
-            "The resulting DataFrame in split format. "
-            "Use this format: {'columns': [...], 'rows': [[...], [...], ...]}.\n"
-            "FALLBACK only: prefer 'data_variable' whenever the result is held "
-            "in a Python variable; use 'data' for small computed tables that "
-            "are not backed by a variable.\n"
-            "Set to null if the response doesn't produce tabular data.\n"
+            "Set to null. ALWAYS use `data_variable` instead — the system "
+            "retrieves ALL rows automatically. Only populate this field when "
+            "the result is a tiny inline table (≤5 rows) not backed by a "
+            "variable.\n"
+            "Format when used: {'columns': [...], 'rows': [[...], [...], ...]}.\n"
             "CRITICAL: All numeric values in rows MUST be raw numbers. "
             "NEVER include currency symbols ($, €, £), percent signs (%), "
             "thousands separators (commas), or any other formatting. "
@@ -261,171 +264,8 @@ class PandasAgentResponse(BaseModel):
         )
 
 
-# ── Pandas-specific prompt layer ────────────────────────────────
-PANDAS_INSTRUCTIONS_LAYER = PromptLayer(
-    name="pandas_instructions",
-    priority=LayerPriority.CUSTOM,
-    phase=RenderPhase.CONFIGURE,
-    template="""<pandas_instructions>
-## Decision Flow (FOLLOW THIS ORDER):
-
-**Step 1 — Check what is already available:**
-Look at the dataframe context above. If the dataset you need is listed
-under loaded DataFrames, it is ALREADY in memory — go directly to Step 3.
-
-**Step 2 — If unsure or dataset not listed, call `list_datasets`:**
-This shows ALL datasets (loaded and unloaded) with their `python_variable`,
-`python_alias`, and `loaded` status.
-- If `loaded: true` → skip to Step 3, data is ready.
-- If `loaded: false` → call `fetch_dataset(name='...')` to load it first.
-
-**Step 3 — Use `python_repl_pandas` to answer the question:**
-Write and execute Python code using the exact variable names from Steps 1/2.
-
-**Do NOT call `get_metadata` or `fetch_dataset` for datasets that are already loaded.**
-
-## Available Tools:
-1. `list_datasets` — List all datasets with loaded status. Call this FIRST if unsure.
-2. `python_repl_pandas` — Execute Python/pandas code for analysis (main tool).
-3. `fetch_dataset` — Load an unloaded dataset into memory.
-4. `get_metadata` — Get schema/EDA details for unfamiliar datasets.
-5. `store_dataframe` — Save a NEW computed DataFrame to the catalog.
-6. `get_dataframe` — Get DataFrame info and samples.
-7. `database_query` — Query external databases if needed.
-
-## DATASET ACCESS POLICY (STRICT — NO BYPASS):
-`list_datasets` is the **authoritative allow-list** of data you may use.
-If a dataset is not in `list_datasets` (and not already visible in the
-dataframe context above), it does **not exist** for this agent.
-
-- **Refusal protocol**: when the user asks about data that is not in the
-  catalog, respond:
-  **"That dataset is not available in this agent's catalog."**
-  Then stop. Do not attempt to retrieve it through any other means, and
-  do not suggest a "similar" dataset unless the user explicitly asks.
-
-- **`python_repl_pandas` MUST NOT be used to load data from outside the
-  catalog.** The following patterns are **forbidden** — even if they look
-  reasonable, even if the user asks for them, even "just to check":
-  • `pd.read_csv` / `read_excel` / `read_json` / `read_parquet` /
-    `read_sql` / `read_html` / `read_clipboard` / `read_pickle`
-  • `open(...)`, `pathlib.Path(...).read_*`, `glob`, `os.listdir`,
-    any filesystem access
-  • `requests`, `urllib`, `httpx`, `aiohttp`, any HTTP client
-  • `sqlalchemy`, `psycopg`, `pymysql`, any direct DB driver
-  • Hardcoded URLs, file paths, or credentials read from environment vars
-
-- The **only** authorized way to bring new data into memory is
-  `fetch_dataset(name=...)` for an entry that already appears in
-  `list_datasets` (typically with `loaded: false`). `database_query` is
-  permitted only when it is in your tool list and the query targets a
-  configured database — never as a workaround to fetch arbitrary data.
-
-- If the user insists on data outside the catalog, politely decline and
-  suggest they register the dataset with the DatasetManager. Do not
-  improvise an alternative source.
-
-## EFFORT CALIBRATION & STOPPING (STRICT):
-Match your effort to the question. More tool calls is **not** more thorough —
-once you can answer, answer.
-
-1. **Simple lookups** ("list the X", "how many Y", "what is Z") must be
-   answered in **one or two** tool calls. Do not turn a lookup into an
-   investigation.
-2. **STOP as soon as the tool output answers the question.** The first correct
-   result IS the answer — do NOT re-run, re-verify, cross-check against another
-   dataset, or "clean it up" once you already have it.
-3. **Do NOT investigate data anomalies** (duplicates, mismatched counts, a
-   value that looks odd, differences between datasets) unless the user asked,
-   or the anomaly genuinely blocks you from answering. If you happen to notice
-   one, mention it in a single sentence and move on — never launch a
-   multi-dataset reconciliation on your own initiative.
-4. **One result DataFrame per question.** Do not spawn several competing
-   intermediates (`raw`, `filtered`, `agg`, `result`, ...) in one turn. Besides
-   wasting budget, it makes `data_variable` ambiguous (see ABSOLUTE DATA-RETURN
-   REQUIREMENT below) and returns empty data to the user.
-
-## TOOL FAILURE & RETRY POLICY (STRICT):
-You have a **limited tool-calling budget**. If a tool returns an error,
-an empty result, or otherwise does not give you what you need:
-
-1. **DO NOT** re-invoke the same tool with the **same arguments** — it
-   will produce the same outcome and burn the budget.
-2. **DO** try ONE alternative on the next turn: different arguments, a
-   different tool, or a different strategy. Vary the input meaningfully.
-3. If the alternative also fails, **STOP CALLING TOOLS**. Reply to the
-   user with a short explanation of what you tried and why you could not
-   complete the request. **A clear failure message is a valid answer.**
-4. **NEVER** call `fetch_dataset` for a dataset that is already shown as
-   `loaded: true`. Re-fetching loaded data is the most common waste of
-   budget — check the dataframe context above before fetching.
-
-Repeated identical tool invocations indicate a stuck loop, not progress.
-
-## DATA PROCESSING PROTOCOL:
-When performing intermediate steps (filtering, grouping, cleaning):
-1. ASSIGN the result to a meaningful variable name.
-2. DO NOT print the dataframe content using `print(df)`.
-3. INSTEAD, print a short confirmation with shape and preview: `print(f"Shape: {df.shape}"); print(df.head())`
-
-## CRITICAL RESPONSE GUIDELINES:
-1. **TRUST THE TOOL OUTPUT**: The tool output contains ACTUAL results.
-2. **ALWAYS** use the ORIGINAL DataFrame names in your Python code.
-3. Write and execute Python code using exact column names.
-4. Before providing your final answer, verify it matches the tool output.
-5. **DATA PASSTHROUGH (MANDATORY for >10 rows)**: Set `data_variable` to the variable
-   name holding your result. The system retrieves the FULL DataFrame from memory and
-   delivers it directly — you do NOT need to print, list, or repeat the rows.
-   - If data is already in a loaded dataset variable (e.g., `kiosks_locations`), just set
-     `data_variable='kiosks_locations'`. No pandas code needed.
-   - If you computed a new result (e.g., `result_df = df[df['active'] == True]`), set
-     `data_variable='result_df'`.
-   - NEVER print() a large DataFrame — it wastes context tokens and may get truncated.
-
-## USER-FACING PRESENTATION (MANDATORY):
-Your `explanation` text is shown DIRECTLY to the end user. The user does NOT
-know about datasets, variable names, aliases, column names, tool calls, or
-any internal implementation detail. **Never expose these in your prose.**
-
-Forbidden patterns in `explanation`:
-- "Based on the `kiosks_locations` dataset..."
-- "The `df1` DataFrame shows..."
-- "Using the `sales_data` table..."
-- "Column `store_id` contains..."
-- "I queried `fetch_dataset`..."
-- Any backtick-quoted variable name, dataset name, alias, or tool name.
-
-Correct patterns:
-- "There are 42 active kiosks across 5 states."
-- "Total revenue for Q1 was $1.2M, a 15% increase over Q4."
-- "The top 3 stores by sales volume are: ..."
-
-Rule: answer the user's question in plain, natural language. Present the
-RESULTS, not the process. Dataset names, aliases (`df1`), column names,
-Python variables, tool names, and implementation details belong in your
-CODE, never in `explanation`.
-
-## ABSOLUTE DATA-RETURN REQUIREMENT:
-If you called `python_repl_pandas`, `fetch_dataset`, or `database_query`
-to answer the user's question, your structured response **MUST** populate
-one of the following — not both, not neither:
-
-- **`data`** — inline rows, ONLY when the result is ≤ 10 rows.
-- **`data_variable`** — the name of the Python variable holding the
-  final DataFrame (REQUIRED for > 10 rows).
-
-The framework does **not** guess which variable to return on your behalf
-when your code produces more than one DataFrame. If you created multiple
-intermediate DataFrames (e.g. `raw`, `filtered`, `agg`, `result`), you
-**must** name the final one in `data_variable` explicitly. Ambiguous
-turns will return empty `data` to the user — that is a bug in YOUR
-response, not the framework's job to fix.
-
-Returning only an `explanation` describing data you computed, without
-populating `data` or `data_variable`, is **incorrect**. The user will
-see empty structured output.
-</pandas_instructions>""",
-)
+# backward-compat alias — canonical definition lives in domain_layers.py
+PANDAS_INSTRUCTIONS_LAYER = DATA_INSTRUCTIONS_LAYER
 
 
 def _build_pandas_prompt_builder() -> PromptBuilder:
@@ -433,7 +273,7 @@ def _build_pandas_prompt_builder() -> PromptBuilder:
     builder = PromptBuilder.default()
     builder.add(DATAFRAME_CONTEXT_LAYER)
     builder.add(STRICT_GROUNDING_LAYER)
-    builder.add(PANDAS_INSTRUCTIONS_LAYER)
+    builder.add(DATA_INSTRUCTIONS_LAYER)
     return builder
 
 
@@ -525,6 +365,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
     """
 
     METADATA_SAMPLE_ROWS = 3
+    MAX_RESPONSE_ROWS = 100
     # Tighter tool-calling budget than the Google client's default (15).
     # PandasAgent benefits from failing fast when the LLM gets stuck
     # re-invoking the same fetch/query tool — see Task 2 in the
@@ -903,89 +744,41 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             return []
 
     def _build_dataframe_info(self) -> str:
-        """
-        Build DataFrame information for system prompt.
+        """Build compact DataFrame catalog for the system prompt.
 
-        Includes both loaded DataFrames (ready for analysis) and unloaded
-        datasets registered in the DatasetManager catalog so the LLM knows
-        they exist and can call ``fetch_dataset`` to materialize them.
+        Lists loaded and unloaded datasets with shape and column names
+        only — no unique values, no verbose descriptions, no code
+        examples. The LLM can call ``get_metadata`` for details.
         """
         alias_map = self._get_dataframe_alias_map()
-        df_info_parts = []
+        df_info_parts: list[str] = []
 
-        # Tool-level usage rules (owned by DatasetManager, shared by every agent
-        # that drives one) go first so the LLM reads the decision rules before
-        # the dataset listing.
         if self._dataset_manager:
             rules = self._dataset_manager.get_usage_rules()
             if rules and rules.strip():
                 df_info_parts.extend([rules.strip(), ""])
 
-        # A dataset can be marked loaded=True yet hold zero rows (a query that
-        # returned nothing, or an eager empty df). Advertising such a frame under
-        # "Loaded DataFrames" misleads the LLM into running pandas that silently
-        # returns nothing, so partition empties out and surface them separately.
         loaded_nonempty = {n: df for n, df in self.dataframes.items() if not df.empty}
         loaded_empty = {n: df for n, df in self.dataframes.items() if df.empty}
 
-        # ── Loaded DataFrames ─────────────────────────────────────────
+        # ── Loaded DataFrames (compact: name, shape, column names) ────
         if loaded_nonempty:
-            df_info_parts.extend([
-                f"**Loaded DataFrames:** {len(loaded_nonempty)}",
-                "",
-            ])
-
+            df_info_parts.append(f"**Loaded DataFrames ({len(loaded_nonempty)}):**")
             for df_name, df in loaded_nonempty.items():
                 alias = alias_map.get(df_name, "")
-                display_name = f"**{df_name}** (alias: `{alias}`)" if alias else f"**{df_name}**"
+                alias_tag = f" (alias: `{alias}`)" if alias else ""
                 desc = ""
                 entry = None
                 if self._dataset_manager and df_name in self._dataset_manager._datasets:
                     entry = self._dataset_manager._datasets[df_name]
                     if entry.description:
                         desc = f" — {entry.description}"
+                col_names = ", ".join(df.columns)
                 df_info_parts.append(
-                    f"- {display_name}: {df.shape[0]:,} rows × {df.shape[1]} columns{desc}"
+                    f"- `{df_name}`{alias_tag} ({df.shape[0]:,}×{df.shape[1]}){desc}: {col_names}"
                 )
 
-                # Include column schema so the LLM knows the data structure
-                col_types = entry.column_types if entry and entry.column_types else {}
-                columns_info = []
-                for col in df.columns:
-                    dtype = col_types.get(col, str(df[col].dtype))
-                    col_info = f"    - `{col}` ({dtype})"
-                    # For categorical/object columns, show unique values (max 10)
-                    if dtype in ('categorical_text', 'text', 'object') or df[col].dtype == 'object':
-                        try:
-                            uniques = df[col].dropna().unique()
-                            if len(uniques) <= 15:
-                                vals = ', '.join(repr(v) for v in sorted(uniques))
-                                col_info += f" — values: [{vals}]"
-                            else:
-                                sample = ', '.join(repr(v) for v in sorted(uniques)[:8])
-                                col_info += f" — {len(uniques)} unique, e.g.: [{sample}, ...]"
-                        except (TypeError, ValueError):
-                            pass
-                    columns_info.append(col_info)
-                if columns_info:
-                    df_info_parts.append("  Columns:")
-                    df_info_parts.extend(columns_info)
-
-            first_name = next(iter(loaded_nonempty))
-            first_alias = alias_map.get(first_name, "df1")
-            df_info_parts.extend([
-                "  ```python",
-                "  # Using original name (recommended):",
-                f"  result = {first_name}.groupby('column').sum()",
-                "  ```",
-                "- Also works: Use aliases for brevity",
-                "  ```python",
-                "  # Using alias (convenience):",
-                f"  result = {first_alias}.groupby('column').sum()",
-                "  ```",
-            ])
-
-        # ── Unloaded datasets in the catalog ──────────────────────────
+        # ── Unloaded datasets (compact: name, row estimate, columns) ──
         if self._dataset_manager:
             unloaded = [
                 (name, entry)
@@ -993,63 +786,35 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 if not entry.loaded
             ]
             if unloaded:
-                df_info_parts.extend([
-                    "",
-                    f"**Unloaded Datasets (call `fetch_dataset` to load):** {len(unloaded)}",
-                ])
+                df_info_parts.append(f"**Unloaded ({len(unloaded)}) — call `fetch_dataset` to load:**")
                 for name, entry in unloaded:
-                    desc = f": {entry.description}" if entry.description else ""
-                    cols = entry.columns
+                    desc = f" — {entry.description}" if entry.description else ""
                     row_est = getattr(entry.source, '_row_count_estimate', None)
-                    size_hint = f", ~{row_est:,} rows" if row_est else ""
+                    size_hint = f"~{row_est:,} rows" if row_est else "?"
+                    cols = entry.columns
                     schema = getattr(entry.source, '_schema', {})
-                    if schema:
-                        # TableSource with prefetched schema: show all columns with types
-                        col_list = [f"`{c}` ({t})" for c, t in schema.items()]
-                        df_info_parts.append(
-                            f"- **{name}**{desc} ({len(cols)} columns{size_hint})"
-                        )
-                        df_info_parts.append(f"  Columns: {', '.join(col_list)}")
-                    elif cols:
-                        col_hint = f" — columns: {', '.join(cols[:8])}"
-                        if len(cols) > 8:
-                            col_hint += f", ... ({len(cols)} total)"
-                        df_info_parts.append(f"- `{name}`{desc}{col_hint}{size_hint}")
-                    else:
-                        df_info_parts.append(f"- `{name}`{desc}{size_hint}")
+                    col_names = ", ".join(schema.keys()) if schema else (
+                        ", ".join(cols[:10]) + (", ..." if len(cols) > 10 else "")
+                    ) if cols else ""
+                    col_part = f": {col_names}" if col_names else ""
+                    df_info_parts.append(f"- `{name}` ({size_hint}){desc}{col_part}")
 
         # ── Loaded-but-empty datasets ─────────────────────────────────
         if loaded_empty:
-            df_info_parts.extend([
-                "",
-                f"**⚠️ Empty datasets (registered but currently hold 0 rows — do NOT query directly):** {len(loaded_empty)}",
-                "Running pandas on these returns nothing. Call `fetch_dataset(name=...)` to "
-                "(re)populate them, or `get_metadata(name=...)` to inspect why they are empty.",
-            ])
+            df_info_parts.append("**Empty (0 rows — call `fetch_dataset` to reload):**")
             for df_name, df in loaded_empty.items():
                 alias = alias_map.get(df_name, "")
-                display_name = f"**{df_name}** (alias: `{alias}`)" if alias else f"**{df_name}**"
-                desc = ""
-                if self._dataset_manager and df_name in self._dataset_manager._datasets:
-                    entry = self._dataset_manager._datasets[df_name]
-                    if entry.description:
-                        desc = f" — {entry.description}"
-                df_info_parts.append(
-                    f"- {display_name}: 0 rows × {df.shape[1]} columns{desc}"
-                )
+                alias_tag = f" (alias: `{alias}`)" if alias else ""
+                df_info_parts.append(f"- `{df_name}`{alias_tag}: 0×{df.shape[1]}")
 
         if not self.dataframes and not (self._dataset_manager and any(
             not e.loaded for e in self._dataset_manager._datasets.values()
         )):
             return "No DataFrames loaded. Use `add_dataframe` to register data."
 
-        df_info_parts.extend([
-            "",
-            "**To get detailed information:**",
-            "- Call `list_datasets()` to see all datasets with loaded status",
-            "- Call `get_metadata(name='dataset_name')` for schema and EDA details",
-            ""
-        ])
+        df_info_parts.append(
+            "Call `get_metadata(name)` for column types, unique values, and EDA details."
+        )
 
         return "\n".join(df_info_parts)
 
@@ -1057,7 +822,24 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         """Override to inject dataframe_schemas for the layer path."""
         if self._prompt_builder and "dataframe_schemas" not in kwargs:
             kwargs["dataframe_schemas"] = self._build_dataframe_info()
-        return await super().create_system_prompt(**kwargs)
+        result = await super().create_system_prompt(**kwargs)
+        if self._prompt_builder and self.logger.isEnabledFor(logging.DEBUG):
+            total = len(result) if isinstance(result, str) else sum(
+                len(s.text) for s in result
+            )
+            sorted_layers = sorted(
+                self._prompt_builder._layers.values(),
+                key=lambda l: l.priority,
+            )
+            breakdown = ", ".join(
+                f"{l.name}={len(r)}"
+                for l in sorted_layers
+                if (r := (l.render(kwargs) or "").strip())
+            )
+            self.logger.debug(
+                "System prompt: %d chars | %s", total, breakdown
+            )
+        return result
 
     def _define_prompt(self, prompt: str = None, **kwargs):
         """
@@ -1963,10 +1745,16 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         if output_mode == OutputMode.STRUCTURED_CHART
                         else ()
                     )
+                    self._current_response_data_columns = (
+                        list(response.data.columns)
+                        if isinstance(response.data, pd.DataFrame) and not response.data.empty
+                        else None
+                    )
                     inferred_var = self._infer_data_variable_from_tools(
                         response.tool_calls,
                         prefer_names=_prefer,
                     )
+                    self._current_response_data_columns = None
 
                 response_data_is_empty = (
                     response.data is None
@@ -2333,7 +2121,13 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
                 # Return the final AIMessage response — serialize response.data for JSON output.
                 if isinstance(response.data, pd.DataFrame):
-                    # Single DataFrame → list of record dicts (existing/backward-compat behavior)
+                    total_rows = len(response.data)
+                    if total_rows > self.MAX_RESPONSE_ROWS:
+                        response.data = response.data.head(self.MAX_RESPONSE_ROWS)
+                        self.logger.info(
+                            "Capped response.data from %d to %d rows",
+                            total_rows, self.MAX_RESPONSE_ROWS,
+                        )
                     response.data = response.data.to_dict(orient='records')
                 elif isinstance(response.data, list):
                     # Already serialized — either:
@@ -2848,6 +2642,26 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             return live_dataframes[0]
 
         if len(live_dataframes) > 1:
+            # Column-match tiebreaker: when response.data is already
+            # populated (truncated by the LLM), pick the candidate whose
+            # columns match — it's the DataFrame the LLM intended.
+            if (
+                hasattr(self, '_current_response_data_columns')
+                and self._current_response_data_columns is not None
+            ):
+                ref_cols = self._current_response_data_columns
+                col_matches = [
+                    var for var in live_dataframes
+                    if list(pandas_tool.locals[var].columns) == ref_cols
+                ]
+                if len(col_matches) == 1:
+                    self.logger.info(
+                        "Disambiguated `data_variable` by column match: "
+                        "'%s' (from %d candidates)",
+                        col_matches[0], len(live_dataframes),
+                    )
+                    return col_matches[0]
+
             self.logger.debug(
                 "Refusing to infer `data_variable`: this turn produced "
                 "%d DataFrame candidates (%s). The LLM must set "

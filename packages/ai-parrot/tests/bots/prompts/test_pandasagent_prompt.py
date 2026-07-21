@@ -8,10 +8,14 @@ import pytest
 from pathlib import Path
 from parrot.bots.prompts.builder import PromptBuilder
 from parrot.bots.prompts.layers import LayerPriority, RenderPhase
-from parrot.bots.prompts.domain_layers import DATAFRAME_CONTEXT_LAYER, STRICT_GROUNDING_LAYER
+from parrot.bots.prompts.domain_layers import (
+    DATA_INSTRUCTIONS_LAYER,
+    DATAFRAME_CONTEXT_LAYER,
+    STRICT_GROUNDING_LAYER,
+)
 
 
-DATA_PY_SOURCE = Path(__file__).resolve().parents[3] / "parrot" / "bots" / "data.py"
+DATA_PY_SOURCE = Path(__file__).resolve().parents[3] / "src" / "parrot" / "bots" / "data.py"
 
 
 class TestPandasAgentHasPromptBuilder:
@@ -38,6 +42,11 @@ class TestPandasAgentHasPromptBuilder:
         source = DATA_PY_SOURCE.read_text()
         assert "STRICT_GROUNDING_LAYER" in source
 
+    def test_source_imports_data_instructions_layer(self):
+        """data.py should import DATA_INSTRUCTIONS_LAYER from domain_layers."""
+        source = DATA_PY_SOURCE.read_text()
+        assert "DATA_INSTRUCTIONS_LAYER" in source
+
     def test_source_imports_prompt_builder(self):
         """data.py should import PromptBuilder."""
         source = DATA_PY_SOURCE.read_text()
@@ -49,13 +58,10 @@ class TestPandasPromptBuilder:
 
     def _build_pandas_builder(self):
         """Replicate the PandasAgent builder setup."""
-        from parrot.bots.prompts.domain_layers import (
-            DATAFRAME_CONTEXT_LAYER,
-            STRICT_GROUNDING_LAYER,
-        )
         builder = PromptBuilder.default()
         builder.add(DATAFRAME_CONTEXT_LAYER)
         builder.add(STRICT_GROUNDING_LAYER)
+        builder.add(DATA_INSTRUCTIONS_LAYER)
         return builder
 
     def test_has_dataframe_context_layer(self):
@@ -65,6 +71,10 @@ class TestPandasPromptBuilder:
     def test_has_strict_grounding_layer(self):
         builder = self._build_pandas_builder()
         assert builder.get("strict_grounding") is not None
+
+    def test_has_data_instructions_layer(self):
+        builder = self._build_pandas_builder()
+        assert builder.get("data_instructions") is not None
 
     def test_has_identity_layer(self):
         builder = self._build_pandas_builder()
@@ -99,7 +109,12 @@ class TestPandasPromptBuilder:
         assert "sales" in prompt
 
     def test_dataframe_context_omitted_when_no_schemas(self):
-        """When no dataframe_schemas, <dataframe_context> should not appear."""
+        """When no dataframe_schemas, the rendered block should not appear.
+
+        Note: <dataframe_context> may appear as instructional text inside
+        DATA_INSTRUCTIONS_LAYER.  The closing tag </dataframe_context> only
+        appears when the DATAFRAME_CONTEXT_LAYER actually renders.
+        """
         builder = self._build_pandas_builder()
         builder.configure({
             "name": "TestBot",
@@ -116,7 +131,7 @@ class TestPandasPromptBuilder:
             "user_context": "",
             "chat_history": "",
         })
-        assert "<dataframe_context>" not in prompt
+        assert "</dataframe_context>" not in prompt
 
     def test_strict_grounding_always_present(self):
         """Strict grounding layer should always render."""
@@ -139,6 +154,28 @@ class TestPandasPromptBuilder:
         assert "<grounding_policy>" in prompt
         assert "Data not available" in prompt
 
+    def test_data_instructions_renders_few_shot(self):
+        """DATA_INSTRUCTIONS_LAYER should include the few-shot example."""
+        builder = self._build_pandas_builder()
+        builder.configure({
+            "name": "TestBot",
+            "role": "data analyst",
+            "goal": "analyze data",
+            "capabilities": "",
+            "backstory": "",
+            "rationale": "",
+            "pre_instructions": "",
+            "has_tools": True,
+        })
+        prompt = builder.build({
+            "knowledge_content": "",
+            "user_context": "",
+            "chat_history": "",
+        })
+        assert "<data_instructions>" in prompt
+        assert "Few-shot" in prompt
+        assert "skip exploration" in prompt
+
 
 class TestPandasAgentCreateSystemPromptOverride:
 
@@ -154,3 +191,18 @@ class TestPandasAgentCreateSystemPromptOverride:
                 ]
                 assert "create_system_prompt" in methods
                 break
+
+
+class TestBackwardCompat:
+    """PANDAS_INSTRUCTIONS_LAYER alias still works."""
+
+    def test_alias_exists_in_data_module(self):
+        source = DATA_PY_SOURCE.read_text()
+        assert "PANDAS_INSTRUCTIONS_LAYER" in source
+
+    def test_domain_layers_exports_both_names(self):
+        from parrot.bots.prompts.domain_layers import (
+            DATA_INSTRUCTIONS_LAYER,
+            PANDAS_INSTRUCTIONS_LAYER,
+        )
+        assert DATA_INSTRUCTIONS_LAYER is PANDAS_INSTRUCTIONS_LAYER

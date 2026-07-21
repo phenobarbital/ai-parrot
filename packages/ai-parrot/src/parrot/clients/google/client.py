@@ -3131,7 +3131,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     len(prompt or ""),
                     len(system_prompt or ""),
                     len(tool_names),
-                    bool(thinking_config),
+                    getattr(thinking_config, 'thinking_budget', None) if thinking_config else False,
                     stateless,
                     len(history),
                 )
