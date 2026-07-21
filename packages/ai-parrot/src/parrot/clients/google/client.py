@@ -179,7 +179,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         )
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
-        # FEAT-252 (TASK-1613): single chokepoint scrubber for all response text
+        # FEAT-252 (TASK-1613): single chokepoint scrubber for all response text.
+        # Redaction is OPT-IN: default False; the owning bot (or a direct
+        # ``enable_redaction=True`` kwarg) flags clients that must scrub.
+        self.enable_redaction: bool = bool(kwargs.get("enable_redaction", False))
         self._scrubber: OutputScrubber = OutputScrubber(ScrubPolicy())
         # Echo-suppression threshold (fraction of tool-result chars that must appear
         # in candidate_text before it's classified as a tool echo). Conservative
@@ -2513,8 +2516,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if not result and all_tool_calls:
             result = self._no_answer_sentinel()
 
-        # ALWAYS scrub last — this is the single egress gate
-        return self._scrubber.scrub(result, tool_name="gemini_client")
+        # Scrub last — single egress gate. Redaction is opt-in per agent:
+        # the owning bot stamps ``enable_redaction`` when it is flagged.
+        if getattr(self, "enable_redaction", False):
+            return self._scrubber.scrub(result, tool_name="gemini_client")
+        return result
 
     def _build_closed_tool_manifest(self, tool_names: Optional[List[str]] = None) -> str:
         """Build the closed tool manifest instruction for the system prompt.

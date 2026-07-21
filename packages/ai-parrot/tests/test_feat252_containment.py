@@ -109,6 +109,7 @@ class TestLayer2OutputScrubber:
 
         import asyncio
         tool = EnvDumpTool()
+        tool.enable_redaction = True  # redaction is opt-in per agent
         result = asyncio.run(tool.execute())
         assert isinstance(result, ToolResult)
         assert "hunter2" not in str(result.result)
@@ -145,6 +146,7 @@ class TestLayer3Chokepoint:
         client.logger.warning = MagicMock()
         client._scrubber = OutputScrubber(ScrubPolicy())
         client._echo_threshold = 0.85
+        client.enable_redaction = True  # redaction is opt-in per agent
         return client
 
     def test_secret_in_synthesis_is_scrubbed(self):

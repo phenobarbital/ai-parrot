@@ -1439,8 +1439,9 @@ class BaseBot(AbstractBot):
                     OutputMode.SLACK,
                     OutputMode.WHATSAPP,
                 ]:
-                    # FEAT-252 (TASK-1612): scrub at channel egress before delivery
-                    if isinstance(response.output, str):
+                    # FEAT-252 (TASK-1612): scrub at channel egress before delivery.
+                    # Opt-in per agent — only flagged agents redact.
+                    if getattr(self, 'enable_redaction', False) and isinstance(response.output, str):
                         response.output = _BOT_EGRESS_SCRUBBER.scrub(
                             response.output, tool_name=self.name
                         )

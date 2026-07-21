@@ -148,6 +148,10 @@ class AbstractTool(EventEmitterMixin, ABC):
     # _execute() and makes it available via current_credential().
     # Tools without this attribute (default None) are unaffected.
     credential_provider: Optional[str] = None
+    # FEAT-252 follow-up: secret/PII redaction is OPT-IN per agent. The owning
+    # agent (via ToolManager) stamps this flag on its tools when the agent is
+    # created with ``enable_redaction=True``; unflagged agents skip scrubbing.
+    enable_redaction: bool = False
 
     def __init__(
         self,
@@ -700,31 +704,34 @@ class AbstractTool(EventEmitterMixin, ABC):
             # so every tool — including python_repl — inherits secret redaction.
             # This is the ONLY place scrubbing happens on the way out; all
             # downstream callers receive a pre-scrubbed ToolResult.
-            try:
-                _scrubber = _default_scrubber()
-                if tool_result.result is not None:
-                    tool_result = tool_result.model_copy(
-                        update={"result": _scrubber.scrub(
-                            tool_result.result, tool_name=_tool_name
-                        )}
+            # Redaction is opt-in per agent: only tools stamped with
+            # enable_redaction=True (flagged agents) are scrubbed.
+            if self.enable_redaction:
+                try:
+                    _scrubber = _default_scrubber()
+                    if tool_result.result is not None:
+                        tool_result = tool_result.model_copy(
+                            update={"result": _scrubber.scrub(
+                                tool_result.result, tool_name=_tool_name
+                            )}
+                        )
+                    if tool_result.error is not None:
+                        tool_result = tool_result.model_copy(
+                            update={"error": _scrubber.scrub(
+                                tool_result.error, tool_name=_tool_name
+                            )}
+                        )
+                    if tool_result.metadata:
+                        tool_result = tool_result.model_copy(
+                            update={"metadata": _scrubber.scrub(
+                                tool_result.metadata, tool_name=_tool_name
+                            )}
+                        )
+                except Exception as _scrub_exc:  # never let scrub errors break tool execution
+                    self.logger.warning(
+                        "OutputScrubber error in tool %s (non-fatal): %s",
+                        _tool_name, _scrub_exc,
                     )
-                if tool_result.error is not None:
-                    tool_result = tool_result.model_copy(
-                        update={"error": _scrubber.scrub(
-                            tool_result.error, tool_name=_tool_name
-                        )}
-                    )
-                if tool_result.metadata:
-                    tool_result = tool_result.model_copy(
-                        update={"metadata": _scrubber.scrub(
-                            tool_result.metadata, tool_name=_tool_name
-                        )}
-                    )
-            except Exception as _scrub_exc:  # never let scrub errors break tool execution
-                self.logger.warning(
-                    "OutputScrubber error in tool %s (non-fatal): %s",
-                    _tool_name, _scrub_exc,
-                )
 
             # ── FEAT-176: emit AfterToolCallEvent on success ──────────────────
             _lc_dur = (time.perf_counter() - _lc_t0) * 1000
@@ -771,11 +778,12 @@ class AbstractTool(EventEmitterMixin, ABC):
             self.logger.error("%s", error_msg)
             self.logger.debug("%s", traceback.format_exc())
 
-            try:
-                _scrubber = _default_scrubber()
-                error_msg = _scrubber.scrub(error_msg, tool_name=_tool_name)
-            except Exception:
-                pass
+            if self.enable_redaction:
+                try:
+                    _scrubber = _default_scrubber()
+                    error_msg = _scrubber.scrub(error_msg, tool_name=_tool_name)
+                except Exception:
+                    pass
 
             return ToolResult(
                 status="error",

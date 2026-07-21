@@ -88,16 +88,29 @@ _DATA_ANALYSIS_IMPORTS: FrozenSet[str] = frozenset(
     }
 )
 
+#: Exception classes (and warning categories) from ``builtins`` — always safe
+#: to reference: they enable standard ``try/except ValueError`` handling and
+#: ``raise`` statements without granting any IO or introspection capability.
+_EXCEPTION_BUILTINS: FrozenSet[str] = frozenset(
+    name
+    for name, obj in vars(builtins).items()
+    if isinstance(obj, type) and issubclass(obj, BaseException)
+)
+
 #: Baseline safe builtins.
-_BASELINE_BUILTINS: FrozenSet[str] = frozenset(
+_BASELINE_BUILTINS: FrozenSet[str] = _EXCEPTION_BUILTINS | frozenset(
     {
         "abs",
         "all",
         "any",
         "bool",
         "bytes",
+        "bytearray",
+        "callable",
         "chr",
+        "complex",
         "dict",
+        "dir",
         "divmod",
         "enumerate",
         "filter",
@@ -211,7 +224,11 @@ _DATA_IO_NAMES: FrozenSet[str] = frozenset({"open", "file"})
 #: os attribute names denied when os access is blocked.
 _ENV_ATTR_NAMES: FrozenSet[str] = frozenset({"environ", "getenv", "putenv", "unsetenv"})
 #: Introspection builtins always denied.
-_INTROSPECTION_NAMES: FrozenSet[str] = frozenset({"globals", "locals", "vars", "dir", "__class__", "__bases__"})
+#: ``dir`` is deliberately NOT here: it returns attribute *names* only and is
+#: the supported way for agents to explore the sandboxed namespace. ``globals``/
+#: ``locals``/``vars`` stay denied — they return the live namespace dict whose
+#: ``__builtins__`` entry is a sandbox-escape vector.
+_INTROSPECTION_NAMES: FrozenSet[str] = frozenset({"globals", "locals", "vars", "__class__", "__bases__"})
 
 
 # ---------------------------------------------------------------------------

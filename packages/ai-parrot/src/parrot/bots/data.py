@@ -313,6 +313,26 @@ dataframe context above), it does **not exist** for this agent.
   suggest they register the dataset with the DatasetManager. Do not
   improvise an alternative source.
 
+## EFFORT CALIBRATION & STOPPING (STRICT):
+Match your effort to the question. More tool calls is **not** more thorough —
+once you can answer, answer.
+
+1. **Simple lookups** ("list the X", "how many Y", "what is Z") must be
+   answered in **one or two** tool calls. Do not turn a lookup into an
+   investigation.
+2. **STOP as soon as the tool output answers the question.** The first correct
+   result IS the answer — do NOT re-run, re-verify, cross-check against another
+   dataset, or "clean it up" once you already have it.
+3. **Do NOT investigate data anomalies** (duplicates, mismatched counts, a
+   value that looks odd, differences between datasets) unless the user asked,
+   or the anomaly genuinely blocks you from answering. If you happen to notice
+   one, mention it in a single sentence and move on — never launch a
+   multi-dataset reconciliation on your own initiative.
+4. **One result DataFrame per question.** Do not spawn several competing
+   intermediates (`raw`, `filtered`, `agg`, `result`, ...) in one turn. Besides
+   wasting budget, it makes `data_variable` ambiguous (see ABSOLUTE DATA-RETURN
+   REQUIREMENT below) and returns empty data to the user.
+
 ## TOOL FAILURE & RETRY POLICY (STRICT):
 You have a **limited tool-calling budget**. If a tool returns an error,
 an empty result, or otherwise does not give you what you need:
@@ -2668,12 +2688,49 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     tree = ast.parse(code)
                 except SyntaxError:
                     continue
-                for node in tree.body:
+                # Walk the WHOLE tree, not just tree.body: assignments inside
+                # try/except, if, for and with blocks are just as much "produced
+                # this turn" as top-level ones. Handles plain, annotated,
+                # augmented and walrus assignments plus tuple/list unpacking.
+                for node in ast.walk(tree):
                     if isinstance(node, ast.Assign):
                         for target in node.targets:
-                            if isinstance(target, ast.Name):
-                                candidates.add(target.id)
+                            candidates.update(self._assignment_target_names(target))
+                    elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+                        candidates.update(self._assignment_target_names(node.target))
+                    elif isinstance(node, ast.NamedExpr):
+                        candidates.update(self._assignment_target_names(node.target))
+                    elif (
+                        isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name)
+                        and node.func.id == 'store_result'
+                    ):
+                        # store_result("key", value) binds `key` in the REPL
+                        # namespace — treat it as produced this turn.
+                        key_arg = node.args[0] if node.args else next(
+                            (kw.value for kw in node.keywords if kw.arg == 'key'), None
+                        )
+                        if isinstance(key_arg, ast.Constant) and isinstance(key_arg.value, str):
+                            candidates.add(key_arg.value)
         return candidates
+
+    @staticmethod
+    def _assignment_target_names(target: Any) -> set:
+        """Extract variable names from an assignment target node.
+
+        Supports ``ast.Name``, tuple/list unpacking and starred targets.
+        Attribute/subscript targets (``obj.attr = …``) are ignored — they do
+        not create new REPL variables.
+        """
+        names: set = set()
+        if isinstance(target, ast.Name):
+            names.add(target.id)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for elt in target.elts:
+                names.update(PandasAgent._assignment_target_names(elt))
+        elif isinstance(target, ast.Starred):
+            names.update(PandasAgent._assignment_target_names(target.value))
+        return names
 
     def _filter_declared_variables(
         self, declared: Optional[List[str]], tool_calls: Optional[List[Any]]
