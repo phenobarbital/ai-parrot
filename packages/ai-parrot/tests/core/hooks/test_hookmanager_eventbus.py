@@ -2,8 +2,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from parrot.core.hooks.manager import HookManager
-from parrot.core.hooks.models import HookEvent, HookType
+from navigator_eventbus.hooks.manager import HookManager
+from navigator_eventbus.hooks.models import HookEvent, HookType
 
 
 def _make_event(hook_type=HookType.SCHEDULER, event_type="tick") -> HookEvent:

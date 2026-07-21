@@ -46,7 +46,9 @@ from pydantic import BaseModel, Field
 
 from parrot.bots import Agent
 from parrot.core.hooks.github_webhook import GitHubWebhookHook
-from parrot.core.hooks.models import GitHubWebhookConfig, HookEvent
+# FEAT-317: GitHubWebhookConfig/HookEvent moved to navigator_eventbus.hooks;
+# imported here via the parrot.core.hooks re-export facade.
+from parrot.core.hooks import GitHubWebhookConfig, HookEvent
 from parrot.models.google import GoogleModel
 from parrot.scheduler import schedule_daily_report, schedule_weekly_report
 from parrot_tools.gittoolkit import (

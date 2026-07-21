@@ -46,7 +46,9 @@ def _get_infographic_result_class() -> Optional[type]:
     except ImportError:
         return None
 # FEAT-176: Lifecycle Events
-from parrot.core.events.lifecycle.trace import TraceContext
+# FEAT-317: TraceContext moved to navigator_eventbus.lifecycle; imported here
+# via the parrot.core.events.lifecycle re-export facade.
+from parrot.core.events.lifecycle import TraceContext
 from parrot.core.events.lifecycle.events import (
     BeforeInvokeEvent,
     AfterInvokeEvent,
@@ -1374,12 +1376,17 @@ class BaseBot(AbstractBot):
                     getattr(response, "tool_calls", None)
                 )
                 if interactive_envelope is not None:
-                    self._finalize_interactive_response(response, interactive_envelope)
+                    if getattr(interactive_envelope, "a2ui_envelope", None) is not None:
+                        response.a2ui_envelope = interactive_envelope.a2ui_envelope
+                        finalize_a2ui_response(response)
+                    else:
+                        self._finalize_interactive_response(response, interactive_envelope)
                     self.logger.info(
                         "InteractiveRenderResult detected — bypassing formatter: "
-                        "artifact_id=%s enhanced=%s",
+                        "artifact_id=%s enhanced=%s a2ui=%s",
                         interactive_envelope.artifact_id,
                         interactive_envelope.enhanced,
+                        interactive_envelope.a2ui_envelope is not None,
                     )
                 elif output_mode == OutputMode.INTERACTIVE:
                     # Interactive mode was requested but no artifact was produced
@@ -1403,11 +1410,16 @@ class BaseBot(AbstractBot):
                     getattr(response, "tool_calls", None)
                 )
                 if infographic_envelope is not None:
-                    self._finalize_infographic_response(response, infographic_envelope)
+                    if getattr(infographic_envelope, "a2ui_envelope", None) is not None:
+                        response.a2ui_envelope = infographic_envelope.a2ui_envelope
+                        finalize_a2ui_response(response)
+                    else:
+                        self._finalize_infographic_response(response, infographic_envelope)
                     self.logger.info(
                         "InfographicRenderResult detected — bypassing formatter: "
-                        "artifact_id=%s",
+                        "artifact_id=%s a2ui=%s",
                         infographic_envelope.artifact_id,
+                        infographic_envelope.a2ui_envelope is not None,
                     )
                 elif output_mode == OutputMode.INFOGRAPHIC:
                     self.logger.warning(
@@ -1427,8 +1439,9 @@ class BaseBot(AbstractBot):
                     OutputMode.SLACK,
                     OutputMode.WHATSAPP,
                 ]:
-                    # FEAT-252 (TASK-1612): scrub at channel egress before delivery
-                    if isinstance(response.output, str):
+                    # FEAT-252 (TASK-1612): scrub at channel egress before delivery.
+                    # Opt-in per agent — only flagged agents redact.
+                    if getattr(self, 'enable_redaction', False) and isinstance(response.output, str):
                         response.output = _BOT_EGRESS_SCRUBBER.scrub(
                             response.output, tool_name=self.name
                         )

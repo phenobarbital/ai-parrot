@@ -32,11 +32,15 @@ def render_reply_text(response: Any) -> str:
     the channel as garbled pseudo-JSON instead of a clean message. This helper
     resolves the model's natural-language text instead, in priority order:
 
-    1. ``AIMessage.response`` — the plain-text response the model produced
+    1. ``AIMessage.output`` when it is already a plain string — the formatted,
+       channel-facing content the renderer produced (``base.py`` sets
+       ``output`` to the rendered text; ``content`` aliases ``output``). This
+       is preferred over ``response`` because ``response`` may hold an
+       environment-*wrapped* variant (e.g. Rich/ANSI terminal rendering) that
+       would leak escape codes into the chat channel.
+    2. ``AIMessage.response`` — the plain-text response the model produced
        before any structured reformatting (``AIMessageFactory`` sets this from
-       the raw ``text_response``).
-    2. ``AIMessage.content`` when it is already a plain string — the common
-       no-structured-output case (``content`` aliases ``output``).
+       the raw ``text_response``); used when ``output`` is not a plain string.
     3. A text-ish field pulled from the structured payload
        (``structured_output`` first, then ``output``) — covers arbitrary
        downstream schemas that carry their prose in a named field
@@ -56,15 +60,22 @@ def render_reply_text(response: Any) -> str:
     if not response:
         return ""
 
-    # 1. Prefer the plain-text response field.
+    # 1. Prefer the formatted output — the channel-facing content the renderer
+    #    produced (base.py sets AIMessage.output to the rendered text). This
+    #    beats `.response`, which may carry an environment-wrapped variant
+    #    (e.g. Rich/ANSI terminal rendering) that leaks escape codes.
+    #    `content` aliases `output` on AIMessage; read both so populating
+    #    either one works, preferring `output`.
+    content = getattr(response, "content", None)
+    output = getattr(response, "output", None)
+    for value in (output, content):
+        if isinstance(value, str) and value.strip():
+            return value
+
+    # 2. Fall back to the plain-text response field.
     text = getattr(response, "response", None)
     if isinstance(text, str) and text.strip():
         return text
-
-    # 2. content/output already a plain string (no structured output).
-    content = getattr(response, "content", None)
-    if isinstance(content, str) and content.strip():
-        return content
 
     # 3. Pull a human-text field out of a structured Pydantic payload.
     from pydantic import BaseModel  # local import: keep module import-light
@@ -384,10 +395,12 @@ class ParrotM365Agent:
                 permission_context=pctx,
             )
             semantic_result = self._extract_semantic_result(response)
-            if semantic_result is None or not self._cards_enabled:
-                await self._send_text(context, render_reply_text(response))
-            else:
+            if semantic_result is not None and self._cards_enabled:
                 await self._send_semantic_card(context, semantic_result, response)
+            elif self._cards_enabled:
+                await self._send_response_card(context, response)
+            else:
+                await self._send_text(context, render_reply_text(response))
         except Exception as exc:  # noqa: BLE001
             # Canonical CredentialRequired (FEAT-264 / TASK-1667).
             # Raised by AbstractTool.execute() seam when broker returns NeedsAuth.
@@ -505,8 +518,8 @@ class ParrotM365Agent:
             fallback_text = cards.render_text(result)
             reply = Activity(
                 type=ActivityTypes.message,
-                text=fallback_text,
                 attachments=[attachment],
+                summary=fallback_text[:200] if fallback_text else None,
             )
             await context.send_activity(reply)
             self.logger.info(
@@ -1029,3 +1042,72 @@ class ParrotM365Agent:
                 text_format=TextFormatTypes.plain,
             )
         )
+
+    async def _send_response_card(self, context, response: Any) -> None:
+        """Render the agent response as an Adaptive Card.
+
+        When the response carries structured tabular data (e.g.
+        ``PandasAgentResponse`` with ``data``), the card includes both
+        the explanation text and a ColumnSet table. Otherwise falls back
+        to a simple TextBlock card wrapping the explanation.
+
+        Args:
+            context: ``TurnContext`` used to emit the reply.
+            response: The ``AIMessage`` returned by ``parrot_agent.ask()``.
+        """
+        from microsoft_agents.activity import Activity, ActivityTypes
+
+        text = render_reply_text(response)
+        table_info = self._extract_table_data(response)
+        if table_info is not None:
+            columns, rows = table_info
+            card = cards.render_data_card(
+                text,
+                columns,
+                rows,
+                max_table_rows=self._max_table_rows,
+            )
+        else:
+            card = cards.render_text_card(text)
+        attachment = cards.build_card_attachment(card)
+        await context.send_activity(
+            Activity(
+                type=ActivityTypes.message,
+                attachments=[attachment],
+                summary=text[:200] if text else None,
+            )
+        )
+
+    @staticmethod
+    def _extract_table_data(
+        response: Any,
+    ) -> Optional[tuple[list[str], list[list]]]:
+        """Extract (columns, rows) from a response if it carries table data.
+
+        Handles two shapes produced by PandasAgent:
+        - ``response.data`` is a list of dicts (serialized DataFrame records)
+        - ``response.output`` is a Pydantic model with a ``data`` attribute
+          holding ``{columns: [...], rows: [[...], ...]}``
+
+        Returns:
+            ``(columns, rows)`` or ``None`` when no tabular data is found.
+        """
+        data = getattr(response, "data", None)
+
+        # Shape 1: list-of-dicts (DataFrame.to_dict(orient='records'))
+        if isinstance(data, list) and data and isinstance(data[0], dict):
+            columns = list(data[0].keys())
+            rows = [list(record.values()) for record in data]
+            return columns, rows
+
+        # Shape 2: structured output with PandasTable-like data attribute
+        output = getattr(response, "output", None)
+        if output is not None and hasattr(output, "data"):
+            inner = getattr(output, "data", None)
+            if inner is not None:
+                cols = getattr(inner, "columns", None)
+                rws = getattr(inner, "rows", None)
+                if isinstance(cols, list) and isinstance(rws, list):
+                    return cols, rws
+
+        return None

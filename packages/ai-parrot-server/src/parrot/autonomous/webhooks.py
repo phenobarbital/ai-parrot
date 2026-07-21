@@ -11,7 +11,7 @@ from aiohttp import web
 from navconfig.logging import logging
 
 if TYPE_CHECKING:
-    from parrot.core.events import EventBus
+    from navigator_eventbus import EventBus
 
 
 @dataclass

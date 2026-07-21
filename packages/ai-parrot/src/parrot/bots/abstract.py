@@ -151,8 +151,9 @@ from .dynamic_values import dynamic_values
 from .middleware import PromptPipeline
 from .prompts.builder import PromptBuilder
 # FEAT-176: Lifecycle Events System
-from parrot.core.events.lifecycle.mixin import EventEmitterMixin
-from parrot.core.events.lifecycle.trace import TraceContext
+# FEAT-317: EventEmitterMixin/TraceContext moved to navigator_eventbus.lifecycle;
+# imported here via the parrot.core.events.lifecycle re-export facade.
+from parrot.core.events.lifecycle import EventEmitterMixin, TraceContext
 from parrot.core.events.lifecycle.events import (
     AgentInitializedEvent,
     AgentConfiguredEvent,
@@ -373,12 +374,17 @@ class AbstractBot(
         self.logger = logging.getLogger(
             f'{self.name}.Bot'
         )
+        # Secret/PII redaction (FEAT-252 follow-up): OPT-IN per agent. Only
+        # agents created with ``enable_redaction=True`` scrub tool results,
+        # LLM responses and channel egress; all other agents skip redaction.
+        self.enable_redaction: bool = bool(kwargs.pop('enable_redaction', False))
         # Agentic Tools:
         self.tool_manager: ToolManager = ToolManager(
             logger=self.logger,
             debug=debug,
             include_search_tool=include_search_tool
         )
+        self.tool_manager.enable_redaction = self.enable_redaction
         self.tool_threshold = tool_threshold
         self.enable_tools: bool = kwargs.get('enable_tools', kwargs.get('use_tools', True))
         # Knowledge-index toolkits captured during tool registration so the
@@ -924,6 +930,8 @@ class AbstractBot(
             # Assign tool_manager reference to existing client instance
             if self.tool_manager and hasattr(config.client_instance, 'tool_manager'):
                 config.client_instance.tool_manager = self.tool_manager
+            # Propagate the per-agent redaction opt-in to the client egress gate
+            config.client_instance.enable_redaction = self.enable_redaction
             return config.client_instance
 
         if not config.client_class:
@@ -931,7 +939,7 @@ class AbstractBot(
                 f"No LLM client class resolved for provider: {config.provider}"
             )
 
-        return config.client_class(
+        client = config.client_class(
             model=config.model,
             temperature=config.temperature,
             top_k=config.top_k,
@@ -941,6 +949,9 @@ class AbstractBot(
             tool_manager=self.tool_manager,
             **config.extra
         )
+        # Propagate the per-agent redaction opt-in to the client egress gate
+        client.enable_redaction = self.enable_redaction
+        return client
 
 
     @property

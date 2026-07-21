@@ -2,8 +2,8 @@
 import asyncio
 from typing import Optional
 
-from .base import BaseHook
-from .models import HookType, IMAPHookConfig
+from navigator_eventbus.hooks.base import BaseHook
+from navigator_eventbus.hooks.models import HookType, IMAPHookConfig
 
 
 class IMAPWatchdogHook(BaseHook):

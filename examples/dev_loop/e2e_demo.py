@@ -51,8 +51,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 from parrot import conf
-from parrot.core.events.lifecycle.base import LifecycleEvent
-from parrot.core.events.lifecycle.global_registry import get_global_registry
+from parrot.core.events.lifecycle import LifecycleEvent, get_global_registry
 from parrot.flows.dev_loop import (
     BugBrief,
     DevLoopRunner,

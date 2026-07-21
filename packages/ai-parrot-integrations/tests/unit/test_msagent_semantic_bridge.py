@@ -107,9 +107,7 @@ class TestCardSeam:
         assert activity.attachments[0].content_type == (
             "application/vnd.microsoft.card.adaptive"
         )
-        from parrot.integrations.msagentsdk.cards import render_text
-
-        assert activity.text == render_text(result)
+        assert not getattr(activity, "text", None)
 
     @pytest.mark.asyncio
     async def test_handle_message_data_fallback_carrier(self, monkeypatch):
@@ -132,9 +130,70 @@ class TestCardSeam:
         )
 
     @pytest.mark.asyncio
-    async def test_handle_message_plain_text_unchanged(self, monkeypatch):
+    async def test_handle_message_plain_text_wrapped_in_card(self, monkeypatch):
         _stub_parrot_utils(monkeypatch)
         agent = _make_agent()
+        response = MagicMock()
+        response.structured_output = None
+        response.data = None
+        response.output = None
+        response.content = "hello world"
+        agent.parrot_agent.ask.return_value = response
+
+        ctx = FakeTurnContext(text="hi")
+        await agent._handle_message(ctx)
+
+        assert len(ctx.sent) == 1
+        activity = ctx.sent[0]
+        assert not getattr(activity, "text", None)
+        assert activity.attachments
+        att = activity.attachments[0]
+        ct = att.content_type if hasattr(att, "content_type") else att["contentType"]
+        assert ct == "application/vnd.microsoft.card.adaptive"
+        content = att.content if hasattr(att, "content") else att["content"]
+        assert content["body"][0]["type"] == "TextBlock"
+        assert content["body"][0]["text"] == "hello world"
+
+    @pytest.mark.asyncio
+    async def test_handle_message_table_data_in_card(self, monkeypatch):
+        """When response carries tabular data, the card includes a table."""
+        _stub_parrot_utils(monkeypatch)
+        agent = _make_agent()
+        response = MagicMock()
+        response.structured_output = None
+        response.data = [
+            {"warehouse": "WH-A", "city": "Boston"},
+            {"warehouse": "WH-B", "city": "Miami"},
+        ]
+        response.output = "explanation text"
+        response.content = "explanation text"
+        response.response = None
+        agent.parrot_agent.ask.return_value = response
+
+        ctx = FakeTurnContext(text="list warehouses")
+        await agent._handle_message(ctx)
+
+        assert len(ctx.sent) == 1
+        activity = ctx.sent[0]
+        att = activity.attachments[0]
+        content = att.content if hasattr(att, "content") else att["content"]
+        body = content["body"]
+        # First element: explanation TextBlock
+        assert body[0]["type"] == "TextBlock"
+        assert body[0]["text"] == "explanation text"
+        # Second element: header ColumnSet
+        assert body[1]["type"] == "ColumnSet"
+        header_texts = [
+            col["items"][0]["text"] for col in body[1]["columns"]
+        ]
+        assert header_texts == ["warehouse", "city"]
+        # Third+ elements: data row ColumnSets
+        assert body[2]["type"] == "ColumnSet"
+
+    @pytest.mark.asyncio
+    async def test_handle_message_plain_text_no_card_when_disabled(self, monkeypatch):
+        _stub_parrot_utils(monkeypatch)
+        agent = _make_agent(enable_semantic_cards=False)
         response = MagicMock()
         response.structured_output = None
         response.data = None

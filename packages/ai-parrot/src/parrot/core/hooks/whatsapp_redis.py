@@ -9,8 +9,8 @@ import asyncio
 import json
 from typing import Any, Dict, Optional
 
-from .base import BaseHook
-from .models import HookType, WhatsAppRedisHookConfig
+from navigator_eventbus.hooks.base import BaseHook
+from navigator_eventbus.hooks.models import HookType, WhatsAppRedisHookConfig
 
 try:
     import redis.asyncio as aioredis

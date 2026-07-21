@@ -128,7 +128,7 @@ class TestHandleHookEventRouting(unittest.IsolatedAsyncioTestCase):
         self.config_patcher.stop()
 
     async def test_assigned_event_routes_to_handler(self):
-        from parrot.core.hooks.models import HookEvent, HookType
+        from navigator_eventbus.hooks.models import HookEvent, HookType
 
         event = HookEvent(
             hook_id="h1",
@@ -143,7 +143,7 @@ class TestHandleHookEventRouting(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, {"status": "ok"})
 
     async def test_ready_for_test_event_routes_to_handler(self):
-        from parrot.core.hooks.models import HookEvent, HookType
+        from navigator_eventbus.hooks.models import HookEvent, HookType
 
         event = HookEvent(
             hook_id="h1",
@@ -158,7 +158,7 @@ class TestHandleHookEventRouting(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "ok")
 
     async def test_other_events_are_ignored(self):
-        from parrot.core.hooks.models import HookEvent, HookType
+        from navigator_eventbus.hooks.models import HookEvent, HookType
 
         event = HookEvent(
             hook_id="h1",

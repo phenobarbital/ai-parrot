@@ -3,8 +3,8 @@ import json
 import pytest
 from dataclasses import dataclass, FrozenInstanceError
 
-from parrot.core.events.lifecycle.base import LifecycleEvent
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.base import LifecycleEvent
+from navigator_eventbus.lifecycle.trace import TraceContext
 
 
 @dataclass(frozen=True)

@@ -1596,6 +1596,70 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         await message.answer("⛔ You must sign in with /login to talk to me.")
         return False
 
+    def _get_deeplink_resume(self):
+        """Lazily construct the A2UI deep-link resume helper.
+
+        Returns None when Redis is unavailable (deep links degrade silently).
+        """
+        if hasattr(self, "_deeplink_resume"):
+            return self._deeplink_resume
+        redis = self.app.get("redis") if self.app else None
+        if redis is None:
+            self._deeplink_resume = None
+            return None
+        from parrot.outputs.a2ui.deeplink import DeepLinkService
+        from parrot.integrations.a2ui_resume import ChannelDeepLinkResume
+
+        service = DeepLinkService(redis)
+        self._deeplink_resume = ChannelDeepLinkResume(
+            service, channel="telegram", logger=self.logger
+        )
+        return self._deeplink_resume
+
+    async def _handle_deeplink_resume(
+        self, message: Message, token: str
+    ) -> bool:
+        """Consume an A2UI deep-link token and inject the action into the original session.
+
+        Returns True if the deep link was handled (success or error), False if the
+        caller should fall through to normal /start behavior.
+        """
+        chat_id = message.chat.id
+        resume_helper = self._get_deeplink_resume()
+        if resume_helper is None:
+            self.logger.warning(
+                "A2UI deep-link token received but Redis is unavailable; "
+                "falling back to normal /start."
+            )
+            return False
+
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+        try:
+            session = self._get_user_session(message)
+            memory = self._get_or_create_memory(chat_id)
+
+            async def inject(*, session_id, user_id, agent_id, query):
+                session.session_id = session_id
+                return await self._invoke_agent(
+                    session, query, memory=memory, message=message
+                )
+
+            outcome = await resume_helper.resume(token, inject=inject)
+            typing_task.cancel()
+
+            if outcome["ok"]:
+                parsed = self._parse_response(outcome["result"])
+                await self._send_parsed_response(message, parsed)
+            else:
+                await message.answer(outcome["reply"])
+        except Exception as exc:
+            typing_task.cancel()
+            self.logger.error("A2UI deep-link resume failed: %s", exc, exc_info=True)
+            await message.answer(
+                "Something went wrong resuming your action. Please try again."
+            )
+        return True
+
     async def handle_start(self, message: Message) -> None:
         """Handle /start command with welcome message."""
         chat_id = message.chat.id
@@ -1603,6 +1667,13 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if not self._is_authorized(chat_id):
             await message.answer("⛔ You are not authorized to use this bot.")
             return
+
+        # A2UI deep-link resume: /start <token> (Telegram deep-link start parameter)
+        parts = (message.text or "").split(maxsplit=1)
+        if len(parts) > 1:
+            token = parts[1].strip()
+            if token and await self._handle_deeplink_resume(message, token):
+                return
 
         # Clear any existing conversation
         if chat_id in self.conversations:

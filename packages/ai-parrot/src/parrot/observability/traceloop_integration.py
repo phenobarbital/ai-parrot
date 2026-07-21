@@ -144,7 +144,7 @@ def setup_traceloop(config: ObservabilityConfig) -> None:
         logger.debug("setup_traceloop: no native subscribers enabled.")
         return
 
-    from parrot.core.events.lifecycle.global_registry import (  # noqa: PLC0415
+    from parrot.core.events.lifecycle import (  # noqa: PLC0415
         get_global_registry,
     )
 
@@ -169,7 +169,7 @@ def shutdown_traceloop() -> None:
     """
     if _SUBSCRIPTION_IDS:
         try:
-            from parrot.core.events.lifecycle.global_registry import (  # noqa: PLC0415
+            from parrot.core.events.lifecycle import (  # noqa: PLC0415
                 get_global_registry,
             )
 

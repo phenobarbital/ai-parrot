@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-18T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-20T13:06:23+00:00",
   "tasks": [
     {
       "id": "TASK-1826",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Entry point. Externally blocked on FEAT-313 (lifecycle) + FEAT-316 (brokers) being delivered in navigator-eventbus; Preflight verifies. Must precede all deletions.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1826-add-navigator-eventbus-dependency.md"
+      "completed_at": "2026-07-20T11:55:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1826-add-navigator-eventbus-dependency.md"
     },
     {
       "id": "TASK-1827",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Deletes shared bus core that lifecycle (1828) and hooks (1829) depend on being gone; must land before them.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1827-delete-rewire-events-bus-core.md"
+      "completed_at": "2026-07-20T11:57:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1827-delete-rewire-events-bus-core.md"
     },
     {
       "id": "TASK-1828",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Theoretically parallelizable with TASK-1829 (disjoint dirs: events/lifecycle vs core/hooks), but spec Worktree Strategy mandates a single sequential worktree. Kept sequential.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1828-delete-rewire-lifecycle-machinery.md"
+      "completed_at": "2026-07-20T12:01:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1828-delete-rewire-lifecycle-machinery.md"
     },
     {
       "id": "TASK-1829",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Theoretically parallelizable with TASK-1828 (disjoint dirs), but spec mandates single sequential worktree. Kept sequential.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1829-delete-rewire-hooks-generic.md"
+      "completed_at": "2026-07-20T12:04:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1829-delete-rewire-hooks-generic.md"
     },
     {
       "id": "TASK-1830",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Consumer rewiring; disjoint file set from 1831/1832 (theoretically parallel) but sequential per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1830-rewire-bots-clients.md"
+      "completed_at": "2026-07-20T12:09:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1830-rewire-bots-clients.md"
     },
     {
       "id": "TASK-1831",
@@ -113,7 +113,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Consumer rewiring; disjoint file set from 1830/1832 (theoretically parallel) but sequential per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1831-rewire-observability-eval-registry-auth.md"
+      "completed_at": "2026-07-20T12:12:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1831-rewire-observability-eval-registry-auth.md"
     },
     {
       "id": "TASK-1832",
@@ -134,7 +134,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -145,8 +145,8 @@
       "parallelism_notes": "Consumer rewiring across the server/integrations packages; includes the sole EventBus() prefix config. Disjoint from 1830/1831 (theoretically parallel) but sequential per spec.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1832-rewire-server-integrations.md"
+      "completed_at": "2026-07-20T12:16:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1832-rewire-server-integrations.md"
     },
     {
       "id": "TASK-1833",
@@ -155,7 +155,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -170,8 +170,8 @@
       "parallelism_notes": "Needs all production rewiring done so tests exercise the final import graph.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1833-migrate-test-suite.md"
+      "completed_at": "2026-07-20T12:33:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1833-migrate-test-suite.md"
     },
     {
       "id": "TASK-1834",
@@ -180,7 +180,7 @@
       "feature_id": "FEAT-317",
       "feature": "parrot-eventbus-migration",
       "spec": "sdd/specs/parrot-eventbus-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -190,8 +190,8 @@
       "parallelism_notes": "Final gate — full suite + grep guards + clean-venv install + emit-overhead benchmark.",
       "assigned_to": null,
       "started_at": "2026-07-20T11:52:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1834-regression-benchmark.md"
+      "completed_at": "2026-07-20T13:06:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1834-regression-benchmark.md"
     }
   ]
 }

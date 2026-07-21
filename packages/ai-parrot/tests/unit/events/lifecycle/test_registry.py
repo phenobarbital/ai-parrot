@@ -8,10 +8,10 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from parrot.core.events.lifecycle.registry import EventRegistry, _emitting_meta
-from parrot.core.events.lifecycle.trace import TraceContext
-from parrot.core.events.lifecycle.base import LifecycleEvent
-from parrot.core.events.lifecycle.meta import SubscriberErrorEvent
+from navigator_eventbus.lifecycle.registry import EventRegistry, _emitting_meta
+from navigator_eventbus.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.base import LifecycleEvent
+from navigator_eventbus.lifecycle.meta import SubscriberErrorEvent
 from parrot.core.events.lifecycle.events import (
     BeforeInvokeEvent,
     AfterInvokeEvent,
@@ -225,23 +225,23 @@ class TestErrorIsolation:
 
         # get_global_registry is lazily imported inside _emit_subscriber_error.
         # Inject a fake module into sys.modules so the lazy import resolves.
-        fake_module = types.ModuleType("parrot.core.events.lifecycle.global_registry")
+        fake_module = types.ModuleType("navigator_eventbus.lifecycle.global_registry")
         fake_module.get_global_registry = MagicMock(return_value=mock_global)
 
         sys.modules.setdefault(
-            "parrot.core.events.lifecycle.global_registry", fake_module
+            "navigator_eventbus.lifecycle.global_registry", fake_module
         )
-        original = sys.modules.get("parrot.core.events.lifecycle.global_registry")
-        sys.modules["parrot.core.events.lifecycle.global_registry"] = fake_module
+        original = sys.modules.get("navigator_eventbus.lifecycle.global_registry")
+        sys.modules["navigator_eventbus.lifecycle.global_registry"] = fake_module
         try:
             await registry.emit(BeforeInvokeEvent(trace_context=trace_root))
             # Allow the scheduled task to run
             await asyncio.sleep(0)
         finally:
             if original is None:
-                del sys.modules["parrot.core.events.lifecycle.global_registry"]
+                del sys.modules["navigator_eventbus.lifecycle.global_registry"]
             else:
-                sys.modules["parrot.core.events.lifecycle.global_registry"] = original
+                sys.modules["navigator_eventbus.lifecycle.global_registry"] = original
 
         # _emit_meta was called once on the global registry
         mock_global._emit_meta.assert_called_once()
@@ -340,7 +340,7 @@ class TestDualEmit:
         self, trace_root: TraceContext
     ) -> None:
         """forward_to_bus=False → zero EventBus.emit calls."""
-        from parrot.core.events.evb import EventBus
+        from navigator_eventbus.evb import EventBus
         bus = EventBus(use_redis=False)
         bus.emit = AsyncMock()  # type: ignore[method-assign]
         reg = EventRegistry(event_bus=bus, forward_to_global=False)
@@ -357,7 +357,7 @@ class TestDualEmit:
         self, trace_root: TraceContext
     ) -> None:
         """forward_to_bus=True → exactly one EventBus.emit call per event."""
-        from parrot.core.events.evb import EventBus
+        from navigator_eventbus.evb import EventBus
         bus = EventBus(use_redis=False)
         bus.emit = AsyncMock()  # type: ignore[method-assign]
         reg = EventRegistry(event_bus=bus, forward_to_global=False)
@@ -374,7 +374,7 @@ class TestDualEmit:
         self, trace_root: TraceContext
     ) -> None:
         """Combining forward_to_bus=False and =True on the same registry works."""
-        from parrot.core.events.evb import EventBus
+        from navigator_eventbus.evb import EventBus
         bus = EventBus(use_redis=False)
         bus.emit = AsyncMock()  # type: ignore[method-assign]
         reg = EventRegistry(event_bus=bus, forward_to_global=False)
@@ -398,7 +398,7 @@ class TestDualEmit:
         self, trace_root: TraceContext
     ) -> None:
         """1000 ClientStreamChunkEvents with forward_to_bus=False → zero bus calls."""
-        from parrot.core.events.evb import EventBus
+        from navigator_eventbus.evb import EventBus
         bus = EventBus(use_redis=False)
         bus.emit = AsyncMock()  # type: ignore[method-assign]
         reg = EventRegistry(event_bus=bus, forward_to_global=False)

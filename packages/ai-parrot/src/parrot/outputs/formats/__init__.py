@@ -11,10 +11,6 @@ from ...models.outputs import OutputMode
 # Each entry names the A2UI replacement path (single source of truth for the message).
 # Kept modes (JSON/YAML/MARKDOWN/SLACK/WHATSAPP/TERMINAL, infographic-JSON) are ABSENT.
 _A2UI_REPLACEMENTS: Dict[OutputMode, str] = {
-    OutputMode.ALTAIR: "OutputMode.A2UI with the Chart catalog component",
-    OutputMode.PLOTLY: "OutputMode.A2UI with the Chart catalog component",
-    OutputMode.MATPLOTLIB: "OutputMode.A2UI with the Chart catalog component",
-    OutputMode.SEABORN: "OutputMode.A2UI with the Chart catalog component",
     OutputMode.ECHARTS: "OutputMode.A2UI with the Chart catalog component",
     OutputMode.STRUCTURED_CHART: "OutputMode.A2UI with the Chart catalog component",
     OutputMode.MAP: "OutputMode.A2UI with the Map catalog component",
@@ -59,16 +55,12 @@ _MODULE_MAP: dict = {
     OutputMode.YAML:            ('.yaml',),
     OutputMode.CHART:           ('.chart',),             # base class only; no renderer registered
     OutputMode.MAP:             ('.map',),
-    OutputMode.ALTAIR:          ('.altair',),
     OutputMode.STRUCTURED_CHART: ('.structured_chart',),
     OutputMode.STRUCTURED_TABLE: ('.structured_table',),
     OutputMode.STRUCTURED_MAP:   ('.structured_map',),
     OutputMode.JINJA2:          ('.jinja2',),
     OutputMode.TEMPLATE_REPORT: ('.template_report',),
-    OutputMode.PLOTLY:          ('.plotly',),
-    OutputMode.MATPLOTLIB:      ('.matplotlib',),
     OutputMode.ECHARTS:         ('.echarts',),
-    OutputMode.SEABORN:         ('.seaborn',),
     OutputMode.TABLE:           ('.table',),
     OutputMode.APPLICATION:     ('.application',),
     OutputMode.CARD:            ('.card',),

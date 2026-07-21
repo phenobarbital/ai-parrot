@@ -14,7 +14,7 @@ from typing import Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navigator_auth.abac.context import EvalContext
-    from parrot.core.events.lifecycle.trace import TraceContext
+    from parrot.core.events.lifecycle import TraceContext
 
 
 @dataclass(frozen=True)

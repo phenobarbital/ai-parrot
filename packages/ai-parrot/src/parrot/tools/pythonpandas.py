@@ -129,6 +129,13 @@ class PythonPandasTool(PythonREPLTool):
         df_locals.update(self.df_locals)
         kwargs['locals_dict'] = df_locals
 
+        # FEAT-252: pandas agents get the data-analysis execution policy by
+        # default (wider pandas/numpy allowlist) instead of the tighter
+        # general_profile() the base REPL falls back to.
+        if kwargs.get('policy') is None:
+            from parrot.security.python_sanitizer import data_analysis_profile
+            kwargs['policy'] = data_analysis_profile()
+
         # Initialize parent class
         super().__init__(**kwargs)
 

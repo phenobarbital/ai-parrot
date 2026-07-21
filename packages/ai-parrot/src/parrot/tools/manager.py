@@ -265,6 +265,9 @@ class ToolManager(MCPToolManagerMixin):
         # policy (tweak as required)
         self.auto_share_dataframes: bool = True
         self.auto_push_to_pandas: bool = True
+        # Secret/PII redaction is opt-in per agent: the owning agent sets this
+        # flag and execute_tool() stamps it onto tools before dispatch.
+        self.enable_redaction: bool = False
         self.pandas_tool_name: str = "python_pandas"
         self._wired_toolkits: set = set()  # Track auto-wired toolkit instances
 
@@ -497,6 +500,8 @@ class ToolManager(MCPToolManagerMixin):
         """
         tool_name = name or getattr(tool, 'name', None) or tool.__class__.__name__
         if isinstance(tool, AbstractTool) or isinstance(tool, ToolDefinition):
+            if isinstance(tool, AbstractTool) and self.enable_redaction:
+                tool.enable_redaction = True
             self._tools[tool_name] = tool
             self.logger.debug(
                 "Registered tool: %s", tool_name
@@ -556,6 +561,8 @@ class ToolManager(MCPToolManagerMixin):
             return
         try:
             if isinstance(tool, (ToolDefinition, AbstractTool)):
+                if isinstance(tool, AbstractTool) and self.enable_redaction:
+                    tool.enable_redaction = True
                 self._tools[tool_name] = tool
                 # Auto-wire ToolManager for ToolkitTool instances
                 self._auto_wire_toolkit(tool)
@@ -1344,6 +1351,10 @@ class ToolManager(MCPToolManagerMixin):
                 return result
 
             elif isinstance(tool, AbstractTool):
+                # Redaction opt-in: stamp the owning agent's flag onto the tool
+                # so AbstractTool.execute() scrubs only for flagged agents.
+                if self.enable_redaction and not tool.enable_redaction:
+                    tool.enable_redaction = True
                 # === Grant guard check (FEAT-211) ===
                 # If a GrantGuard is configured and the tool requires a grant,
                 # authorize before dispatching to tool.execute().

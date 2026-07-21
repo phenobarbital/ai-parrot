@@ -23,9 +23,6 @@ class OutputType(str, Enum):
     MARKDOWN = "markdown"
     DATAFRAME = "dataframe"
     FOLIUM_MAP = "folium_map"
-    PLOTLY_CHART = "plotly_chart"
-    MATPLOTLIB_FIGURE = "matplotlib_figure"
-    ALTAIR_CHART = "altair_chart"
     PANEL_DASHBOARD = "panel_dashboard"
     HTML_WIDGET = "html_widget"
     IMAGE = "image"
@@ -48,10 +45,6 @@ class OutputMode(str, Enum):
     TEMPLATE_REPORT = "template_report"  # Pass to Jinja2 template (using jinja2 templates)
     APPLICATION = "application"  # Wrap in app (Streamlit/React/Svelte/HTML+TS)
     CHART = "chart"               # Generate chart visualization
-    ALTAIR = "altair"           # Generate Altair chart visualization
-    PLOTLY = "plotly"
-    MATPLOTLIB = "matplotlib"
-    SEABORN = "seaborn"
     CODE = "code"
     MAP = "map"                   # Generate map visualization
     IMAGE = "image"             # render the image as a base64 embed into HTML <img>

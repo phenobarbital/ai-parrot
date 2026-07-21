@@ -23,8 +23,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .base import BaseHook, HookRegistry
-from .models import HookType, MatrixHookConfig
+from navigator_eventbus.hooks.base import BaseHook, HookRegistry
+from navigator_eventbus.hooks.models import HookType, MatrixHookConfig
 
 logger = logging.getLogger("parrot.hooks.matrix")
 

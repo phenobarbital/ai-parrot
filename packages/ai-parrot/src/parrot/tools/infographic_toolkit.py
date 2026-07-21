@@ -101,6 +101,7 @@ class InfographicRenderResult(BaseModel):
     theme: Optional[str] = None
     data_variables: List[str] = Field(default_factory=list)
     enhanced: bool = False
+    a2ui_envelope: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +138,7 @@ class InfographicToolkit(AbstractToolkit):
         artifact_store: ArtifactStore,
         template_dirs: Optional[Any] = None,
         templates: Optional[Dict[str, str]] = None,
+        emit_a2ui: bool = False,
         **kwargs,
     ) -> None:
         """Initialise the toolkit.
@@ -149,10 +151,13 @@ class InfographicToolkit(AbstractToolkit):
             templates: Optional mapping of ``{name: source}`` in-memory HTML+Jinja
                 templates for ``render_template`` (registered via the engine's
                 ``DictLoader``). Combine with ``template_dirs`` or use alone.
+            emit_a2ui: When True, the render tools additionally produce a validated
+                A2UI ``CreateSurface`` envelope (FEAT-273 Module 11, D1a lane).
             **kwargs: Forwarded to ``AbstractToolkit.__init__``.
         """
         super().__init__(**kwargs)
         self._artifact_store = artifact_store
+        self._emit_a2ui = emit_a2ui
         self._renderer = get_infographic_html_renderer()()
         self.logger = logging.getLogger(__name__)
         # Ensure the class-level return_direct=True is set as an instance
@@ -337,6 +342,12 @@ class InfographicToolkit(AbstractToolkit):
             template.name, validated_theme, enhanced, len(html),
         )
 
+        a2ui_envelope = None
+        if self._emit_a2ui:
+            a2ui_envelope = self._build_a2ui_envelope(
+                coerced_blocks, template.name, validated_theme, artifact_id,
+            )
+
         return InfographicRenderResult(
             artifact_id=artifact_id,
             html_url=html_url,
@@ -345,6 +356,7 @@ class InfographicToolkit(AbstractToolkit):
             theme=validated_theme,
             data_variables=data_variables,
             enhanced=enhanced,
+            a2ui_envelope=a2ui_envelope,
         )
 
     async def render_template(
@@ -431,6 +443,16 @@ class InfographicToolkit(AbstractToolkit):
             template_name, theme, len(html),
         )
 
+        a2ui_envelope = None
+        if self._emit_a2ui:
+            sections = [{"heading": title or template_name}]
+            if data:
+                sections[0]["text"] = str(list(data.keys()))
+            a2ui_envelope = self._build_a2ui_envelope(
+                [], template_name, theme, artifact_id, title=title,
+                extra_sections=sections,
+            )
+
         return InfographicRenderResult(
             artifact_id=artifact_id,
             html_url=html_url,
@@ -439,6 +461,7 @@ class InfographicToolkit(AbstractToolkit):
             theme=theme,
             data_variables=[],
             enhanced=False,
+            a2ui_envelope=a2ui_envelope,
         )
 
     def _build_template_context(
@@ -467,6 +490,45 @@ class InfographicToolkit(AbstractToolkit):
             "title": title,
             "now": datetime.now(timezone.utc),
         }
+
+    def _build_a2ui_envelope(
+        self,
+        blocks: List[Dict[str, Any]],
+        template_name: str,
+        theme: Optional[str],
+        artifact_id: str,
+        *,
+        title: Optional[str] = None,
+        extra_sections: Optional[List[Dict[str, Any]]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Build a validated A2UI Infographic envelope from the render data."""
+        from parrot.outputs.a2ui.builders import build_infographic
+
+        sections = extra_sections or []
+        if not sections:
+            for i, block in enumerate(blocks):
+                heading = block.get("title") or block.get("type") or f"Block {i + 1}"
+                sections.append({"heading": heading})
+        if not sections:
+            sections = [{"heading": template_name}]
+
+        try:
+            envelope = build_infographic(
+                title=title or template_name,
+                sections=sections,
+                theme=theme,
+                surface_id=f"infographic-{artifact_id}",
+                data_model={"blocks": blocks} if blocks else None,
+            )
+            return envelope.model_dump(mode="json")
+        except Exception:
+            self.logger.warning(
+                "A2UI envelope build failed for infographic %s; "
+                "falling back to HTML-only result.",
+                artifact_id,
+                exc_info=True,
+            )
+            return None
 
     def _snapshot_bot_message(self) -> Dict[str, Any]:
         """Best-effort dict view of the bound bot's last ``AIMessage``.

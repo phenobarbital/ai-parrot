@@ -6,8 +6,8 @@ import asyncpg
 import backoff
 from navconfig.logging import logging
 
-from .base import BaseHook
-from .models import HookType, PostgresHookConfig
+from navigator_eventbus.hooks.base import BaseHook
+from navigator_eventbus.hooks.models import HookType, PostgresHookConfig
 
 
 class PostgresListenHook(BaseHook):

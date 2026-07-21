@@ -20,7 +20,7 @@ from parrot.observability.attributes import resolve_gen_ai_system
 from parrot.observability.recorders.models import UsageRecord
 
 if TYPE_CHECKING:
-    from parrot.core.events.lifecycle.registry import EventRegistry
+    from parrot.core.events.lifecycle import EventRegistry
     from parrot.observability.cost.calculator import CostCalculator
     from parrot.observability.recorders.base import AbstractLogger
 
