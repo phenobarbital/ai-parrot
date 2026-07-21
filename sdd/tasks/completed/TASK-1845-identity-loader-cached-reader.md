@@ -229,10 +229,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-21
+**Notes**: Promoted `read_text_cached(path)` in `agent_context.py` as a thin
+public wrapper over the existing `_read_cached` lru cache (single shared
+cache preserved); `load_agent_context` refactored to call it internally,
+behavior unchanged (17 pre-existing tests in
+`tests/test_agent_context_loader.py` still pass). Created
+`prompts/identity.py` with `IdentityFields` (Pydantic model, 5 optional
+fields + `as_kwargs()`), `IDENTITY_FILES` tuple, and `load_identity()` —
+missing/empty/whitespace-only/unreadable file all silently resolve to
+`None` (debug log only), content injected verbatim by default with an
+opt-in `escape_placeholders` flag. 10 new unit tests pass; `ruff check`
+clean on all touched files.
 
 **Deviations from spec**: none

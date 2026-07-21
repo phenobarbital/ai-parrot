@@ -211,10 +211,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-21
+**Notes**: Implemented `CAPABILITIES_LAYER` in `domain_layers.py` (priority
+`IDENTITY + 1` = 11, CONFIGURE phase, condition mirrors
+`KNOWLEDGE_SCOPE_LAYER`'s strip-check style) and registered it under
+`_DOMAIN_LAYERS["capabilities"]`. Registered the `"identity"` preset in
+`presets.py` via a `_identity_preset()` factory (`PromptBuilder.default().add(
+CAPABILITIES_LAYER)`), returning a fresh builder per call. All 7 new unit
+tests pass; verified `PromptBuilder.default()` still has no `"capabilities"`
+layer (non-adopters unchanged). Pre-existing baseline failures in
+`test_yaml_prompt_config.py` / `test_pandasagent_prompt.py` (54 failed / 229
+passed before this task, 54 failed / 236 passed after — same 54, all
+attributable to a missing `BotManager._build_prompt_builder` unrelated to
+this feature) confirmed via `git stash` comparison — no regressions
+introduced. `ruff check` clean on both modified files and the new test file.
 
 **Deviations from spec**: none
