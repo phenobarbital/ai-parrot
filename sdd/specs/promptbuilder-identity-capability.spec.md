@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-321
 **Date**: 2026-07-21
 **Author**: jlara (brainstorm: `sdd/proposals/promptbuilder-identity-capability.brainstorm.md`; supersedes draft proposal `sdd/proposals/identitycapability.spec.md` by amartinez)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.0 (current: 0.25.22)
 
 ---
