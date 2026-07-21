@@ -14,7 +14,7 @@
       "feature_id": "FEAT-321",
       "feature": "promptbuilder-identity-capability",
       "spec": "sdd/specs/promptbuilder-identity-capability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only domain_layers.py/presets.py + its own test file; shares no files with TASK-1845. Could run in a separate worktree, though per-spec sequential execution is the recommended isolation (spec Worktree Strategy).",
       "assigned_to": null,
       "started_at": "2026-07-21T20:31:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1844-capabilities-layer-identity-preset.md"
+      "completed_at": "2026-07-21T20:46:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1844-capabilities-layer-identity-preset.md"
     },
     {
       "id": "TASK-1845",
