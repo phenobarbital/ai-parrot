@@ -615,9 +615,9 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         """
         ft = field.field_type
 
-        # Skip types with no input element mapping
+        # Unsupported types fall back to generic text input
         if ft in (FieldType.ARRAY, FieldType.FILE, FieldType.IMAGE):
-            return None
+            ft = FieldType.TEXT
 
         value = prefilled.get(field.field_id, field.default)
 

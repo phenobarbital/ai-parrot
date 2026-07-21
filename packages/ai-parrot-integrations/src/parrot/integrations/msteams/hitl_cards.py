@@ -383,7 +383,7 @@ class TeamsCardRenderer:
         actions = [
             self._submit_action(
                 interaction.interaction_id,
-                title="Confirmar seleccion",
+                title="Confirmar selección",
                 extra_data={"field": "selected_options"},
             )
         ]

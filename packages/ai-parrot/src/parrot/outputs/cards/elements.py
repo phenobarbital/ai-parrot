@@ -78,7 +78,8 @@ class Table(ACElement):
     vertical_cell_content_alignment: Literal["Top", "Center", "Bottom"] | None = None
 
 
-class Column(BaseModel):
+class Column(ACElement):
+    element_type: Literal["Column"] = "Column"
     width: str = "stretch"
     items: list[ACElement] = []
 

@@ -270,6 +270,8 @@ def _build_form_field(field: FormFieldSpec) -> list[ACElement]:
             kwargs["max_length"] = field.constraints["max_length"]
         if field.constraints and field.constraints.get("pattern"):
             kwargs["regex"] = field.constraints["pattern"]
+        if field.description:
+            elements.append(TextBlock(text=field.description, is_subtle=True, spacing="Small"))
         elements.append(InputText(
             id=field.field_id,
             label=field.label,
@@ -285,6 +287,8 @@ def _build_form_field(field: FormFieldSpec) -> list[ACElement]:
                 kwargs["min"] = field.constraints["min_value"]
             if field.constraints.get("max_value") is not None:
                 kwargs["max"] = field.constraints["max_value"]
+        if field.description:
+            elements.append(TextBlock(text=field.description, is_subtle=True, spacing="Small"))
         elements.append(InputNumber(
             id=field.field_id,
             label=field.label,
@@ -302,6 +306,8 @@ def _build_form_field(field: FormFieldSpec) -> list[ACElement]:
             is_required=field.required,
         ))
     elif input_type == "Input.Date":
+        if field.description:
+            elements.append(TextBlock(text=field.description, is_subtle=True, spacing="Small"))
         elements.append(InputDate(
             id=field.field_id,
             label=field.label,
@@ -309,6 +315,8 @@ def _build_form_field(field: FormFieldSpec) -> list[ACElement]:
             is_required=field.required,
         ))
     elif input_type == "Input.Time":
+        if field.description:
+            elements.append(TextBlock(text=field.description, is_subtle=True, spacing="Small"))
         elements.append(InputTime(
             id=field.field_id,
             label=field.label,
@@ -321,6 +329,8 @@ def _build_form_field(field: FormFieldSpec) -> list[ACElement]:
             from .inputs import InputChoice
             choices = [InputChoice(title=o.title, value=o.value) for o in field.options]
         is_multi = field.field_type == "multi_select"
+        if field.description:
+            elements.append(TextBlock(text=field.description, is_subtle=True, spacing="Small"))
         elements.append(InputChoiceSet(
             id=field.field_id,
             label=field.label,
