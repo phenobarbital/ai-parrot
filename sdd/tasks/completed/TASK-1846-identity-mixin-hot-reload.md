@@ -336,3 +336,29 @@ functionally required for the explicit hot-reload ACs to pass; the resulting
 behavior matches the spec's intent and codebase contract, just anchored at
 the `__init__`→`configure()` boundary instead of inside `_configure_identity()`
 itself.
+
+### Post-review fix (2026-07-21)
+
+A code review of the full FEAT-321 branch caught two bugs in this task's
+implementation, both fixed in a follow-up commit on the same branch:
+
+1. **Critical**: `self.capabilities` was unconditionally overwritten with
+   the file value after `super().__init__()`, regardless of whether an
+   explicit `capabilities=` kwarg was given — silently violating "explicit
+   kwarg > file value" for `capabilities` on *any* adopter, not just the
+   documented `PandasAgent` swallow case. Fixed by capturing the caller's
+   original `capabilities` kwarg before `super().__init__()` runs (i.e.
+   before `PandasAgent`'s own `capabilities` parameter can intercept it)
+   and re-applying that exact value afterwards, only falling back to the
+   file value when no kwarg was passed.
+2. **Important**: the synchronous hot-reload context omitted
+   `agent_context_content`, so a `prompt_caching=True` agent's
+   `AGENT_CONTEXT_LAYER` would silently and permanently stop rendering
+   after the first hot reload. Fixed by including it via the existing
+   synchronous `load_agent_context()` call when `self._prompt_caching` is set.
+
+3 new regression tests added (`test_kwarg_wins_over_file_all_fields`,
+`test_capabilities_kwarg_wins_despite_pandasagent_style_swallow`,
+`test_hot_reload_preserves_agent_context_layer`), all passing. Docs
+(`docs/prompts/identity-capability.md`) corrected to no longer describe
+the capabilities precedence issue as an unfixable pre-existing quirk.
