@@ -288,10 +288,51 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-21
+**Notes**: Implemented `IdentityMixin` in `bots/mixins/identity.py`, exported
+from `bots/mixins/__init__.py` alongside `IntentRouterMixin`. Key design
+decision (documented here per the task's own "raise it in the completion
+note" escape hatch): the pristine, never-configured builder snapshot used
+for hot reload is captured in `__init__` — right after `super().__init__()`
+sets `self._prompt_builder` (abstract.py:533-536) but *before* `configure()`
+is ever called — rather than re-cloning `self._prompt_builder` inside
+`_configure_identity()` itself. This matters because `configure()` destroys
+CONFIGURE-phase templates (builder.py:234-241); by the time
+`_configure_identity()` runs (explicitly, after `await super().configure()`
+per the SkillRegistryMixin/EpisodicMemoryMixin pattern), the framework's own
+`_configure_prompt_builder()` has already baked IDENTITY_LAYER/BEHAVIOR_LAYER
+with the file-injected values from `__init__`. Cloning that already-baked
+builder as the "pristine" source would only allow re-configuring the newly
+added `CAPABILITIES_LAYER` on later hot reloads — not `role`/`goal`/
+`backstory`/`rationale` — which would fail the explicit
+`test_mixin_hot_reload` acceptance criterion (editing `backstory.md` must
+reflect in the next `_build_prompt()`). Capturing the snapshot at the
+`__init__`/`configure()` boundary (a naturally pristine point, since these
+are separate lifecycle phases) resolves this while still matching the
+letter of the codebase contract ("instance attr set by AbstractBot.__init__
+via prompt_builder/prompt_preset, abstract.py:533-536").
 
-**Completed by**:
-**Date**:
-**Notes**:
+`_configure_identity()` reuses the inherited (async) `_configure_prompt_builder()`
+against the new clone instead of duplicating its full context-assembly logic,
+eliminating drift risk for the *initial* configure pass. The *hot-reload*
+path (`_build_prompt` override, synchronous) cannot await, so it replicates
+only the cheap/sync subset of that context (identity fields + static extras
++ a cached dynamic-values dict refreshed once per `_configure_identity()`
+call) per the task's Option 2 guidance — a known, documented limitation:
+`$current_date`-style tokens inside identity files resolve using the
+dynamic values captured at the last `_configure_identity()` call, not
+recomputed synchronously on every hot reload (recomputing them would require
+blocking the running event loop, which is explicitly disallowed).
+9 new unit tests pass (field injection, precedence, hot reload, transient
+layer carry-over, dynamic-value resolution, non-adopter parity). Full
+`tests/bots/` suite: 66 pre-existing failures unrelated to this feature
+(confirmed via `git stash` A/B comparison — same 66 before and after, all in
+vector-store/RAG/YAML-config areas), 946 passed after (937 before + 9 new).
+`ruff check` clean on all touched files.
 
-**Deviations from spec**: none
+**Deviations from spec**: The pristine-snapshot capture point (see above) —
+functionally required for the explicit hot-reload ACs to pass; the resulting
+behavior matches the spec's intent and codebase contract, just anchored at
+the `__init__`→`configure()` boundary instead of inside `_configure_identity()`
+itself.

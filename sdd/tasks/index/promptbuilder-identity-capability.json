@@ -50,7 +50,7 @@
       "feature_id": "FEAT-321",
       "feature": "promptbuilder-identity-capability",
       "spec": "sdd/specs/promptbuilder-identity-capability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,8 +61,8 @@
       "parallelism_notes": "Imports CAPABILITIES_LAYER (TASK-1844) and load_identity (TASK-1845); must run after both.",
       "assigned_to": null,
       "started_at": "2026-07-21T20:31:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1846-identity-mixin-hot-reload.md"
+      "completed_at": "2026-07-21T21:02:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1846-identity-mixin-hot-reload.md"
     },
     {
       "id": "TASK-1847",
