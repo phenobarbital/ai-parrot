@@ -283,11 +283,15 @@ directory + caching machinery.
    `kwarg → getattr(self, …) → DEFAULT` resolution keeps kwargs winning and files
    beating class attributes); sets `self.capabilities` explicitly (the `PandasAgent`
    path swallows the `capabilities` kwarg into `self._capabilities`, data.py:550,586).
-   During `_configure_identity()`: clone the class builder, add `CAPABILITIES_LAYER`,
-   stash the pristine clone. At prompt-assembly time (override of
-   `create_system_prompt` or `_build_prompt`, delegating to `super()`): re-run
-   `load_identity`; if fields differ from last applied, update attributes, re-clone
-   pristine, re-configure, swap `self._prompt_builder`.
+   During `_configure_identity()`: clone the agent's *effective* builder (instance
+   attribute when set via `prompt_builder`/`prompt_preset`, else the class
+   attribute), add `CAPABILITIES_LAYER`, stash the pristine clone. At
+   prompt-assembly time (override of `_build_prompt` — resolved open question —
+   delegating to `super()`): re-run `load_identity`; if fields differ from last
+   applied, update attributes, re-clone pristine, re-configure, carry over any
+   transient layers present on the old builder but not the clone (e.g.
+   `skill_active`, added by `create_system_prompt` before `_build_prompt` runs),
+   then swap `self._prompt_builder`.
 5. **Porygon**: add `IdentityMixin` first in bases, `enable_identity = True`,
    delete the `BACKSTORY` constant and its kwarg, call
    `await self._configure_identity()` in `configure()` alongside the existing
@@ -298,10 +302,14 @@ directory + caching machinery.
 - **Missing dir / missing files**: silent fallthrough (debug log), never an error.
 - **Empty or whitespace-only file**: treated as missing (field `None`) so the
   fallthrough chain is not short-circuited by an empty string.
-- **Literal `$tokens` in identity markdown**: `partial_render` output becomes the
-  next phase's template (`safe_substitute`, layers.py:93-119), so `$name`-like text
-  inside a backstory could be substituted at request time. Loader must escape `$`
-  → `$$` on injected values.
+- **`$tokens` in identity markdown**: injected verbatim, NO escaping (resolved
+  open question). Dynamic variables (`$current_date`, …) are intentionally
+  pre-resolved inside identity fields by `_configure_prompt_builder`'s
+  `_resolve()` (abstract.py:1200-1214) — file personas keep parity with inline
+  ones. Leftover `$tokens` that collide with REQUEST-context keys substitute at
+  request time (`safe_substitute`, layers.py:93-119) — pre-existing property of
+  inline identity; document it, optionally offer `escape_placeholders=False`
+  loader flag.
 - **Concurrent requests during a reload**: builder swap must be atomic (build the
   new configured builder fully, then assign) so in-flight `build()` calls use a
   consistent snapshot.
@@ -497,21 +505,51 @@ from parrot.memory import EpisodicMemoryMixin
 
 ## Open Questions
 
-- [ ] Assign the real `FEAT-<NNN>` id — *Owner: amartinez*
-- [ ] Hot-reload hook: override `create_system_prompt` (abstract.py:2733) or
-      `_build_prompt` (abstract.py:1242)? (`create_system_prompt` is the outermost
-      seam and async; `_build_prompt` is closer to the builder but also used by the
-      transient skill-layer logic at 2766-2786.) — *Owner: spec author*
-- [ ] Promote `agent_context._read_cached` to a public helper (e.g.
+- [x] Assign the real `FEAT-<NNN>` id — *Owner: jlara*: highest assigned id today
+      is FEAT-320 → tentative **FEAT-321**. `/sdd-spec` MUST re-scan
+      `sdd/tasks/index/` + `sdd/specs/` at spec-commit time (concurrent sessions
+      have collided on ids before, cf. FEAT-306/307).
+- [x] Hot-reload hook: override `create_system_prompt` (abstract.py:2733) or
+      `_build_prompt` (abstract.py:1242)? — *Owner: jlara*: override
+      **`_build_prompt`**, with skill-layer compatibility. Verified mechanics:
+      `create_system_prompt` `add()`s the transient `skill_active` layer
+      (abstract.py:2772) BEFORE calling `_build_prompt` (2774) and `remove()`s it
+      after (2786). Therefore when the override swaps `self._prompt_builder`
+      (identity changed → re-clone + re-configure), it MUST carry over any layers
+      present on the old builder but absent from the pristine clone (e.g.
+      `skill_active`) before delegating to `super()._build_prompt(...)`.
+      `PromptBuilder.remove()` is a no-op on missing names (builder.py:164-174),
+      so the post-call cleanup is safe either way — carry-over only prevents a
+      one-turn silent drop of the active skill.
+- [x] Promote `agent_context._read_cached` to a public helper (e.g.
       `read_text_cached`) vs. the identity loader importing the private name or
-      shipping its own copy — *Owner: spec author*
-- [ ] `$`-escaping policy for identity file content (escape `$` → `$$` at load
-      time, per Edge Cases) — confirm this doesn't break intentional placeholder
-      use in advanced personas — *Owner: spec author*
-- [ ] Should the `"identity"` preset ALSO be what the mixin clones from (single
+      shipping its own copy — *Owner: jlara*: promote to a public helper —
+      `read_text_cached(path)` in `agent_context.py` that stats mtime and calls
+      the existing lru-cached private, keeping one shared cache.
+- [x] `$`-escaping policy for identity file content — *Owner: jlara → verified*:
+      **do NOT escape by default.** Escaping would break `dynamic_values`:
+      `_configure_prompt_builder` deliberately pre-resolves dynamic variables
+      (`$current_date`, `$local_time`, …) INSIDE identity fields via
+      `_resolve()` → `Template.safe_substitute(dynamic_context)`
+      (abstract.py:1200-1214, comment at 1200-1203 states this is intentional).
+      Escaping `$`→`$$` at load time would strip that supported capability from
+      file-based personas, breaking parity with inline/kwarg identity. Policy:
+      inject file content verbatim (same behavior as inline BACKSTORY today);
+      document that unresolved `$tokens` colliding with REQUEST-context keys
+      (`$user_context`, `$knowledge_content`, …) will substitute at request time
+      — a pre-existing property of inline identity, not a regression. Optionally
+      expose `escape_placeholders: bool = False` on the loader for locked-down
+      personas.
+- [x] Should the `"identity"` preset ALSO be what the mixin clones from (single
       source of the capabilities-augmented stack), or does the mixin always clone
       the agent's own class builder and just `add(CAPABILITIES_LAYER)`? (Porygon
-      needs the latter — its builder carries pandas layers.) — *Owner: spec author*
+      needs the latter — its builder carries pandas layers.) — *Owner: jlara*:
+      mixin clones the agent's own builder + `add(CAPABILITIES_LAYER)`. Caveat:
+      clone the agent's *effective* builder — the instance attribute when set
+      (`prompt_builder` kwarg / `prompt_preset` via `get_preset`,
+      abstract.py:533-536), else the class attribute. `add()` is
+      add-or-replace-by-name, so combining the mixin with
+      `prompt_preset="identity"` cannot double-add the layer.
 - [x] Flow type/base — *Owner: jlara*: feature → dev.
 - [x] Role of `devloop_session_state.py` — *Owner: jlara*: out of scope; ignore.
 - [x] Mixin module path — *Owner: jlara*: `parrot/bots/mixins/identity.py`.
