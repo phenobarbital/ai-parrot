@@ -48,10 +48,6 @@ class TestActionToggleVisibility:
 
 
 class TestActionShowCard:
-    @pytest.mark.skip(
-        reason="CardSpec/TextSection land in Task 3 (spec.py/sections.py); "
-        "deferred per Task 2 brief."
-    )
     def test_inline_card(self):
         from parrot.outputs.cards.actions import ActionShowCard
         from parrot.outputs.cards.spec import CardSpec
