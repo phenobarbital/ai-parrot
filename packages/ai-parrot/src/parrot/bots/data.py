@@ -192,8 +192,10 @@ class PandasAgentResponse(BaseModel):
     explanation: str = Field(
         description=(
             "Clear, text-based explanation of the analysis performed. "
-            "Include insights, findings, and interpretation of the data."
-            "If data is tabular, also generate a markdown table representation. "
+            "Include insights, findings, and interpretation of the data. "
+            "Do NOT embed the full result table here — the table is delivered "
+            "separately via 'data'/'data_variable'. A short highlight of a few "
+            "rows is acceptable when it aids the narrative."
         )
     )
     data: Optional[PandasTable] = Field(
@@ -201,6 +203,9 @@ class PandasAgentResponse(BaseModel):
         description=(
             "The resulting DataFrame in split format. "
             "Use this format: {'columns': [...], 'rows': [[...], [...], ...]}.\n"
+            "FALLBACK only: prefer 'data_variable' whenever the result is held "
+            "in a Python variable; use 'data' for small computed tables that "
+            "are not backed by a variable.\n"
             "Set to null if the response doesn't produce tabular data.\n"
             "CRITICAL: All numeric values in rows MUST be raw numbers. "
             "NEVER include currency symbols ($, €, £), percent signs (%), "
@@ -210,7 +215,14 @@ class PandasAgentResponse(BaseModel):
     )
     data_variable: Optional[str] = Field(
         default=None,
-        description="The variable name holding the result DataFrame (e.g. 'result_df'). Use this for large datasets instead of 'data'."
+        description=(
+            "PREFERRED way to return tabular results: the exact variable name "
+            "your executed Python code assigned the result DataFrame to "
+            "(e.g. 'result_df'). ALWAYS set this when your code produced a "
+            "result DataFrame this turn, regardless of its size — the system "
+            "retrieves the full DataFrame from memory automatically. Only "
+            "declare variables your executed code actually created."
+        )
     )
     data_variables: Optional[List[str]] = Field(
         default=None,

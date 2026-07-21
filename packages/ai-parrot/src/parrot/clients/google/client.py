@@ -2057,7 +2057,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     "for this turn. Do NOT request any more tools. Using ONLY "
                     "the information already gathered from the tool outputs "
                     "above, write your final answer to the user's original "
-                    "question now. If what you gathered is not enough to fully "
+                    "question now. If your Python code already ASSIGNED the "
+                    "result to a variable, set data_variable (or data_variables) "
+                    "to that exact variable name — the system will attach the "
+                    "full DataFrame for you; do NOT re-print or inline the "
+                    "table. Only declare variables your executed code actually "
+                    "created. If what you gathered is not enough to fully "
                     "answer, say so explicitly and summarize what you did find."
                 )
                 current_response = await chat.send_message(synthesis_prompt, config=current_config)

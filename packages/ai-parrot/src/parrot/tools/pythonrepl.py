@@ -143,6 +143,12 @@ class PythonREPLTool(AbstractTool):
         "setattr",
         "vars",
     }
+    # NOTE: attribute blocking is name-based (no type info), so names that
+    # collide with core pandas / builtin idioms must NOT be listed here.
+    # ``rename`` / ``replace`` / ``remove`` were meant for os/pathlib file ops,
+    # but those modules are categorically un-importable in the sandbox anyway,
+    # while df.rename(), df.replace(), str.replace() and list.remove() are
+    # everyday data-analysis calls.
     BLOCKED_ATTRIBUTES: set = {
         "__class__",
         "__dict__",
@@ -165,9 +171,6 @@ class PythonREPLTool(AbstractTool):
         "popen",
         "read_bytes",
         "read_text",
-        "remove",
-        "rename",
-        "replace",
         "request",
         "resolve",
         "rglob",
