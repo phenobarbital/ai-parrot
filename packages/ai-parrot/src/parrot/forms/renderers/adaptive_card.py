@@ -9,6 +9,24 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from parrot.outputs.cards import (
+    ActionSubmit,
+    CardSpec,
+    Column,
+    ColumnSet,
+    Container,
+    DetailField,
+    DetailSection,
+    InputChoice,
+    RawElementsSection,
+    TextBlock,
+    render as render_card,
+)
+from parrot.outputs.cards.elements import ACElement
+from parrot.outputs.cards.sections import CardSection
+from parrot.outputs.cards.sections import FormSection as CardFormSection
+from parrot.outputs.cards.sections import FormFieldSpec
+
 from ..schema import FormField, FormSchema, FormSection, FormSubsection, RenderedForm
 from ..style import LayoutType, StyleSchema
 from ..types import FieldType, LocalizedString
@@ -39,31 +57,6 @@ def _resolve(value: LocalizedString | None, locale: str = "en") -> str:
     if "en" in value:
         return value["en"]
     return next(iter(value.values()), "")
-
-
-# Map new FieldType to Adaptive Card input element type
-_FIELD_TYPE_MAPPING: dict[FieldType, str] = {
-    FieldType.TEXT: "Input.Text",
-    FieldType.TEXT_AREA: "Input.Text",
-    FieldType.NUMBER: "Input.Number",
-    FieldType.INTEGER: "Input.Number",
-    FieldType.BOOLEAN: "Input.Toggle",
-    FieldType.DATE: "Input.Date",
-    FieldType.DATETIME: "Input.Date",
-    FieldType.TIME: "Input.Time",
-    FieldType.SELECT: "Input.ChoiceSet",
-    FieldType.MULTI_SELECT: "Input.ChoiceSet",
-    FieldType.EMAIL: "Input.Text",
-    FieldType.URL: "Input.Text",
-    FieldType.PHONE: "Input.Text",
-    FieldType.PASSWORD: "Input.Text",
-    FieldType.COLOR: "Input.Text",
-    FieldType.HIDDEN: "Input.Text",
-    FieldType.GROUP: None,
-    FieldType.ARRAY: None,
-    FieldType.FILE: None,
-    FieldType.IMAGE: None,
-}
 
 
 class AdaptiveCardRenderer(AbstractFormRenderer):
@@ -131,27 +124,33 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         prefilled = prefilled or {}
         errors = errors or {}
 
-        body: list[dict[str, Any]] = []
+        sections: list[CardSection] = []
 
         # Header
         title = _resolve(form.title, locale)
-        body.append(self._build_header(title))
+        sections.append(RawElementsSection(elements=[
+            TextBlock(text=title, weight="Bolder", size="Large"),
+        ]))
 
         # Form description if present
         if form.description:
-            body.append({
-                "type": "TextBlock",
-                "text": _resolve(form.description, locale),
-                "isSubtle": True,
-                "wrap": True,
-                "spacing": "Small",
-            })
+            sections.append(RawElementsSection(elements=[
+                TextBlock(
+                    text=_resolve(form.description, locale),
+                    is_subtle=True,
+                    spacing="Small",
+                ),
+            ]))
 
         # Render all sections
         for i, section in enumerate(form.sections):
             if i > 0:
-                body.append({"type": "TextBlock", "text": " ", "separator": True})
-            body.extend(self._build_section_body(section, prefilled, errors, locale))
+                sections.append(RawElementsSection(elements=[
+                    TextBlock(text=" ", separator=True),
+                ]))
+            sections.extend(
+                self._build_section_cards(section, prefilled, errors, locale)
+            )
 
         # Actions
         submit_label = _resolve(style.submit_label, locale) or "Submit"
@@ -162,7 +161,13 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             cancel_label=cancel_label,
         )
 
-        card = self._wrap_card(body, actions)
+        spec = CardSpec(
+            sections=sections,
+            actions=actions,
+            version=self.version,
+            schema_url=self.SCHEMA_URL,
+        )
+        card = render_card(spec)
         return RenderedForm(
             content=card,
             content_type=self.CONTENT_TYPE,
@@ -203,23 +208,31 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         total = len(form.sections)
         is_last = section_index == total - 1
 
-        body: list[dict[str, Any]] = []
+        sections: list[CardSection] = []
 
         # Form title header
         form_title = _resolve(form.title, locale)
-        body.append(self._build_header(form_title, size="Medium"))
+        sections.append(RawElementsSection(elements=[
+            TextBlock(text=form_title, weight="Bolder", size="Medium"),
+        ]))
 
         # Progress indicator for multi-section forms
         if total > 1:
-            section_title = _resolve(section.title, locale) if section.title else None
-            body.append(self._build_progress_indicator(
-                current=section_index + 1,
-                total=total,
-                section_title=section_title,
-            ))
+            section_title = (
+                _resolve(section.title, locale) if section.title else None
+            )
+            sections.append(RawElementsSection(elements=[
+                self._build_progress_indicator(
+                    current=section_index + 1,
+                    total=total,
+                    section_title=section_title,
+                ),
+            ]))
 
         # Section body
-        body.extend(self._build_section_body(section, prefilled, errors, locale))
+        sections.extend(
+            self._build_section_cards(section, prefilled, errors, locale)
+        )
 
         # Wizard actions
         cancel_label = _resolve(style.cancel_label, locale) or "Cancel"
@@ -232,7 +245,13 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             cancel_label=cancel_label,
         )
 
-        card = self._wrap_card(body, actions)
+        spec = CardSpec(
+            sections=sections,
+            actions=actions,
+            version=self.version,
+            schema_url=self.SCHEMA_URL,
+        )
+        card = render_card(spec)
         return RenderedForm(
             content=card,
             content_type=self.CONTENT_TYPE,
@@ -257,59 +276,74 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         Returns:
             RenderedForm with summary confirmation card.
         """
-        body: list[dict[str, Any]] = []
+        sections: list[CardSection] = []
 
-        body.append(self._build_header("Confirm Submission", size="Medium"))
+        sections.append(RawElementsSection(elements=[
+            TextBlock(text="Confirm Submission", weight="Bolder", size="Medium"),
+        ]))
         form_title = _resolve(form.title, locale)
-        body.append({
-            "type": "TextBlock",
-            "text": form_title,
-            "weight": "Bolder",
-            "size": "Large",
-            "wrap": True,
-        })
+        sections.append(RawElementsSection(elements=[
+            TextBlock(text=form_title, weight="Bolder", size="Large"),
+        ]))
 
         if summary_text:
-            body.append({
-                "type": "Container",
-                "style": "emphasis",
-                "items": [{"type": "TextBlock", "text": summary_text, "wrap": True}],
-                "spacing": "Medium",
-            })
+            sections.append(RawElementsSection(elements=[
+                Container(
+                    style="Emphasis",
+                    items=[TextBlock(text=summary_text)],
+                    spacing="Medium",
+                ),
+            ]))
 
-        # Data as FactSet per section
+        # Data as FactSet per section via DetailSection
         for section in form.sections:
-            facts = []
+            facts: list[DetailField] = []
             for field in section.iter_fields():
                 value = form_data.get(field.field_id)
                 if value is not None:
                     label = _resolve(field.label, locale)
-                    facts.append({
-                        "title": f"{label}:",
-                        "value": self._format_value(field, value, locale),
-                    })
+                    facts.append(DetailField(
+                        label=f"{label}:",
+                        value=self._format_value(field, value, locale),
+                    ))
             if facts:
                 section_title = _resolve(section.title, locale) or ""
                 if section_title:
-                    body.append({
-                        "type": "TextBlock",
-                        "text": section_title,
-                        "weight": "Bolder",
-                        "spacing": "Medium",
-                        "separator": True,
-                    })
-                body.append({"type": "FactSet", "facts": facts})
+                    sections.append(RawElementsSection(elements=[
+                        TextBlock(
+                            text=section_title,
+                            weight="Bolder",
+                            spacing="Medium",
+                            separator=True,
+                        ),
+                    ]))
+                sections.append(DetailSection(fields=facts))
 
         actions = [
-            {"type": "Action.Submit", "title": "Confirm", "style": "positive",
-             "data": {"_action": "confirm", **form_data}},
-            {"type": "Action.Submit", "title": "Edit",
-             "data": {"_action": "edit", **form_data}},
-            {"type": "Action.Submit", "title": "Cancel", "style": "destructive",
-             "data": {"_action": "cancel"}, "associatedInputs": "none"},
+            ActionSubmit(
+                title="Confirm",
+                style="positive",
+                data={"_action": "confirm", **form_data},
+            ),
+            ActionSubmit(
+                title="Edit",
+                data={"_action": "edit", **form_data},
+            ),
+            ActionSubmit(
+                title="Cancel",
+                style="destructive",
+                data={"_action": "cancel"},
+                associated_inputs="None",
+            ),
         ]
 
-        card = self._wrap_card(body, actions)
+        spec = CardSpec(
+            sections=sections,
+            actions=actions,
+            version=self.version,
+            schema_url=self.SCHEMA_URL,
+        )
+        card = render_card(spec)
         return RenderedForm(content=card, content_type=self.CONTENT_TYPE)
 
     async def render_error(
@@ -331,92 +365,48 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         Returns:
             RenderedForm with error card.
         """
-        body: list[dict[str, Any]] = [
-            {
-                "type": "TextBlock",
-                "text": f"Error: {title}",
-                "weight": "Bolder",
-                "size": "Medium",
-                "color": "Attention",
-            },
-            {
-                "type": "TextBlock",
-                "text": "Please correct the following:",
-                "wrap": True,
-            },
+        elements: list[ACElement] = [
+            TextBlock(
+                text=f"Error: {title}",
+                weight="Bolder",
+                size="Medium",
+                color="Attention",
+            ),
+            TextBlock(text="Please correct the following:"),
         ]
 
         for error in errors:
-            body.append({
-                "type": "TextBlock",
-                "text": f"- {error}",
-                "color": "Attention",
-                "wrap": True,
-            })
+            elements.append(TextBlock(
+                text=f"- {error}",
+                color="Attention",
+            ))
 
-        actions = []
+        actions: list[ActionSubmit] = []
         if retry_action:
-            actions.append({
-                "type": "Action.Submit",
-                "title": "Try Again",
-                "data": {"_action": "retry"},
-            })
+            actions.append(ActionSubmit(
+                title="Try Again",
+                data={"_action": "retry"},
+            ))
 
-        card = self._wrap_card(body, actions)
+        spec = CardSpec(
+            sections=[RawElementsSection(elements=elements)],
+            actions=actions,
+            version=self.version,
+            schema_url=self.SCHEMA_URL,
+        )
+        card = render_card(spec)
         return RenderedForm(content=card, content_type=self.CONTENT_TYPE)
 
     # =========================================================================
     # Internal builders
     # =========================================================================
 
-    def _wrap_card(
-        self,
-        body: list[dict[str, Any]],
-        actions: list[dict[str, Any]] | None = None,
-    ) -> dict[str, Any]:
-        """Wrap body and actions into an Adaptive Card structure.
-
-        Args:
-            body: Card body elements.
-            actions: Card action buttons.
-
-        Returns:
-            Complete Adaptive Card dict.
-        """
-        card: dict[str, Any] = {
-            "type": "AdaptiveCard",
-            "$schema": self.SCHEMA_URL,
-            "version": self.version,
-            "body": body,
-        }
-        if actions:
-            card["actions"] = actions
-        return card
-
-    def _build_header(self, text: str, size: str = "Large") -> dict[str, Any]:
-        """Build a header TextBlock element.
-
-        Args:
-            text: Header text.
-            size: Font size (Large, Medium, etc.).
-
-        Returns:
-            TextBlock dict.
-        """
-        return {
-            "type": "TextBlock",
-            "text": text,
-            "weight": "Bolder",
-            "size": size,
-            "wrap": True,
-        }
-
     def _build_progress_indicator(
         self,
         current: int,
         total: int,
         section_title: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> ColumnSet:
         """Build a wizard progress indicator ColumnSet.
 
         Args:
@@ -425,7 +415,7 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             section_title: Optional section title for the current step.
 
         Returns:
-            ColumnSet dict.
+            ColumnSet element.
         """
         indicators = []
         for i in range(1, total + 1):
@@ -441,34 +431,37 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         if section_title:
             step_text += f": {section_title}"
 
-        return {
-            "type": "ColumnSet",
-            "columns": [
-                {
-                    "type": "Column",
-                    "width": "auto",
-                    "items": [{"type": "TextBlock", "text": progress_text,
-                               "fontType": "Monospace", "size": "Small"}],
-                },
-                {
-                    "type": "Column",
-                    "width": "stretch",
-                    "items": [{"type": "TextBlock", "text": step_text,
-                               "size": "Small", "isSubtle": True,
-                               "horizontalAlignment": "Right"}],
-                },
+        return ColumnSet(
+            columns=[
+                Column(
+                    width="auto",
+                    items=[TextBlock(
+                        text=progress_text,
+                        font_type="Monospace",
+                        size="Small",
+                    )],
+                ),
+                Column(
+                    width="stretch",
+                    items=[TextBlock(
+                        text=step_text,
+                        size="Small",
+                        is_subtle=True,
+                        horizontal_alignment="Right",
+                    )],
+                ),
             ],
-            "spacing": "Small",
-        }
+            spacing="Small",
+        )
 
-    def _build_section_body(
+    def _build_section_cards(
         self,
         section: FormSection,
         prefilled: dict[str, Any],
         errors: dict[str, str],
         locale: str,
-    ) -> list[dict[str, Any]]:
-        """Build body elements for a form section.
+    ) -> list[CardSection]:
+        """Build card sections for a form section.
 
         Args:
             section: FormSection to render.
@@ -477,82 +470,94 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             locale: Locale for i18n.
 
         Returns:
-            List of Adaptive Card elements.
+            List of CardSection objects.
         """
-        elements: list[dict[str, Any]] = []
+        result: list[CardSection] = []
+        header_elements: list[ACElement] = []
 
         if section.title:
-            section_title = _resolve(section.title, locale)
-            elements.append({
-                "type": "TextBlock",
-                "text": section_title,
-                "weight": "Bolder",
-                "spacing": "Medium",
-            })
+            header_elements.append(TextBlock(
+                text=_resolve(section.title, locale),
+                weight="Bolder",
+                spacing="Medium",
+            ))
 
         if section.description:
-            elements.append({
-                "type": "TextBlock",
-                "text": _resolve(section.description, locale),
-                "isSubtle": True,
-                "wrap": True,
-                "spacing": "Small",
-            })
+            header_elements.append(TextBlock(
+                text=_resolve(section.description, locale),
+                is_subtle=True,
+                spacing="Small",
+            ))
+
+        if header_elements:
+            result.append(RawElementsSection(elements=header_elements))
 
         for item in section.fields:
             if isinstance(item, FormSubsection):
-                elements.extend(self._build_subsection(item, prefilled, errors, locale))
+                result.extend(
+                    self._build_subsection_cards(item, prefilled, errors, locale)
+                )
             else:
-                elements.extend(self._build_field(item, prefilled, errors, locale))
+                result.extend(
+                    self._build_field_cards(item, prefilled, errors, locale)
+                )
 
-        return elements
+        return result
 
-    def _build_subsection(
+    def _build_subsection_cards(
         self,
         subsection: FormSubsection,
         prefilled: dict[str, Any],
         errors: dict[str, str],
         locale: str,
-    ) -> list[dict[str, Any]]:
-        """Build Adaptive Card elements for a subsection container."""
-        items: list[dict[str, Any]] = []
+    ) -> list[CardSection]:
+        """Build card sections for a subsection container.
+
+        Args:
+            subsection: Subsection to render.
+            prefilled: Pre-filled values.
+            errors: Field error messages.
+            locale: Locale for i18n.
+
+        Returns:
+            List of CardSection objects.
+        """
+        result: list[CardSection] = []
+        header_elements: list[ACElement] = []
 
         if subsection.title:
-            items.append({
-                "type": "TextBlock",
-                "text": _resolve(subsection.title, locale),
-                "weight": "Bolder",
-                "size": "Default",
-                "spacing": "Medium",
-                "separator": True,
-            })
+            header_elements.append(TextBlock(
+                text=_resolve(subsection.title, locale),
+                weight="Bolder",
+                spacing="Medium",
+                separator=True,
+            ))
         if subsection.description:
-            items.append({
-                "type": "TextBlock",
-                "text": _resolve(subsection.description, locale),
-                "isSubtle": True,
-                "wrap": True,
-                "size": "Small",
-                "spacing": "None",
-            })
+            header_elements.append(TextBlock(
+                text=_resolve(subsection.description, locale),
+                is_subtle=True,
+                size="Small",
+                spacing="None",
+            ))
+
+        if header_elements:
+            result.append(RawElementsSection(elements=header_elements))
 
         for field in subsection.fields:
-            items.extend(self._build_field(field, prefilled, errors, locale))
+            result.extend(
+                self._build_field_cards(field, prefilled, errors, locale)
+            )
 
-        return [{
-            "type": "Container",
-            "items": items,
-            "spacing": "Medium",
-        }]
+        return result
 
-    def _build_field(
+    def _build_field_cards(
         self,
         field: FormField,
         prefilled: dict[str, Any],
         errors: dict[str, str],
         locale: str,
-    ) -> list[dict[str, Any]]:
-        """Build Adaptive Card elements for a single field.
+    ) -> list[CardSection]:
+        """Build card sections for a single form field.
 
         Args:
             field: FormField to render.
@@ -561,230 +566,130 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             locale: Locale for i18n.
 
         Returns:
-            List of elements (label, input, optional error).
+            List of CardSection objects (form field + optional error).
         """
-        elements: list[dict[str, Any]] = []
-        value = prefilled.get(field.field_id, field.default)
+        result: list[CardSection] = []
         error = errors.get(field.field_id)
 
-        # Label
-        label_text = _resolve(field.label, locale) or field.field_id.replace("_", " ").title()
-        if field.required:
-            label_text += " *"
+        if field.field_type == FieldType.GROUP and field.children:
+            # GROUP: recursively render children
+            for child in field.children:
+                result.extend(
+                    self._build_field_cards(child, prefilled, errors, locale)
+                )
+        else:
+            field_spec = self._build_field_spec(field, prefilled, locale)
+            if field_spec:
+                result.append(CardFormSection(fields=[field_spec]))
 
-        elements.append({
-            "type": "TextBlock",
-            "text": label_text,
-            "weight": "Bolder",
-            "size": "Default",
-            "spacing": "Medium",
-        })
-
-        # Description
-        if field.description:
-            elements.append({
-                "type": "TextBlock",
-                "text": _resolve(field.description, locale),
-                "isSubtle": True,
-                "size": "Small",
-                "wrap": True,
-                "spacing": "None",
-            })
-
-        # Input element
-        input_elem = self._build_input_element(field, value, locale)
-        if input_elem:
-            elements.append(input_elem)
-
-        # Error message
         if error:
-            elements.append({
-                "type": "TextBlock",
-                "text": f"Error: {error}",
-                "color": "Attention",
-                "size": "Small",
-                "spacing": "None",
-            })
+            result.append(RawElementsSection(elements=[
+                TextBlock(
+                    text=f"Error: {error}",
+                    color="Attention",
+                    size="Small",
+                    spacing="None",
+                ),
+            ]))
 
-        return elements
+        return result
 
-    def _build_input_element(
+    def _build_field_spec(
         self,
         field: FormField,
-        value: Any,
+        prefilled: dict[str, Any],
         locale: str,
-    ) -> dict[str, Any] | None:
-        """Build the Adaptive Card input element for a field.
+    ) -> FormFieldSpec | None:
+        """Build a FormFieldSpec from a FormField.
+
+        Maps the FormField's type, constraints, options, and prefilled value
+        into a shared-builder FormFieldSpec that the renderer can expand.
 
         Args:
             field: FormField definition.
-            value: Pre-filled value.
+            prefilled: Pre-filled values keyed by field_id.
             locale: Locale for i18n.
 
         Returns:
-            Adaptive Card input element dict, or None for unsupported types.
+            FormFieldSpec, or None for unsupported types.
         """
-        base: dict[str, Any] = {
-            "id": field.field_id,
-            "isRequired": field.required,
-        }
-
         ft = field.field_type
 
-        if ft in (FieldType.TEXT, FieldType.EMAIL, FieldType.URL, FieldType.PHONE,
-                  FieldType.COLOR, FieldType.HIDDEN, FieldType.PASSWORD):
-            elem: dict[str, Any] = {
-                **base,
-                "type": "Input.Text",
-                "placeholder": _resolve(field.placeholder, locale) if field.placeholder else "",
-                "value": str(value) if value is not None else "",
-            }
-            if ft == FieldType.EMAIL:
-                elem["style"] = "Email"
-            elif ft == FieldType.URL:
-                elem["style"] = "Url"
-            elif ft == FieldType.PASSWORD:
-                elem["style"] = "Password"
-            if field.constraints:
-                if field.constraints.max_length:
-                    elem["maxLength"] = field.constraints.max_length
-                if field.constraints.pattern:
-                    elem["regex"] = field.constraints.pattern
-            return elem
+        # Skip types with no input element mapping
+        if ft in (FieldType.ARRAY, FieldType.FILE, FieldType.IMAGE):
+            return None
 
-        elif ft == FieldType.TEXT_AREA:
-            return {
-                **base,
-                "type": "Input.Text",
-                "isMultiline": True,
-                "placeholder": _resolve(field.placeholder, locale) if field.placeholder else "",
-                "value": str(value) if value is not None else "",
-            }
+        value = prefilled.get(field.field_id, field.default)
 
-        elif ft in (FieldType.NUMBER, FieldType.INTEGER):
-            elem = {
-                **base,
-                "type": "Input.Number",
-                "placeholder": _resolve(field.placeholder, locale) if field.placeholder else "",
-            }
-            if value is not None:
-                elem["value"] = value
-            if field.constraints:
-                if field.constraints.min_value is not None:
-                    elem["min"] = field.constraints.min_value
-                if field.constraints.max_value is not None:
-                    elem["max"] = field.constraints.max_value
-            return elem
+        # Resolve label with required indicator
+        label_text = (
+            _resolve(field.label, locale)
+            or field.field_id.replace("_", " ").title()
+        )
+        if field.required:
+            label_text += " *"
 
-        elif ft == FieldType.BOOLEAN:
-            title = _resolve(field.description, locale) if field.description else _resolve(field.label, locale)
-            return {
-                **base,
-                "type": "Input.Toggle",
-                "title": title,
-                "value": "true" if value else "false",
-                "valueOn": "true",
-                "valueOff": "false",
-            }
+        field_type_str = ft.value  # e.g. "text", "text_area", "number"
 
-        elif ft == FieldType.DATE:
-            elem = {**base, "type": "Input.Date"}
-            if value:
-                elem["value"] = str(value)
-            return elem
+        # Build constraints dict from Pydantic model
+        constraints: dict[str, Any] | None = None
+        if field.constraints:
+            c: dict[str, Any] = {}
+            max_len = getattr(field.constraints, "max_length", None)
+            if max_len:
+                c["max_length"] = max_len
+            pattern = getattr(field.constraints, "pattern", None)
+            if pattern:
+                c["pattern"] = pattern
+            min_val = getattr(field.constraints, "min_value", None)
+            if min_val is not None:
+                c["min_value"] = min_val
+            max_val = getattr(field.constraints, "max_value", None)
+            if max_val is not None:
+                c["max_value"] = max_val
+            if c:
+                constraints = c
 
-        elif ft == FieldType.DATETIME:
-            elem = {**base, "type": "Input.Date"}
-            if value:
-                v = str(value)
-                elem["value"] = v.split("T")[0] if "T" in v else v
-            return elem
+        # Build options for choice types
+        options: list[InputChoice] | None = None
+        if ft in (FieldType.SELECT, FieldType.MULTI_SELECT) and field.options:
+            options = [
+                InputChoice(
+                    title=_resolve(opt.label, locale) or opt.value,
+                    value=opt.value,
+                )
+                for opt in field.options
+            ]
 
-        elif ft == FieldType.TIME:
-            elem = {**base, "type": "Input.Time"}
-            if value:
-                elem["value"] = str(value)
-            return elem
+        # Handle datetime → date value conversion
+        default = value
+        if ft == FieldType.DATETIME and value:
+            v = str(value)
+            default = v.split("T")[0] if "T" in v else v
 
-        elif ft == FieldType.SELECT:
-            choices = self._build_choices(field, locale)
-            elem = {
-                **base,
-                "type": "Input.ChoiceSet",
-                "style": "compact",
-                "choices": choices,
-            }
-            if value:
-                elem["value"] = str(value)
-            return elem
-
-        elif ft == FieldType.MULTI_SELECT:
-            choices = self._build_choices(field, locale)
-            elem = {
-                **base,
-                "type": "Input.ChoiceSet",
-                "isMultiSelect": True,
-                "style": "expanded",
-                "choices": choices,
-            }
-            if value:
-                if isinstance(value, list):
-                    elem["value"] = ",".join(str(v) for v in value)
-                else:
-                    elem["value"] = str(value)
-            return elem
-
-        # GROUP and ARRAY are rendered as sub-containers (simplified)
-        elif ft == FieldType.GROUP and field.children:
-            items: list[dict[str, Any]] = []
-            for child in field.children:
-                items.extend(self._build_field(child, {}, {}, locale))
-            return {
-                "type": "Container",
-                "items": items,
-                "spacing": "Small",
-            }
-
-        # Fallback for unsupported types
-        else:
-            logger.debug("No AC input element for field type %s, using text fallback", ft)
-            return {
-                **base,
-                "type": "Input.Text",
-                "placeholder": _resolve(field.placeholder, locale) if field.placeholder else "",
-                "value": str(value) if value is not None else "",
-            }
-
-    def _build_choices(
-        self,
-        field: FormField,
-        locale: str,
-    ) -> list[dict[str, str]]:
-        """Build choices array for Input.ChoiceSet.
-
-        Args:
-            field: FormField with options.
-            locale: Locale for i18n option labels.
-
-        Returns:
-            List of {title, value} dicts.
-        """
-        if not field.options:
-            return []
-        return [
-            {
-                "title": _resolve(opt.label, locale) or opt.value,
-                "value": opt.value,
-            }
-            for opt in field.options
-        ]
+        return FormFieldSpec(
+            field_id=field.field_id,
+            field_type=field_type_str,
+            label=label_text,
+            description=(
+                _resolve(field.description, locale) if field.description else None
+            ),
+            placeholder=(
+                _resolve(field.placeholder, locale) if field.placeholder else None
+            ),
+            required=field.required,
+            default=default,
+            options=options,
+            constraints=constraints,
+            is_multiline=ft == FieldType.TEXT_AREA,
+        )
 
     def _build_form_actions(
         self,
         show_cancel: bool = True,
         submit_label: str = "Submit",
         cancel_label: str = "Cancel",
-    ) -> list[dict[str, Any]]:
+    ) -> list[ActionSubmit]:
         """Build action buttons for a complete form.
 
         Args:
@@ -793,24 +698,22 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             cancel_label: Cancel button label.
 
         Returns:
-            List of Action.Submit dicts.
+            List of ActionSubmit instances.
         """
-        actions = [
-            {
-                "type": "Action.Submit",
-                "title": submit_label,
-                "style": "positive",
-                "data": {"_action": "submit"},
-            },
+        actions: list[ActionSubmit] = [
+            ActionSubmit(
+                title=submit_label,
+                style="positive",
+                data={"_action": "submit"},
+            ),
         ]
         if show_cancel:
-            actions.append({
-                "type": "Action.Submit",
-                "title": cancel_label,
-                "style": "destructive",
-                "data": {"_action": "cancel"},
-                "associatedInputs": "none",
-            })
+            actions.append(ActionSubmit(
+                title=cancel_label,
+                style="destructive",
+                data={"_action": "cancel"},
+                associated_inputs="None",
+            ))
         return actions
 
     def _build_wizard_actions(
@@ -821,7 +724,7 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         show_cancel: bool = True,
         show_skip: bool = False,
         cancel_label: str = "Cancel",
-    ) -> list[dict[str, Any]]:
+    ) -> list[ActionSubmit]:
         """Build action buttons for a wizard step.
 
         Args:
@@ -833,49 +736,44 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             cancel_label: Cancel button label.
 
         Returns:
-            List of Action.Submit dicts.
+            List of ActionSubmit instances.
         """
-        actions: list[dict[str, Any]] = []
+        actions: list[ActionSubmit] = []
 
         if not is_first and show_back:
-            actions.append({
-                "type": "Action.Submit",
-                "title": "Back",
-                "data": {"_action": "back"},
-                "associatedInputs": "none",
-            })
+            actions.append(ActionSubmit(
+                title="Back",
+                data={"_action": "back"},
+                associated_inputs="None",
+            ))
 
         if show_skip:
-            actions.append({
-                "type": "Action.Submit",
-                "title": "Skip",
-                "data": {"_action": "skip"},
-                "associatedInputs": "none",
-            })
+            actions.append(ActionSubmit(
+                title="Skip",
+                data={"_action": "skip"},
+                associated_inputs="None",
+            ))
 
         if show_cancel:
-            actions.append({
-                "type": "Action.Submit",
-                "title": cancel_label,
-                "style": "destructive",
-                "data": {"_action": "cancel"},
-                "associatedInputs": "none",
-            })
+            actions.append(ActionSubmit(
+                title=cancel_label,
+                style="destructive",
+                data={"_action": "cancel"},
+                associated_inputs="None",
+            ))
 
         if is_last:
-            actions.append({
-                "type": "Action.Submit",
-                "title": "Submit",
-                "style": "positive",
-                "data": {"_action": "submit"},
-            })
+            actions.append(ActionSubmit(
+                title="Submit",
+                style="positive",
+                data={"_action": "submit"},
+            ))
         else:
-            actions.append({
-                "type": "Action.Submit",
-                "title": "Next",
-                "style": "positive",
-                "data": {"_action": "next"},
-            })
+            actions.append(ActionSubmit(
+                title="Next",
+                style="positive",
+                data={"_action": "next"},
+            ))
 
         return actions
 
