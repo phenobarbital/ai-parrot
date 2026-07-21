@@ -1,7 +1,7 @@
 {
   "feature_id": "FEAT-322",
   "title": "Agent Host Protocol-style Session State & Multi-Agent Orchestration over dev-loop",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "mode": "enrichment",
   "wiki_available": true,
   "budget": {
@@ -33,10 +33,26 @@
   "base_branch": "dev",
   "started_at": "2026-07-21T00:00:00Z",
   "phases": {
-    "source": { "status": "complete" },
-    "plan": { "status": "complete", "approved_by_user": true },
-    "research": { "status": "complete", "findings_count": 8, "files_read": 9, "grep_calls": 4 },
-    "synthesis": { "status": "complete", "overall_confidence": "high", "claims_high": 10, "claims_medium": 3, "claims_low": 0 },
+    "source": {
+      "status": "complete"
+    },
+    "plan": {
+      "status": "complete",
+      "approved_by_user": true
+    },
+    "research": {
+      "status": "complete",
+      "findings_count": 8,
+      "files_read": 9,
+      "grep_calls": 4
+    },
+    "synthesis": {
+      "status": "complete",
+      "overall_confidence": "high",
+      "claims_high": 10,
+      "claims_medium": 3,
+      "claims_low": 0
+    },
     "qa": {
       "status": "complete",
       "questions_total": 3,
@@ -49,11 +65,12 @@
     },
     "output": {
       "status": "complete",
-      "proposal_path": "sdd/proposals/agent-host-protocol-session-state.proposal.md"
+      "proposal_path": "sdd/proposals/agent-host-protocol-session-state.proposal.md",
+      "commit_sha": "834c6c80c5092cbb91b5b3ee9e655740f9f2e2bc"
     }
   },
   "resume_hint": {
-    "next_phase": "commit",
-    "next_action": "Commit proposal + state, then recommend /sdd-spec FEAT-322"
+    "next_phase": "done",
+    "next_action": "Run /sdd-spec FEAT-322"
   }
 }
