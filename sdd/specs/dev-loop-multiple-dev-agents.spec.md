@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-323
 **Date**: 2026-07-21
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.0
 
 ---
@@ -642,3 +642,4 @@ class FlowStreamMultiplexer:
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-21 | Jesus Lara | Initial draft desde brainstorm (11 preguntas resueltas, 0 abiertas) |
+| 0.2 | 2026-07-22 | Jesus Lara | Status → approved |
