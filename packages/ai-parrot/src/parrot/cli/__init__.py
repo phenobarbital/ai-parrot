@@ -68,6 +68,7 @@ cli._lazy_commands = {
     "setup": "parrot.setup.cli",
     "conf": "parrot.install.conf",
     "install": "parrot.install.cli",
+    "wiki": "parrot.knowledge.wiki.cli",
     "mcp": "parrot.mcp.cli",
     "autonomous": "parrot.autonomous.cli",
     "agent": "parrot.cli.agent_repl",

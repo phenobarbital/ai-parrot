@@ -1134,3 +1134,31 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# --------------------------------------------------------------------------
+# Coding-agent integration commands (codex / claude / gemini)
+# --------------------------------------------------------------------------
+
+
+def _register_agent_command(name: str) -> None:
+    """Create a ``wiki <agent> install|hook`` subcommand dynamically."""
+    from parrot.knowledge.wiki import coding_agents
+
+    @wiki.command(name)
+    @click.option(
+        "--path",
+        type=click.Path(file_okay=False, path_type=Path),
+        default=Path.cwd,
+    )
+    @click.argument("action", type=click.Choice(["install", "hook"]))
+    def command(path: Path, action: str) -> None:
+        """Install wiki integration or run its lifecycle hook."""
+        if action == "hook":
+            raise click.exceptions.Exit(coding_agents.hook(name))
+        for item in coding_agents.install(name, path):
+            click.echo(f"  ✓ {item}")
+
+
+for _agent_name in ("codex", "claude", "gemini"):
+    _register_agent_command(_agent_name)
