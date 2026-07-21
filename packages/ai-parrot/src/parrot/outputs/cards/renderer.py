@@ -123,7 +123,7 @@ _FIELD_RENAMES: dict[str, str] = {
 _ALWAYS_EMIT_FIELDS = frozenset({
     "element_type", "text", "url", "id", "title", "facts",
     "columns", "rows", "items", "cells", "choices",
-    "wrap", "first_row_as_header",
+    "wrap", "first_row_as_header", "is_multi_select",
 })
 
 
@@ -481,14 +481,13 @@ def render(spec: CardSpec, *, max_card_bytes: int = 28_000) -> dict[str, Any]:
             toggle_counter += 1
 
         elements, actions = expander(section)
-        for element in elements:
+        for index, element in enumerate(elements):
             serialized = _serialize_element(element)
-            if section.separator and not body:
-                pass
-            elif section.separator:
-                serialized["separator"] = True
-            if section.spacing:
-                serialized["spacing"] = section.spacing
+            if index == 0:
+                if section.separator and body:
+                    serialized["separator"] = True
+                if section.spacing:
+                    serialized.setdefault("spacing", section.spacing)
             body.append(serialized)
         all_actions.extend(actions)
 

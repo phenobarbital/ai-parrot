@@ -178,6 +178,87 @@ class TestRenderFormSection:
         assert inputs[1]["type"] == "Input.Number"
 
 
+class TestRenderFormFieldTypes:
+    def test_boolean_toggle(self):
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.sections import FormFieldSpec, FormSection
+        from parrot.outputs.cards.spec import CardSpec
+        spec = CardSpec(sections=[FormSection(fields=[
+            FormFieldSpec(field_id="agree", field_type="boolean", label="Agree", description="I agree to terms"),
+        ])])
+        card = render(spec)
+        inputs = [e for e in card["body"] if e["type"] == "Input.Toggle"]
+        assert len(inputs) == 1
+        assert inputs[0]["id"] == "agree"
+
+    def test_date_input(self):
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.sections import FormFieldSpec, FormSection
+        from parrot.outputs.cards.spec import CardSpec
+        spec = CardSpec(sections=[FormSection(fields=[
+            FormFieldSpec(field_id="dob", field_type="date", label="Date of Birth"),
+        ])])
+        card = render(spec)
+        inputs = [e for e in card["body"] if e["type"] == "Input.Date"]
+        assert len(inputs) == 1
+
+    def test_time_input(self):
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.sections import FormFieldSpec, FormSection
+        from parrot.outputs.cards.spec import CardSpec
+        spec = CardSpec(sections=[FormSection(fields=[
+            FormFieldSpec(field_id="start", field_type="time", label="Start Time"),
+        ])])
+        card = render(spec)
+        inputs = [e for e in card["body"] if e["type"] == "Input.Time"]
+        assert len(inputs) == 1
+
+    def test_select_choiceset(self):
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.inputs import InputChoice
+        from parrot.outputs.cards.sections import FormFieldSpec, FormSection
+        from parrot.outputs.cards.spec import CardSpec
+        spec = CardSpec(sections=[FormSection(fields=[
+            FormFieldSpec(
+                field_id="role", field_type="select", label="Role",
+                options=[InputChoice(title="Admin", value="admin"),
+                         InputChoice(title="User", value="user")],
+            ),
+        ])])
+        card = render(spec)
+        inputs = [e for e in card["body"] if e["type"] == "Input.ChoiceSet"]
+        assert len(inputs) == 1
+        assert inputs[0]["isMultiSelect"] is False
+
+    def test_multi_select_choiceset(self):
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.inputs import InputChoice
+        from parrot.outputs.cards.sections import FormFieldSpec, FormSection
+        from parrot.outputs.cards.spec import CardSpec
+        spec = CardSpec(sections=[FormSection(fields=[
+            FormFieldSpec(
+                field_id="tags", field_type="multi_select", label="Tags",
+                options=[InputChoice(title="A", value="a")],
+            ),
+        ])])
+        card = render(spec)
+        inputs = [e for e in card["body"] if e["type"] == "Input.ChoiceSet"]
+        assert len(inputs) == 1
+        assert inputs[0]["isMultiSelect"] is True
+
+    def test_email_style(self):
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.sections import FormFieldSpec, FormSection
+        from parrot.outputs.cards.spec import CardSpec
+        spec = CardSpec(sections=[FormSection(fields=[
+            FormFieldSpec(field_id="email", field_type="email", label="Email"),
+        ])])
+        card = render(spec)
+        inputs = [e for e in card["body"] if e["type"] == "Input.Text"]
+        assert len(inputs) == 1
+        assert inputs[0]["style"] == "Email"
+
+
 class TestRenderToggleSection:
     def test_explicit_toggle(self):
         from parrot.outputs.cards.elements import TextBlock
