@@ -79,15 +79,30 @@ class IdentityMixin:
         for name, value in fields.as_kwargs().items():
             setattr(self, name, value)
 
+        # Capture the ORIGINAL caller's explicit `capabilities` kwarg (if
+        # any) before super().__init__() runs — PandasAgent.__init__
+        # declares its own `capabilities` named parameter and stores it as
+        # self._capabilities instead of self.capabilities (data.py:550,586),
+        # so by the time AbstractBot.__init__'s own
+        # `kwargs.get('capabilities') or getattr(self, 'capabilities', None)
+        # or DEFAULT` chain runs, the kwarg has already been stripped out of
+        # **kwargs — the explicit value would otherwise be silently lost for
+        # self.capabilities specifically (and therefore never reach
+        # CAPABILITIES_LAYER).
+        explicit_capabilities = kwargs.get("capabilities")
+
         super().__init__(*args, **kwargs)
 
-        # PandasAgent.__init__ swallows an explicit `capabilities` kwarg
-        # into self._capabilities instead of self.capabilities
-        # (data.py:550,586), bypassing AbstractBot's resolution chain for
-        # that one field. Re-apply the file value so
-        # _configure_prompt_builder's getattr(self, 'capabilities')
-        # (abstract.py:1213) reflects it.
-        if fields.capabilities:
+        # Re-apply the ORIGINAL explicit kwarg (never the file value) when
+        # one was given, so it wins over the file value on every base class
+        # — including PandasAgent, where it would otherwise never reach
+        # self.capabilities at all. Only fall back to the file value when no
+        # explicit kwarg was passed (this is a no-op on non-swallowing base
+        # classes, where AbstractBot.__init__ already resolved it via the
+        # pre-super instance attribute set above).
+        if explicit_capabilities:
+            self.capabilities = explicit_capabilities
+        elif fields.capabilities:
             self.capabilities = fields.capabilities
 
         # Snapshot the effective builder exactly as AbstractBot.__init__
@@ -274,7 +289,7 @@ class IdentityMixin:
             getattr(self, "enable_tools", False)
             and self.tool_manager.tool_count() > 0
         )
-        return {
+        context: Dict[str, Any] = {
             "name": self.name,
             "role": _resolve(getattr(self, "role", "")),
             "goal": _resolve(getattr(self, "goal", "")),
@@ -288,3 +303,22 @@ class IdentityMixin:
             "extra_rag_rules": _resolve(getattr(self, "extra_rag_rules", "")),
             **dynamic_context,
         }
+
+        # FEAT-181: when prompt_caching is on, AbstractBot.__init__ adds
+        # AGENT_CONTEXT_LAYER to the pristine builder (abstract.py:538-541)
+        # before this mixin ever ran, so it is present (and still
+        # CONFIGURE-phase, gated on this key) in every pristine clone.
+        # load_agent_context is a plain sync call (agent_context.py:57), so
+        # it is safe to include here — omitting it would let the layer's
+        # condition evaluate False on the first hot reload and silently gate
+        # the layer off for the remaining lifetime of this instance (a
+        # PromptLayer whose condition fails keeps its CONFIGURE phase,
+        # builder.py/layers.py partial_render, but a subsequent build()
+        # re-evaluates that same failing condition against REQUEST context,
+        # which never carries this key either).
+        if getattr(self, "_prompt_caching", False):
+            from ..prompts.agent_context import load_agent_context
+
+            context["agent_context_content"] = load_agent_context(self.name)
+
+        return context

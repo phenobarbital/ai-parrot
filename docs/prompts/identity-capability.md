@@ -119,15 +119,16 @@ explicit kwarg  >  file value  >  class attribute  >  package default
 was passed, while a kwarg still wins and a file value still beats a class
 attribute default.
 
-> **Known exception**: `PandasAgent.__init__` declares its own `capabilities`
-> parameter and stores it as `self._capabilities` instead of
-> `self.capabilities` (`data.py:550,586`), bypassing the usual kwarg
-> resolution for that one field on `PandasAgent`-derived agents. The mixin
-> re-applies the file value to `self.capabilities` after `super().__init__()`
-> so it still reaches the prompt builder — but this means an explicit
-> `capabilities=` kwarg on a `PandasAgent` subclass loses to a file value.
-> This is a pre-existing quirk of `PandasAgent`, not something introduced by
-> the identity capability.
+> **`PandasAgent` note**: `PandasAgent.__init__` declares its own
+> `capabilities` parameter and stores it as `self._capabilities` instead of
+> `self.capabilities` (`data.py:550,586`), which would otherwise bypass the
+> usual kwarg resolution for that one field on `PandasAgent`-derived agents.
+> `IdentityMixin` captures the caller's original `capabilities=` kwarg
+> *before* `super().__init__()` runs (i.e. before `PandasAgent`'s signature
+> can swallow it) and re-applies that exact value to `self.capabilities`
+> afterwards — so an explicit kwarg still wins over a file value on
+> `PandasAgent` subclasses too, restoring the same precedence as every other
+> field.
 
 ---
 

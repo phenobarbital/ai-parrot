@@ -94,6 +94,41 @@ class TestFieldInjection:
         # Non-overridden fields still come from the file.
         assert agent.goal == "answer questions"
 
+    def test_kwarg_wins_over_file_all_fields(self, identity_dir):
+        # Regression: capabilities previously lost to the file value even
+        # when an explicit kwarg was given (code-review Critical #1).
+        Agent = make_agent_class(identity_dir)
+        overrides = {
+            "role": "kwarg role",
+            "goal": "kwarg goal",
+            "capabilities": "kwarg capabilities",
+            "backstory": "kwarg backstory",
+            "rationale": "kwarg rationale",
+        }
+        agent = Agent(prompt_preset="default", **overrides)
+        for field, value in overrides.items():
+            assert getattr(agent, field) == value
+
+    def test_capabilities_kwarg_wins_despite_pandasagent_style_swallow(self, identity_dir):
+        # PandasAgent.__init__ declares its own `capabilities` parameter and
+        # stores it as self._capabilities instead of self.capabilities
+        # (data.py:550,586), bypassing AbstractBot's normal kwarg
+        # resolution for that one field. Reproduce the swallow here and
+        # confirm the mixin still makes the explicit kwarg win.
+        class SwallowingBase(FakeBase):
+            def __init__(self, *args, capabilities=None, **kwargs):
+                self._capabilities = capabilities
+                super().__init__(*args, **kwargs)
+
+        Agent = type(
+            "PandasLikeAgent",
+            (IdentityMixin, SwallowingBase),
+            {"enable_identity": True, "identity_dir": identity_dir},
+        )
+        agent = Agent(prompt_preset="default", capabilities="explicit kwarg capabilities")
+        assert agent.capabilities == "explicit kwarg capabilities"
+        assert agent._capabilities == "explicit kwarg capabilities"
+
     def test_file_beats_class_attribute(self, identity_dir):
         Agent = make_agent_class(identity_dir, role_class_attr="class-level default")
         agent = Agent(prompt_preset="default")
@@ -156,6 +191,42 @@ class TestHotReload:
 
         agent._build_prompt()
         assert agent._prompt_builder.get("skill_active") is not None
+
+    @pytest.mark.asyncio
+    async def test_hot_reload_preserves_agent_context_layer(self, identity_dir, tmp_path, monkeypatch):
+        # Regression: the sync hot-reload context omitted
+        # "agent_context_content", so a prompt_caching=True agent's
+        # AGENT_CONTEXT_LAYER would silently and permanently stop rendering
+        # after the first hot reload (code-review Important #2).
+        import os
+
+        import parrot.bots.prompts.agent_context as agent_context_module
+        from parrot.bots.prompts.agent_context import AGENT_CONTEXT_LAYER
+
+        monkeypatch.setattr(agent_context_module, "AGENT_CONTEXT_DIR", tmp_path)
+        (tmp_path / "TestBot.md").write_text("AGENT CONTEXT BODY", encoding="utf-8")
+
+        Agent = make_agent_class(identity_dir)
+        builder = PromptBuilder.default().add(AGENT_CONTEXT_LAYER)
+        agent = Agent(prompt_builder=builder)
+        agent._prompt_caching = True
+        await agent._configure_identity()
+
+        def _text(result):
+            if isinstance(result, list):
+                return "\n\n".join(seg.text for seg in result)
+            return result
+
+        first = _text(agent._build_prompt())
+        assert "AGENT CONTEXT BODY" in first
+
+        f = identity_dir / "backstory.md"
+        f.write_text("updated backstory for context-layer test", encoding="utf-8")
+        os.utime(f, (f.stat().st_atime, f.stat().st_mtime + 5))
+
+        second = _text(agent._build_prompt())
+        assert "AGENT CONTEXT BODY" in second
+        assert "updated backstory for context-layer test" in second
 
     @pytest.mark.asyncio
     async def test_dynamic_values_resolve(self, identity_dir):

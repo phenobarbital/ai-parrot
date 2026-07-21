@@ -81,8 +81,8 @@ def load_identity(
         file_path = directory / f"{name}.md"
         try:
             raw = read_text_cached(file_path)
-        except Exception as exc:  # noqa: BLE001 - mirror load_agent_context silence
-            _logger.debug("Could not read identity file %s: %s", file_path, exc)
+        except Exception as exc:  # noqa: BLE001 - decode/permission errors, not "missing"
+            _logger.warning("Could not read identity file %s: %s", file_path, exc)
             raw = ""
         content = raw.strip()
         if not content:
