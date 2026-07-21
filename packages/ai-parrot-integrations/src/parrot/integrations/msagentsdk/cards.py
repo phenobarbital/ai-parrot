@@ -14,7 +14,6 @@ bridge's job (``agent.py``, TASK-1753).
 """
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from parrot.integrations.msagentsdk.semantic import (
@@ -40,7 +39,6 @@ from parrot.outputs.cards import (
 )
 from parrot.outputs.cards import CardRenderError  # noqa: F401 — re-export
 from parrot.outputs.cards import render as _card_render
-from parrot.outputs.cards import render_text as _card_render_text
 
 
 class _DefaultFormatDict(dict):
