@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-322
 **Date**: 2026-07-21
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Proposal**: `sdd/proposals/agent-host-protocol-session-state.proposal.md`
 **Brainstorm**: `sdd/proposals/dev-loop-session-state-hitl.brainstorm.md` (Option B ⭐)
@@ -772,12 +772,14 @@ No new runtime dependencies.
 
 ### Unresolved
 
-- [ ] Should a run in `awaiting_gate` release its `FLOW_MAX_CONCURRENT_RUNS`
-  semaphore slot? — *Owner: Jesus*. v1 answer assumed by this spec: **no**
-  (keep semaphore semantics, rely on TTLs + `pending_gate_count`
-  visibility). Releasing the slot requires checkpoint/resume of `run_flow`
-  — a separate feature if ever needed. Decide before layering long-TTL
-  blocking manual criteria onto high-throughput deployments.
+- [x] Should a run in `awaiting_gate` release its `FLOW_MAX_CONCURRENT_RUNS`
+  semaphore slot? — *Resolved (Jesus, 2026-07-21)*: **no** for this version —
+  keep semaphore semantics, rely on TTLs + `pending_gate_count` visibility.
+  Releasing the slot requires checkpoint/resume of `run_flow` — a separate
+  feature if ever needed (revisit before layering long-TTL blocking manual
+  criteria onto high-throughput deployments).
+
+(none remaining)
 
 ---
 
@@ -801,3 +803,4 @@ No new runtime dependencies.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-21 | Jesus Lara (with Claude) | Initial draft from FEAT-322 proposal + dev-loop-session-state-hitl brainstorm (Option B) |
+| 1.0 | 2026-07-21 | Jesus Lara | Resolved final open question (awaiting_gate keeps semaphore slot); status → approved |
