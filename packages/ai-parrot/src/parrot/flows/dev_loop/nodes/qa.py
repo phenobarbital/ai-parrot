@@ -19,6 +19,7 @@ The node returns the report regardless of ``passed`` — the flow factory
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
@@ -130,6 +131,14 @@ class QANode(DevLoopNode):
             c for c in brief.acceptance_criteria
             if isinstance(c, ManualCriterion)
         ]
+        # FEAT-322: per-criterion opt-in HITL gating. Default ``blocking=False``
+        # preserves today's behavior byte-identically via
+        # ``_merge_manual_results`` below; only ``blocking=True`` criteria open
+        # a gate and await resolution before this method returns.
+        blocking_manual: List[ManualCriterion] = [c for c in manual if c.blocking]
+        non_blocking_manual: List[ManualCriterion] = [
+            c for c in manual if not c.blocking
+        ]
         executable: List[AcceptanceCriterion] = [
             c for c in brief.acceptance_criteria
             if not isinstance(c, ManualCriterion)
@@ -163,11 +172,17 @@ class QANode(DevLoopNode):
             )
             deterministic_passed = report.passed
 
-        if manual:
-            report = self._merge_manual_results(report, manual)
+        if non_blocking_manual:
+            report = self._merge_manual_results(report, non_blocking_manual)
+
+        blocking_passed = True
+        if blocking_manual:
+            report, blocking_passed = await self._resolve_blocking_manual_criteria(
+                shared, blocking_manual, report
+            )
 
         update: Dict[str, Any] = {
-            "passed": deterministic_passed and cr_passed,
+            "passed": deterministic_passed and cr_passed and blocking_passed,
             "code_review_passed": cr_passed,
             "code_review_findings": cr_findings,
         }
@@ -333,6 +348,99 @@ class QANode(DevLoopNode):
                 "notes": new_notes,
             }
         )
+
+    async def _resolve_blocking_manual_criteria(
+        self,
+        shared: Dict[str, Any],
+        blocking: List[ManualCriterion],
+        report: QAReport,
+    ) -> tuple[QAReport, bool]:
+        """Open one HITL gate per blocking criterion and await all resolutions.
+
+        FEAT-322 (dev-loop-approval-gates, spec §3 M5). Folds one
+        ``CriterionResult`` per criterion into ``report`` before this method
+        returns (CEL routes on ``result.passed``, so gate resolution MUST
+        complete inside ``execute``). Multiple gates are opened first, then
+        awaited concurrently — one human can review several criteria in any
+        order.
+
+        No-host fallback (legacy ``DevLoopRunner`` construction, no AHP
+        host seeded): logs a WARNING and degrades to the same
+        ``passed=True`` synthesis as non-blocking criteria — a legacy run
+        must never deadlock waiting for a gate that can never resolve.
+
+        Args:
+            shared: The run's shared state (``shared["session_host"]``).
+            blocking: The ``blocking=True`` manual criteria to gate.
+            report: The report to fold the gate outcomes into.
+
+        Returns:
+            A ``(report, all_passed)`` tuple — ``all_passed`` is ``False``
+            if any gate resolved ``rejected``/``expired``.
+        """
+        host = shared.get("session_host")
+        if host is None:
+            self.logger.warning(
+                "QANode: %d blocking manual criteria requested but no "
+                "session_host in shared state (legacy DevLoopRunner "
+                "construction) — falling back to non-blocking synthesis.",
+                len(blocking),
+            )
+            return self._merge_manual_results(report, blocking), True
+
+        # Lazy import — avoids a runner.py <-> factories.py <-> qa.py import
+        # cycle (runner.py imports factories.py, which imports this module).
+        from parrot.flows.dev_loop.runner import gate_ttl_for
+
+        ttl_seconds = gate_ttl_for("manual_criterion")
+        opened: List[tuple] = []
+        for criterion in blocking:
+            gate_id, _ = host.open_gate(
+                kind="manual_criterion",
+                node_id="qa",
+                title=criterion.name,
+                instructions=criterion.text,
+                ttl_seconds=ttl_seconds,
+                on_expiry="fail",
+            )
+            opened.append((criterion, gate_id))
+
+        resolved_gates = await asyncio.gather(
+            *[host.wait_gate(gate_id) for _, gate_id in opened]
+        )
+
+        synthesized: List[CriterionResult] = []
+        audit_lines: List[str] = []
+        all_passed = True
+        for (criterion, _gate_id), gate in zip(opened, resolved_gates):
+            passed = gate.status == "approved"
+            all_passed = all_passed and passed
+            synthesized.append(CriterionResult(
+                name=criterion.name,
+                kind="manual",
+                exit_code=0 if passed else 1,
+                duration_seconds=0.0,
+                stdout_tail="",
+                stderr_tail="",
+                passed=passed,
+            ))
+            audit_lines.append(
+                f"{criterion.name}: {gate.status} by "
+                f"{gate.resolved_by or 'system'} — {gate.comment}"
+            )
+
+        merged_results = list(report.criterion_results) + synthesized
+        existing_notes = report.notes or ""
+        sep = "\n\n" if existing_notes else ""
+        audit_block = "\n".join(audit_lines)
+        new_notes = (
+            f"{existing_notes}{sep}Blocking manual criteria (HITL):\n{audit_block}"
+        )
+        report = report.model_copy(update={
+            "criterion_results": merged_results,
+            "notes": new_notes,
+        })
+        return report, all_passed
 
 
 __all__ = ["QANode"]
