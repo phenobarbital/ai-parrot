@@ -206,10 +206,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: Implemented `DevAgentBackend`, `DevAgentSpec`, `DevAgentPoolConfig`,
+`WorkerSummary`, `TaskScopedBrief` in `models.py`, plus back-compat-safe
+`WorkBrief.dev_agents`/`dev_isolation` and `DevelopmentOutput.incomplete_tasks`/
+`worker_summaries` (all with defaults). Exported the new names from
+`parrot/flows/dev_loop/__init__.py`. Added
+`packages/ai-parrot/tests/flows/dev_loop/test_pool_models.py` (13 new tests);
+`tests/flows/__init__.py` and `tests/flows/dev_loop/__init__.py` already existed
+so no new package files were needed there. Full existing
+`packages/ai-parrot/tests/flows/dev_loop/test_models.py` +
+`test_models_feat250.py` + new suite (45 tests) pass; `ruff check` clean.
+Note: had to `uv pip install navigator-eventbus` (missing after a recent
+`dev` sync) and copy two pre-built Cython `.so` artifacts
+(`parrot/utils/types.*.so`, `parrot/utils/parsers/toml.*.so`, both
+gitignored build outputs with identical `.pyx` sources to the main repo)
+into the worktree to get the dev_loop test suite importable — pre-existing
+environment issue, unrelated to this task's scope, not committed (gitignored).
+Also confirmed 4 pre-existing failures in `test_server_repo_wiring.py` /
+`test_webhook.py` (full-suite ordering pollution) are present identically
+with and without this task's changes (verified via `git stash`).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: None.

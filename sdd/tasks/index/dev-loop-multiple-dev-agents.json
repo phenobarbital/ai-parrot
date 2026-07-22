@@ -14,7 +14,7 @@
       "feature_id": "FEAT-323",
       "feature": "dev-loop-multiple-dev-agents",
       "spec": "sdd/specs/dev-loop-multiple-dev-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Base de todos los demás módulos; edita models.py compartido.",
       "assigned_to": null,
       "started_at": "2026-07-21T23:56:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1857-pool-config-models.md"
+      "completed_at": "2026-07-22T00:04:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1857-pool-config-models.md"
     },
     {
       "id": "TASK-1858",
