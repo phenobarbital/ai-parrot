@@ -151,10 +151,34 @@ class TestOpenAICompatIntegration:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-07-23
 **Notes**:
+- Added `BotManager._register_openai_compat_routes(router)` mirroring the
+  exact `_register_fullmode_avatar_routes` pattern (defensive `ImportError`
+  guard, warning log on failure), and wired it into `setup()` right after
+  `self._register_fullmode_avatar_routes(router)`.
+- Integration test drives the real `openai` Python SDK against a real
+  aiohttp test server (`aiohttp_client` fixture — genuine TCP socket, not
+  mocked). Because LiveAvatar's Custom LLM posts directly to the minted
+  per-session URL (`/v1/chat/completions/{session_id}`), which the SDK's
+  high-level `chat.completions.create()` cannot target (it always appends
+  a fixed `/chat/completions` suffix to `base_url`), the test uses the
+  SDK's low-level `client.post(path, ..., stream_cls=AsyncStream[...])`
+  escape hatch instead — this exercises the actual SDK SSE decoder against
+  our endpoint, which is what makes it a genuine wire-format conformance
+  check rather than a re-implementation of our own parsing.
+- `openai` is already present in the dev venv (2.41.0) but is not declared
+  as a project dependency; the test uses `pytest.importorskip("openai")`
+  per the task's test spec so the suite skips gracefully wherever the
+  optional SDK isn't installed.
+- Verified no regressions: ran the full `ai-parrot-server` test suite
+  (`--continue-on-collection-errors` to skip two pre-existing
+  `fakeredis`-missing collection errors, unrelated to this feature). 4
+  pre-existing failures (host-handlers stub-file check + 3 A2A vertical
+  broker tests) reproduce identically on a clean stash of this branch —
+  confirmed unrelated to FEAT-247. 551 passed, only the two known-missing
+  `fakeredis` modules blocked collection (also pre-existing).
+- `ruff check` clean on `manager.py` and the test file.
 
 **Deviations from spec**: none
