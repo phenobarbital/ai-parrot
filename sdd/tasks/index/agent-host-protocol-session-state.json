@@ -32,7 +32,7 @@
       "feature_id": "FEAT-322",
       "feature": "agent-host-protocol-session-state",
       "spec": "sdd/specs/agent-host-protocol-session-state.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Same file as TASK-1848 (session_state.py).",
       "assigned_to": null,
       "started_at": "2026-07-21T23:57:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1849-session-host-arbitration-shims.md"
+      "completed_at": "2026-07-22T00:11:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1849-session-host-arbitration-shims.md"
     },
     {
       "id": "TASK-1850",
