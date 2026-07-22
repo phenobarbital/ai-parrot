@@ -1,12 +1,17 @@
-"""Basic unit tests for the session-state core (FEAT-322 TASK-1848).
+"""Basic unit tests for the session-state core (FEAT-322 TASK-1848/1849).
 
 Covers construction, one ``reduce()`` step per action type, the root
-reducer, and envelope round-tripping. The hypothesis property suite
-(fold invariant, totality, arbitration, expiry, shim mappings) lives in
-``test_session_state_properties.py`` (TASK-1850).
+reducer, envelope round-tripping, the ``SessionHost`` (sequencing, gate
+arbitration, expiry, ``wait_gate``) and the migration shims. The
+hypothesis property suite (fold invariant, totality, arbitration, expiry,
+shim mappings) lives in ``test_session_state_properties.py`` (TASK-1850).
 """
 
 from __future__ import annotations
+
+import asyncio
+
+import pytest
 
 from parrot.flows.dev_loop.session_state import (
     ActionEnvelope,
@@ -21,7 +26,9 @@ from parrot.flows.dev_loop.session_state import (
     DispatchStarted,
     DispatchToolResult,
     DispatchToolUse,
+    GateAlreadyResolvedError,
     GateExpired,
+    GateNotFoundError,
     GateOpened,
     GateResolved,
     JiraLinked,
@@ -38,7 +45,10 @@ from parrot.flows.dev_loop.session_state import (
     RunRemoved,
     RunSummary,
     RunSummaryChanged,
+    SessionHost,
     Snapshot,
+    action_from_dispatch_event,
+    action_from_flow_event,
     changeset_channel,
     reduce,
     reduce_root,
@@ -325,3 +335,248 @@ def test_snapshot_round_trip():
     restored = Snapshot.model_validate(dumped)
     assert restored.state.run_id == RUN_ID
     assert restored.from_seq == 0
+
+
+# ---------------------------------------------------------------------------
+# SessionHost — sequencing, snapshot/replay (FEAT-322 TASK-1849)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def host() -> SessionHost:
+    return SessionHost(RUN_ID)
+
+
+def test_host_apply_sequences_monotonic_from_1(host: SessionHost):
+    e1 = host.apply(RunCreated(run_id=RUN_ID))
+    e2 = host.apply(NodeStarted(node_id="qa"))
+    assert e1.server_seq == 1
+    assert e2.server_seq == 2
+    assert host.state.phase == "running"
+
+
+def test_host_replay_since_filters_by_seq(host: SessionHost):
+    host.apply(RunCreated(run_id=RUN_ID))
+    host.apply(NodeStarted(node_id="qa"))
+    host.apply(NodeCompleted(node_id="qa"))
+    replayed = host.replay_since(1)
+    assert [e.server_seq for e in replayed] == [2, 3]
+    assert host.replay_since(0)[0].server_seq == 1
+    assert host.replay_since(3) == []
+
+
+def test_host_snapshot_reflects_current_seq(host: SessionHost):
+    host.apply(RunCreated(run_id=RUN_ID))
+    host.apply(NodeStarted(node_id="qa"))
+    snap = host.snapshot()
+    assert snap.from_seq == 2
+    assert snap.state.nodes["qa"].status == "running"
+    assert snap.channel == session_channel(RUN_ID)
+
+
+def test_host_apply_with_origin_round_trips():
+    host = SessionHost(RUN_ID)
+    origin = ActionOrigin(client_id="ui-1", client_seq=1)
+    envelope = host.apply(RunCreated(run_id=RUN_ID), origin=origin)
+    assert envelope.origin == origin
+
+
+def test_host_on_envelope_sink_invoked():
+    seen = []
+    host = SessionHost(RUN_ID, on_envelope=seen.append)
+    host.apply(RunCreated(run_id=RUN_ID))
+    assert len(seen) == 1
+    assert seen[0].server_seq == 1
+
+
+def test_on_envelope_sink_exception_swallowed():
+    def boom(_envelope):
+        raise RuntimeError("redis is down")
+
+    host = SessionHost(RUN_ID, on_envelope=boom)
+    # apply() must not raise even though the sink blows up — the in-memory
+    # fold must still succeed (never-break-a-run).
+    envelope = host.apply(RunCreated(run_id=RUN_ID))
+    assert envelope.server_seq == 1
+    assert host.state.phase == "running"
+
+
+# ---------------------------------------------------------------------------
+# SessionHost — gate arbitration (first-writer-wins)
+# ---------------------------------------------------------------------------
+
+
+def test_open_gate_returns_id_and_envelope(host: SessionHost):
+    gate_id, envelope = host.open_gate(
+        kind="manual_criterion", node_id="qa", title="Review this"
+    )
+    assert gate_id in host.state.gates
+    assert host.state.gates[gate_id].status == "pending"
+    assert envelope.action.type == "gate/opened"
+    assert host.state.phase == "awaiting_gate"
+
+
+def test_first_writer_wins_second_raises(host: SessionHost):
+    gate_id, _ = host.open_gate(kind="manual_criterion", node_id="qa", title="x")
+    host.resolve_gate(gate_id, "approved", resolved_by="alice")
+    with pytest.raises(GateAlreadyResolvedError, match="alice"):
+        host.resolve_gate(gate_id, "rejected", resolved_by="bob")
+    # Exactly one gate/resolved envelope in the log.
+    resolved_envelopes = [
+        e for e in host.replay_since(0) if e.action.type == "gate/resolved"
+    ]
+    assert len(resolved_envelopes) == 1
+    assert host.state.gates[gate_id].resolved_by == "alice"
+
+
+def test_resolve_gate_unknown_raises_not_found(host: SessionHost):
+    with pytest.raises(GateNotFoundError):
+        host.resolve_gate("missing", "approved", resolved_by="alice")
+
+
+# ---------------------------------------------------------------------------
+# SessionHost — expiry sweep
+# ---------------------------------------------------------------------------
+
+
+def test_expiry_fail_closed_emits_gate_expired(host: SessionHost):
+    gate_id, _ = host.open_gate(
+        kind="deployment_approval", node_id="deployment_handoff", title="x",
+        ttl_seconds=10, on_expiry="fail",
+    )
+    envelopes = host.expire_due_gates(now=host.state.gates[gate_id].opened_at + 20)
+    assert len(envelopes) == 1
+    assert envelopes[0].action.type == "gate/expired"
+    assert host.state.gates[gate_id].status == "expired"
+
+
+def test_expiry_fail_open_auto_approve_audited(host: SessionHost):
+    gate_id, _ = host.open_gate(
+        kind="plan_approval", node_id="research", title="x",
+        ttl_seconds=10, on_expiry="approve",
+    )
+    envelopes = host.expire_due_gates(now=host.state.gates[gate_id].opened_at + 20)
+    assert len(envelopes) == 1
+    assert envelopes[0].action.type == "gate/resolved"
+    gate = host.state.gates[gate_id]
+    assert gate.status == "approved"
+    assert gate.resolved_by == "system:ttl-auto-approve"
+
+
+def test_expiry_sweep_ignores_gates_without_ttl(host: SessionHost):
+    gate_id, _ = host.open_gate(kind="manual_criterion", node_id="qa", title="x")
+    envelopes = host.expire_due_gates(now=host.state.gates[gate_id].opened_at + 1_000_000)
+    assert envelopes == []
+    assert host.state.gates[gate_id].status == "pending"
+
+
+def test_expiry_sweep_ignores_gates_not_yet_due(host: SessionHost):
+    gate_id, _ = host.open_gate(
+        kind="manual_criterion", node_id="qa", title="x", ttl_seconds=10_000,
+    )
+    envelopes = host.expire_due_gates(now=host.state.gates[gate_id].opened_at + 1)
+    assert envelopes == []
+    assert host.state.gates[gate_id].status == "pending"
+
+
+# ---------------------------------------------------------------------------
+# SessionHost — wait_gate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_wait_gate_already_resolved_returns_immediately(host: SessionHost):
+    gate_id, _ = host.open_gate(kind="manual_criterion", node_id="qa", title="x")
+    host.resolve_gate(gate_id, "approved", resolved_by="alice")
+    gate = await asyncio.wait_for(host.wait_gate(gate_id), timeout=1)
+    assert gate.status == "approved"
+
+
+@pytest.mark.asyncio
+async def test_wait_gate_await_then_resolve(host: SessionHost):
+    gate_id, _ = host.open_gate(kind="manual_criterion", node_id="qa", title="x")
+
+    async def resolver():
+        await asyncio.sleep(0.01)
+        host.resolve_gate(gate_id, "rejected", resolved_by="bob")
+
+    waiter = asyncio.ensure_future(host.wait_gate(gate_id))
+    resolve_task = asyncio.ensure_future(resolver())
+    gate = await asyncio.wait_for(waiter, timeout=1)
+    await resolve_task
+    assert gate.status == "rejected"
+    assert gate.resolved_by == "bob"
+
+
+@pytest.mark.asyncio
+async def test_wait_gate_resolves_on_expiry(host: SessionHost):
+    gate_id, _ = host.open_gate(
+        kind="plan_approval", node_id="research", title="x",
+        ttl_seconds=10, on_expiry="approve",
+    )
+
+    async def expirer():
+        await asyncio.sleep(0.01)
+        host.expire_due_gates(now=host.state.gates[gate_id].opened_at + 20)
+
+    waiter = asyncio.ensure_future(host.wait_gate(gate_id))
+    expire_task = asyncio.ensure_future(expirer())
+    gate = await asyncio.wait_for(waiter, timeout=1)
+    await expire_task
+    assert gate.status == "approved"
+
+
+@pytest.mark.asyncio
+async def test_wait_gate_unknown_raises_not_found(host: SessionHost):
+    with pytest.raises(GateNotFoundError):
+        await host.wait_gate("missing")
+
+
+# ---------------------------------------------------------------------------
+# Migration shims
+# ---------------------------------------------------------------------------
+
+
+def test_shim_flow_event_mappings():
+    assert action_from_flow_event("node_started", "qa", 1.0).type == "node/started"
+    assert action_from_flow_event("node_completed", "qa", 1.0).type == "node/completed"
+    failed = action_from_flow_event("node_failed", "qa", 1.0, error="boom")
+    assert failed.type == "node/failed"
+    assert failed.error == "boom"
+    assert action_from_flow_event("node_skipped", "qa", 1.0).type == "node/skipped"
+
+
+def test_shim_flow_event_unknown_returns_none():
+    assert action_from_flow_event("something_else", "qa", 1.0) is None
+
+
+def test_shim_flow_event_error_truncated_to_500_chars():
+    long_error = "x" * 1000
+    action = action_from_flow_event("node_failed", "qa", 1.0, error=long_error)
+    assert len(action.error) == 500
+
+
+def test_shim_dispatch_event_mappings():
+    assert action_from_dispatch_event("dispatch.queued", "development", 1.0,
+                                       {"dispatcher": "claude-code"}).dispatcher == "claude-code"
+    assert action_from_dispatch_event("dispatch.started", "development", 1.0).type == "dispatch/started"
+    assert action_from_dispatch_event("dispatch.message", "development", 1.0).type == "dispatch/delta"
+    tool_use = action_from_dispatch_event("dispatch.tool_use", "development", 1.0, {"tool_name": "Read"})
+    assert tool_use.tool_name == "Read"
+    assert action_from_dispatch_event("dispatch.tool_result", "development", 1.0).type == "dispatch/tool_result"
+    invalid = action_from_dispatch_event("dispatch.output_invalid", "qa", 1.0, {"error": "bad"})
+    assert invalid.error == "bad"
+    failed = action_from_dispatch_event("dispatch.failed", "qa", 1.0, {"error": "crash"})
+    assert failed.error == "crash"
+    assert action_from_dispatch_event("dispatch.completed", "qa", 1.0).type == "dispatch/completed"
+
+
+def test_shim_dispatch_event_unknown_returns_none():
+    assert action_from_dispatch_event("dispatch.something_else", "qa", 1.0) is None
+
+
+def test_shim_dispatch_event_error_truncated_to_500_chars():
+    action = action_from_dispatch_event(
+        "dispatch.failed", "qa", 1.0, {"error": "x" * 1000}
+    )
+    assert len(action.error) == 500

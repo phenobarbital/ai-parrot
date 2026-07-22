@@ -59,8 +59,19 @@ Root channel (``parrot-root://``): a lightweight run catalogue —
 
 from __future__ import annotations
 
+import asyncio
 import time
-from typing import Annotated, Dict, Literal, Optional, Union
+import uuid
+from typing import (
+    Annotated,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    Union,
+)
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -694,6 +705,320 @@ def reduce_root(state: RunRegistryState, action: RootAction) -> RunRegistryState
     return state  # forward-compat: unknown action → no-op
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Host-side sequencing + gate arbitration (the AHP "mutex")
+# ─────────────────────────────────────────────────────────────────────
+
+
+class SessionHost:
+    """Minimal authoritative host for one session channel.
+
+    Responsibilities (per AHP): hold the state tree, validate commands,
+    sequence accepted actions with ``server_seq``, retain the envelope log
+    for replay, and let gate-opening nodes ``await`` a gate's resolution.
+    Transport (WS/REST) and persistence (Redis XADD of the envelope) plug
+    in via ``on_envelope`` — this class stays pure-ish and NEVER imports
+    redis/aiohttp itself.
+
+    NOT thread-safe by design: one host per run, driven from the runner's
+    event loop (single-writer). Multi-client writes arrive as commands and
+    are serialised here — that's the whole point.
+    """
+
+    def __init__(
+        self,
+        run_id: str,
+        *,
+        on_envelope: Optional[Callable[[ActionEnvelope], None]] = None,
+    ) -> None:
+        """Initialize a fresh host for ``run_id``.
+
+        Args:
+            run_id: The run this host is authoritative for.
+            on_envelope: Optional sink invoked with every accepted
+                :class:`ActionEnvelope` (e.g. XADD to
+                ``flow:{run_id}:actions``). Exceptions raised by the sink
+                are swallowed — the new-path publish must never break a
+                run.
+        """
+        self._state = DevLoopSessionState(
+            run_id=run_id, channel=session_channel(run_id)
+        )
+        self._seq = 0
+        self._log: List[ActionEnvelope] = []
+        self._on_envelope = on_envelope
+        self._gate_events: Dict[str, asyncio.Event] = {}
+
+    # -- read side ----------------------------------------------------
+
+    @property
+    def state(self) -> DevLoopSessionState:
+        """The current, authoritative session state."""
+        return self._state
+
+    def snapshot(self) -> Snapshot:
+        """Return a :class:`Snapshot` of the current state and seq."""
+        return Snapshot(channel=self._state.channel,
+                        state=self._state, from_seq=self._seq)
+
+    def replay_since(self, last_seen_server_seq: int) -> List[ActionEnvelope]:
+        """Return all envelopes with ``server_seq > last_seen_server_seq``."""
+        return [e for e in self._log if e.server_seq > last_seen_server_seq]
+
+    # -- write side ---------------------------------------------------
+
+    def apply(
+        self,
+        action: DevLoopAction,
+        origin: Optional[ActionOrigin] = None,
+    ) -> ActionEnvelope:
+        """Sequence + fold one action. Trusted-producer path (the flow).
+
+        Args:
+            action: The action to sequence and fold.
+            origin: Optional multi-client attribution for this action.
+
+        Returns:
+            The sequenced :class:`ActionEnvelope`.
+        """
+        self._seq += 1
+        envelope = ActionEnvelope(
+            channel=self._state.channel, server_seq=self._seq, action=action,
+            origin=origin,
+        )
+        self._state = reduce(self._state, action)
+        self._log.append(envelope)
+        self._signal_gate_waiters(action)
+        if self._on_envelope is not None:
+            try:
+                self._on_envelope(envelope)
+            except Exception:  # noqa: BLE001 — never break a run
+                pass
+        return envelope
+
+    def _signal_gate_waiters(self, action: DevLoopAction) -> None:
+        """Wake any ``wait_gate`` coroutine when a gate reaches a final state."""
+        if action.type in ("gate/resolved", "gate/expired"):
+            event = self._gate_events.get(action.gate_id)
+            if event is not None:
+                event.set()
+
+    def resolve_gate(
+        self,
+        gate_id: str,
+        resolution: Literal["approved", "rejected"],
+        resolved_by: str,
+        comment: str = "",
+    ) -> ActionEnvelope:
+        """Client command path — validated BEFORE sequencing.
+
+        First writer wins; later attempts raise and never become actions.
+        This is the arbitration AHP describes for tool-call confirmation,
+        applied to deployment/QA gates.
+
+        Args:
+            gate_id: The gate to resolve.
+            resolution: ``"approved"`` or ``"rejected"``.
+            resolved_by: Identity of the resolving client/user.
+            comment: Optional free-text audit comment.
+
+        Returns:
+            The sequenced :class:`ActionEnvelope` for the resolution.
+
+        Raises:
+            GateNotFoundError: ``gate_id`` does not exist.
+            GateAlreadyResolvedError: the gate is no longer ``"pending"``.
+        """
+        gate = self._state.gates.get(gate_id)
+        if gate is None:
+            raise GateNotFoundError(gate_id)
+        if gate.status != "pending":
+            raise GateAlreadyResolvedError(
+                f"gate {gate_id} already {gate.status} "
+                f"by {gate.resolved_by or 'system'}"
+            )
+        return self.apply(GateResolved(
+            gate_id=gate_id, resolution=resolution,
+            resolved_by=resolved_by, comment=comment,
+        ))
+
+    def open_gate(
+        self,
+        *,
+        kind: GateKind,
+        node_id: NodeId,
+        title: str,
+        instructions: str = "",
+        payload_ref: str = "",
+        ttl_seconds: Optional[int] = None,
+        on_expiry: Literal["fail", "approve"] = "fail",
+    ) -> Tuple[str, ActionEnvelope]:
+        """Open a new gate (convenience for QA/DeploymentHandoff nodes).
+
+        Args:
+            kind: The gate kind (``manual_criterion``, ``deployment_approval``,
+                ``revision_approval``, ``plan_approval``).
+            node_id: The node opening the gate.
+            title: Short human-readable title.
+            instructions: Longer instructions/context for the approver.
+            payload_ref: Changeset/terminal URI carrying supporting evidence.
+            ttl_seconds: Optional per-gate TTL override.
+            on_expiry: ``"fail"`` (fail-closed) or ``"approve"`` (fail-open).
+
+        Returns:
+            A ``(gate_id, envelope)`` tuple.
+        """
+        now = time.time()
+        gate = ApprovalGate(
+            gate_id=uuid.uuid4().hex,
+            kind=kind, node_id=node_id, title=title,
+            instructions=instructions, payload_ref=payload_ref,
+            opened_at=now,
+            expires_at=(now + ttl_seconds) if ttl_seconds else None,
+            on_expiry=on_expiry,
+        )
+        return gate.gate_id, self.apply(GateOpened(gate=gate))
+
+    def expire_due_gates(self, now: Optional[float] = None
+                         ) -> List[ActionEnvelope]:
+        """Expiry sweep — call periodically from the runner's loop.
+
+        For each pending gate past its ``expires_at``, applies the gate's
+        ``on_expiry`` policy: ``"fail"`` → ``GateExpired`` (fail-closed;
+        the flow routes to failure/escalation); ``"approve"`` →
+        ``GateResolved`` by ``system:ttl-auto-approve`` (fail-open; audited
+        in-state exactly like a human resolution). Reducer stays untouched.
+
+        Args:
+            now: Optional override for the current time (testing).
+
+        Returns:
+            The list of envelopes emitted by this sweep pass.
+        """
+        now = time.time() if now is None else now
+        out: List[ActionEnvelope] = []
+        for gate in list(self._state.gates.values()):
+            if gate.status != "pending" or gate.expires_at is None:
+                continue
+            if now < gate.expires_at:
+                continue
+            if gate.on_expiry == "approve":
+                out.append(self.apply(GateResolved(
+                    gate_id=gate.gate_id, resolution="approved",
+                    resolved_by="system:ttl-auto-approve",
+                    comment="TTL expired; fail-open policy.",
+                )))
+            else:
+                out.append(self.apply(GateExpired(gate_id=gate.gate_id)))
+        return out
+
+    async def wait_gate(self, gate_id: str) -> ApprovalGate:
+        """Await a gate's resolution (approved/rejected/expired).
+
+        Works regardless of ordering: if the gate is already resolved when
+        called, returns immediately; otherwise awaits the internal
+        ``asyncio.Event`` set by :meth:`apply` when a matching
+        ``gate/resolved``/``gate/expired`` action folds.
+
+        Args:
+            gate_id: The gate to wait on.
+
+        Returns:
+            The final :class:`ApprovalGate` (status != ``"pending"``).
+
+        Raises:
+            GateNotFoundError: ``gate_id`` does not exist in state.
+        """
+        gate = self._state.gates.get(gate_id)
+        if gate is None:
+            raise GateNotFoundError(gate_id)
+        if gate.status != "pending":
+            return gate
+        event = self._gate_events.setdefault(gate_id, asyncio.Event())
+        await event.wait()
+        self._gate_events.pop(gate_id, None)
+        return self._state.gates[gate_id]
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Adapters from the current ad-hoc events (migration shims, Fase 1)
+# ─────────────────────────────────────────────────────────────────────
+
+_FLOW_EVENT_MAP: Dict[str, str] = {
+    "node_started": "node/started",
+    "node_completed": "node/completed",
+    "node_failed": "node/failed",
+    "node_skipped": "node/skipped",
+}
+
+_DISPATCH_KIND_MAP: Dict[str, type] = {
+    "dispatch.queued": DispatchQueued,
+    "dispatch.started": DispatchStarted,
+    "dispatch.message": DispatchDelta,
+    "dispatch.tool_use": DispatchToolUse,
+    "dispatch.tool_result": DispatchToolResult,
+    "dispatch.output_invalid": DispatchOutputInvalid,
+    "dispatch.failed": DispatchFailed,
+    "dispatch.completed": DispatchCompleted,
+}
+
+
+def action_from_flow_event(event: str, node_id: str, ts: float,
+                           error: str = "") -> Optional[DevLoopAction]:
+    """Map a ``FlowEventPublisher`` event to a :data:`DevLoopAction`.
+
+    Args:
+        event: The flow event name (e.g. ``"node_started"``, unprefixed —
+            callers strip the ``"flow."`` prefix before calling this shim).
+        node_id: The node the event concerns.
+        ts: Event timestamp (POSIX seconds).
+        error: Optional error string (only used for ``node_failed``).
+
+    Returns:
+        The mapped action, or ``None`` if ``event`` is not recognised
+        (forward-compat: unknown events are ignored, never raise).
+    """
+    mapped = _FLOW_EVENT_MAP.get(event)
+    if mapped is None:
+        return None
+    if mapped == "node/started":
+        return NodeStarted(node_id=node_id, ts=ts)  # type: ignore[arg-type]
+    if mapped == "node/completed":
+        return NodeCompleted(node_id=node_id, ts=ts)  # type: ignore[arg-type]
+    if mapped == "node/failed":
+        return NodeFailed(node_id=node_id, ts=ts, error=error[:500])  # type: ignore[arg-type]
+    return NodeSkipped(node_id=node_id, ts=ts)  # type: ignore[arg-type]
+
+
+def action_from_dispatch_event(kind: str, node_id: str, ts: float,
+                               payload: Optional[dict] = None
+                               ) -> Optional[DevLoopAction]:
+    """Map a ``DispatchEvent.kind`` to a :data:`DevLoopAction`.
+
+    Args:
+        kind: The dispatch event kind (e.g. ``"dispatch.queued"``).
+        node_id: The node hosting the dispatch.
+        ts: Event timestamp (POSIX seconds).
+        payload: Optional raw payload dict; only display-ready fields are
+            extracted (lazy-loading rule — heavy content stays by-reference).
+
+    Returns:
+        The mapped action, or ``None`` if ``kind`` is not recognised.
+    """
+    cls = _DISPATCH_KIND_MAP.get(kind)
+    if cls is None:
+        return None
+    payload = payload or {}
+    kwargs: dict = {"node_id": node_id, "ts": ts}
+    if cls in (DispatchOutputInvalid, DispatchFailed):
+        kwargs["error"] = str(payload.get("error", ""))[:500]
+    if cls is DispatchToolUse:
+        kwargs["tool_name"] = str(payload.get("tool_name", ""))
+    if cls is DispatchQueued:
+        kwargs["dispatcher"] = str(payload.get("dispatcher", ""))
+    return cls(**kwargs)  # type: ignore[return-value]
+
+
 __all__ = [
     "ActionEnvelope",
     "ActionOrigin",
@@ -737,7 +1062,10 @@ __all__ = [
     "RunRemoved",
     "RunSummary",
     "RunSummaryChanged",
+    "SessionHost",
     "Snapshot",
+    "action_from_dispatch_event",
+    "action_from_flow_event",
     "changeset_channel",
     "reduce",
     "reduce_root",
