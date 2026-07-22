@@ -134,7 +134,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -142,8 +142,8 @@
       "parallelism_notes": "Touches ONLY ai-parrot-visualizations and depends only on the existing FEAT-273 renderer contract — no file/import overlap with core tasks; safe in a separate worktree.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1871-interactive-html-renderer.md"
+      "completed_at": "2026-07-22T01:31:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1871-interactive-html-renderer.md"
     },
     {
       "id": "TASK-1872",
