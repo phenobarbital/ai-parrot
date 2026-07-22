@@ -135,10 +135,24 @@ async def test_start_returns_custom_llm_url():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-07-23
 **Notes**:
+- Added `custom_llm_url` to the `/full/start` JSON response exactly per the
+  spec pattern (`{base}/v1/chat/completions/{session_id}?agent={agent_id}`).
+- Implemented the "consider env var override" note as
+  `OPENAI_COMPAT_BASE_URL`: when set, it wins over `request.scheme`/`.host`
+  for the base URL (covers reverse-proxy deployments where the public URL
+  differs from the internal request host). Falls back to
+  `{request.scheme}://{request.host}` when unset.
+- Existing response fields (`session_id`, `livekit_url`,
+  `livekit_client_token`) unchanged — verified all 25 pre-existing tests in
+  `test_avatar_fullmode.py` still pass, plus 3 new tests for the
+  `custom_llm_url` field (happy path, existing-fields-unchanged, base-URL
+  override). 28/28 passing.
+- `ruff check` clean on the diff. Noted one **pre-existing** unrelated lint
+  finding (`F841` unused `exc` in `close_all_fullmode_sessions`, line ~498)
+  that predates this task and is out of scope — left untouched per the
+  no-scope-creep rule.
 
 **Deviations from spec**: none
