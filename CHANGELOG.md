@@ -5,6 +5,32 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased] — FEAT-319: EventBus Consolidation
+
+### Changed
+
+- **navigator-eventbus pinned to `>=0.1.0,<0.2`** (was a git commit hash).
+  The published 0.1.0 release includes envelope `schema_version` support and
+  tri-state `route_to_bus` on `HookManager`.
+
+### Behavior Change
+
+- **`HookManager.route_to_bus` auto-routing**: `navigator-eventbus>=0.1.0`
+  changes `route_to_bus` to auto-enable when a bus is attached via
+  `set_event_bus`. Any deployment that previously called `set_event_bus` and
+  relied on the implicit `route_to_bus=False` default will now route hooks
+  traffic to the bus. Pass `route_to_bus=False` explicitly to restore the old
+  behavior. This is currently latent in ai-parrot (zero `route_to_bus` call
+  sites).
+
+### Added
+
+- `test_no_internal_bus_copy` migration guard — asserts the deleted
+  `parrot/core/events/bus/` directory stays deleted and no `parrot.*` module
+  defines `BusCore`.
+
+---
+
 ## [Unreleased] — FEAT-202: ai-parrot-integrations
 
 ### Breaking Changes

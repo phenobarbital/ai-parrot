@@ -88,7 +88,7 @@ def _ui_action_to_ac_action(action: UIAction) -> ActionOpenUrl | ActionSubmit:
 def _semantic_to_card_spec(
     result: SemanticUIResult,
     *,
-    max_table_rows: int = 15,
+    max_table_rows: int = 50,
 ) -> CardSpec:
     """Map a :class:`SemanticUIResult` to a :class:`CardSpec`.
 
@@ -163,7 +163,7 @@ def _semantic_to_card_spec(
 def render_card(
     result: SemanticUIResult,
     *,
-    max_table_rows: int = 15,
+    max_table_rows: int = 50,
     max_card_bytes: int = 25_000,
 ) -> dict:
     """Render a `SemanticUIResult` as Adaptive Card 1.5 JSON.
@@ -277,7 +277,7 @@ def render_data_card(
     columns: list[str],
     rows: list[list],
     *,
-    max_table_rows: int = 15,
+    max_table_rows: int = 50,
 ) -> dict:
     """Build an Adaptive Card with an explanation block and a data table.
 

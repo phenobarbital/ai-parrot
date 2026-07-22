@@ -104,7 +104,7 @@ dependencies = [
     # Episodic memory default backend (FAISS) — required whenever an agent
     # enables episodic memory without an explicit pgvector DSN.
     "faiss-cpu>=1.9.0",
-    "navigator-eventbus>=0.1.0",
+    "navigator-eventbus>=0.1.0,<0.2",
 ]
 
 [project.scripts]

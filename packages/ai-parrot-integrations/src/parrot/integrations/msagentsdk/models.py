@@ -90,7 +90,7 @@ class MSAgentSDKConfig:
     oauth_connections: Dict[str, str] = field(default_factory=dict)
     obo_scopes: Dict[str, List[str]] = field(default_factory=dict)
     enable_semantic_cards: bool = True
-    max_table_rows: int = 15
+    max_table_rows: int = 50
     max_card_bytes: int = 25_000
 
     def __post_init__(self) -> None:
