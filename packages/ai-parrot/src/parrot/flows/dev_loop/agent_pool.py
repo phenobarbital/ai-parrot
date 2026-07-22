@@ -11,13 +11,14 @@ see ``FlowStreamMultiplexer``), retries a failed task exactly once on a
 See ``sdd/specs/dev-loop-multiple-dev-agents.spec.md`` §2 "New Public
 Interfaces" and §3 "Module 4" for the authoritative design.
 
-NOTE: imports go through the ``parrot.flows.dev_loop`` package (not the
-``.dispatcher``/``.models`` submodules directly) for the same class-identity
-reason documented in ``agent_builder.py`` — importing a submodule of this
-package always executes ``__init__.py`` first, so there is no cost saved by
-bypassing the package re-exports, and doing so risks a stale class object
-after aggressive ``sys.modules`` surgery elsewhere in the test suite (see
-``test_lazy_import.py``).
+NOTE: unlike ``agent_builder.py``, this module imports directly from the
+``.dispatcher``/``.models`` submodules rather than the ``parrot.flows.dev_loop``
+package. ``agent_pool`` is imported transitively by
+``nodes/development.py`` (reached via the package's own
+``__init__.py -> flow.py -> factories.py -> nodes/development.py`` chain),
+so importing the *package* here — while it is still mid-initialization —
+would raise ``ImportError: cannot import name ... from partially
+initialized module``. Submodule-direct imports avoid that cycle.
 """
 
 from __future__ import annotations
@@ -29,13 +30,15 @@ from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel
 
-from parrot.flows.dev_loop import (
-    DevAgentPoolConfig,
-    DevAgentSpec,
-    DevelopmentOutput,
+from parrot.flows.dev_loop.dispatcher import (
     DevLoopCodeDispatcher,
     DispatchExecutionError,
     DispatchOutputValidationError,
+)
+from parrot.flows.dev_loop.models import (
+    DevAgentPoolConfig,
+    DevAgentSpec,
+    DevelopmentOutput,
     ResearchOutput,
     TaskScopedBrief,
     WorkerSummary,
