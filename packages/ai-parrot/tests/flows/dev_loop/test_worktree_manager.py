@@ -130,6 +130,12 @@ class TestMerge:
         report = await manager.merge_sequential(resolver=resolver)
 
         assert len(calls) == 1
+        # Regression (FEAT-323 TASK-1864 found this): the resolver must
+        # receive `base_worktree` — where `git merge` actually ran and the
+        # conflict markers/`git status` live — NOT the failed worker's own
+        # sub-worktree (`w1_path`), which never has any conflict state.
+        assert calls[0][0] == str(base_worktree.resolve())
+        assert calls[0][0] != w1_path
         assert report.conflicts_resolved == [f"{feature_branch}--development-w1"]
         assert report.kept_for_inspection == []
 

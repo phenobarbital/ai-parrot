@@ -188,9 +188,12 @@ class SubWorktreeManager:
         Args:
             resolver: Optional ``(worktree_path, conflict_description) ->
                 bool`` async callable. On a merge conflict it is invoked
-                with the conflicted sub-worktree path and a human-readable
-                description; it is expected to fix + commit the merge
-                in-place and return ``True`` on success.
+                with ``base_worktree`` (where ``git merge`` actually ran and
+                the conflict markers/``git status`` live — NOT the failed
+                worker's own sub-worktree, which has no conflict state of
+                its own) and a human-readable description; it is expected
+                to fix + commit the merge in-place and return ``True`` on
+                success.
 
         Returns:
             A :class:`MergeReport` summarising the run.
@@ -234,7 +237,7 @@ class SubWorktreeManager:
             )
 
             if resolver is not None:
-                resolved = await resolver(path, conflict_desc)
+                resolved = await resolver(self.base_worktree, conflict_desc)
                 if resolved:
                     conflicts_resolved.append(branch)
                     merged.append(branch)

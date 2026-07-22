@@ -333,18 +333,22 @@ class DevelopmentNode(DevLoopNode):
     ) -> bool:
         """Merge-conflict resolver policy: first pool worker, claude-code fallback.
 
-        Dispatches the first worker of the pool into the conflicted
-        sub-worktree (a ``TaskScopedBrief`` wrapping the shared research
-        output, mirroring how every other pool dispatch is briefed — the
-        resolver is expected to inspect ``git status``, resolve the
-        conflict markers, and commit, exactly like the merge-conflict
-        resolver dispatch described in the spec). If that dispatch raises
-        and the first worker is not already ``claude-code``, retries once
-        with a dedicated claude-code dispatcher built via
-        ``dispatcher_builder``.
+        Dispatches the first worker of the pool into ``path`` (the base
+        worktree passed by ``SubWorktreeManager.merge_sequential`` — where
+        the actual conflict markers / ``git status`` live, NOT any
+        sub-worktree) with a ``TaskScopedBrief`` wrapping the shared
+        research output, mirroring how every other pool dispatch is
+        briefed — the resolver is expected to inspect ``git status``,
+        resolve the conflict markers, and commit, exactly like the
+        merge-conflict resolver dispatch described in the spec. If that
+        dispatch raises and the first worker is not already
+        ``claude-code``, retries once with a dedicated claude-code
+        dispatcher built via ``dispatcher_builder``.
 
         Args:
-            path: The conflicted sub-worktree path.
+            path: The base worktree path where the conflict occurred (see
+                ``SubWorktreeManager.merge_sequential``'s ``resolver``
+                contract).
             description: Human-readable conflict description (unused
                 directly here — the resolver agent discovers the conflict
                 via ``git status`` in ``path``; kept for logging).
