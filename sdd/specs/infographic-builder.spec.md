@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-324
 **Date**: 2026-07-22
 **Author**: Jesus Lara (decisions) + Claude (research/synthesis)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.27.0
 **Brainstorm**: `sdd/proposals/infographic-builder.brainstorm.md` (authoritative input; all 7 open questions resolved there and carried forward)
 
