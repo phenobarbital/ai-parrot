@@ -1,0 +1,171 @@
+# budget-variance-daily.yaml — canonical FEAT-324 example recipe.
+#
+# Reproduces the reference `sdd/artifacts/budget_variance_dashboard_Template.html`
+# dashboard end-to-end through Modules 1-8: a KPI row, an actual-vs-budget
+# chart, and a "key drivers" ledger table, fed entirely by registered
+# transformers over a `DatasetManager` dataset — no hand-written HTML, no
+# LLM in the replay loop (spec G1/G3).
+#
+# Load + validate this file with:
+#   from parrot.outputs.a2ui.recipes import InfographicRecipe
+#   recipe = InfographicRecipe.from_yaml(open("budget-variance-daily.yaml").read())
+#
+# See packages/ai-parrot/tests/integration/infographic_recipes/test_e2e.py
+# for the full load -> dry_run -> run walkthrough, and
+# docs/outputs/infographic-recipes.md for the annotated line-by-line guide.
+
+schema_version: 1
+name: budget-variance-daily
+title: "Daily Budget Variance"
+description: >
+  Daily in-month revenue/EBITDA projections vs budget, replacing the legacy
+  daily_report.py Task Scheduler + Outlook flow (see docs/outputs/infographic-recipes.md
+  Migration Story). Replays deterministically with fresh data every day.
+owner: null  # unscoped/shared recipe; FileRecipeStore/DBRecipeStore scope by owner when saved per-user
+
+# Declared params, resolved at run time via {param} substitution + the five
+# built-in relative-date resolvers (parrot.outputs.a2ui.recipes.params).
+# NOTE: this example's data source is an in-memory/dev dataset (see the
+# fixtures in the e2e test) that does not itself filter by month — `month`
+# is declared here to demonstrate the params contract; a production recipe
+# against a real SQL/table source would template it into `sql`/`conditions`
+# below.
+params:
+  - name: month
+    default: current_month
+    description: "Month to report on (YYYY-MM). Defaults to the current calendar month."
+
+# Two aliases for the SAME registered dataset: `snapshots` feeds the
+# finance-domain transformers (day_totals/division_breakdown/
+# variance_analysis/top_movers, which all expect an input keyed
+# "snapshots"); `df` feeds groupby_aggregate (which expects an input keyed
+# "df"). Both resolve to the same underlying `in_month_projections` dataset.
+data_sources:
+  - dataset: in_month_projections
+    alias: snapshots
+    force_refresh: true
+  - dataset: in_month_projections
+    alias: df
+    force_refresh: true
+
+# Transform chain — every value in the layout below traces to one of these
+# registered @infographic_transformer calls (spec G1: never stored code).
+transforms:
+  # Per-snapshot totals. Keys are dynamic (per-snapshot date strings), so the
+  # LAYOUT does not $bind into this directly (see variance_analysis for the
+  # stable-key equivalent) — it is still produced so callers/contract
+  # inspection (infographic_get_recipe_contract) can see per-day totals.
+  - transformer: day_totals
+    inputs: [snapshots]
+    params:
+      snapshot_col: snapshot
+    output_key: day_totals
+
+  # Per-division rollup for the LATEST snapshot — available in the
+  # dataModel for contract/API consumers; not directly bound below (see
+  # top_movers for the flat, DataTable-friendly equivalent).
+  - transformer: division_breakdown
+    inputs: [snapshots]
+    params:
+      snapshot_col: snapshot
+    output_key: division_breakdown
+
+  # First-vs-latest comparison with STABLE keys (first_totals/last_totals) —
+  # what the KPI row binds to, since day_totals' per-snapshot keys change
+  # daily and are unsuitable for a fixed layout binding.
+  - transformer: variance_analysis
+    inputs: [snapshots]
+    params:
+      snapshot_col: snapshot
+    output_key: variance_analysis
+
+  # Worst/best EBITDA-variance projects at the latest snapshot — feeds the
+  # "Key Drivers" ledger table (flat rows, DataTable-compatible).
+  - transformer: top_movers
+    inputs: [snapshots]
+    params:
+      snapshot_col: snapshot
+      n: 5
+    output_key: top_movers
+
+  # Generic groupby (existing Module 3 transformer) reshapes the combined
+  # multi-day frame into per-day revenue totals — a flat rows array the
+  # Chart component can bind directly (day_totals' dict-of-dicts shape is
+  # not directly chartable).
+  - transformer: groupby_aggregate
+    inputs: [df]
+    params:
+      by: [snapshot]
+      aggs:
+        rev_actual: {column: rev_actual, func: sum}
+        rev_budget: {column: rev_budget, func: sum}
+    output_key: chart_data
+
+# Layout: one Infographic with three sections (KPI row, chart, ledger).
+layout:
+  component: Infographic
+  properties:
+    title: "Daily Budget Variance"
+    subtitle: "In-month revenue & EBITDA projections vs budget"
+    sections:
+      - heading: "Snapshot"
+        components:
+          - component: KPICard
+            properties:
+              label: "Revenue (latest)"
+              value: {$bind: "/variance_analysis/last_totals/rev_actual"}
+              unit: USD
+          - component: KPICard
+            properties:
+              label: "Revenue Variance"
+              value: {$bind: "/variance_analysis/last_totals/rev_variance"}
+              trend: down
+          - component: KPICard
+            properties:
+              label: "EBITDA (latest)"
+              value: {$bind: "/variance_analysis/last_totals/ebitda_actual"}
+              unit: USD
+          - component: KPICard
+            properties:
+              label: "EBITDA Variance"
+              value: {$bind: "/variance_analysis/last_totals/ebitda_variance"}
+              trend: down
+      - heading: "Actual vs Budget by Day"
+        components:
+          - component: Chart
+            properties:
+              type: bar
+              x: snapshot
+              y: [rev_actual, rev_budget]
+              title: "Revenue — Actual vs Budget"
+              showLegend: true
+              data: {$bind: "/chart_data/rows"}
+      - heading: "Key Drivers — Watch List"
+        components:
+          - component: DataTable
+            properties:
+              title: "Worst EBITDA Variance (latest snapshot)"
+              columns:
+                - {name: division, title: Division}
+                - {name: project, title: Project}
+                - {name: ebitda_variance, title: "EBITDA Variance"}
+                - {name: trend, title: "Trend (day/day)"}
+              data: {$bind: "/top_movers/worst"}
+
+# Render profile: self-contained interactive HTML (Chart.js + day-tab/
+# metric-toggle/sort behaviors — Module 7). Static profiles (ssr_html, pdf)
+# remain available per delivery channel (see the docs' scheduling section).
+render:
+  profile: interactive-html
+  theme: null
+  delivery: null
+
+# Scheduled replays require an explicit principal (spec G8) — uncomment and
+# set a real principal before scheduling this recipe via the
+# run_infographic_recipe callback (see docs/outputs/infographic-recipes.md).
+# schedule:
+#   principal: svc-budget-bot
+
+# Overwritten by AbstractRecipeStore.save() (spec G5) — placeholder for
+# standalone from_yaml() loading (e.g. in tests/examples) before the first save.
+updated_at: "2026-07-22T00:00:00+00:00"
