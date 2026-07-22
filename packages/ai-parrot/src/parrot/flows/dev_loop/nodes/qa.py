@@ -269,6 +269,10 @@ class QANode(DevLoopNode):
             run_id=shared["run_id"],
             node_id=self.name,
             cwd=effective_cwd,
+            # FEAT-322: fold dispatch-level events into the run's
+            # SessionHost when one is present (see development.py's
+            # dispatch() call for the same pattern/rationale).
+            session_host=shared.get("session_host"),
         )
 
     # ------------------------------------------------------------------
@@ -303,6 +307,9 @@ class QANode(DevLoopNode):
                 run_id=shared["run_id"],
                 node_id=self.name,
                 cwd=review_cwd,
+                # FEAT-322: fold dispatch-level events into the run's
+                # SessionHost when one is present.
+                session_host=shared.get("session_host"),
             )
         except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
             self.logger.warning("Code-review dispatcher raised: %s", exc)

@@ -265,6 +265,10 @@ class ResearchNode(DevLoopNode):
             run_id=shared["run_id"],
             node_id=self.name,
             cwd=dispatch_cwd,
+            # FEAT-322: fold dispatch-level events into the run's
+            # SessionHost when one is present (see development.py's
+            # dispatch() call for the same pattern/rationale).
+            session_host=shared.get("session_host"),
         )
 
         # 5. If the subagent left jira_issue_key blank, inject ours.

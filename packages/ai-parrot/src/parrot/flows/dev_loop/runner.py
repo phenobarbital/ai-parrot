@@ -254,9 +254,22 @@ class DevLoopRunner:
         return host
 
     def _discard_host(self, run_id: str) -> None:
-        """Remove a terminated run's host from the registry."""
+        """Remove a terminated run's host from the registry.
+
+        The sweep task is only cancelled when there is truly nothing left
+        for it to do — no live hosts AND no runs still awaiting their
+        actions-stream retention window (``_pending_retention``). Since
+        ``RunRemoved`` for a finished run is now applied BY the retention
+        sweep (see :meth:`_sweep_retention_once`), cancelling the task just
+        because the last host was discarded would silently strand that
+        run in the root catalogue forever (`RunRemoved` would never fire).
+        """
         self._hosts.pop(run_id, None)
-        if not self._hosts and self._sweep_task is not None:
+        if (
+            not self._hosts
+            and not self._pending_retention
+            and self._sweep_task is not None
+        ):
             self._sweep_task.cancel()
             self._sweep_task = None
 
@@ -370,23 +383,37 @@ class DevLoopRunner:
         )
 
     async def _sweep_retention_once(self) -> None:
-        """Delete actions streams whose retention window has elapsed."""
-        if not self._redis_url:
-            self._pending_retention.clear()
-            return
+        """Delete due actions streams AND remove their runs from the root catalogue.
+
+        ``RunRemoved`` is applied HERE, alongside the actions-stream
+        deletion, per spec §3 M3 ("RunRemoved after retention") — NOT
+        immediately at run-close (:meth:`_close_host`), so a just-finished
+        run stays visible in ``registry_state`` with its final
+        ``RunSummary`` for the full ``DEV_LOOP_ACTIONS_RETENTION_DAYS``
+        window, matching how the actions stream itself is retained.
+
+        Runs without a redis-backed actions stream (``self._redis_url`` is
+        ``None``) still get ``RunRemoved`` applied once their window
+        elapses — there's simply no stream to delete first.
+        """
         now = time.time()
         due = [rid for rid, at in self._pending_retention.items() if now >= at]
         for rid in due:
-            try:
-                redis_client = await self._ensure_actions_redis()
-                await redis_client.delete(f"flow:{rid}:actions")
-            except Exception:  # noqa: BLE001 - retention sweep must not raise
-                self.logger.debug(
-                    "actions-stream retention delete failed for run %s",
-                    rid, exc_info=True,
-                )
-            finally:
-                self._pending_retention.pop(rid, None)
+            if self._redis_url:
+                try:
+                    redis_client = await self._ensure_actions_redis()
+                    await redis_client.delete(f"flow:{rid}:actions")
+                except Exception:  # noqa: BLE001 - retention sweep must not raise
+                    self.logger.debug(
+                        "actions-stream retention delete failed for run %s",
+                        rid, exc_info=True,
+                    )
+            self._pending_retention.pop(rid, None)
+            self._apply_root_action(RunRemoved(run_id=rid))
+            self.logger.info(
+                "Run %s retention window elapsed — removed from root catalogue",
+                rid,
+            )
 
     # ── Expiry sweep loop (FEAT-322) ─────────────────────────────────────────
 
@@ -695,10 +722,22 @@ class DevLoopRunner:
 
         Order (spec §3 M3): apply ``RunClosed`` -> persist the terminal
         snapshot -> schedule actions-stream retention -> fold the final
-        ``RunSummaryChanged`` -> discard the host + fold ``RunRemoved``. The
-        host is discarded immediately (not kept until retention): the
-        ``view="state"`` multiplexer falls back to replaying
-        ``flow:{run_id}:actions`` for a finished run (spec §3 M6).
+        ``RunSummaryChanged`` -> discard the host. ``RunRemoved`` is
+        deliberately NOT applied here — per spec §3 M3 ("RunRemoved AFTER
+        retention"), the finished run stays visible in the root catalogue
+        (``registry_state``) with its final summary until
+        ``_sweep_retention_once`` deletes the actions stream
+        (``DEV_LOOP_ACTIONS_RETENTION_DAYS``, default 7d), at which point
+        both happen together (code-review finding: an earlier version
+        removed the run from the catalogue immediately at close, which
+        silently diverged from the spec's stated intent — an operator
+        dashboard watching ``parrot-root://`` would never see a run that
+        just finished).
+
+        The host itself IS still discarded immediately (not kept until
+        retention): the ``view="state"`` multiplexer falls back to
+        replaying ``flow:{run_id}:actions`` for a finished run (spec §3 M6)
+        — only the ROOT-CHANNEL catalogue entry outlives the host.
         """
         run_id = host.state.run_id
         outcome = self._outcome_from_status(result.status)
@@ -717,7 +756,6 @@ class DevLoopRunner:
             RunSummaryChanged(summary=self._run_summary_from_host(host))
         )
         self._discard_host(run_id)
-        self._apply_root_action(RunRemoved(run_id=run_id))
 
 
 __all__ = ["DevLoopRunner", "build_dev_loop_revision_flow", "gate_ttl_for"]

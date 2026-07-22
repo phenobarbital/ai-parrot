@@ -20,7 +20,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from parrot.flows.dev_loop import ClaudeCodeDispatcher, ClaudeCodeDispatchProfile, ResearchOutput
+from parrot.flows.dev_loop import (
+    ClaudeCodeDispatcher,
+    ClaudeCodeDispatchProfile,
+    DispatchExecutionError,
+    ResearchOutput,
+)
 from parrot.flows.dev_loop.dispatcher import _apply_to_session_host, _SESSION_HOST_CTX
 from parrot.flows.dev_loop.flow import FlowEventPublisher
 from parrot.flows.dev_loop.models import DispatchEvent
@@ -377,3 +382,37 @@ async def test_dispatch_session_host_ctx_isolated_across_concurrent_dispatches(m
 
 def test_session_channel_sanity():
     assert session_channel(RUN_ID) == f"parrot-session:/{RUN_ID}"
+
+
+# ---------------------------------------------------------------------------
+# Regression: _SESSION_HOST_CTX must reset even on the pre-semaphore
+# early-exit path (code-review finding — cwd validation used to raise
+# BEFORE the try/finally that resets the contextvar).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_session_host_ctx_reset_on_cwd_validation_failure(monkeypatch, tmp_path):
+    disp = _make_dispatcher(monkeypatch)
+    host = SessionHost(RUN_ID)
+
+    # cwd outside WORKTREE_BASE_PATH (never patched in this test) makes
+    # _enforce_cwd_under_worktree_base raise BEFORE the semaphore/try block
+    # that owns the "normal" reset.
+    with pytest.raises(DispatchExecutionError):
+        await disp.dispatch(
+            brief=ResearchOutput(
+                jira_issue_key="OPS-0", spec_path="x", feat_id="FEAT-0",
+                branch_name="b", worktree_path=str(tmp_path),
+            ),
+            profile=ClaudeCodeDispatchProfile(),
+            output_model=ResearchOutput,
+            run_id=RUN_ID,
+            node_id="research",
+            cwd="/definitely/not/under/worktree/base",
+            session_host=host,
+        )
+
+    # The contextvar must NOT still be bound to `host` after the raise —
+    # confirms the fix actually resets on this path instead of leaking.
+    assert _SESSION_HOST_CTX.get() is None

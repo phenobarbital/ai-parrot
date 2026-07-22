@@ -145,7 +145,12 @@ async def test_run_partial_status_maps_to_failed_outcome(brief):
 
 
 @pytest.mark.asyncio
-async def test_run_root_registry_reflects_add_then_remove(brief):
+async def test_run_root_registry_retains_finished_run_until_retention(brief):
+    """Code-review finding (RunRemoved timing): spec §3 M3 says `RunRemoved`
+    fires AFTER retention, mirroring the actions-stream sweep — not
+    immediately at run-close. A just-finished run must stay visible in the
+    root catalogue (with its final summary) until the retention window
+    elapses; only THEN is it removed."""
     flow = _FakeFlow()
     runner = DevLoopRunner(flow, max_concurrent_runs=2)  # type: ignore[arg-type]
 
@@ -154,9 +159,18 @@ async def test_run_root_registry_reflects_add_then_remove(brief):
 
     await runner.run(brief, run_id="run-host5")
 
-    # RunAdded then RunRemoved on terminal handling — net effect: empty
-    # again (host discarded, root catalogue does not retain finished runs).
-    assert runner.registry_state.runs == {}
+    # RunSummaryChanged (final phase) applied at close — the run is STILL
+    # in the catalogue right after finishing (host already discarded).
+    assert "run-host5" in runner.registry_state.runs
+    assert runner.registry_state.runs["run-host5"].phase == "succeeded"
+    assert runner.get_host("run-host5") is None
+
+    # Force the retention window to have already elapsed and run one sweep
+    # pass — THAT is what removes it from the catalogue.
+    runner._pending_retention["run-host5"] = 0.0  # noqa: SLF001 - test-only
+    await runner._sweep_retention_once()  # noqa: SLF001 - test-only
+
+    assert "run-host5" not in runner.registry_state.runs
 
 
 @pytest.mark.asyncio
@@ -171,7 +185,11 @@ async def test_run_root_registry_populated_mid_run(brief):
 
     flow.release.set()
     await task
-    assert "run-host6" not in runner.registry_state.runs
+    # Still present (with the final phase) right after finishing — removal
+    # is deferred to the retention sweep (see the "retains_finished_run"
+    # test above), not applied at close anymore.
+    assert "run-host6" in runner.registry_state.runs
+    assert runner.registry_state.runs["run-host6"].phase == "succeeded"
 
 
 # ---------------------------------------------------------------------------

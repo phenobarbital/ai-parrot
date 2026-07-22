@@ -79,7 +79,7 @@ def mock_jira():
 def _dispatcher_returning(research_out, qa_passed: bool = True, fail_node: str = ""):
     """Dispatcher mock that answers per output_model; optionally raises."""
 
-    async def dispatch(*, brief, profile, output_model, run_id, node_id, cwd):
+    async def dispatch(*, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
         if fail_node and node_id == fail_node:
             raise RuntimeError(f"dispatch blew up in {node_id}")
         if output_model is ResearchOutput:

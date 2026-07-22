@@ -278,22 +278,28 @@ class ClaudeCodeDispatcher:
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         json_schema_path: Optional[str] = None
         # FEAT-322 TASK-1852: bind the per-dispatch host for _publish_event
-        # to read (see module-level _SESSION_HOST_CTX docstring) — reset in
-        # the finally block below, which already covers this method's exit.
+        # to read (see module-level _SESSION_HOST_CTX docstring). The main
+        # finally: below resets it on every path THAT reaches the semaphore
+        # block; this try/except covers the narrow pre-semaphore window
+        # (cwd validation, the "queued" publish) so an early raise there
+        # still resets the var instead of leaking it forward.
         _host_token = _SESSION_HOST_CTX.set(session_host)
+        try:
+            # Spec §7 R4 — defense in depth. Waived for read-only (plan-mode,
+            # no-edit) dispatches such as the sdd-codereview gate, which may
+            # run against a checkout outside the worktree base.
+            self._enforce_cwd_under_worktree_base(cwd, profile)
 
-        # Spec §7 R4 — defense in depth. Waived for read-only (plan-mode,
-        # no-edit) dispatches such as the sdd-codereview gate, which may run
-        # against a checkout outside the worktree base.
-        self._enforce_cwd_under_worktree_base(cwd, profile)
-
-        await self._publish_event(
-            stream_key,
-            kind="dispatch.queued",
-            run_id=run_id,
-            node_id=node_id,
-            payload={"profile": profile.model_dump(mode="json")},
-        )
+            await self._publish_event(
+                stream_key,
+                kind="dispatch.queued",
+                run_id=run_id,
+                node_id=node_id,
+                payload={"profile": profile.model_dump(mode="json")},
+            )
+        except Exception:
+            _SESSION_HOST_CTX.reset(_host_token)
+            raise
 
         async with self._semaphore:
             try:
@@ -976,17 +982,23 @@ class CodexCodeDispatcher:
         output_path: Optional[str] = None
         process: Any = None
         # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring.
+        # try/except covers the narrow pre-semaphore window so an early
+        # raise here still resets the var (the main finally: below only
+        # covers the semaphore block).
         _host_token = _SESSION_HOST_CTX.set(session_host)
+        try:
+            self._enforce_cwd_under_worktree_base(cwd)
 
-        self._enforce_cwd_under_worktree_base(cwd)
-
-        await self._publish_event(
-            stream_key,
-            kind="dispatch.queued",
-            run_id=run_id,
-            node_id=node_id,
-            payload={"profile": profile.model_dump(mode="json")},
-        )
+            await self._publish_event(
+                stream_key,
+                kind="dispatch.queued",
+                run_id=run_id,
+                node_id=node_id,
+                payload={"profile": profile.model_dump(mode="json")},
+            )
+        except Exception:
+            _SESSION_HOST_CTX.reset(_host_token)
+            raise
 
         async with self._semaphore:
             try:
@@ -1407,35 +1419,41 @@ class GeminiCodeDispatcher:
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         process: Any = None
         # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring.
+        # try/except covers the narrow pre-semaphore window so an early
+        # raise here still resets the var (the main finally: below only
+        # covers the semaphore block).
         _host_token = _SESSION_HOST_CTX.set(session_host)
+        try:
+            self._enforce_cwd_under_worktree_base(cwd)
 
-        self._enforce_cwd_under_worktree_base(cwd)
-
-        # Handle transparent profile conversion
-        if isinstance(profile, ClaudeCodeDispatchProfile):
-            approval_mode = "auto_edit"
-            if profile.permission_mode == "acceptEdits":
+            # Handle transparent profile conversion
+            if isinstance(profile, ClaudeCodeDispatchProfile):
                 approval_mode = "auto_edit"
-            elif profile.permission_mode == "bypassPermissions" or profile.permission_mode == "default":
-                approval_mode = "yolo"
-            elif profile.permission_mode == "plan":
-                approval_mode = "plan"
+                if profile.permission_mode == "acceptEdits":
+                    approval_mode = "auto_edit"
+                elif profile.permission_mode == "bypassPermissions" or profile.permission_mode == "default":
+                    approval_mode = "yolo"
+                elif profile.permission_mode == "plan":
+                    approval_mode = "plan"
 
-            profile = GeminiCodeDispatchProfile(
-                subagent=profile.subagent or "sdd-worker",
-                model="auto",
-                sandbox=True,
-                approval_mode=approval_mode,
-                timeout_seconds=profile.timeout_seconds,
+                profile = GeminiCodeDispatchProfile(
+                    subagent=profile.subagent or "sdd-worker",
+                    model="auto",
+                    sandbox=True,
+                    approval_mode=approval_mode,
+                    timeout_seconds=profile.timeout_seconds,
+                )
+
+            await self._publish_event(
+                stream_key,
+                kind="dispatch.queued",
+                run_id=run_id,
+                node_id=node_id,
+                payload={"profile": profile.model_dump(mode="json")},
             )
-
-        await self._publish_event(
-            stream_key,
-            kind="dispatch.queued",
-            run_id=run_id,
-            node_id=node_id,
-            payload={"profile": profile.model_dump(mode="json")},
-        )
+        except Exception:
+            _SESSION_HOST_CTX.reset(_host_token)
+            raise
 
         async with self._semaphore:
             try:
@@ -1839,18 +1857,24 @@ class LLMCodeDispatcher:
     ) -> T:
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring —
-        # reset in the finally added to the try/except below (its only exit
-        # paths: the success return or one of the re-raising excepts).
+        # the try/except below covers the narrow pre-semaphore window (an
+        # early raise here still resets the var); the try/except/finally
+        # inside the semaphore block below resets it on every OTHER exit
+        # path (the success return or one of the re-raising excepts).
         _host_token = _SESSION_HOST_CTX.set(session_host)
-        self._enforce_cwd_under_worktree_base(cwd)
+        try:
+            self._enforce_cwd_under_worktree_base(cwd)
 
-        await self._publish_event(
-            stream_key,
-            kind="dispatch.queued",
-            run_id=run_id,
-            node_id=node_id,
-            payload={"profile": profile.model_dump(mode="json")},
-        )
+            await self._publish_event(
+                stream_key,
+                kind="dispatch.queued",
+                run_id=run_id,
+                node_id=node_id,
+                payload={"profile": profile.model_dump(mode="json")},
+            )
+        except Exception:
+            _SESSION_HOST_CTX.reset(_host_token)
+            raise
 
         async with self._semaphore:
             await self._publish_event(

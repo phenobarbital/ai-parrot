@@ -36,6 +36,7 @@ from parrot.flows.dev_loop import (
 from parrot.flows.dev_loop.commands import register_command_routes
 from parrot.flows.dev_loop.models import CodeReviewVerdict, DevelopmentOutput
 from parrot.flows.dev_loop.nodes.deployment_handoff import DeploymentHandoffNode
+from parrot.flows.dev_loop.nodes.research import ResearchNode
 from parrot.flows.dev_loop.session_state import (
     ActionEnvelope,
     DevLoopSessionState,
@@ -61,6 +62,40 @@ async def wait_until(condition, timeout: float = 5.0) -> None:
             return
         await asyncio.sleep(0.01)
     pytest.fail(f"condition not met within {timeout}s")
+
+
+async def wait_until_stream(
+    fake_redis: "_FakeStreamsRedis",
+    run_id: str,
+    predicate,
+    timeout: float = 5.0,
+) -> List[Tuple[str, Dict[str, str]]]:
+    """Poll ``flow:{run_id}:actions`` until ``predicate(entries)`` is true.
+
+    Code-review finding (flaky ``test_crash_rebuild_from_actions_stream``):
+    ``SessionHost.apply()`` updates ``host.state`` SYNCHRONOUSLY, but the
+    runner's envelope sink (``DevLoopRunner._make_envelope_sink``) fires the
+    actual actions-stream XADD via a fire-and-forget
+    ``asyncio.get_running_loop().create_task(...)`` — the write lands on a
+    LATER event-loop iteration, not before the current await point returns.
+    A test that polls ``host.state`` and then immediately reads
+    ``fake_redis.xrange(...)`` can observe a state ahead of what's actually
+    on the stream, especially under full-suite CPU contention (this is what
+    made the crash-rebuild test intermittently fail 2/5 runs). Polling the
+    STREAM itself for the expected condition (rather than trusting one
+    ``host.state``-gated read) removes the race.
+    """
+    deadline = time.monotonic() + timeout
+    entries: List[Tuple[str, Dict[str, str]]] = []
+    while time.monotonic() < deadline:
+        entries = await fake_redis.xrange(_actions_key(run_id))
+        if predicate(entries):
+            return entries
+        await asyncio.sleep(0.01)
+    pytest.fail(
+        f"actions-stream condition not met within {timeout}s "
+        f"(last saw {len(entries)} entries)"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +166,7 @@ def _research_output(tmp_path) -> ResearchOutput:
 
 
 def _stub_dispatcher(research_out: ResearchOutput):
-    async def dispatch(*, brief, profile, output_model, run_id, node_id, cwd):
+    async def dispatch(*, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
         if output_model is ResearchOutput:
             return research_out
         if output_model is DevelopmentOutput:
@@ -196,6 +231,33 @@ def _patch_handoff(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _patch_research_llm_calls(monkeypatch):
+    """Neutralize ResearchNode's OWN direct LLM calls (code-review finding).
+
+    ``ResearchNode._build_plan_summary`` (called unconditionally whenever a
+    NEW Jira ticket is created — the path every test in this module takes,
+    since ``mock_jira`` never returns an existing issue) constructs a REAL
+    ``LLMFactory``-backed client and calls ``client.ask(...)`` — completely
+    independent of the stub ``dispatcher`` fixture, which only covers
+    ``dispatcher.dispatch(...)``. Left unpatched, this makes a genuine
+    network call on every run; when it's slow (no ``ANTHROPIC_API_KEY``,
+    network hiccup, rate limit) it can stall well past this suite's 5s
+    ``wait_until``/``wait_until_stream`` timeouts, surfacing as an
+    intermittent ``pytest.fail("condition not met within 5s")`` — this is
+    what actually caused the flakiness the code review flagged (a separate,
+    more direct cause than the actions-stream background-task race also
+    fixed in this file). ``_build_description``'s log-excerpt summarizer
+    (``_summarize_excerpts``) is NOT patched here — it only triggers when
+    the rendered Jira description exceeds 32 767 chars, never true for this
+    module's short fixtures.
+    """
+    monkeypatch.setattr(
+        ResearchNode, "_build_plan_summary",
+        AsyncMock(return_value="1. Investigate. 2. Fix. 3. Verify."),
+    )
+
+
 @pytest.fixture
 def fake_redis() -> _FakeStreamsRedis:
     return _FakeStreamsRedis()
@@ -206,15 +268,11 @@ async def _build_gated_runner(
 ) -> DevLoopRunner:
     """Build a real 8-node flow with BOTH HITL gates reachable.
 
-    ``require_deployment_approval`` has no wiring through
-    ``build_dev_loop_node_factories``/``build_dev_loop_flow`` yet (TASK-1853
-    flagged this — the flag is opt-in per node instance, not yet threaded
-    through the factory). Flipped directly on the already-constructed node
-    instance via ``object.__setattr__`` — the same attribute-setting style
-    ``DeploymentHandoffNode.__init__`` itself uses (nodes/base.py /
-    deployment_handoff.py convention) — zero production-code changes;
-    ``AgentsFlow._materialize_nodes()`` copies this instance (incl. private
-    attrs) fresh per run.
+    Code-review follow-up: ``require_deployment_approval`` is now threaded
+    through ``build_dev_loop_flow`` -> ``build_dev_loop_node_factories`` ->
+    ``DeploymentHandoffNode`` (a real, production-reachable activation path
+    — earlier this test flipped the flag via ``object.__setattr__`` on the
+    already-constructed node because no such wiring existed yet).
     """
     research_out = _research_output(tmp_path)
     dispatcher = _stub_dispatcher(research_out)
@@ -224,9 +282,7 @@ async def _build_gated_runner(
         log_toolkits={},
         redis_url="redis://localhost:6399/9",  # legacy XADD target; swallowed on failure
         publish_flow_events=True,
-    )
-    object.__setattr__(
-        flow._nodes["deployment_handoff"], "_require_deployment_approval", True
+        require_deployment_approval=True,
     )
 
     runner = DevLoopRunner(
@@ -309,8 +365,16 @@ async def test_e2e_run_with_blocking_gates(
     assert host.state.gates[deploy_gate_id].resolved_by == "bob"
 
     # Legacy streams also populated (dual-publish, TASK-1852): at minimum the
-    # actions stream captured the full lifecycle.
-    entries = await fake_redis.xrange(_actions_key(RUN_ID))
+    # actions stream captured the full lifecycle. The final envelope's XADD
+    # is scheduled as a background task by the runner's envelope sink and
+    # may not have landed the instant `task` completes — poll the stream
+    # itself (not just `host.state`) until it's caught up, avoiding a race
+    # under full-suite CPU contention.
+    entries = await wait_until_stream(
+        fake_redis, RUN_ID,
+        lambda es: _fold_actions(es, RUN_ID) == host.state,
+        timeout=5,
+    )
     assert len(entries) > 0
 
     # Fold-equals-snapshot: replaying flow:{run_id}:actions from seq 0
@@ -387,7 +451,14 @@ async def test_ws_state_view_reconnect(
     assert result.responses["deployment_handoff"]["status"] == "ready_to_deploy"
 
     # "Disconnect + reconnect" with ?last_seen=<seq from the first snapshot>.
-    entries = await fake_redis.xrange(_actions_key(RUN_ID))
+    # Poll the stream until it's caught up with the finished host (the last
+    # envelope's XADD is a background task — see wait_until_stream's
+    # docstring) rather than reading it once right after `task` resolves.
+    entries = await wait_until_stream(
+        fake_redis, RUN_ID,
+        lambda es: _fold_actions(es, RUN_ID) == host.state,
+        timeout=5,
+    )
     mux2 = FlowStreamMultiplexer(fake_redis, run_id=RUN_ID, view="state")
     reconnect_frames = [
         f async for f in mux2.state_replay(last_seen=last_seen)
@@ -429,7 +500,16 @@ async def test_crash_rebuild_from_actions_stream(
     await wait_until(lambda: len(host.state.gates) >= 1, timeout=5)
 
     # --- Mid-run rebuild: cut the stream while a gate is still pending. ---
-    mid_run_entries = await fake_redis.xrange(_actions_key(RUN_ID))
+    # `host.state.gates` updates synchronously ahead of the actions-stream
+    # XADD (a background task fired by the runner's envelope sink) — poll
+    # the STREAM itself for `awaiting_gate`, not a single read gated only
+    # by `host.state`, to avoid the race that made this test intermittently
+    # fail under full-suite load (see wait_until_stream's docstring).
+    mid_run_entries = await wait_until_stream(
+        fake_redis, RUN_ID,
+        lambda es: _fold_actions(es, RUN_ID).phase == "awaiting_gate",
+        timeout=5,
+    )
     mid_run_state = _fold_actions(mid_run_entries, RUN_ID)
     assert mid_run_state.phase == "awaiting_gate"
     assert any(g.status == "pending" for g in mid_run_state.gates.values())
@@ -454,7 +534,14 @@ async def test_crash_rebuild_from_actions_stream(
     # this in _close_host; simulate total memory loss by building state
     # from nothing but the stream). ---
     assert runner.get_host(RUN_ID) is None  # confirms the host really is gone
-    final_entries = await fake_redis.xrange(_actions_key(RUN_ID))
+    # Poll until the stream has caught up with the finished host's final
+    # state — the last envelope's XADD is a background task, not guaranteed
+    # to have landed the instant `task` resolved (see wait_until_stream).
+    final_entries = await wait_until_stream(
+        fake_redis, RUN_ID,
+        lambda es: _fold_actions(es, RUN_ID).phase == "succeeded",
+        timeout=5,
+    )
     rebuilt = _fold_actions(final_entries, RUN_ID)
 
     assert rebuilt.phase == "succeeded"

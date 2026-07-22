@@ -200,6 +200,7 @@ def build_dev_loop_flow(
     git_toolkit: Optional[Any] = None,
     repos: Optional[list[RepoSpec]] = None,
     codereview_dispatcher: Optional[Any] = None,
+    require_deployment_approval: bool = False,
 ) -> AgentsFlow:
     """Build the eight-node dev-loop ``AgentsFlow`` (FEAT-132).
 
@@ -241,6 +242,14 @@ def build_dev_loop_flow(
             (FEAT-270) used by ``QANode`` for the code-review gate. Defaults
             to ``None``, in which case ``QANode`` auto-wraps ``dispatcher``
             in a ``ClaudeCodeReviewDispatcher`` (backward compat).
+        require_deployment_approval: FEAT-322 — forwarded to
+            ``DeploymentHandoffNode`` via ``build_dev_loop_node_factories``.
+            Defaults to ``False`` (today's behavior, unchanged); set
+            ``True`` to require a ``deployment_approval`` HITL gate before
+            the Jira "Ready to Deploy" transition (resolved via the REST
+            command layer, TASK-1855). Only takes effect when the run also
+            has a ``SessionHost`` (seeded by ``DevLoopRunner.run()``) —
+            see ``DeploymentHandoffNode``'s docstring.
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -260,6 +269,7 @@ def build_dev_loop_flow(
         log_toolkits=log_toolkits,
         repos=repos,
         codereview_dispatcher=codereview_dispatcher,
+        require_deployment_approval=require_deployment_approval,
     )
     staged = AgentsFlow.from_definition(
         definition,

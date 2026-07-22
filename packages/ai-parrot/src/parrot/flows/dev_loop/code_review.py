@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Type
+from typing import Dict, Optional, Type
 
 from pydantic import BaseModel
 
@@ -29,6 +29,7 @@ from parrot.flows.dev_loop.models import (
     CodexCodeReviewProfile,
     GeminiCodeReviewProfile,
 )
+from parrot.flows.dev_loop.session_state import SessionHost
 
 
 class AbstractCodeReviewDispatcher(ABC):
@@ -54,12 +55,22 @@ class AbstractCodeReviewDispatcher(ABC):
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> CodeReviewVerdict:
         """Run code review, optionally fix issues, return a verdict.
 
         Delegates to the underlying development dispatcher's ``dispatch()``
         with the review profile. On any infrastructure error, degrades to a
         passing verdict with a nit-level finding noting the failure.
+
+        Args:
+            brief: The review brief (acceptance criteria + worktree path).
+            run_id: The flow run id, used for the Redis stream key.
+            node_id: The flow node id, used for the Redis stream key.
+            cwd: Working directory for the review session.
+            session_host: FEAT-322 — the run's ``SessionHost``, if any
+                (threaded through to the underlying dispatcher so
+                dispatch-level events fold into session state).
         """
         try:
             return await self._dispatcher.dispatch(
@@ -69,6 +80,7 @@ class AbstractCodeReviewDispatcher(ABC):
                 run_id=run_id,
                 node_id=node_id,
                 cwd=cwd,
+                session_host=session_host,
             )
         except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
             self.logger.warning(
