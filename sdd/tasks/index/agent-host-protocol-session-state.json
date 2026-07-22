@@ -152,7 +152,7 @@
       "feature_id": "FEAT-322",
       "feature": "agent-host-protocol-session-state",
       "spec": "sdd/specs/agent-host-protocol-session-state.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -162,8 +162,8 @@
       "parallelism_notes": "New file commands.py (+ __init__ export) — no overlap with TASK-1852/1853/1854 beyond the __init__.py export line (coordinate ordering).",
       "assigned_to": null,
       "started_at": "2026-07-21T23:57:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1855-rest-command-endpoints.md"
+      "completed_at": "2026-07-22T01:19:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1855-rest-command-endpoints.md"
     },
     {
       "id": "TASK-1856",
