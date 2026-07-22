@@ -201,10 +201,62 @@ def test_legacy_construction_no_redis(...): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: `DevLoopRunner` now owns `_hosts: Dict[run_id, SessionHost]` +
+`_registry: RunRegistryState`, with `get_host`/`registry_state`/
+`resolve_gate`/`cancel_run` per the contract. `run()`/`run_revision()`
+create+register a host before `run_flow`, apply `RunCreated`+`RunAdded`,
+seed `shared["session_host"]`; on completion (`_close_host`) apply
+`RunClosed` (outcome mapped from `FlowResult.status`: `completed`→
+`succeeded`, `partial`/`failed`→`failed`), persist the terminal
+`Snapshot` under `conf.OUTPUT_DIR/dev_loop_runs/{run_id}.snapshot.json`,
+schedule actions-stream retention, fold `RunSummaryChanged`, then discard
+the host + fold `RunRemoved` — the host is NOT kept until retention (the
+`view="state"` multiplexer, TASK-1854, falls back to replaying
+`flow:{run_id}:actions` for a finished run). Envelope sink is a sync
+`on_envelope` callback that schedules a best-effort background XADD task
+(`flow:{run_id}:actions`, MAXLEN~100k) — never blocks `apply()`, every
+failure swallowed+logged at DEBUG; no-op when `redis_url` is None. Gate
+expiry + actions-stream retention share one periodic sweep
+(`_sweep_loop`/`_sweep_once`, ~30s cadence, started on first host,
+cancelled when none remain) rather than one asyncio task per run (avoids
+leaking un-awaited multi-day sleeps). Added the 5 conf keys +
+`gate_ttl_for(kind)` helper (in `runner.py`, keeps conf out of
+`session_state.py`). Exported `SessionHost`, `ActionEnvelope`, `Snapshot`,
+`ApprovalGate`, `DevLoopAction`, `DevLoopSessionState`, `RunRegistryState`,
+`RunSummary`, `RootAction`, `ActionOrigin`, `GateNotFoundError`,
+`GateAlreadyResolvedError`, `gate_ttl_for` from `parrot.flows.dev_loop`.
+16 new tests in `test_runner_host.py`; all 7 pre-existing `test_runner.py`
+tests still pass unchanged (legacy `DevLoopRunner(flow)` construction
+verified). Full dev_loop suite: 460 passed (4 pre-existing unrelated
+failures in `test_server_repo_wiring.py`/`test_webhook.py`, same as
+before this task — verified in TASK-1850's note).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **`packages/ai-parrot/tests/flows/dev_loop/conftest.py` modified**
+   (not in this task's file list). The terminal-snapshot persistence
+   this task adds writes real files under `conf.OUTPUT_DIR/dev_loop_runs/`
+   on every completed run — without a fix, EVERY pre-existing test in this
+   suite that drives a real run (not just the new host tests) would litter
+   the actual repo's `outputs/` directory (confirmed: an initial run of
+   `test_runner.py` created `outputs/dev_loop_runs/run-happy.snapshot.json`
+   etc. in the real repo before this fix; cleaned up via `git clean -fd`).
+   Added one autouse fixture (`_isolate_dev_loop_run_artifacts`) that
+   monkeypatches `parrot.flows.dev_loop.runner.conf.OUTPUT_DIR` to
+   `tmp_path` for every test in the module — a minimal, necessary fix for
+   a regression this task's own change would otherwise cause.
+2. **Snapshot artifact location** (`conf.OUTPUT_DIR/dev_loop_runs/`) was
+   an implementer's choice per the task's own Implementation Notes
+   ("where run artifacts live is implementer's choice"); reused the
+   existing `conf.OUTPUT_DIR` convention rather than inventing a new conf
+   key or directory.
+3. **Actions-stream retention** implemented as entries in a
+   `_pending_retention: Dict[run_id, delete_at]` dict checked by the same
+   periodic sweep as gate expiry, rather than a long-lived per-run
+   `asyncio.Task` sleeping for `DEV_LOOP_ACTIONS_RETENTION_DAYS` (7 days
+   default) — a multi-day-sleeping task would not survive a process
+   restart and would need explicit cancellation bookkeeping; the sweep
+   approach is simpler, testable in isolation (`_sweep_once`), and
+   equally correct for a v1 best-effort mechanism (spec §7 accepts
+   Redis-side duplication/staleness during migration).

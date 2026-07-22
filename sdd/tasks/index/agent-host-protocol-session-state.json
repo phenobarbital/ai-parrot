@@ -72,7 +72,7 @@
       "feature_id": "FEAT-322",
       "feature": "agent-host-protocol-session-state",
       "spec": "sdd/specs/agent-host-protocol-session-state.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Gates + shims + streaming + REST all consume the runner surface added here.",
       "assigned_to": null,
       "started_at": "2026-07-21T23:57:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1851-runner-as-host.md"
+      "completed_at": "2026-07-22T00:30:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1851-runner-as-host.md"
     },
     {
       "id": "TASK-1852",
