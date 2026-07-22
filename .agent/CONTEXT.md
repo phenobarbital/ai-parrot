@@ -51,6 +51,21 @@ of `Node` instances from `parrot/bots/flows/core/`.
 - Attach `on_node_event` listeners for lifecycle telemetry.
 Inherits `PersistenceMixin` (not `SynthesisMixin`).
 
+### ModelSwitchingMixin
+Location: `parrot/bots/mixins/model_switching.py`
+Dual-LLM model switching for any bot/agent (`class MyAgent(ModelSwitchingMixin, Agent)`).
+Configure a `secondary_llm` (same formats as `llm`: `"provider:model"`, client
+class/instance, or model_config dict) plus a `model_switch_mode`:
+- `fallback` — primary serves every call; on error the same call is retried
+  once on the secondary client (cross-provider failover, complementary to the
+  client-level same-provider `fallback_model`).
+- `contrastive` — both models answer concurrently; the merged `AIMessage`
+  carries a combined labeled output and `metadata['model_switching']`
+  attributes each answer (provider, model, usage, timing) to its model.
+Built on the `AbstractBot.get_client()` / `execute_llm_call()` hooks (same
+cooperative pattern as `IntentRouterMixin`). v1 limitation: `ask_stream`
+always uses the primary client.
+
 ### Loaders
 Location: `parrot/loaders/`
 Transform documents (PDF, HTML, DOCX, etc.) into text chunks for RAG.

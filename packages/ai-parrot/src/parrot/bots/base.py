@@ -415,7 +415,7 @@ class BaseBot(AbstractBot):
             )
 
             # Configure LLM if needed
-            llm = self._llm
+            llm = self.get_client()
             if (new_llm := kwargs.pop('llm', None)):
                 llm = self.configure_llm(
                     llm=new_llm,
@@ -451,7 +451,7 @@ class BaseBot(AbstractBot):
                     if max_tokens is not None:
                         llm_kwargs["max_tokens"] = max_tokens
 
-                    response = await client.ask(**llm_kwargs)
+                    response = await self.execute_llm_call(client, "ask", **llm_kwargs)
 
                     # Extract the vector-specific metadata
                     vector_info = vector_metadata.get('vector', {})
@@ -676,7 +676,7 @@ class BaseBot(AbstractBot):
             )
 
             # Configure LLM if needed
-            llm = self._llm
+            llm = self.get_client()
             if (new_llm := kwargs.pop('llm', None)):
                 llm = self.configure_llm(
                     llm=new_llm,
@@ -706,7 +706,7 @@ class BaseBot(AbstractBot):
                         output_type=response_model
                     )
 
-                response = await client.ask(**llm_kwargs)
+                response = await self.execute_llm_call(client, "ask", **llm_kwargs)
 
                 # Set conversation context info
                 response.set_conversation_context_info(
@@ -1239,7 +1239,7 @@ class BaseBot(AbstractBot):
             )
 
             # Configure LLM if needed
-            llm = self._llm
+            llm = self.get_client()
             if (new_llm := kwargs.pop('llm', None)):
                 llm = self.configure_llm(
                     llm=new_llm,
@@ -1300,7 +1300,7 @@ class BaseBot(AbstractBot):
                         llm_kwargs["structured_output"] = structured_output
 
                 phase_started = time.perf_counter()
-                response = await client.ask(**llm_kwargs)
+                response = await self.execute_llm_call(client, "ask", **llm_kwargs)
                 self.logger.info(
                     "[%s] ask timing: client.ask_ms=%.1f model=%s use_tools=%s",
                     self.name,

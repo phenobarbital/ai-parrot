@@ -1120,6 +1120,43 @@ class AbstractBot(
     def llm(self, model):
         self._llm = model
 
+    def get_client(self) -> AbstractClient:
+        """Return the LLM client to use for the next call.
+
+        Default: the configured primary client (``self._llm``). This is the
+        cooperative-MRO terminal for client-selection mixins (e.g.
+        ``ModelSwitchingMixin``), which may override it to pick between
+        multiple configured clients.
+
+        Returns:
+            The :class:`AbstractClient` the caller should enter and invoke.
+        """
+        return self._llm
+
+    async def execute_llm_call(
+        self,
+        client: AbstractClient,
+        method: str = "ask",
+        **llm_kwargs: Any,
+    ) -> Any:
+        """Execute a single LLM call through an overridable hook.
+
+        Default implementation delegates straight to the client — behavior is
+        identical to the previous inline ``await client.ask(**llm_kwargs)``.
+        Mixins (e.g. ``ModelSwitchingMixin``) override this to add
+        cross-provider fallback or contrastive dual-model calls, chaining
+        ``super().execute_llm_call(...)`` for the primary call.
+
+        Args:
+            client: The already-entered LLM client (inside ``async with``).
+            method: Client coroutine to invoke (currently always ``"ask"``).
+            **llm_kwargs: Keyword arguments forwarded to the client method.
+
+        Returns:
+            The :class:`~parrot.models.responses.AIMessage` from the client.
+        """
+        return await getattr(client, method)(**llm_kwargs)
+
     def configure_conversation_memory(self) -> None:
         """Configure the unified conversation memory system."""
         try:
