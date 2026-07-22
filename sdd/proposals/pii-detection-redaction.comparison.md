@@ -1,7 +1,7 @@
-# Comparison: OpenAI Guardrails PII (Presidio + spaCy) vs FEAT-319 (Rust + catalog)
+# Comparison: OpenAI Guardrails PII (Presidio + spaCy) vs FEAT-324 (Rust + catalog)
 
 **Date**: 2026-07-22
-**Feature**: FEAT-319 (`sdd/specs/pii-detection-redaction.spec.md`)
+**Feature**: FEAT-324 (`sdd/specs/pii-detection-redaction.spec.md`)
 **Trigger**: review of https://openai.github.io/openai-guardrails-python/ref/checks/pii/
 **Latency budget under evaluation**: ≤ 1000 ms for detection + masking
 
@@ -31,7 +31,7 @@ Notable properties:
 
 ## 2. Architectural comparison
 
-| Dimension | OpenAI Guardrails (Presidio+spaCy) | FEAT-319 (this repo) |
+| Dimension | OpenAI Guardrails (Presidio+spaCy) | FEAT-324 (this repo) |
 |---|---|---|
 | Engine | Presidio analyzer; spaCy NLP pipeline runs on **every** `analyze()` call | Rust `pii-rs` (`RegexSet` one-pass DFA + validators + context scoring); pure-Python fallback, identical behavior |
 | Hard deps | `presidio-analyzer`, `presidio-anonymizer`, spaCy + `en_core_web_sm` model (init fails without it) | none in Python core; optional `ai-parrot[pii-native]` wheel |
@@ -41,7 +41,7 @@ Notable properties:
 | Actions | mask (input stage only) or block | allow / redact (mask strategies) / **reversible pseudonymize** with per-conversation restore |
 | Output-stage masking | **not supported** (block only) | primary use case: tool egress + final response are both mask-capable |
 | Streaming | none | sliding-window filter, holdback ≤ 128 chars, streaming ≡ non-streaming invariant |
-| Anti-bypass | Unicode normalization; optional encoded-PII scan | **adopted into FEAT-319 from this comparison** (see §5) |
+| Anti-bypass | Unicode normalization; optional encoded-PII scan | **adopted into FEAT-324 from this comparison** (see §5) |
 | At-rest posture | n/a (gateway-level check) | `enforce` mode persists scrubbed text in memory/observability on both ask paths |
 
 The output-stage limitation is decisive for our use case: AI-Parrot's two
@@ -53,7 +53,7 @@ to block-only.
 
 Environment: Linux container, Python 3.11.15, `presidio-analyzer 2.2.363`,
 `spacy 3.8.13`. 200 warm iterations per corpus; p50/p95/p99 via
-`time.perf_counter`. Corpora match the FEAT-319 benchmark gates: 1 KB clean
+`time.perf_counter`. Corpora match the FEAT-324 benchmark gates: 1 KB clean
 prose, 1 KB PII-dense (emails, phones, Luhn-valid cards, IPs, SSNs),
 10 KB mixed. Scripts in Appendix A.
 
@@ -85,7 +85,7 @@ differently, not a coverage gap in either direction).
 single-DFA pass plus GIL release is consistently reported at 10–33× over
 equivalent Python regex scanning (e.g. the argus-redact PyO3 engine's
 sub-ms "fast" mode). Applied to the measured prototype numbers, that puts
-the FEAT-319 native targets — p99 < 100 µs @ 1 KB clean, < 1 ms @ 10 KB —
+the FEAT-324 native targets — p99 < 100 µs @ 1 KB clean, < 1 ms @ 10 KB —
 inside the projected envelope with margin.
 
 ## 4. Reading the numbers against the ≤ 1000 ms budget
@@ -100,11 +100,11 @@ inside the projected envelope with margin.
   sliding window. A 20–50 ms engine inside the streaming loop turns a
   100-chunk response into seconds of added latency and starves
   time-to-first-token; at 0.1–1.7 ms (Python) or tens of µs (Rust,
-  projected) the same loop stays imperceptible. This is why FEAT-319 gates
+  projected) the same loop stays imperceptible. This is why FEAT-324 gates
   on p99 *per scan*, not per turn.
 - **Cold start matters for serverless/worker topologies**: 2.85 s of
   import+init (lower bound; the real model is bigger) vs effectively zero.
-- **detect_only telemetry mode** (FEAT-319) runs the same scan on every
+- **detect_only telemetry mode** (FEAT-324) runs the same scan on every
   output; a 30–50 ms engine makes "audit everything" expensive, a sub-2 ms
   one makes it free.
 
@@ -112,11 +112,11 @@ inside the projected envelope with margin.
 check for non-streaming input screening, but it cannot serve AI-Parrot's
 hot seams: it masks only at input stage, has no streaming story, and its
 per-scan cost composes badly even though a single call fits 1000 ms. The
-FEAT-319 design (catalog + Rust engine + Python fallback) meets the same
+FEAT-324 design (catalog + Rust engine + Python fallback) meets the same
 budget with two to three orders of magnitude of headroom — headroom that
 is what actually makes per-tool-call and per-chunk scrubbing viable.
 
-## 5. What we adopt from Guardrails (design changes to FEAT-319)
+## 5. What we adopt from Guardrails (design changes to FEAT-324)
 
 Two features are validated by this review and **incorporated into the spec
 (v0.2)**:
@@ -162,7 +162,7 @@ ran in this environment).
 ### corpus.py
 
 ```python
-"""Shared synthetic corpora for the PII latency benchmark (FEAT-319 baseline)."""
+"""Shared synthetic corpora for the PII latency benchmark (FEAT-324 baseline)."""
 
 CLEAN_1KB = (
     "The quarterly planning meeting covered roadmap priorities for the data "
@@ -263,7 +263,7 @@ if __name__ == "__main__":
 ### bench_prototype.py
 
 ```python
-"""FEAT-319 Phase-1 Python engine prototype (compiled stdlib re + Luhn)."""
+"""FEAT-324 Phase-1 Python engine prototype (compiled stdlib re + Luhn)."""
 import json, re, resource, statistics, sys, time
 
 PATTERNS = {
@@ -361,5 +361,5 @@ if __name__ == "__main__":
 - OpenAI Guardrails PII check: https://openai.github.io/openai-guardrails-python/ref/checks/pii/
 - Microsoft Presidio: https://microsoft.github.io/presidio/
 - argus-redact (PyO3 engine, sub-ms fast mode): https://pypi.org/project/argus-redact/
-- FEAT-319 spec: `sdd/specs/pii-detection-redaction.spec.md`
-- FEAT-319 brainstorm: `sdd/proposals/pii-detection-redaction.brainstorm.md`
+- FEAT-324 spec: `sdd/specs/pii-detection-redaction.spec.md`
+- FEAT-324 brainstorm: `sdd/proposals/pii-detection-redaction.brainstorm.md`

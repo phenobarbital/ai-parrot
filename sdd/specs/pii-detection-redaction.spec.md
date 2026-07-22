@@ -5,15 +5,16 @@ base_branch: dev
 
 # Feature Specification: PII Detection & Redaction for Tool Outputs and Agent Responses
 
-**Feature ID**: FEAT-319
+**Feature ID**: FEAT-324
 **Date**: 2026-07-20
 **Author**: Jesús Lara (spec drafted with Claude Code)
 **Status**: draft
 **Target version**: 0.26.0
 
 > Source brainstorm: `sdd/proposals/pii-detection-redaction.brainstorm.md`
-> (Recommended Option A). Note: the brainstorm tentatively cited FEAT-316;
-> that id was taken by the eventbus migration — this feature is **FEAT-319**.
+> (Recommended Option A). Id history: tentatively FEAT-316, then FEAT-319 —
+> both ranges were claimed by the eventbus workstream (FEAT-316–319) while
+> this spec was in flight; final id is **FEAT-324** (highest on main: 323).
 
 ---
 
@@ -534,7 +535,7 @@ def encrypt_credential(...)   # line 19 — AES-GCM via navigator_session.vault.
   `navigator_session.vault.crypto` helpers wrapped by
   `security/credentials_utils.py`.
 - ~~FEAT-316 as this feature's id~~ — FEAT-316/317/318 belong to the
-  eventbus migration specs; this feature is FEAT-319.
+  eventbus migration specs; this feature is FEAT-324.
 
 ---
 
@@ -631,7 +632,7 @@ def encrypt_credential(...)   # line 19 — AES-GCM via navigator_session.vault.
 - [ ] PII split across formatting (table cells / JSON keys): document as
   limitation only, or add a normalization pre-pass later? — *Owner: Jesús*
 - [x] NER-class entities — *Resolved in spec round*: out of scope for
-  FEAT-319; `PIIEngine` protocol is the extension point for a future
+  FEAT-324; `PIIEngine` protocol is the extension point for a future
   `SpacyNerEngine` (§1 Non-Goals).
 - [ ] Streaming UX for voice consumers (holdback ≤128 chars acceptable?) —
   *Owner: Jesús*
@@ -650,3 +651,4 @@ def encrypt_credential(...)   # line 19 — AES-GCM via navigator_session.vault.
 |---|---|---|---|
 | 0.1 | 2026-07-20 | Jesús Lara / Claude Code | Initial draft from `pii-detection-redaction.brainstorm.md`; FEAT id corrected 316→319 |
 | 0.2 | 2026-07-22 | Jesús Lara / Claude Code | Adopt Unicode normalization + `detect_encoded_pii` from the OpenAI-Guardrails comparison; add measured Presidio baseline (`pii-detection-redaction.comparison.md`) |
+| 0.3 | 2026-07-22 | Jesús Lara / Claude Code | Renumber FEAT-319 → FEAT-324 (id claimed by `eventbus-consolidation.spec.md` on main) |
