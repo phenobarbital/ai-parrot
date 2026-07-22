@@ -5,6 +5,17 @@ Lives OUTSIDE ``parrot.outputs.a2ui`` so it may import ``DatasetManager``
 DatasetManager/agents/LLM clients; this package is where dataset I/O happens).
 """
 
+from parrot.tools.infographic_recipes.freeze import (
+    FreezeProvenanceError,
+    FreezeValidationError,
+    freeze_session_envelope,
+)
 from parrot.tools.infographic_recipes.runner import RecipeRunException, RecipeRunner
 
-__all__ = ["RecipeRunException", "RecipeRunner"]
+__all__ = [
+    "RecipeRunException",
+    "RecipeRunner",
+    "FreezeProvenanceError",
+    "FreezeValidationError",
+    "freeze_session_envelope",
+]
