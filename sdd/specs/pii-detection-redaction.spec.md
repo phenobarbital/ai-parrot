@@ -100,6 +100,17 @@ is redacted or token-restored in `AbstractBot.get_response()`
 (non-streaming) and through a `StreamingPIIFilter` sliding window in
 `BaseBot.ask_stream()` (streaming).
 
+Two anti-bypass measures are adopted from the OpenAI Guardrails PII check
+(comparison + measured baseline: `sdd/proposals/pii-detection-redaction.comparison.md`):
+a **mandatory Unicode normalization pre-pass** in both engines (NFKC folding
+of fullwidth/compatibility characters before matching, with spans mapped
+back to original-text offsets so masking always rewrites the untouched
+original), and an optional **encoded-PII detection** pass
+(`PIIPolicy.detect_encoded_pii`, default off): Base64/URL-encoded/hex
+candidates are decoded with stdlib codecs and scanned, and matches mask the
+*encoded* region with `<{ENTITY}_ENCODED>` tokens. Encoded-PII decoding runs
+Python-side (Module 1), outside the Rust hot path initially.
+
 Resolved design decisions (carried from brainstorm + spec round):
 - Catalog regexes are validated at load time against the **Rust `regex`
   syntax subset** (no lookaround/backreferences) so Python↔Rust parity is
@@ -109,6 +120,9 @@ Resolved design decisions (carried from brainstorm + spec round):
   of any rollout.
 - In `enforce` mode, memory and observability persist **scrubbed** text on
   both `ask()` and `ask_stream()` paths.
+- Unicode normalization is always-on (not policy-gated) — a bypassable
+  detector is worse than none; `detect_encoded_pii` is opt-in because its
+  decode+rescan cost is measurable.
 - `PseudonymStore` ships with an abstract interface and **two backends in
   this feature**: in-memory (TTL/LRU) and encrypted Redis (AES-GCM via the
   existing `credentials_utils` helpers over `navigator_session.vault.crypto`,
@@ -222,6 +236,7 @@ class PIIPolicy(BaseModel):
     scrub_final_response: bool = True
     scrub_streaming: bool = True
     pseudonymize_default: bool = False
+    detect_encoded_pii: bool = False          # scan Base64/URL/hex-decoded content
 ```
 
 ### New Public Interfaces
@@ -288,7 +303,10 @@ New bot kwargs (following the `enable_tools` convention):
   at the tool seam; redact in `get_response()`; bot kwargs; starter entities
   (`email`, `phone_us`, `credit_card` w/ Luhn, `ipv4`, `us_ssn`);
   scrubbed-at-rest on both paths in `enforce`; `detect_only` mode; audit
-  logging (entity id + tool, never the value).
+  logging (entity id + tool, never the value); **Unicode normalization
+  pre-pass** (NFKC fold, spans mapped back to original offsets) always-on;
+  **encoded-PII pass** (Base64/URL/hex decode + rescan, `<{ENTITY}_ENCODED>`
+  masking) behind `detect_encoded_pii`, default off.
 - **Depends on**: nothing new (existing seams only).
 
 ### Module 2: pii-rust-engine
@@ -340,6 +358,8 @@ New bot kwargs (following the `enable_tools` convention):
 | `test_engine_parity` | M2 | Shared corpus through both engines → identical `(entity_id, start, end)` sets; `skipif` without `pii_rs` |
 | `test_token_map_roundtrip` | M3 | `restore(transform(x)) == x`; same value → same token; hallucinated token left literal + WARNING |
 | `test_pseudonym_stores` | M3 | TTL/LRU eviction; Redis backend stores only ciphertext; map never in logs (`caplog`) |
+| `test_unicode_bypass` | M1 | Fullwidth/compatibility chars (e.g. `ｊｏｈｎ＠ｅｘａｍｐｌｅ．ｃｏｍ`) are detected; masked output rewrites the ORIGINAL text (offset-mapping correctness) |
+| `test_encoded_pii` | M1 | Base64/URL-encoded/hex PII detected when `detect_encoded_pii=True` → `<EMAIL_ENCODED>`-style masks; off by default |
 | `test_streaming_boundaries` | M4 | Seeded random chunk splits → concatenated output == non-streaming scrub output; markers never split |
 
 ### Integration Tests
@@ -359,6 +379,13 @@ New bot kwargs (following the `enable_tools` convention):
 | Native scan, 10 KB mixed | p99 < 1 ms |
 | Python fallback, same corpora | informational (target: < 10× native) |
 | 100 KB pathological (many near-misses) | no quadratic blowup (documented ceiling) |
+
+Measured baseline for context (Presidio/spaCy stack as used by OpenAI
+Guardrails; blank-model **lower bound**, see
+`sdd/proposals/pii-detection-redaction.comparison.md`): scan+mask p99 =
+1.13 ms @ 1 KB clean, 37.4 ms @ 1 KB PII-dense, 50.35 ms @ 10 KB mixed;
+cold init 2.85 s; 147 MB RSS. The Phase-1 Python prototype measured 0.16 /
+0.24 / 1.73 ms p99 on the same corpora at 10.4 MB RSS.
 
 ### Test Data / Fixtures
 
@@ -407,6 +434,14 @@ def pii_bot(policy: PIIPolicy):  # bot wired with a stub PII-emitting tool
       never split across chunks; holdback ≤ 128 chars.
 - [ ] In `enforce` mode, memory and observability store scrubbed text on
       both `ask()` and `ask_stream()` paths.
+- [ ] Unicode normalization is always active: the fullwidth-bypass test
+      passes and masked output rewrites original (un-normalized) text.
+- [ ] `detect_encoded_pii` detects Base64/URL/hex-encoded PII when enabled,
+      masks as `<{ENTITY}_ENCODED>`, and is off by default.
+- [ ] The comparative latency baseline vs Presidio/spaCy is checked into the
+      repo (`sdd/proposals/pii-detection-redaction.comparison.md`) and the
+      Rust engine beats the measured Presidio lower bound by ≥50× on the
+      10 KB corpus.
 - [ ] Documentation updated in `docs/` (enable/rollout guide:
       off → detect_only → enforce).
 - [ ] No breaking changes to the existing public API.
@@ -600,6 +635,12 @@ def encrypt_credential(...)   # line 19 — AES-GCM via navigator_session.vault.
   `SpacyNerEngine` (§1 Non-Goals).
 - [ ] Streaming UX for voice consumers (holdback ≤128 chars acceptable?) —
   *Owner: Jesús*
+- [x] Unicode-bypass hardening — *Resolved in comparison round (v0.2)*:
+  adopt a mandatory NFKC normalization pre-pass in both engines, spans
+  mapped back to original offsets (§2 Overview, §3 Module 1, §5).
+- [x] Encoded-PII detection (Base64/URL/hex) — *Resolved in comparison
+  round (v0.2)*: adopted as `PIIPolicy.detect_encoded_pii`, default off,
+  Python-side in Module 1, `<{ENTITY}_ENCODED>` masking (§2, §3, §5).
 
 ---
 
@@ -608,3 +649,4 @@ def encrypt_credential(...)   # line 19 — AES-GCM via navigator_session.vault.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-20 | Jesús Lara / Claude Code | Initial draft from `pii-detection-redaction.brainstorm.md`; FEAT id corrected 316→319 |
+| 0.2 | 2026-07-22 | Jesús Lara / Claude Code | Adopt Unicode normalization + `detect_encoded_pii` from the OpenAI-Guardrails comparison; add measured Presidio baseline (`pii-detection-redaction.comparison.md`) |
