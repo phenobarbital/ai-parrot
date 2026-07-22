@@ -72,7 +72,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Independent of TASK-1866/1867 logic but shares recipes/__init__.py exports; sequential in-worktree avoids merge noise.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1868-recipe-stores.md"
+      "completed_at": "2026-07-22T01:04:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1868-recipe-stores.md"
     },
     {
       "id": "TASK-1869",
