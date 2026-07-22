@@ -255,5 +255,3 @@ class TestOpenAIModels:
 **Deviations from spec**: none (only the BaseView import-path contract
 correction noted above, which is an anti-hallucination fix, not a design
 deviation).
-
-**Deviations from spec**: none
