@@ -52,7 +52,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Shares recipes/__init__.py with TASK-1868; keep sequential in the feature worktree.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1867-transformer-library.md"
+      "completed_at": "2026-07-22T01:01:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1867-transformer-library.md"
     },
     {
       "id": "TASK-1868",
