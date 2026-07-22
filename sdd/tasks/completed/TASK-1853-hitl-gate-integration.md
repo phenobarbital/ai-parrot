@@ -182,10 +182,62 @@ async def test_handoff_rejected_marks_blocked_no_transition(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: `ManualCriterion.blocking: bool = False` added. `QANode.execute`
+now splits `manual` into blocking/non-blocking; non-blocking keeps the
+exact `_merge_manual_results` path; blocking criteria open one
+`manual_criterion` gate each via `shared["session_host"]`
+(TTL from `gate_ttl_for("manual_criterion")`), open ALL gates first then
+`asyncio.gather` all `wait_gate` calls (concurrent human review), fold
+`CriterionResult(kind="manual", passed=(status=="approved"))` + audit
+lines into `QAReport.notes`, and combine into
+`passed = deterministic_passed and cr_passed and blocking_passed`. No-host
+fallback (`shared.get("session_host") is None`) logs a WARNING and
+degrades to the non-blocking synthesis — never deadlocks.
+`DeploymentHandoffNode` gained a `deployment_approval` gate between PR
+creation and the Jira transition, opened via `_await_deployment_approval`
+(`gate_ttl_for("deployment_approval")`, `payload_ref=changeset_channel(run_id)`);
+reject/expire → `_mark_blocked` + `{"status": "blocked", "error":
+"deployment_approval <status> by <resolver>"}`, reusing the existing
+blocked path (no new edges; verified `_mark_blocked` already fires the
+BLOCKED Jira transition + comment via the same
+`transition_issue_with_candidates` walker). 20 new tests in
+`test_gate_integration.py` (approved/rejected/concurrent-gates/no-host
+paths for both nodes, default-off regression guard). Full dev_loop suite:
+484 passed (same 4 pre-existing unrelated failures as prior tasks in this
+feature), no hangs.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **`DeploymentHandoffNode.require_deployment_approval: bool = False`
+   constructor flag added (NOT in the task's file-list scope beyond
+   `deployment_handoff.py` itself, but a necessary correction discovered
+   while validating this task).** The task's scope said to gate on
+   `host = shared.get("session_host"); if host is not None: <open gate>`.
+   But TASK-1851 (already completed) made `DevLoopRunner.run()`/
+   `run_revision()` ALWAYS seed `shared["session_host"]` — unconditionally,
+   for every construction style, not just "AHP-enabled" runners. Gating
+   purely on host-presence would therefore make the `deployment_approval`
+   gate MANDATORY for every existing and future run through the real
+   runner, with nothing to resolve it — verified as a concrete regression:
+   the full `pytest packages/ai-parrot/tests/flows/dev_loop/` run hung
+   indefinitely inside `test_runner.py`'s pre-existing happy-path tests
+   (which exercise `DeploymentHandoffNode` via `runner.run()` and never
+   resolve a gate). Added `require_deployment_approval` (default `False`)
+   as the explicit opt-in — the same "per-criterion opt-in" philosophy
+   spec §1 G4 already establishes for `ManualCriterion.blocking` — so the
+   gate only activates when BOTH a host is present AND the node was
+   explicitly constructed with the flag on. `factories.py`/`runner.py` were
+   NOT touched to wire this flag on by default anywhere (out of this
+   task's file-list scope) — flagging that a follow-up task must decide
+   how/when to turn `require_deployment_approval=True` on for real runs
+   (e.g. a new conf key threaded through `build_dev_loop_node_factories`)
+   for the deployment-approval gate to ever fire in production. Added a
+   regression-guard test
+   (`test_handoff_default_skips_gate_even_with_host_present`) documenting
+   exactly this scenario.
+2. **`revision_approval` / `plan_approval` gate call-sites**: confirmed
+   NOT in scope per the task; no node opens them. `plan_approval` would
+   naturally slot into `ResearchNode` (approve the plan before
+   Development) and `revision_approval` into `RevisionHandoffNode`
+   (approve before pushing to the existing PR) — neither touched here.

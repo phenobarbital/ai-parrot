@@ -112,7 +112,7 @@
       "feature_id": "FEAT-322",
       "feature": "agent-host-protocol-session-state",
       "spec": "sdd/specs/agent-host-protocol-session-state.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Touches models.py + nodes/qa.py + nodes/deployment_handoff.py — no file overlap with TASK-1852/1854/1855.",
       "assigned_to": null,
       "started_at": "2026-07-21T23:57:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1853-hitl-gate-integration.md"
+      "completed_at": "2026-07-22T01:05:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1853-hitl-gate-integration.md"
     },
     {
       "id": "TASK-1854",
