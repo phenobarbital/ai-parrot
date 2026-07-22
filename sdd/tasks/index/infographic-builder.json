@@ -92,7 +92,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Integrates registry, library, stores, DatasetManager and renderer registry.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1869-recipe-runner.md"
+      "completed_at": "2026-07-22T01:14:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1869-recipe-runner.md"
     },
     {
       "id": "TASK-1870",
