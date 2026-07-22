@@ -90,28 +90,82 @@ from parrot.flows.dev_loop import (
     BugBrief,
     ClaudeCodeDispatcher,
     CodexCodeDispatcher,
-    CodexCodeDispatchProfile,
+    CodexCodeDispatchProfile,  # noqa: F401 - re-exported; test-patchable, see agent_builder
     GeminiCodeDispatcher,
-    GeminiCodeDispatchProfile,
-    LLMCodeDispatcher,
-    LLMCodeDispatchProfile,
-    GrokCodeDispatcher,
-    GrokCodeDispatchProfile,
-    MoonshotCodeDispatcher,
-    MoonshotCodeDispatchProfile,
-    ZaiCodeDispatcher,
-    ZaiCodeDispatchProfile,
+    GeminiCodeDispatchProfile,  # noqa: F401 - re-exported; test-patchable, see agent_builder
+    LLMCodeDispatcher,  # noqa: F401 - re-exported; test-patchable, see agent_builder
+    LLMCodeDispatchProfile,  # noqa: F401 - re-exported; test-patchable, see agent_builder
+    GrokCodeDispatcher,  # noqa: F401 - re-exported; test-patchable, see agent_builder
+    GrokCodeDispatchProfile,  # noqa: F401 - re-exported; test-patchable, see agent_builder
+    MoonshotCodeDispatcher,  # noqa: F401 - re-exported; test-patchable, see agent_builder
+    MoonshotCodeDispatchProfile,  # noqa: F401 - re-exported; test-patchable, see agent_builder
+    ZaiCodeDispatcher,  # noqa: F401 - re-exported; test-patchable, see agent_builder
+    ZaiCodeDispatchProfile,  # noqa: F401 - re-exported; test-patchable, see agent_builder
     DevLoopRunner,
     build_dev_loop_flow,
     flow_stream_ws,
     parse_repo_specs,
 )
+from parrot.flows.dev_loop.agent_builder import build_dispatcher
 from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
+from parrot.flows.dev_loop.models import DevAgentSpec
 from parrot_tools.gittoolkit import GitToolkit
 from parrot_tools.jiratoolkit import JiraToolkit
 
 logger = logging.getLogger("dev_loop.server")
 STATIC_DIR = Path(__file__).parent / "static"
+
+# FEAT-323: per-backend max-concurrent env var, mirroring the original
+# inline if/elif in ``_on_startup`` verbatim (Module 3 extraction).
+_DEVELOPMENT_AGENT_MAX_CONCURRENT_ENV = {
+    "codex": "CODEX_CODE_MAX_CONCURRENT_DISPATCHES",
+    "gemini": "GEMINI_CODE_MAX_CONCURRENT_DISPATCHES",
+    "nvidia": "LLM_CODE_MAX_CONCURRENT_DISPATCHES",
+    "grok": "GROK_CODE_MAX_CONCURRENT_DISPATCHES",
+    "zai": "ZAI_CODE_MAX_CONCURRENT_DISPATCHES",
+    "moonshot": "MOONSHOT_CODE_MAX_CONCURRENT_DISPATCHES",
+}
+
+
+def _log_development_agent_selection(backend: str, profile: Any) -> None:
+    """Log the Development node's dispatcher selection.
+
+    Mirrors the exact log messages/args the pre-FEAT-323 inline if/elif
+    block emitted per backend, so the single-agent path stays observably
+    unchanged after the Module 3 builder extraction.
+
+    Args:
+        backend: The resolved ``DevAgentBackend`` (``"llm"`` normalized to
+            ``"nvidia"`` by the caller).
+        profile: The dispatch profile returned by ``build_dispatcher``.
+    """
+    if backend == "codex":
+        logger.info("Development node using Codex CLI (model=%s)", profile.model)
+    elif backend == "gemini":
+        logger.info("Development node using Gemini CLI (model=%s)", profile.model)
+    elif backend == "nvidia":
+        logger.info(
+            "Development node using Nvidia LLM code dispatcher (llm=%s)",
+            profile.llm,
+        )
+    elif backend == "grok":
+        logger.info(
+            "Development node using Grok code dispatcher (model=%s)",
+            profile.model,
+        )
+    elif backend == "zai":
+        logger.info(
+            "Development node using Z.ai code dispatcher (model=%s, thinking=%s)",
+            profile.model,
+            profile.enable_thinking,
+        )
+    elif backend == "moonshot":
+        logger.info(
+            "Development node using Moonshot code dispatcher (model=%s, "
+            "reasoning_effort=%s)",
+            profile.model,
+            profile.reasoning_effort,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -459,125 +513,24 @@ async def _on_startup(app: web.Application) -> None:
     development_dispatcher: object = dispatcher
     development_profile: object | None = None
     development_agent = conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code").strip().lower()
-    if development_agent == "codex":
-        development_dispatcher = CodexCodeDispatcher(
+    if development_agent in {"claude", "claude-code"}:
+        pass  # development_dispatcher/development_profile already set above
+    elif development_agent in _DEVELOPMENT_AGENT_MAX_CONCURRENT_ENV or development_agent == "llm":
+        # FEAT-323 Module 3: materialize via the reusable builder instead of
+        # a dedicated inline branch per backend. "llm" is a legacy alias for
+        # "nvidia" (DevAgentBackend only knows "nvidia").
+        backend = "nvidia" if development_agent == "llm" else development_agent
+        development_dispatcher, development_profile = build_dispatcher(
+            DevAgentSpec(agent=backend),
+            redis_url=redis_url,
             max_concurrent=conf.config.getint(
-                "CODEX_CODE_MAX_CONCURRENT_DISPATCHES",
+                _DEVELOPMENT_AGENT_MAX_CONCURRENT_ENV[backend],
                 fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
             ),
-            redis_url=redis_url,
             stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
         )
-        development_profile = CodexCodeDispatchProfile(
-            model=conf.config.get("DEV_LOOP_CODEX_MODEL", fallback="gpt-5.5")
-        )
-        logger.info(
-            "Development node using Codex CLI (model=%s)",
-            development_profile.model,
-        )
-    elif development_agent == "gemini":
-        development_dispatcher = GeminiCodeDispatcher(
-            max_concurrent=conf.config.getint(
-                "GEMINI_CODE_MAX_CONCURRENT_DISPATCHES",
-                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
-            ),
-            redis_url=redis_url,
-            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
-        )
-        development_profile = GeminiCodeDispatchProfile(model=conf.config.get("DEV_LOOP_GEMINI_MODEL", fallback="auto"))
-        logger.info(
-            "Development node using Gemini CLI (model=%s)",
-            development_profile.model,
-        )
-    elif development_agent in {"nvidia", "llm"}:
-        nvidia_model = conf.config.get(
-            "DEV_LOOP_NVIDIA_CODE_MODEL",
-            fallback="moonshotai/kimi-k2-instruct-0905",
-        )
-        development_dispatcher = LLMCodeDispatcher(
-            max_concurrent=conf.config.getint(
-                "LLM_CODE_MAX_CONCURRENT_DISPATCHES",
-                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
-            ),
-            redis_url=redis_url,
-            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
-        )
-        development_profile = LLMCodeDispatchProfile(
-            llm=f"nvidia:{nvidia_model}",
-            enable_thinking=conf.config.getboolean(
-                "DEV_LOOP_NVIDIA_ENABLE_THINKING",
-                fallback=False,
-            ),
-            clear_thinking=conf.config.getboolean(
-                "DEV_LOOP_NVIDIA_CLEAR_THINKING",
-                fallback=False,
-            ),
-        )
-        logger.info(
-            "Development node using Nvidia LLM code dispatcher (llm=%s)",
-            development_profile.llm,
-        )
-    elif development_agent == "grok":
-        development_dispatcher = GrokCodeDispatcher(
-            max_concurrent=conf.config.getint(
-                "GROK_CODE_MAX_CONCURRENT_DISPATCHES",
-                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
-            ),
-            redis_url=redis_url,
-            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
-        )
-        development_profile = GrokCodeDispatchProfile(
-            model=conf.config.get("DEV_LOOP_GROK_MODEL", fallback="grok-build-0.1")
-        )
-        logger.info(
-            "Development node using Grok code dispatcher (model=%s)",
-            development_profile.model,
-        )
-    elif development_agent == "zai":
-        development_dispatcher = ZaiCodeDispatcher(
-            max_concurrent=conf.config.getint(
-                "ZAI_CODE_MAX_CONCURRENT_DISPATCHES",
-                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
-            ),
-            redis_url=redis_url,
-            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
-        )
-        development_profile = ZaiCodeDispatchProfile(
-            model=conf.config.get("DEV_LOOP_ZAI_MODEL", fallback="glm-5.2"),
-            enable_thinking=conf.config.getboolean(
-                "DEV_LOOP_ZAI_ENABLE_THINKING", fallback=True
-            ),
-            reasoning_effort=conf.config.get(
-                "DEV_LOOP_ZAI_REASONING_EFFORT", fallback="max"
-            ),
-        )
-        logger.info(
-            "Development node using Z.ai code dispatcher (model=%s, thinking=%s)",
-            development_profile.model,
-            development_profile.enable_thinking,
-        )
-    elif development_agent == "moonshot":
-        development_dispatcher = MoonshotCodeDispatcher(
-            max_concurrent=conf.config.getint(
-                "MOONSHOT_CODE_MAX_CONCURRENT_DISPATCHES",
-                fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
-            ),
-            redis_url=redis_url,
-            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
-        )
-        development_profile = MoonshotCodeDispatchProfile(
-            model=conf.config.get("DEV_LOOP_MOONSHOT_MODEL", fallback="kimi-k3"),
-            reasoning_effort=conf.config.get(
-                "DEV_LOOP_MOONSHOT_REASONING_EFFORT", fallback="max"
-            ),
-        )
-        logger.info(
-            "Development node using Moonshot code dispatcher (model=%s, "
-            "reasoning_effort=%s)",
-            development_profile.model,
-            development_profile.reasoning_effort,
-        )
-    elif development_agent not in {"claude", "claude-code"}:
+        _log_development_agent_selection(backend, development_profile)
+    else:
         raise RuntimeError(
             "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', "
             "'gemini', 'nvidia', 'grok', 'zai', or 'moonshot', "
