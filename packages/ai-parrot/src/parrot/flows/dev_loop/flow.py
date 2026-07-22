@@ -167,6 +167,9 @@ def build_dev_loop_flow(
     lifecycle_events: bool = True,
     development_dispatcher: Optional[Any] = None,
     development_profile: Optional[Any] = None,
+    development_pool_config: Optional[Any] = None,
+    development_dispatcher_builder: Optional[Any] = None,
+    development_pool_max: int = 4,
     git_toolkit: Optional[Any] = None,
     repos: Optional[list[RepoSpec]] = None,
     codereview_dispatcher: Optional[Any] = None,
@@ -207,6 +210,15 @@ def build_dev_loop_flow(
             ``DevelopmentNode``. Defaults to ``dispatcher``.
         development_profile: Optional dispatch profile passed only to
             ``DevelopmentNode``.
+        development_pool_config: Optional :class:`DevAgentPoolConfig`
+            (FEAT-323) propagated to ``DevelopmentNode`` via
+            ``build_dev_loop_node_factories``. ``None`` (default) preserves
+            the single-agent behaviour exactly.
+        development_dispatcher_builder: Optional ``(DevAgentSpec) ->
+            (dispatcher, profile)`` callable (FEAT-323) propagated to
+            ``DevelopmentNode`` for pool-worker/conflict-resolver materialization.
+        development_pool_max: Hard cap on total pool workers (FEAT-323).
+            Defaults to ``4``.
         codereview_dispatcher: Optional ``AbstractCodeReviewDispatcher``
             (FEAT-270) used by ``QANode`` for the code-review gate. Defaults
             to ``None``, in which case ``QANode`` auto-wraps ``dispatcher``
@@ -226,6 +238,9 @@ def build_dev_loop_flow(
         redis_url=redis_url,
         development_dispatcher=development_dispatcher,
         development_profile=development_profile,
+        development_pool_config=development_pool_config,
+        development_dispatcher_builder=development_dispatcher_builder,
+        development_pool_max=development_pool_max,
         git_toolkit=git_toolkit,
         log_toolkits=log_toolkits,
         repos=repos,

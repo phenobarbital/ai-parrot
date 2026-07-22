@@ -90,12 +90,15 @@ from parrot.flows.dev_loop.models import (
 )
 from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
 # Nuevos (tras TASK-1857..1861):
-from parrot.flows.dev_loop.models import DevAgentPoolConfig, DevAgentSpec
+from parrot.flows.dev_loop.models import DevAgentPoolConfig, DevAgentSpec, TaskScopedBrief
 from parrot.flows.dev_loop.task_scheduler import TaskScheduler
-from parrot.flows.dev_loop.agent_pool import DevAgentPool, aggregate_outputs
-from parrot.flows.dev_loop.worktree_manager import (
-    SubWorktreeManager, SubWorktreeMergeError,
-)
+from parrot.flows.dev_loop.agent_pool import DevAgentPool, WaveResult, aggregate_outputs
+from parrot.flows.dev_loop.worktree_manager import SubWorktreeManager
+# SubWorktreeMergeError NOT imported here — the node never catches it,
+# only lets it propagate (per "Does NOT Exist" note below); TaskScopedBrief
+# added for the conflict-resolver's brief (see Completion Note deviation 2);
+# conf.WORKTREE_BASE_PATH read via `from parrot import conf` (precedent:
+# nodes/research.py already does this — confirmed via grep).
 ```
 
 ### Existing Signatures to Use
@@ -242,10 +245,69 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: Reworked `DevelopmentNode` per scope: `__init__` gained
+`pool_config`/`dispatcher_builder`/`pool_max=4` (keyword-only, optional,
+via `object.__setattr__` matching the existing frozen-node pattern);
+`execute()` bifurcates via `_resolve_pool_config` (cascade:
+`shared["work_brief"] or shared["bug_brief"]`.`dev_agents` — verified via
+grep that BOTH keys exist, forward-compat/legacy, set by
+`intent_classifier.py`/`runner.py` — > injected `pool_config` > `None`);
+`_execute_single` is the untouched pre-FEAT-323 code (verified byte-a-byte
+via `TestSinglePathRegression` + the pre-existing `test_development.py`
+suite, both green); `_execute_pool` resolves the feature slug by scanning
+`sdd/tasks/index/*.json` for a `feature_id` match (never assumes the
+filename), builds the pool via `DevAgentPool.build`, loops
+`scheduler.next_wave()` → `pool.run_wave()` → `mark_done`/`mark_failed`,
+creates sub-worktrees via `SubWorktreeManager` before the first wave and
+merges after each wave in 'isolated' mode (`cleanup()` always runs in
+`finally`), raises `RuntimeError` only when zero tasks completed AND some
+are incomplete (true "all-incomplete" case — partial completion does not
+raise, matching "QA decide"), and returns `aggregate_outputs(...)`. The
+conflict-resolver policy (`_resolve_conflict`) dispatches the pool's first
+worker into the conflicted sub-worktree, falling back to a claude-code
+dispatcher (via `dispatcher_builder`) on failure, propagating
+`SubWorktreeMergeError` if both fail. Added
+`packages/ai-parrot/tests/flows/dev_loop/test_development_node.py` (9
+tests: single-path regression, injected-pool-used, brief-overrides-
+injected, missing-index-degrades, no-builder-degrades, waves+partial
+aggregation, all-incomplete raises, isolated mode manager/dispatch-cwd
+wiring, cleanup-runs-in-finally-even-on-merge-failure — via a `FakeManager`/
+`FailingMergeManager` test double, no real git needed for this file since
+TASK-1861 already covers real-git behavior). Full
+`packages/ai-parrot/tests/flows/dev_loop/` suite (449 tests) passes except
+the same 4 pre-existing full-suite-ordering failures already verified
+unrelated to this feature. `ruff check` clean. Verified
+`parrot.flows.dev_loop.factories`/`.flow`/the bare package still import
+cleanly after the fix below.
 
 **Deviations from spec**:
+1. Discovered and fixed a **circular-import bug** in `agent_pool.py`
+   (TASK-1860), outside this task's nominal file list but blocking this
+   task entirely: `agent_pool.py` imported its dependencies via the
+   `parrot.flows.dev_loop` package (a TASK-1859/1860 deviation to keep
+   class identity stable against `test_lazy_import.py`'s `sys.modules`
+   surgery). `nodes/development.py` now imports `agent_pool.py`, and
+   `nodes/development.py` is reached **transitively** through the
+   package's own init chain (`__init__.py -> flow.py -> factories.py ->
+   nodes/development.py`), so importing the package from `agent_pool.py`
+   raised `ImportError: cannot import name ... from partially initialized
+   module`. Fixed by reverting `agent_pool.py` to import directly from
+   `.dispatcher`/`.models`/`.task_scheduler` (submodule-direct) — safe
+   here because nothing else currently imports `agent_pool`'s classes via
+   the package path, so there is no class-identity divergence risk (unlike
+   `agent_builder.py`, which stays package-style since it is NOT reached
+   by the package's own init chain and IS imported by `server.py` via the
+   package). Documented the rationale in `agent_pool.py`'s module docstring.
+2. `_resolve_conflict`'s brief for the conflict-resolver dispatch has no
+   dedicated Pydantic model in the spec's Data Models section (only
+   `TaskScopedBrief` exists). I reused `TaskScopedBrief(research=research,
+   task_id="RESOLVE_MERGE_CONFLICT")` — a sentinel task_id, not a real
+   TASK-NNN — dispatched with `cwd` set to the conflicted sub-worktree, so
+   the resolver agent discovers the conflict via `git status` itself
+   (mirroring how the single-agent path already drops `sdd-worker` into a
+   worktree with no further hand-holding). TASK-1863 (subagent-def wiring)
+   should confirm whether `sdd-worker.md`'s new task-scoped instruction
+   needs an explicit carve-out for this sentinel, or whether the existing
+   "no task_id match in index -> use judgment" behavior already covers it.

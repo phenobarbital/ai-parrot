@@ -202,10 +202,37 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: Implemented `MergeReport`, `SubWorktreeMergeError`, and
+`SubWorktreeManager` in `parrot/flows/dev_loop/worktree_manager.py`:
+`__init__` validates `base_worktree` lives under `worktree_base_path`
+(`ValueError` otherwise); `create(worker_id)` runs `git worktree add -b
+<feature_branch>--<sanitized-worker-id> <path> <feature_branch>` via
+`asyncio.create_subprocess_exec`, sanitizing `.` → `-` in the branch
+suffix, path always under `worktree_base_path`; `merge_sequential(resolver=)`
+merges worker branches strictly in `worker_id` order against the same
+`base_worktree` (never concurrent), skips workers with no new commits,
+detects conflicts via `git merge` exit code + `git status --porcelain`
+(`UU`/`AA`/... entries) for diagnostics, invokes the injected `resolver`
+WITHOUT aborting first (resolver edits in-place + commits per the spec's
+resolver contract — documented in the module docstring), aborts the merge
+only when the resolver is absent/fails, and raises `SubWorktreeMergeError`
+while preserving the sub-worktree; `cleanup(keep_on_conflict=)` removes
+merged sub-worktrees + `git worktree prune`, preserving conflicted ones by
+default. Added `packages/ai-parrot/tests/flows/dev_loop/test_worktree_manager.py`
+(7 tests, on a REAL temporary git repo/worktree sandbox fixture — no
+mocking of git itself): paths-under-base, base-worktree-outside-base
+rejection, clean two-worker merge, conflict→resolver-invoked-and-succeeds,
+resolver-failure→raises+keeps, no-resolver→raises+keeps,
+cleanup-removes-merged-keeps-conflicted. All 7 pass; `ruff check` clean.
+Full `packages/ai-parrot/tests/flows/dev_loop/` suite (438 tests) passes
+except the same 4 pre-existing full-suite-ordering failures already
+verified unrelated to this feature in TASK-1857/1859/1860's notes.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: None — implemented exactly as scoped. Conflict-
+resolution ordering (resolver invoked before any abort, only aborting on
+resolver absence/failure) was an implementation decision required to
+satisfy the spec's own note that "el resolutor edita in-place el worktree
+base y commitea" (§ Implementation Notes); documented explicitly in the
+module docstring per that note's instruction to "documentar la elección."

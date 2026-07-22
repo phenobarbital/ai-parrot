@@ -72,21 +72,23 @@ shared/isolated y wiring en el nodo (TASK-1862).
 
 ### Verified Imports
 ```python
-from parrot.flows.dev_loop.dispatcher import (
-    DevLoopCodeDispatcher,               # Protocol — dispatcher.py:129
-    DispatchExecutionError,              # dispatcher.py (clase de error)
-    DispatchOutputValidationError,       # dispatcher.py (clase de error)
+# UPDATED post-implementation (deviation, see Completion Note): the
+# Protocol/error/model classes are imported via the *package* re-export
+# (parrot.flows.dev_loop), matching agent_builder.py's TASK-1859 fix, so
+# isinstance checks stay stable across test-suite sys.modules surgery
+# (see test_lazy_import.py).
+from parrot.flows.dev_loop import (
+    DevAgentPoolConfig, DevAgentSpec,     # tras TASK-1857 (models.py)
+    DevelopmentOutput,                    # models.py:329
+    DevLoopCodeDispatcher,                # Protocol — dispatcher.py:129
+    DispatchExecutionError,               # dispatcher.py (clase de error)
+    DispatchOutputValidationError,        # dispatcher.py (clase de error)
+    ResearchOutput,                       # models.py:273
+    TaskScopedBrief, WorkerSummary,       # tras TASK-1857 (models.py)
 )
-from parrot.flows.dev_loop.models import (
-    DevelopmentOutput,                   # models.py:329
-    ResearchOutput,                      # models.py:273
-    # tras TASK-1857:
-    DevAgentPoolConfig, DevAgentSpec, TaskScopedBrief, WorkerSummary,
-)
-# tras TASK-1858:
+# TaskRef no se re-exporta desde el paquete — se importa directo del
+# submódulo (sin riesgo de isinstance, no aparece en asserts existentes):
 from parrot.flows.dev_loop.task_scheduler import TaskRef
-# tras TASK-1859:
-from parrot.flows.dev_loop.agent_builder import build_dispatcher
 ```
 
 ### Existing Signatures to Use
@@ -221,10 +223,41 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: Implemented `PoolWorker`, `WaveResult`, `DevAgentPool`
+(`DevAgentPool.build(config, dispatcher_builder, pool_max)` factory: expands
+`DevAgentSpec`s by `count`, truncates at `pool_max` with a warning, numbers
+workers `development.w1..wN`), `run_wave()` (round-robin assignment,
+`asyncio.gather` dispatch with `node_id=worker_id`, `_dispatch_one` never
+raises — converts any exception incl. `DispatchExecutionError`/
+`DispatchOutputValidationError` into a typed `(task_id, worker_id, output,
+error)` tuple, single retry on the next distinct worker via `_next_worker`
+identity-based lookup, single-worker pools retry on themselves), and
+`aggregate_outputs()` (dedup `files_changed` preserving first-seen order,
+`commit_shas` in arrival order, per-`worker_id` `WorkerSummary` merged
+across waves, `incomplete_tasks` populated). Added
+`packages/ai-parrot/tests/flows/dev_loop/test_agent_pool.py` (8 tests:
+round-robin + stream ids, retry-on-other-worker, second-failure-marks-failed,
+pool_max truncation, empty-wave, no-workers ValueError, single-worker/
+single-task aggregate equivalence, dedup+multi-wave-merge aggregation) using
+a `FakeDispatcher`/`AlwaysFailDispatcher` fulfilling the
+`DevLoopCodeDispatcher` Protocol. Full
+`packages/ai-parrot/tests/flows/dev_loop/` suite (428 tests) passes except
+the same 4 pre-existing full-suite-ordering failures verified unrelated to
+this feature in TASK-1857/1859's notes (`test_webhook.py`
+`TestSweepFinishedWorktrees` ×3, `test_server_builds_flow_with_repos`).
+`ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: Imports go through the `parrot.flows.dev_loop`
+package (not `.dispatcher`/`.models`/`.task_scheduler` submodules directly)
+for `DevAgentPoolConfig`/`DevAgentSpec`/`DevelopmentOutput`/
+`DevLoopCodeDispatcher`/`DispatchExecutionError`/
+`DispatchOutputValidationError`/`ResearchOutput`/`TaskScopedBrief`/
+`WorkerSummary` — same class-identity rationale established in TASK-1859
+(importing a submodule of this package always executes `__init__.py`
+first, so there is no cost saved, and bypassing the package re-export risks
+a stale class object after `test_lazy_import.py`'s `sys.modules` surgery).
+`TaskRef` is still imported directly from `.task_scheduler` since it is not
+re-exported by the package `__init__.py` and is not involved in any
+isinstance-sensitive assertion in the existing test suite.
