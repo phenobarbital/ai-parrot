@@ -20,6 +20,7 @@ duplicate it, beyond building sub-worktree paths through
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -247,9 +248,15 @@ class DevelopmentNode(DevLoopNode):
             SubWorktreeMergeError: Unresolvable merge conflict in 'isolated' mode.
             RuntimeError: Every dispatchable task ended up incomplete.
         """
-        feature_slug = self._find_feature_slug(research.worktree_path, research.feat_id)
+        # Index discovery + parsing are small local filesystem reads; keep
+        # them off the event loop to honour the async-first rule.
+        feature_slug = await asyncio.to_thread(
+            self._find_feature_slug, research.worktree_path, research.feat_id
+        )
         scheduler = (
-            TaskScheduler.from_worktree(research.worktree_path, feature_slug)
+            await asyncio.to_thread(
+                TaskScheduler.from_worktree, research.worktree_path, feature_slug
+            )
             if feature_slug is not None
             else None
         )
@@ -305,6 +312,11 @@ class DevelopmentNode(DevLoopNode):
 
                 if manager is not None:
                     await manager.merge_sequential(resolver=_resolver)
+                    # Propagate this wave's merged output into every
+                    # sub-worktree so the next wave's tasks (which may
+                    # depend_on a task another worker just finished) build
+                    # on the integrated feature branch, not a stale tree.
+                    await manager.refresh_all()
         finally:
             if manager is not None:
                 await manager.cleanup(keep_on_conflict=True)

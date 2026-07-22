@@ -195,6 +195,14 @@ class DevAgentPool:
         Returns:
             A ``(task_id, worker_id, output, error)`` tuple. Exactly one of
             ``output``/``error`` is non-``None``.
+
+        Note:
+            A dispatch that commits partial work and *then* fails leaves that
+            commit behind; the single retry re-runs the whole task (on another
+            worker in 'shared' mode, against the same worktree). Sub-agents are
+            expected to make each task's commit atomic (all-or-nothing) so a
+            retry starts clean — the pool does not attempt to unwind partial
+            commits itself.
         """
         brief = TaskScopedBrief(research=research, task_id=task.id)
         try:
@@ -282,19 +290,28 @@ class DevAgentPool:
 
         failed: List[str] = []
         if retry_targets:
+            retry_workers = [self._next_worker(fw) for _task, fw in retry_targets]
             retry_attempts = await asyncio.gather(
                 *(
                     self._dispatch_one(
                         task,
-                        self._next_worker(failed_worker),
+                        retry_worker,
                         research=research,
                         run_id=run_id,
                         cwd_for=cwd_for,
                     )
-                    for task, failed_worker in retry_targets
+                    for (task, _fw), retry_worker in zip(retry_targets, retry_workers)
                 )
             )
-            for task_id, worker_id, output, _error in retry_attempts:
+            for (_task, failed_worker), retry_worker, (task_id, worker_id, output, _error) in zip(
+                retry_targets, retry_workers, retry_attempts
+            ):
+                # Attribute the first-attempt failure to the original worker
+                # — unless the retry landed on that same worker (single-worker
+                # pool), where the retry outcome below already records it and
+                # a second entry would just be a duplicate.
+                if failed_worker is not retry_worker:
+                    per_worker_failed[failed_worker.worker_id].append(task_id)
                 if output is not None:
                     completed[task_id] = output
                     per_worker_completed[worker_id].append(task_id)

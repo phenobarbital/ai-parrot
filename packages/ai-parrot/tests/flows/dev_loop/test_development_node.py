@@ -107,6 +107,7 @@ class FakeManager:
         self.worktree_base_path = worktree_base_path
         self.created: list[str] = []
         self.merge_calls = 0
+        self.refresh_calls = 0
         self.cleanup_calls: list[bool] = []
 
     async def create(self, worker_id: str) -> str:
@@ -116,6 +117,9 @@ class FakeManager:
     async def merge_sequential(self, *, resolver=None) -> MergeReport:
         self.merge_calls += 1
         return MergeReport()
+
+    async def refresh_all(self) -> None:
+        self.refresh_calls += 1
 
     async def cleanup(self, *, keep_on_conflict: bool = True) -> None:
         self.cleanup_calls.append(keep_on_conflict)

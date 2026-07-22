@@ -104,6 +104,32 @@ class TestMerge:
         assert (base_worktree / "w1.py").exists()
         assert (base_worktree / "w2.py").exists()
 
+    async def test_refresh_all_fast_forwards_subworktrees(self, git_sandbox):
+        """After a wave's merge, ``refresh_all`` brings every sub-worktree up
+        to the integrated feature branch (so the next wave is not stale)."""
+        base_worktree, feature_branch, worktree_base_path = git_sandbox
+        manager = SubWorktreeManager(
+            base_worktree=str(base_worktree),
+            feature_branch=feature_branch,
+            worktree_base_path=str(worktree_base_path),
+        )
+
+        w1_path = await manager.create("development.w1")
+        w2_path = await manager.create("development.w2")
+
+        # Only w1 does work this wave; w2 produced nothing.
+        await _write_and_commit(Path(w1_path), "w1.py", "w1\n", "w1 work")
+        await manager.merge_sequential(resolver=None)
+
+        # Before refresh: w2's sub-worktree cannot see w1's merged file.
+        assert not (Path(w2_path) / "w1.py").exists()
+
+        await manager.refresh_all()
+
+        # After refresh: every live sub-worktree contains the merged output.
+        assert (Path(w1_path) / "w1.py").exists()
+        assert (Path(w2_path) / "w1.py").exists()
+
     async def test_conflict_calls_resolver(self, git_sandbox):
         base_worktree, feature_branch, worktree_base_path = git_sandbox
         manager = SubWorktreeManager(

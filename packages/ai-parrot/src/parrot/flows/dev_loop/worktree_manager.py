@@ -261,6 +261,39 @@ class SubWorktreeManager:
             kept_for_inspection=kept_for_inspection,
         )
 
+    async def refresh_all(self) -> None:
+        """Fast-forward every live sub-worktree branch to the feature branch.
+
+        Called between waves (isolated mode) so a later wave's dispatch
+        sees the *integrated* output of every earlier wave — not just the
+        commits the same worker happened to produce. After
+        :meth:`merge_sequential` merges a worker branch with ``--no-ff``,
+        that branch is an ancestor of the feature branch, and any worker
+        that produced no commits still branched from an earlier feature
+        commit — so a ``--ff-only`` merge always applies cleanly and never
+        creates a merge commit inside the sub-worktree.
+
+        Conflicted worktrees (kept for inspection) are skipped. A
+        fast-forward that unexpectedly fails is logged and skipped rather
+        than raised: the worker simply runs the next wave on slightly
+        staler state, which is strictly no worse than the pre-refresh
+        behaviour.
+        """
+        for worker_id in sorted(self._created):
+            if worker_id in self._conflicted_worker_ids:
+                continue
+            path, _branch = self._created[worker_id]
+            rc, _out, err = await self._git(
+                "merge", "--ff-only", self.feature_branch, cwd=path
+            )
+            if rc != 0:
+                self.logger.warning(
+                    "Failed to fast-forward sub-worktree %s to %s: %s",
+                    path,
+                    self.feature_branch,
+                    err.strip(),
+                )
+
     async def cleanup(self, *, keep_on_conflict: bool = True) -> None:
         """Remove merged sub-worktrees; optionally keep conflicted ones.
 
