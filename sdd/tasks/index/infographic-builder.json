@@ -114,7 +114,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Modifies infographic_toolkit.py and consumes the runner API.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1870-toolkit-recipe-tools.md"
+      "completed_at": "2026-07-22T01:21:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1870-toolkit-recipe-tools.md"
     },
     {
       "id": "TASK-1871",
