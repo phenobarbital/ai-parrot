@@ -157,10 +157,38 @@ async def test_cancel_run_200_terminal(...): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: Created `commands.py` with `ResolveGateRequest`/`CancelRunRequest`
+(frozen, extra="forbid"), `resolve_gate_handler`/`cancel_run_handler`
+(thin: validate → delegate to `runner.resolve_gate`/`cancel_run` → map
+exceptions), and `register_command_routes(app, runner)` (binds
+`app["dev_loop_runner"]`, registers both POST routes — mirrors
+`register_pull_request_webhook`'s naming). Status-code contract: 200
+envelope, 400 invalid JSON/body (pydantic `ValidationError` → error
+details), 404 unknown run/gate, 409 already-resolved with resolver
+identity + timestamp (read from `runner.get_host(run_id).state.gates`).
+Exported `register_command_routes` from `__init__.py`; verified no
+import cycle (`commands.py` → `runner.py`, one direction only). 12 new
+tests via `aiohttp_client` (pytest-aiohttp) against a real
+`web.Application` + real `DevLoopRunner`/`SessionHost` pair. Full
+dev_loop suite: 504 passed (same 4 pre-existing unrelated failures as
+prior tasks).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: exactly the one the task's own Codebase
+Contract anticipated and told me to verify — TASK-1851 did NOT expose an
+`origin` parameter on `DevLoopRunner.resolve_gate`, and TASK-1849's
+`SessionHost.resolve_gate` didn't accept one either (only the lower-level
+`SessionHost.apply` did). Per the task's explicit instruction ("if not,
+... extend the runner signature (additive) — do NOT bypass the runner
+and call the host directly from the handler"), added
+`origin: Optional[ActionOrigin] = None` to BOTH `SessionHost.resolve_gate`
+(`session_state.py`) and `DevLoopRunner.resolve_gate` (`runner.py`),
+threading it through to the underlying `apply(GateResolved(...), origin=origin)`
+call. Both changes are purely additive (new keyword-only param, default
+`None`) — verified zero behavior change for existing callers via the
+full `test_session_state.py` (30) + `test_session_state_properties.py`
+(13) + `test_runner_host.py` (16) suites, all still green. This was the
+only way to honestly satisfy the AC "ActionOrigin recorded on resolve
+envelopes" without the REST handler fabricating an envelope the host
+never actually sequenced.

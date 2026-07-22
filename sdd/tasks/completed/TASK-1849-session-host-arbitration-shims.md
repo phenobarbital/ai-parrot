@@ -149,10 +149,23 @@ def test_shim_unknown_kind_returns_none(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: Extended `session_state.py` with `SessionHost` (apply/snapshot/
+replay_since/resolve_gate/open_gate/expire_due_gates/wait_gate) and the
+migration shims (`_FLOW_EVENT_MAP`, `_DISPATCH_KIND_MAP`,
+`action_from_flow_event`, `action_from_dispatch_event`) per the sketch,
+plus the `on_envelope` sink (exceptions swallowed) and `origin` passthrough
+on `apply`. `wait_gate` is implemented as `async def` (idiomatic Python
+equivalent of the spec's `Awaitable[ApprovalGate]` return type) backed by
+one lazily-created `asyncio.Event` per gate_id, set inside `apply` when a
+matching `gate/resolved`/`gate/expired` folds, and discarded after wakeup;
+works for both await-then-resolve and already-resolved orderings. 23 new
+tests added (53 total in the file now) covering sequencing monotonicity,
+replay filtering, first-writer-wins arbitration, both expiry policies,
+sink-exception swallowing, `wait_gate` in both orderings + on expiry, and
+1:1 shim mappings (incl. unknown→None and 500-char truncation). `ruff
+check` clean; module still imports only pydantic + stdlib (asyncio/time/
+uuid/typing — all stdlib).
 
 **Deviations from spec**: none

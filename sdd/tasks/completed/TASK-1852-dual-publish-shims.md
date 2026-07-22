@@ -168,10 +168,69 @@ async def test_actions_xadd_failure_does_not_break_legacy(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: `flow.py`'s `FlowEventPublisher.__call__` now folds
+`shared_data["session_host"]` (per-event, same resolution pattern as
+run_id) via `action_from_flow_event` in a SECOND, INDEPENDENT try/except
+after the legacy XADD block — verified both directions (legacy-XADD
+failure doesn't block the fold; a broken host doesn't block legacy
+publish). `dispatcher.py`'s 4 `_publish_event` definitions (Claude/Codex/
+Gemini/LLM — the ONE choke point every one of the 8 dispatch kinds
+already funnels through, incl. via `_publish_message_event`/
+`_stream_stdout_events`/`_publish_codex_event`/`_publish_gemini_event`)
+now call the single shared `_apply_to_session_host(event)` helper right
+after `DispatchEvent` construction (before the legacy Redis
+connect/XADD, so it fires even when Redis is down). All 7 `dispatch()`
+signatures (4 base + Grok/Zai/Moonshot pass-through) gained
+`session_host: Optional[SessionHost] = None`; Grok/Zai/Moonshot just
+forward it to `super().dispatch(session_host=session_host, ...)`.
+5th-family check: none found — still exactly 4 XADD sites as documented.
+23 new tests (14 in `test_dual_publish.py` covering both shim sites,
+folding, isolation, and both failure-swallow directions); all pre-existing
+dispatcher tests (Claude/Codex/Gemini/LLM/Grok/Zai/Moonshot, 69 tests) and
+flow/runner tests pass unmodified. Full dev_loop suite: 474 passed (same
+4 pre-existing unrelated failures as TASK-1850/1851).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **`contextvars.ContextVar` instead of per-call-site parameter threading**
+   for the dispatcher shim. The task's scope literally suggested extending
+   "the internal event-publish helper path each dispatcher already threads
+   per-dispatch" — i.e., passing `session_host` explicitly through every
+   `_publish_event`/`_publish_message_event`/`_stream_stdout_events`/
+   `_publish_codex_event`/`_publish_gemini_event` call site. A full survey
+   found ~48 such call sites across 4 dispatcher classes' streaming
+   helpers in this 2856-line, actively-churning file (FEAT-270/Moonshot
+   landed here in the last weeks, per the task's own risk note). Threading
+   a new kwarg through every nested helper in every class would be a
+   large, mechanical, high-risk rewrite with real potential for silently
+   dropping a shim call at one site. Instead, `dispatch()` binds
+   `session_host` into a module-level `ContextVar` for the duration of its
+   own call (reset in the method's existing `finally`, or a `finally` added
+   to `LLMCodeDispatcher.dispatch()`'s try/except which had none);
+   `_publish_event` reads it back — a 3-line touch per `dispatch()` method
+   instead of touching every internal helper. This preserves the EXACT
+   safety invariant the task calls out — "per-dispatch value, never
+   dispatcher-instance state" — because `ContextVar` values are copied per
+   `asyncio.Task` at task-creation time: concurrent `dispatch()` calls on
+   the SAME shared dispatcher instance (separate Tasks, e.g. two runs
+   dispatching concurrently) never observe each other's host. Verified
+   directly: `test_dispatch_session_host_ctx_isolated_across_concurrent_dispatches`
+   runs two concurrent `dispatch()` calls with distinct hosts on ONE
+   dispatcher instance and asserts no cross-contamination. `dispatch()`'s
+   PUBLIC signature still gains the exact `session_host: Optional[SessionHost]
+   = None` kwarg the contract specifies — only the internal plumbing
+   differs from literal per-call-site threading. Flagging this explicitly
+   in case the architect prefers literal parameter-threading for stylistic
+   consistency with how `run_id`/`node_id` already flow through this file;
+   the current implementation is functionally equivalent and lower-risk.
+2. **Node call-site wiring not in scope / not done**: `nodes/development.py`,
+   `nodes/qa.py`, etc. do not yet pass `shared["session_host"]` into their
+   `dispatcher.dispatch(...)` calls — this task's file list was
+   `flow.py`/`dispatcher.py`/test-file only, and TASK-1853 (HITL gate
+   integration) is the task that touches `qa.py`. Until a node passes
+   `session_host` explicitly, the dispatch-event shim is dormant for that
+   call site (harmless — `session_host` defaults to `None`, exactly
+   "legacy callers... behave exactly as today", per this task's own AC).
+   Flagging so a follow-up task wires the node call sites if full
+   production activation of the dispatch-event fold is desired.

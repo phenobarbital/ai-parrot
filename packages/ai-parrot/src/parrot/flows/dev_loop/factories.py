@@ -51,6 +51,7 @@ def build_dev_loop_node_factories(
     log_toolkits: Optional[Dict[str, Any]] = None,
     repos: Optional[List[RepoSpec]] = None,
     codereview_dispatcher: Optional[Any] = None,
+    require_deployment_approval: bool = False,
 ) -> Dict[str, NodeFactory]:
     """Return the ``{dev_loop.* type: factory}`` map binding live deps.
 
@@ -81,6 +82,14 @@ def build_dev_loop_node_factories(
             (FEAT-270) used by ``QANode`` for the code-review gate. Defaults
             to ``None``, in which case ``QANode`` auto-wraps ``dispatcher``
             in a ``ClaudeCodeReviewDispatcher`` (backward compat).
+        require_deployment_approval: FEAT-322 — forwarded to
+            ``DeploymentHandoffNode``. Defaults to ``False`` (today's
+            behavior, unchanged); set ``True`` to require a
+            ``deployment_approval`` HITL gate (resolved via the REST
+            command layer, TASK-1855) before the Jira "Ready to Deploy"
+            transition. This was previously reachable only by reaching
+            into an already-constructed node from a test — code review
+            flagged it as dead-end wiring with no real activation path.
 
     Returns:
         A mapping suitable for ``node_factories=`` on
@@ -137,7 +146,10 @@ def build_dev_loop_node_factories(
 
     def handoff_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(
-            DeploymentHandoffNode(jira_toolkit=jira_toolkit, git_toolkit=git_toolkit, name=nd.id),
+            DeploymentHandoffNode(
+                jira_toolkit=jira_toolkit, git_toolkit=git_toolkit, name=nd.id,
+                require_deployment_approval=require_deployment_approval,
+            ),
             deps,
             succs,
         )

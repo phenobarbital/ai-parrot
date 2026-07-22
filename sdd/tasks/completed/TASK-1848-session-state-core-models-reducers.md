@@ -169,10 +169,27 @@ def test_envelope_origin_rejection_roundtrip(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: Created `session_state.py` transcribing the design sketch's
+state models, 20-action `DevLoopAction` union, `reduce()` (+ helpers),
+and added the spec §2 deltas: `ActionOrigin`, `ActionEnvelope.origin`/
+`.rejection_reason`, and the root channel (`RunSummary`,
+`RunRegistryState` defaulting `channel=ROOT_CHANNEL`, `RunAdded`/
+`RunSummaryChanged`/`RunRemoved`, `RootAction`, `reduce_root`).
+`GateNotFoundError`/`GateAlreadyResolvedError` defined now (unused until
+`SessionHost` lands in TASK-1849). `SessionHost`, `wait_gate`, and the
+migration shims are intentionally NOT in this file yet — TASK-1849 is a
+second pass on the same module per the task scope. 30 unit tests pass;
+`ruff check` clean; verified the module imports only pydantic + stdlib.
+`NodeId` Literal matches `definition.py`'s 9-id roster exactly.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Note for later tasks: the repo's local venv is shared across worktrees
+via an editable install pointing at the main repo path; two Cython
+`.so` build artifacts (`parrot/utils/types`, `parrot/utils/parsers/toml`)
+are gitignored and therefore absent from a fresh worktree checkout,
+which breaks `import parrot...` until copied over. Copied them manually
+for this worktree; flagging in case later tasks in this feature (or
+other worktrees) hit the same `ModuleNotFoundError: parrot.utils.types`.
 
 **Deviations from spec**: none

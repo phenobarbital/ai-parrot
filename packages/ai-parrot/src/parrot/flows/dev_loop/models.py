@@ -87,6 +87,17 @@ class ManualCriterion(BaseModel):
         min_length=1,
         description="Human-readable statement the reviewer must verify.",
     )
+    blocking: bool = Field(
+        default=False,
+        description=(
+            "FEAT-322: when True, QANode opens a blocking manual_criterion "
+            "HITL gate and awaits its resolution before returning — the run "
+            "pauses (phase='awaiting_gate') until a human approves/rejects "
+            "or the gate's TTL expires. Default False preserves today's "
+            "behavior exactly: the criterion is synthesized as "
+            "passed=True without blocking (see QANode._merge_manual_results)."
+        ),
+    )
 
 
 AcceptanceCriterion = Annotated[

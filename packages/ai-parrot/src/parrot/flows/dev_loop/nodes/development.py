@@ -190,6 +190,11 @@ class DevelopmentNode(DevLoopNode):
             run_id=shared["run_id"],
             node_id=self.name,
             cwd=research.worktree_path,
+            # FEAT-322: fold dispatch-level events (queued/started/message/
+            # tool_use/…) into the run's SessionHost when one is present
+            # (seeded by DevLoopRunner.run(); absent for nodes invoked
+            # outside the runner). `dispatch()` defaults this to None.
+            session_host=shared.get("session_host"),
         )
         shared["development_output"] = dev_out
         return dev_out

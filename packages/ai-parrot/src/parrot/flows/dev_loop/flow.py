@@ -25,6 +25,7 @@ The factory is a pure function — no globals, no env reads.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from typing import Any, Dict, Optional
 
@@ -33,6 +34,9 @@ from parrot.flows.dev_loop.definition import build_dev_loop_definition
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.models import RepoSpec, WorkBrief
+from parrot.flows.dev_loop.session_state import action_from_flow_event
+
+_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Edge predicates
@@ -92,7 +96,14 @@ class FlowEventPublisher:
         self._redis: Any = None
 
     async def __call__(self, event: str, node_id: str, info: Dict[str, Any]) -> None:
-        """XADD one ``flow.<event>`` envelope to the current run's stream."""
+        """XADD one ``flow.<event>`` envelope to the current run's stream.
+
+        FEAT-322 TASK-1852 (dual-publish): after the legacy XADD, also folds
+        the event into the run's ``SessionHost`` (if seeded in
+        ``shared_data["session_host"]`` by :class:`DevLoopRunner`). The two
+        publish paths are independent failure domains — a legacy-XADD
+        failure never blocks the session-state fold and vice versa.
+        """
         run_id = ""
         run_ctx = info.get("context")
         if run_ctx is not None:
@@ -101,9 +112,10 @@ class FlowEventPublisher:
             run_id = self._holder.get("run_id", "")
         if not run_id:
             return
+        ts = time.time()
         envelope = {
             "kind": f"flow.{event}",
-            "ts": time.time(),
+            "ts": ts,
             "run_id": run_id,
             "node_id": node_id,
             "payload": {k: v for k, v in info.items() if k not in ("flow", "context")},
@@ -118,6 +130,24 @@ class FlowEventPublisher:
             )
         except Exception:  # noqa: BLE001 - telemetry must never break the run
             pass
+
+        # Independent failure domain — never affects (or is affected by) the
+        # legacy XADD above.
+        try:
+            session_host = None
+            if run_ctx is not None:
+                session_host = getattr(run_ctx, "shared_data", {}).get("session_host")
+            if session_host is not None:
+                action = action_from_flow_event(
+                    event, node_id, ts, error=str(info.get("error", ""))
+                )
+                if action is not None:
+                    session_host.apply(action)
+        except Exception:  # noqa: BLE001 - session-state fold must never break the run
+            _logger.debug(
+                "dev-loop session-state fold failed for event %s (node=%s, run=%s)",
+                event, node_id, run_id, exc_info=True,
+            )
 
     async def _ensure_redis(self) -> Any:
         """Return a cached async Redis client, creating it on first call."""
@@ -173,6 +203,7 @@ def build_dev_loop_flow(
     git_toolkit: Optional[Any] = None,
     repos: Optional[list[RepoSpec]] = None,
     codereview_dispatcher: Optional[Any] = None,
+    require_deployment_approval: bool = False,
 ) -> AgentsFlow:
     """Build the eight-node dev-loop ``AgentsFlow`` (FEAT-132).
 
@@ -223,6 +254,14 @@ def build_dev_loop_flow(
             (FEAT-270) used by ``QANode`` for the code-review gate. Defaults
             to ``None``, in which case ``QANode`` auto-wraps ``dispatcher``
             in a ``ClaudeCodeReviewDispatcher`` (backward compat).
+        require_deployment_approval: FEAT-322 — forwarded to
+            ``DeploymentHandoffNode`` via ``build_dev_loop_node_factories``.
+            Defaults to ``False`` (today's behavior, unchanged); set
+            ``True`` to require a ``deployment_approval`` HITL gate before
+            the Jira "Ready to Deploy" transition (resolved via the REST
+            command layer, TASK-1855). Only takes effect when the run also
+            has a ``SessionHost`` (seeded by ``DevLoopRunner.run()``) —
+            see ``DeploymentHandoffNode``'s docstring.
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -245,6 +284,7 @@ def build_dev_loop_flow(
         log_toolkits=log_toolkits,
         repos=repos,
         codereview_dispatcher=codereview_dispatcher,
+        require_deployment_approval=require_deployment_approval,
     )
     staged = AgentsFlow.from_definition(
         definition,

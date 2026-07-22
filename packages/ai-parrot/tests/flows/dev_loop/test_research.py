@@ -127,6 +127,33 @@ class TestExecutionOrder:
         )
         assert call_order == ["jira", "dispatch"]
 
+    @pytest.mark.asyncio
+    async def test_dispatch_forwards_session_host(self, node, good_brief):
+        """FEAT-322: shared["session_host"] must reach dispatcher.dispatch()."""
+        sentinel_host = object()
+
+        await node.execute(
+            prompt="",
+            ctx={
+                "run_id": "r1", "bug_brief": good_brief,
+                "session_host": sentinel_host,
+            },
+        )
+
+        kwargs = node._dispatcher.dispatch.await_args.kwargs
+        assert kwargs["session_host"] is sentinel_host
+
+    @pytest.mark.asyncio
+    async def test_dispatch_session_host_none_when_absent(self, node, good_brief):
+        """No "session_host" in shared state (legacy caller) → None default."""
+        await node.execute(
+            prompt="",
+            ctx={"run_id": "r1", "bug_brief": good_brief},
+        )
+
+        kwargs = node._dispatcher.dispatch.await_args.kwargs
+        assert kwargs["session_host"] is None
+
 
 class TestReturnValue:
     @pytest.mark.asyncio

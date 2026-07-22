@@ -68,6 +68,49 @@ class TestPermissionMode:
         assert "Bash" in profile.allowed_tools
 
 
+class TestSessionHostForwarding:
+    """FEAT-322: shared["session_host"] must reach BOTH dispatch() calls —
+    the deterministic sdd-qa pass AND the code-review pass (the latter via
+    ClaudeCodeReviewDispatcher.review(), which wraps the SAME dispatcher by
+    default)."""
+
+    @pytest.mark.asyncio
+    async def test_session_host_forwarded_to_both_dispatch_calls(self, ctx):
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            side_effect=[
+                QAReport(passed=True, criterion_results=[], lint_passed=True),
+                CodeReviewVerdict(passed=True),
+            ]
+        )
+        node = QANode(dispatcher=dispatcher)
+        sentinel_host = object()
+        ctx["session_host"] = sentinel_host
+
+        await node.execute(ctx)
+
+        deterministic_kwargs = dispatcher.dispatch.await_args_list[0].kwargs
+        review_kwargs = dispatcher.dispatch.await_args_list[1].kwargs
+        assert deterministic_kwargs["session_host"] is sentinel_host
+        assert review_kwargs["session_host"] is sentinel_host
+
+    @pytest.mark.asyncio
+    async def test_session_host_none_when_absent(self, ctx):
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            side_effect=[
+                QAReport(passed=True, criterion_results=[], lint_passed=True),
+                CodeReviewVerdict(passed=True),
+            ]
+        )
+        node = QANode(dispatcher=dispatcher)
+
+        await node.execute(ctx)
+
+        for call in dispatcher.dispatch.await_args_list:
+            assert call.kwargs["session_host"] is None
+
+
 class TestFailureDoesNotRaise:
     @pytest.mark.asyncio
     async def test_returns_failure_without_raising(self, ctx):

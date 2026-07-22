@@ -156,10 +156,36 @@ async def test_bad_frame_skipped_not_crash(...): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: `ViewLiteral` extended with `"state"`. Added
+`_read_action_envelopes` (XRANGE `flow:{run_id}:actions`, parses each
+`{"envelope": <json>}` entry via `ActionEnvelope.model_validate_json`,
+malformed entries logged+skipped — never crashes), `state_replay(last_seen)`
+(folds via `reduce()` from a fresh `DevLoopSessionState`; `last_seen=None`
+→ snapshot-only first frame; `last_seen=N` → only envelopes with
+`server_seq > N`, no snapshot), and `state_tail()` (XREAD BLOCK live
+continuation from the cursor `state_replay` leaves behind). All three are
+NEW methods — the legacy `replay()`/`tail()`/`_fields_to_envelope()` code
+paths are byte-identical, untouched. `flow_stream_ws` gained a
+`view == "state"` branch (separate from the legacy branch) plus
+`?last_seen=<int>` parsing; legacy `view`/`replay` handling unchanged.
+Server_seq ordering trusted from the Redis stream (single writer,
+TASK-1851's sink) — never re-sorted, per the task's own constraint. 8 new
+tests (snapshot-first, seq monotonic, reconnect gap replay, finished-run
+fold via a FRESH multiplexer proving crash-rebuild, malformed-entry
+skip, live tail continuation, legacy-view sanity). Full dev_loop suite:
+492 passed (same 4 pre-existing unrelated failures as prior tasks).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none of substance. One self-inflicted bug found
+and fixed during validation: my first draft of `test_finished_run_fold`
+imported `RunClosed` via a deferred in-function import, which — combined
+with this repo's pre-existing `test_lazy_import.py` (purges
+`parrot.flows.dev_loop` from `sys.modules` mid-session and re-imports it,
+per spec §7 R1) running earlier in the same pytest session — resolved to
+a DIFFERENT `RunClosed` class object than the one already baked into
+`ActionEnvelope`'s pydantic discriminated-union schema, causing a
+`ValidationError` ONLY when run as part of the full suite (passed in
+isolation). Fixed by moving the import to the file's top-level import
+block (collection-time), consistent with every other import in the file
+and with how the rest of this feature's test files already do it.

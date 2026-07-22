@@ -11,14 +11,22 @@ Responsibilities:
   (``shared_data['bug_brief']`` / ``['work_brief']`` / ``['run_id']``);
 - bind the run_id to the flow's :class:`FlowEventPublisher` so
   node-lifecycle events land on ``flow:{run_id}:flow``;
-- track active runs (``active_runs`` / ``is_active``).
+- track active runs (``active_runs`` / ``is_active``);
+- **AHP-style host (FEAT-322)**: own one :class:`SessionHost` per run
+  (registry keyed by ``run_id``, never a captured reference — one
+  ``AgentsFlow`` serves concurrent runs), the root-channel run catalogue
+  (:class:`RunRegistryState`), a periodic gate-expiry sweep, and the
+  command methods (:meth:`resolve_gate`, :meth:`cancel_run`) the REST
+  layer (TASK-1855) adapts.
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
-from typing import Any, Dict, Optional, Set
+from pathlib import Path
+from typing import Any, Callable, Dict, Optional, Set
 
 from navconfig.logging import logging
 
@@ -40,6 +48,54 @@ from parrot.flows.dev_loop.models import (
     ShellCriterion,
     WorkBrief,
 )
+from parrot.flows.dev_loop.session_state import (
+    ActionEnvelope,
+    ActionOrigin,
+    GateKind,
+    RunAdded,
+    RunCancelled,
+    RunClosed,
+    RunCreated,
+    RunRegistryState,
+    RunRemoved,
+    RunSummary,
+    RunSummaryChanged,
+    SessionHost,
+    reduce_root,
+)
+
+# ---------------------------------------------------------------------------
+# Gate TTL policy (FEAT-322 §2, §8) — conf-overridable per kind, seconds.
+# ---------------------------------------------------------------------------
+
+_GATE_TTL_CONF_ATTR: Dict[GateKind, str] = {
+    "deployment_approval": "DEV_LOOP_GATE_TTL_DEPLOYMENT",
+    "manual_criterion": "DEV_LOOP_GATE_TTL_MANUAL",
+    "revision_approval": "DEV_LOOP_GATE_TTL_REVISION",
+    "plan_approval": "DEV_LOOP_GATE_TTL_PLAN",
+}
+
+
+def gate_ttl_for(kind: GateKind) -> int:
+    """Return the conf-configured TTL (seconds) for a gate ``kind``.
+
+    Conf stays out of the transport-free ``session_state`` module — this
+    helper is the single place gate-opening nodes and the runner read the
+    per-kind default from. Callers may still override per-gate via
+    ``SessionHost.open_gate(ttl_seconds=...)``.
+
+    Args:
+        kind: The gate kind.
+
+    Returns:
+        The TTL in seconds (``conf.DEV_LOOP_GATE_TTL_*``).
+    """
+    attr = _GATE_TTL_CONF_ATTR[kind]
+    return int(getattr(conf, attr))
+
+
+# Actions-stream expiry/retention sweep cadence (seconds).
+_SWEEP_INTERVAL_SECONDS = 30
 
 
 def build_dev_loop_revision_flow(
@@ -137,6 +193,319 @@ class DevLoopRunner:
         self._rev_flow: Optional[AgentsFlow] = None
         self.logger = logging.getLogger("parrot.dev_loop.runner")
 
+        # ── AHP-style host state (FEAT-322) ─────────────────────────────
+        # Registry keyed by run_id — resolved per-call, NEVER captured as
+        # "the current host" (one AgentsFlow serves concurrent runs).
+        self._hosts: Dict[str, SessionHost] = {}
+        self._registry = RunRegistryState()
+        # Lazy async Redis client for the actions-stream sink. Separate from
+        # FlowEventPublisher's own client — same lazy-connect, swallow-all
+        # pattern (flow.py:122-128).
+        self._actions_redis: Any = None
+        # run_id -> epoch seconds after which flow:{run_id}:actions is
+        # eligible for deletion (DEV_LOOP_ACTIONS_RETENTION_DAYS). Checked by
+        # the periodic sweep alongside gate expiry.
+        self._pending_retention: Dict[str, float] = {}
+        self._sweep_task: Optional[asyncio.Task] = None
+
+    # ── AHP-style host registry (FEAT-322) ──────────────────────────────────
+
+    def get_host(self, run_id: str) -> Optional[SessionHost]:
+        """Return the live :class:`SessionHost` for ``run_id``, if any.
+
+        Returns ``None`` once the run has terminated and its host was
+        discarded — callers (e.g. the ``view="state"`` multiplexer) fall
+        back to folding ``flow:{run_id}:actions`` from seq 0 in that case.
+        """
+        return self._hosts.get(run_id)
+
+    @property
+    def registry_state(self) -> RunRegistryState:
+        """The root-channel run catalogue (``parrot-root://``)."""
+        return self._registry
+
+    def _apply_root_action(self, action: Any) -> None:
+        """Fold one root action into ``self._registry`` (sync, in-memory)."""
+        self._registry = reduce_root(self._registry, action)
+
+    def _run_summary_from_host(self, host: SessionHost) -> RunSummary:
+        """Project a host's live state into a display-ready :class:`RunSummary`."""
+        state = host.state
+        pending_gates = sum(
+            1 for g in state.gates.values() if g.status == "pending"
+        )
+        return RunSummary(
+            run_id=state.run_id,
+            phase=state.phase,
+            work_kind=state.work_kind,
+            summary=state.summary,
+            jira_issue_key=state.jira_issue_key,
+            pr_url=state.pr_url,
+            pending_gate_count=pending_gates,
+            created_at=state.created_at,
+            finished_at=state.finished_at,
+        )
+
+    def _register_host(self, run_id: str) -> SessionHost:
+        """Create, register and return a fresh :class:`SessionHost` for ``run_id``."""
+        host = SessionHost(run_id, on_envelope=self._make_envelope_sink(run_id))
+        self._hosts[run_id] = host
+        self._ensure_sweep_task()
+        return host
+
+    def _discard_host(self, run_id: str) -> None:
+        """Remove a terminated run's host from the registry.
+
+        The sweep task is only cancelled when there is truly nothing left
+        for it to do — no live hosts AND no runs still awaiting their
+        actions-stream retention window (``_pending_retention``). Since
+        ``RunRemoved`` for a finished run is now applied BY the retention
+        sweep (see :meth:`_sweep_retention_once`), cancelling the task just
+        because the last host was discarded would silently strand that
+        run in the root catalogue forever (`RunRemoved` would never fire).
+        """
+        self._hosts.pop(run_id, None)
+        if (
+            not self._hosts
+            and not self._pending_retention
+            and self._sweep_task is not None
+        ):
+            self._sweep_task.cancel()
+            self._sweep_task = None
+
+    @staticmethod
+    def _outcome_from_status(status: Any) -> str:
+        """Map ``FlowResult.status`` (``FlowStatus``) to a RunClosed outcome.
+
+        ``"completed"`` -> ``"succeeded"``; ``"partial"`` and ``"failed"``
+        both map to ``"failed"`` — a partially-completed run is not a clean
+        success for the session-state model's binary outcome.
+        """
+        value = getattr(status, "value", status)
+        return "succeeded" if value == "completed" else "failed"
+
+    # ── Envelope sink — actions-stream XADD (FEAT-322) ──────────────────────
+
+    def _make_envelope_sink(self, run_id: str) -> Callable[[ActionEnvelope], None]:
+        """Build the synchronous ``on_envelope`` callback for ``run_id``'s host.
+
+        ``SessionHost.apply`` invokes this callback synchronously (never
+        awaited) and swallows any exception it raises. Because the actual
+        Redis XADD is async I/O, this schedules a best-effort background
+        task rather than blocking the reducer — the in-memory fold has
+        already happened by the time this is called, so a slow/failing
+        sink can never affect run correctness (never-break-a-run).
+        """
+
+        def _sink(envelope: ActionEnvelope) -> None:
+            if not self._redis_url:
+                return  # no redis configured — host still folds in-memory
+            try:
+                asyncio.get_running_loop().create_task(
+                    self._xadd_envelope(run_id, envelope)
+                )
+            except RuntimeError:
+                # No running loop (e.g. sync test harness) — drop silently.
+                pass
+
+        return _sink
+
+    async def _ensure_actions_redis(self) -> Any:
+        """Return a cached async Redis client for the actions stream."""
+        if self._actions_redis is None:
+            import redis.asyncio as aioredis  # noqa: PLC0415 - lazy
+
+            self._actions_redis = aioredis.from_url(
+                self._redis_url, decode_responses=True
+            )
+        return self._actions_redis
+
+    async def _xadd_envelope(self, run_id: str, envelope: ActionEnvelope) -> None:
+        """XADD one sequenced envelope to ``flow:{run_id}:actions``.
+
+        Every failure is swallowed and logged at DEBUG — the actions
+        stream is an operational, best-effort mirror of state already
+        folded in-memory (spec §2 "Retention").
+        """
+        try:
+            redis_client = await self._ensure_actions_redis()
+            await redis_client.xadd(
+                f"flow:{run_id}:actions",
+                {"envelope": envelope.model_dump_json()},
+                maxlen=100_000,
+                approximate=True,
+            )
+        except Exception:  # noqa: BLE001 - actions publish must never break a run
+            self.logger.debug(
+                "dev-loop actions XADD failed for run %s", run_id, exc_info=True
+            )
+
+    # ── Terminal snapshot + retention (FEAT-322) ────────────────────────────
+
+    def _persist_terminal_snapshot(self, host: SessionHost) -> None:
+        """Persist the terminal :class:`Snapshot` as a run artifact.
+
+        Location is an implementation choice (spec §7): a JSON file under
+        ``conf.OUTPUT_DIR/dev_loop_runs/{run_id}.snapshot.json``, reusing
+        the existing output-directory convention rather than inventing a
+        new one. Failures are logged and swallowed — never break the run.
+        """
+        try:
+            snapshot = host.snapshot()
+            out_dir = Path(conf.OUTPUT_DIR) / "dev_loop_runs"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            path = out_dir / f"{host.state.run_id}.snapshot.json"
+            path.write_text(snapshot.model_dump_json(indent=2))
+            self.logger.info(
+                "Persisted terminal snapshot for run %s at %s",
+                host.state.run_id, path,
+            )
+        except Exception:  # noqa: BLE001 - artifact persistence must not break a run
+            self.logger.warning(
+                "Failed to persist terminal snapshot for run %s",
+                host.state.run_id, exc_info=True,
+            )
+
+    def _schedule_actions_retention(self, run_id: str) -> None:
+        """Record the delete-after time for ``flow:{run_id}:actions``.
+
+        The periodic sweep (:meth:`_sweep_once`) deletes the stream once
+        ``DEV_LOOP_ACTIONS_RETENTION_DAYS`` has elapsed since the run
+        terminated — checked alongside gate expiry rather than via a
+        separate long-lived per-run task (which would not survive a
+        process restart and would leak if never awaited).
+        """
+        retention_seconds = float(conf.DEV_LOOP_ACTIONS_RETENTION_DAYS) * 86400.0
+        self._pending_retention[run_id] = time.time() + retention_seconds
+        self.logger.info(
+            "Scheduled flow:%s:actions for deletion in %.0fd",
+            run_id, conf.DEV_LOOP_ACTIONS_RETENTION_DAYS,
+        )
+
+    async def _sweep_retention_once(self) -> None:
+        """Delete due actions streams AND remove their runs from the root catalogue.
+
+        ``RunRemoved`` is applied HERE, alongside the actions-stream
+        deletion, per spec §3 M3 ("RunRemoved after retention") — NOT
+        immediately at run-close (:meth:`_close_host`), so a just-finished
+        run stays visible in ``registry_state`` with its final
+        ``RunSummary`` for the full ``DEV_LOOP_ACTIONS_RETENTION_DAYS``
+        window, matching how the actions stream itself is retained.
+
+        Runs without a redis-backed actions stream (``self._redis_url`` is
+        ``None``) still get ``RunRemoved`` applied once their window
+        elapses — there's simply no stream to delete first.
+        """
+        now = time.time()
+        due = [rid for rid, at in self._pending_retention.items() if now >= at]
+        for rid in due:
+            if self._redis_url:
+                try:
+                    redis_client = await self._ensure_actions_redis()
+                    await redis_client.delete(f"flow:{rid}:actions")
+                except Exception:  # noqa: BLE001 - retention sweep must not raise
+                    self.logger.debug(
+                        "actions-stream retention delete failed for run %s",
+                        rid, exc_info=True,
+                    )
+            self._pending_retention.pop(rid, None)
+            self._apply_root_action(RunRemoved(run_id=rid))
+            self.logger.info(
+                "Run %s retention window elapsed — removed from root catalogue",
+                rid,
+            )
+
+    # ── Expiry sweep loop (FEAT-322) ─────────────────────────────────────────
+
+    def _ensure_sweep_task(self) -> None:
+        """Start the periodic gate-expiry/retention sweep if not running."""
+        if self._sweep_task is None or self._sweep_task.done():
+            try:
+                self._sweep_task = asyncio.get_running_loop().create_task(
+                    self._sweep_loop()
+                )
+            except RuntimeError:
+                # No running loop (e.g. constructed outside async context) —
+                # the sweep starts lazily on the next call from async code.
+                self._sweep_task = None
+
+    async def _sweep_loop(self) -> None:
+        """Periodic loop: expire due gates on every live host + retention."""
+        try:
+            while True:
+                await asyncio.sleep(_SWEEP_INTERVAL_SECONDS)
+                await self._sweep_once()
+        except asyncio.CancelledError:
+            raise
+
+    async def _sweep_once(self) -> None:
+        """Run one gate-expiry + retention sweep pass (testable in isolation)."""
+        for host in list(self._hosts.values()):
+            try:
+                host.expire_due_gates()
+            except Exception:  # noqa: BLE001 - sweep must never raise
+                self.logger.debug(
+                    "gate-expiry sweep failed for run %s",
+                    host.state.run_id, exc_info=True,
+                )
+        await self._sweep_retention_once()
+
+    # ── HITL command surface (FEAT-322) ──────────────────────────────────────
+
+    async def resolve_gate(
+        self,
+        run_id: str,
+        gate_id: str,
+        resolution: str,
+        resolved_by: str,
+        comment: str = "",
+        origin: Optional[ActionOrigin] = None,
+    ) -> ActionEnvelope:
+        """Resolve a pending gate on ``run_id``'s host.
+
+        Args:
+            run_id: The target run.
+            gate_id: The gate to resolve.
+            resolution: ``"approved"`` or ``"rejected"``.
+            resolved_by: Identity of the resolving client/user.
+            comment: Optional free-text audit comment.
+            origin: Optional multi-client attribution (FEAT-322 TASK-1855 —
+                the REST command layer passes the calling client here).
+
+        Returns:
+            The sequenced :class:`ActionEnvelope` for the resolution.
+
+        Raises:
+            KeyError: ``run_id`` has no live host (unknown or already
+                terminated run).
+            GateNotFoundError: ``gate_id`` does not exist on this run.
+            GateAlreadyResolvedError: the gate is no longer pending.
+        """
+        host = self._hosts.get(run_id)
+        if host is None:
+            raise KeyError(f"no active session host for run_id={run_id!r}")
+        return host.resolve_gate(
+            gate_id, resolution, resolved_by, comment, origin=origin
+        )
+
+    async def cancel_run(self, run_id: str, requested_by: str) -> ActionEnvelope:
+        """Request cancellation of ``run_id`` (terminal-sticky).
+
+        Args:
+            run_id: The target run.
+            requested_by: Identity of the requesting client/user.
+
+        Returns:
+            The sequenced :class:`ActionEnvelope` for ``run/cancelled``.
+
+        Raises:
+            KeyError: ``run_id`` has no live host.
+        """
+        host = self._hosts.get(run_id)
+        if host is None:
+            raise KeyError(f"no active session host for run_id={run_id!r}")
+        return host.apply(RunCancelled(requested_by=requested_by))
+
     # ── Introspection ─────────────────────────────────────────────────────
 
     @property
@@ -175,10 +544,23 @@ class DevLoopRunner:
             The aggregated :class:`FlowResult` for the run.
         """
         rid = run_id or f"run-{uuid.uuid4().hex[:8]}"
+
+        # AHP-style host: create + register before the flow runs, seed it
+        # into shared state so nodes resolve it per-run (never a captured
+        # reference — QANode/DeploymentHandoffNode read
+        # ``shared["session_host"]``, they never import the runner).
+        host = self._register_host(rid)
+        host.apply(RunCreated(
+            run_id=rid, revision=False, work_kind=brief.kind,
+            summary=brief.summary,
+        ))
+        self._apply_root_action(RunAdded(summary=self._run_summary_from_host(host)))
+
         shared: Dict[str, Any] = {
             "bug_brief": brief,    # legacy key — nodes read this
             "work_brief": brief,   # forward-compat name
             "run_id": rid,
+            "session_host": host,
         }
         if extra_shared:
             shared.update(extra_shared)
@@ -206,6 +588,7 @@ class DevLoopRunner:
         self.logger.info(
             "Dev-loop run %s finished status=%s", rid, result.status
         )
+        self._close_host(host, result, ctx)
         return result
 
     async def run_revision(
@@ -243,6 +626,16 @@ class DevLoopRunner:
             )
 
         rid = run_id or f"rev-{uuid.uuid4().hex[:8]}"
+
+        # AHP-style host — same lifecycle as ``run()`` (revision=True).
+        host = self._register_host(rid)
+        host.apply(RunCreated(
+            run_id=rid, revision=True,
+            work_kind="bug",
+            summary=f"Revision for {brief.jira_issue_key or brief.branch}",
+        ))
+        self._apply_root_action(RunAdded(summary=self._run_summary_from_host(host)))
+
         # Build the revision flow once (fixed topology) and reuse it — fresh
         # node FSMs are materialized per run by the scheduler, like ``run``.
         if self._rev_flow is None:
@@ -294,6 +687,7 @@ class DevLoopRunner:
             "jira_issue_key": brief.jira_issue_key,
             "feedback": brief.feedback,
             "head_sha": brief.head_sha,
+            "session_host": host,
         }
         ctx = FlowContext(
             initial_task=brief.feedback or "revision", shared_data=shared
@@ -316,7 +710,52 @@ class DevLoopRunner:
         self.logger.info(
             "Dev-loop revision run %s finished status=%s", rid, result.status
         )
+        self._close_host(host, result, ctx)
         return result
 
+    # ── Host terminal handling (FEAT-322) ───────────────────────────────────
 
-__all__ = ["DevLoopRunner", "build_dev_loop_revision_flow"]
+    def _close_host(
+        self, host: SessionHost, result: FlowResult, ctx: FlowContext,
+    ) -> None:
+        """Fold ``run/closed``, persist the terminal snapshot, and retire the host.
+
+        Order (spec §3 M3): apply ``RunClosed`` -> persist the terminal
+        snapshot -> schedule actions-stream retention -> fold the final
+        ``RunSummaryChanged`` -> discard the host. ``RunRemoved`` is
+        deliberately NOT applied here — per spec §3 M3 ("RunRemoved AFTER
+        retention"), the finished run stays visible in the root catalogue
+        (``registry_state``) with its final summary until
+        ``_sweep_retention_once`` deletes the actions stream
+        (``DEV_LOOP_ACTIONS_RETENTION_DAYS``, default 7d), at which point
+        both happen together (code-review finding: an earlier version
+        removed the run from the catalogue immediately at close, which
+        silently diverged from the spec's stated intent — an operator
+        dashboard watching ``parrot-root://`` would never see a run that
+        just finished).
+
+        The host itself IS still discarded immediately (not kept until
+        retention): the ``view="state"`` multiplexer falls back to
+        replaying ``flow:{run_id}:actions`` for a finished run (spec §3 M6)
+        — only the ROOT-CHANNEL catalogue entry outlives the host.
+        """
+        run_id = host.state.run_id
+        outcome = self._outcome_from_status(result.status)
+        jira_issue_key = str(ctx.shared_data.get("jira_issue_key", "") or "")
+        handoff_resp = result.responses.get("deployment_handoff")
+        pr_url = ""
+        if isinstance(handoff_resp, dict):
+            pr_url = str(handoff_resp.get("pr_url", "") or "")
+
+        host.apply(RunClosed(
+            outcome=outcome, jira_issue_key=jira_issue_key, pr_url=pr_url,
+        ))
+        self._persist_terminal_snapshot(host)
+        self._schedule_actions_retention(run_id)
+        self._apply_root_action(
+            RunSummaryChanged(summary=self._run_summary_from_host(host))
+        )
+        self._discard_host(run_id)
+
+
+__all__ = ["DevLoopRunner", "build_dev_loop_revision_flow", "gate_ttl_for"]
