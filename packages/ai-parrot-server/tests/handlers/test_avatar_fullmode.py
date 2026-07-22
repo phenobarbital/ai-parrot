@@ -277,6 +277,79 @@ class TestStartFullmodeSession:
 
 
 # ---------------------------------------------------------------------------
+# TASK-1875 (FEAT-247): custom_llm_url in /full/start response
+# ---------------------------------------------------------------------------
+
+
+class TestStartReturnsCustomLLMURL:
+    """Tests for the FEAT-247 `custom_llm_url` field (TASK-1875)."""
+
+    async def test_start_returns_custom_llm_url(self) -> None:
+        """Response includes custom_llm_url matching /v1/chat/completions/{session_id}?agent={agent_id}."""
+        req = _make_request(
+            {"session_id": "sess-1", "tenant_id": "acme"},
+            match_info={"agent_id": "pokemon_analyst"},
+        )
+        req.scheme = "https"
+        req.host = "parrot.example.com"
+
+        saved, keys, _, _ = _inject_fullmode_stack()
+        try:
+            resp = await _start_fullmode_session(req)
+        finally:
+            _restore_modules(saved, keys)
+
+        body = json.loads(resp.body)  # type: ignore[attr-defined]
+        assert (
+            body["custom_llm_url"]
+            == "https://parrot.example.com/v1/chat/completions/sess-1?agent=pokemon_analyst"
+        )
+
+    async def test_existing_fields_unchanged(self) -> None:
+        """session_id, livekit_url, livekit_client_token are still present and correct."""
+        req = _make_request(
+            {"session_id": "sess-1", "tenant_id": "acme"},
+            match_info={"agent_id": "pokemon_analyst"},
+        )
+        req.scheme = "https"
+        req.host = "parrot.example.com"
+
+        saved, keys, _, _ = _inject_fullmode_stack()
+        try:
+            resp = await _start_fullmode_session(req)
+        finally:
+            _restore_modules(saved, keys)
+
+        body = json.loads(resp.body)  # type: ignore[attr-defined]
+        assert body["session_id"] == "sess-1"
+        assert body["livekit_url"] == "wss://test.livekit.cloud"
+        assert body["livekit_client_token"] == "eyJ-browser-token"
+
+    async def test_custom_llm_url_uses_base_url_override(self, monkeypatch) -> None:
+        """OPENAI_COMPAT_BASE_URL, when set, wins over request.scheme/host."""
+        monkeypatch.setenv("OPENAI_COMPAT_BASE_URL", "https://public.example.com")
+
+        req = _make_request(
+            {"session_id": "sess-2", "tenant_id": "acme"},
+            match_info={"agent_id": "weather_bot"},
+        )
+        req.scheme = "http"
+        req.host = "internal-host:8080"
+
+        saved, keys, _, _ = _inject_fullmode_stack()
+        try:
+            resp = await _start_fullmode_session(req)
+        finally:
+            _restore_modules(saved, keys)
+
+        body = json.loads(resp.body)  # type: ignore[attr-defined]
+        assert (
+            body["custom_llm_url"]
+            == "https://public.example.com/v1/chat/completions/sess-2?agent=weather_bot"
+        )
+
+
+# ---------------------------------------------------------------------------
 # TASK-1594: _stop_fullmode_session
 # ---------------------------------------------------------------------------
 

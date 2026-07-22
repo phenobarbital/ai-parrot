@@ -35,6 +35,7 @@ extra.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Dict, Optional
 
 from aiohttp import web, ClientResponseError
@@ -50,6 +51,13 @@ _logger = logging.getLogger("Parrot.AvatarFullmodeView")
 # Kept separate from Phase A LITE sessions (AVATAR_SESSIONS_KEY in avatar.py) so
 # the two modes never interfere.
 FULLMODE_SESSIONS_KEY = "avatar_fullmode_sessions"
+
+# Optional override for the public-facing base URL used to build
+# `custom_llm_url` (FEAT-247 TASK-1875). When unset, the base URL is derived
+# from the incoming request (`{scheme}://{host}`), which is correct for
+# direct deployments but may be wrong behind certain reverse-proxy setups
+# that do not forward scheme/host faithfully.
+OPENAI_COMPAT_BASE_URL_ENV = "OPENAI_COMPAT_BASE_URL"
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +86,9 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
         session_id          (str): The shared session ID.
         livekit_url         (str): LiveKit Cloud WebSocket URL for the browser.
         livekit_client_token (str): Browser viewer JWT from the FULL mode /start.
+        custom_llm_url       (str): Per-session OpenAI-compat endpoint
+            (FEAT-247) — ``{base}/v1/chat/completions/{session_id}?agent={agent_id}``
+            — for the frontend to pass to LiveAvatar's Custom LLM configuration.
 
     The ``session_token`` and any other server-side secrets are NEVER returned.
     """
@@ -177,11 +188,22 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
         " [request override]" if avatar_id else " [config default]",
     )
 
+    # FEAT-247 (TASK-1875): mint the per-session OpenAI-compat URL so the
+    # frontend can pass it to LiveAvatar's Custom LLM configuration. Prefers
+    # OPENAI_COMPAT_BASE_URL when configured (public-facing URL may differ
+    # from request.host behind some reverse proxies); falls back to the
+    # incoming request's scheme/host otherwise.
+    base_url = os.environ.get(OPENAI_COMPAT_BASE_URL_ENV) or (
+        f"{request.scheme}://{request.host}"
+    )
+    custom_llm_url = f"{base_url}/v1/chat/completions/{session_id}?agent={agent_id}"
+
     # Return viewer credentials ONLY — session_token stays server-side.
     return web.json_response({
         "session_id": session_id,
         "livekit_url": handle.livekit_url,
         "livekit_client_token": handle.livekit_client_token,
+        "custom_llm_url": custom_llm_url,
     })
 
 
