@@ -577,6 +577,11 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
 
     # -- run lifecycle
     if t == "run/created":
+        # Terminal-sticky (FEAT-322 TASK-1850): a late/duplicate run/created
+        # replayed against an already-terminal state must not resurrect the
+        # phase — mirrors the guard already on run/cancelled below.
+        if state.phase in _TERMINAL_PHASES:
+            return state
         return state.model_copy(update={
             "phase": "running",
             "created_at": action.ts,
@@ -593,6 +598,11 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
             "finished_at": action.ts,
         })
     if t == "run/closed":
+        # Terminal-sticky (FEAT-322 TASK-1850): a late/duplicate run/closed
+        # against an already-terminal state must not flip the phase again
+        # (e.g. failed -> succeeded) — same guard as run/created/cancelled.
+        if state.phase in _TERMINAL_PHASES:
+            return state
         return state.model_copy(update={
             "phase": action.outcome,
             "finished_at": action.ts,
