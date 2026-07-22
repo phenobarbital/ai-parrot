@@ -50,6 +50,7 @@ from parrot.flows.dev_loop.models import (
 )
 from parrot.flows.dev_loop.session_state import (
     ActionEnvelope,
+    ActionOrigin,
     GateKind,
     RunAdded,
     RunCancelled,
@@ -431,6 +432,7 @@ class DevLoopRunner:
         resolution: str,
         resolved_by: str,
         comment: str = "",
+        origin: Optional[ActionOrigin] = None,
     ) -> ActionEnvelope:
         """Resolve a pending gate on ``run_id``'s host.
 
@@ -440,6 +442,8 @@ class DevLoopRunner:
             resolution: ``"approved"`` or ``"rejected"``.
             resolved_by: Identity of the resolving client/user.
             comment: Optional free-text audit comment.
+            origin: Optional multi-client attribution (FEAT-322 TASK-1855 —
+                the REST command layer passes the calling client here).
 
         Returns:
             The sequenced :class:`ActionEnvelope` for the resolution.
@@ -453,7 +457,9 @@ class DevLoopRunner:
         host = self._hosts.get(run_id)
         if host is None:
             raise KeyError(f"no active session host for run_id={run_id!r}")
-        return host.resolve_gate(gate_id, resolution, resolved_by, comment)
+        return host.resolve_gate(
+            gate_id, resolution, resolved_by, comment, origin=origin
+        )
 
     async def cancel_run(self, run_id: str, requested_by: str) -> ActionEnvelope:
         """Request cancellation of ``run_id`` (terminal-sticky).

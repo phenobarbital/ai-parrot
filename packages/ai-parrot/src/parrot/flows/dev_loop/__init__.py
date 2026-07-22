@@ -9,6 +9,7 @@ spec. Runs are hosted by :class:`DevLoopRunner`, which enforces the
 ``FLOW_MAX_CONCURRENT_RUNS`` cap.
 """
 
+from parrot.flows.dev_loop.commands import register_command_routes
 from parrot.flows.dev_loop.config import parse_repo_specs
 from parrot.flows.dev_loop.dispatcher import (
     ClaudeCodeDispatcher,
@@ -121,6 +122,7 @@ __all__ = [
     "flow_stream_ws",
     "gate_ttl_for",
     "parse_repo_specs",
+    "register_command_routes",
     "register_pull_request_webhook",
     "sweep_finished_worktrees",
 ]

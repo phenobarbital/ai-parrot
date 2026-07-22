@@ -819,6 +819,7 @@ class SessionHost:
         resolution: Literal["approved", "rejected"],
         resolved_by: str,
         comment: str = "",
+        origin: Optional[ActionOrigin] = None,
     ) -> ActionEnvelope:
         """Client command path — validated BEFORE sequencing.
 
@@ -831,6 +832,8 @@ class SessionHost:
             resolution: ``"approved"`` or ``"rejected"``.
             resolved_by: Identity of the resolving client/user.
             comment: Optional free-text audit comment.
+            origin: Optional multi-client attribution (FEAT-322 TASK-1855 —
+                the REST command layer records the calling client here).
 
         Returns:
             The sequenced :class:`ActionEnvelope` for the resolution.
@@ -847,10 +850,13 @@ class SessionHost:
                 f"gate {gate_id} already {gate.status} "
                 f"by {gate.resolved_by or 'system'}"
             )
-        return self.apply(GateResolved(
-            gate_id=gate_id, resolution=resolution,
-            resolved_by=resolved_by, comment=comment,
-        ))
+        return self.apply(
+            GateResolved(
+                gate_id=gate_id, resolution=resolution,
+                resolved_by=resolved_by, comment=comment,
+            ),
+            origin=origin,
+        )
 
     def open_gate(
         self,
