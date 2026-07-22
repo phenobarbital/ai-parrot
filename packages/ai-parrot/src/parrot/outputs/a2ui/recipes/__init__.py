@@ -24,6 +24,13 @@ from parrot.outputs.a2ui.recipes.params import (
     resolve_params,
     substitute,
 )
+from parrot.outputs.a2ui.recipes.transformers import (
+    RegisteredTransformer,
+    TransformerRegistry,
+    infographic_transformer,
+    transformer_registry,
+    validate_inputs,
+)
 
 __all__ = [
     "RecipeParam",
@@ -39,4 +46,9 @@ __all__ = [
     "resolve_date",
     "resolve_params",
     "substitute",
+    "RegisteredTransformer",
+    "TransformerRegistry",
+    "infographic_transformer",
+    "transformer_registry",
+    "validate_inputs",
 ]
