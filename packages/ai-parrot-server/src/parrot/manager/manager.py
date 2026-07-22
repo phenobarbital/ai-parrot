@@ -1635,6 +1635,32 @@ class BotManager:
             self.app.on_cleanup.append(close_all_fullmode_sessions)
         return registered
 
+    def _register_openai_compat_routes(self, router) -> bool:
+        """Register OpenAI-compatible endpoints (FEAT-247).
+
+        Delegates to ``parrot.handlers.openai_compat.register_openai_compat_routes``,
+        which exposes ``/v1/chat/completions/{session_id}`` and ``/v1/models``
+        so LiveAvatar FULL Mode can call ai-parrot directly as its Custom LLM.
+        Guarded by the same defensive ``ImportError`` pattern used by the other
+        optional route groups so a missing/broken import degrades gracefully
+        instead of crashing boot.
+
+        Args:
+            router: The aiohttp ``UrlDispatcher`` to register routes on.
+
+        Returns:
+            ``True`` if the OpenAI-compat routes were registered, ``False``
+            otherwise.
+        """
+        try:
+            from ..handlers.openai_compat import register_openai_compat_routes
+        except ImportError as exc:
+            self.logger.warning(
+                "OpenAI-compat endpoints disabled (%s).", exc,
+            )
+            return False
+        return register_openai_compat_routes(router)
+
     def _setup_structured_output_transport(self) -> None:
         """Wire the Redis structured-output transport subscriber when enabled (FEAT-249).
 
@@ -1840,6 +1866,10 @@ class BotManager:
         # Registered under the same optional-integration guard; a missing stack
         # logs a warning instead of crashing boot.
         self._register_fullmode_avatar_routes(router)
+        # OpenAI-compat routes (FEAT-247) — lets LiveAvatar FULL Mode call
+        # ai-parrot directly as its Custom LLM. Registered right after the
+        # FULL mode routes since it depends on FULLMODE_SESSIONS_KEY.
+        self._register_openai_compat_routes(router)
         # Dataset Manager for agents:
         router.add_view(
             '/api/v1/agents/datasets/{agent_id}',

@@ -1,4 +1,5 @@
-"""Unit tests for the OpenAI-compatible chat-completions endpoint (FEAT-247, TASK-1874).
+"""Unit + integration tests for the OpenAI-compatible chat-completions endpoint
+(FEAT-247, TASK-1874 + TASK-1876).
 
 Following the project convention for handler tests (see
 ``test_knowledge_handler.py``), the views are exercised via ``__new__`` +
@@ -6,6 +7,11 @@ manually-injected ``.logger``/``._request`` — bypassing navigator's
 ``BaseView`` init (which needs a live app/auth) — and
 ``web.StreamResponse`` is monkeypatched to a chunk-capturing fake so the SSE
 stream can be inspected without a real HTTP connection.
+
+``TestOpenAICompatIntegration`` (TASK-1876) is the exception: it stands up a
+real aiohttp test server via ``aiohttp_client`` and drives it with the actual
+``openai`` Python SDK to verify wire-format conformance end-to-end. Skipped
+automatically when the optional ``openai`` dev dependency is not installed.
 """
 from __future__ import annotations
 
@@ -386,3 +392,81 @@ class TestOpenAIModels:
         body = json.loads(resp.body)
 
         assert body["data"] == []
+
+
+# ---------------------------------------------------------------------------
+# TestOpenAICompatIntegration (TASK-1876)
+# ---------------------------------------------------------------------------
+
+openai = pytest.importorskip("openai")
+
+
+class TestOpenAICompatIntegration:
+    """The ``openai`` Python SDK, pointed at our per-session URL, streams a
+    completion end-to-end (contract-conformance integration test).
+
+    LiveAvatar's Custom LLM integration POSTs directly to the minted
+    per-session URL (``/v1/chat/completions/{session_id}``), which is not a
+    fixed suffix the ``openai`` SDK's high-level ``chat.completions.create()``
+    can target (it always appends ``/chat/completions`` to ``base_url``).
+    The SDK's low-level ``client.post(path, ..., stream_cls=...)`` escape
+    hatch is used instead so the *actual* SSE decoder from the SDK parses our
+    response — this is what makes it a wire-format conformance check rather
+    than a reimplementation of our own SSE parsing.
+    """
+
+    async def test_openai_sdk_streams_completion(self, aiohttp_client, monkeypatch):
+        from openai import AsyncOpenAI, AsyncStream
+        from openai.types.chat import ChatCompletionChunk
+
+        from parrot.handlers.openai_compat import register_openai_compat_routes
+
+        monkeypatch.setenv(OPENAI_COMPAT_BEARER_TOKEN_ENV, "test-secret-token")
+
+        app = web.Application()
+        register_openai_compat_routes(app.router)
+
+        bot = MagicMock()
+        bot.name = "pokemon_analyst"
+
+        async def _stream(question, session_id=None, **kw):
+            yield "Pikachu is "
+            yield "an Electric type."
+
+        bot.ask_stream = _stream
+
+        bot_manager = MagicMock()
+        bot_manager.get_bot = AsyncMock(return_value=bot)
+
+        app["bot_manager"] = bot_manager
+        app["avatar_fullmode_sessions"] = {"sess-int-1": {}}
+
+        test_client = await aiohttp_client(app)
+        base_url = str(test_client.make_url("/"))
+
+        sdk_client = AsyncOpenAI(api_key="unused", base_url=base_url)
+
+        stream = await sdk_client.post(
+            "/v1/chat/completions/sess-int-1?agent=pokemon_analyst",
+            body={
+                "model": "pokemon_analyst",
+                "messages": [{"role": "user", "content": "Who is Pikachu?"}],
+                "stream": True,
+            },
+            cast_to=ChatCompletionChunk,
+            stream=True,
+            stream_cls=AsyncStream[ChatCompletionChunk],
+            options={"headers": {"Authorization": "Bearer test-secret-token"}},
+        )
+
+        collected = ""
+        saw_stop = False
+        async for chunk in stream:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if delta is not None and delta.content:
+                collected += delta.content
+            if chunk.choices and chunk.choices[0].finish_reason == "stop":
+                saw_stop = True
+
+        assert "Pikachu is an Electric type." in collected
+        assert saw_stop
