@@ -32,7 +32,7 @@
       "feature_id": "FEAT-323",
       "feature": "dev-loop-multiple-dev-agents",
       "spec": "sdd/specs/dev-loop-multiple-dev-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Archivo nuevo disjunto, pero importa los modelos de TASK-1857 (regla: importa código de task previa ⇒ secuencial).",
       "assigned_to": null,
       "started_at": "2026-07-21T23:56:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1858-task-scheduler.md"
+      "completed_at": "2026-07-22T00:05:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1858-task-scheduler.md"
     },
     {
       "id": "TASK-1859",
