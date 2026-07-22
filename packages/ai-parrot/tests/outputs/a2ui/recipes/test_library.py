@@ -137,6 +137,16 @@ def test_groupby_aggregate():
     assert rows == {"Sales": 300.0, "Ops": 50.0}
 
 
+def test_groupby_aggregate_rejects_unsafe_func_name():
+    df = pd.DataFrame({"division": ["Sales"], "rev_actual": [100.0]})
+    fn = transformer_registry.get("groupby_aggregate").func
+    with pytest.raises(ValueError, match="Unsupported aggregation function"):
+        fn(
+            {"df": df},
+            {"by": ["division"], "aggs": {"x": {"column": "rev_actual", "func": "__class__"}}},
+        )
+
+
 def test_pivot():
     df = pd.DataFrame(
         {
@@ -154,6 +164,16 @@ def test_pivot():
     assert rows["Sales"]["rev"] == 100.0
     assert rows["Sales"]["ebitda"] == 20.0
     assert rows["Ops"]["rev"] == 50.0
+
+
+def test_pivot_rejects_unsafe_aggfunc_name():
+    df = pd.DataFrame({"division": ["Sales"], "metric": ["rev"], "value": [100.0]})
+    fn = transformer_registry.get("pivot").func
+    with pytest.raises(ValueError, match="Unsupported aggregation function"):
+        fn(
+            {"df": df},
+            {"index": "division", "columns": "metric", "values": "value", "aggfunc": "eval"},
+        )
 
 
 def test_latest_vs_baseline():

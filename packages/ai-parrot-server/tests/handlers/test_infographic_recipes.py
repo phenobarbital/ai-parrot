@@ -22,7 +22,6 @@ from parrot.handlers.infographic_recipes import (
     RecipeHandler,
     RunInfographicRecipeCallback,
     configure_recipe_runner,
-    get_recipe_runner,
 )
 from parrot.outputs.a2ui.recipes.models import (
     InfographicRecipe,
@@ -212,7 +211,14 @@ class TestRecipeHandlerRun:
         assert resp.status == 200
         body = json.loads(resp.body)
         assert body["artifact"]["artifact_id"] == "a1"
-        fake_runner.run.assert_awaited_once_with("test-recipe", params={"month": "2026-06"})
+        # A real pctx/recipe_owner MUST always be threaded through so replay
+        # honors the invoker's PBAC/data-plane guards (spec G8) instead of
+        # silently making DatasetManager's checks fail open.
+        call_args, call_kwargs = fake_runner.run.call_args
+        assert call_args == ("test-recipe",)
+        assert call_kwargs["params"] == {"month": "2026-06"}
+        assert call_kwargs["pctx"] is not None
+        assert call_kwargs["recipe_owner"] == "user-1"
 
     async def test_recipe_handler_run_422_on_drift(self, fake_runner):
         app = {"recipe_runner": fake_runner}
@@ -278,6 +284,28 @@ class TestSchedulerCallback:
         pctx = call_kwargs["pctx"]
         assert isinstance(pctx, PermissionContext)
         assert pctx.user_id == "svc-budget-bot"
+        # No explicit tenant_id/roles on the ScheduleSpec -> documented
+        # fallback (tenant_id=principal, no roles), NOT a crash.
+        assert pctx.tenant_id == "svc-budget-bot"
+        assert pctx.roles == frozenset()
+
+    async def test_scheduler_callback_uses_explicit_tenant_and_roles(self, fake_runner):
+        configure_recipe_runner(fake_runner)
+        recipe = _sample_recipe(
+            schedule=ScheduleSpec(
+                principal="svc-budget-bot", tenant_id="acme-corp", roles=["finance.read"]
+            )
+        )
+        fake_runner.store.get.return_value = recipe
+        artifact = SimpleNamespace(artifact_id="a1", mime_type="text/html", filename="f.html")
+        fake_runner.run.return_value = artifact
+
+        callback = RunInfographicRecipeCallback(config={"recipe_name": "test-recipe"})
+        await callback.run(None, schedule_id="sched-1", agent_name="agent-1")
+
+        pctx = fake_runner.run.call_args.kwargs["pctx"]
+        assert pctx.tenant_id == "acme-corp"
+        assert pctx.roles == frozenset({"finance.read"})
 
     async def test_missing_principal_fails_no_fallback(self, fake_runner):
         configure_recipe_runner(fake_runner)

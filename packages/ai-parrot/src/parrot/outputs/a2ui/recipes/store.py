@@ -250,22 +250,28 @@ class DBRecipeStore(AbstractRecipeStore):
         self._lock = asyncio.Lock()
 
     async def configure(self) -> None:
-        """Idempotently connect to Redis, falling back to in-memory on failure."""
-        if self._configured:
-            return
-        if self._use_redis:
-            try:
-                self._redis = Redis.from_url(
-                    self.redis_url, decode_responses=True, socket_connect_timeout=5
-                )
-                await self._redis.ping()
-                self.logger.info("DBRecipeStore connected to Redis")
-            except Exception as exc:  # noqa: BLE001 - mirrors SkillRegistry's broad fallback
-                self.logger.warning(
-                    "DBRecipeStore Redis connection failed (%s); using in-memory store", exc
-                )
-                self._use_redis = False
-        self._configured = True
+        """Idempotently connect to Redis, falling back to in-memory on failure.
+
+        Takes ``self._lock`` for the whole check-then-set so two concurrent
+        first-callers cannot both attempt a Redis connection (the previous,
+        lock-free double-checked version had exactly that race).
+        """
+        async with self._lock:
+            if self._configured:
+                return
+            if self._use_redis:
+                try:
+                    self._redis = Redis.from_url(
+                        self.redis_url, decode_responses=True, socket_connect_timeout=5
+                    )
+                    await self._redis.ping()
+                    self.logger.info("DBRecipeStore connected to Redis")
+                except Exception as exc:  # noqa: BLE001 - mirrors SkillRegistry's broad fallback
+                    self.logger.warning(
+                        "DBRecipeStore Redis connection failed (%s); using in-memory store", exc
+                    )
+                    self._use_redis = False
+            self._configured = True
 
     def _key(self, name: str, owner: Optional[str]) -> str:
         return f"a2ui_recipe:{self.namespace}:{owner or '_'}:{name}"
@@ -300,8 +306,24 @@ class DBRecipeStore(AbstractRecipeStore):
 
     async def list(self, owner: Optional[str] = None) -> list[dict[str, Any]]:
         await self.configure()
+        names = await self._available_names(owner)
+        if not names:
+            return []
+
+        if self._use_redis and self._redis:
+            # Single MGET instead of N sequential GETs (one per recipe).
+            keys = [self._key(name, owner) for name in names]
+            payloads = await self._redis.mget(keys)
+            summaries = []
+            for name, payload in zip(names, payloads):
+                if payload is None:
+                    continue  # index/value race (deleted between smembers and mget)
+                recipe = _check_schema_version(InfographicRecipe.model_validate_json(payload))
+                summaries.append(_summary(recipe))
+            return summaries
+
         summaries = []
-        for name in await self._available_names(owner):
+        for name in names:
             recipe = await self.get(name, owner)
             summaries.append(_summary(recipe))
         return summaries

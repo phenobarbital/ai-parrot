@@ -15,6 +15,7 @@ from parrot.outputs.a2ui.recipes.models import (
     RecipeRunError,
     TransformStep,
 )
+from parrot.auth.permission import PermissionContext, UserSession
 from parrot.outputs.a2ui.recipes.store import RecipeNotFoundError
 from parrot.tools.infographic_recipes.runner import RecipeRunException
 from parrot.tools.infographic_toolkit import _RECIPE_TOOL_NAMES, InfographicToolkit
@@ -125,7 +126,45 @@ class TestRecipeTools:
             "title": "T",
             "filename": "f.html",
         }
-        fake_recipe_runner.run.assert_awaited_once_with("test-recipe", params={"month": "2026-06"})
+        # pctx/recipe_owner are ALWAYS threaded through so replay honors the
+        # same PBAC/data-plane guards a live chat call would (spec G8).
+        fake_recipe_runner.run.assert_awaited_once()
+        call_args, call_kwargs = fake_recipe_runner.run.call_args
+        assert call_args == ("test-recipe",)
+        assert call_kwargs["params"] == {"month": "2026-06"}
+        assert call_kwargs["pctx"] is not None
+        assert call_kwargs["recipe_owner"] == "_anon"  # no bot bound -> _resolve_scope sentinel
+
+    async def test_run_recipe_uses_dispatch_injected_permission_context(
+        self, fake_artifact_store, fake_recipe_store, fake_recipe_runner
+    ):
+        """When invoked through the real toolkit-dispatch path (`_pre_execute`
+        injects `_permission_context`), `infographic_run_recipe` must use THAT
+        real context — not the `build_principal_context` fallback — so
+        DatasetManager's PBAC guards see the invoker's actual roles/tenant."""
+        tk = InfographicToolkit(
+            artifact_store=fake_artifact_store,
+            recipe_store=fake_recipe_store,
+            recipe_runner=fake_recipe_runner,
+        )
+        artifact = MagicMock(
+            artifact_id="a1", mime_type="text/html", title="T", filename="f.html"
+        )
+        fake_recipe_runner.run.return_value = artifact
+
+        real_pctx = PermissionContext(
+            session=UserSession(user_id="alice", tenant_id="acme", roles=frozenset({"finance.read"}))
+        )
+        # Mirrors ToolkitTool._execute: _pre_execute runs BEFORE the tool
+        # body, _post_execute AFTER — always injecting _permission_context.
+        await tk._pre_execute("infographic_run_recipe", _permission_context=real_pctx)
+        try:
+            await tk.infographic_run_recipe("test-recipe")
+        finally:
+            await tk._post_execute("infographic_run_recipe", None)
+
+        call_kwargs = fake_recipe_runner.run.call_args.kwargs
+        assert call_kwargs["pctx"] is real_pctx
 
     async def test_run_recipe_without_runner_configured(self, fake_artifact_store):
         tk = InfographicToolkit(artifact_store=fake_artifact_store)

@@ -13,6 +13,8 @@ result of ``infographic_render`` is the final agent output, consumed by
 """
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import json
 import logging
 import uuid
@@ -22,6 +24,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError as PydanticValidationError
 
+from parrot.auth.permission import build_principal_context
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.template.engine import TemplateEngine
 from parrot.models.infographic import (
@@ -56,6 +59,19 @@ _RECIPE_TOOL_NAMES: Tuple[str, ...] = (
     "infographic_list_recipes",
     "infographic_run_recipe",
     "infographic_get_recipe_contract",
+)
+
+#: Per-task holder for the invoker's ``PermissionContext``, set by
+#: ``InfographicToolkit._pre_execute`` (mirrors ``DatasetManager``'s own
+#: ``_pctx_var`` in ``parrot.auth.context``, which is per-toolkit rather than
+#: shared globally — using a dedicated ContextVar here, rather than an
+#: instance attribute, ensures concurrent requests on a shared toolkit
+#: instance cannot bleed each other's context across an await boundary,
+#: exactly like DatasetManager's own doc rationale for the same pattern).
+#: Consumed by ``infographic_run_recipe`` so recipe replay honors the SAME
+#: PBAC/data-plane guards a live chat call would (spec G8).
+_infographic_pctx_var: "contextvars.ContextVar[Any | None]" = contextvars.ContextVar(
+    "infographic_toolkit_pctx", default=None
 )
 
 
@@ -224,6 +240,58 @@ class InfographicToolkit(AbstractToolkit):
             self._recipe_runner = None
         if self._recipe_store is None:
             self.exclude_tools = (*self.exclude_tools, *_RECIPE_TOOL_NAMES)
+        # Per-task token bookkeeping for _infographic_pctx_var (see module
+        # docstring comment above the ContextVar definition).
+        self._recipe_pctx_tokens: Dict[int, Any] = {}
+
+    async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:
+        """Capture the invoker's ``PermissionContext`` for recipe-replay tools.
+
+        ``ToolkitTool._execute`` always injects ``_permission_context`` into
+        ``kwargs`` (even when ``None``) before calling this hook — see
+        ``AbstractToolkit._pre_execute``'s docstring and
+        ``parrot.tools.dataset_manager.tool.DatasetManager._pre_execute`` for
+        the precedent this mirrors. Stashing it in a ContextVar (rather than
+        an instance attribute) keeps concurrent calls on a shared toolkit
+        instance from bleeding each other's context (same rationale
+        DatasetManager documents for its own ``_pctx_var``).
+
+        Args:
+            tool_name: Name of the tool about to execute.
+            **kwargs: Tool arguments, including the injected
+                ``_permission_context``.
+        """
+        pctx = kwargs.get("_permission_context")
+        token = _infographic_pctx_var.set(pctx)
+        task = asyncio.current_task()
+        if task is not None:
+            self._recipe_pctx_tokens[id(task)] = token
+
+    async def _post_execute(self, tool_name: str, result: Any, /, **kwargs) -> Any:
+        """Reset the ``_infographic_pctx_var`` token set by :meth:`_pre_execute`."""
+        task = asyncio.current_task()
+        if task is not None:
+            token = self._recipe_pctx_tokens.pop(id(task), None)
+            if token is not None:
+                _infographic_pctx_var.reset(token)
+        return result
+
+    @staticmethod
+    def _current_recipe_pctx(user_id: str) -> Any:
+        """Return the invoker's ``PermissionContext`` for recipe replay (spec G8).
+
+        Prefers the REAL ``PermissionContext`` captured by :meth:`_pre_execute`
+        (from the toolkit-dispatch-injected ``_permission_context``); falls
+        back to a minimal principal-only context built from the resolved
+        ``user_id`` when no dispatch-time context is available (e.g. a
+        direct method call outside the toolkit dispatch path). NEVER returns
+        ``None`` — a falsy ``pctx`` makes ``DatasetManager``'s PBAC guards
+        fail OPEN rather than closed.
+        """
+        pctx = _infographic_pctx_var.get()
+        if pctx is not None:
+            return pctx
+        return build_principal_context(user_id, channel="chat")
 
     def add_template(self, name: str, source: str) -> None:
         """Register a trusted in-memory HTML+Jinja template for ``render_template``.
@@ -989,8 +1057,13 @@ class InfographicToolkit(AbstractToolkit):
                 "status": "error",
                 "detail": "Recipe runner not configured on this toolkit.",
             }
+        bot = getattr(self, "_bot", None)
+        user_id, _agent_id, _session_id = self._resolve_scope(bot)
+        pctx = self._current_recipe_pctx(user_id)
         try:
-            artifact = await self._recipe_runner.run(name, params=params)
+            artifact = await self._recipe_runner.run(
+                name, params=params, pctx=pctx, recipe_owner=user_id
+            )
         except RecipeRunException as exc:
             return {"status": "error", "error": exc.error.model_dump()}
         return {
@@ -1020,8 +1093,10 @@ class InfographicToolkit(AbstractToolkit):
         """
         if self._recipe_store is None:
             return {"status": "error", "detail": "Recipe store not configured on this toolkit."}
+        bot = getattr(self, "_bot", None)
+        user_id, _agent_id, _session_id = self._resolve_scope(bot)
         try:
-            recipe = await self._recipe_store.get(name)
+            recipe = await self._recipe_store.get(name, owner=user_id)
         except RecipeNotFoundError as exc:
             return {"status": "error", "detail": str(exc)}
 

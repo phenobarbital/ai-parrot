@@ -236,13 +236,39 @@ outright.
 
 | Trigger | `pctx` source |
 |---|---|
-| Chat tool | Invoker's `PermissionContext` (toolkit dispatch) |
-| REST | Invoker's `PermissionContext` (request auth) |
-| Scheduler | Resolved from the recipe's `schedule.principal` — REQUIRED, no fallback |
+| Chat tool | Real `PermissionContext` captured by `InfographicToolkit._pre_execute` from the toolkit-dispatch-injected `_permission_context` (falls back to a principal-only context built from the resolved user id when invoked outside the dispatch path — e.g. direct method calls) |
+| REST | Built from the authenticated session's user id via `build_principal_context` (`parrot.auth.permission`) |
+| Scheduler | Resolved from the recipe's `schedule.principal` (+ optional `schedule.tenant_id`/`schedule.roles`) — REQUIRED, no fallback |
+
+**Every** `RecipeRunner.run()` call site (chat tool, REST, scheduler) ALWAYS
+passes a real `pctx` — a falsy `pctx` makes `DatasetManager`'s PBAC/data-plane
+guards fail OPEN (no filtering applied) rather than closed, so this is a hard
+requirement, not a nicety. `PermissionContext`s built from a bare principal
+(REST, chat-tool fallback) default `tenant_id` to the principal itself and
+grant no roles — set `schedule.tenant_id`/`schedule.roles` explicitly on a
+recipe's `schedule` block for role-gated PBAC policies to apply to its
+scheduled replays.
+
+`RecipeRunner.run()` also takes `recipe_owner` — it MUST match the owner a
+recipe was saved under (stores key by `(name, owner)`); all three triggers
+resolve and pass it automatically (the invoker's user id for chat/REST,
+`None`/unscoped for scheduled recipes unless you scope those separately).
 
 `DatasetManager`'s PBAC/data-plane guards apply unchanged in all three paths
 — a permission-denied dataset fails the run, it never silently narrows or
 widens access.
+
+### `{param}` substitution into `sql` templates
+
+`DataSourceSpec.sql`'s `{param}` substitution is guarded against SQL
+injection: a resolved param value containing quotes, semicolons, or comment
+markers (`--`, `/*`, `*/`) is rejected with a `stage="data"` error BEFORE any
+query executes. `DatasetManager`'s `TableSource` executes `sql` close to
+verbatim and documents itself as NOT a security boundary — recipe `params`
+overrides are a new, less-trusted input to that path compared to
+`TableSource`'s existing (LLM/agent-authored) callers. Prefer
+`DataSourceSpec.conditions` (parameterized, escaped at fetch time) over
+embedding `{param}` directly inside `sql` wherever possible.
 
 ---
 

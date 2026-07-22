@@ -20,10 +20,11 @@ from parrot.outputs.a2ui.recipes.models import (
     DataSourceSpec,
     InfographicRecipe,
     LayoutSpec,
+    RecipeParam,
     RenderSpec,
     TransformStep,
 )
-from parrot.outputs.a2ui.recipes.transformers import infographic_transformer, transformer_registry
+from parrot.outputs.a2ui.recipes.transformers import transformer_registry
 from parrot.outputs.a2ui.renderers import (
     AbstractA2UIRenderer,
     RendererCapabilities,
@@ -101,8 +102,10 @@ class _FakeDatasetManager:
 class _FakeStore:
     def __init__(self, recipes: dict[str, InfographicRecipe]) -> None:
         self._recipes = recipes
+        self.get_calls: list[tuple[str, object]] = []
 
     async def get(self, name, owner=None):
+        self.get_calls.append((name, owner))
         if name not in self._recipes:
             raise KeyError(name)
         return self._recipes[name]
@@ -296,6 +299,18 @@ class TestRecipeRunner:
         assert len(errors) >= 2
         assert dataset_manager.fetch_calls == []  # dry_run never fetches data
 
+    async def test_dry_run_catches_delivery_missing_recipients(self, dataset_manager):
+        """A malformed render.delivery (missing 'recipients') should surface at
+        dry_run/freeze time, not silently fail at the first scheduled run
+        (delivery is best-effort — no exception would otherwise be raised)."""
+        recipe = _make_recipe(render=RenderSpec(profile="fake-recorder", delivery={"provider": "email"}))
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)
+
+        errors = await runner.dry_run(recipe)
+
+        assert any(e.stage == "render" and "recipients" in e.detail for e in errors)
+
     async def test_pctx_propagated_and_reset(self, runner, dataset_manager):
         sentinel_pctx = object()
         assert _pctx_var.get() is None
@@ -304,6 +319,70 @@ class TestRecipeRunner:
 
         assert dataset_manager.pctx_seen_during_fetch == [sentinel_pctx]
         assert _pctx_var.get() is None  # reset after the fetch step
+
+    async def test_recipe_owner_scopes_the_store_lookup(self, store, dataset_manager):
+        """`run(recipe_owner=...)` must reach `store.get(name, owner=...)` —
+        omitting it silently makes owner-scoped recipes unrunnable (they were
+        SAVED under a real owner, but replay always looked them up under
+        owner=None)."""
+        runner = RecipeRunner(store, dataset_manager)
+
+        await runner.run("test-recipe", recipe_owner="alice")
+
+        assert store.get_calls == [("test-recipe", "alice")]
+
+    async def test_recipe_owner_defaults_to_none(self, store, dataset_manager):
+        runner = RecipeRunner(store, dataset_manager)
+
+        await runner.run("test-recipe")
+
+        assert store.get_calls == [("test-recipe", None)]
+
+    async def test_sql_param_substitution_rejects_injection_shaped_values(
+        self, dataset_manager
+    ):
+        """A resolved param containing quotes/semicolons/comment markers must
+        never be substituted into a DataSourceSpec.sql template — TableSource
+        executes `sql` close to verbatim and documents itself as NOT a
+        security boundary; recipe `params` overrides are a new, less-trusted
+        input to that path."""
+        recipe = _make_recipe(
+            data_sources=[
+                DataSourceSpec(
+                    dataset="snapshots",
+                    alias="snapshots",
+                    sql="SELECT * FROM ledger WHERE division = '{division}'",
+                )
+            ],
+            params=[RecipeParam(name="division", default="Sales")],
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)
+
+        with pytest.raises(RecipeRunException) as exc_info:
+            await runner.run(recipe.name, params={"division": "Sales'; DROP TABLE ledger; --"})
+
+        assert exc_info.value.error.stage == "data"
+        assert "unsafe" in exc_info.value.error.detail.lower()
+        assert dataset_manager.fetch_calls == []  # aborted BEFORE any fetch
+
+    async def test_sql_param_substitution_allows_benign_values(self, dataset_manager):
+        recipe = _make_recipe(
+            data_sources=[
+                DataSourceSpec(
+                    dataset="snapshots",
+                    alias="snapshots",
+                    sql="SELECT * FROM ledger WHERE division = '{division}'",
+                )
+            ],
+            params=[RecipeParam(name="division", default="Sales")],
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)
+
+        await runner.run(recipe.name, params={"division": "Ops"})
+
+        assert dataset_manager.fetch_calls[0]["sql"] == "SELECT * FROM ledger WHERE division = 'Ops'"
 
     async def test_params_override_reaches_transform(self, dataset_manager):
         recipe = _make_recipe(

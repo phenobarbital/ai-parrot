@@ -38,6 +38,36 @@ __all__: list[str] = []  # registration is by import side effect, not re-export
 
 _MONEY_COLUMNS = ["rev_actual", "rev_budget", "ebitda_actual", "ebitda_budget"]
 
+#: Allowlist of aggregation function NAMES `groupby_aggregate`/`pivot` accept
+#: for their `func`/`aggfunc` params. Both feed straight into pandas'
+#: `.agg()`/`.pivot_table()`, which resolve string names via `getattr`
+#: lookups on the groupby object (never `eval`) — so this is not an RCE/code-
+#: injection risk, but an explicit allowlist is still cheap defensive coding
+#: against surprising behavior from arbitrary caller-supplied strings landing
+#: directly in a pandas API call.
+_SAFE_AGG_FUNCS = frozenset(
+    {"sum", "mean", "median", "min", "max", "count", "std", "var", "first", "last", "nunique", "size"}
+)
+
+
+def _validate_agg_func(name: str) -> str:
+    """Validate an aggregation function name against :data:`_SAFE_AGG_FUNCS`.
+
+    Args:
+        name: Caller-supplied aggregation function name.
+
+    Returns:
+        ``name`` unchanged, if valid.
+
+    Raises:
+        ValueError: If ``name`` is not in the allowlist.
+    """
+    if name not in _SAFE_AGG_FUNCS:
+        raise ValueError(
+            f"Unsupported aggregation function {name!r}; allowed: {sorted(_SAFE_AGG_FUNCS)!r}"
+        )
+    return name
+
 
 def _records(df: pd.DataFrame) -> list[dict[str, Any]]:
     """Convert a DataFrame to a JSON-safe list of records.
@@ -291,8 +321,9 @@ def top_movers(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> dict[
     description=(
         "Generic group-by + named aggregation. 'by' is a list of grouping "
         "columns; 'aggs' maps output column name -> {'column': ..., "
-        "'func': 'sum'|'mean'|'count'|'min'|'max'|...}. Returns a list of "
-        "records (full float precision, no assumed rounding)."
+        "'func': one of sum|mean|median|min|max|count|std|var|first|last|"
+        "nunique|size}. Returns a list of records (full float precision, no "
+        "assumed rounding)."
     ),
     params_schema={
         "by": {"type": "array", "items": {"type": "string"}},
@@ -305,7 +336,7 @@ def groupby_aggregate(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -
     by = params["by"]
     aggs = params["aggs"]
     named_aggs = {
-        out_name: pd.NamedAgg(column=spec["column"], aggfunc=spec["func"])
+        out_name: pd.NamedAgg(column=spec["column"], aggfunc=_validate_agg_func(spec["func"]))
         for out_name, spec in aggs.items()
     }
     grouped = df.groupby(by, dropna=False).agg(**named_aggs).reset_index()
@@ -317,8 +348,9 @@ def groupby_aggregate(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -
     requires_columns={},  # columns depend on runtime 'index'/'columns'/'values' params
     description=(
         "Generic pivot table: 'index', 'columns', 'values' column names "
-        "plus 'aggfunc' (default 'sum'). Returns a list of records with the "
-        "pivoted columns flattened (full float precision)."
+        "plus 'aggfunc' (default 'sum'; one of sum|mean|median|min|max|"
+        "count|std|var|first|last|nunique|size). Returns a list of records "
+        "with the pivoted columns flattened (full float precision)."
     ),
     params_schema={
         "index": {"type": "string"},
@@ -334,7 +366,7 @@ def pivot(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> dict[str, 
         index=params["index"],
         columns=params["columns"],
         values=params["values"],
-        aggfunc=params.get("aggfunc", "sum"),
+        aggfunc=_validate_agg_func(params.get("aggfunc", "sum")),
     ).reset_index()
     table.columns = [str(c) for c in table.columns]
     return {"rows": _records(table)}

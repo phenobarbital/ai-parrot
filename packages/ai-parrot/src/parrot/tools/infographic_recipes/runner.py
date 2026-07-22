@@ -35,11 +35,29 @@ that session context (chat tool TASK-1870, REST/scheduler TASK-1872); this
 runner's ``artifact_store`` constructor param is passed straight through to
 ``deliver_artifact(..., artifact_store=...)`` for its one VERIFIED use (the
 Slack public-URL lookup), not re-invented as a separate persist call.
+
+**Security review follow-up (post-merge hardening)**:
+
+* Every caller of ``run()`` MUST pass a real ``pctx`` — a missing/``None``
+  ``pctx`` makes ``DatasetManager``'s PBAC/data-plane guards fail OPEN, not
+  closed. Use ``parrot.auth.permission.build_principal_context()`` to build
+  one from a bare user id/principal when no richer context is available.
+* ``run()`` accepts ``recipe_owner`` so replay loads the SAME owner scope a
+  recipe was saved under (stores key by ``(name, owner)`` — omitting this
+  silently makes owner-scoped recipes unrunnable via the tools meant to run
+  them).
+* ``DataSourceSpec.sql`` `{param}` substitution is guarded against SQL
+  injection (see :func:`_reject_unsafe_sql_params`) — ``TableSource``
+  executes ``sql`` close to verbatim and is NOT a security boundary by its
+  own documentation; recipe ``params`` overrides are a new, less-trusted
+  input to that path compared to ``TableSource``'s existing (LLM/agent-
+  authored) callers.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 
 import pandas as pd
@@ -106,6 +124,39 @@ def _substitute_value(value: Any, resolved_params: dict[str, str]) -> Any:
     return value
 
 
+#: Characters/sequences that must never appear in a resolved param value
+#: substituted directly into a ``DataSourceSpec.sql`` template — quotes,
+#: statement separators, and comment markers are the classic SQL-injection
+#: breakout vectors. ``DatasetManager``'s ``TableSource`` executes ``sql``
+#: close to verbatim (it documents itself as NOT a security boundary,
+#: trusting its existing LLM/agent-authored callers); recipe ``params``
+#: overrides are a NEW, less-trusted input to that same execution path, so
+#: values substituted into ``sql`` specifically are restricted here.
+_SQL_UNSAFE_VALUE_RE = re.compile(r"""['";]|--|/\*|\*/""")
+
+
+def _reject_unsafe_sql_params(sql_template: str, resolved_params: dict[str, str]) -> None:
+    """Guard ``DataSourceSpec.sql`` `{param}` substitution against SQL injection.
+
+    Args:
+        sql_template: The recipe's ``sql`` template (before substitution).
+        resolved_params: Fully resolved param values (declared defaults +
+            caller overrides) about to be substituted into it.
+
+    Raises:
+        ValueError: If a param actually referenced by ``sql_template``
+            resolves to a value containing an unsafe character/sequence.
+    """
+    for param_name, value in resolved_params.items():
+        if f"{{{param_name}}}" in sql_template and _SQL_UNSAFE_VALUE_RE.search(value):
+            raise ValueError(
+                f"Resolved param {param_name!r}={value!r} contains characters unsafe "
+                "for direct substitution into a SQL template (quotes/semicolons/comment "
+                "markers). Use DataSourceSpec.conditions (parameterized, escaped at "
+                "fetch time) instead of embedding untrusted {param} values inside `sql`."
+            )
+
+
 def _extract_metadata_columns(metadata: Any) -> Optional[set[str]]:
     """Best-effort extraction of a column-name set from ``DatasetManager.get_metadata()``.
 
@@ -160,6 +211,7 @@ class RecipeRunner:
         *,
         params: dict[str, Any] | None = None,
         pctx: Any | None = None,
+        recipe_owner: Optional[str] = None,
     ) -> RenderedArtifact:
         """Run the full seven-step replay pipeline for recipe ``name``.
 
@@ -169,7 +221,17 @@ class RecipeRunner:
             pctx: Invoker's ``PermissionContext`` (chat/REST) or the resolved
                 context for ``schedule.principal`` (scheduled jobs). Propagated
                 to ``DatasetManager`` via its ``_pctx_var`` ContextVar for the
-                duration of the data-fetch step.
+                duration of the data-fetch step. Callers SHOULD always pass a
+                real ``PermissionContext`` here (e.g. via
+                ``parrot.auth.permission.build_principal_context``) — a falsy
+                ``pctx`` makes ``DatasetManager``'s PBAC/data-plane guards
+                fail OPEN (no filtering applied), not fail closed.
+            recipe_owner: Owner scope to load the recipe under (must match
+                the owner it was saved with — stores key by ``(name, owner)``).
+                ``None`` loads the shared/unscoped recipe. Named distinctly
+                from the constructor's ``owner`` (the NotificationMixin-
+                bearing delivery owner — an unrelated concept) to avoid
+                confusion between the two.
 
         Returns:
             The rendered, persisted-if-configured :class:`RenderedArtifact`.
@@ -180,7 +242,7 @@ class RecipeRunner:
                 renderer backend (propagated from ``get_a2ui_renderer`` unchanged
                 — "degrades with the existing actionable ImportError").
         """
-        recipe = await self._load_recipe(name)
+        recipe = await self._load_recipe(name, recipe_owner)
         resolved_params = self._resolve_params_or_raise(recipe, params)
         frames = await self._fetch_frames(recipe, resolved_params, pctx)
         self._run_gate_or_raise(recipe, frames)
@@ -273,12 +335,25 @@ class RecipeRunner:
                     )
                 )
 
+        if recipe.render.delivery is not None and "recipients" not in recipe.render.delivery:
+            errors.append(
+                RecipeRunError(
+                    recipe=recipe.name,
+                    stage="render",
+                    detail=(
+                        "render.delivery is set but missing required 'recipients' key "
+                        "(deliver_artifact requires it) — this would currently fail "
+                        "silently at run time (delivery is best-effort); catch it now."
+                    ),
+                )
+            )
+
         return errors
 
     # ── Pipeline steps ────────────────────────────────────────────────
 
-    async def _load_recipe(self, name: str) -> InfographicRecipe:
-        return await self.store.get(name)
+    async def _load_recipe(self, name: str, owner: Optional[str] = None) -> InfographicRecipe:
+        return await self.store.get(name, owner=owner)
 
     def _resolve_params_or_raise(
         self, recipe: InfographicRecipe, overrides: dict[str, Any] | None
@@ -300,6 +375,18 @@ class RecipeRunner:
         try:
             frames: dict[str, pd.DataFrame] = {}
             for ds in recipe.data_sources:
+                if ds.sql:
+                    try:
+                        _reject_unsafe_sql_params(ds.sql, resolved_params)
+                    except ValueError as exc:
+                        raise RecipeRunException(
+                            RecipeRunError(
+                                recipe=recipe.name,
+                                stage="data",
+                                dataset=ds.dataset,
+                                detail=str(exc),
+                            )
+                        ) from exc
                 sql = substitute(ds.sql, resolved_params) if ds.sql else None
                 conditions = (
                     _substitute_value(ds.conditions, resolved_params)

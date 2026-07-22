@@ -76,6 +76,12 @@ _SURFACE_NAME = "interactive-html"
 #: vendored ECharts bundle (`echarts.py`'s `_ECHARTS_JS_PATH`).
 _CHART_JS_PATH = Path(__file__).parent.parent / "formats" / "assets" / "chart.umd.min.js"
 
+#: Read ONCE at import time (not per-render) — this is a 200KB+ file and
+#: `render()` is an async method; re-reading it synchronously on every call
+#: would block the event loop repeatedly for no benefit, since the bundle
+#: never changes at runtime.
+_CHART_JS_SOURCE = _CHART_JS_PATH.read_text(encoding="utf-8")
+
 # A2UI Chart type -> Chart.js chart type.
 _CHART_TYPE = {
     "bar": "bar",
@@ -228,7 +234,7 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         body_parts = [self._render_top(bc) for bc in baked_components]
 
         data_model_json = _safe_json(envelope.data_model)
-        chart_js = _CHART_JS_PATH.read_text(encoding="utf-8")
+        chart_js = _CHART_JS_SOURCE
 
         document = (
             "<!DOCTYPE html>"

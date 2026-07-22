@@ -168,3 +168,91 @@ async def test_db_store_crud():
     await store.delete(recipe.name)
     with pytest.raises(RecipeNotFoundError):
         await store.get(recipe.name)
+
+
+class _FakeRedis:
+    """Minimal fake standing in for `redis.asyncio.Redis` to exercise the
+    REAL Redis code path (`_use_redis=True`) without a live server."""
+
+    def __init__(self):
+        self.data: dict[str, str] = {}
+        self.sets: dict[str, set[str]] = {}
+        self.mget_calls = 0
+        self.get_calls = 0
+        self.ping_calls = 0
+
+    async def ping(self):
+        self.ping_calls += 1
+        return True
+
+    async def set(self, key, value):
+        self.data[key] = value
+
+    async def get(self, key):
+        self.get_calls += 1
+        return self.data.get(key)
+
+    async def mget(self, keys):
+        self.mget_calls += 1
+        return [self.data.get(k) for k in keys]
+
+    async def sadd(self, key, member):
+        self.sets.setdefault(key, set()).add(member)
+
+    async def smembers(self, key):
+        return self.sets.get(key, set())
+
+    async def delete(self, key):
+        return 1 if self.data.pop(key, None) is not None else 0
+
+    async def srem(self, key, member):
+        self.sets.get(key, set()).discard(member)
+
+
+async def test_db_store_list_uses_single_mget_not_n_plus_one():
+    """`list()` must batch-fetch via a single MGET, not one GET per recipe."""
+    store = DBRecipeStore(redis_url=None)
+    fake_redis = _FakeRedis()
+    # Bypass configure()'s real connection attempt — inject the fake directly.
+    store._use_redis = True
+    store._redis = fake_redis
+    store._configured = True
+
+    for i in range(3):
+        await store.save(_make_recipe(name=f"recipe-{i}"))
+
+    fake_redis.get_calls = 0  # reset (save() doesn't call get, but be explicit)
+    listing = await store.list()
+
+    assert len(listing) == 3
+    assert fake_redis.mget_calls == 1
+    assert fake_redis.get_calls == 0  # no per-recipe GETs
+
+
+async def test_db_store_configure_is_idempotent_under_concurrency():
+    """Concurrent first-callers must only attempt ONE Redis connection."""
+    import asyncio
+
+    store = DBRecipeStore(redis_url="redis://fake:6379/0")
+    store._use_redis = True  # pretend REDIS_AVAILABLE was True at construction
+
+    connect_attempts = 0
+
+    class _FakeRedisModule:
+        @staticmethod
+        def from_url(*args, **kwargs):
+            nonlocal connect_attempts
+            connect_attempts += 1
+            return _FakeRedis()
+
+    import parrot.outputs.a2ui.recipes.store as store_module
+
+    original_redis = store_module.Redis
+    store_module.Redis = _FakeRedisModule
+    try:
+        await asyncio.gather(*(store.configure() for _ in range(10)))
+    finally:
+        store_module.Redis = original_redis
+
+    assert connect_attempts == 1
+    assert store._configured is True

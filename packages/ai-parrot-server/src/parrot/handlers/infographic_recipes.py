@@ -37,7 +37,7 @@ from navigator_auth.decorators import is_authenticated, user_session
 from navigator_session import get_session
 from pydantic import ValidationError
 
-from parrot.auth.permission import PermissionContext, UserSession
+from parrot.auth.permission import build_principal_context
 from parrot.outputs.a2ui.recipes.models import InfographicRecipe
 from parrot.outputs.a2ui.recipes.store import AbstractRecipeStore, RecipeNotFoundError
 from parrot.tools.infographic_recipes.runner import RecipeRunException, RecipeRunner
@@ -286,8 +286,16 @@ class RecipeHandler(BaseView):
         except RuntimeError as exc:
             return self._error_response(str(exc), status=500)
 
+        owner = await _get_user_id(self.request)
+        # ALWAYS pass a real PermissionContext — a falsy pctx makes
+        # DatasetManager's PBAC/data-plane guards fail OPEN, not closed
+        # (spec G8; this endpoint is already @is_authenticated(), so owner
+        # should always resolve, but fall back to an anonymous principal
+        # rather than None if it somehow doesn't).
+        pctx = build_principal_context(owner or "_anon", channel="rest")
+
         try:
-            artifact = await runner.run(name, params=params)
+            artifact = await runner.run(name, params=params, pctx=pctx, recipe_owner=owner)
         except RecipeRunException as exc:
             return self.json_response(
                 {"status": "error", **exc.error.model_dump()}, status=422
@@ -320,12 +328,15 @@ class RunInfographicRecipeCallback(BaseSchedulerCallback):
         params (dict, optional): Override values for the recipe's declared params.
 
     The targeted recipe MUST have ``schedule.principal`` set. It is resolved
-    into a minimal ``PermissionContext`` (the principal is treated as a
-    ``user_id``; full multi-tenant/role resolution is a documented follow-up
-    — NOT required by spec G8's core acceptance criterion, which is simply
-    "never fall back to a server identity"). A missing principal, or a
-    missing runner, fails the job outright rather than silently widening
-    access.
+    into a ``PermissionContext`` via ``build_principal_context`` — using
+    ``schedule.tenant_id``/``schedule.roles`` when the recipe author set
+    them, falling back to ``tenant_id=principal``/no roles otherwise (a
+    documented simplification, not a silent bug: policies keyed on real
+    tenant ids or roles should set ``schedule.tenant_id``/``schedule.roles``
+    explicitly). A missing principal, or a missing runner, fails the job
+    outright rather than silently widening access — this is the part spec
+    G8's core acceptance criterion actually requires ("never fall back to a
+    server identity").
     """
 
     callback_name = "run_infographic_recipe"
@@ -357,9 +368,11 @@ class RunInfographicRecipeCallback(BaseSchedulerCallback):
                 "explicit principal (spec G8) — refusing to run under a server identity."
             )
 
-        pctx = PermissionContext(
-            session=UserSession(user_id=principal, tenant_id=principal, roles=frozenset()),
+        pctx = build_principal_context(
+            principal,
             channel="scheduler",
+            tenant_id=recipe.schedule.tenant_id,
+            roles=frozenset(recipe.schedule.roles),
         )
         artifact = await runner.run(recipe_name, params=self.config.get("params"), pctx=pctx)
         return {

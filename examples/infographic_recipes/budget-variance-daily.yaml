@@ -163,8 +163,12 @@ render:
 # Scheduled replays require an explicit principal (spec G8) — uncomment and
 # set a real principal before scheduling this recipe via the
 # run_infographic_recipe callback (see docs/outputs/infographic-recipes.md).
+# tenant_id/roles are optional and default to (principal, no roles) when
+# omitted — set them explicitly for any multi-tenant/role-gated PBAC policy.
 # schedule:
 #   principal: svc-budget-bot
+#   tenant_id: acme-corp
+#   roles: [finance.read]
 
 # Overwritten by AbstractRecipeStore.save() (spec G5) — placeholder for
 # standalone from_yaml() loading (e.g. in tests/examples) before the first save.

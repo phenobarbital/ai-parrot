@@ -163,6 +163,49 @@ class PermissionContext:
         return self.session.has_any_role(roles)
 
 
+def build_principal_context(
+    principal: str,
+    *,
+    channel: str,
+    tenant_id: Optional[str] = None,
+    roles: Optional[frozenset[str]] = None,
+) -> "PermissionContext":
+    """Build a minimal ``PermissionContext`` for a bare principal identifier.
+
+    Used wherever a caller has an authenticated identity (a REST session's
+    user id, a recipe's ``schedule.principal``, ...) but no pre-built
+    ``PermissionContext`` — e.g. FEAT-324's recipe replay triggers (chat
+    tool, REST, scheduler), all of which must propagate a REAL
+    ``PermissionContext`` to ``DatasetManager`` so its PBAC/data-plane guards
+    apply to replay exactly as they do to live use (a falsy ``pctx`` makes
+    those guards fail OPEN — see ``DatasetManager._filter_dataset_info_columns``
+    and friends, all guarded by ``if not self._policy_guard or not pctx``).
+
+    Args:
+        principal: Bare identity string (user id / service-account id).
+        channel: Originating channel (e.g. ``"scheduler"``, ``"rest"``,
+            ``"chat"``) — propagated to ``PermissionContext.channel``.
+        tenant_id: Tenant/org identifier. Defaults to ``principal`` when not
+            given — a documented simplification (no generic session ->
+            tenant_id resolution exists yet in this codebase); pass a real
+            tenant id when the caller has one.
+        roles: Role claims for policy evaluation. Defaults to an empty
+            ``frozenset`` when not given — role-gated PBAC policies will
+            deny by default until real roles are threaded in by the caller.
+
+    Returns:
+        A ``PermissionContext`` wrapping a minimal ``UserSession``.
+    """
+    return PermissionContext(
+        session=UserSession(
+            user_id=principal,
+            tenant_id=tenant_id or principal,
+            roles=roles or frozenset(),
+        ),
+        channel=channel,
+    )
+
+
 def to_eval_context(context: "PermissionContext") -> "EvalContext":
     """Bridge a PermissionContext to a navigator-auth EvalContext.
 

@@ -128,11 +128,22 @@ class ScheduleSpec(BaseModel):
     Attributes:
         principal: Explicit run-as principal for scheduled replays. Scheduled
             jobs NEVER run under a server identity — only this principal.
+        tenant_id: Optional tenant/org id for the principal's resolved
+            ``PermissionContext``. Defaults to ``principal`` when unset (see
+            ``parrot.auth.permission.build_principal_context``) — set this
+            explicitly for any multi-tenant PBAC policy keyed on a real
+            tenant id rather than the bare principal string.
+        roles: Optional role claims for the principal's resolved
+            ``PermissionContext``. Defaults to none — role-gated PBAC
+            policies will deny scheduled replays until real roles are set
+            here.
     """
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     principal: str
+    tenant_id: Optional[str] = None
+    roles: list[str] = Field(default_factory=list)
 
 
 class InfographicRecipe(BaseModel):
