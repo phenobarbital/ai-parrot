@@ -31,6 +31,14 @@ from parrot.outputs.a2ui.recipes.transformers import (
     transformer_registry,
     validate_inputs,
 )
+from parrot.outputs.a2ui.recipes.store import (
+    SUPPORTED_SCHEMA_VERSION,
+    AbstractRecipeStore,
+    DBRecipeStore,
+    FileRecipeStore,
+    RecipeNotFoundError,
+    RecipeSchemaVersionError,
+)
 
 # Import side effect ONLY: registers the 7 built-in transformers (day_totals,
 # division_breakdown, variance_analysis, top_movers, groupby_aggregate,
@@ -58,4 +66,10 @@ __all__ = [
     "infographic_transformer",
     "transformer_registry",
     "validate_inputs",
+    "AbstractRecipeStore",
+    "DBRecipeStore",
+    "FileRecipeStore",
+    "RecipeNotFoundError",
+    "RecipeSchemaVersionError",
+    "SUPPORTED_SCHEMA_VERSION",
 ]
