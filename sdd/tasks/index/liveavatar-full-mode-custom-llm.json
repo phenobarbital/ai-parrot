@@ -14,14 +14,14 @@
       "feature_id": "FEAT-247",
       "feature": "liveavatar-full-mode-custom-llm",
       "spec": "sdd/specs/liveavatar-full-mode-custom-llm.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation — creates openai_compat.py; TASK-1875 and TASK-1876 both depend on it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-22T20:56:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1874-openai-compat-streaming-endpoint.md"
     },
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-247",
       "feature": "liveavatar-full-mode-custom-llm",
       "spec": "sdd/specs/liveavatar-full-mode-custom-llm.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -41,7 +41,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies avatar_fullmode.py to reference the /v1/chat/completions route created by TASK-1874.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-22T20:56:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1875-fullstart-custom-llm-url.md"
     },
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-247",
       "feature": "liveavatar-full-mode-custom-llm",
       "spec": "sdd/specs/liveavatar-full-mode-custom-llm.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -62,7 +62,7 @@
       "parallel": false,
       "parallelism_notes": "Wires routes from TASK-1874 into manager.py and adds SDK integration test. Final convergence task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-22T20:56:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1876-openai-compat-route-registration.md"
     }
