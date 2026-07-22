@@ -74,6 +74,7 @@ Boot::
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -106,7 +107,7 @@ from parrot.flows.dev_loop import (
     flow_stream_ws,
     parse_repo_specs,
 )
-from parrot.flows.dev_loop.agent_builder import build_dispatcher
+from parrot.flows.dev_loop.agent_builder import build_dispatcher, parse_pool_env, resolve_pool_max
 from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
 from parrot.flows.dev_loop.models import DevAgentSpec
 from parrot_tools.gittoolkit import GitToolkit
@@ -597,6 +598,37 @@ async def _on_startup(app: web.Application) -> None:
         )
     else:
         logger.info("DEV_LOOP_REPOS not set; flow will target local checkout at BASE_DIR")
+
+    # FEAT-323: resolve the dev-agent pool from env (DEV_LOOP_DEV_AGENTS /
+    # DEV_LOOP_DEV_ISOLATION / DEV_LOOP_DEV_POOL_MAX). This is ADDITIVE to
+    # the single-agent selection above — with DEV_LOOP_DEV_AGENTS unset,
+    # DevelopmentNode's cascade resolves to `None` and runs single-agent
+    # exactly as before.
+    development_pool_config = parse_pool_env(conf.config.get)
+    development_pool_max = resolve_pool_max(conf.config.get)
+    development_dispatcher_builder = None
+    if development_pool_config is not None:
+        development_dispatcher_builder = functools.partial(
+            build_dispatcher,
+            redis_url=redis_url,
+            max_concurrent=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+            stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+        )
+        backends_summary = ", ".join(
+            f"{spec.agent}x{spec.count}" for spec in development_pool_config.agents
+        )
+        logger.info(
+            "Dev-agent pool configured: %s (isolation=%s, pool_max=%d)",
+            backends_summary,
+            development_pool_config.isolation_mode,
+            development_pool_max,
+        )
+    else:
+        logger.info(
+            "Dev-agent pool not configured (DEV_LOOP_DEV_AGENTS unset); "
+            "DevelopmentNode runs single-agent mode."
+        )
+
     app["flow"] = build_dev_loop_flow(
         dispatcher=dispatcher,
         jira_toolkit=_build_jira_toolkit(),
@@ -604,6 +636,9 @@ async def _on_startup(app: web.Application) -> None:
         redis_url=redis_url,
         development_dispatcher=development_dispatcher,
         development_profile=development_profile,
+        development_pool_config=development_pool_config,
+        development_dispatcher_builder=development_dispatcher_builder,
+        development_pool_max=development_pool_max,
         name="dev-loop-demo",
         git_toolkit=_build_git_toolkit(),
         repos=repos,
