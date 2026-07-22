@@ -23,7 +23,7 @@ from parrot.flows.dev_loop.dispatcher import (
     DispatchOutputValidationError,
 )
 from parrot.flows.dev_loop.flow import FlowEventPublisher, build_dev_loop_flow
-from parrot.flows.dev_loop.runner import DevLoopRunner
+from parrot.flows.dev_loop.runner import DevLoopRunner, gate_ttl_for
 from parrot.flows.dev_loop.nodes.intent_classifier import IntentClassifierNode
 from parrot.flows.dev_loop.streaming import (
     FlowStreamMultiplexer,
@@ -55,14 +55,33 @@ from parrot.flows.dev_loop.models import (
     ShellCriterion,
     WorkBrief,
 )
+from parrot.flows.dev_loop.session_state import (
+    ActionEnvelope,
+    ActionOrigin,
+    ApprovalGate,
+    DevLoopAction,
+    DevLoopSessionState,
+    GateAlreadyResolvedError,
+    GateNotFoundError,
+    RootAction,
+    RunRegistryState,
+    RunSummary,
+    SessionHost,
+    Snapshot,
+)
 
 __all__ = [
     "AcceptanceCriterion",
+    "ActionEnvelope",
+    "ActionOrigin",
+    "ApprovalGate",
     "BugBrief",
     "ClaudeCodeDispatcher",
     "ClaudeCodeDispatchProfile",
     "CodexCodeDispatcher",
     "CodexCodeDispatchProfile",
+    "DevLoopAction",
+    "DevLoopSessionState",
     "GeminiCodeDispatcher",
     "GeminiCodeDispatchProfile",
     "LLMCodeDispatcher",
@@ -83,16 +102,24 @@ __all__ = [
     "FlowEventPublisher",
     "FlowStreamMultiplexer",
     "FlowtaskCriterion",
+    "GateAlreadyResolvedError",
+    "GateNotFoundError",
     "IntentClassifierNode",
     "LogSource",
     "ManualCriterion",
     "QAReport",
     "ResearchOutput",
+    "RootAction",
+    "RunRegistryState",
+    "RunSummary",
+    "SessionHost",
     "ShellCriterion",
+    "Snapshot",
     "WorkBrief",
     "build_dev_loop_flow",
     "cleanup_worktree",
     "flow_stream_ws",
+    "gate_ttl_for",
     "parse_repo_specs",
     "register_pull_request_webhook",
     "sweep_finished_worktrees",
