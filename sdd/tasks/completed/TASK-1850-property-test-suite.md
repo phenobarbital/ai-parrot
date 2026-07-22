@@ -149,10 +149,37 @@ def test_action_union_schema_has_discriminator(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: Created `test_session_state_properties.py` with P1-P6 hypothesis
+properties, an AST-based transport-purity gate, and JSON-Schema
+discriminator-export tests for both `DevLoopAction` and `RootAction`.
+13 property tests, `max_examples` 50-200 per property (deadline=None for
+host-loop properties per the task's constraint), suite runs in ~3-8s.
+Full `pytest packages/ai-parrot/tests/flows/dev_loop/` run: 444 passed +
+66 in the two session_state files (510 total in-scope), 4 pre-existing
+failures in `test_server_repo_wiring.py`/`test_webhook.py` verified
+unrelated (reproduce identically with the new test files excluded —
+a pre-existing test-isolation issue outside this feature's scope).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **`hypothesis` dev-dependency added** (`packages/ai-parrot/pyproject.toml`,
+   `dev` extra). The task's Codebase Contract claimed hypothesis was
+   "already used in repo tests" — verified stale (grepped the full repo;
+   not installed, not referenced anywhere). Added `hypothesis>=6.100` and
+   installed it into the shared venv; this was necessary infrastructure,
+   not a design change.
+2. **Two-line reducer fix in `session_state.py`** (`reduce()`, `run/created`
+   and `run/closed` branches): writing the P3 property test
+   (`test_terminal_phase_sticky`, mandated by this task's own acceptance
+   criteria and the spec's Test Specification table) surfaced that the
+   design sketch's `run/created`/`run/closed` handlers unconditionally set
+   `phase`, unlike `run/cancelled` which already guards
+   `state.phase in _TERMINAL_PHASES`. Added the same guard to the other two
+   run-lifecycle actions so a late/duplicate action replayed against an
+   already-terminal state can never resurrect/flip `phase` — required for
+   the universal "terminal phases sticky" invariant (spec §5 AC, §7). No
+   other reducer behavior changed; this task's file list did not name
+   `session_state.py`, but the fix is a minimal, same-pattern correction in
+   the same feature's core module, directly required to pass a mandated
+   acceptance criterion of this task.
