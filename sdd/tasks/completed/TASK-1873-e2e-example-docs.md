@@ -158,10 +158,43 @@ class TestBudgetVarianceE2E:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-22
+**Notes**: Read all prior FEAT-324 Completion Notes before starting (per
+instructions) — none of the noted deviations changed public APIs used here.
+Built 3 synthetic fixture CSVs (`snapshot_2026-07-01/21/22.csv`, compact-row
+format matching `daily_report.py:parse_csv`) covering negative variance
+(Beta/Delta), positive (Alpha/Gamma), and a flat/no-variance edge case
+(Epsilon). Verified the full pipeline manually (`add_dataset` → recipe
+`from_yaml` → `dry_run` → `run`) before writing formal pytest, catching two
+real integration issues early: (1) each built-in transformer hard-codes its
+own expected input-alias name (`day_totals`/etc. expect `"snapshots"`,
+`groupby_aggregate` expects `"df"`) — the example recipe therefore declares
+TWO `data_sources` aliasing the SAME dataset; (2) `day_totals`'s per-snapshot
+keys are dynamic (today's date changes daily) and unsuitable for a fixed
+`$bind` pointer — the layout binds to `variance_analysis`'s stable
+`first_totals`/`last_totals` keys instead, with `day_totals`/
+`division_breakdown` still included as transform steps (satisfying "fed by"
+literally) even though the curated layout doesn't bind directly into them.
+All 4 integration tests pass + the example recipe's own `dry_run`; `ruff
+check` clean; no regressions across the full recipes/toolkit/runner/
+visualizations/server test suites (100 + 49 + 15 = 164 tests, run
+separately due to a pre-existing `tests.conftest` module-name collision
+between the ai-parrot and ai-parrot-server packages when combined in one
+pytest invocation — unrelated to this feature).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: (1) `render.profile: ssr-html` (hyphen) in the
+task text does not match the ACTUALLY REGISTERED renderer name — verified
+`ssr_html.py`'s `_SURFACE_NAME = "ssr_html"` (underscore); used the correct
+registered name throughout. (2) The "grouped ledger DataTable" binds to
+`top_movers.worst` (flat rows) rather than `division_breakdown`'s nested
+per-division dict, since `DataTable` needs a flat rows array and writing a
+NEW flattening transformer was explicitly out of scope for this
+docs-and-example-only task; documented as a deliberate adaptation using only
+the 7 existing transformers. (3) Both `packages/ai-parrot/conftest.py`
+(closer `pyproject.toml` rootdir) and the ai-parrot-visualizations namespace
+merge required a LOCAL, test-file-scoped `sys.path`/`parrot.outputs.__path__`
+fix (inserted, not appended — `a2ui_renderers` is a regular, non-namespace
+subpackage that resolves to the FIRST matching directory) since this e2e
+test is the first ai-parrot-core test to need the visualizations satellite;
+scoped to `test_e2e.py` only, no shared conftest touched for this task.

@@ -157,10 +157,21 @@ def test_variance_pct_zero_budget_guard(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-22
+**Notes**: Read `sdd/artifacts/executive_summary.py` (gitignored, not a
+package) in full and ported `day_totals`, `division_breakdown`, and the
+cross-day math from `analyze` (as `variance_analysis` + `top_movers`, WITHOUT
+narrative/docx code) verbatim, plus 3 generic tabular transformers
+(`groupby_aggregate`, `pivot`, `latest_vs_baseline`). Convention chosen for
+multi-day data: one frame + `snapshot_col` param (documented in the module
+docstring), not per-day framing or a date-discovery transformer. Money
+outputs rounded to 2 decimals; generic helpers preserve full float precision.
+Golden fixtures (2-snapshot, 4-project dataset) hand-computed and verified —
+all 4 golden-file tests + 10 additional unit tests passed on first run (44
+total in the recipes suite). `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: None. `requires_columns` for the 3 generic
+transformers is `{}` since their column needs depend on runtime `by`/`index`/
+`on` params, not a fixed input alias — documented in each transformer's
+description.

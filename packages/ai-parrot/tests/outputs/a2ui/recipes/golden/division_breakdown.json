@@ -1,0 +1,26 @@
+{
+  "Sales": {
+    "rev_actual": 175000.0,
+    "rev_budget": 180000.0,
+    "ebitda_actual": 29000.0,
+    "ebitda_budget": 31000.0,
+    "rev_variance": -5000.0,
+    "ebitda_variance": -2000.0,
+    "projects": [
+      {"name": "Alpha", "rev_variance": 10000.0, "ebitda_variance": 3000.0},
+      {"name": "Beta", "rev_variance": -15000.0, "ebitda_variance": -5000.0}
+    ]
+  },
+  "Ops": {
+    "rev_actual": 42000.0,
+    "rev_budget": 43000.0,
+    "ebitda_actual": 3500.0,
+    "ebitda_budget": 4700.0,
+    "rev_variance": -1000.0,
+    "ebitda_variance": -1200.0,
+    "projects": [
+      {"name": "Gamma", "rev_variance": 1000.0, "ebitda_variance": 300.0},
+      {"name": "Delta", "rev_variance": -2000.0, "ebitda_variance": -1500.0}
+    ]
+  }
+}

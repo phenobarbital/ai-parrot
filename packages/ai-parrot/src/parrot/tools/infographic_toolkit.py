@@ -13,6 +13,8 @@ result of ``infographic_render`` is the final agent output, consumed by
 """
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import json
 import logging
 import uuid
@@ -22,6 +24,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError as PydanticValidationError
 
+from parrot.auth.permission import build_principal_context
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.template.engine import TemplateEngine
 from parrot.models.infographic import (
@@ -40,6 +43,36 @@ from parrot.models.outputs import OutputMode
 from parrot.storage.artifacts import ArtifactStore
 from parrot.storage.artifact_signing import build_public_html_url
 from parrot.storage.models import Artifact, ArtifactType, ArtifactCreator
+from parrot.outputs.a2ui.recipes.store import AbstractRecipeStore, RecipeNotFoundError
+from parrot.outputs.a2ui.recipes.transformers import transformer_registry
+from parrot.tools.infographic_recipes.freeze import (
+    FreezeProvenanceError,
+    FreezeValidationError,
+    freeze_session_envelope,
+)
+from parrot.tools.infographic_recipes.runner import RecipeRunException, RecipeRunner
+
+#: Recipe tool method names (Module 6, FEAT-324) — excluded from tool
+#: generation when no recipe store is configured on this toolkit instance.
+_RECIPE_TOOL_NAMES: Tuple[str, ...] = (
+    "infographic_save_recipe",
+    "infographic_list_recipes",
+    "infographic_run_recipe",
+    "infographic_get_recipe_contract",
+)
+
+#: Per-task holder for the invoker's ``PermissionContext``, set by
+#: ``InfographicToolkit._pre_execute`` (mirrors ``DatasetManager``'s own
+#: ``_pctx_var`` in ``parrot.auth.context``, which is per-toolkit rather than
+#: shared globally — using a dedicated ContextVar here, rather than an
+#: instance attribute, ensures concurrent requests on a shared toolkit
+#: instance cannot bleed each other's context across an await boundary,
+#: exactly like DatasetManager's own doc rationale for the same pattern).
+#: Consumed by ``infographic_run_recipe`` so recipe replay honors the SAME
+#: PBAC/data-plane guards a live chat call would (spec G8).
+_infographic_pctx_var: "contextvars.ContextVar[Any | None]" = contextvars.ContextVar(
+    "infographic_toolkit_pctx", default=None
+)
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +158,15 @@ class InfographicToolkit(AbstractToolkit):
         infographic_list_templates
         infographic_get_template_contract
         infographic_validate_blocks
+
+    Recipe tools (Module 6, FEAT-324 — spec G2/G6) are exposed ONLY when
+    ``recipe_store`` is configured at construction time; otherwise they are
+    absent from ``get_tools()`` entirely (see ``exclude_tools``)::
+
+        infographic_save_recipe        — freeze the current session envelope
+        infographic_list_recipes       — lightweight recipe summaries
+        infographic_run_recipe         — deterministic replay (no LLM)
+        infographic_get_recipe_contract — datasets/columns/params a recipe needs
     """
 
     return_direct: bool = True          # bypass LLM re-summarisation
@@ -139,6 +181,9 @@ class InfographicToolkit(AbstractToolkit):
         template_dirs: Optional[Any] = None,
         templates: Optional[Dict[str, str]] = None,
         emit_a2ui: bool = False,
+        recipe_store: Optional[AbstractRecipeStore] = None,
+        recipe_runner: Optional[RecipeRunner] = None,
+        dataset_manager: Optional[Any] = None,
         **kwargs,
     ) -> None:
         """Initialise the toolkit.
@@ -153,6 +198,17 @@ class InfographicToolkit(AbstractToolkit):
                 ``DictLoader``). Combine with ``template_dirs`` or use alone.
             emit_a2ui: When True, the render tools additionally produce a validated
                 A2UI ``CreateSurface`` envelope (FEAT-273 Module 11, D1a lane).
+            recipe_store: Optional ``AbstractRecipeStore`` (FEAT-324, Module 4/6).
+                When provided, the four recipe tools (``infographic_save_recipe``,
+                ``infographic_list_recipes``, ``infographic_run_recipe``,
+                ``infographic_get_recipe_contract``) are exposed; otherwise they
+                are excluded from ``get_tools()`` entirely.
+            recipe_runner: Optional pre-built ``RecipeRunner``. Takes precedence
+                over ``dataset_manager`` (below) if both are given.
+            dataset_manager: Optional ``DatasetManager`` used to build a
+                ``RecipeRunner`` when ``recipe_runner`` is not supplied directly
+                (a ``RecipeRunner`` needs both a store and a dataset manager —
+                see ``parrot.tools.infographic_recipes.runner.RecipeRunner``).
             **kwargs: Forwarded to ``AbstractToolkit.__init__``.
         """
         super().__init__(**kwargs)
@@ -170,6 +226,72 @@ class InfographicToolkit(AbstractToolkit):
             self._template_engine = TemplateEngine(template_dirs=template_dirs)
             if templates:
                 self._template_engine.add_templates(templates)
+
+        # Recipe subsystem (FEAT-324, Module 6) — optional; the four recipe
+        # tools are excluded from get_tools() entirely when no store is given.
+        self._recipe_store = recipe_store
+        if recipe_runner is not None:
+            self._recipe_runner = recipe_runner
+        elif recipe_store is not None and dataset_manager is not None:
+            self._recipe_runner = RecipeRunner(
+                recipe_store, dataset_manager, artifact_store=artifact_store
+            )
+        else:
+            self._recipe_runner = None
+        if self._recipe_store is None:
+            self.exclude_tools = (*self.exclude_tools, *_RECIPE_TOOL_NAMES)
+        # Per-task token bookkeeping for _infographic_pctx_var (see module
+        # docstring comment above the ContextVar definition).
+        self._recipe_pctx_tokens: Dict[int, Any] = {}
+
+    async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:
+        """Capture the invoker's ``PermissionContext`` for recipe-replay tools.
+
+        ``ToolkitTool._execute`` always injects ``_permission_context`` into
+        ``kwargs`` (even when ``None``) before calling this hook — see
+        ``AbstractToolkit._pre_execute``'s docstring and
+        ``parrot.tools.dataset_manager.tool.DatasetManager._pre_execute`` for
+        the precedent this mirrors. Stashing it in a ContextVar (rather than
+        an instance attribute) keeps concurrent calls on a shared toolkit
+        instance from bleeding each other's context (same rationale
+        DatasetManager documents for its own ``_pctx_var``).
+
+        Args:
+            tool_name: Name of the tool about to execute.
+            **kwargs: Tool arguments, including the injected
+                ``_permission_context``.
+        """
+        pctx = kwargs.get("_permission_context")
+        token = _infographic_pctx_var.set(pctx)
+        task = asyncio.current_task()
+        if task is not None:
+            self._recipe_pctx_tokens[id(task)] = token
+
+    async def _post_execute(self, tool_name: str, result: Any, /, **kwargs) -> Any:
+        """Reset the ``_infographic_pctx_var`` token set by :meth:`_pre_execute`."""
+        task = asyncio.current_task()
+        if task is not None:
+            token = self._recipe_pctx_tokens.pop(id(task), None)
+            if token is not None:
+                _infographic_pctx_var.reset(token)
+        return result
+
+    @staticmethod
+    def _current_recipe_pctx(user_id: str) -> Any:
+        """Return the invoker's ``PermissionContext`` for recipe replay (spec G8).
+
+        Prefers the REAL ``PermissionContext`` captured by :meth:`_pre_execute`
+        (from the toolkit-dispatch-injected ``_permission_context``); falls
+        back to a minimal principal-only context built from the resolved
+        ``user_id`` when no dispatch-time context is available (e.g. a
+        direct method call outside the toolkit dispatch path). NEVER returns
+        ``None`` — a falsy ``pctx`` makes ``DatasetManager``'s PBAC guards
+        fail OPEN rather than closed.
+        """
+        pctx = _infographic_pctx_var.get()
+        if pctx is not None:
+            return pctx
+        return build_principal_context(user_id, channel="chat")
 
     def add_template(self, name: str, source: str) -> None:
         """Register a trusted in-memory HTML+Jinja template for ``render_template``.
@@ -788,6 +910,222 @@ class InfographicToolkit(AbstractToolkit):
             }
         except InfographicValidationError as exc:
             return {"ok": False, "code": exc.code, "detail": exc.detail}
+
+    # ------------------------------------------------------------------
+    # Recipe tools (FEAT-324, Module 6) — exposed only when recipe_store set
+    # ------------------------------------------------------------------
+
+    async def infographic_save_recipe(
+        self,
+        name: str,
+        title: str,
+        layout_component: str,
+        layout_properties: Dict[str, Any],
+        dataset_names: Dict[str, str],
+        transform_steps: List[Dict[str, Any]],
+        description: Optional[str] = None,
+        render_profile: str = "interactive-html",
+        theme: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Freeze the current session's infographic construction into a replayable recipe.
+
+        Call this AFTER building an infographic in this session, once you know
+        EXACTLY which registered datasets and registered transformer calls
+        produced its data. Freezing captures those as recipe steps so the same
+        infographic can be regenerated later with fresh data, deterministically,
+        with no LLM in the loop (spec G2/G3).
+
+        Every dataset referenced in ``dataset_names`` must be a name registered
+        with the DatasetManager, and every step in ``transform_steps`` must name
+        a REGISTERED ``@infographic_transformer`` — ad-hoc pandas computation
+        done directly in this session cannot be frozen (this is a deliberate
+        boundary, not a limitation to work around).
+
+        Args:
+            name: Unique recipe name (its storage key).
+            title: Human-readable recipe title.
+            layout_component: Catalog component name for the layout (e.g.
+                ``"Infographic"``, ``"Chart"``).
+            layout_properties: Catalog properties for the layout; data-carrying
+                properties use ``{"$bind": "/pointer"}`` bindings into the
+                dataModel produced by ``transform_steps``.
+            dataset_names: Mapping of data-source alias -> registered
+                DatasetManager dataset name, e.g. ``{"snapshots": "budget_ledger"}``.
+            transform_steps: Ordered list of transform-step dicts, each shaped
+                like ``{"transformer": "division_breakdown", "inputs":
+                ["snapshots"], "params": {}, "output_key": "division_breakdown"}``.
+            description: Optional longer description.
+            render_profile: Renderer profile name for replay (default
+                ``"interactive-html"``).
+            theme: Optional theme name.
+
+        Returns:
+            ``{"status": "ok", "recipe": {...summary...}}`` on success, or
+            ``{"status": "error", "detail": ...}`` /
+            ``{"status": "error", "errors": [...]}`` when the provenance is
+            inexpressible or the normalized recipe fails dry-run validation.
+        """
+        if self._recipe_store is None or self._recipe_runner is None:
+            return {
+                "status": "error",
+                "detail": "Recipe store/runner not configured on this toolkit.",
+            }
+
+        from parrot.outputs.a2ui.builders import build_surface  # noqa: PLC0415
+
+        try:
+            envelope = build_surface(
+                layout_component, layout_properties, surface_id=f"freeze-{name}"
+            )
+        except Exception as exc:  # noqa: BLE001 - surfaced as a structured tool error
+            return {"status": "error", "detail": f"Invalid layout: {exc}"}
+
+        bot = getattr(self, "_bot", None)
+        user_id, _agent_id, _session_id = self._resolve_scope(bot)
+
+        try:
+            recipe = await freeze_session_envelope(
+                envelope,
+                dataset_names=dataset_names,
+                transform_steps=transform_steps,
+                name=name,
+                title=title,
+                runner=self._recipe_runner,
+                description=description,
+                owner=user_id,
+                render_profile=render_profile,
+                theme=theme,
+            )
+        except FreezeProvenanceError as exc:
+            return {"status": "error", "detail": str(exc)}
+        except FreezeValidationError as exc:
+            return {"status": "error", "errors": [e.model_dump() for e in exc.errors]}
+
+        await self._recipe_store.save(recipe)
+        saved = await self._recipe_store.get(recipe.name, owner=user_id)
+        return {
+            "status": "ok",
+            "recipe": {
+                "name": saved.name,
+                "title": saved.title,
+                "description": saved.description,
+                "owner": saved.owner,
+                "updated_at": saved.updated_at.isoformat(),
+            },
+        }
+
+    async def infographic_list_recipes(self) -> List[Dict[str, Any]]:
+        """List saved recipes available to the current user (lightweight summaries).
+
+        Use this to discover recipe names before calling
+        ``infographic_run_recipe`` or ``infographic_get_recipe_contract``.
+
+        Returns:
+            List of dicts with ``name``, ``title``, ``description``, ``owner``,
+            ``updated_at`` — never full recipe definitions.
+        """
+        if self._recipe_store is None:
+            return []
+        bot = getattr(self, "_bot", None)
+        user_id, _agent_id, _session_id = self._resolve_scope(bot)
+        return await self._recipe_store.list(owner=user_id)
+
+    async def infographic_run_recipe(
+        self, name: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Replay a saved recipe deterministically (no LLM) and render a fresh artifact.
+
+        Re-fetches the recipe's datasets, re-runs its registered transform
+        chain, and renders a new artifact — same construction instructions,
+        fresh data (spec G3).
+
+        Args:
+            name: Recipe name to run.
+            params: Optional override values for the recipe's declared params
+                (e.g. ``{"month": "2026-06"}``); undeclared names are rejected.
+
+        Returns:
+            ``{"status": "ok", "artifact_id": ..., "mime_type": ..., "title":
+            ..., "filename": ...}`` on success. On failure:
+            ``{"status": "error", "error": {...RecipeRunError fields...}}`` —
+            a structured diagnostic (recipe/stage/transformer/dataset/
+            missing_columns/detail) for you to explain to the user; never a
+            raw traceback.
+        """
+        if self._recipe_runner is None:
+            return {
+                "status": "error",
+                "detail": "Recipe runner not configured on this toolkit.",
+            }
+        bot = getattr(self, "_bot", None)
+        user_id, _agent_id, _session_id = self._resolve_scope(bot)
+        pctx = self._current_recipe_pctx(user_id)
+        try:
+            artifact = await self._recipe_runner.run(
+                name, params=params, pctx=pctx, recipe_owner=user_id
+            )
+        except RecipeRunException as exc:
+            return {"status": "error", "error": exc.error.model_dump()}
+        return {
+            "status": "ok",
+            "artifact_id": artifact.artifact_id,
+            "mime_type": artifact.mime_type,
+            "title": artifact.title,
+            "filename": artifact.filename,
+        }
+
+    async def infographic_get_recipe_contract(self, name: str) -> Dict[str, Any]:
+        """Return the datasets, required columns, and params a recipe needs to replay.
+
+        Use this before running or scheduling a recipe to verify it is still
+        replayable (its datasets are registered, its transformers exist).
+
+        Args:
+            name: Recipe name.
+
+        Returns:
+            ``{"status": "ok", "name": ..., "datasets": [{"alias":...,
+            "dataset":...}], "params": [{"name":...,"default":...,
+            "description":...}], "transforms": [{"transformer":...,
+            "output_key":...,"requires_columns":{...}}]}``, or
+            ``{"status": "error", "detail": ...}`` if the recipe or store is
+            unavailable.
+        """
+        if self._recipe_store is None:
+            return {"status": "error", "detail": "Recipe store not configured on this toolkit."}
+        bot = getattr(self, "_bot", None)
+        user_id, _agent_id, _session_id = self._resolve_scope(bot)
+        try:
+            recipe = await self._recipe_store.get(name, owner=user_id)
+        except RecipeNotFoundError as exc:
+            return {"status": "error", "detail": str(exc)}
+
+        transforms = []
+        for step in recipe.transforms:
+            try:
+                requires_columns = transformer_registry.manifest(step.transformer).requires_columns
+            except KeyError:
+                requires_columns = {}
+            transforms.append(
+                {
+                    "transformer": step.transformer,
+                    "output_key": step.output_key,
+                    "requires_columns": requires_columns,
+                }
+            )
+
+        return {
+            "status": "ok",
+            "name": recipe.name,
+            "datasets": [
+                {"alias": ds.alias, "dataset": ds.dataset} for ds in recipe.data_sources
+            ],
+            "params": [
+                {"name": p.name, "default": p.default, "description": p.description}
+                for p in recipe.params
+            ],
+            "transforms": transforms,
+        }
 
     # ------------------------------------------------------------------
     # Block builders (REPL data → validated block dict)

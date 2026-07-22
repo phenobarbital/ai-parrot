@@ -201,10 +201,37 @@ class TestRecipeRunner:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-22
+**Notes**: Verified `_pctx_var` lives in `parrot.auth.context` (not a local
+DatasetManager ContextVar) before wiring pctx propagation — the runner sets/
+resets it manually around the fetch step since it calls `fetch_dataset`
+directly, bypassing `_pre_execute`'s toolkit-dispatch trigger. Implemented
+all seven steps: params -> data (dataset-not-registered raises stage="data"
+listing available names via `list_datasets()`) -> gate (DataFrame-backed
+inputs only; chained dict-output_key inputs are exempt from column-gating,
+validated instead at transform time) -> transforms (data_model keyed by
+`output_key`, chaining supported) -> `$bind` drift check (custom lightweight
+top-level-key scan reusing `BINDING_KEY`/`is_binding_expression` from
+`parrot.outputs.a2ui.models` — no `jsonpointer` dependency needed since only
+the top-level key is checked, not full resolution) -> envelope assembly
+(`build_infographic` for `component == "Infographic"`, `build_surface`
+otherwise) -> render (`get_a2ui_renderer` returns a CLASS, instantiated then
+`.render()` called; ImportError propagates unchanged for unknown profiles)
+-> best-effort delivery (no RecipeRunError stage exists for delivery/persist
+in the TASK-1865 model, so failures are logged, never raised). `dry_run()`
+checks params/transformer-names/`$bind`-vs-declared-output_keys, plus a
+best-effort dataset-metadata column check, WITHOUT ever calling
+`fetch_dataset`. 78 tests pass (12 new + 66 pre-existing recipes suite);
+`ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: (1) `run()`'s literal signature per spec/contract
+has no `owner`/session-context params, so full `ArtifactStore.save_artifact`
+persistence (which needs user_id/agent_id/session_id) is left to the caller
+with that context (TASK-1870/1872); `artifact_store` is passed straight
+through to `deliver_artifact` for its one verified use (Slack public-URL
+lookup). (2) `$bind` drift checking validates only the pointer's top-level
+key against `data_model`/declared `output_key`s (not full nested-path
+resolution via `jsonpointer`), since spec §7's stated risk is specifically
+about `output_key` renames breaking bindings, and this avoids requiring the
+`ai-parrot-visualizations[a2ui]` extra just to validate a recipe.

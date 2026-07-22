@@ -28,9 +28,11 @@ Versioning is simple overwrite + `updated_at` bump (spec G5); history is a non-g
   - `FileRecipeStore(directory)` — one YAML file per recipe (`<name>.yaml`; owner-scoped
     subdirectories when `owner` given). Uses the TASK-1865 YAML round-trip. Path traversal in
     `name` rejected.
-  - `DBRecipeStore` — single table (`a2ui_recipes`: name, owner, definition JSONB,
-    schema_version, updated_at; PK (name, owner)), persistence via the same asyncdb-based
-    pattern `SkillRegistry` uses. `configure()`-style async init like SkillRegistry.
+  - `DBRecipeStore` — CORRECTED (see Codebase Contract): persists via the SAME Redis pattern
+    `SkillRegistry` actually uses (lazy `redis.asyncio` import, `REDIS_AVAILABLE` flag,
+    in-memory dict fallback when Redis is absent/unconfigured), keyed by
+    `(namespace, owner, name)`; NOT a relational table (no asyncdb table pattern exists in
+    this codebase to copy). `configure()`-style idempotent async init, mirroring SkillRegistry.
 - Contract test suite run against BOTH backends (file: tmp_path; DB: test double/fake
   connection per existing SkillRegistry test approach).
 - `schema_version` mismatch on load → explicit error with guidance (spec edge case).
@@ -60,18 +62,32 @@ import yaml                                                        # PyYAML, exi
 ### Existing Signatures to Use
 ```python
 # packages/ai-parrot/src/parrot/skills/store.py — PATTERN REFERENCE (read before implementing)
+# CORRECTED 2026-07-22 (re-verified against the actual file — the original
+# contract's "asyncdb-based pattern" / "a2ui_recipes table (JSONB)" claim is
+# STALE: grep confirms zero `asyncdb` references anywhere in skills/store.py.
+# The real persistence is Redis (redis.asyncio, lazy try/except import,
+# REDIS_AVAILABLE flag) with an in-memory dict fallback, keyed by namespace.
 class SkillRegistry:                       # line 120
-    def __init__(self, ...):               # line 132
-    async def configure(self, ...):        # line 186 — async init/connection pattern
-    async def _persist_skill(self, skill) -> None:   # line 820 — DB write pattern
-    async def list_skills(self, ...):      # line 774
-# Copy its connection/config handling shape; do NOT import SkillRegistry into store.py.
+    def __init__(self, ..., redis_url: Optional[str] = None, ...):  # line 132
+    async def configure(self, ...):        # line 186 — idempotent async init:
+                                            #   connects Redis (await self._redis.ping()),
+                                            #   falls back to in-memory on failure, sets self._configured
+    async def _persist_skill(self, skill) -> None:   # line 820 —
+        # if self._use_redis: await self._redis.hset(f"skill:{namespace}:{id}", "data", json.dumps(...))
+        # else: in-memory dict + optional _save_to_disk() JSON file
+    async def list_skills(self, ...) -> List[Dict[str, Any]]:  # line 774 — lightweight summary dicts
+# Copy its connection/config handling shape (lazy Redis import + in-memory
+# fallback + idempotent configure()); do NOT import SkillRegistry into
+# store.py. DBRecipeStore therefore persists via Redis (JSON payload per
+# key) with an in-memory fallback when Redis is unavailable/unconfigured —
+# NOT a relational "a2ui_recipes" SQL table (no such pattern exists to copy).
 ```
 
 ### Does NOT Exist
 - ~~`AbstractRecipeStore` / `FileRecipeStore` / `DBRecipeStore`~~ — created by THIS task
-- ~~An `a2ui_recipes` table or migration~~ — created by THIS task (follow however SkillRegistry
-  provisions its table — read `skills/store.py` `configure()` for the create-if-missing shape)
+- ~~An `a2ui_recipes` SQL table or migration~~ — does NOT exist and is NOT created; grep-verified
+  `skills/store.py` has zero `asyncdb`/SQL-table code to copy. `DBRecipeStore` persists via
+  Redis (+ in-memory fallback), matching the ACTUAL SkillRegistry mechanism.
 - ~~`AbstractStore` from `parrot.stores`~~ — that ABC is for VECTOR stores
   (`parrot/stores/`, Document/SearchResult vocabulary); do NOT subclass it for recipes
 - ~~SkillsDirectoryLoader reuse~~ — `parrot/skills/loader.py` loads markdown skills; the file
@@ -147,10 +163,25 @@ async def test_file_store_rejects_path_traversal(tmp_path): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-22
+**Notes**: CORRECTED the Codebase Contract before implementing: grep-verified
+`skills/store.py` has zero `asyncdb`/SQL-table code, so the original
+contract's "asyncdb-based pattern" / "a2ui_recipes table (JSONB)" claim was
+stale. `SkillRegistry`'s actual persistence is Redis (`redis.asyncio`, lazy
+try/except import, `REDIS_AVAILABLE` flag) + in-memory/JSON-disk fallback.
+`DBRecipeStore` mirrors THAT real mechanism (Redis-backed with an in-memory
+dict fallback when `redis_url` is unset or Redis is unreachable), not an
+invented relational table. `FileRecipeStore` writes one YAML file per recipe
+with atomic write-to-temp + `os.replace`, name/owner path-traversal rejected
+via an allowlist regex. Both backends share `RecipeNotFoundError` (lists
+available names) and `RecipeSchemaVersionError` (checked against
+`SUPPORTED_SCHEMA_VERSION = 1`). 66 tests pass total (22 new, parametrized
+across both backends); `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: `DBRecipeStore` persists via Redis + in-memory
+fallback instead of a relational `a2ui_recipes` table — the task's original
+contract described a table pattern that doesn't exist anywhere in this
+codebase to copy (verified by grep); mirroring the ACTUAL `SkillRegistry`
+mechanism was the faithful interpretation of "same pattern SkillRegistry
+uses." Task file's Codebase Contract was corrected in place before coding.

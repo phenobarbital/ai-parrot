@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-22T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-07-22T01:52:13+00:00",
   "tasks": [
     {
       "id": "TASK-1865",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Root of the dependency spine; every other core task imports these models.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1865-recipe-models-params.md"
+      "completed_at": "2026-07-22T00:55:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1865-recipe-models-params.md"
     },
     {
       "id": "TASK-1866",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Extends recipes/__init__.py and imports TASK-1865 models.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1866-transformer-registry-gate.md"
+      "completed_at": "2026-07-22T00:56:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1866-transformer-registry-gate.md"
     },
     {
       "id": "TASK-1867",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Shares recipes/__init__.py with TASK-1868; keep sequential in the feature worktree.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1867-transformer-library.md"
+      "completed_at": "2026-07-22T01:01:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1867-transformer-library.md"
     },
     {
       "id": "TASK-1868",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Independent of TASK-1866/1867 logic but shares recipes/__init__.py exports; sequential in-worktree avoids merge noise.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1868-recipe-stores.md"
+      "completed_at": "2026-07-22T01:04:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1868-recipe-stores.md"
     },
     {
       "id": "TASK-1869",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Integrates registry, library, stores, DatasetManager and renderer registry.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1869-recipe-runner.md"
+      "completed_at": "2026-07-22T01:14:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1869-recipe-runner.md"
     },
     {
       "id": "TASK-1870",
@@ -114,7 +114,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Modifies infographic_toolkit.py and consumes the runner API.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1870-toolkit-recipe-tools.md"
+      "completed_at": "2026-07-22T01:21:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1870-toolkit-recipe-tools.md"
     },
     {
       "id": "TASK-1871",
@@ -134,7 +134,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -142,8 +142,8 @@
       "parallelism_notes": "Touches ONLY ai-parrot-visualizations and depends only on the existing FEAT-273 renderer contract — no file/import overlap with core tasks; safe in a separate worktree.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1871-interactive-html-renderer.md"
+      "completed_at": "2026-07-22T01:31:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1871-interactive-html-renderer.md"
     },
     {
       "id": "TASK-1872",
@@ -152,7 +152,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -162,8 +162,8 @@
       "parallelism_notes": "Touches ONLY ai-parrot-server; no file overlap with core/visualizations tasks, but requires TASK-1869's runner API to be merged first.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1872-recipe-rest-scheduler.md"
+      "completed_at": "2026-07-22T01:42:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1872-recipe-rest-scheduler.md"
     },
     {
       "id": "TASK-1873",
@@ -172,7 +172,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -184,8 +184,8 @@
       "parallelism_notes": "Final integration proof; needs every other task merged.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1873-e2e-example-docs.md"
+      "completed_at": "2026-07-22T01:52:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1873-e2e-example-docs.md"
     }
   ]
 }

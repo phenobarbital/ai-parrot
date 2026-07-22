@@ -1,0 +1,20 @@
+{
+  "2026-06-01": {
+    "rev_actual": 180000.0,
+    "rev_budget": 180000.0,
+    "rev_variance": 0.0,
+    "rev_variance_pct": 0.0,
+    "ebitda_actual": 29000.0,
+    "ebitda_budget": 30000.0,
+    "ebitda_variance": -1000.0
+  },
+  "2026-07-22": {
+    "rev_actual": 217000.0,
+    "rev_budget": 223000.0,
+    "rev_variance": -6000.0,
+    "rev_variance_pct": -2.69,
+    "ebitda_actual": 32500.0,
+    "ebitda_budget": 35700.0,
+    "ebitda_variance": -3200.0
+  }
+}

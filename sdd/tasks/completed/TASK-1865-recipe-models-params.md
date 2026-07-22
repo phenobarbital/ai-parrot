@@ -162,10 +162,18 @@ def test_substitute_leaves_no_placeholders():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-22
+**Notes**: Implemented all models from spec §2 verbatim (`RecipeParam`,
+`DataSourceSpec`, `TransformStep`, `LayoutSpec`, `RenderSpec`, `ScheduleSpec`,
+`InfographicRecipe`, `TransformerManifest`, `RecipeRunError`) plus
+`InfographicRecipe.to_yaml()/from_yaml()` round-trip helpers. `params.py`
+implements plain `{name}` substitution (regex-based, non-eval) and the five
+built-in relative-date resolvers via `zoneinfo.ZoneInfo`. 21 tests pass
+(`pytest packages/ai-parrot/tests/outputs/a2ui/recipes/ -v`); `ruff check`
+clean. The G8 import-rule test has both a static AST-free grep-style scan and
+a subprocess-isolated dynamic import check (mirrors
+`packages/ai-parrot/conftest.py`'s src-path insertion so it resolves against
+this worktree, not a stale editable-install path).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: None.

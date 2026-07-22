@@ -161,10 +161,38 @@ class TestFreeze:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-22
+**Notes**: Read `infographic_toolkit.py` lines 1-260 + 1180-1294 before
+touching it; `render()` (legacy template path) is untouched, regression-
+verified via the pre-existing 34-test suite in
+`tests/unit/tools/test_infographic_toolkit*.py` (all still pass). Added
+`freeze.py` (`freeze_session_envelope`, explicit-provenance-only, rejects
+empty `dataset_names`/`transform_steps` and multi-component envelopes,
+dry-runs the normalized recipe via the injected `RecipeRunner`). Extended
+`InfographicToolkit.__init__` with optional `recipe_store`/`recipe_runner`/
+`dataset_manager` kwargs (all default `None`, backward-compatible); when no
+`recipe_store` is given, the 4 recipe tool names are appended to
+`self.exclude_tools` (mirroring the `skills/tools.py` `include_write_tools`
+precedent) so they're absent from `get_tools()` entirely rather than merely
+erroring at call time. Four tool methods added right after `build_block`
+(`infographic_save_recipe`, `infographic_list_recipes`,
+`infographic_run_recipe`, `infographic_get_recipe_contract`) with LLM-grade
+docstrings; `infographic_run_recipe` catches ONLY `RecipeRunException` and
+returns the structured `RecipeRunError`, letting other exceptions propagate
+per spec. 96 tests pass (18 new + 78 pre-existing recipes/runner suites);
+`ruff check` clean (pre-existing unused `OutputMode` import at line 39 left
+untouched — out of scope, present before this task).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: `infographic_save_recipe`'s tool signature accepts
+`layout_component`/`layout_properties` (the two fields `LayoutSpec` actually
+needs) rather than a full serialized envelope object — there is no existing
+"current session envelope" accessor on the toolkit to reuse (the task's own
+contract confirms no automatic provenance capture exists), and `render()`
+(the only place that builds an envelope) is explicitly off-limits to modify.
+The tool method constructs a throwaway `CreateSurface` via the verified
+`build_surface()` and passes THAT to `freeze_session_envelope(envelope,
+...)`, honoring the task's literal `freeze_session_envelope(envelope: ...)`
+signature while keeping the LLM-facing tool args to what the LLM can
+actually supply — consistent with the explicit-provenance principle already
+established for `transform_steps`/`dataset_names`.
