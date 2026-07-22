@@ -136,10 +136,65 @@ async def test_crash_rebuild_from_actions_stream(...): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: Created `test_session_state_e2e.py` (marked `pytest.mark.live`
+per this directory's convention, but — mirroring `test_websocket_replay.py`/
+`test_concurrency.py` — needs NO live services: in-process fake Redis
+Streams stub + stub dispatcher + fake Jira toolkit + neutralized git
+push/PR). Reused `test_runner.py`'s exact stub-dispatcher/mock-Jira
+fixture shapes (had to add `jira_get_issue`/`jira_search_issues`/
+`jira_assign_issue`/`jira_find_user` AsyncMocks that my first draft
+missed — `ResearchNode._find_existing_issue` calls them and a bare
+`MagicMock()` auto-attribute isn't awaitable, surfaced as "object
+MagicMock can't be used in 'await' expression").
+- `test_e2e_run_with_blocking_gates`: real 8-node flow via
+  `build_dev_loop_flow`, one blocking `ManualCriterion`; QA's
+  `manual_criterion` gate and the `deployment_approval` gate BOTH
+  resolved via the real `commands.py` REST endpoints
+  (`aiohttp_client` + `register_command_routes`); asserts Jira
+  "Ready to Deploy" transition fires only after both approvals, final
+  phase `succeeded`, both gates carry resolver identity, and
+  `flow:{run_id}:actions` folds to exactly `host.state`.
+- `test_ws_state_view_reconnect`: real `FlowStreamMultiplexer(view="state")`
+  against the SAME run's actions stream — snapshot mid-run, resolve both
+  gates, then reconnect with `?last_seen=<snapshot's from_seq>` and assert
+  strictly-increasing, gap-free, duplicate-free `server_seq`s reaching the
+  final action, with the reconnect-replayed fold matching the finished
+  host's state exactly.
+- `test_crash_rebuild_from_actions_stream`: folds a PREFIX of the actions
+  stream captured while a gate was still pending → asserts
+  `phase == "awaiting_gate"` (pending-gate survival); after the run
+  completes and the runner has ALREADY discarded the host
+  (`_close_host`, TASK-1851), folds the FULL stream from seq 0 with zero
+  reference to the original host object and asserts it matches both the
+  live host's final state AND the persisted terminal-snapshot JSON
+  artifact byte-for-byte (`model_dump(mode="json")` equality).
+Full dev_loop suite: 507 passed (504 + these 3), same 4 pre-existing
+unrelated failures as every prior task in this feature, no hangs, no
+`outputs/` pollution (protected by TASK-1851's `conftest.py` autouse
+fixture, which cascades to this `integration/` subdirectory).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **`require_deployment_approval` flipped via `object.__setattr__` on the
+   already-constructed `DeploymentHandoffNode` instance, from within the
+   test** (`flow._nodes["deployment_handoff"]`), rather than via a new
+   parameter threaded through `build_dev_loop_flow`/
+   `build_dev_loop_node_factories`. Neither of those two production
+   files is in this task's file list (test-file only), and TASK-1853
+   already flagged that no task wires the opt-in flag through the
+   factory pipeline. This is the same attribute-setting convention
+   `DeploymentHandoffNode.__init__` itself uses, confirmed safe because
+   `AgentsFlow._materialize_nodes()` copies the node instance (including
+   non-field private attributes) fresh per run — verified working end to
+   end (both gates genuinely activated in the real flow). Zero production
+   code touched for this task.
+2. **Fake in-process Redis** (not a live Redis instance) backs
+   `flow:{run_id}:actions`, injected via
+   `runner._ensure_actions_redis = AsyncMock(return_value=fake_redis)`
+   (same pattern as `test_runner_host.py`'s sink-failure test). This
+   keeps the suite CI-safe and fast (~10s for all 3 scenarios) per the
+   task's own "<~60s" constraint and the directory's established
+   "in-process stream stub — no live Redis needed" precedent
+   (`test_websocket_replay.py`), while still genuinely exercising the
+   real XADD/XRANGE/XREAD code paths in `runner.py` and `streaming.py`.

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-21T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-22T01:28:24+00:00",
   "tasks": [
     {
       "id": "TASK-1848",
@@ -172,7 +172,7 @@
       "feature_id": "FEAT-322",
       "feature": "agent-host-protocol-session-state",
       "spec": "sdd/specs/agent-host-protocol-session-state.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -185,8 +185,8 @@
       "parallelism_notes": "Final convergence task — needs the whole stack.",
       "assigned_to": null,
       "started_at": "2026-07-21T23:57:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1856-e2e-integration-tests.md"
+      "completed_at": "2026-07-22T01:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1856-e2e-integration-tests.md"
     }
   ]
 }
