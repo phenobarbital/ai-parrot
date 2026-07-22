@@ -32,6 +32,13 @@ from parrot.outputs.a2ui.recipes.transformers import (
     validate_inputs,
 )
 
+# Import side effect ONLY: registers the 7 built-in transformers (day_totals,
+# division_breakdown, variance_analysis, top_movers, groupby_aggregate,
+# pivot, latest_vs_baseline) on `transformer_registry`. Nothing from this
+# module is re-exported — transformers are looked up by name via the
+# registry, never imported directly (spec G1).
+from parrot.outputs.a2ui.recipes import library as _library  # noqa: F401
+
 __all__ = [
     "RecipeParam",
     "DataSourceSpec",

@@ -1,0 +1,10 @@
+{
+  "worst": [
+    {"division": "Sales", "project": "Beta", "ebitda_variance": -5000.0, "trend": -2000.0},
+    {"division": "Ops", "project": "Delta", "ebitda_variance": -1500.0, "trend": null}
+  ],
+  "best": [
+    {"division": "Sales", "project": "Alpha", "ebitda_variance": 3000.0, "trend": 1000.0},
+    {"division": "Ops", "project": "Gamma", "ebitda_variance": 300.0, "trend": 300.0}
+  ]
+}
