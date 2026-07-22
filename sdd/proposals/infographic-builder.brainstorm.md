@@ -63,7 +63,9 @@ safe (no `exec()`, FEAT-273 G1) and schedulable.
 - **Interactivity**: client-side baked — tabs/metric toggles/sortable tables work offline in a
   self-contained HTML file, like the reference template (user decision). Note: the current
   `SSRHTMLRenderer` is deliberately static (`interactive=False`, zero `<script>` output), so
-  this requires a new interactive render profile in `ai-parrot-visualizations`.
+  this requires a new interactive render profile in `ai-parrot-visualizations`. Resolved:
+  vendor **Chart.js v4** (visual fidelity with the reference template) alongside the existing
+  vendored ECharts; vanilla JS for tabs/toggle/sort.
 - **Schema drift → fail fast**: transformers declare required input columns; regeneration
   validates before executing and fails with a precise diagnostic (missing column, empty
   dataset). No silently-wrong infographics (user decision).
@@ -289,7 +291,8 @@ recipes conversationally), not as the persistence mechanism.
    `validate_envelope` enforces the catalog allowlist.
 6. **Render & persist**: pass the envelope to the selected render profile. New
    `interactive-html` profile (ai-parrot-visualizations) emits a single self-contained HTML
-   document with vendored JS (ECharts) and small vanilla-JS behaviors (day tabs, metric
+   document with vendored JS (Chart.js v4, matching the reference template's visuals; the
+   vendored ECharts remains available) and small vanilla-JS behaviors (day tabs, metric
    toggle, table sort) driven only by the embedded dataModel JSON — mirroring the reference
    template's `<script id="report-data">` pattern. Static profiles (existing SSR-HTML → PDF/
    email) remain available for delivery channels that need them. Result is a
@@ -323,7 +326,8 @@ recipes conversationally), not as the persistence mechanism.
   transformer registry, dual stores (file/DB), runner, toolkit tools, REST handler and
   scheduled-run entry point.
 - `a2ui-interactive-html-renderer`: self-contained interactive HTML render profile (baked
-  vendored JS, client-side-only interactivity) in ai-parrot-visualizations.
+  vendored Chart.js v4 + vanilla-JS behaviors, client-side-only interactivity) in
+  ai-parrot-visualizations.
 
 ### Modified Capabilities
 - `a2ui-implementation` (FEAT-273): consumed, not changed — except registering the new render
@@ -338,11 +342,12 @@ recipes conversationally), not as the persistence mechanism.
 | `parrot/outputs/a2ui/` (core) | extends | new `recipes/` subpackage: models + transformer registry (pure, keeps G8 one-way import rule — no DatasetManager imports here) |
 | `parrot/tools/infographic_toolkit.py` | extends | new tools: save/list/run/inspect recipes; freeze path from live session |
 | `parrot/tools/dataset_manager/tool.py` | depends on | `fetch_dataset` / `get_dataframe` / `get_dataset_entry`; no changes expected |
-| `packages/ai-parrot-visualizations` | extends | new `interactive_html.py` renderer profile (vendored ECharts + vanilla JS behaviors) |
-| `packages/ai-parrot-server` handlers | extends | new `RecipeHandler` (BaseView) + routes; scheduled-job entry point |
+| `packages/ai-parrot-visualizations` | extends | new `interactive_html.py` renderer profile (vendored Chart.js v4 + vanilla JS behaviors; ECharts already vendored) |
+| `packages/ai-parrot-server` handlers | extends | new `RecipeHandler` (BaseView) + routes |
+| `packages/ai-parrot-server` scheduler | extends | register recipe replay as a job callback on the existing `AgentSchedulerManager` (APScheduler 3.11.2); jobs managed via existing `SchedulerJobsHandler` REST CRUD |
 | `parrot/outputs/a2ui/delivery.py` | depends on | reuse RenderedArtifact delivery bridge for scheduled runs |
 | `parrot/skills/store.py` | reference | SkillRegistry pattern copied for DBRecipeStore (no changes) |
-| DB migrations | adds | recipe table(s) for DBRecipeStore |
+| DB migrations | adds | recipe table for DBRecipeStore — lives in **core ai-parrot** (SkillRegistry precedent), usable without the server package |
 
 No breaking changes; everything is additive.
 
@@ -437,6 +442,16 @@ class DatasetManagerHandler(BaseView):         # line 141
 # From packages/ai-parrot/src/parrot/models/infographic_templates.py (legacy template system)
 class InfographicTemplate(BaseModel):          # line 47
 class InfographicTemplateRegistry:             # line 512
+
+# From packages/ai-parrot-server/src/parrot/scheduler/manager.py (EXISTING scheduler)
+class AgentSchedulerManager:                   # line 284 — APScheduler-backed job manager
+    def __init__(self, bot_manager: Any = None, **kwargs):  # line 296
+    def _prepare_call_arguments(self, ...):    # line 336 — binds callbacks to job configs
+class ScheduleType(Enum):                      # line 52
+
+# From packages/ai-parrot-server/src/parrot/handlers/scheduler.py (EXISTING job CRUD REST)
+class SchedulerJobsHandler(BaseView):          # line 52 — get:70 post:90 patch:119 delete:141
+class SchedulerCallbacksHandler(BaseView):     # line 33 — lists registered job callbacks
 ```
 
 #### Verified Imports
@@ -461,7 +476,8 @@ from parrot.tools.toolkit import AbstractToolkit                     # used by i
 - ~~`TransformerRegistry` / `@infographic_transformer` / any transform registry~~ — no transform registry anywhere in `parrot/` (grep-verified)
 - ~~`RecipeStore` / `AbstractRecipeStore` / `InfographicRecipe`~~ — do not exist
 - ~~An interactive/JS-emitting A2UI HTML renderer~~ — `SSRHTMLRenderer` is explicitly script-free; `echarts.py` emits a payload, not a standalone interactive document
-- ~~A scheduler subsystem in core parrot~~ — no job scheduler exists; scheduled runs must be an entry point invoked by external schedulers (cron/systemd/k8s) or a server-side hook, to be decided in spec
+- ~~Vendored Chart.js in ai-parrot-visualizations~~ — only ECharts is vendored today; Chart.js v4 must be added as a vendored asset for the interactive-html profile
+- ~~A scheduler subsystem in **core** ai-parrot~~ — correct for core (`apscheduler` extra is commented out in core pyproject.toml:184), but ai-parrot-server DOES ship one: `AgentSchedulerManager` (`parrot/scheduler/manager.py:284`, APScheduler 3.11.2) + `SchedulerJobsHandler` REST CRUD (`parrot/handlers/scheduler.py:52`). Scheduled recipe runs register a callback there — do NOT build a new scheduler
 - ~~`DatasetManager.get_dataframe()` returning a raw `pd.DataFrame`~~ — it returns a `Dict[str, Any]` (info + sample); raw frames come from `get_dataset_entry(name).df`
 
 ---
@@ -486,19 +502,34 @@ from parrot.tools.toolkit import AbstractToolkit                     # used by i
 
 ## Open Questions
 
-- [ ] Interactive-html renderer scope: reuse vendored ECharts only, or also vendor a
+- [x] Interactive-html renderer scope: reuse vendored ECharts only, or also vendor a
   Chart.js-equivalent to match the reference template's visuals? What is the minimum JS
-  behavior set (day tabs, metric toggle, column sort) for v1? — *Owner: spec author*
-- [ ] Recipe versioning semantics: SkillRegistry-style new-version-per-edit with history, or
-  simple overwrite + `updated_at` for v1? — *Owner: Jesus*
-- [ ] Refresh-parameter templating: plain `{param}` substitution into SQL/conditions plus a
+  behavior set (day tabs, metric toggle, column sort) for v1? — *Owner: Jesus*: vendor
+  Chart.js v4 as well (visual fidelity with the reference template); minimum v1 behaviors are
+  day tabs, metric toggle and column sort in vanilla JS, all driven from the embedded
+  dataModel JSON.
+- [x] Recipe versioning semantics: SkillRegistry-style new-version-per-edit with history, or
+  simple overwrite + `updated_at` for v1? — *Owner: Jesus*: simple overwrite + `updated_at`
+  (plus `schema_version`); full version history is a possible follow-up.
+- [x] Refresh-parameter templating: plain `{param}` substitution into SQL/conditions plus a
   small set of built-in relative-date resolvers (`current_month`, `yesterday`), or a richer
-  expression syntax? — *Owner: spec author*
-- [ ] PBAC context on replay: scheduled/REST runs execute under the recipe owner's permission
-  context or the invoker's? (DatasetManager guards need a `pctx`.) — *Owner: Jesus*
-- [ ] DBRecipeStore placement: table + migrations in ai-parrot-server (like datasets handler
-  storage) or core? — *Owner: spec author*
-- [ ] Scheduled trigger mechanism: document external-cron invocation only (CLI/REST), or ship
-  a server-side periodic task hook? — *Owner: Jesus*
-- [ ] Should the LLM-assisted "repair" path (schema drift → propose remapped recipe) be a
-  fast-follow feature? (Explicitly out of v1 per fail-fast decision.) — *Owner: Jesus*
+  expression syntax? — *Owner: Jesus*: plain `{param}` substitution + fixed built-in
+  relative-date resolvers (`current_month`, `previous_month`, `today`, `yesterday`,
+  `first_of_month`). No expression language.
+- [x] PBAC context on replay: scheduled/REST runs execute under the recipe owner's permission
+  context or the invoker's? (DatasetManager guards need a `pctx`.) — *Owner: Jesus*: invoker's
+  context for chat and REST; scheduled jobs store an explicit principal (service account or
+  owner) in the recipe's schedule config and run under it. Permissions are never elevated.
+- [x] DBRecipeStore placement: table + migrations in ai-parrot-server (like datasets handler
+  storage) or core? — *Owner: Jesus*: core ai-parrot, following the SkillRegistry precedent —
+  usable without the server package.
+- [x] Scheduled trigger mechanism: document external-cron invocation only (CLI/REST), or ship
+  a server-side periodic task hook? — *Owner: Jesus*: use the EXISTING APScheduler-based
+  `AgentSchedulerManager` in ai-parrot-server (`parrot/scheduler/manager.py:284`) — register
+  recipe replay as a job callback; jobs are created/managed via the existing
+  `SchedulerJobsHandler` REST CRUD, and the recipe REST endpoint also allows direct invocation.
+  Do not build a new scheduler.
+- [x] Should the LLM-assisted "repair" path (schema drift → propose remapped recipe) be a
+  fast-follow feature? (Explicitly out of v1 per fail-fast decision.) — *Owner: Jesus*: yes —
+  declared fast-follow; v1's structured drift diagnostic (recipe id, transform, missing
+  columns) is designed to be feedable to the LLM repair flow later.
