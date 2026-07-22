@@ -161,10 +161,14 @@ def test_gate_empty_dataset_fail_fast(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-22
+**Notes**: Implemented `@infographic_transformer` decorator, `RegisteredTransformer`
+(frozen dataclass wrapping func + manifest), and `TransformerRegistry` (module-level
+singleton `transformer_registry`) mirroring `register_component`'s dict-registry +
+decorator pattern. `params_schema` is an explicit decorator kwarg (documented
+mechanism, no signature introspection). `validate_inputs(step, frames, recipe_name="")`
+collects ALL gate problems (missing alias, empty frame, missing columns) rather
+than stopping at the first. 31 tests pass total (10 new); `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: None.

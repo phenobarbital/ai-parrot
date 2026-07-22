@@ -32,7 +32,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Extends recipes/__init__.py and imports TASK-1865 models.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1866-transformer-registry-gate.md"
+      "completed_at": "2026-07-22T00:56:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1866-transformer-registry-gate.md"
     },
     {
       "id": "TASK-1867",
