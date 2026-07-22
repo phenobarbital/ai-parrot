@@ -139,7 +139,7 @@
       "feature_id": "FEAT-323",
       "feature": "dev-loop-multiple-dev-agents",
       "spec": "sdd/specs/dev-loop-multiple-dev-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -150,8 +150,8 @@
       "parallelism_notes": "Necesita la firma final del nodo (1862) y el builder/pool (1859/1860).",
       "assigned_to": null,
       "started_at": "2026-07-21T23:56:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1863-wiring-task-scoped-subagent.md"
+      "completed_at": "2026-07-22T00:42:14+00:00",
+      "file": "sdd/tasks/completed/TASK-1863-wiring-task-scoped-subagent.md"
     },
     {
       "id": "TASK-1864",
