@@ -60,27 +60,33 @@ wiring de factories/flow (TASK-1863).
 
 ### Verified Imports
 ```python
-# Dispatchers — todos definidos en parrot/flows/dev_loop/dispatcher.py:
-from parrot.flows.dev_loop.dispatcher import (
-    ClaudeCodeDispatcher,      # line 150
-    CodexCodeDispatcher,       # dispatch en line 896
-    GeminiCodeDispatcher,
-    LLMCodeDispatcher,         # backend "nvidia"/"llm"
-    GrokCodeDispatcher,
-    ZaiCodeDispatcher,
-    MoonshotCodeDispatcher,
-    DevLoopCodeDispatcher,     # Protocol, line 129
-)
-# Profiles — parrot/flows/dev_loop/models.py:
-from parrot.flows.dev_loop.models import (
-    ClaudeCodeDispatchProfile,   # line 381
+# UPDATED post-implementation (deviation, see Completion Note): imported via
+# the *package* re-export, not the .dispatcher/.models submodules directly.
+# Importing any submodule of parrot.flows.dev_loop unconditionally executes
+# parrot/flows/dev_loop/__init__.py first, so there is no eager-import cost
+# saved by bypassing the package — but doing so left agent_builder.py
+# holding a DIFFERENT class object than examples/dev_loop/server.py (which
+# already imports these names via the package) after
+# test_lazy_import.py's aggressive, prefix-scoped sys.modules
+# purge-and-reimport, breaking isinstance assertions in
+# test_server_repo_wiring.py under full-suite runs.
+from parrot.flows.dev_loop import (
+    ClaudeCodeDispatcher,      # line 150 (dispatcher.py)
+    ClaudeCodeDispatchProfile, # line 381 (models.py)
+    CodexCodeDispatcher,       # dispatch en line 896 (dispatcher.py)
     CodexCodeDispatchProfile,
+    DevAgentPoolConfig, DevAgentSpec,   # tras TASK-1857 (models.py)
+    DevLoopCodeDispatcher,     # Protocol, line 129 (dispatcher.py)
+    GeminiCodeDispatcher,
     GeminiCodeDispatchProfile,
-    LLMCodeDispatchProfile,
+    GrokCodeDispatcher,
     GrokCodeDispatchProfile,
+    LLMCodeDispatcher,         # backend "nvidia"/"llm"
+    LLMCodeDispatchProfile,
+    MoonshotCodeDispatcher,
+    MoonshotCodeDispatchProfile,
+    ZaiCodeDispatcher,
     ZaiCodeDispatchProfile,
-    # tras TASK-1857:
-    DevAgentPoolConfig, DevAgentSpec,
 )
 ```
 
@@ -224,10 +230,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: Implemented `build_dispatcher`, `parse_pool_env`, `resolve_pool_max`
+in `parrot/flows/dev_loop/agent_builder.py`, mirroring the exact model
+defaults/env-var names of the pre-existing `DEV_LOOP_DEVELOPMENT_AGENT`
+if/elif block in `examples/dev_loop/server.py:454-585` (read in full before
+implementing, per the Agent Instructions). Refactored `server.py`'s
+single-agent path to call `build_dispatcher` for the 6 non-claude-code
+backends (claude-code keeps its original dedicated-instance-reuse path
+unchanged); extracted `_DEVELOPMENT_AGENT_MAX_CONCURRENT_ENV` mapping and
+`_log_development_agent_selection` helper so the per-backend max-concurrent
+env-var resolution and log messages stay byte-identical to before. Added
+`packages/ai-parrot/tests/flows/dev_loop/test_agent_builder.py` (22 tests:
+all 7 backends build, explicit-model-wins, env-model-used, nvidia `llm=`
+prefixing, zai defaults, claude-code default, pool env parsing
+valid/invalid/unknown-backend/absent, pool-max default/parse/invalid/clamp).
+Full `packages/ai-parrot/tests/flows/dev_loop/` suite (420 tests) passes
+except the same 4 pre-existing failures present identically without any of
+this feature's changes (verified via `git stash`): `test_webhook.py`
+`TestSweepFinishedWorktrees` (×3) and
+`test_server_builds_flow_with_repos` — all full-suite test-ordering
+pollution, unrelated to this task. `ruff check` clean on all
+created/modified files.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: The Codebase Contract's "Verified Imports"
+suggested `agent_builder.py` import dispatcher/profile classes directly
+from `parrot.flows.dev_loop.dispatcher` / `parrot.flows.dev_loop.models`.
+I instead import them via the package (`from parrot.flows.dev_loop import
+...`), matching how `examples/dev_loop/server.py` already imports the same
+names. Reason: importing any submodule of `parrot.flows.dev_loop`
+unconditionally executes `parrot/flows/dev_loop/__init__.py` first (Python
+always initializes parent packages before submodules), so there is no
+eager-import cost saved by bypassing the package re-exports — but doing so
+left `agent_builder.py` holding a *different* class object than
+`server.py` after `test_lazy_import.py`'s aggressive, prefix-scoped
+`sys.modules` purge-and-reimport (it reloads `.models` and the top package
+independently), breaking `isinstance` assertions in
+`test_server_repo_wiring.py::test_server_zai_agent_startup` /
+`test_server_moonshot_agent_startup` when run as part of the full suite.
+Aligning both modules' import path resolves the divergence. Updated the
+in-file Codebase Contract accordingly before finalizing.

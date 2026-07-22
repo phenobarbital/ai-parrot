@@ -203,10 +203,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: Implemented `TaskRef` + `TaskScheduler` in
+`parrot/flows/dev_loop/task_scheduler.py`: `from_index_file`/`from_worktree`
+(both return `None` on missing/corrupt index — never raise), `next_wave`,
+`mark_done`, `mark_failed` (transitive `skipped` propagation via BFS over
+dependents), `pending`/`failed`/`skipped`/`done` views, and Kahn's-algorithm
+cycle detection at construction (raises `ValueError` naming the cycle ids).
+Unknown `depends_on` ids are treated as permanently unsatisfied (never
+`in self._done`) plus a logged warning, per spec — never crash. Added
+`packages/ai-parrot/tests/flows/dev_loop/test_task_scheduler.py` (11 tests:
+two-wave graph, cycle, missing/corrupt index, `done`-status-at-construction,
+unknown-dependency blocking, transitive skip propagation, view methods,
+`from_worktree` path resolution). All 11 pass; `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: None.

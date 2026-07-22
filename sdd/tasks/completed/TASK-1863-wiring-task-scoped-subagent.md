@@ -205,10 +205,46 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-22
+**Notes**: `build_dev_loop_node_factories` gained
+`development_pool_config`/`development_dispatcher_builder`/
+`development_pool_max=4` (keyword-only, optional), passed straight through
+to `DevelopmentNode(...)` in `development_factory`. `build_dev_loop_flow`
+gained the same three params and forwards them to
+`build_dev_loop_node_factories`. `examples/dev_loop/server.py`: after the
+existing single-agent selection block, resolves
+`parse_pool_env(conf.config.get)` + `resolve_pool_max(conf.config.get)`
+(TASK-1859), builds a `functools.partial(build_dispatcher, redis_url=...,
+max_concurrent=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS)` dispatcher_builder only
+when a pool resolves, logs the effective pool (backends×counts +
+isolation + pool_max) or "single-agent mode", and passes all three new
+params to `build_dev_loop_flow`. Added the "## Task-Scoped Mode (FEAT-323)"
+section (byte-identical, verified via a regex-extraction unit test) to
+BOTH dual-sourced copies of `sdd-worker.md`
+(`.claude/agents/sdd-worker.md` and `_subagent_data/sdd-worker.md`),
+inserted right after `## Input`: with a `task_id` field in the brief,
+implement ONLY that task, skip feature-level bookkeeping, update SDD state
+for only that task; without `task_id`, behavior is unchanged. Did NOT
+touch `_VALID_NAMES` or `ClaudeCodeDispatchProfile.subagent`'s `Literal`
+(per contract). Added
+`packages/ai-parrot/tests/flows/dev_loop/test_pool_wiring.py` (4 tests:
+factories accept+propagate pool params, existing no-pool-params call still
+works with `None`/`4` defaults, both `sdd-worker.md` copies have an
+identical "## Task-Scoped Mode" section, the section states the `task_id`-
+conditional behavior). All 4 pass; full
+`packages/ai-parrot/tests/flows/dev_loop/` suite (448 tests) passes except
+the same 4 pre-existing full-suite-ordering failures already verified
+unrelated to this feature. `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: Noted (but did not fix) a **pre-existing**
+divergence between the two `sdd-worker.md` copies discovered while adding
+the new section: `.claude/agents/sdd-worker.md` is already on the FEAT-145
+per-spec-index workflow (worktree-local index, no `cd` back to a main
+repo), while `_subagent_data/sdd-worker.md` still describes the older
+"code in worktree, state on `dev`" workflow with explicit `cd` round-trips.
+This predates FEAT-323 and is out of this task's scope (the acceptance
+criteria and test only require the NEW "Task-Scoped Mode" section itself
+to be identical between the two copies, which it is) — flagging here so a
+future task can reconcile the rest of the file.
