@@ -152,7 +152,7 @@
       "feature_id": "FEAT-324",
       "feature": "infographic-builder",
       "spec": "sdd/specs/infographic-builder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -162,8 +162,8 @@
       "parallelism_notes": "Touches ONLY ai-parrot-server; no file overlap with core/visualizations tasks, but requires TASK-1869's runner API to be merged first.",
       "assigned_to": null,
       "started_at": "2026-07-22T00:50:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1872-recipe-rest-scheduler.md"
+      "completed_at": "2026-07-22T01:42:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1872-recipe-rest-scheduler.md"
     },
     {
       "id": "TASK-1873",

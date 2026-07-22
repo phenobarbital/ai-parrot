@@ -173,10 +173,46 @@ class TestSchedulerCallback:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-22
+**Notes**: Read `datasets.py` (`DatasetManagerHandler`), `handlers/scheduler.py`,
+and `scheduler/manager.py` in full before wiring anything. Key discovery:
+`AgentSchedulerManager`/`SchedulerJobsHandler` are NOT currently instantiated
+or route-registered ANYWHERE in the running app (`AgentSchedulerManager(`
+has zero call sites; its OWN `setup(app)` method — not `manager.py` — owns
+its route registration, called only when/if an operator wires it in). Also
+discovered the scheduler's `CALLBACK_REGISTRY`/`BaseSchedulerCallback`
+mechanism is POST-RUN only (invoked after an agent job succeeds, receiving
+`result`) with callback objects built from static JSON config alone
+(`build_scheduler_callback`) — no `app` access. `RunInfographicRecipeCallback`
+therefore reads a process-wide `RecipeRunner` singleton
+(`configure_recipe_runner()`/`get_recipe_runner()`) rather than inventing app
+access the mechanism doesn't have; documented as a Wiring note in the module
+docstring. `RecipeHandler` mirrors `DatasetManagerHandler`'s
+`@is_authenticated() @user_session()` + `artifacts.py`'s `_get_user_id()`
+owner-extraction pattern; routes registered unconditionally in `manager.py`
+(mirroring the `DatasetManagerHandler` precedent literally), with the
+handler returning a clear 500 if `app["recipe_store"]`/`["recipe_runner"]`
+aren't configured (deployers wire them via `register_recipe_routes()`).
+15 tests pass (auth-decorator layers bypassed via `__wrapped__` — same
+approach `test_prompt_handler.py` uses to avoid needing real aiohttp
+session/auth middleware); 147/147 pre-existing server handler tests still
+pass (1 pre-existing skip); `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: `run_infographic_recipe` is registered as a
+scheduler CALLBACK (post-run hook via `CALLBACK_REGISTRY`), not a standalone
+schedulable "job type" — the existing `AgentSchedulerManager` only schedules
+agent-method invocations with post-run callbacks as the sole pluggable
+extension point (verified: no generic arbitrary-callable job mechanism
+exists to hang a recipe-replay-as-primary-action off of). This is the
+literal, faithful interpretation of the task's own pointer to
+`SchedulerCallbacksHandler`/`list_callbacks()` as "the existing
+callback-registration mechanism" and satisfies "do NOT build a new
+scheduler." An operator schedules ANY lightweight agent job with
+`callbacks=[{"type": "run_infographic_recipe", "config": {"recipe_name":
+...}}]` to trigger a recipe replay. Principal-to-`PermissionContext`
+resolution is intentionally minimal (principal treated as `user_id`; full
+multi-tenant/role resolution is a documented follow-up) since no existing
+principal-resolver utility exists to reuse — the core G8 acceptance
+criterion (never fall back to a server identity on a missing principal) is
+fully enforced regardless.
