@@ -14,7 +14,7 @@
       "feature_id": "FEAT-247",
       "feature": "liveavatar-full-mode-custom-llm",
       "spec": "sdd/specs/liveavatar-full-mode-custom-llm.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation — creates openai_compat.py; TASK-1875 and TASK-1876 both depend on it.",
       "assigned_to": null,
       "started_at": "2026-07-22T20:56:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1874-openai-compat-streaming-endpoint.md"
+      "completed_at": "2026-07-22T23:15:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1874-openai-compat-streaming-endpoint.md"
     },
     {
       "id": "TASK-1875",
