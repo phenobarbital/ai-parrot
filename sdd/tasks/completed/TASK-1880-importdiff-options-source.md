@@ -128,9 +128,14 @@ Completion Note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-23
+**Notes**: Added `options_source: str | None = None` to `ImportDiffEntry`.
+In `_map_question_to_field`, computed `field_options_source` from
+`options_provenance.get(col_name)` for option-typed fields only (`None`
+otherwise) and passed it into all three report branches (mapeado /
+aproximado / requiere_intervencion — the FIELD_SELECT_RADIO "aproximado"
+branch needed it too, since render_as also flags it approximate). Verified
+with the task's test scaffold, the full existing unit suite (24 passed), and
+`ruff check` (clean).
 **Deviations from spec**: none

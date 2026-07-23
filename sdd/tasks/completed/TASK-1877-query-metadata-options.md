@@ -129,9 +129,11 @@ index status to `done`, and fill in the Completion Note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-23
+**Notes**: Added `'options', m.options` to the `jsonb_build_object` in
+`_FORM_QUERY`; `_build_metadata_index` now stores `options` (defaulting to
+`[]` when null/absent). Verified with the task's test scaffold, the full
+existing unit suite (`test_networkninja_importer.py`, 24 passed), and
+`ruff check` (clean).
 **Deviations from spec**: none
