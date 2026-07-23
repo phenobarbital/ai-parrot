@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-325
 **Date**: 2026-07-23
 **Author**: Claude
-**Status**: draft
+**Status**: approved
 **Target version**: parrot-formdesigner 0.9.0
 
 ---
@@ -389,3 +389,4 @@ No new dependencies.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-23 | Claude | Initial draft from networkninja-metadata-select-options.brainstorm.md (Option A) |
+| 0.2 | 2026-07-23 | Claude | Status → approved |
