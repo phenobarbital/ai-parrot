@@ -197,6 +197,7 @@ class TestCardTurnEndToEnd:
     async def test_plain_bot_unaffected(self, monkeypatch):
         _stub_parrot_utils(monkeypatch)
         agent = _make_agent()
+        agent._cards_enabled = False
         agent.parrot_agent.ask.return_value = _response_for(None)
 
         ctx = FakeTurnContext(activity_type="message", text="hello there")

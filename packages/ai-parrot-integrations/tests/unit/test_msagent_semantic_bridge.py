@@ -181,14 +181,14 @@ class TestCardSeam:
         # First element: explanation TextBlock
         assert body[0]["type"] == "TextBlock"
         assert body[0]["text"] == "explanation text"
-        # Second element: header ColumnSet
+        # Second element: AC 1.4 ColumnSet header row
         assert body[1]["type"] == "ColumnSet"
-        header_texts = [
-            col["items"][0]["text"] for col in body[1]["columns"]
-        ]
+        header_cols = body[1]["columns"]
+        header_texts = [col["items"][0]["text"] for col in header_cols]
         assert header_texts == ["warehouse", "city"]
-        # Third+ elements: data row ColumnSets
-        assert body[2]["type"] == "ColumnSet"
+        # Header + 2 data ColumnSets
+        column_sets = [b for b in body if b.get("type") == "ColumnSet"]
+        assert len(column_sets) >= 3
 
     @pytest.mark.asyncio
     async def test_handle_message_plain_text_no_card_when_disabled(self, monkeypatch):
@@ -258,7 +258,7 @@ class TestConfig:
     def test_new_config_fields_defaults(self):
         cfg = MSAgentSDKConfig(name="x", chatbot_id="y")
         assert cfg.enable_semantic_cards is True
-        assert cfg.max_table_rows == 15
+        assert cfg.max_table_rows == 50
         assert cfg.max_card_bytes == 25_000
 
 

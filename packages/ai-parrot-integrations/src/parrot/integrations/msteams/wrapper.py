@@ -1110,13 +1110,13 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 columns = [str(c) for c in df.columns]
                 rows = [
                     [str(val) for val in row.values]
-                    for _, row in df.head(20).iterrows()
+                    for _, row in df.head(50).iterrows()
                 ]
                 sections.append(TableSection(
                     columns=columns,
                     rows=rows,
                     total_rows=len(df),
-                    max_display_rows=20,
+                    max_display_rows=50,
                     spacing="Medium",
                 ))
             except Exception:

@@ -140,7 +140,7 @@ class ParrotM365Agent:
         adapter: Optional[Any] = None,
         agent_app_id: Optional[str] = None,
         enable_semantic_cards: bool = True,
-        max_table_rows: int = 15,
+        max_table_rows: int = 50,
         max_card_bytes: int = 25_000,
     ) -> None:
         """Initialise the bridge.

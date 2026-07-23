@@ -9,7 +9,7 @@ from .actions import ACAction
 from .sections import CardSection
 from .toggle import AutoCollapsePolicy
 
-DEFAULT_ADAPTIVE_CARD_VERSION: str = config.get("ADAPTIVE_CARD_VERSION") or "1.5"
+DEFAULT_ADAPTIVE_CARD_VERSION: str = config.get("ADAPTIVE_CARD_VERSION") or "1.4"
 
 
 class CardSpec(BaseModel):

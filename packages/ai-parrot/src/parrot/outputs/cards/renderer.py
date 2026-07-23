@@ -18,6 +18,8 @@ from .actions import (
 )
 from .elements import (
     ACElement,
+    Column,
+    ColumnSet,
     Container,
     Fact,
     FactSet,
@@ -147,6 +149,7 @@ def _expand_text(section: TextSection) -> tuple[list[ACElement], list[ACAction]]
 
 
 def _expand_table(section: TableSection) -> tuple[list[ACElement], list[ACAction]]:
+    """Render a TableSection as an AC 1.5 native Table element."""
     n_cols = len(section.columns)
     col_defs = [TableColumnDefinition(width="1") for _ in section.columns]
 
@@ -168,6 +171,32 @@ def _expand_table(section: TableSection) -> tuple[list[ACElement], list[ACAction
         first_row_as_header=section.first_row_as_header,
         show_grid_lines=section.show_grid_lines,
     )]
+
+    total = section.total_rows if section.total_rows is not None else len(section.rows)
+    if total > len(display_rows):
+        elements.append(TextBlock(
+            text=f"Showing {len(display_rows)} of {total}",
+            is_subtle=True,
+        ))
+    return elements, []
+
+
+def _expand_table_columnset(section: TableSection) -> tuple[list[ACElement], list[ACAction]]:
+    """Render a TableSection as ColumnSet rows (AC 1.3+ compatible)."""
+    n_cols = len(section.columns)
+    elements: list[ACElement] = []
+
+    header_cols = [Column(width="stretch", items=[TextBlock(text=c, weight="Bolder")])
+                   for c in section.columns]
+    elements.append(ColumnSet(columns=header_cols, separator=True))
+
+    display_rows = section.rows[:section.max_display_rows]
+    for row_data in display_rows:
+        cells = [str(c) for c in row_data[:n_cols]]
+        cells += [""] * (n_cols - len(cells))
+        row_cols = [Column(width="stretch", items=[TextBlock(text=cell)])
+                    for cell in cells]
+        elements.append(ColumnSet(columns=row_cols))
 
     total = section.total_rows if section.total_rows is not None else len(section.rows)
     if total > len(display_rows):
@@ -370,6 +399,8 @@ def _serialize_to_element(obj: Any) -> ACElement:
 def _apply_auto_collapse(
     sections: list[CardSection],
     policy: AutoCollapsePolicy,
+    *,
+    table_expander: Any = None,
 ) -> list[CardSection]:
     """Wrap oversized section content in auto-generated toggle groups.
 
@@ -383,11 +414,16 @@ def _apply_auto_collapse(
     Args:
         sections: The card's sections, pre-expansion.
         policy: Auto-collapse thresholds.
+        table_expander: The table expansion function to use for overflow
+            content (version-aware: ``_expand_table`` for AC >=1.5,
+            ``_expand_table_columnset`` for AC <=1.4).
 
     Returns:
         A new list of sections with oversized ones replaced by a
         preview + toggle pair.
     """
+    if table_expander is None:
+        table_expander = _expand_table
     result: list[CardSection] = []
     counter = 0
     for section in sections:
@@ -412,7 +448,7 @@ def _apply_auto_collapse(
                 first_row_as_header=section.first_row_as_header,
                 show_grid_lines=section.show_grid_lines,
             )
-            overflow_elements, _ = _expand_table(overflow_section)
+            overflow_elements, _ = table_expander(overflow_section)
             toggle = ToggleGroup(
                 content=overflow_elements,
                 label_collapsed=f"Show {len(overflow_rows)} more rows",
@@ -552,8 +588,21 @@ def _serialize_action(action: ACAction) -> dict[str, Any]:
 
 # ── Public API ────────────────────────────────────────────────────────
 
+def _version_gte(version: str, target: str) -> bool:
+    """Return True when *version* >= *target* (major.minor comparison)."""
+    try:
+        v_parts = [int(p) for p in version.split(".")[:2]]
+        t_parts = [int(p) for p in target.split(".")[:2]]
+        return v_parts >= t_parts
+    except (ValueError, IndexError):
+        return True
+
+
 def render(spec: CardSpec, *, max_card_bytes: int = 28_000) -> dict[str, Any]:
-    """Render a :class:`CardSpec` into an Adaptive Card 1.5 JSON payload.
+    """Render a :class:`CardSpec` into an Adaptive Card JSON payload.
+
+    Uses native ``Table`` elements for AC >= 1.5, and falls back to
+    ``ColumnSet``-based rows for AC <= 1.4 compatibility.
 
     Args:
         spec: The card specification to render.
@@ -568,6 +617,9 @@ def render(spec: CardSpec, *, max_card_bytes: int = 28_000) -> dict[str, Any]:
     body: list[dict[str, Any]] = []
     all_actions: list[ACAction] = list(spec.actions)
 
+    use_native_table = _version_gte(spec.version, "1.5")
+    table_expander = _expand_table if use_native_table else _expand_table_columnset
+
     # Title and summary
     if spec.title:
         body.append(_serialize_element(TextBlock(
@@ -579,12 +631,17 @@ def render(spec: CardSpec, *, max_card_bytes: int = 28_000) -> dict[str, Any]:
     # Auto-collapse oversized sections before expansion
     sections = spec.sections
     if spec.auto_collapse is not None and spec.auto_collapse.enabled:
-        sections = _apply_auto_collapse(sections, spec.auto_collapse)
+        sections = _apply_auto_collapse(
+            sections, spec.auto_collapse, table_expander=table_expander,
+        )
 
     # Expand sections
     toggle_counter = 0
     for section in sections:
-        expander = _SECTION_EXPANDERS.get(section.section_type)
+        if section.section_type == "table":
+            expander = table_expander
+        else:
+            expander = _SECTION_EXPANDERS.get(section.section_type)
         if expander is None:
             logger.warning("Unknown section type: %s", section.section_type)
             continue
