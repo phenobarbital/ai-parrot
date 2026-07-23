@@ -21,10 +21,12 @@ this module adds the missing wire protocol on top of it):
         returns a single JSON completion.
 
         Structured output on the final ``AIMessage`` (data/code/tool_calls)
-        is published via the existing FEAT-249 Mode-B bifurcation path
-        (``AgentTalk._maybe_publish_bifurcated_output``) so it still reaches
-        the AgentChat WS side channel — reused here rather than
-        reimplemented, see :func:`_publish_bifurcated_output`.
+        is published via the shared FEAT-249 Mode-B bifurcation function
+        (``avatar_fullmode.publish_bifurcated_output``) so it still reaches
+        the AgentChat WS side channel — the SAME function
+        ``AgentTalk._maybe_publish_bifurcated_output`` (``handlers/agent.py``)
+        delegates to, so the logic lives in exactly one place. See
+        :func:`_publish_bifurcated_output`.
 
     GET /v1/models
         Minimal OpenAI-compatible model listing: one "model" per registered
@@ -146,6 +148,37 @@ def _extract_last_user_message(messages: List[ChatMessage]) -> Optional[str]:
     return None
 
 
+def _openai_error(
+    status_cls: type,
+    message: str,
+    error_type: str = "invalid_request_error",
+) -> web.HTTPException:
+    """Build an aiohttp HTTP exception with an OpenAI-shaped ``{"error": {...}}`` body.
+
+    Bare ``web.HTTPXxx(reason=...)`` renders as plain text/HTML, which breaks
+    "OpenAI-compatible" conformance on error paths (code-review follow-up:
+    the SDK-conformance test only ever exercised the happy path). Callers
+    ``raise`` the returned exception.
+
+    Args:
+        status_cls: An aiohttp ``HTTPException`` subclass (e.g.
+            ``web.HTTPUnauthorized``) determining the status code.
+        message: Human-readable error message (OpenAI's ``error.message``).
+        error_type: OpenAI-style error type, e.g. ``"invalid_request_error"``,
+            ``"authentication_error"``, ``"permission_error"``, ``"api_error"``.
+
+    Returns:
+        The constructed (not yet raised) HTTP exception, with a JSON body
+        shaped like ``{"error": {"message": ..., "type": ..., "code": None}}``.
+    """
+    return status_cls(
+        text=json.dumps(
+            {"error": {"message": message, "type": error_type, "code": None}}
+        ),
+        content_type="application/json",
+    )
+
+
 def _sse_chunk(
     completion_id: str,
     created: int,
@@ -191,37 +224,32 @@ async def _publish_bifurcated_output(
     session_id: str,
     turn_id: Optional[str],
 ) -> None:
-    """Publish structured output via the existing FEAT-249 Mode-B path.
+    """Publish structured output via the shared FEAT-249 Mode-B path.
 
-    Reuses ``AgentTalk._maybe_publish_bifurcated_output`` (handlers/agent.py)
-    rather than reimplementing the bifurcation logic: the method is invoked
-    as an unbound call against a minimal shim exposing only ``.request`` and
-    ``.logger`` — the two attributes it reads. This mirrors the pattern
-    already established in
-    ``tests/handlers/test_fullmode_bifurcation.py::_FakeAgentTalk``.
+    Delegates to ``avatar_fullmode.publish_bifurcated_output`` — the SAME
+    shared function ``AgentTalk._maybe_publish_bifurcated_output``
+    (``handlers/agent.py``) also delegates to (code-review follow-up on
+    FEAT-247: replaces the previous unbound-method/shim reuse of a private
+    ``AgentTalk`` method with a proper shared function, removing the
+    fragile cross-module coupling on ``AgentTalk``'s internals).
 
     Best-effort: any error (including the import itself) is logged and
-    swallowed so it never breaks the spoken stream.
+    swallowed so it never breaks the spoken stream — this thin wrapper adds
+    its own try/except on top of the shared function's internal one purely
+    as defense-in-depth against the import itself failing.
 
     Args:
         request: The originating aiohttp request (carries ``app`` context).
-        logger: Logger to use for the shim (and for reporting failures here).
+        logger: Logger to use for reporting failures.
         ai_message: The final ``AIMessage`` from the turn.
         session_id: The conversation/session id (Redis channel key).
         turn_id: Optional turn identifier for deduplication.
     """
     try:
-        from parrot.handlers.agent import AgentTalk
+        from .avatar_fullmode import publish_bifurcated_output
 
-        class _BifurcationShim:
-            pass
-
-        shim = _BifurcationShim()
-        shim.request = request  # type: ignore[attr-defined]
-        shim.logger = logger  # type: ignore[attr-defined]
-
-        await AgentTalk._maybe_publish_bifurcated_output(
-            shim, ai_message=ai_message, session_id=session_id, turn_id=turn_id,
+        await publish_bifurcated_output(
+            request, logger, ai_message, session_id, turn_id,
         )
     except Exception:  # noqa: BLE001 - best-effort, never breaks the reply
         logger.warning(
@@ -249,19 +277,25 @@ class OpenAIChatCompletions(BaseView):
         request = self.request
 
         if not _check_bearer_token(request):
-            raise web.HTTPUnauthorized(reason="Missing or invalid bearer token")
+            raise _openai_error(
+                web.HTTPUnauthorized,
+                "Missing or invalid bearer token",
+                "authentication_error",
+            )
 
         session_id = request.match_info.get("session_id", "")
         fullmode_store: Dict[str, Any] = request.app.get(FULLMODE_SESSIONS_KEY) or {}
         session_record = fullmode_store.get(session_id) if session_id else None
         if session_record is None:
-            raise web.HTTPNotFound(
-                reason=f"Unknown FULL mode session_id '{session_id}'"
+            raise _openai_error(
+                web.HTTPNotFound, f"Unknown FULL mode session_id '{session_id}'",
             )
 
         agent_name = request.rel_url.query.get("agent", "")
         if not agent_name:
-            raise web.HTTPBadRequest(reason="'agent' query parameter is required")
+            raise _openai_error(
+                web.HTTPBadRequest, "'agent' query parameter is required",
+            )
 
         # Bind check: the `agent` query param must match the ai-parrot agent
         # this session was actually started for (recorded at /full/start,
@@ -274,38 +308,44 @@ class OpenAIChatCompletions(BaseView):
         # always carries one, so this is enforced going forward.
         bound_agent_id = session_record.get("agent_id")
         if bound_agent_id and agent_name != bound_agent_id:
-            raise web.HTTPForbidden(
-                reason=(
+            raise _openai_error(
+                web.HTTPForbidden,
+                (
                     f"'agent' query parameter '{agent_name}' does not match "
                     f"the agent this session was started for"
-                )
+                ),
+                "permission_error",
             )
 
         try:
             body: Dict[str, Any] = await request.json()
         except Exception as exc:  # noqa: BLE001
-            raise web.HTTPBadRequest(reason="Invalid JSON body") from exc
+            raise _openai_error(web.HTTPBadRequest, "Invalid JSON body") from exc
 
         try:
             chat_request = ChatCompletionRequest(**body)
         except Exception as exc:  # noqa: BLE001
-            raise web.HTTPBadRequest(
-                reason=f"Invalid chat-completions request: {exc}"
+            raise _openai_error(
+                web.HTTPBadRequest, f"Invalid chat-completions request: {exc}",
             ) from exc
 
         question = _extract_last_user_message(chat_request.messages)
         if question is None:
-            raise web.HTTPBadRequest(reason="No user message found in 'messages'")
+            raise _openai_error(
+                web.HTTPBadRequest, "No user message found in 'messages'",
+            )
 
         manager = request.app.get("bot_manager")
         if manager is None:
-            raise web.HTTPServiceUnavailable(reason="Bot manager is not configured")
+            raise _openai_error(
+                web.HTTPServiceUnavailable, "Bot manager is not configured", "api_error",
+            )
 
         bot: Optional[AbstractBot] = await manager.get_bot(
             agent_name, session_id=session_id,
         )
         if bot is None:
-            raise web.HTTPNotFound(reason=f"Unknown agent '{agent_name}'")
+            raise _openai_error(web.HTTPNotFound, f"Unknown agent '{agent_name}'")
 
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
         created = int(time.time())
@@ -432,6 +472,11 @@ class OpenAIChatCompletions(BaseView):
                 "OpenAICompat: stream error for session %s: %s", session_id, exc,
             )
             try:
+                # Flush any partial sentence still buffered in the flattener
+                # (e.g. "Partial answer, then" with no terminal punctuation
+                # yet) — otherwise it is silently dropped instead of spoken,
+                # even though it was already generated by the agent.
+                await _write_sentences(flattener.flush())
                 await resp.write(
                     _sse_chunk(completion_id, created, agent_name, finish_reason="stop")
                 )
@@ -481,8 +526,10 @@ class OpenAIChatCompletions(BaseView):
                 "OpenAICompat: non-stream completion failed for session %s: %s",
                 session_id, exc,
             )
-            raise web.HTTPInternalServerError(
-                reason="Agent failed to produce a completion"
+            raise _openai_error(
+                web.HTTPInternalServerError,
+                "Agent failed to produce a completion",
+                "api_error",
             ) from exc
 
         content = "".join(content_parts)
@@ -525,7 +572,11 @@ class OpenAIModels(BaseView):
     async def get(self) -> web.Response:
         """List available agents as OpenAI-style model entries."""
         if not _check_bearer_token(self.request):
-            raise web.HTTPUnauthorized(reason="Missing or invalid bearer token")
+            raise _openai_error(
+                web.HTTPUnauthorized,
+                "Missing or invalid bearer token",
+                "authentication_error",
+            )
 
         manager = self.request.app.get("bot_manager")
         agent_names: List[str] = []

@@ -172,15 +172,20 @@ class TestOpenAIChatCompletions:
         assert body["choices"][0]["finish_reason"] == "stop"
 
     async def test_auth_required(self):
-        """Missing bearer token -> 401."""
+        """Missing bearer token -> 401 with an OpenAI-shaped {"error": {...}} body."""
         handler, _ = _make_handler(
             OpenAIChatCompletions,
             headers={},
             match_info={"session_id": "sess-1"},
         )
 
-        with pytest.raises(web.HTTPUnauthorized):
+        with pytest.raises(web.HTTPUnauthorized) as exc_info:
             await handler.post()
+
+        assert exc_info.value.content_type == "application/json"
+        body = json.loads(exc_info.value.text)
+        assert body["error"]["type"] == "authentication_error"
+        assert "bearer" in body["error"]["message"].lower()
 
     async def test_invalid_bearer_token_rejected(self):
         """Wrong bearer token -> 401."""
@@ -204,6 +209,23 @@ class TestOpenAIChatCompletions:
 
         with pytest.raises(web.HTTPNotFound):
             await handler.post()
+
+    async def test_missing_agent_query_param_returns_400(self):
+        """No 'agent' query parameter -> 400 with an OpenAI-shaped error body."""
+        handler, _ = _make_handler(
+            OpenAIChatCompletions,
+            headers={"Authorization": "Bearer test-secret-token"},
+            match_info={"session_id": "sess-1"},
+            query={},
+            app={"avatar_fullmode_sessions": {"sess-1": {}}},
+        )
+
+        with pytest.raises(web.HTTPBadRequest) as exc_info:
+            await handler.post()
+
+        body = json.loads(exc_info.value.text)
+        assert body["error"]["type"] == "invalid_request_error"
+        assert "agent" in body["error"]["message"]
 
     async def test_resolves_agent_and_session(self):
         """agent from query param + session_id from URL passed to ask_stream."""
@@ -350,6 +372,56 @@ class TestOpenAIChatCompletions:
         with pytest.raises(web.HTTPInternalServerError):
             await handler.post()
 
+    async def test_stream_ask_stream_error_degrades_gracefully(self, monkeypatch):
+        """bot.ask_stream raising mid-STREAM -> stream ends cleanly with [DONE],
+        never propagates an unhandled exception (unlike the non-stream path,
+        which can't recover mid-response and must raise before any bytes are
+        written)."""
+        bot = MagicMock()
+        bot.name = "test_agent"
+
+        async def _stream(question, session_id=None, **kw):
+            yield "Partial answer, then "
+            raise RuntimeError("provider dropped connection")
+
+        bot.ask_stream = _stream
+
+        bot_manager = MagicMock()
+        bot_manager.get_bot = AsyncMock(return_value=bot)
+
+        handler, _ = _make_handler(
+            OpenAIChatCompletions,
+            headers={"Authorization": "Bearer test-secret-token"},
+            match_info={"session_id": "sess-1"},
+            query={"agent": "test_agent"},
+            json_body={
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": True,
+            },
+            app={
+                "bot_manager": bot_manager,
+                "avatar_fullmode_sessions": {"sess-1": {}},
+            },
+        )
+        _FakeStreamResponse.instances.clear()
+        monkeypatch.setattr(
+            "parrot.handlers.openai_compat.web.StreamResponse", _FakeStreamResponse
+        )
+
+        # Must not raise -- the streaming path degrades gracefully.
+        resp = await handler.post()
+
+        stream = _FakeStreamResponse.instances[-1]
+        assert resp is stream
+        assert stream.eof is True
+        raw = b"".join(stream.chunks).decode()
+        # flush() strips trailing whitespace, so the emitted delta is
+        # "Partial answer, then" (no trailing space) -- the point of this
+        # test is that it's emitted AT ALL despite the mid-stream error, not
+        # the exact whitespace.
+        assert "Partial answer, then" in raw
+        assert raw.strip().endswith("data: [DONE]")
+
     async def test_no_double_speak_when_response_mirrors_streamed_chunks(self, monkeypatch):
         """Regression: a final AIMessage.response equal to the already-streamed
         text must NOT be spoken a second time (code-review finding)."""
@@ -378,7 +450,7 @@ class TestOpenAIChatCompletions:
         bot_manager.get_bot = AsyncMock(return_value=bot)
 
         monkeypatch.setattr(
-            "parrot.handlers.agent.AgentTalk._maybe_publish_bifurcated_output",
+            "parrot.handlers.avatar_fullmode.publish_bifurcated_output",
             AsyncMock(),
         )
 
@@ -433,11 +505,11 @@ class TestOpenAIChatCompletions:
 
         published = []
 
-        async def _fake_publish(self, *, ai_message, session_id, turn_id=None):
+        async def _fake_publish(request, logger, ai_message, session_id, turn_id=None):
             published.append((session_id, turn_id, ai_message))
 
         monkeypatch.setattr(
-            "parrot.handlers.agent.AgentTalk._maybe_publish_bifurcated_output",
+            "parrot.handlers.avatar_fullmode.publish_bifurcated_output",
             _fake_publish,
         )
 
@@ -492,7 +564,7 @@ class TestOpenAIChatCompletions:
         bot_manager.get_bot = AsyncMock(return_value=bot)
 
         monkeypatch.setattr(
-            "parrot.handlers.agent.AgentTalk._maybe_publish_bifurcated_output",
+            "parrot.handlers.avatar_fullmode.publish_bifurcated_output",
             AsyncMock(),
         )
 
