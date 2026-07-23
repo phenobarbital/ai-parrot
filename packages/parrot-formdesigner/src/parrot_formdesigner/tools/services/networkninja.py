@@ -475,9 +475,37 @@ class NetworkninjaFormService(AbstractFormService):
                     "column_id": entry.get("column_id"),
                     "data_type": entry.get("data_type"),
                     "description": entry.get("description"),
-                    "options": entry.get("options") or [],
+                    "options": self._normalize_options(entry.get("options")),
                 }
         return index
+
+    @staticmethod
+    def _normalize_options(raw: Any) -> list[dict[str, Any]]:
+        """Coerce a raw ``form_metadata.options`` value into a list of dicts.
+
+        ``form_metadata.options`` is not uniformly shaped in the source: some
+        columns store a proper JSONB array of option objects, but others store
+        a JSON *string* (e.g. the double-encoded ``"[]"`` on non-select
+        columns, or occasionally ``"[{...}]"``), a scalar, or ``NULL``. Every
+        downstream consumer (``_collect_select_options``,
+        ``_build_option_id_catalog``) assumes a list of dicts, so all coercion
+        happens here once (FEAT-325).
+
+        Args:
+            raw: The raw ``options`` value from the metadata aggregate.
+
+        Returns:
+            A list containing only dict-shaped option entries; ``[]`` when the
+            value is null, a non-list scalar, or unparseable.
+        """
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return []
+        if not isinstance(raw, list):
+            return []
+        return [opt for opt in raw if isinstance(opt, dict)]
 
     def _build_option_id_catalog(
         self, meta_index: dict[str, dict[str, Any]]

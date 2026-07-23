@@ -803,3 +803,47 @@ def test_option_id_cast_to_str():
     field = next(schema.iter_all_fields())
     assert field.options[0].value == "6091"
     assert isinstance(field.options[0].value, str)
+
+
+def test_malformed_metadata_options_do_not_crash():
+    """Non-list / non-dict ``form_metadata.options`` are coerced, never crash.
+
+    Real flexroc data stores ``options`` as the double-encoded JSON string
+    ``"[]"`` on some (non-select) columns, and occasionally as other scalars.
+    The import must tolerate this: such columns yield no options and the form
+    still builds (regression for the FEAT-325 re-import crash).
+    """
+    row = {
+        "formid": 50, "orgid": 74, "form_name": "Lovesac Event Form",
+        "description": None,
+        "question_blocks": [{
+            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
+            "questions": [
+                {"question_id": 1, "question_column_name": "2493",
+                 "question_description": "Notes", "validations": [],
+                 "question_logic_groups": []},
+                {"question_id": 2, "question_column_name": "2500",
+                 "question_description": "Role", "validations": [],
+                 "question_logic_groups": []},
+            ],
+        }],
+        "metadata": [
+            # double-encoded empty array as a JSON *string* on a text column
+            {"column_id": 1, "column_name": "2493", "data_type": "FIELD_TEXT",
+             "description": "Notes", "options": "[]"},
+            # a well-formed select alongside it must still populate
+            {"column_id": 2, "column_name": "2500", "data_type": "FIELD_SELECT",
+             "description": "Role", "options": [
+                 {"is_active": True, "option_id": "6091", "column_name": 2500,
+                  "option_value": "Field Merchandiser"},
+                 "garbage-non-dict-entry",  # dropped, not crashed
+             ]},
+        ],
+    }
+    svc = _svc()
+    schema = svc.to_form_schema(row)  # must not raise
+    fields = {f.field_id: f for f in schema.iter_all_fields()}
+    # text column: no options
+    assert not fields["field_2493"].options
+    # select column: the one valid option survived, the non-dict was dropped
+    assert [o.value for o in fields["field_2500"].options] == ["6091"]
