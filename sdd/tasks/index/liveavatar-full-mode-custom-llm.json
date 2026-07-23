@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-22T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-07-22T23:55:39+00:00",
   "tasks": [
     {
       "id": "TASK-1874",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-247",
       "feature": "liveavatar-full-mode-custom-llm",
       "spec": "sdd/specs/liveavatar-full-mode-custom-llm.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation — creates openai_compat.py; TASK-1875 and TASK-1876 both depend on it.",
       "assigned_to": null,
       "started_at": "2026-07-22T20:56:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1874-openai-compat-streaming-endpoint.md"
+      "completed_at": "2026-07-22T23:15:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1874-openai-compat-streaming-endpoint.md"
     },
     {
       "id": "TASK-1875",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-247",
       "feature": "liveavatar-full-mode-custom-llm",
       "spec": "sdd/specs/liveavatar-full-mode-custom-llm.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Modifies avatar_fullmode.py to reference the /v1/chat/completions route created by TASK-1874.",
       "assigned_to": null,
       "started_at": "2026-07-22T20:56:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1875-fullstart-custom-llm-url.md"
+      "completed_at": "2026-07-22T23:26:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1875-fullstart-custom-llm-url.md"
     },
     {
       "id": "TASK-1876",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-247",
       "feature": "liveavatar-full-mode-custom-llm",
       "spec": "sdd/specs/liveavatar-full-mode-custom-llm.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Wires routes from TASK-1874 into manager.py and adds SDK integration test. Final convergence task.",
       "assigned_to": null,
       "started_at": "2026-07-22T20:56:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1876-openai-compat-route-registration.md"
+      "completed_at": "2026-07-22T23:55:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1876-openai-compat-route-registration.md"
     }
   ]
 }
