@@ -257,7 +257,10 @@ show/hide rules that key off a select continue to fire correctly.
    values match option values. Columns with no metadata catalog keep the current
    text comparison.
 6. `_map_question_to_field` attaches the collected options exactly as today.
-7. `ImportDiffReport` behaviour is unchanged.
+7. `ImportDiffEntry` gains an `options_source` provenance field
+   (`"metadata" | "inline" | "logic_groups" | "none"`) recording where each
+   option-typed field's choices came from; all other report behaviour is
+   unchanged and the import still never aborts.
 
 ### Edge Cases & Error Handling
 - **`options` is `null` / empty in metadata** → fall back to inline, then
@@ -392,7 +395,23 @@ from ...core.schema import FormField, FormSchema, FormSection, FormType
   `FieldOption(disabled=True)` to preserve historical values.
 - [x] Scope — *Owner: user*: importer fix only; re-import + hydration are
   FieldSync (NAV-9182).
-- [ ] Fallback value/label mismatch for logic-group-only selects (no metadata
-  catalog) — accept text-as-value, or normalize in a follow-up? — *Owner: user*
-- [ ] Should the `ImportDiffReport` gain a note when options are sourced from
-  metadata vs inline vs logic-groups (provenance)? — *Owner: user*
+- [x] Fallback value/label mismatch for logic-group-only selects (no metadata
+  catalog) — *Owner: user*: accept text-as-value. When a select column has no
+  `form_metadata.options`, no `option_id` exists anywhere at the source, so the
+  only available value is the human text from `condition_comparison_value`; the
+  importer emits `FieldOption(value=text, label=text)`. This is internally
+  consistent within the form (the conditions on that same field also compare by
+  `comparison_value`, so `FieldCondition.value == FieldOption.value`), so
+  conditional logic still fires. The only inconsistency is cross-form (metadata
+  forms use `option_id`, fallback forms use text). Synthesizing a surrogate id
+  is explicitly rejected: it would be untraceable to NetworkNinja and would
+  break the text-based conditions. Documented as a known edge case; a saved
+  answer keyed by text will not re-resolve if NetworkNinja later edits the
+  wording, which is an unavoidable limitation of source data that carries no
+  stable id.
+- [x] Should the `ImportDiffReport` gain a note when options are sourced from
+  metadata vs inline vs logic-groups (provenance)? — *Owner: user*: yes. Add an
+  option-provenance signal to `ImportDiffEntry` (e.g. `options_source` ∈
+  `{"metadata", "inline", "logic_groups", "none"}`) so an audit can tell which
+  of the ~338 live select columns were populated from the canonical metadata
+  catalog versus a fallback source. Low effort, high audit value.
