@@ -439,3 +439,367 @@ def test_report_aproximado_status():
     _, report = svc.import_with_report(_make_row("FIELD_MONEY"))
     assert report.fields
     assert report.fields[0].status == "aproximado"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-325 — form_metadata.options as the primary select-option source
+# ---------------------------------------------------------------------------
+
+
+def test_metadata_options_populate_select():
+    """FIELD_SELECT with form_metadata.options yields FieldOption(value=option_id, label=option_value)."""
+    row = {
+        "formid": 1, "orgid": 1, "form_name": "F", "description": None,
+        "question_blocks": [{
+            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
+            "questions": [{
+                "question_id": 1, "question_column_name": "10211",
+                "question_description": "Role", "validations": [],
+                "question_logic_groups": [],
+            }],
+        }],
+        "metadata": [{
+            "column_id": 1, "column_name": "10211", "data_type": "FIELD_SELECT",
+            "description": "Role", "options": [
+                {"is_active": True, "option_id": "6091", "column_name": 10211,
+                 "option_value": "Field Merchandiser"},
+            ],
+        }],
+    }
+    svc = _svc()
+    schema = svc.to_form_schema(row)
+    field = next(schema.iter_all_fields())
+    assert field.options is not None
+    assert len(field.options) == 1
+    opt = field.options[0]
+    assert opt.value == "6091"
+    assert opt.label == "Field Merchandiser"
+    assert opt.disabled is False
+
+
+def test_metadata_options_scale_1_10():
+    """A 1-10 scale select (options only in metadata) yields 10 options."""
+    options = [
+        {"is_active": True, "option_id": str(i), "column_name": 10212, "option_value": str(i)}
+        for i in range(1, 11)
+    ]
+    row = {
+        "formid": 2, "orgid": 1, "form_name": "F", "description": None,
+        "question_blocks": [{
+            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
+            "questions": [{
+                "question_id": 1, "question_column_name": "10212",
+                "question_description": "Quality", "validations": [],
+                "question_logic_groups": [],
+            }],
+        }],
+        "metadata": [{
+            "column_id": 1, "column_name": "10212", "data_type": "FIELD_SELECT",
+            "description": "Quality", "options": options,
+        }],
+    }
+    svc = _svc()
+    schema = svc.to_form_schema(row)
+    field = next(schema.iter_all_fields())
+    assert field.options is not None
+    assert len(field.options) == 10
+
+
+def test_inactive_option_marked_disabled():
+    """is_active=false option imported with disabled=True, still present."""
+    row = {
+        "formid": 3, "orgid": 1, "form_name": "F", "description": None,
+        "question_blocks": [{
+            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
+            "questions": [{
+                "question_id": 1, "question_column_name": "10213",
+                "question_description": "Role", "validations": [],
+                "question_logic_groups": [],
+            }],
+        }],
+        "metadata": [{
+            "column_id": 1, "column_name": "10213", "data_type": "FIELD_SELECT",
+            "description": "Role", "options": [
+                {"is_active": True, "option_id": "1", "column_name": 10213, "option_value": "Active"},
+                {"is_active": False, "option_id": "2", "column_name": 10213, "option_value": "Retired"},
+            ],
+        }],
+    }
+    svc = _svc()
+    schema = svc.to_form_schema(row)
+    field = next(schema.iter_all_fields())
+    assert {o.value for o in field.options} == {"1", "2"}
+    retired = next(o for o in field.options if o.value == "2")
+    assert retired.disabled is True
+
+
+def test_metadata_primary_over_inline():
+    """When both metadata and inline options exist, metadata wins."""
+    row = {
+        "formid": 4, "orgid": 1, "form_name": "F", "description": None,
+        "question_blocks": [{
+            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
+            "questions": [{
+                "question_id": 1, "question_column_name": "10214",
+                "question_description": "Role", "validations": [],
+                "question_logic_groups": [],
+                "options": [{"value": "inline1", "label": "Inline One"}],
+            }],
+        }],
+        "metadata": [{
+            "column_id": 1, "column_name": "10214", "data_type": "FIELD_SELECT",
+            "description": "Role", "options": [
+                {"is_active": True, "option_id": "6091", "column_name": 10214,
+                 "option_value": "Field Merchandiser"},
+            ],
+        }],
+    }
+    svc = _svc()
+    schema = svc.to_form_schema(row)
+    field = next(schema.iter_all_fields())
+    assert {o.value for o in field.options} == {"6091"}
+
+
+def test_inline_fallback_when_metadata_empty():
+    """Empty metadata options -> inline options used (no regression)."""
+    row = {
+        "formid": 5, "orgid": 1, "form_name": "F", "description": None,
+        "question_blocks": [{
+            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
+            "questions": [{
+                "question_id": 1, "question_column_name": "10215",
+                "question_description": "Role", "validations": [],
+                "question_logic_groups": [],
+                "options": [{"value": "inline1", "label": "Inline One"}],
+            }],
+        }],
+        "metadata": [{
+            "column_id": 1, "column_name": "10215", "data_type": "FIELD_SELECT",
+            "description": "Role", "options": [],
+        }],
+    }
+    svc = _svc()
+    schema = svc.to_form_schema(row)
+    field = next(schema.iter_all_fields())
+    assert {o.value for o in field.options} == {"inline1"}
+    assert next(o for o in field.options if o.value == "inline1").label == "Inline One"
+
+
+def test_logic_group_fallback_when_no_metadata():
+    """No metadata catalog -> logic-group text used as value & label."""
+    row = {
+        "formid": 6, "orgid": 1, "form_name": "F", "description": None,
+        "question_blocks": [{
+            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
+            "questions": [
+                {
+                    "question_id": 1, "question_column_name": "10216",
+                    "question_description": "Role", "validations": [],
+                    "question_logic_groups": [],
+                },
+                {
+                    "question_id": 2, "question_column_name": "99",
+                    "question_description": "Dep", "validations": [],
+                    "question_logic_groups": [{
+                        "conditions": [{
+                            "condition_logic": "EQUALS",
+                            "condition_question_reference_id": 1,
+                            "condition_comparison_value": "Field Merchandiser",
+                        }],
+                    }],
+                },
+            ],
+        }],
+        "metadata": [
+            {"column_id": 1, "column_name": "10216", "data_type": "FIELD_SELECT",
+             "description": "Role", "options": []},
+            {"column_id": 2, "column_name": "99", "data_type": "FIELD_TEXT",
+             "description": "Dep", "options": []},
+        ],
+    }
+    svc = _svc()
+    schema = svc.to_form_schema(row)
+    fields = {f.field_id: f for f in schema.iter_all_fields()}
+    role_field = fields["field_10216"]
+    assert {o.value for o in role_field.options} == {"Field Merchandiser"}
+    assert role_field.options[0].label == "Field Merchandiser"
+
+
+def test_condition_reindexed_to_option_id():
+    """EQUALS on a metadata-backed select -> FieldCondition.value == option_id."""
+    row = {
+        "formid": 7, "orgid": 1, "form_name": "F", "description": None,
+        "question_blocks": [{
+            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
+            "questions": [
+                {
+                    "question_id": 1, "question_column_name": "10217",
+                    "question_description": "Role", "validations": [],
+                    "question_logic_groups": [],
+                },
+                {
+                    "question_id": 2, "question_column_name": "99",
+                    "question_description": "Dep", "validations": [],
+                    "question_logic_groups": [{
+                        "conditions": [{
+                            "condition_logic": "EQUALS",
+                            "condition_question_reference_id": 1,
+                            "condition_comparison_value": "Field Merchandiser",
+                        }],
+                    }],
+                },
+            ],
+        }],
+        "metadata": [
+            {"column_id": 1, "column_name": "10217", "data_type": "FIELD_SELECT",
+             "description": "Role", "options": [
+                 {"is_active": True, "option_id": "6091", "column_name": 10217,
+                  "option_value": "Field Merchandiser"},
+             ]},
+            {"column_id": 2, "column_name": "99", "data_type": "FIELD_TEXT",
+             "description": "Dep", "options": []},
+        ],
+    }
+    svc = _svc()
+    schema = svc.to_form_schema(row)
+    fields = {f.field_id: f for f in schema.iter_all_fields()}
+    dep_field = fields["field_99"]
+    assert dep_field.depends_on is not None
+    assert dep_field.depends_on.conditions[0].value == "6091"
+
+
+def test_condition_unmatched_comparison_value_preserved():
+    """comparison_value absent from catalog -> original value kept, no crash."""
+    row = {
+        "formid": 8, "orgid": 1, "form_name": "F", "description": None,
+        "question_blocks": [{
+            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
+            "questions": [
+                {
+                    "question_id": 1, "question_column_name": "10218",
+                    "question_description": "Role", "validations": [],
+                    "question_logic_groups": [],
+                },
+                {
+                    "question_id": 2, "question_column_name": "99",
+                    "question_description": "Dep", "validations": [],
+                    "question_logic_groups": [{
+                        "conditions": [{
+                            "condition_logic": "EQUALS",
+                            "condition_question_reference_id": 1,
+                            "condition_comparison_value": "Unknown Value",
+                        }],
+                    }],
+                },
+            ],
+        }],
+        "metadata": [
+            {"column_id": 1, "column_name": "10218", "data_type": "FIELD_SELECT",
+             "description": "Role", "options": [
+                 {"is_active": True, "option_id": "6091", "column_name": 10218,
+                  "option_value": "Field Merchandiser"},
+             ]},
+            {"column_id": 2, "column_name": "99", "data_type": "FIELD_TEXT",
+             "description": "Dep", "options": []},
+        ],
+    }
+    svc = _svc()
+    schema = svc.to_form_schema(row)
+    fields = {f.field_id: f for f in schema.iter_all_fields()}
+    dep_field = fields["field_99"]
+    assert dep_field.depends_on is not None
+    assert dep_field.depends_on.conditions[0].value == "Unknown Value"
+
+
+def test_options_source_provenance():
+    """ImportDiffEntry.options_source is metadata/inline/logic_groups/none as appropriate."""
+    row = {
+        "formid": 9, "orgid": 1, "form_name": "F", "description": None,
+        "question_blocks": [{
+            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
+            "questions": [
+                {
+                    "question_id": 1, "question_column_name": "meta_col",
+                    "question_description": "Meta", "validations": [],
+                    "question_logic_groups": [],
+                },
+                {
+                    "question_id": 2, "question_column_name": "inline_col",
+                    "question_description": "Inline", "validations": [],
+                    "question_logic_groups": [],
+                    "options": [{"value": "i1", "label": "Inline"}],
+                },
+                {
+                    "question_id": 3, "question_column_name": "logic_col",
+                    "question_description": "Logic", "validations": [],
+                    "question_logic_groups": [],
+                },
+                {
+                    "question_id": 4, "question_column_name": "none_col",
+                    "question_description": "None", "validations": [],
+                    "question_logic_groups": [],
+                },
+                {
+                    "question_id": 5, "question_column_name": "dep_col",
+                    "question_description": "Dep", "validations": [],
+                    "question_logic_groups": [{
+                        "conditions": [{
+                            "condition_logic": "EQUALS",
+                            "condition_question_reference_id": 3,
+                            "condition_comparison_value": "Logic Value",
+                        }],
+                    }],
+                },
+            ],
+        }],
+        "metadata": [
+            {"column_id": 1, "column_name": "meta_col", "data_type": "FIELD_SELECT",
+             "description": "Meta", "options": [
+                 {"is_active": True, "option_id": "1", "column_name": "meta_col",
+                  "option_value": "Meta Val"},
+             ]},
+            {"column_id": 2, "column_name": "inline_col", "data_type": "FIELD_SELECT",
+             "description": "Inline", "options": []},
+            {"column_id": 3, "column_name": "logic_col", "data_type": "FIELD_SELECT",
+             "description": "Logic", "options": []},
+            {"column_id": 4, "column_name": "none_col", "data_type": "FIELD_SELECT",
+             "description": "None", "options": []},
+            {"column_id": 5, "column_name": "dep_col", "data_type": "FIELD_TEXT",
+             "description": "Dep", "options": []},
+        ],
+    }
+    svc = _svc()
+    _, report = svc.import_with_report(row)
+    by_col = {e.column_name: e for e in report.fields}
+    assert by_col["meta_col"].options_source == "metadata"
+    assert by_col["inline_col"].options_source == "inline"
+    assert by_col["logic_col"].options_source == "logic_groups"
+    assert by_col["none_col"].options_source == "none"
+    assert by_col["dep_col"].options_source is None
+
+
+def test_option_id_cast_to_str():
+    """Integer option_id cast to str for FieldOption.value."""
+    row = {
+        "formid": 10, "orgid": 1, "form_name": "F", "description": None,
+        "question_blocks": [{
+            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
+            "questions": [{
+                "question_id": 1, "question_column_name": "10219",
+                "question_description": "Role", "validations": [],
+                "question_logic_groups": [],
+            }],
+        }],
+        "metadata": [{
+            "column_id": 1, "column_name": "10219", "data_type": "FIELD_SELECT",
+            "description": "Role", "options": [
+                {"is_active": True, "option_id": 6091, "column_name": 10219,
+                 "option_value": "Field Merchandiser"},
+            ],
+        }],
+    }
+    svc = _svc()
+    schema = svc.to_form_schema(row)
+    field = next(schema.iter_all_fields())
+    assert field.options[0].value == "6091"
+    assert isinstance(field.options[0].value, str)
