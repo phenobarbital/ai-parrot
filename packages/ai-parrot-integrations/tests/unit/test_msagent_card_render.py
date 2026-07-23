@@ -20,6 +20,7 @@ from parrot.integrations.msagentsdk.semantic import (
 
 ALLOWED_ELEMENTS = {
     "TextBlock", "ColumnSet", "Column", "FactSet", "Container", "Table",
+    "TableRow", "TableCell",
 }
 ALLOWED_ACTIONS = {"Action.Submit", "Action.OpenUrl"}
 
@@ -53,24 +54,17 @@ class TestRenderCard:
     def test_render_table_card(self, table_result):
         card = render_card(table_result)
         assert card["type"] == "AdaptiveCard"
-        assert card["version"] == "1.5"
+        assert card["version"] == "1.4"
 
-    def test_table_uses_native_table_element(self, table_result):
-        """The shared builder renders tables as native AC 1.5 Table elements
-        with equal-width column definitions and firstRowAsHeader=True."""
+    def test_table_uses_columnset_for_ac14(self, table_result):
+        """Default AC 1.4 renders tables as ColumnSet rows."""
         card = render_card(table_result)
-        tables = [b for b in card["body"] if b.get("type") == "Table"]
-        assert tables
-        table = tables[0]
-        # 2 columns, equal width
-        assert len(table["columns"]) == 2
-        assert all(c["width"] == "1" for c in table["columns"])
-        # Header row + data rows
-        assert table["firstRowAsHeader"] is True
-        # Header cells carry bold weight
-        header_cells = table["rows"][0]["cells"]
+        column_sets = [b for b in card["body"] if b.get("type") == "ColumnSet"]
+        assert column_sets
+        header_cs = column_sets[0]
+        assert len(header_cs["columns"]) == 2
         assert all(
-            cell["items"][0]["weight"] == "Bolder" for cell in header_cells
+            col["items"][0]["weight"] == "Bolder" for col in header_cs["columns"]
         )
 
     def test_table_ragged_rows_normalized(self):
@@ -83,23 +77,21 @@ class TestRenderCard:
             ),
         )
         card = render_card(result)
-        tables = [b for b in card["body"] if b.get("type") == "Table"]
-        assert len(tables) == 1
-        table = tables[0]
-        # Header + 2 data rows
-        assert len(table["rows"]) == 3
-        # All rows normalized to exactly 3 cells
-        assert all(len(row["cells"]) == 3 for row in table["rows"])
+        # AC 1.4: header ColumnSet + 2 data ColumnSets = 3 total
+        column_sets = [b for b in card["body"] if b.get("type") == "ColumnSet"]
+        assert len(column_sets) == 3
+        # All ColumnSets have exactly 3 columns
+        assert all(len(cs["columns"]) == 3 for cs in column_sets)
         # Short row padded with empty strings
-        short_row_cells = [
-            c["items"][0]["text"] for c in table["rows"][1]["cells"]
+        short_row_cols = [
+            c["items"][0]["text"] for c in column_sets[1]["columns"]
         ]
-        assert short_row_cells == ["1", "", ""]
+        assert short_row_cols == ["1", "", ""]
         # Long row truncated to column count
-        long_row_cells = [
-            c["items"][0]["text"] for c in table["rows"][2]["cells"]
+        long_row_cols = [
+            c["items"][0]["text"] for c in column_sets[2]["columns"]
         ]
-        assert long_row_cells == ["1", "2", "3"]
+        assert long_row_cols == ["1", "2", "3"]
 
     def test_render_metrics_card(self):
         result = SemanticUIResult(
@@ -141,7 +133,7 @@ class TestRenderCard:
         card = render_card(table_result)
         found = set(_walk_types(card))
         assert found <= ALLOWED_ELEMENTS | ALLOWED_ACTIONS | {"AdaptiveCard"}
-        assert card["version"] == "1.5"
+        assert card["version"] == "1.4"
 
     def test_table_truncation(self, table_result):
         card = render_card(table_result, max_table_rows=15)

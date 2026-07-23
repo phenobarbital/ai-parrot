@@ -66,14 +66,17 @@ registration in manager.py (TASK-1876), session lifecycle (FEAT-248).
 
 ### Verified Imports
 ```python
-# handlers/agent.py:102 — BaseView for aiohttp handlers
-from parrot.handlers.base import BaseView  # verified pattern from avatar_fullmode.py
+# CORRECTED 2026-07-23 (stale entry): BaseView for aiohttp handlers actually
+# comes from navigator, not parrot.handlers.base (which does not exist).
+# Verified via avatar_fullmode.py:43 and navigator/views/__init__.py.
+from navigator.views import BaseView
 
 # handlers/avatar_fullmode.py:52 — session store key
 from parrot.handlers.avatar_fullmode import FULLMODE_SESSIONS_KEY
 
-# bots/base.py — ask_stream interface
-# AbstractBot.ask_stream() -> AsyncIterator[Union[str, AIMessage]]
+# bots/base.py:1587 — ask_stream interface (verified signature)
+from parrot.bots.base import AbstractBot
+# AbstractBot.ask_stream(question, session_id=None, ...) -> AsyncIterator[Union[str, AIMessage]]
 
 # liveavatar/speakable.py:87
 from parrot.integrations.liveavatar.speakable import SpeakableFlattener
@@ -81,8 +84,15 @@ from parrot.integrations.liveavatar.speakable import SpeakableFlattener
 # models/responses.py
 from parrot.models.responses import AIMessage
 
-# manager resolution
-# BotManager.get_bot(agent_name) — async, returns AbstractBot instance
+# manager/manager.py:664 — BotManager.get_bot(name, new=False, session_id="",
+# request=None, **kwargs) -> AbstractBot (async). Accessed from handlers via
+# `request.app.get('bot_manager')` (verified pattern in handlers/agent.py:993).
+
+# handlers/agent.py:2577 — _maybe_publish_bifurcated_output(self, ai_message,
+# session_id, turn_id). Reused (not duplicated) by invoking the unbound method
+# against a minimal shim object exposing only `.request` and `.logger` — the
+# same pattern already established in
+# tests/handlers/test_fullmode_bifurcation.py::_FakeAgentTalk.
 ```
 
 ### Existing Signatures to Use
@@ -217,10 +227,31 @@ class TestOpenAIModels:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-07-23
 **Notes**:
+- Corrected a stale Codebase Contract entry: `BaseView` comes from
+  `navigator.views`, not `parrot.handlers.base` (which does not exist).
+  Verified against `avatar_fullmode.py:43` and `navigator/views/__init__.py`.
+- `OpenAIChatCompletions`/`OpenAIModels` implemented exactly as declared in
+  spec §3 Module 1 (`BaseView` subclasses with `post`/`get`), unlike the
+  private-function + thin-view-wrapper split used in `avatar_fullmode.py`.
+- Structured-output bifurcation is **reused**, not reimplemented: invokes
+  the real `AgentTalk._maybe_publish_bifurcated_output` as an unbound call
+  against a minimal shim exposing only `.request`/`.logger` — the same
+  pattern already established in
+  `tests/handlers/test_fullmode_bifurcation.py::_FakeAgentTalk`.
+- Bearer token is a static shared secret from `OPENAI_COMPAT_BEARER_TOKEN`
+  (fails closed if unset), per spec — distinct from the JWT/session auth
+  used elsewhere, since this is a server-to-server call from LiveAvatar.
+- Added a small "structured-only turn" filler (`"Here's what I found."`)
+  per spec §7 Known Risks, only when zero speakable content was ever
+  emitted AND the final `AIMessage` carries structured content.
+- Also feeds the final `AIMessage.response` (if non-empty) into the
+  flattener before flush, per acceptance criterion 2 ("the final
+  AIMessage's speakable response is also spoken").
+- Tests: 10/10 passing, `ruff check` clean on both new files.
 
-**Deviations from spec**: none
+**Deviations from spec**: none (only the BaseView import-path contract
+correction noted above, which is an anti-hallucination fix, not a design
+deviation).

@@ -17,7 +17,7 @@ class ToggleGroup(BaseModel):
 
 class AutoCollapsePolicy(BaseModel):
     enabled: bool = True
-    table_row_threshold: int = 5
+    table_row_threshold: int = 15
     text_char_threshold: int = 500
     code_line_threshold: int = 10
     image_count_threshold: int = 2

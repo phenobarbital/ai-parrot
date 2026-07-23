@@ -35,6 +35,7 @@ extra.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Dict, Optional
 
 from aiohttp import web, ClientResponseError
@@ -50,6 +51,13 @@ _logger = logging.getLogger("Parrot.AvatarFullmodeView")
 # Kept separate from Phase A LITE sessions (AVATAR_SESSIONS_KEY in avatar.py) so
 # the two modes never interfere.
 FULLMODE_SESSIONS_KEY = "avatar_fullmode_sessions"
+
+# Optional override for the public-facing base URL used to build
+# `custom_llm_url` (FEAT-247 TASK-1875). When unset, the base URL is derived
+# from the incoming request (`{scheme}://{host}`), which is correct for
+# direct deployments but may be wrong behind certain reverse-proxy setups
+# that do not forward scheme/host faithfully.
+OPENAI_COMPAT_BASE_URL_ENV = "OPENAI_COMPAT_BASE_URL"
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +86,9 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
         session_id          (str): The shared session ID.
         livekit_url         (str): LiveKit Cloud WebSocket URL for the browser.
         livekit_client_token (str): Browser viewer JWT from the FULL mode /start.
+        custom_llm_url       (str): Per-session OpenAI-compat endpoint
+            (FEAT-247) — ``{base}/v1/chat/completions/{session_id}?agent={agent_id}``
+            — for the frontend to pass to LiveAvatar's Custom LLM configuration.
 
     The ``session_token`` and any other server-side secrets are NEVER returned.
     """
@@ -100,6 +111,14 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
 
     session_id: str = body.get("session_id") or ""
     tenant_id: Optional[str] = body.get("tenant_id") or None
+    # `agent_name` is a body-supplied LOGGING label only (see docstring above)
+    # and may legitimately differ from `agent_id` (the URL path param). The
+    # opt-in gate, the FEAT-247 session/agent binding (`store[...]["agent_id"]`)
+    # and the minted `custom_llm_url` must all key off the SAME identity --
+    # `agent_id` -- since that is what `BotManager.get_bot()` actually resolves
+    # at completion time. Using the (possibly divergent) `agent_name` for the
+    # opt-in gate was a latent inconsistency between what got gated and what
+    # the FULL session was actually bound to (code-review follow-up, FEAT-247).
     agent_name: str = body.get("agent_name") or agent_id
     avatar_id: Optional[str] = (body.get("avatar_id") or "").strip() or None
 
@@ -115,8 +134,10 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
             reason=f"A FULL mode session for '{session_id}' is already active"
         )
 
-    # Per-tenant FULL mode opt-in gate (superset of is_avatar_enabled).
-    if not is_fullmode_enabled(tenant_id=tenant_id, agent_name=agent_name):
+    # Per-tenant FULL mode opt-in gate (superset of is_avatar_enabled). Keyed
+    # on `agent_id` (not `agent_name`) so the gated identity always matches
+    # the one bound to the session and exposed via `custom_llm_url`.
+    if not is_fullmode_enabled(tenant_id=tenant_id, agent_name=agent_id):
         raise web.HTTPForbidden(
             reason="FULL mode avatar is not enabled for this tenant"
         )
@@ -166,22 +187,40 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
         raise
 
     # Register the live session so /stop (and shutdown cleanup) can reach it.
-    store[session_id] = {"client": client, "handle": handle}
+    # `agent_id` is recorded here (FEAT-247 code-review follow-up) so the
+    # OpenAI-compat endpoint (handlers/openai_compat.py) can verify that the
+    # `agent` query param on a /v1/chat/completions/{session_id} call matches
+    # the ai-parrot agent this session was actually started for — without
+    # it, any bearer-token holder could invoke an arbitrary registered agent
+    # against someone else's active session.
+    store[session_id] = {"client": client, "handle": handle, "agent_id": agent_id}
 
     _logger.info(
-        "AvatarFullmode: started session %s for agent %s (tenant set=%s, avatar=%s%s)",
+        "AvatarFullmode: started session %s for agent %s (label=%s, tenant set=%s, avatar=%s%s)",
         session_id,
         agent_id,
+        agent_name,
         tenant_id is not None,
         cfg.avatar_id,
         " [request override]" if avatar_id else " [config default]",
     )
+
+    # FEAT-247 (TASK-1875): mint the per-session OpenAI-compat URL so the
+    # frontend can pass it to LiveAvatar's Custom LLM configuration. Prefers
+    # OPENAI_COMPAT_BASE_URL when configured (public-facing URL may differ
+    # from request.host behind some reverse proxies); falls back to the
+    # incoming request's scheme/host otherwise.
+    base_url = os.environ.get(OPENAI_COMPAT_BASE_URL_ENV) or (
+        f"{request.scheme}://{request.host}"
+    )
+    custom_llm_url = f"{base_url}/v1/chat/completions/{session_id}?agent={agent_id}"
 
     # Return viewer credentials ONLY — session_token stays server-side.
     return web.json_response({
         "session_id": session_id,
         "livekit_url": handle.livekit_url,
         "livekit_client_token": handle.livekit_client_token,
+        "custom_llm_url": custom_llm_url,
     })
 
 
@@ -458,6 +497,119 @@ def register_fullmode_routes(router: Any) -> bool:
 
     _logger.info("FULL mode avatar routes registered (authenticated).")
     return True
+
+
+# ---------------------------------------------------------------------------
+# Structured-output bifurcation (FEAT-249 Mode B) — shared implementation
+# ---------------------------------------------------------------------------
+
+
+async def publish_bifurcated_output(
+    request: web.Request,
+    logger: logging.Logger,
+    ai_message: Any,
+    session_id: str,
+    turn_id: Optional[str] = None,
+) -> None:
+    """Publish structured output via the Redis transport for Mode B bifurcation.
+
+    Single shared implementation used by BOTH ``AgentTalk.
+    _maybe_publish_bifurcated_output`` (``handlers/agent.py``, the original
+    FEAT-249 call site) and the OpenAI-compat endpoint (``handlers/
+    openai_compat.py``, FEAT-247) — moved here (code-review follow-up on
+    FEAT-247) so the bifurcation logic lives in exactly one place instead of
+    being duplicated or reflected into via a private-method call on an
+    unrelated handler class.
+
+    Best-effort — any import or publish error is logged and swallowed so it
+    never breaks the caller's reply/spoken stream.
+
+    Args:
+        request: The originating aiohttp request (carries ``app`` context,
+            used to look up the FULL mode session store).
+        logger: Logger to use for debug/warning messages.
+        ai_message: The final ``AIMessage`` from the turn.
+        session_id: The conversation ID (Redis channel key).
+        turn_id: Optional turn identifier for deduplication.
+    """
+    try:
+        # Only publish if a FULL mode session is live for this session_id.
+        fullmode_store = request.app.get(FULLMODE_SESSIONS_KEY) or {}
+        if session_id not in fullmode_store:
+            return
+
+        # Only publish when structured content is present.
+        has_structured = getattr(ai_message, 'is_structured', False)
+        has_data = getattr(ai_message, 'data', None) is not None
+        has_code = getattr(ai_message, 'code', None) is not None
+        has_tool_calls = bool(getattr(ai_message, 'tool_calls', []))
+
+        if not (has_structured or has_data or has_code or has_tool_calls):
+            return
+
+        from parrot.integrations.liveavatar.models import StructuredOutputMessage
+        from parrot.integrations.liveavatar.output_bridge import OutputBridge
+        from parrot.integrations.liveavatar.output_transport import (
+            DEFAULT_OUTPUT_CHANNEL,
+            RedisBroadcastForwarder,
+        )
+        from parrot.conf import REDIS_URL
+
+        # Build payload from available structured fields.
+        payload: Dict[str, Any] = {}
+        if has_data:
+            payload['data'] = getattr(ai_message, 'data')
+        if has_code:
+            payload['code'] = getattr(ai_message, 'code')
+        if has_tool_calls:
+            payload['tool_calls'] = [
+                {
+                    'name': getattr(t, 'name', 'unknown'),
+                    'status': getattr(t, 'status', 'completed'),
+                    'output': getattr(t, 'output', None),
+                    'arguments': getattr(t, 'arguments', None),
+                }
+                for t in getattr(ai_message, 'tool_calls', [])
+            ]
+        if has_structured:
+            so = getattr(ai_message, 'structured_output', None)
+            if so is not None:
+                try:
+                    payload['structured_output'] = (
+                        so.model_dump() if hasattr(so, 'model_dump') else dict(so)
+                    )
+                except Exception:  # noqa: BLE001
+                    payload['structured_output'] = str(so)
+
+        output_type = getattr(ai_message, 'output_mode', 'data')
+        if hasattr(output_type, 'value'):
+            output_type = output_type.value
+
+        msg = StructuredOutputMessage(
+            type=str(output_type),
+            session_id=session_id,
+            payload=payload,
+            turn_id=turn_id,
+        )
+
+        forwarder = RedisBroadcastForwarder.from_url(
+            REDIS_URL, channel=DEFAULT_OUTPUT_CHANNEL
+        )
+        bridge = OutputBridge(forwarder)
+        await bridge.publish(msg)
+        try:
+            await forwarder.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+
+        logger.debug(
+            "Published bifurcated structured output for session %s", session_id,
+        )
+    except Exception:  # noqa: BLE001 - best-effort, never breaks the reply
+        logger.warning(
+            "Bifurcated output publish failed for session %s",
+            session_id, exc_info=True,
+        )
 
 
 async def close_all_fullmode_sessions(app: web.Application) -> None:

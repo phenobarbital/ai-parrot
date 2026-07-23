@@ -57,10 +57,12 @@ class TableColumnDefinition(BaseModel):
 
 
 class TableCell(BaseModel):
+    type: Literal["TableCell"] = "TableCell"
     items: list[ACElement] = []
 
 
 class TableRow(BaseModel):
+    type: Literal["TableRow"] = "TableRow"
     cells: list[TableCell]
     style: Literal["Default", "Accent", "Good",
                     "Warning", "Attention"] | None = None

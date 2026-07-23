@@ -32,7 +32,7 @@ class TableSection(CardSection):
     columns: list[str]
     rows: list[list[str]]
     total_rows: int | None = None
-    max_display_rows: int = 20
+    max_display_rows: int = 50
     show_grid_lines: bool = True
     first_row_as_header: bool = True
 
