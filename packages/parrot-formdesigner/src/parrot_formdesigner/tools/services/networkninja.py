@@ -32,7 +32,8 @@ SELECT
     jsonb_agg(
         jsonb_build_object(
             'column_id', m.column_id, 'column_name', m.column_name,
-            'description', m.description, 'data_type', m.data_type
+            'description', m.description, 'data_type', m.data_type,
+            'options', m.options
         )
     ) AS metadata
 FROM networkninja.forms f
@@ -465,6 +466,7 @@ class NetworkninjaFormService(AbstractFormService):
                     "column_id": entry.get("column_id"),
                     "data_type": entry.get("data_type"),
                     "description": entry.get("description"),
+                    "options": entry.get("options") or [],
                 }
         return index
 
