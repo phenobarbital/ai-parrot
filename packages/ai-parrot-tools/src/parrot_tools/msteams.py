@@ -46,6 +46,7 @@ import urllib.parse
 import msal
 from pydantic import BaseModel, Field
 import aiohttp
+from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION
 from azure.identity.aio import ClientSecretCredential
 from azure.identity import UsernamePasswordCredential
 from msgraph import GraphServiceClient
@@ -691,7 +692,7 @@ class MSTeamsToolkit(AbstractToolkit):
         adaptive_card = {
             "type": "AdaptiveCard",
             "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-            "version": "1.4",
+            "version": DEFAULT_ADAPTIVE_CARD_VERSION,
             "body": card_body
         }
 

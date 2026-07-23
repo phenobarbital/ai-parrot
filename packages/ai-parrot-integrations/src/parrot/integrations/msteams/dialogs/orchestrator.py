@@ -13,6 +13,7 @@ import asyncio
 import json
 from botbuilder.core import TurnContext
 
+from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION
 from parrot.forms.tools import RequestFormTool
 from parrot.forms import FormSchema
 from parrot.forms.extractors.tool import ToolExtractor
@@ -694,7 +695,7 @@ class FormOrchestrator:
     # after tool execution. Kept inline because the shared renderer only
     # knows how to render FormSchemas.
     _ADAPTIVE_CARD_SCHEMA = "http://adaptivecards.io/schemas/adaptive-card.json"
-    _ADAPTIVE_CARD_VERSION = "1.5"
+    _ADAPTIVE_CARD_VERSION = DEFAULT_ADAPTIVE_CARD_VERSION
 
     def _wrap_card(
         self,

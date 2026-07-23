@@ -345,42 +345,45 @@ def parse_response(response: Any) -> ParsedResponse:
         parsed.text = response
         return parsed
     
-    # Extract primary text content
-    if hasattr(response, 'response') and response.response:
-        parsed.text = str(response.response)
-    elif hasattr(response, 'content'):
-        content = response.content
-        if isinstance(content, str):
-            parsed.text = content
-        elif isinstance(content, list):
-            # Handle list of content blocks
+    # Extract primary text content.
+    # Prefer output/content (the channel-facing rendered text) over
+    # .response (the raw text_response before formatting — may be a
+    # short summary when structured output produced the real content).
+    output = getattr(response, 'output', None)
+    content = getattr(response, 'content', None)
+    for value in (output, content):
+        if isinstance(value, str) and value.strip():
+            parsed.text = value
+            break
+        elif isinstance(value, list):
             text_parts = []
-            for block in content:
+            for block in value:
                 if isinstance(block, dict) and block.get('type') == 'text':
                     text_parts.append(block.get('text', ''))
                 elif isinstance(block, str):
                     text_parts.append(block)
-            parsed.text = "\n".join(text_parts)
-        else:
-            parsed.text = str(content)
-    elif hasattr(response, 'output'):
-        output = response.output
-        if isinstance(output, str):
-            parsed.text = output
-        elif hasattr(output, 'to_string'):
-            # pandas DataFrame
-            parsed.table_data = output
-            parsed.table_markdown = _dataframe_to_markdown(output)
+            joined = "\n".join(text_parts)
+            if joined.strip():
+                parsed.text = joined
+                break
+        elif value is not None and hasattr(value, 'to_string'):
+            parsed.table_data = value
+            parsed.table_markdown = _dataframe_to_markdown(value)
             parsed.has_structured_output = True
-        elif isinstance(output, dict):
-            parsed.text = str(output)
+            break
+        elif isinstance(value, dict):
+            parsed.text = str(value)
             parsed.has_structured_output = True
-        else:
-            parsed.text = str(output)
-    elif hasattr(response, 'text'):
-        parsed.text = str(response.text)
+            break
     else:
-        parsed.text = str(response)
+        # Fall back to .response, then .text, then str()
+        text = getattr(response, 'response', None)
+        if isinstance(text, str) and text.strip():
+            parsed.text = text
+        elif hasattr(response, 'text') and response.text:
+            parsed.text = str(response.text)
+        else:
+            parsed.text = str(response)
     
     # Extract code
     if hasattr(response, 'code') and response.code:

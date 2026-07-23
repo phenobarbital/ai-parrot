@@ -4,6 +4,7 @@ Data models for MS Teams bot configuration.
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Any
 from navconfig import config
+from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION
 
 if TYPE_CHECKING:
     from .voice.models import VoiceTranscriberConfig
@@ -42,6 +43,7 @@ class MSTeamsAgentConfig:
     allowed_conversation_ids: Optional[List[str]] = None
     allowed_user_ids: Optional[List[str]] = None
     voice_config: Optional["VoiceTranscriberConfig"] = None
+    adaptive_card_version: str = DEFAULT_ADAPTIVE_CARD_VERSION
 
     # Jira OAuth 2.0 (3LO) configuration — FEAT-225
     # When set, MSTeamsAgentWrapper will initialize a JiraOAuthManager and wire
@@ -60,6 +62,11 @@ class MSTeamsAgentConfig:
         if not self.client_secret:
             env_var_name = f"{self.name.upper()}_MICROSOFT_APP_PASSWORD"
             self.client_secret = config.get(env_var_name)
+        if not self.app_tenantid:
+            self.app_tenantid = (
+                config.get(f"{self.name.upper()}_APP_TENANTID")
+                or config.get("APP_TENANTID")
+            )
         # Jira OAuth env fallbacks
         if not self.jira_client_id:
             self.jira_client_id = config.get(f"{self.name.upper()}_JIRA_CLIENT_ID")
@@ -130,6 +137,9 @@ class MSTeamsAgentConfig:
             allowed_conversation_ids=data.get('allowed_conversation_ids'),
             allowed_user_ids=data.get('allowed_user_ids'),
             voice_config=voice_config,
+            adaptive_card_version=data.get(
+                'adaptive_card_version', DEFAULT_ADAPTIVE_CARD_VERSION
+            ),
             # Jira OAuth (FEAT-225)
             jira_client_id=data.get('jira_client_id'),
             jira_client_secret=data.get('jira_client_secret'),
