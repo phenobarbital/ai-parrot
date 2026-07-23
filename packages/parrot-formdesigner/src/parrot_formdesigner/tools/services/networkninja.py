@@ -365,7 +365,7 @@ class NetworkninjaFormService(AbstractFormService):
         question_id_index = self._build_question_id_index(question_blocks, meta_index)
 
         # Pre-scan questions to collect options for select-type fields
-        select_options = self._collect_select_options(
+        select_options, options_provenance = self._collect_select_options(
             question_blocks, question_id_index, meta_index
         )
 
@@ -383,6 +383,7 @@ class NetworkninjaFormService(AbstractFormService):
         for block in question_blocks:
             section = self._map_block_to_section(
                 block, meta_index, question_id_index, select_options,
+                options_provenance,
                 report_entries=report_entries,
             )
             if section is not None:
@@ -508,13 +509,16 @@ class NetworkninjaFormService(AbstractFormService):
         question_blocks: list[dict[str, Any]],
         question_id_index: dict[str, str],
         meta_index: dict[str, dict[str, Any]],
-    ) -> dict[str, list[FieldOption]]:
+    ) -> tuple[dict[str, list[FieldOption]], dict[str, str]]:
         """Pre-scan questions to collect option values for select-type fields.
 
-        Options are gathered from two sources:
-        1. Inline ``options`` arrays in the question JSON (preferred).
-        2. ``logic_groups`` conditions that reference a select-type column
-           via ``condition_question_reference_id``.
+        ``form_metadata.options`` (the canonical metadata catalog) is the
+        primary source: ``FieldOption(value=str(option_id), label=option_value,
+        disabled=not is_active)``, deduplicated by ``option_id``. Inline
+        ``options`` arrays in the question JSON, then ``logic_groups``
+        conditions referencing the column, are used ONLY as a fallback when a
+        column's metadata catalog is empty — preserving pre-FEAT-325 behaviour
+        for logic-group-only / inline-only selects.
 
         Args:
             question_blocks: All parsed question blocks.
@@ -522,9 +526,50 @@ class NetworkninjaFormService(AbstractFormService):
             meta_index: Active metadata index for type lookups.
 
         Returns:
-            Dict mapping column_name → deduplicated list of FieldOption.
+            Tuple of:
+            - Dict mapping column_name → deduplicated list of FieldOption.
+            - Dict mapping column_name → provenance
+              (``"metadata" | "inline" | "logic_groups" | "none"``) for every
+              option-typed column present in ``meta_index``.
         """
-        collector: dict[str, dict[str, str]] = {}  # col_name → {value: label}
+        option_columns = {
+            col
+            for col, meta in meta_index.items()
+            if meta.get("data_type") in _OPTION_FIELD_TYPES
+        }
+
+        collector: dict[str, dict[str, FieldOption]] = {}  # col_name → {value: FieldOption}
+        provenance: dict[str, str] = {}
+        metadata_populated: set[str] = set()
+
+        # Source 0 (primary): form_metadata.options catalog
+        for col in option_columns:
+            meta_options: list[dict[str, Any]] = meta_index[col].get("options") or []
+            if not meta_options:
+                continue
+            col_collector: dict[str, FieldOption] = {}
+            for opt in meta_options:
+                option_id = opt.get("option_id")
+                if option_id is None:
+                    continue
+                value = str(option_id)
+                option_value = opt.get("option_value")
+                is_active = opt.get("is_active", True)
+                col_collector[value] = FieldOption(
+                    value=value,
+                    label=str(option_value) if option_value is not None else value,
+                    disabled=not is_active,
+                )
+            if col_collector:
+                collector[col] = col_collector
+                provenance[col] = "metadata"
+                metadata_populated.add(col)
+
+        # Fallback collector (legacy behaviour) — populated only for columns
+        # whose metadata catalog is empty.
+        legacy_collector: dict[str, dict[str, str]] = {}  # col_name → {value: label}
+        inline_populated: set[str] = set()
+        logic_populated: set[str] = set()
 
         def _scan_conditions(conditions: list[dict[str, Any]]) -> None:
             """Extract option values from a list of conditions."""
@@ -533,7 +578,7 @@ class NetworkninjaFormService(AbstractFormService):
                     cond.get("condition_question_reference_id", "")
                 )
                 ref_col = question_id_index.get(ref_qid)
-                if not ref_col:
+                if not ref_col or ref_col in metadata_populated:
                     continue
 
                 ref_meta = meta_index.get(ref_col, {})
@@ -542,10 +587,11 @@ class NetworkninjaFormService(AbstractFormService):
 
                 comp_value = cond.get("condition_comparison_value")
                 if comp_value is not None:
-                    if ref_col not in collector:
-                        collector[ref_col] = {}
+                    if ref_col not in legacy_collector:
+                        legacy_collector[ref_col] = {}
                     # comparison_value is the human-readable label
-                    collector[ref_col][str(comp_value)] = str(comp_value)
+                    legacy_collector[ref_col][str(comp_value)] = str(comp_value)
+                    logic_populated.add(ref_col)
 
         for block in question_blocks:
             # Scan block-level logic groups (question_block_logic_groups)
@@ -560,7 +606,7 @@ class NetworkninjaFormService(AbstractFormService):
             for question in block.get("questions") or []:
                 # Source 1: inline options on the question itself
                 col_name = str(question.get("question_column_name", ""))
-                if col_name in meta_index:
+                if col_name in meta_index and col_name not in metadata_populated:
                     ref_meta = meta_index.get(col_name, {})
                     if ref_meta.get("data_type") in _OPTION_FIELD_TYPES:
                         inline_opts = question.get("options") or []
@@ -572,11 +618,12 @@ class NetworkninjaFormService(AbstractFormService):
                                 or opt.get("text")
                             )
                             if value is not None:
-                                if col_name not in collector:
-                                    collector[col_name] = {}
-                                collector[col_name][str(value)] = (
+                                if col_name not in legacy_collector:
+                                    legacy_collector[col_name] = {}
+                                legacy_collector[col_name][str(value)] = (
                                     str(label) if label else str(value)
                                 )
+                                inline_populated.add(col_name)
 
                 # Source 2: options inferred from conditional references
                 logic_groups = (
@@ -587,13 +634,25 @@ class NetworkninjaFormService(AbstractFormService):
                 for group in logic_groups:
                     _scan_conditions(group.get("conditions") or [])
 
-        return {
-            col: [
-                FieldOption(value=value, label=label)
+        for col, options in legacy_collector.items():
+            collector[col] = {
+                value: FieldOption(value=value, label=label)
                 for value, label in options.items()
-            ]
-            for col, options in collector.items()
-        }
+            }
+            if col in inline_populated:
+                provenance[col] = "inline"
+            elif col in logic_populated:
+                provenance[col] = "logic_groups"
+
+        # Every option-typed column present in meta_index gets a provenance
+        # entry, even when no options were found anywhere.
+        for col in option_columns:
+            provenance.setdefault(col, "none")
+
+        return (
+            {col: list(opts.values()) for col, opts in collector.items()},
+            provenance,
+        )
 
     # ------------------------------------------------------------------
     # Section and field mapping
@@ -605,6 +664,7 @@ class NetworkninjaFormService(AbstractFormService):
         meta_index: dict[str, dict[str, Any]],
         question_id_index: dict[str, str],
         select_options: dict[str, list[FieldOption]],
+        options_provenance: dict[str, str],
         report_entries: list[ImportDiffEntry] | None = None,
     ) -> FormSection | None:
         """Map a question_block dict to a FormSection.
@@ -614,6 +674,9 @@ class NetworkninjaFormService(AbstractFormService):
             meta_index: Active metadata lookup.
             question_id_index: question_id → column_name reverse index.
             select_options: Pre-collected options keyed by column_name.
+            options_provenance: Per-column option provenance
+                (``"metadata" | "inline" | "logic_groups" | "none"``) from
+                ``_collect_select_options``.
             report_entries: Optional accumulator for ``ImportDiffEntry`` objects.
 
         Returns:
@@ -629,6 +692,7 @@ class NetworkninjaFormService(AbstractFormService):
         for question in block.get("questions") or []:
             field = self._map_question_to_field(
                 question, meta_index, question_id_index, select_options,
+                options_provenance,
                 report_entries=report_entries,
             )
             if field is not None:
@@ -649,6 +713,7 @@ class NetworkninjaFormService(AbstractFormService):
         meta_index: dict[str, dict[str, Any]],
         question_id_index: dict[str, str],
         select_options: dict[str, list[FieldOption]],
+        options_provenance: dict[str, str],
         report_entries: list[ImportDiffEntry] | None = None,
     ) -> FormField | None:
         """Map a question dict to a FormField.
@@ -666,6 +731,9 @@ class NetworkninjaFormService(AbstractFormService):
             meta_index: Active metadata lookup.
             question_id_index: question_id → column_name reverse index.
             select_options: Pre-collected options keyed by column_name.
+            options_provenance: Per-column option provenance
+                (``"metadata" | "inline" | "logic_groups" | "none"``) from
+                ``_collect_select_options``.
             report_entries: Optional accumulator for ``ImportDiffEntry`` objects.
 
         Returns:
