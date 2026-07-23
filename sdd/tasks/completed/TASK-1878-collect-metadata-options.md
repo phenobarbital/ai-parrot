@@ -152,9 +152,15 @@ set index status `done`, and fill the Completion Note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-23
+**Notes**: Rewrote `_collect_select_options` to return
+`(select_options, options_provenance)`. Metadata (`form_metadata.options`) is
+now the primary source, deduped by `option_id`, with `disabled=not is_active`.
+Inline then logic-group scans remain as fallback, applied only to columns
+whose metadata catalog is empty (tracked via `metadata_populated`). Threaded
+`options_provenance` through `_build_form_schema` → `_map_block_to_section` →
+`_map_question_to_field` (parameter added, not yet consumed — TASK-1880 wires
+it into `ImportDiffEntry`). Verified with the task's test scaffold, the full
+existing unit suite (24 passed), and `ruff check` (clean).
 **Deviations from spec**: none

@@ -130,9 +130,15 @@ Completion Note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-23
+**Notes**: Added `_build_option_id_catalog(meta_index) -> dict[str, dict[str, str]]`
+(column_name → {option_value: option_id}). Threaded `option_id_catalog` from
+`_build_form_schema` through `_map_block_to_section` / `_map_question_to_field`
+into `_map_logic_groups`, which now re-indexes `condition_comparison_value` to
+`option_id` when the referenced column has a catalog entry, preserves text
+comparison when no catalog exists, and keeps the original value (with a debug
+log) when the comparison value is not found. Verified with a manual smoke
+test (condition on a metadata-backed select re-indexes "Field Merchandiser" →
+"6091"), the full existing unit suite (24 passed), and `ruff check` (clean).
 **Deviations from spec**: none

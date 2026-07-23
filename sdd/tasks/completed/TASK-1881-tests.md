@@ -132,9 +132,26 @@ completed, set index status `done`, fill the Completion Note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-23
+**Notes**: Added the 10 unit tests to `test_networkninja_importer.py` covering
+the full spec §4 matrix (metadata populate, 1-10 scale, inactive→disabled,
+metadata-primary-over-inline, inline fallback, logic-group fallback,
+condition re-indexing, unmatched comparison_value preserved, options_source
+provenance for all 4 states, int option_id cast to str). Fixed
+`test_feat300_integration.py`'s `_row_with_all_live_types` fixture
+(`option_label` → real `option_value` shape, with `is_active`/`column_name`),
+added `test_feat300_all_live_types_options` (asserts SELECT/RADIO/MULTISELECT
+fields carry populated options) and `test_end_to_end_metadata_form` (full
+round trip: id-keyed options, disabled inactive option, re-indexed condition,
+`options_source == "metadata"`, HTML5 render). Full suite:
+43 passed (24 pre-existing + 10 new unit + 9 pre-existing integration + 2 new
+integration). `ruff check` clean on both test modules.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Self-correction: the SDD-state commits for TASK-1877/1878/1879/1880 moved
+each task file from `active/` to `completed/` via `mv` but only staged the
+new file at `completed/`, not the resulting deletion at `active/` — so the
+four `active/*.md` deletions were left uncommitted. This commit (TASK-1881's
+SDD-state commit) also stages and finalizes those four pending deletions;
+no file content was altered, only the stale git index state was corrected.
 **Deviations from spec**: none
