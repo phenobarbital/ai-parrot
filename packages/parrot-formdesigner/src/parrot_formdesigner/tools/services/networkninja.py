@@ -369,6 +369,10 @@ class NetworkninjaFormService(AbstractFormService):
             question_blocks, question_id_index, meta_index
         )
 
+        # column_name → {option_value: option_id} catalog, used to re-index
+        # EQUALS conditions to the option_id value-space (FEAT-325 Module 3).
+        option_id_catalog = self._build_option_id_catalog(meta_index)
+
         # Derive form_type from block_type (FEAT-300):
         # any block with block_type == "survey" → FormType.SURVEY; else SIMPLE.
         # PRODUCT is never detected from networkninja (FEAT-302 only).
@@ -383,7 +387,7 @@ class NetworkninjaFormService(AbstractFormService):
         for block in question_blocks:
             section = self._map_block_to_section(
                 block, meta_index, question_id_index, select_options,
-                options_provenance,
+                options_provenance, option_id_catalog,
                 report_entries=report_entries,
             )
             if section is not None:
@@ -470,6 +474,39 @@ class NetworkninjaFormService(AbstractFormService):
                     "options": entry.get("options") or [],
                 }
         return index
+
+    def _build_option_id_catalog(
+        self, meta_index: dict[str, dict[str, Any]]
+    ) -> dict[str, dict[str, str]]:
+        """Build column_name → {option_value: option_id} from metadata options.
+
+        Used to re-index ``EQUALS`` conditions (whose
+        ``condition_comparison_value`` is human text) to the ``option_id``
+        value-space that ``FieldOption.value`` now uses for metadata-backed
+        selects (FEAT-325).
+
+        Args:
+            meta_index: Active metadata index from ``_build_metadata_index``.
+
+        Returns:
+            Dict mapping column_name → {option_value (str): option_id (str)}.
+            Columns with no metadata options are absent from the result.
+        """
+        catalog: dict[str, dict[str, str]] = {}
+        for col, meta in meta_index.items():
+            meta_options: list[dict[str, Any]] = meta.get("options") or []
+            if not meta_options:
+                continue
+            col_catalog: dict[str, str] = {}
+            for opt in meta_options:
+                option_id = opt.get("option_id")
+                option_value = opt.get("option_value")
+                if option_id is None or option_value is None:
+                    continue
+                col_catalog[str(option_value)] = str(option_id)
+            if col_catalog:
+                catalog[col] = col_catalog
+        return catalog
 
     def _build_question_id_index(
         self,
@@ -665,6 +702,7 @@ class NetworkninjaFormService(AbstractFormService):
         question_id_index: dict[str, str],
         select_options: dict[str, list[FieldOption]],
         options_provenance: dict[str, str],
+        option_id_catalog: dict[str, dict[str, str]],
         report_entries: list[ImportDiffEntry] | None = None,
     ) -> FormSection | None:
         """Map a question_block dict to a FormSection.
@@ -677,6 +715,9 @@ class NetworkninjaFormService(AbstractFormService):
             options_provenance: Per-column option provenance
                 (``"metadata" | "inline" | "logic_groups" | "none"``) from
                 ``_collect_select_options``.
+            option_id_catalog: column_name → {option_value: option_id} from
+                ``_build_option_id_catalog``, used to re-index EQUALS
+                conditions.
             report_entries: Optional accumulator for ``ImportDiffEntry`` objects.
 
         Returns:
@@ -692,7 +733,7 @@ class NetworkninjaFormService(AbstractFormService):
         for question in block.get("questions") or []:
             field = self._map_question_to_field(
                 question, meta_index, question_id_index, select_options,
-                options_provenance,
+                options_provenance, option_id_catalog,
                 report_entries=report_entries,
             )
             if field is not None:
@@ -714,6 +755,7 @@ class NetworkninjaFormService(AbstractFormService):
         question_id_index: dict[str, str],
         select_options: dict[str, list[FieldOption]],
         options_provenance: dict[str, str],
+        option_id_catalog: dict[str, dict[str, str]],
         report_entries: list[ImportDiffEntry] | None = None,
     ) -> FormField | None:
         """Map a question dict to a FormField.
@@ -734,6 +776,9 @@ class NetworkninjaFormService(AbstractFormService):
             options_provenance: Per-column option provenance
                 (``"metadata" | "inline" | "logic_groups" | "none"``) from
                 ``_collect_select_options``.
+            option_id_catalog: column_name → {option_value: option_id} from
+                ``_build_option_id_catalog``, used to re-index EQUALS
+                conditions.
             report_entries: Optional accumulator for ``ImportDiffEntry`` objects.
 
         Returns:
@@ -799,7 +844,7 @@ class NetworkninjaFormService(AbstractFormService):
 
         # Conditional logic → DependencyRule
         depends_on: DependencyRule | None = self._map_logic_groups(
-            question, question_id_index
+            question, question_id_index, option_id_catalog
         )
 
         # Options for select-type fields (collected during pre-scan)
@@ -863,6 +908,7 @@ class NetworkninjaFormService(AbstractFormService):
         self,
         question: dict[str, Any],
         question_id_index: dict[str, str],
+        option_id_catalog: dict[str, dict[str, str]] | None = None,
     ) -> DependencyRule | None:
         """Translate logic_groups on a question into a DependencyRule.
 
@@ -871,10 +917,20 @@ class NetworkninjaFormService(AbstractFormService):
         - Multiple logic_groups on one question → ``logic="and"``
         - All rules use ``effect="show"``
         - Only ``condition_logic="EQUALS"`` is supported; others are skipped.
+        - FEAT-325: when the referenced column has a metadata option_id
+          catalog, ``condition_comparison_value`` (human text) is re-indexed
+          to the matching ``option_id`` so ``FieldCondition.value`` shares the
+          value-space of the metadata-backed ``FieldOption.value``. Columns
+          with no catalog keep the original text comparison; an unmatched
+          comparison value is preserved as-is (logged at debug, never
+          dropped).
 
         Args:
             question: Question dict potentially containing logic_groups.
             question_id_index: question_id → column_name reverse index.
+            option_id_catalog: column_name → {option_value: option_id} from
+                ``_build_option_id_catalog``. ``None``/empty behaves like no
+                catalog (text comparison preserved).
 
         Returns:
             DependencyRule if any valid conditions are present, else None.
@@ -911,6 +967,20 @@ class NetworkninjaFormService(AbstractFormService):
 
                 ref_field_id = f"field_{ref_col}"
                 comparison_value = cond.get("condition_comparison_value")
+
+                # FEAT-325: re-index text comparison_value → option_id when
+                # the referenced column has a metadata option_id catalog.
+                col_catalog = (option_id_catalog or {}).get(ref_col)
+                if col_catalog is not None and comparison_value is not None:
+                    reindexed = col_catalog.get(str(comparison_value))
+                    if reindexed is not None:
+                        comparison_value = reindexed
+                    else:
+                        self.logger.debug(
+                            "comparison_value '%s' not found in option_id "
+                            "catalog for column '%s' — keeping original value",
+                            comparison_value, ref_col,
+                        )
 
                 group_conditions.append(
                     FieldCondition(
