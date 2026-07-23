@@ -177,7 +177,13 @@ async def _start_fullmode_session(request: web.Request) -> web.Response:
         raise
 
     # Register the live session so /stop (and shutdown cleanup) can reach it.
-    store[session_id] = {"client": client, "handle": handle}
+    # `agent_id` is recorded here (FEAT-247 code-review follow-up) so the
+    # OpenAI-compat endpoint (handlers/openai_compat.py) can verify that the
+    # `agent` query param on a /v1/chat/completions/{session_id} call matches
+    # the ai-parrot agent this session was actually started for — without
+    # it, any bearer-token holder could invoke an arbitrary registered agent
+    # against someone else's active session.
+    store[session_id] = {"client": client, "handle": handle, "agent_id": agent_id}
 
     _logger.info(
         "AvatarFullmode: started session %s for agent %s (tenant set=%s, avatar=%s%s)",

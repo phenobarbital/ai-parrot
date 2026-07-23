@@ -28,7 +28,8 @@ this module adds the missing wire protocol on top of it):
 
     GET /v1/models
         Minimal OpenAI-compatible model listing: one "model" per registered
-        agent name.
+        agent name. Requires the same bearer-token auth as the completions
+        endpoint — the agent registry is not public information.
 
 Lazy/defensive: this module has no optional-extra dependency of its own (no
 liveavatar import at module scope), so it is always importable; TASK-1876
@@ -39,6 +40,7 @@ groups.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -104,6 +106,9 @@ def _check_bearer_token(request: web.Request) -> bool:
 
     Fails closed: if ``OPENAI_COMPAT_BEARER_TOKEN`` is not configured, every
     request is rejected (there is no shared secret to authenticate against).
+    Uses a constant-time comparison (``hmac.compare_digest``) to match the
+    secret-comparison convention used elsewhere in the codebase (e.g.
+    ``integrations/slack/security.py``, ``a2a/security.py``).
 
     Args:
         request: The incoming aiohttp request.
@@ -122,7 +127,7 @@ def _check_bearer_token(request: web.Request) -> bool:
     if not auth_header.startswith("Bearer "):
         return False
     token = auth_header[len("Bearer "):]
-    return token == expected
+    return hmac.compare_digest(token, expected)
 
 
 def _extract_last_user_message(messages: List[ChatMessage]) -> Optional[str]:
@@ -248,7 +253,8 @@ class OpenAIChatCompletions(BaseView):
 
         session_id = request.match_info.get("session_id", "")
         fullmode_store: Dict[str, Any] = request.app.get(FULLMODE_SESSIONS_KEY) or {}
-        if not session_id or session_id not in fullmode_store:
+        session_record = fullmode_store.get(session_id) if session_id else None
+        if session_record is None:
             raise web.HTTPNotFound(
                 reason=f"Unknown FULL mode session_id '{session_id}'"
             )
@@ -256,6 +262,24 @@ class OpenAIChatCompletions(BaseView):
         agent_name = request.rel_url.query.get("agent", "")
         if not agent_name:
             raise web.HTTPBadRequest(reason="'agent' query parameter is required")
+
+        # Bind check: the `agent` query param must match the ai-parrot agent
+        # this session was actually started for (recorded at /full/start,
+        # see avatar_fullmode.py). Without this, any bearer-token holder
+        # could invoke an arbitrary registered agent against someone else's
+        # active session — the bearer token authenticates the CALLER
+        # (LiveAvatar), not which session/agent pair it is entitled to use.
+        # Skipped (fail-open) only when the session record predates this
+        # check (no "agent_id" key) — every session started after this fix
+        # always carries one, so this is enforced going forward.
+        bound_agent_id = session_record.get("agent_id")
+        if bound_agent_id and agent_name != bound_agent_id:
+            raise web.HTTPForbidden(
+                reason=(
+                    f"'agent' query parameter '{agent_name}' does not match "
+                    f"the agent this session was started for"
+                )
+            )
 
         try:
             body: Dict[str, Any] = await request.json()
@@ -277,7 +301,11 @@ class OpenAIChatCompletions(BaseView):
         if manager is None:
             raise web.HTTPServiceUnavailable(reason="Bot manager is not configured")
 
-        bot: AbstractBot = await manager.get_bot(agent_name, session_id=session_id)
+        bot: Optional[AbstractBot] = await manager.get_bot(
+            agent_name, session_id=session_id,
+        )
+        if bot is None:
+            raise web.HTTPNotFound(reason=f"Unknown agent '{agent_name}'")
 
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
         created = int(time.time())
@@ -355,9 +383,16 @@ class OpenAIChatCompletions(BaseView):
             await _write_sentences(flattener.flush())
 
             # Acceptance: "the final AIMessage's speakable response is also
-            # spoken" — feed any trailing response text not already covered
-            # by the streamed chunks (e.g. a spoken caption for a chart).
-            if ai_message is not None and getattr(ai_message, "response", None):
+            # spoken" — but ONLY as a fallback. Real bots set `.response` to
+            # the SAME text already streamed chunk-by-chunk (see
+            # AbstractBot.ask_stream's fallback envelope and e.g.
+            # clients/grok.py), so feeding it unconditionally double-speaks
+            # every plain-text answer. Only feed it when nothing was spoken
+            # yet — the structured-only-turn case (a spoken caption/filler
+            # for a chart) is exactly when the streamed chunks were empty.
+            if not emitted_any and ai_message is not None and getattr(
+                ai_message, "response", None,
+            ):
                 await _write_sentences(flattener.feed(ai_message.response))
                 await _write_sentences(flattener.flush())
 
@@ -404,7 +439,16 @@ class OpenAIChatCompletions(BaseView):
             except Exception:  # noqa: BLE001
                 pass
         finally:
-            await resp.write_eof()
+            # Guarded: if the client already disconnected, write_eof() can
+            # raise — must not shadow a legitimate in-flight exception
+            # (including CancelledError) propagating out of the try block.
+            try:
+                await resp.write_eof()
+            except Exception:  # noqa: BLE001
+                self.logger.debug(
+                    "OpenAICompat: write_eof failed for session %s (client "
+                    "likely disconnected)", session_id,
+                )
         return resp
 
     async def _non_stream_response(
@@ -421,14 +465,25 @@ class OpenAIChatCompletions(BaseView):
         content_parts: List[str] = []
         ai_message: Optional[AIMessage] = None
 
-        async_stream: AsyncIterator[Union[str, AIMessage]] = bot.ask_stream(
-            question, session_id=session_id,
-        )
-        async for chunk in async_stream:
-            if isinstance(chunk, AIMessage):
-                ai_message = chunk
-            else:
-                content_parts.append(chunk)
+        try:
+            async_stream: AsyncIterator[Union[str, AIMessage]] = bot.ask_stream(
+                question, session_id=session_id,
+            )
+            async for chunk in async_stream:
+                if isinstance(chunk, AIMessage):
+                    ai_message = chunk
+                else:
+                    content_parts.append(chunk)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "OpenAICompat: non-stream completion failed for session %s: %s",
+                session_id, exc,
+            )
+            raise web.HTTPInternalServerError(
+                reason="Agent failed to produce a completion"
+            ) from exc
 
         content = "".join(content_parts)
         if not content and ai_message is not None:
@@ -462,15 +517,20 @@ class OpenAIChatCompletions(BaseView):
 class OpenAIModels(BaseView):
     """``GET /v1/models`` — minimal OpenAI-compatible model listing.
 
-    Reports one "model" per agent registered on the ``BotManager``.
+    Reports one "model" per agent registered on the ``BotManager``. Requires
+    the same bearer-token auth as ``OpenAIChatCompletions`` — the agent
+    registry is not public information for a server-to-server endpoint.
     """
 
     async def get(self) -> web.Response:
         """List available agents as OpenAI-style model entries."""
+        if not _check_bearer_token(self.request):
+            raise web.HTTPUnauthorized(reason="Missing or invalid bearer token")
+
         manager = self.request.app.get("bot_manager")
         agent_names: List[str] = []
         if manager is not None:
-            agent_names = list(getattr(manager, "_bots", {}).keys())
+            agent_names = list(manager.get_bots().keys())
 
         return web.json_response({
             "object": "list",

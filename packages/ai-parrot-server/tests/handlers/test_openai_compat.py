@@ -243,6 +243,171 @@ class TestOpenAIChatCompletions:
         assert captured["question"] == "What's Pikachu?"
         assert captured["session_id"] == "sess-42"
 
+    async def test_agent_session_mismatch_forbidden(self):
+        """agent query param must match the agent this session was started for."""
+        bot_manager = MagicMock()
+        bot_manager.get_bot = AsyncMock(return_value=_fake_bot())
+
+        handler, _ = _make_handler(
+            OpenAIChatCompletions,
+            headers={"Authorization": "Bearer test-secret-token"},
+            match_info={"session_id": "sess-1"},
+            query={"agent": "some_other_agent"},
+            json_body={
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": False,
+            },
+            app={
+                "bot_manager": bot_manager,
+                "avatar_fullmode_sessions": {
+                    "sess-1": {"agent_id": "pokemon_analyst"}
+                },
+            },
+        )
+
+        with pytest.raises(web.HTTPForbidden):
+            await handler.post()
+
+        bot_manager.get_bot.assert_not_awaited()
+
+    async def test_agent_session_match_allowed(self):
+        """Matching agent + session_id proceeds normally."""
+        bot_manager = MagicMock()
+        bot_manager.get_bot = AsyncMock(return_value=_fake_bot())
+
+        handler, _ = _make_handler(
+            OpenAIChatCompletions,
+            headers={"Authorization": "Bearer test-secret-token"},
+            match_info={"session_id": "sess-1"},
+            query={"agent": "pokemon_analyst"},
+            json_body={
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": False,
+            },
+            app={
+                "bot_manager": bot_manager,
+                "avatar_fullmode_sessions": {
+                    "sess-1": {"agent_id": "pokemon_analyst"}
+                },
+            },
+        )
+
+        resp = await handler.post()
+        assert json.loads(resp.body)["object"] == "chat.completion"
+
+    async def test_unknown_agent_returns_404(self):
+        """get_bot() returning None (unregistered agent) -> 404, not a crash."""
+        bot_manager = MagicMock()
+        bot_manager.get_bot = AsyncMock(return_value=None)
+
+        handler, _ = _make_handler(
+            OpenAIChatCompletions,
+            headers={"Authorization": "Bearer test-secret-token"},
+            match_info={"session_id": "sess-1"},
+            query={"agent": "no_such_agent"},
+            json_body={
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": False,
+            },
+            app={
+                "bot_manager": bot_manager,
+                "avatar_fullmode_sessions": {"sess-1": {}},
+            },
+        )
+
+        with pytest.raises(web.HTTPNotFound):
+            await handler.post()
+
+    async def test_non_stream_ask_stream_error_returns_500(self):
+        """bot.ask_stream raising mid-turn -> clean 500, not an unhandled exception."""
+        bot = MagicMock()
+        bot.name = "test_agent"
+
+        async def _stream(question, session_id=None, **kw):
+            raise RuntimeError("provider unavailable")
+            yield  # pragma: no cover - unreachable, makes this an async generator
+
+        bot.ask_stream = _stream
+
+        bot_manager = MagicMock()
+        bot_manager.get_bot = AsyncMock(return_value=bot)
+
+        handler, _ = _make_handler(
+            OpenAIChatCompletions,
+            headers={"Authorization": "Bearer test-secret-token"},
+            match_info={"session_id": "sess-1"},
+            query={"agent": "test_agent"},
+            json_body={
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": False,
+            },
+            app={
+                "bot_manager": bot_manager,
+                "avatar_fullmode_sessions": {"sess-1": {}},
+            },
+        )
+
+        with pytest.raises(web.HTTPInternalServerError):
+            await handler.post()
+
+    async def test_no_double_speak_when_response_mirrors_streamed_chunks(self, monkeypatch):
+        """Regression: a final AIMessage.response equal to the already-streamed
+        text must NOT be spoken a second time (code-review finding)."""
+        ai_message = MagicMock(spec=AIMessage)
+        ai_message.is_structured = False
+        ai_message.data = None
+        ai_message.code = None
+        ai_message.tool_calls = []
+        # Mirrors real ask_stream implementations (e.g. clients/grok.py,
+        # AbstractBot.ask_stream's fallback envelope): `.response` holds the
+        # SAME text already yielded chunk-by-chunk, not additional content.
+        ai_message.response = "Hello world."
+        ai_message.turn_id = None
+
+        bot = MagicMock()
+        bot.name = "test_agent"
+
+        async def _stream(question, session_id=None, **kw):
+            yield "Hello "
+            yield "world."
+            yield ai_message
+
+        bot.ask_stream = _stream
+
+        bot_manager = MagicMock()
+        bot_manager.get_bot = AsyncMock(return_value=bot)
+
+        monkeypatch.setattr(
+            "parrot.handlers.agent.AgentTalk._maybe_publish_bifurcated_output",
+            AsyncMock(),
+        )
+
+        handler, _ = _make_handler(
+            OpenAIChatCompletions,
+            headers={"Authorization": "Bearer test-secret-token"},
+            match_info={"session_id": "sess-1"},
+            query={"agent": "test_agent"},
+            json_body={
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": True,
+            },
+            app={
+                "bot_manager": bot_manager,
+                "avatar_fullmode_sessions": {"sess-1": {}},
+            },
+        )
+        _FakeStreamResponse.instances.clear()
+        monkeypatch.setattr(
+            "parrot.handlers.openai_compat.web.StreamResponse", _FakeStreamResponse
+        )
+
+        await handler.post()
+
+        stream = _FakeStreamResponse.instances[-1]
+        raw = b"".join(stream.chunks).decode()
+        # "Hello world." must appear as spoken content exactly once, not twice.
+        assert raw.count("Hello world.") == 1
+
     async def test_structured_output_published_without_crashing_stream(self, monkeypatch):
         """Final AIMessage w/ structured data triggers bifurcation, never crashes stream."""
         ai_message = MagicMock(spec=AIMessage)
@@ -367,13 +532,14 @@ class TestOpenAIModels:
     async def test_models_endpoint(self):
         """GET /v1/models returns available agent names."""
         bot_manager = MagicMock()
-        bot_manager._bots = {
+        bot_manager.get_bots.return_value = {
             "pokemon_analyst": MagicMock(),
             "weather_bot": MagicMock(),
         }
 
         handler, _ = _make_handler(
             OpenAIModels,
+            headers={"Authorization": "Bearer test-secret-token"},
             app={"bot_manager": bot_manager},
         )
 
@@ -386,12 +552,23 @@ class TestOpenAIModels:
 
     async def test_models_endpoint_no_manager(self):
         """GET /v1/models with no bot_manager configured returns an empty list."""
-        handler, _ = _make_handler(OpenAIModels, app={})
+        handler, _ = _make_handler(
+            OpenAIModels,
+            headers={"Authorization": "Bearer test-secret-token"},
+            app={},
+        )
 
         resp = await handler.get()
         body = json.loads(resp.body)
 
         assert body["data"] == []
+
+    async def test_models_endpoint_requires_auth(self):
+        """GET /v1/models without a bearer token -> 401 (agent registry is not public)."""
+        handler, _ = _make_handler(OpenAIModels, headers={}, app={})
+
+        with pytest.raises(web.HTTPUnauthorized):
+            await handler.get()
 
 
 # ---------------------------------------------------------------------------
