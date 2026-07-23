@@ -64,6 +64,9 @@ class ImportDiffEntry(BaseModel):
             (approximate mapping with meta hint), or
             ``"requiere_intervencion"`` (manual review needed).
         note: Human-readable note about the mapping decision.
+        options_source: Provenance of the field's options — one of
+            ``"metadata"``, ``"inline"``, ``"logic_groups"``, ``"none"`` for
+            option-typed fields; ``None`` for non-option fields (FEAT-325).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -73,6 +76,7 @@ class ImportDiffEntry(BaseModel):
     mapped_field_type: str | None = None
     status: str  # "mapeado" | "aproximado" | "requiere_intervencion"
     note: str = ""
+    options_source: str | None = None  # "metadata" | "inline" | "logic_groups" | "none"
 
 
 class ImportDiffReport(BaseModel):
@@ -853,6 +857,12 @@ class NetworkninjaFormService(AbstractFormService):
             collected = select_options.get(col_name)
             options = collected if collected else None
 
+        # Option provenance for the report (FEAT-325) — only meaningful for
+        # option-typed fields; None otherwise.
+        field_options_source: str | None = None
+        if data_type in _OPTION_FIELD_TYPES:
+            field_options_source = options_provenance.get(col_name)
+
         # --- ImportDiffReport entry ---
         if report_entries is not None:
             is_formula = data_type in ("FIELD_FORMULA", "FIELD_TOTAL")
@@ -869,6 +879,7 @@ class NetworkninjaFormService(AbstractFormService):
                         "formula expression unavailable at networkninja source "
                         "(options=[]); meta.expression=None; evaluator is FEAT-301"
                     ),
+                    options_source=field_options_source,
                 ))
             elif is_approximate:
                 report_entries.append(ImportDiffEntry(
@@ -880,6 +891,7 @@ class NetworkninjaFormService(AbstractFormService):
                         f"mapped to {field_type.value} with render_as hint "
                         f"{extra_kwargs['meta'].get('render_as')!r}"
                     ),
+                    options_source=field_options_source,
                 ))
             else:
                 report_entries.append(ImportDiffEntry(
@@ -888,6 +900,7 @@ class NetworkninjaFormService(AbstractFormService):
                     mapped_field_type=field_type.value,
                     status="mapeado",
                     note="",
+                    options_source=field_options_source,
                 ))
 
         return FormField(
