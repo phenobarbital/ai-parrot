@@ -72,7 +72,7 @@
       "feature_id": "FEAT-325",
       "feature": "networkninja-metadata-select-options",
       "spec": "sdd/specs/networkninja-metadata-select-options.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -81,9 +81,9 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1878 (per-column provenance); modifies networkninja.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1880-importdiff-options-source.md"
+      "started_at": "2026-07-23T15:47:31+00:00",
+      "completed_at": "2026-07-23T15:53:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1880-importdiff-options-source.md"
     },
     {
       "id": "TASK-1881",
