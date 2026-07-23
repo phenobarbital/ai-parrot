@@ -14,16 +14,16 @@
       "feature_id": "FEAT-325",
       "feature": "networkninja-metadata-select-options",
       "spec": "sdd/specs/networkninja-metadata-select-options.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "All FEAT-325 tasks modify the single file networkninja.py; separate worktrees would conflict. Sequential per-spec.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1877-query-metadata-options.md"
+      "started_at": "2026-07-23T15:14:26+00:00",
+      "completed_at": "2026-07-23T15:37:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1877-query-metadata-options.md"
     },
     {
       "id": "TASK-1878",
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1877"],
+      "depends_on": [
+        "TASK-1877"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1877 (options in metadata index); modifies networkninja.py.",
       "assigned_to": null,
@@ -53,7 +55,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1877"],
+      "depends_on": [
+        "TASK-1877"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1877; shares networkninja.py with TASK-1878, so runs sequentially even though logically independent of TASK-1878.",
       "assigned_to": null,
@@ -71,7 +75,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1878"],
+      "depends_on": [
+        "TASK-1878"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1878 (per-column provenance); modifies networkninja.py.",
       "assigned_to": null,
@@ -89,7 +95,12 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1877", "TASK-1878", "TASK-1879", "TASK-1880"],
+      "depends_on": [
+        "TASK-1877",
+        "TASK-1878",
+        "TASK-1879",
+        "TASK-1880"
+      ],
       "parallel": false,
       "parallelism_notes": "Validates the full feature; depends on all implementation tasks.",
       "assigned_to": null,
