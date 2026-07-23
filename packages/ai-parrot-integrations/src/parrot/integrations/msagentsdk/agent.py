@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from navconfig.logging import logging
 
+from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION
 from parrot.integrations.msagentsdk import cards
 from parrot.integrations.msagentsdk.semantic import SemanticUIResult
 
@@ -955,7 +956,7 @@ class ParrotM365Agent:
         # render it interactively. Fallback text for plain-text channels.
         adaptive_card = {
             "type": "AdaptiveCard",
-            "version": "1.4",
+            "version": DEFAULT_ADAPTIVE_CARD_VERSION,
             "body": [
                 {
                     "type": "TextBlock",

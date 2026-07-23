@@ -28,6 +28,7 @@ from parrot.outputs.a2ui.renderers import (
     register_a2ui_renderer,
 )
 from parrot.outputs.cards import (
+    DEFAULT_ADAPTIVE_CARD_VERSION,
     CardSpec,
     Column,
     ColumnSet,
@@ -43,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 _SURFACE_NAME = "adaptive_cards"
 _AC_SCHEMA = "http://adaptivecards.io/schemas/adaptive-card.json"
-_AC_VERSION = "1.5"  # pinned to match msteams/hitl_cards.py
+_AC_VERSION = DEFAULT_ADAPTIVE_CARD_VERSION
 _AC_MIME = "application/vnd.microsoft.card.adaptive"
 
 # Text roles that get emphasized styling in the card.

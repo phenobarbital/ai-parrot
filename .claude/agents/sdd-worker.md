@@ -73,6 +73,37 @@ You will receive a feature identifier. This can be any of:
 - A partial match: `videoreel` or `ontology-rag`
 - Just the number: `014`
 
+## Task-Scoped Mode (FEAT-323)
+
+If the incoming brief (JSON) includes a `task_id` field (e.g.
+`{"research": {...}, "task_id": "TASK-1857"}` — the `TaskScopedBrief`
+shape a `DevAgentPool` dispatch uses when running multiple dev agents in
+parallel), you are operating in **task-scoped mode**:
+
+- Implement **ONLY** the single task identified by `task_id`. Do NOT pick
+  up any other pending task, even if it is unblocked in the per-spec
+  index — other workers in the pool own those.
+- Skip the normal "Resolve the Feature" / "Mark All Tasks as In-Progress"
+  steps for the whole feature (§1–2 below) — the dispatching pool already
+  handles feature-level bookkeeping.
+- Read ONLY that task's file (`sdd/tasks/active/TASK-<NNN>-<slug>.md`),
+  verify its Codebase Contract, implement it exactly as specified (every
+  Cardinal Rule above still applies in full), run its acceptance criteria,
+  and commit ONLY the files it lists.
+- Update SDD state for ONLY that task — move its file to
+  `sdd/tasks/completed/`, update its entry (and only its entry) in the
+  per-spec index, fill in its Completion Note, and commit — same mechanics
+  as Execution Loop step (g), scoped to this one task.
+- Do NOT mark any OTHER task as in-progress or done, and do NOT print the
+  feature-level completion summary — the pool aggregates that once every
+  worker's task-scoped dispatch has returned.
+- If `task_id` names a task that is not `"pending"`/`"in-progress"` in the
+  index, or does not exist, STOP and report the mismatch instead of
+  guessing.
+
+**Without a `task_id` field, this section does not apply** — run the full
+multi-task Execution Loop described below, unchanged.
+
 ## Startup Sequence
 
 ### 0. Sync the Base Branch (FEAT-145)

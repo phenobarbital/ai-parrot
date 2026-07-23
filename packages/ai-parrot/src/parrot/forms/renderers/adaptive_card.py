@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 from parrot.outputs.cards import (
+    DEFAULT_ADAPTIVE_CARD_VERSION,
     ActionSubmit,
     CardSpec,
     Column,
@@ -81,7 +82,7 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
     """
 
     SCHEMA_URL = "http://adaptivecards.io/schemas/adaptive-card.json"
-    DEFAULT_VERSION = "1.5"
+    DEFAULT_VERSION = DEFAULT_ADAPTIVE_CARD_VERSION
     CONTENT_TYPE = "application/vnd.microsoft.card.adaptive"
 
     def __init__(

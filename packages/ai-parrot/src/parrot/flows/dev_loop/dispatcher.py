@@ -29,6 +29,7 @@ Responsibilities (per spec §3 Module 2):
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
 import os
@@ -65,6 +66,7 @@ from parrot.flows.dev_loop.models import (
     MoonshotCodeDispatchProfile,
     ZaiCodeDispatchProfile,
 )
+from parrot.flows.dev_loop.session_state import SessionHost, action_from_dispatch_event
 from parrot.clients.moonshot import _thinking_ctx as _moonshot_thinking_ctx
 from parrot.models.moonshot import ALWAYS_THINKING_MODELS, K_SERIES_MODELS
 from parrot.models.zai import THINKING_CAPABLE_ZAI_MODELS
@@ -73,6 +75,58 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from claude_agent_sdk.types import AgentDefinition  # noqa: F401
 
 T = TypeVar("T", bound=BaseModel)
+
+_logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Dual-publish shim (FEAT-322 TASK-1852) — fold DispatchEvents into the run's
+# SessionHost alongside the legacy XADD, with zero call-site fan-out.
+#
+# ``dispatch()`` gains an explicit ``session_host: Optional[SessionHost] =
+# None`` kwarg (the per-dispatch value the spec requires — never dispatcher-
+# instance state, since one dispatcher instance is shared across concurrent
+# runs). Internally, threading that value positionally through every one of
+# the ~40 ``self._publish_event(...)``/``_publish_*_event(...)`` call sites
+# spread across 4 dispatcher classes' streaming helpers would be a large,
+# error-prone rewrite of this hot, actively-churning file (FEAT-270/Moonshot
+# work landed here in the last weeks — see spec §7 "Known Risks"). Instead,
+# ``dispatch()`` binds the value into a ``ContextVar`` for the duration of
+# its own call; ``_publish_event`` (the ONE choke point every dispatch kind
+# already funnels through) reads it back. ``ContextVar`` values are copied
+# per ``asyncio.Task`` at task-creation time, so concurrent dispatches on the
+# SAME shared dispatcher instance (separate Tasks) never observe each
+# other's host — the identical safety property explicit per-call-site
+# threading would have given, with a 3-line touch per dispatch() method
+# instead of a rewrite of every internal helper.
+# ---------------------------------------------------------------------------
+
+_SESSION_HOST_CTX: "contextvars.ContextVar[Optional[SessionHost]]" = contextvars.ContextVar(
+    "dev_loop_session_host", default=None
+)
+
+
+def _apply_to_session_host(event: DispatchEvent) -> None:
+    """Fold one dispatch event into the current dispatch's SessionHost, if any.
+
+    Reads the per-dispatch host from :data:`_SESSION_HOST_CTX` (bound by the
+    active ``dispatch()`` call). No-op when no host is bound (legacy
+    callers). Every failure is swallowed and logged at DEBUG — the shim must
+    never affect the legacy publish path or the dispatch itself.
+    """
+    host = _SESSION_HOST_CTX.get()
+    if host is None:
+        return
+    try:
+        action = action_from_dispatch_event(
+            event.kind, event.node_id, event.ts, event.payload
+        )
+        if action is not None:
+            host.apply(action)
+    except Exception:  # noqa: BLE001 - shim must never break a dispatch
+        _logger.debug(
+            "dev-loop session-state shim failed for dispatch event %s (node=%s)",
+            event.kind, event.node_id, exc_info=True,
+        )
 
 # Edit/Write tools that let a dispatched session mutate the filesystem through
 # the SDK's own tool surface. A dispatch whose profile excludes ALL of these
@@ -138,6 +192,7 @@ class DevLoopCodeDispatcher(Protocol):
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         """Dispatch a code-agent run and return validated structured output."""
 
@@ -195,6 +250,7 @@ class ClaudeCodeDispatcher:
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         """Dispatch a single Claude Code session and return its parsed output.
 
@@ -221,19 +277,29 @@ class ClaudeCodeDispatcher:
         """
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         json_schema_path: Optional[str] = None
+        # FEAT-322 TASK-1852: bind the per-dispatch host for _publish_event
+        # to read (see module-level _SESSION_HOST_CTX docstring). The main
+        # finally: below resets it on every path THAT reaches the semaphore
+        # block; this try/except covers the narrow pre-semaphore window
+        # (cwd validation, the "queued" publish) so an early raise there
+        # still resets the var instead of leaking it forward.
+        _host_token = _SESSION_HOST_CTX.set(session_host)
+        try:
+            # Spec §7 R4 — defense in depth. Waived for read-only (plan-mode,
+            # no-edit) dispatches such as the sdd-codereview gate, which may
+            # run against a checkout outside the worktree base.
+            self._enforce_cwd_under_worktree_base(cwd, profile)
 
-        # Spec §7 R4 — defense in depth. Waived for read-only (plan-mode,
-        # no-edit) dispatches such as the sdd-codereview gate, which may run
-        # against a checkout outside the worktree base.
-        self._enforce_cwd_under_worktree_base(cwd, profile)
-
-        await self._publish_event(
-            stream_key,
-            kind="dispatch.queued",
-            run_id=run_id,
-            node_id=node_id,
-            payload={"profile": profile.model_dump(mode="json")},
-        )
+            await self._publish_event(
+                stream_key,
+                kind="dispatch.queued",
+                run_id=run_id,
+                node_id=node_id,
+                payload={"profile": profile.model_dump(mode="json")},
+            )
+        except Exception:
+            _SESSION_HOST_CTX.reset(_host_token)
+            raise
 
         async with self._semaphore:
             try:
@@ -370,6 +436,7 @@ class ClaudeCodeDispatcher:
                 )
                 return result
             finally:
+                _SESSION_HOST_CTX.reset(_host_token)
                 if json_schema_path is not None:
                     try:
                         os.unlink(json_schema_path)
@@ -800,6 +867,11 @@ class ClaudeCodeDispatcher:
             node_id=node_id,
             payload=payload,
         )
+        # FEAT-322 TASK-1852: dual-publish — fold into the run's SessionHost
+        # (if any) independent of legacy Redis availability, mirroring
+        # flow.py's FlowEventPublisher pattern (two independent failure
+        # domains; neither publish path affects the other).
+        _apply_to_session_host(event)
         try:
             redis_client = await self._ensure_redis()
         except Exception as exc:  # pragma: no cover - dev-mode fallback
@@ -902,22 +974,31 @@ class CodexCodeDispatcher:
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         """Dispatch a single Codex CLI session and return parsed output."""
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         schema_path: Optional[str] = None
         output_path: Optional[str] = None
         process: Any = None
+        # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring.
+        # try/except covers the narrow pre-semaphore window so an early
+        # raise here still resets the var (the main finally: below only
+        # covers the semaphore block).
+        _host_token = _SESSION_HOST_CTX.set(session_host)
+        try:
+            self._enforce_cwd_under_worktree_base(cwd)
 
-        self._enforce_cwd_under_worktree_base(cwd)
-
-        await self._publish_event(
-            stream_key,
-            kind="dispatch.queued",
-            run_id=run_id,
-            node_id=node_id,
-            payload={"profile": profile.model_dump(mode="json")},
-        )
+            await self._publish_event(
+                stream_key,
+                kind="dispatch.queued",
+                run_id=run_id,
+                node_id=node_id,
+                payload={"profile": profile.model_dump(mode="json")},
+            )
+        except Exception:
+            _SESSION_HOST_CTX.reset(_host_token)
+            raise
 
         async with self._semaphore:
             try:
@@ -1026,6 +1107,7 @@ class CodexCodeDispatcher:
                 )
                 return result
             finally:
+                _SESSION_HOST_CTX.reset(_host_token)
                 for path in (schema_path, output_path):
                     if path is None:
                         continue
@@ -1265,6 +1347,8 @@ class CodexCodeDispatcher:
             node_id=node_id,
             payload=payload,
         )
+        # FEAT-322 TASK-1852: dual-publish shim (see module-level docstring).
+        _apply_to_session_host(event)
         try:
             redis_client = await self._ensure_redis()
         except Exception as exc:  # pragma: no cover - dev-mode fallback
@@ -1329,38 +1413,47 @@ class GeminiCodeDispatcher:
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         """Dispatch a single Gemini CLI session and return its parsed output."""
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         process: Any = None
+        # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring.
+        # try/except covers the narrow pre-semaphore window so an early
+        # raise here still resets the var (the main finally: below only
+        # covers the semaphore block).
+        _host_token = _SESSION_HOST_CTX.set(session_host)
+        try:
+            self._enforce_cwd_under_worktree_base(cwd)
 
-        self._enforce_cwd_under_worktree_base(cwd)
-
-        # Handle transparent profile conversion
-        if isinstance(profile, ClaudeCodeDispatchProfile):
-            approval_mode = "auto_edit"
-            if profile.permission_mode == "acceptEdits":
+            # Handle transparent profile conversion
+            if isinstance(profile, ClaudeCodeDispatchProfile):
                 approval_mode = "auto_edit"
-            elif profile.permission_mode == "bypassPermissions" or profile.permission_mode == "default":
-                approval_mode = "yolo"
-            elif profile.permission_mode == "plan":
-                approval_mode = "plan"
+                if profile.permission_mode == "acceptEdits":
+                    approval_mode = "auto_edit"
+                elif profile.permission_mode == "bypassPermissions" or profile.permission_mode == "default":
+                    approval_mode = "yolo"
+                elif profile.permission_mode == "plan":
+                    approval_mode = "plan"
 
-            profile = GeminiCodeDispatchProfile(
-                subagent=profile.subagent or "sdd-worker",
-                model="auto",
-                sandbox=True,
-                approval_mode=approval_mode,
-                timeout_seconds=profile.timeout_seconds,
+                profile = GeminiCodeDispatchProfile(
+                    subagent=profile.subagent or "sdd-worker",
+                    model="auto",
+                    sandbox=True,
+                    approval_mode=approval_mode,
+                    timeout_seconds=profile.timeout_seconds,
+                )
+
+            await self._publish_event(
+                stream_key,
+                kind="dispatch.queued",
+                run_id=run_id,
+                node_id=node_id,
+                payload={"profile": profile.model_dump(mode="json")},
             )
-
-        await self._publish_event(
-            stream_key,
-            kind="dispatch.queued",
-            run_id=run_id,
-            node_id=node_id,
-            payload={"profile": profile.model_dump(mode="json")},
-        )
+        except Exception:
+            _SESSION_HOST_CTX.reset(_host_token)
+            raise
 
         async with self._semaphore:
             try:
@@ -1463,7 +1556,7 @@ class GeminiCodeDispatcher:
                 )
                 return result
             finally:
-                pass
+                _SESSION_HOST_CTX.reset(_host_token)
 
     def _build_command(
         self,
@@ -1705,6 +1798,8 @@ class GeminiCodeDispatcher:
             node_id=node_id,
             payload=payload,
         )
+        # FEAT-322 TASK-1852: dual-publish shim (see module-level docstring).
+        _apply_to_session_host(event)
         try:
             redis_client = await self._ensure_redis()
         except Exception as exc:  # pragma: no cover - dev-mode fallback
@@ -1758,17 +1853,28 @@ class LLMCodeDispatcher:
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
-        self._enforce_cwd_under_worktree_base(cwd)
+        # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring —
+        # the try/except below covers the narrow pre-semaphore window (an
+        # early raise here still resets the var); the try/except/finally
+        # inside the semaphore block below resets it on every OTHER exit
+        # path (the success return or one of the re-raising excepts).
+        _host_token = _SESSION_HOST_CTX.set(session_host)
+        try:
+            self._enforce_cwd_under_worktree_base(cwd)
 
-        await self._publish_event(
-            stream_key,
-            kind="dispatch.queued",
-            run_id=run_id,
-            node_id=node_id,
-            payload={"profile": profile.model_dump(mode="json")},
-        )
+            await self._publish_event(
+                stream_key,
+                kind="dispatch.queued",
+                run_id=run_id,
+                node_id=node_id,
+                payload={"profile": profile.model_dump(mode="json")},
+            )
+        except Exception:
+            _SESSION_HOST_CTX.reset(_host_token)
+            raise
 
         async with self._semaphore:
             await self._publish_event(
@@ -1842,6 +1948,8 @@ class LLMCodeDispatcher:
                     },
                 )
                 raise DispatchExecutionError(f"LLM code dispatch failed: {exc}") from exc
+            finally:
+                _SESSION_HOST_CTX.reset(_host_token)
 
     async def _dispatch_loop(
         self,
@@ -2549,6 +2657,8 @@ class LLMCodeDispatcher:
             node_id=node_id,
             payload=payload,
         )
+        # FEAT-322 TASK-1852: dual-publish shim (see module-level docstring).
+        _apply_to_session_host(event)
         try:
             redis_client = await self._ensure_redis()
         except Exception as exc:  # pragma: no cover - dev-mode fallback
@@ -2612,6 +2722,7 @@ class GrokCodeDispatcher(LLMCodeDispatcher):
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         llm_profile = LLMCodeDispatchProfile(
             subagent=profile.subagent,
@@ -2632,6 +2743,7 @@ class GrokCodeDispatcher(LLMCodeDispatcher):
             run_id=run_id,
             node_id=node_id,
             cwd=cwd,
+            session_host=session_host,
         )
 
 
@@ -2720,6 +2832,7 @@ class ZaiCodeDispatcher(LLMCodeDispatcher):
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         return await super().dispatch(
             brief=brief,
@@ -2728,6 +2841,7 @@ class ZaiCodeDispatcher(LLMCodeDispatcher):
             run_id=run_id,
             node_id=node_id,
             cwd=cwd,
+            session_host=session_host,
         )
 
 
@@ -2831,6 +2945,7 @@ class MoonshotCodeDispatcher(LLMCodeDispatcher):
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         return await super().dispatch(
             brief=brief,
@@ -2839,6 +2954,7 @@ class MoonshotCodeDispatcher(LLMCodeDispatcher):
             run_id=run_id,
             node_id=node_id,
             cwd=cwd,
+            session_host=session_host,
         )
 
 

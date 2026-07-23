@@ -44,10 +44,14 @@ def build_dev_loop_node_factories(
     redis_url: str,
     development_dispatcher: Optional[Any] = None,
     development_profile: Optional[Any] = None,
+    development_pool_config: Optional[Any] = None,
+    development_dispatcher_builder: Optional[Any] = None,
+    development_pool_max: int = 4,
     git_toolkit: Optional[Any] = None,
     log_toolkits: Optional[Dict[str, Any]] = None,
     repos: Optional[List[RepoSpec]] = None,
     codereview_dispatcher: Optional[Any] = None,
+    require_deployment_approval: bool = False,
 ) -> Dict[str, NodeFactory]:
     """Return the ``{dev_loop.* type: factory}`` map binding live deps.
 
@@ -60,6 +64,17 @@ def build_dev_loop_node_factories(
             ``DevelopmentNode``. Defaults to ``dispatcher``.
         development_profile: Optional dispatch profile passed only to
             ``DevelopmentNode``.
+        development_pool_config: Optional :class:`DevAgentPoolConfig`
+            (FEAT-323) passed to ``DevelopmentNode``. A
+            ``WorkBrief.dev_agents`` found in shared state at run time
+            always takes priority over this. ``None`` (default) preserves
+            the single-agent behaviour exactly.
+        development_dispatcher_builder: Optional ``(DevAgentSpec) ->
+            (dispatcher, profile)`` callable (FEAT-323, see
+            ``agent_builder.build_dispatcher``) used to materialize pool
+            workers and the conflict resolver's claude-code fallback.
+        development_pool_max: Hard cap on total pool workers (FEAT-323,
+            ``DEV_LOOP_DEV_POOL_MAX``). Defaults to ``4``.
         git_toolkit: Optional ``GitToolkit`` for repo provisioning (FEAT-250).
         log_toolkits: Optional ``{source_kind: toolkit}`` map for ResearchNode.
         repos: Optional ``RepoSpec`` list cloned/pulled before Development.
@@ -67,6 +82,14 @@ def build_dev_loop_node_factories(
             (FEAT-270) used by ``QANode`` for the code-review gate. Defaults
             to ``None``, in which case ``QANode`` auto-wraps ``dispatcher``
             in a ``ClaudeCodeReviewDispatcher`` (backward compat).
+        require_deployment_approval: FEAT-322 — forwarded to
+            ``DeploymentHandoffNode``. Defaults to ``False`` (today's
+            behavior, unchanged); set ``True`` to require a
+            ``deployment_approval`` HITL gate (resolved via the REST
+            command layer, TASK-1855) before the Jira "Ready to Deploy"
+            transition. This was previously reachable only by reaching
+            into an already-constructed node from a test — code review
+            flagged it as dead-end wiring with no real activation path.
 
     Returns:
         A mapping suitable for ``node_factories=`` on
@@ -101,6 +124,9 @@ def build_dev_loop_node_factories(
             DevelopmentNode(
                 dispatcher=development_dispatcher,
                 dispatch_profile=development_profile,
+                pool_config=development_pool_config,
+                dispatcher_builder=development_dispatcher_builder,
+                pool_max=development_pool_max,
                 name=nd.id,
             ),
             deps,
@@ -120,7 +146,10 @@ def build_dev_loop_node_factories(
 
     def handoff_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(
-            DeploymentHandoffNode(jira_toolkit=jira_toolkit, git_toolkit=git_toolkit, name=nd.id),
+            DeploymentHandoffNode(
+                jira_toolkit=jira_toolkit, git_toolkit=git_toolkit, name=nd.id,
+                require_deployment_approval=require_deployment_approval,
+            ),
             deps,
             succs,
         )

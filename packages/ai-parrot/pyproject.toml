@@ -104,7 +104,7 @@ dependencies = [
     # Episodic memory default backend (FAISS) — required whenever an agent
     # enables episodic memory without an explicit pgvector DSN.
     "faiss-cpu>=1.9.0",
-    "navigator-eventbus>=0.1.0",
+    "navigator-eventbus>=0.1.0,<0.2",
 ]
 
 [project.scripts]
@@ -523,6 +523,10 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-benchmark>=4.0",
     "ruff>=0.4",
+    # FEAT-322 TASK-1850: reducer/host property tests (fold invariant,
+    # totality, arbitration, expiry). The spec's contract claimed this was
+    # "already used in repo tests" — verified absent in-tree; added here.
+    "hypothesis>=6.100",
 ]
 
 # Remote tool executors (parrot.tools.executors). Pulls the optional

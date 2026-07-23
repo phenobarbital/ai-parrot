@@ -18,12 +18,25 @@ emits flat JSON envelopes:
 
 Query parameters on the WebSocket URL:
 
-* ``view`` — ``"flow" | "dispatch" | "both"`` (default ``"both"``).
+* ``view`` — ``"flow" | "dispatch" | "both" | "state"`` (default ``"both"``).
 * ``replay`` — ``true|false`` (default ``true``).
+* ``last_seen`` — ``int``, ``view="state"`` only (AHP reconnect semantics,
+  FEAT-322 TASK-1854): replays ``flow:{run_id}:actions`` envelopes with
+  ``server_seq > last_seen`` instead of the initial snapshot.
 
 The handler is intentionally a thin wrapper over
 :class:`FlowStreamMultiplexer` so the merge / dispatch-discovery logic is
 unit-testable without an aiohttp test server.
+
+``view="state"`` (FEAT-322) is a separate code path from the legacy
+``flow``/``dispatch``/``both`` views: it reads ONLY the operational
+``flow:{run_id}:actions`` stream (never the flow/dispatch streams) and
+folds it through the transport-free ``session_state.reduce()`` — this
+works identically for a live run or a finished one (crash-rebuild
+invariant, spec §7), and deliberately never looks up a live
+``SessionHost``/``DevLoopRunner`` (the multiplexer may run in another
+worker process). Legacy views are untouched — zero changes to their code
+paths.
 """
 
 from __future__ import annotations
@@ -32,15 +45,24 @@ import asyncio
 import heapq
 import json
 import logging
+import time
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Tuple
 
 from aiohttp import web
+
+from parrot.flows.dev_loop.session_state import (
+    ActionEnvelope,
+    DevLoopSessionState,
+    Snapshot,
+    reduce,
+    session_channel,
+)
 
 logger = logging.getLogger(__name__)
 
 
 SourceLiteral = Literal["flow", "dispatch"]
-ViewLiteral = Literal["flow", "dispatch", "both"]
+ViewLiteral = Literal["flow", "dispatch", "both", "state"]
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +101,10 @@ class FlowStreamMultiplexer:
         self._block_ms = block_ms
         self._flow_key = f"flow:{run_id}:flow"
         self._dispatch_prefix = f"flow:{run_id}:dispatch:"
+        # FEAT-322 TASK-1854 — the operational actions stream, ``view="state"``
+        # only. Never mixed into the flow/dispatch discovery/merge above.
+        self._actions_key = f"flow:{run_id}:actions"
+        self._state_cursor = "$"
         # Per-stream cursor for XREAD BLOCK $, populated lazily.
         self._cursors: Dict[str, str] = {}
         self._closed = asyncio.Event()
@@ -211,6 +237,142 @@ class FlowStreamMultiplexer:
         self._closed.set()
 
     # ------------------------------------------------------------------
+    # State view (FEAT-322 TASK-1854) — reads ONLY flow:{run_id}:actions
+    # ------------------------------------------------------------------
+
+    async def _read_action_envelopes(self) -> List[Tuple[str, ActionEnvelope]]:
+        """Read + parse every entry on the actions stream, in stream order.
+
+        Returns ``(entry_id, envelope)`` pairs. Malformed entries (parse
+        failure) are logged and skipped — forward-compat: an unknown/newer
+        action type inside an envelope must never crash the view. Order is
+        NOT re-sorted: ``server_seq`` ordering comes free from the Redis
+        stream (single writer per run, TASK-1851's sink).
+        """
+        entries = await self._redis.xrange(self._actions_key, min="-", max="+")
+        out: List[Tuple[str, ActionEnvelope]] = []
+        for entry_id, fields in entries:
+            raw = fields.get("envelope") if isinstance(fields, dict) else None
+            if raw is None:
+                continue
+            try:
+                envelope = ActionEnvelope.model_validate_json(raw)
+            except Exception:  # noqa: BLE001 - forward-compat, never crash the view
+                logger.debug(
+                    "state view: skipping malformed actions-stream entry %s "
+                    "for run=%s", entry_id, self._run_id, exc_info=True,
+                )
+                continue
+            out.append((entry_id, envelope))
+        return out
+
+    async def state_replay(
+        self, *, last_seen: Optional[int] = None
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """``view="state"`` connect sequence — snapshot or gap replay.
+
+        Folds every envelope on ``flow:{run_id}:actions`` from seq 0
+        through :func:`reduce` (works identically for a live run or a
+        finished one — no live host lookup, spec §7 crash-rebuild
+        invariant).
+
+        * ``last_seen is None`` (fresh connect): yields the folded
+          :class:`Snapshot` as the FIRST frame, then nothing else from this
+          historical batch (the snapshot already reflects it).
+        * ``last_seen is not None`` (AHP reconnect): skips the snapshot and
+          yields only envelopes with ``server_seq > last_seen`` — no gaps,
+          no duplicates.
+
+        Sets ``self._state_cursor`` to the last raw stream entry id seen,
+        so a subsequent :meth:`state_tail` call continues from exactly
+        where this method left off.
+        """
+        entries = await self._read_action_envelopes()
+        state = DevLoopSessionState(
+            run_id=self._run_id, channel=session_channel(self._run_id)
+        )
+        from_seq = 0
+        for _entry_id, envelope in entries:
+            state = reduce(state, envelope.action)
+            from_seq = envelope.server_seq
+
+        if entries:
+            self._state_cursor = entries[-1][0]
+
+        if last_seen is None:
+            snapshot = Snapshot(
+                channel=session_channel(self._run_id),
+                state=state,
+                from_seq=from_seq,
+            )
+            yield {
+                "source": "state",
+                "node_id": None,
+                "event_kind": "snapshot",
+                "ts": time.time(),
+                "payload": snapshot.model_dump(),
+            }
+            return
+
+        for _entry_id, envelope in entries:
+            if envelope.server_seq <= last_seen:
+                continue
+            yield {
+                "source": "state",
+                "node_id": None,
+                "event_kind": "action",
+                "ts": envelope.action.ts,
+                "payload": envelope.model_dump(),
+            }
+
+    async def state_tail(self) -> AsyncIterator[Dict[str, Any]]:
+        """``view="state"`` live continuation after :meth:`state_replay`.
+
+        Uses ``XREAD BLOCK`` from ``self._state_cursor`` (populated by
+        ``state_replay``, or ``"$"`` — new entries only — if that method
+        was never called). Malformed entries are logged and skipped, same
+        forward-compat contract as :meth:`_read_action_envelopes`.
+        """
+        while not self._closed.is_set():
+            try:
+                response = await self._redis.xread(
+                    streams={self._actions_key: self._state_cursor},
+                    block=self._block_ms,
+                    count=100,
+                )
+            except Exception as exc:  # pragma: no cover - transport errors
+                logger.warning("state-view xread failed: %s", exc)
+                await asyncio.sleep(0.5)
+                continue
+            if not response:
+                continue
+            for stream_key, stream_entries in response:
+                if isinstance(stream_key, bytes):
+                    stream_key = stream_key.decode("utf-8")
+                for entry_id, fields in stream_entries:
+                    if isinstance(entry_id, bytes):
+                        entry_id = entry_id.decode("utf-8")
+                    self._state_cursor = entry_id
+                    raw = fields.get("envelope") if isinstance(fields, dict) else None
+                    if raw is None:
+                        continue
+                    try:
+                        envelope = ActionEnvelope.model_validate_json(raw)
+                    except Exception:  # noqa: BLE001 - forward-compat
+                        logger.debug(
+                            "state view: skipping malformed live entry %s "
+                            "for run=%s", entry_id, self._run_id, exc_info=True,
+                        )
+                        continue
+                    yield {
+                        "source": "state",
+                        "node_id": None,
+                        "event_kind": "action",
+                        "ts": envelope.action.ts,
+                        "payload": envelope.model_dump(),
+                    }
+
+    # ------------------------------------------------------------------
     # Envelope helpers
     # ------------------------------------------------------------------
 
@@ -300,8 +462,11 @@ async def flow_stream_ws(request: web.Request) -> web.WebSocketResponse:
 
     Query parameters:
 
-    * ``view`` — ``"flow" | "dispatch" | "both"`` (default ``"both"``).
-    * ``replay`` — ``true|false`` (default ``true``).
+    * ``view`` — ``"flow" | "dispatch" | "both" | "state"`` (default ``"both"``).
+    * ``replay`` — ``true|false`` (default ``true``, legacy views only).
+    * ``last_seen`` — ``int``, ``view="state"`` only (FEAT-322): reconnect
+      replay — envelopes with ``server_seq > last_seen`` instead of the
+      initial snapshot.
 
     Emits a JSON envelope per event:
 
@@ -310,6 +475,12 @@ async def flow_stream_ws(request: web.Request) -> web.WebSocketResponse:
         {"source": "flow"|"dispatch", "node_id": str|null,
          "event_kind": str, "ts": float, "payload": {...}}
 
+    ``view="state"`` emits the AHP-style snapshot/action shape instead
+    (``source="state"``, ``event_kind="snapshot"|"action"``,
+    ``payload`` = ``Snapshot``/``ActionEnvelope`` — see
+    :meth:`FlowStreamMultiplexer.state_replay`); legacy views are
+    byte-identical to before this parameter existed.
+
     The owning aiohttp app must populate ``request.app["redis_url"]``
     (or ``request.app["redis"]`` with a pre-built client). The handler
     closes both the Redis connection it created and the WebSocket on
@@ -317,9 +488,16 @@ async def flow_stream_ws(request: web.Request) -> web.WebSocketResponse:
     """
     run_id = request.match_info["run_id"]
     view: ViewLiteral = request.query.get("view", "both")  # type: ignore[assignment]
-    if view not in ("flow", "dispatch", "both"):
+    if view not in ("flow", "dispatch", "both", "state"):
         view = "both"
     replay = request.query.get("replay", "true").lower() == "true"
+    last_seen_raw = request.query.get("last_seen")
+    last_seen: Optional[int] = None
+    if last_seen_raw is not None:
+        try:
+            last_seen = int(last_seen_raw)
+        except ValueError:
+            last_seen = None
 
     ws = web.WebSocketResponse(heartbeat=30)
     await ws.prepare(request)
@@ -338,15 +516,27 @@ async def flow_stream_ws(request: web.Request) -> web.WebSocketResponse:
 
     mux = FlowStreamMultiplexer(redis_client, run_id=run_id, view=view)
     try:
-        if replay:
-            async for envelope in mux.replay():
+        if view == "state":
+            # FEAT-322 TASK-1854 — separate code path; legacy branch below
+            # is completely untouched.
+            async for envelope in mux.state_replay(last_seen=last_seen):
                 if ws.closed:
                     break
                 await ws.send_json(envelope)
-        async for envelope in mux.tail():
-            if ws.closed:
-                break
-            await ws.send_json(envelope)
+            async for envelope in mux.state_tail():
+                if ws.closed:
+                    break
+                await ws.send_json(envelope)
+        else:
+            if replay:
+                async for envelope in mux.replay():
+                    if ws.closed:
+                        break
+                    await ws.send_json(envelope)
+            async for envelope in mux.tail():
+                if ws.closed:
+                    break
+                await ws.send_json(envelope)
     except asyncio.CancelledError:  # pragma: no cover - shutdown path
         # Ctrl-C / aiohttp GracefulExit / client disconnect all surface
         # as CancelledError here. We deliberately do NOT re-raise:

@@ -43,6 +43,7 @@ from typing import Any, Dict, List, Optional
 from parrot.human.channels.base import ESCALATE_OPTION_KEY, escalate_option
 from parrot.human.models import ChoiceOption, HumanInteraction, InteractionType
 from parrot.outputs.cards import (
+    DEFAULT_ADAPTIVE_CARD_VERSION,
     ActionSubmit,
     CardSpec,
     FormFieldSpec,
@@ -57,8 +58,7 @@ from parrot.outputs.cards.elements import ACElement
 from parrot.outputs.cards.sections import CardSection
 from parrot.outputs.cards.sections import FormSection as CardFormSection
 
-# Adaptive Card schema version targeted.
-_AC_VERSION = "1.5"
+_AC_VERSION = DEFAULT_ADAPTIVE_CARD_VERSION
 _AC_SCHEMA = "http://adaptivecards.io/schemas/adaptive-card.json"
 
 # Map HITL schema field types to shared-builder field type strings.

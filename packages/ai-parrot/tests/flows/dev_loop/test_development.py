@@ -59,6 +59,31 @@ class TestDispatchArguments:
         assert profile.permission_mode == "acceptEdits"
         assert "Edit" in profile.allowed_tools
         assert "Write" in profile.allowed_tools
+        # FEAT-322: no "session_host" in shared state (legacy caller) →
+        # dispatch() must be called with session_host=None (its default).
+        assert kwargs["session_host"] is None
+
+    @pytest.mark.asyncio
+    async def test_dispatch_forwards_session_host_when_present(
+        self, research_out, dev_out
+    ):
+        """FEAT-322: shared["session_host"] must reach dispatcher.dispatch()."""
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(return_value=dev_out)
+        node = DevelopmentNode(dispatcher=dispatcher)
+        sentinel_host = object()
+
+        await node.execute(
+            prompt="",
+            ctx={
+                "run_id": "r1",
+                "research_output": research_out,
+                "session_host": sentinel_host,
+            },
+        )
+
+        kwargs = dispatcher.dispatch.await_args.kwargs
+        assert kwargs["session_host"] is sentinel_host
 
     @pytest.mark.asyncio
     async def test_injected_dispatch_profile_used(self, research_out, dev_out):

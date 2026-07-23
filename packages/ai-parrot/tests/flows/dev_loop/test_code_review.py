@@ -127,6 +127,31 @@ class TestClaudeCodeReviewDispatcher:
         mock_disp.dispatch.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_review_forwards_session_host(self):
+        """FEAT-322: review(session_host=...) must reach dispatch()."""
+        mock_disp = MagicMock()
+        mock_disp.dispatch = AsyncMock(return_value=CodeReviewVerdict(passed=True))
+        d = ClaudeCodeReviewDispatcher(dispatcher=mock_disp)
+        sentinel_host = object()
+
+        await d.review(
+            brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp",
+            session_host=sentinel_host,
+        )
+
+        assert mock_disp.dispatch.await_args.kwargs["session_host"] is sentinel_host
+
+    @pytest.mark.asyncio
+    async def test_review_session_host_defaults_to_none(self):
+        mock_disp = MagicMock()
+        mock_disp.dispatch = AsyncMock(return_value=CodeReviewVerdict(passed=True))
+        d = ClaudeCodeReviewDispatcher(dispatcher=mock_disp)
+
+        await d.review(brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp")
+
+        assert mock_disp.dispatch.await_args.kwargs["session_host"] is None
+
+    @pytest.mark.asyncio
     async def test_review_degrades_on_error(self):
         mock_disp = MagicMock()
         mock_disp.dispatch = AsyncMock(side_effect=RuntimeError("boom"))
@@ -250,6 +275,53 @@ class TestBuildDevLoopNodeFactoriesWiring:
         nd = NodeDefinition(id="qa", type="dev_loop.qa")
         node = factories["dev_loop.qa"](nd, set(), set())
         assert isinstance(node._codereview_dispatcher, ClaudeCodeReviewDispatcher)
+
+
+class TestBuildDevLoopNodeFactoriesRequireDeploymentApproval:
+    """FEAT-322 code-review follow-up: require_deployment_approval threads
+    through the factory chain to a real, production-reachable
+    DeploymentHandoffNode instance (previously only settable via
+    object.__setattr__ from a test)."""
+
+    def test_handoff_factory_defaults_to_false(self):
+        from parrot.bots.flows.flow.definition import NodeDefinition
+        from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
+
+        factories = build_dev_loop_node_factories(
+            dispatcher=MagicMock(),
+            jira_toolkit=MagicMock(),
+            redis_url="redis://localhost:6379/0",
+        )
+        nd = NodeDefinition(id="deployment_handoff", type="dev_loop.deployment_handoff")
+        node = factories["dev_loop.deployment_handoff"](nd, set(), set())
+        assert node._require_deployment_approval is False
+
+    def test_handoff_factory_forwards_true(self):
+        from parrot.bots.flows.flow.definition import NodeDefinition
+        from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
+
+        factories = build_dev_loop_node_factories(
+            dispatcher=MagicMock(),
+            jira_toolkit=MagicMock(),
+            redis_url="redis://localhost:6379/0",
+            require_deployment_approval=True,
+        )
+        nd = NodeDefinition(id="deployment_handoff", type="dev_loop.deployment_handoff")
+        node = factories["dev_loop.deployment_handoff"](nd, set(), set())
+        assert node._require_deployment_approval is True
+
+    def test_build_dev_loop_flow_forwards_require_deployment_approval(self):
+        from parrot.flows.dev_loop.flow import build_dev_loop_flow
+
+        flow = build_dev_loop_flow(
+            dispatcher=MagicMock(),
+            jira_toolkit=MagicMock(),
+            log_toolkits={},
+            redis_url="redis://localhost:6379/0",
+            publish_flow_events=False,
+            require_deployment_approval=True,
+        )
+        assert flow._nodes["deployment_handoff"]._require_deployment_approval is True
 
 
 @pytest.fixture

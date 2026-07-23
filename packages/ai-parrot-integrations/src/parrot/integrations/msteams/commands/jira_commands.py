@@ -21,6 +21,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict
 
 from botbuilder.core import TurnContext
+from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION
 
 if TYPE_CHECKING:
     from parrot.auth.jira_oauth import JiraOAuthManager
@@ -47,7 +48,7 @@ def _connect_jira_card(auth_url: str) -> Dict[str, Any]:
     return {
         "type": "AdaptiveCard",
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-        "version": "1.4",
+        "version": DEFAULT_ADAPTIVE_CARD_VERSION,
         "body": [
             {
                 "type": "TextBlock",
@@ -74,7 +75,7 @@ def _jira_menu_card() -> Dict[str, Any]:
     return {
         "type": "AdaptiveCard",
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-        "version": "1.4",
+        "version": DEFAULT_ADAPTIVE_CARD_VERSION,
         "body": [
             {
                 "type": "TextBlock",

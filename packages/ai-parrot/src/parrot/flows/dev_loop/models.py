@@ -87,6 +87,17 @@ class ManualCriterion(BaseModel):
         min_length=1,
         description="Human-readable statement the reviewer must verify.",
     )
+    blocking: bool = Field(
+        default=False,
+        description=(
+            "FEAT-322: when True, QANode opens a blocking manual_criterion "
+            "HITL gate and awaits its resolution before returning — the run "
+            "pauses (phase='awaiting_gate') until a human approves/rejects "
+            "or the gate's TTL expires. Default False preserves today's "
+            "behavior exactly: the criterion is synthesized as "
+            "passed=True without blocking (see QANode._merge_manual_results)."
+        ),
+    )
 
 
 AcceptanceCriterion = Annotated[
@@ -175,6 +186,25 @@ class WorkBrief(BaseModel):
             "the named ticket instead. When unset, ResearchNode searches "
             "the project for an open ticket with a matching summary "
             "before falling back to creating a new one."
+        ),
+    )
+    dev_agents: Optional[List["DevAgentSpec"]] = Field(
+        default=None,
+        description=(
+            "Optional per-run dev-agent pool declaration (FEAT-323). When "
+            "set, ``DevelopmentNode`` dispatches this pool of sub-agents "
+            "instead of the single-agent path. Falls back to the "
+            "``DEV_LOOP_DEV_AGENTS`` env var, then to the single-agent "
+            "behaviour, when unset."
+        ),
+    )
+    dev_isolation: Optional[Literal["shared", "isolated"]] = Field(
+        default=None,
+        description=(
+            "Optional per-run isolation mode override for the dev-agent "
+            "pool (FEAT-323). Falls back to ``DEV_LOOP_DEV_ISOLATION``, "
+            "then to ``DevAgentPoolConfig.isolation_mode`` (default "
+            "'shared'), when unset."
         ),
     )
 
@@ -326,12 +356,111 @@ class ResearchOutput(BaseModel):
     )
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Dev-agent pool configuration & task-scoped dispatch (FEAT-323)
+# ─────────────────────────────────────────────────────────────────────
+
+DevAgentBackend = Literal[
+    "claude-code", "codex", "gemini", "nvidia", "grok", "zai", "moonshot"
+]
+
+
+class DevAgentSpec(BaseModel):
+    """A single dev-agent declaration inside a ``DevAgentPoolConfig``.
+
+    Materialized by the pool builder into an existing
+    ``DevLoopCodeDispatcher`` instance; ``count`` replicas of the same
+    backend/model share the same dispatcher (and its semaphore).
+    """
+
+    agent: DevAgentBackend = Field(
+        ..., description="Backend → existing dispatcher (claude-code, codex, ...)."
+    )
+    model: str = Field(
+        default="", description="'' ⇒ use the backend's default model."
+    )
+    count: int = Field(
+        default=1, ge=1, description="Number of replicas of this spec in the pool."
+    )
+
+
+class DevAgentPoolConfig(BaseModel):
+    """Declares the pool of dev sub-agents for a dev-loop run (FEAT-323).
+
+    Travels on ``WorkBrief.dev_agents`` / ``dev_isolation``, or is parsed
+    from the ``DEV_LOOP_DEV_AGENTS`` / ``DEV_LOOP_DEV_ISOLATION`` env
+    vars. When absent entirely, ``DevelopmentNode`` runs the single-agent
+    path unchanged.
+    """
+
+    agents: List[DevAgentSpec] = Field(
+        ..., min_length=1, description="Dev-agent specs that make up the pool."
+    )
+    isolation_mode: Literal["shared", "isolated"] = Field(
+        default="shared",
+        description=(
+            "'shared': all dispatches share the single worktree (precondition: "
+            "disjoint task files). 'isolated': one sub-worktree per worker, "
+            "merged sequentially back to the feature branch."
+        ),
+    )
+
+
+class TaskScopedBrief(BaseModel):
+    """Per-dispatch brief for a single task, used by the ``DevAgentPool``.
+
+    Wraps the (single, shared) ``ResearchOutput`` with the ``task_id`` the
+    dispatched sub-agent must implement in isolation, per the
+    ``sdd-worker.md`` conditional instruction (FEAT-323 Module 7).
+    """
+
+    research: ResearchOutput
+    task_id: str = Field(..., description="TASK-NNN id this dispatch must implement.")
+
+
+class WorkerSummary(BaseModel):
+    """Per-worker summary emitted by a ``DevAgentPool`` dispatch wave.
+
+    One instance per sub-agent in the pool (FEAT-323), aggregated onto
+    ``DevelopmentOutput.worker_summaries`` by ``DevelopmentNode`` when it
+    runs in pool mode.
+    """
+
+    worker_id: str = Field(
+        ..., description="Synthetic node id, e.g. 'development.w1'."
+    )
+    agent: str = Field(..., description="Backend used for this worker, e.g. 'codex'.")
+    model: str = Field(..., description="Model name/id used by this worker.")
+    tasks_completed: List[str] = Field(
+        default_factory=list, description="TASK-NNN ids completed by this worker."
+    )
+    tasks_failed: List[str] = Field(
+        default_factory=list, description="TASK-NNN ids that failed on this worker."
+    )
+    summary: str = Field(default="", description="Free-text summary from the worker.")
+
+
 class DevelopmentOutput(BaseModel):
     """Structured output from the ``sdd-worker`` dispatch."""
 
     files_changed: List[str]
     commit_shas: List[str]
     summary: str
+    incomplete_tasks: List[str] = Field(
+        default_factory=list,
+        description=(
+            "TASK-NNN ids that could not be completed after a retry "
+            "(FEAT-323 pool mode). Empty for the single-agent path and for "
+            "back-compat with pre-FEAT-323 payloads."
+        ),
+    )
+    worker_summaries: List[WorkerSummary] = Field(
+        default_factory=list,
+        description=(
+            "Per-worker summaries when dispatched via a ``DevAgentPool`` "
+            "(FEAT-323). Empty for the single-agent path."
+        ),
+    )
 
 
 class CriterionResult(BaseModel):

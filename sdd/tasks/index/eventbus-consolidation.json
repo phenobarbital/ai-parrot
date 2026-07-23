@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-21T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-07-22T00:00:00+00:00",
   "tasks": [
     {
       "id": "TASK-1839",
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-319",
       "feature": "eventbus-consolidation",
       "spec": "sdd/specs/eventbus-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Release gate — requires all navigator-eventbus code tasks merged. Tag + PyPI publish are human-gated (Jesus).",
       "assigned_to": null,
       "started_at": "2026-07-20T22:24:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1842-release-navigator-eventbus-0-1-0.md"
+      "completed_at": "2026-07-22T00:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1842-release-navigator-eventbus-0-1-0.md"
     },
     {
       "id": "TASK-1843",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-319",
       "feature": "eventbus-consolidation",
       "spec": "sdd/specs/eventbus-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "ai-parrot task, hard-gated on the PyPI release (TASK-1842). Two-file change — per spec Worktree Strategy, no worktree.",
       "assigned_to": null,
       "started_at": "2026-07-20T22:24:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1843-ai-parrot-pypi-pin-and-guard.md"
+      "completed_at": "2026-07-22T00:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1843-ai-parrot-pypi-pin-and-guard.md"
     }
   ]
 }

@@ -1,0 +1,6 @@
+division,project,rev_actual,rev_budget,ebitda_actual,ebitda_budget
+Sales,Alpha,120000,110000,25000,22000
+Sales,Beta,55000,70000,4000,9000
+Ops,Gamma,32000,31000,4500,4200
+Ops,Delta,10000,12000,-1000,500
+Marketing,Epsilon,5000,5000,500,500

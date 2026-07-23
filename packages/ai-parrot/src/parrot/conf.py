@@ -935,6 +935,32 @@ DEV_LOOP_JIRA_TRANSITIONS_REVISION: list[str] = config.getlist(
     fallback=["In Review – revised", "In Review", "Resolve Issue", "In Progress", "Reopen"],
 ) or ["In Review – revised", "In Review", "Resolve Issue", "In Progress", "Reopen"]
 
+# AHP-style session state / HITL approval gates (FEAT-322). Per-kind gate
+# TTLs in seconds (read via ``runner.gate_ttl_for(kind)`` — conf stays out
+# of the transport-free ``session_state`` module); per-gate overrides are
+# still possible via ``SessionHost.open_gate(ttl_seconds=...)``. Defaults
+# match the brainstorm-resolved policy (spec §8): deployment/manual/revision
+# gates are fail-closed (long TTL, escalate on expiry); plan_approval is
+# fail-open (short TTL, auto-approved by "system:ttl-auto-approve").
+DEV_LOOP_GATE_TTL_DEPLOYMENT: int = config.getint(
+    "DEV_LOOP_GATE_TTL_DEPLOYMENT", fallback=86400  # 24h, fail-closed
+)
+DEV_LOOP_GATE_TTL_MANUAL: int = config.getint(
+    "DEV_LOOP_GATE_TTL_MANUAL", fallback=259200  # 72h, fail-closed
+)
+DEV_LOOP_GATE_TTL_REVISION: int = config.getint(
+    "DEV_LOOP_GATE_TTL_REVISION", fallback=86400  # 24h, fail-closed
+)
+DEV_LOOP_GATE_TTL_PLAN: int = config.getint(
+    "DEV_LOOP_GATE_TTL_PLAN", fallback=14400  # 4h, fail-open
+)
+# Retention window for the operational ``flow:{run_id}:actions`` stream
+# (XADD MAXLEN ~100000 during the run); the terminal Snapshot is the
+# durable audit record — the stream itself is swept after this many days.
+DEV_LOOP_ACTIONS_RETENTION_DAYS: int = config.getint(
+    "DEV_LOOP_ACTIONS_RETENTION_DAYS", fallback=7
+)
+
 # ---------------------------------------------------------------------------
 # Remote Tool Executors (parrot.tools.executors)
 # ---------------------------------------------------------------------------

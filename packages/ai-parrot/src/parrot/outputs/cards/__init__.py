@@ -56,5 +56,5 @@ from .sections import (
     TextSection,
     ToggleSection,
 )
-from .spec import CardSpec
+from .spec import DEFAULT_ADAPTIVE_CARD_VERSION, CardSpec
 from .toggle import AutoCollapsePolicy, ToggleGroup
