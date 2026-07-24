@@ -105,7 +105,7 @@
       "parallel": false,
       "parallelism_notes": "Rewrites the package __init__ created in TASK-1894 and imports DevLoopConsole from TASK-1896; also the only task touching cli/__init__.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-24T16:00:00+02:00",
       "completed_at": "2026-07-24T22:22:50+00:00",
       "file": "sdd/tasks/completed/TASK-1897-devloop-click-wiring-docs.md",
       "verification": "verified"
@@ -126,7 +126,7 @@
       "parallel": false,
       "parallelism_notes": "Exercises the fully-wired feature (real DevLoopRunner over a fake flow); must run last.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-24T18:30:00+02:00",
       "completed_at": "2026-07-24T22:22:50+00:00",
       "file": "sdd/tasks/completed/TASK-1898-devloop-integration-tests.md",
       "verification": "verified"
