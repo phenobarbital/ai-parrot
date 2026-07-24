@@ -1,6 +1,7 @@
 """Unit tests for InfographicAuthoringMixin (FEAT-326, Module 3 / TASK-1884)."""
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -131,6 +132,31 @@ class TestGenerateInfographic:
         with pytest.raises(InfographicValidationError) as exc:
             await agent.generate_infographic("tpl", descriptor)
         assert exc.value.code == "sections_unmet"
+        render_spy.assert_not_called()
+
+    async def test_multi_dataset_section_rejected_before_render(self, agent):
+        # The default builder cannot merge multiple datasets — it must fail fast
+        # rather than silently drop the extra frames.
+        descriptor = SectionDescriptor(
+            template="tpl",
+            mode="data-splice",
+            sections=[
+                SectionSpec(name="hero", target="/hero",
+                            datasets=["revenue", "ebitda"], shape="records"),
+            ],
+        )
+        # Both datasets exist so the dataset gate passes; the multi-dataset guard
+        # must still fire.
+        agent._dataset_manager = _FakeDM({
+            "revenue": _FakeEntry(pd.DataFrame({"a": [1]})),
+            "ebitda": _FakeEntry(pd.DataFrame({"a": [2]})),
+        })
+        render_spy = AsyncMock(return_value=_fake_render_result())
+        agent._infographic_toolkit.render_data_template = render_spy
+        with pytest.raises(InfographicValidationError) as exc:
+            await agent.generate_infographic("tpl", descriptor)
+        assert exc.value.code == "multi_dataset_section_unsupported"
+        assert exc.value.detail["sections"][0]["section"] == "hero"
         render_spy.assert_not_called()
 
     async def test_accepts_descriptor_json_string(self, agent, monkeypatch):

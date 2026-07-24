@@ -711,6 +711,18 @@ class InfographicToolkit(AbstractToolkit):
                 {"error": str(exc)},
             ) from exc
 
+        # Neutralise HTML-significant characters before embedding the JSON in a
+        # <script> tag. ``json.dumps`` does NOT escape ``<``/``>``/``&``, so a
+        # payload string containing ``</script>`` would otherwise break out of
+        # the marker element and execute following markup in the browser. The
+        # ``\uXXXX`` forms are valid JSON and decode back to the original
+        # characters client-side (same mitigation as knowledge/graphindex).
+        payload_json = (
+            payload_json.replace("<", "\\u003c")
+            .replace(">", "\\u003e")
+            .replace("&", "\\u0026")
+        )
+
         html = self._splice_payload(source, payload_json, effective_marker)
 
         artifact_id, html_url = await self._persist_template(

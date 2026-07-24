@@ -123,11 +123,13 @@ def _extract_report_data(html_doc: str) -> dict:
 # ---------------------------------------------------------------------------
 
 class TestDomainTransformers:
-    def test_registered_by_name(self):
+    # These are synchronous checks; declared ``async`` only so the module-level
+    # ``pytestmark = pytest.mark.asyncio`` does not warn about sync functions.
+    async def test_registered_by_name(self):
         assert transformer_registry.get("day_totals") is not None
         assert transformer_registry.get("division_breakdown") is not None
 
-    def test_day_totals_matches_reference_math(self):
+    async def test_day_totals_matches_reference_math(self):
         fn = transformer_registry.get("day_totals").func
         frame = pd.DataFrame(_SNAPSHOTS["20260722"], columns=_CSV_COLS)
         out = fn({"snapshots": frame}, {})  # no snapshot col → single record
@@ -137,7 +139,7 @@ class TestDomainTransformers:
         assert out["rev_variance"] == pytest.approx(30000)
         assert out["ebitda_variance"] == pytest.approx((25000 + 9000) - (18000 + 9000))
 
-    def test_division_breakdown_matches_reference_math(self):
+    async def test_division_breakdown_matches_reference_math(self):
         fn = transformer_registry.get("division_breakdown").func
         frame = pd.DataFrame(_SNAPSHOTS["20260722"], columns=_CSV_COLS)
         out = fn({"snapshots": frame}, {})

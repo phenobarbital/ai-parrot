@@ -35,6 +35,7 @@ from parrot.tools.infographic_sections import (
 from parrot.tools.infographic_toolkit import (
     InfographicRenderResult,
     InfographicToolkit,
+    InfographicValidationError,
 )
 from parrot.outputs.a2ui.recipes.models import (
     DataSourceSpec,
@@ -191,14 +192,44 @@ class InfographicAuthoringMixin:
         drives the agent's pandas REPL tools; subclasses/tests may override this
         hook. NEVER records the code used to build the data.
 
+        The default builder shapes a SINGLE declared dataset per section — it
+        does NOT know how to join/merge multiple frames. Sections declaring more
+        than one dataset are rejected fail-fast here (rather than silently
+        dropping the extra frames); build them by overriding this hook or via the
+        agent's pandas REPL tools.
+
         Args:
             descriptor: The validated descriptor.
             params: Author-supplied parameters (unused by the default build).
 
         Returns:
             ``(payload, dataset_snapshots)``.
+
+        Raises:
+            InfographicValidationError: ``multi_dataset_section_unsupported``
+                when any section declares more than one dataset.
         """
         dm = self._require_dm()
+
+        multi = [
+            {"section": s.name, "datasets": list(s.datasets)}
+            for s in descriptor.sections
+            if len(s.datasets) > 1
+        ]
+        if multi:
+            raise InfographicValidationError(
+                "multi_dataset_section_unsupported",
+                {
+                    "sections": multi,
+                    "detail": (
+                        "The default section builder shapes a single dataset per "
+                        "section. Override _build_section_payload (or build these "
+                        "sections via the agent's pandas REPL) to combine multiple "
+                        "datasets."
+                    ),
+                },
+            )
+
         payload: Dict[str, Any] = {}
         snapshots: Dict[str, str] = {}
         now_iso = datetime.now(timezone.utc).isoformat()

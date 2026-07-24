@@ -125,6 +125,23 @@ class TestRenderDataTemplate:
             await toolkit.render_data_template("does-not-exist", {"x": 1})
         assert exc.value.code == "TEMPLATE_UNKNOWN"
 
+    async def test_script_breakout_escaped(self, toolkit, fake_artifact_store):
+        # A payload value containing </script> must NOT close the marker tag or
+        # inject executable markup: < / > / & are escaped to \uXXXX in the JSON.
+        evil = "Q3</script><script>alert(document.cookie)</script>"
+        await toolkit.render_data_template("tiny", {"project": evil})
+        artifact = fake_artifact_store.save_artifact.call_args[0][-1]
+        html = artifact.definition["html"]
+        # The ONLY <script tag in the output is the legitimate marker — the
+        # injected tags were neutralised (escaped), so no breakout occurs.
+        assert html.count("<script") == 1
+        assert "</script><script>" not in html
+        assert "\\u003c" in html  # escaping was applied to the payload
+        # The marker's JSON still round-trips to the original value (inert data).
+        start = html.index('id="report-data">') + len('id="report-data">')
+        end = html.index("</script>", start)
+        assert json.loads(html[start:end]) == {"project": evil}
+
     async def test_descriptor_gate_runs_first(self, toolkit, fake_artifact_store):
         # Section declares a 'records' shape but payload provides a scalar → the
         # gate must fire BEFORE any splice/persist.
