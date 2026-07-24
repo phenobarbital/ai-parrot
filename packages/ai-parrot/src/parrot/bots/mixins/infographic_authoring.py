@@ -20,19 +20,31 @@ added by TASK-1885.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from parrot.tools.infographic_sections import (
+    GapReport,
     ProvenanceDescriptor,
     SectionDescriptor,
     SectionSpec,
+    TransformerGap,
     validate_descriptor_datasets,
 )
 from parrot.tools.infographic_toolkit import (
     InfographicRenderResult,
     InfographicToolkit,
 )
+from parrot.outputs.a2ui.recipes.models import (
+    DataSourceSpec,
+    InfographicRecipe,
+    LayoutSpec,
+    RenderSpec,
+    TransformStep,
+)
+from parrot.outputs.a2ui.recipes.store import RecipeNotFoundError
+from parrot.outputs.a2ui.recipes.transformers import transformer_registry
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +244,146 @@ class InfographicAuthoringMixin:
         # scalar
         return df.iloc[0, 0] if not df.empty else None
 
+    # ── Tier 2 — publication ────────────────────────────────────────────────
+
+    async def publish_recipe(
+        self,
+        name: str,
+        descriptor: "SectionDescriptor | str",
+        owner: Optional[str] = None,
+        delivery: Optional[dict] = None,
+        overwrite: bool = False,
+    ) -> Union[InfographicRecipe, GapReport]:
+        """Publish a descriptor as a deterministic FEAT-324 recipe (tier 2).
+
+        Maps each descriptor section onto a **registered** transformer as a
+        :class:`TransformStep`. Full coverage → build and save an
+        :class:`InfographicRecipe` carrying the ``section_descriptor`` and a
+        :class:`RenderSpec` with the supplied ``delivery`` config. ANY unmapped
+        section → return a :class:`GapReport` (with a human-registerable
+        ``suggested_source`` per gap) and save **nothing** (spec G1: never store
+        or execute code).
+
+        Section → transformer resolution uses the section's name, normalised to
+        a Python identifier, as the registry key.
+
+        Args:
+            name: Recipe name (scoped by ``owner``).
+            descriptor: A :class:`SectionDescriptor` or its JSON string.
+            owner: Recipe owner scope.
+            delivery: Optional delivery config → ``RenderSpec.delivery``.
+            overwrite: Replace an existing ``(name, owner)`` recipe. When False,
+                a collision raises.
+
+        Returns:
+            The saved :class:`InfographicRecipe`, or a :class:`GapReport` when
+            coverage is partial.
+
+        Raises:
+            ValueError: On a ``(name, owner)`` collision when ``overwrite`` is
+                False.
+            RuntimeError: When no recipe store is wired.
+        """
+        descriptor = self._coerce_descriptor(descriptor)
+        store = self._require_recipe_store()
+
+        if not overwrite:
+            try:
+                await store.get(name, owner)
+            except RecipeNotFoundError:
+                pass
+            else:
+                raise ValueError(
+                    f"Recipe (name={name!r}, owner={owner!r}) already exists; "
+                    f"pass overwrite=True to replace it."
+                )
+
+        transforms: List[TransformStep] = []
+        gaps: List[TransformerGap] = []
+        covered: List[str] = []
+        for section in descriptor.sections:
+            tname = self._transformer_name(section)
+            try:
+                transformer_registry.get(tname)
+            except KeyError:
+                gaps.append(
+                    TransformerGap(
+                        section=section.name,
+                        proposed_name=tname,
+                        suggested_source=self._suggest_transformer_source(section, tname),
+                    )
+                )
+                continue
+            transforms.append(
+                TransformStep(
+                    transformer=tname,
+                    inputs=list(section.datasets),
+                    params=dict(descriptor.params),
+                    output_key=section.target.lstrip("/"),
+                )
+            )
+            covered.append(section.name)
+
+        if gaps:
+            self.logger.info(
+                "publish_recipe(%s): partial coverage — %d gap(s); recipe NOT saved.",
+                name, len(gaps),
+            )
+            return GapReport(gaps=gaps, covered=covered)
+
+        # Full coverage → build + persist the recipe.
+        aliases: List[str] = []
+        for section in descriptor.sections:
+            for alias in section.datasets:
+                if alias not in aliases:
+                    aliases.append(alias)
+        data_sources = [DataSourceSpec(dataset=alias, alias=alias) for alias in aliases]
+
+        recipe = InfographicRecipe(
+            name=name,
+            title=name,
+            owner=owner,
+            data_sources=data_sources,
+            transforms=transforms,
+            layout=LayoutSpec(
+                component="Infographic",
+                properties={"template": descriptor.template},
+            ),
+            render=RenderSpec(delivery=delivery),
+            section_descriptor=descriptor,
+            updated_at=datetime.now(timezone.utc),
+        )
+        await store.save(recipe)
+        self.logger.info(
+            "publish_recipe(%s): saved with %d transform(s), delivery=%s.",
+            name, len(transforms), bool(delivery),
+        )
+        return recipe
+
+    @staticmethod
+    def _transformer_name(section: SectionSpec) -> str:
+        """Normalise a section name into a transformer-registry key/identifier."""
+        return re.sub(r"\W+", "_", section.name).strip("_")
+
+    @staticmethod
+    def _suggest_transformer_source(section: SectionSpec, fn_name: str) -> str:
+        """Return a human-registerable transformer skeleton (NEVER executed).
+
+        Derived from the section's declared inputs/output shape — text only, for
+        a developer to review and register with ``@infographic_transformer``.
+        """
+        inputs = ", ".join(section.datasets) or "<dataset aliases>"
+        return (
+            f"# Suggested transformer for section '{section.name}'.\n"
+            f"# FOR HUMAN REVIEW + REGISTRATION ONLY — this text is never executed.\n"
+            f"from parrot.outputs.a2ui.recipes.transformers import infographic_transformer\n\n"
+            f"@infographic_transformer({fn_name!r})\n"
+            f"def {fn_name}(inputs: dict, params: dict) -> dict:\n"
+            f"    # Required input aliases: {inputs}\n"
+            f"    # Expected output shape: {section.shape} (target {section.target!r})\n"
+            f"    raise NotImplementedError('Implement the {section.name!r} transform')\n"
+        )
+
     # ── Helpers ──────────────────────────────────────────────────────────────
 
     @staticmethod
@@ -265,3 +417,14 @@ class InfographicAuthoringMixin:
                 "(compose onto PandasAgent or a DatasetManager-bearing agent)."
             )
         return dm
+
+    def _require_recipe_store(self) -> Any:
+        """Return the wired recipe store or raise a clear error."""
+        toolkit = self._require_toolkit()
+        store = getattr(toolkit, "_recipe_store", None)
+        if store is None:
+            raise RuntimeError(
+                "InfographicAuthoringMixin.publish_recipe requires a recipe store; "
+                "pass recipe_store= (or a toolkit configured with one)."
+            )
+        return store
