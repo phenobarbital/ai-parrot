@@ -20,9 +20,19 @@ from datetime import datetime, timezone
 from aiohttp import web
 from navconfig.logging import logging
 from navigator_auth.decorators import is_authenticated, user_session
+from navigator_session import get_session
 from pydantic import ValidationError
 
 from .agent import AgentTalk
+from .infographic_render import (
+    RenderBodyTooLargeError,
+    RenderPayloadError,
+    RenderRequest,
+    RenderResponse,
+    decode_inline_datasets,
+    parse_multipart_render_request,
+    render_deterministic,
+)
 from ..helpers.infographics import (
     get_template,
     get_theme,
@@ -31,6 +41,7 @@ from ..helpers.infographics import (
     register_template,
     register_theme,
 )
+from ..tools.infographic_toolkit import InfographicToolkit, InfographicValidationError
 
 # Keys consumed or reserved by the handler itself.  They must NOT be
 # forwarded as ``**kwargs`` into ``bot.get_infographic`` because doing so
@@ -96,6 +107,8 @@ class InfographicTalk(AgentTalk):
             return await self._handle_templates_register()
         if resource == "themes":
             return await self._handle_themes_register()
+        if resource == "render":
+            return await self._render_infographic_deterministic()
         # Default: per-agent infographic generation
         return await self._generate_infographic()
 
@@ -302,6 +315,194 @@ class InfographicTalk(AgentTalk):
             self.logger.warning(
                 "Auto-save infographic artifact failed: %s", exc
             )
+
+    # ── Deterministic render (FEAT-327) ──────────────────────────────────
+
+    async def _render_infographic_deterministic(self) -> web.Response:
+        """Deterministic, bot-less render: ``POST .../infographic/render``.
+
+        No ``{agent_id}``, no bot, no LLM. Decodes the request (JSON or
+        multipart), runs the FEAT-326 validation gate via
+        ``AdhocDatasetAdapter``, renders through a server-owned
+        ``InfographicToolkit``, persists (awaited, unless ``persist=False``),
+        and returns a negotiated response with the two-behavior URL rule.
+
+        Returns:
+            ``text/html`` (spliced/rendered HTML) or ``application/json``
+            (``RenderResponse``), per ``_negotiate_accept()``. ``400`` on a
+            malformed part/body, ``413`` over the body cap, ``404`` on an
+            unknown template, ``422`` on aggregated validation deficits,
+            ``501`` for ``async=true`` (TASK-1891 seam), ``5xx`` otherwise.
+        """
+        try:
+            parsed, frames = await self._decode_render_request()
+        except RenderPayloadError as exc:
+            return self.json_response(
+                {"error": "Malformed request", "part": exc.part_name, "detail": str(exc)},
+                status=400,
+            )
+        except RenderBodyTooLargeError as exc:
+            return self.json_response({"error": str(exc)}, status=413)
+        except ValidationError as exc:
+            return self.json_response(
+                {"error": "Invalid RenderRequest", "details": exc.errors()}, status=400
+            )
+
+        if parsed.async_:
+            # TASK-1891 seam: replace with Redis-backed job creation + 202.
+            # NOTE: BaseView.error() only remaps a fixed status set (400/401/
+            # 403/404/406/412/428) — 501 falls through to HTTPBadRequest, so
+            # json_response() is used here to honor the real status code.
+            return self.json_response(
+                {"error": "async=true rendering is not yet implemented (TASK-1891)."},
+                status=501,
+            )
+
+        try:
+            get_template(parsed.template)
+        except KeyError:
+            return self.error(f"Unknown template '{parsed.template}'.", status=404)
+
+        user_id, agent_id, session_id = await self._resolve_render_attribution(parsed)
+        toolkit = self._get_render_toolkit()
+        artifact_store = self.request.app.get("artifact_store") if parsed.persist else None
+        if parsed.persist and artifact_store is None:
+            self.logger.warning(
+                "Render requested persist=True but app['artifact_store'] is not "
+                "configured; proceeding WITHOUT persistence."
+            )
+
+        try:
+            outcome = await render_deterministic(
+                parsed,
+                frames,
+                toolkit=toolkit,
+                artifact_store=artifact_store,
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+            )
+        except InfographicValidationError as exc:
+            if exc.code in ("sections_unmet", "payload_shape_mismatch"):
+                return self.json_response(
+                    {"error": exc.code, "detail": exc.detail}, status=422
+                )
+            self.logger.error("Render failed: %s — %s", exc.code, exc.detail)
+            return self.json_response(
+                {"error": exc.code, "detail": exc.detail}, status=500
+            )
+        except RenderPayloadError as exc:
+            return self.json_response(
+                {"error": "Payload assembly failed", "part": exc.part_name, "detail": str(exc)},
+                status=400,
+            )
+
+        accept = self._negotiate_accept()
+        if accept == "text/html":
+            response = web.Response(
+                body=outcome.html.encode("utf-8"),
+                content_type="text/html",
+                charset="utf-8",
+            )
+            response.headers["X-Artifact-Persisted"] = str(outcome.persisted).lower()
+            return response
+
+        payload = RenderResponse(
+            artifact_id=outcome.artifact_id,
+            url=outcome.url,
+            template=parsed.template,
+            sections_validated=outcome.sections_validated,
+            persisted=outcome.persisted,
+            timings=outcome.timings,
+        )
+        return self.json_response(payload.model_dump())
+
+    async def _decode_render_request(self):
+        """Decode the render body (JSON or multipart) into a ``RenderRequest`` + frames.
+
+        Returns:
+            Tuple of ``(RenderRequest, {name: DataFrame})`` — inline datasets
+            decoded from the JSON body, plus (for multipart) the
+            ``dataset:<name>`` parts.
+
+        Raises:
+            RenderPayloadError: Malformed body/part, or a declared ``None``
+                dataset with no backing multipart part.
+            RenderBodyTooLargeError: The body exceeds the configured cap.
+            pydantic.ValidationError: The JSON body fails ``RenderRequest`` validation.
+        """
+        content_type = self.request.content_type or ""
+        if content_type.startswith("multipart/"):
+            reader = await self.request.multipart()
+            parsed, multipart_frames = await parse_multipart_render_request(reader)
+            frames = decode_inline_datasets(parsed)
+            frames.update(multipart_frames)
+            return parsed, frames
+
+        try:
+            body = await self.request.json()
+        except Exception as exc:
+            raise RenderPayloadError("request", f"invalid JSON body: {exc}") from exc
+        parsed = RenderRequest.model_validate(body)
+        frames = decode_inline_datasets(parsed)
+        missing = [
+            name for name, dataset in parsed.datasets.items()
+            if dataset is None and name not in frames
+        ]
+        for name in missing:
+            raise RenderPayloadError(
+                f"dataset:{name}",
+                "declared as null but the request is not multipart — no part to hydrate it",
+            )
+        return parsed, frames
+
+    async def _resolve_render_attribution(self, parsed: RenderRequest):
+        """Resolve ``(user_id, agent_id, session_id)`` attribution for a render.
+
+        ``user_id`` comes ONLY from the authenticated session (never the
+        body — the body cannot spoof another user's ownership); ``agent_id``/
+        ``session_id`` come from the body, falling back to system defaults.
+
+        Args:
+            parsed: The parsed ``RenderRequest``.
+
+        Returns:
+            The resolved ``(user_id, agent_id, session_id)`` tuple.
+        """
+        user_id = None
+        try:
+            request_session = self.request.session or await get_session(self.request)
+            if request_session:
+                user_id = request_session.get("user_id")
+        except AttributeError:
+            pass
+        user_id = user_id or "_anon"
+        agent_id = parsed.agent_id or "_anon"
+        session_id = parsed.session_id or uuid.uuid4().hex
+        return str(user_id), str(agent_id), str(session_id)
+
+    def _get_render_toolkit(self) -> InfographicToolkit:
+        """Return (lazily building) the server-owned ``InfographicToolkit``.
+
+        Cached on ``self.request.app["infographic_render_toolkit"]`` — ONE
+        instance shared across requests. Safe to share: the render flow
+        (``render_deterministic``) never mutates toolkit instance state
+        (unlike the bot-bound authoring path), so there is no cross-request
+        interference. ``template_dirs`` comes from the (new, minimal)
+        ``app["infographic_render_template_dirs"]`` config key — mirrors the
+        existing ``app["artifact_store"]`` DI convention
+        (``manager.py`` on_startup). Absent config degrades to
+        ``TEMPLATE_ENGINE_UNSET`` at render time rather than failing to build.
+        """
+        app = self.request.app
+        toolkit = app.get("infographic_render_toolkit")
+        if toolkit is None:
+            toolkit = InfographicToolkit(
+                artifact_store=app.get("artifact_store"),
+                template_dirs=app.get("infographic_render_template_dirs"),
+            )
+            app["infographic_render_toolkit"] = toolkit
+        return toolkit
 
     async def _handle_templates_get(
         self, name: Optional[str]

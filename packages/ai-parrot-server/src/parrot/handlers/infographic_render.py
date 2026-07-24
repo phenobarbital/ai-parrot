@@ -27,6 +27,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
+from dataclasses import dataclass, field as dataclass_field
+from datetime import datetime, timezone
 from io import BytesIO
 from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
 
@@ -34,7 +37,18 @@ import pandas as pd
 import pyarrow  # noqa: F401  (declared dependency — TASK-1892; required by pd.read_parquet)
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from parrot.tools import SectionDescriptor
+from parrot.tools import AdhocDatasetAdapter, SectionDescriptor
+from parrot.tools.infographic_sections import (
+    validate_descriptor_datasets,
+    validate_payload_shape,
+)
+from parrot.tools.infographic_toolkit import (
+    InfographicToolkit,
+    InfographicValidationError,
+    _json_safe_default,
+)
+from parrot.storage.artifacts import ArtifactStore
+from parrot.storage.models import Artifact, ArtifactCreator, ArtifactType
 
 logger = logging.getLogger(__name__)
 
@@ -436,6 +450,436 @@ def _verify_declared_parts_present(
         )
 
 
+# ---------------------------------------------------------------------------
+# Payload assembly + URL two-behavior rule (FEAT-327, Module 3)
+# ---------------------------------------------------------------------------
+
+def assemble_section_payload(
+    descriptor: SectionDescriptor, frames: Mapping[str, pd.DataFrame]
+) -> Dict[str, Any]:
+    """Assemble a data-splice/jinja payload dict from validated section datasets.
+
+    For each section with a non-empty ``datasets`` list, builds the
+    ``target``'s value from its dataset — restricted to ``columns[alias]``
+    when given (else every column) — shaped per ``section.shape``:
+
+    - ``"records"``: list of row dicts (``DataFrame.to_dict("records")``).
+    - ``"table"``: list of row lists (``DataFrame.values.tolist()``).
+    - ``"mapping"``: the first row as a ``{column: value}`` dict.
+    - ``"scalar"``: the first row's first column value.
+
+    Sections with an empty ``datasets`` list are skipped (their value is
+    expected to come from ``descriptor.params`` or caller-side composition
+    upstream — nothing to assemble here).
+
+    **v1 scope note**: a section naming MORE THAN ONE dataset alias needs a
+    bespoke transformer (how to combine them is not generically defined) —
+    the generic assembler here supports exactly one dataset per section and
+    raises :class:`RenderPayloadError` naming the section otherwise, rather
+    than guessing a combination strategy.
+
+    Args:
+        descriptor: The section descriptor driving assembly.
+        frames: ``{name: DataFrame}`` — every alias referenced by a
+            single-dataset section MUST already be present (the FEAT-326
+            validation gate is expected to have run first).
+
+    Returns:
+        The assembled payload dict, keyed per each section's ``target``.
+
+    Raises:
+        RenderPayloadError: A section names more than one dataset, or has
+            no rows available for a ``"mapping"``/``"scalar"`` shape.
+    """
+    payload: Dict[str, Any] = {}
+    for section in descriptor.sections:
+        if not section.datasets:
+            continue
+        if len(section.datasets) > 1:
+            raise RenderPayloadError(
+                section.name,
+                "sections referencing more than one dataset require a "
+                "custom transformer; the generic v1 assembler supports "
+                "exactly one dataset per section",
+            )
+        alias = section.datasets[0]
+        df = frames[alias]
+        columns = section.columns.get(alias) or list(df.columns)
+        value = _shape_dataframe(df[columns], section.shape, section_name=section.name)
+        _assign_target(payload, section.target, value)
+    return payload
+
+
+def _shape_dataframe(view: pd.DataFrame, shape: str, *, section_name: str) -> Any:
+    """Shape a column-restricted DataFrame view per a section's declared ``shape``."""
+    if shape == "records":
+        return view.to_dict(orient="records")
+    if shape == "table":
+        return view.values.tolist()
+    if shape == "mapping":
+        if view.empty:
+            raise RenderPayloadError(
+                section_name, "no rows available to assemble a 'mapping' section"
+            )
+        return view.iloc[0].to_dict()
+    if shape == "scalar":
+        if view.empty or view.shape[1] == 0:
+            raise RenderPayloadError(
+                section_name, "no value available to assemble a 'scalar' section"
+            )
+        cell = view.iloc[0, 0]
+        return cell.item() if hasattr(cell, "item") else cell
+    raise RenderPayloadError(section_name, f"unsupported shape '{shape}'")
+
+
+def _assign_target(payload: Dict[str, Any], target: str, value: Any) -> None:
+    """Assign ``value`` at ``target`` (JSON pointer or plain key) within ``payload``.
+
+    Mirrors :func:`parrot.tools.infographic_sections._resolve_target`'s
+    pointer syntax, but WRITES rather than reads.
+    """
+    if target.startswith("/"):
+        tokens = [
+            tok.replace("~1", "/").replace("~0", "~")
+            for tok in target.lstrip("/").split("/")
+        ]
+        node = payload
+        for tok in tokens[:-1]:
+            node = node.setdefault(tok, {})
+        node[tokens[-1]] = value
+    else:
+        payload[target] = value
+
+
+async def publish_to_static_dir(html: str, artifact_id: str) -> str:
+    """Write ``html`` under ``STATIC_DIR`` and return its ``/static/`` URL.
+
+    The filename is server-generated from ``artifact_id`` (never a
+    caller-controlled path segment) — sanitisation is inherent since
+    ``artifact_id`` is always produced by :func:`uuid.uuid4`. The write runs
+    via ``loop.run_in_executor`` (blocking file I/O off the event loop).
+
+    Args:
+        html: The rendered HTML to publish.
+        artifact_id: The artifact identifier backing the filename.
+
+    Returns:
+        The relative ``/static/<filename>`` URL (served by the app's
+        ``add_static("/static/", ...)`` route — ``navigator``'s
+        ``AppHandler`` with ``staticdir=STATIC_DIR``).
+    """
+    from parrot.conf import STATIC_DIR  # local import: keep module import-light
+
+    filename = f"infographic-{artifact_id}.html"
+    path = STATIC_DIR / filename
+
+    def _write() -> None:
+        STATIC_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(html, encoding="utf-8")
+
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _write)
+    return f"/static/{filename}"
+
+
+async def resolve_response_url(
+    *,
+    html: str,
+    public: bool,
+    artifact_store: Optional[ArtifactStore],
+    user_id: str,
+    agent_id: str,
+    session_id: str,
+    artifact_id: str,
+) -> Optional[str]:
+    """Resolve the response ``url`` per the two-behavior rule (spec §2 Overview).
+
+    - ``public=True`` → publish ``html`` under ``STATIC_DIR`` and return the
+      static URL (irreversible-ish: the file remains until cleaned up).
+    - ``public=False`` → try :meth:`ArtifactStore.get_public_url` (S3
+      presigned, ALWAYS — infographics are never hosted on public S3); on
+      ``KeyError``/``ValueError`` (inline artifact, local backend, or the
+      artifact was never persisted), return ``None`` — retrieval then goes
+      through the artifacts handler.
+
+    Args:
+        html: The rendered HTML (needed only for the ``public=True`` branch).
+        public: The request's ``public`` flag.
+        artifact_store: The configured store, or ``None`` when the artifact
+            was not persisted (``persist=False``) — the presigned branch is
+            skipped in that case (nothing to presign).
+        user_id: Owning user (storage scope).
+        agent_id: Producing agent (storage scope).
+        session_id: Owning session (storage scope).
+        artifact_id: The artifact identifier.
+
+    Returns:
+        The resolved URL, or ``None``.
+    """
+    if public:
+        return await publish_to_static_dir(html, artifact_id)
+    if artifact_store is None:
+        return None
+    try:
+        return await artifact_store.get_public_url(user_id, agent_id, session_id, artifact_id)
+    except (KeyError, ValueError):
+        return None
+
+
+@dataclass
+class RenderOutcome:
+    """Result of :func:`render_deterministic` — everything the route needs.
+
+    Attributes:
+        html: The rendered HTML (spliced or Jinja-rendered).
+        artifact_id: Server-generated artifact identifier (always present,
+            even when ``persisted=False`` — nothing is stored under it then).
+        url: Resolved per the two-behavior rule; ``None`` when neither
+            applies (local, non-public, or not persisted).
+        persisted: Whether the artifact was actually saved.
+        sections_validated: Number of descriptor sections that passed the gate.
+        timings: Named stage timings, in seconds.
+    """
+
+    html: str
+    artifact_id: str
+    url: Optional[str]
+    persisted: bool
+    sections_validated: int
+    timings: Dict[str, float] = dataclass_field(default_factory=dict)
+
+
+async def render_deterministic(
+    parsed: RenderRequest,
+    frames: Mapping[str, pd.DataFrame],
+    *,
+    toolkit: InfographicToolkit,
+    artifact_store: Optional[ArtifactStore],
+    user_id: str,
+    agent_id: str,
+    session_id: str,
+) -> RenderOutcome:
+    """Validate, render, and (conditionally) persist a ``RenderRequest``.
+
+    Runs the FEAT-326 gate (via :class:`AdhocDatasetAdapter`) BEFORE any
+    render/persist step, assembles the section payload, renders through the
+    ``toolkit``'s low-level primitives (bypassing
+    ``render_data_template``/``render_template``'s UNCONDITIONAL internal
+    persistence — see the module docstring note below) so that ``persist``
+    and the caller's own ``user_id``/``agent_id``/``session_id`` attribution
+    are both honored exactly, then resolves the response URL.
+
+    Deliberately bypasses ``InfographicToolkit.render_data_template`` /
+    ``render_template``: both persist unconditionally under a `_bot`-scope-
+    derived (or ``"_anon"``, when bot-less) identity, with no ``persist``
+    switch — incompatible with this endpoint's caller-supplied attribution
+    and optional persistence. Instead this function uses the toolkit's own
+    lower-level, persist-free primitives (``_template_engine`` +
+    ``InfographicToolkit._splice_payload`` for data-splice mode;
+    ``_template_engine.render`` for jinja mode — the exact same calls
+    ``render_data_template``/``render_template`` make internally, per the
+    spec's own §6 Codebase Contract, which explicitly lists
+    ``_splice_payload`` as a verified signature) and persists directly via
+    ``ArtifactStore.save_artifact`` with this call's own scope.
+
+    Args:
+        parsed: The parsed ``RenderRequest``.
+        frames: ``{name: DataFrame}`` — every dataset referenced by the
+            descriptor (inline + multipart, already decoded).
+        toolkit: The server-owned ``InfographicToolkit`` instance.
+        artifact_store: The configured store, or ``None`` (persistence is
+            then skipped regardless of ``parsed.persist``).
+        user_id: Attribution — from the authenticated session.
+        agent_id: Attribution — from the request body, or a system default.
+        session_id: Attribution — from the request body, or a system default.
+
+    Returns:
+        The :class:`RenderOutcome`.
+
+    Raises:
+        InfographicValidationError: Aggregated dataset/shape deficits
+            (``sections_unmet`` / ``payload_shape_mismatch``), or
+            ``TEMPLATE_UNKNOWN``/``TEMPLATE_ENGINE_UNSET`` when the toolkit's
+            OWN template registry does not know ``parsed.template`` (a
+            registry-configuration gap — see module docstring).
+        RenderPayloadError: The section assembler could not build the payload.
+    """
+    timings: Dict[str, float] = {}
+    loop = asyncio.get_running_loop()
+
+    t0 = loop.time()
+    adapter = AdhocDatasetAdapter(frames=frames)
+    validate_descriptor_datasets(parsed.descriptor, adapter)
+    timings["validate_datasets"] = loop.time() - t0
+
+    t1 = loop.time()
+    payload = assemble_section_payload(parsed.descriptor, frames)
+    validate_payload_shape(parsed.descriptor, payload)
+    timings["assemble_and_validate_shape"] = loop.time() - t1
+
+    t2 = loop.time()
+    if parsed.descriptor.mode == "data-splice":
+        html = await _splice_html(toolkit, parsed, payload)
+    else:
+        html = await _jinja_html(toolkit, parsed, payload)
+    timings["render"] = loop.time() - t2
+
+    artifact_id = f"infographic-{uuid.uuid4().hex[:12]}"
+    t3 = loop.time()
+    persisted = False
+    if parsed.persist and artifact_store is not None:
+        await _persist_render(
+            artifact_store,
+            artifact_id=artifact_id,
+            html=html,
+            template_name=parsed.template,
+            theme=parsed.theme,
+            user_id=user_id,
+            agent_id=agent_id,
+            session_id=session_id,
+        )
+        persisted = True
+    timings["persist"] = loop.time() - t3
+
+    t4 = loop.time()
+    url = await resolve_response_url(
+        html=html,
+        public=parsed.public,
+        artifact_store=artifact_store if persisted else None,
+        user_id=user_id,
+        agent_id=agent_id,
+        session_id=session_id,
+        artifact_id=artifact_id,
+    )
+    timings["resolve_url"] = loop.time() - t4
+
+    return RenderOutcome(
+        html=html,
+        artifact_id=artifact_id,
+        url=url,
+        persisted=persisted,
+        sections_validated=len(parsed.descriptor.sections),
+        timings=timings,
+    )
+
+
+async def _splice_html(
+    toolkit: InfographicToolkit, parsed: RenderRequest, payload: Dict[str, Any]
+) -> str:
+    """Render data-splice HTML via the toolkit's low-level splice primitive.
+
+    Mirrors ``InfographicToolkit.render_data_template``'s own internals
+    (template-source load + ``_splice_payload``) WITHOUT its unconditional
+    auto-persist.
+
+    Raises:
+        InfographicValidationError: ``TEMPLATE_ENGINE_UNSET`` /
+            ``TEMPLATE_UNKNOWN`` when the toolkit's Jinja env has no source
+            for ``parsed.template``.
+    """
+    engine = toolkit._template_engine  # noqa: SLF001 — documented in spec §6 Codebase Contract
+    if engine is None:
+        raise InfographicValidationError(
+            "TEMPLATE_ENGINE_UNSET",
+            {"detail": "No HTML templates configured on the server-owned toolkit."},
+        )
+    try:
+        source, _, _ = engine.env.loader.get_source(engine.env, parsed.template)
+    except Exception as exc:  # noqa: BLE001 — TemplateNotFound and friends
+        raise InfographicValidationError(
+            "TEMPLATE_UNKNOWN", {"template_name": parsed.template}
+        ) from exc
+
+    try:
+        payload_json = json.dumps(
+            payload, allow_nan=False, default=_json_safe_default
+        )
+    except (ValueError, TypeError) as exc:
+        raise InfographicValidationError(
+            "PAYLOAD_NOT_SERIALIZABLE", {"error": str(exc)}
+        ) from exc
+    payload_json = (
+        payload_json.replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
+    # RenderRequest.descriptor is REQUIRED (unlike the tool-level API's
+    # Optional[SectionDescriptor]) — its splice_marker_id ALWAYS governs,
+    # exactly mirroring render_data_template's own documented behavior.
+    marker_id = parsed.descriptor.splice_marker_id
+    return InfographicToolkit._splice_payload(source, payload_json, marker_id)  # noqa: SLF001
+
+
+async def _jinja_html(
+    toolkit: InfographicToolkit, parsed: RenderRequest, payload: Dict[str, Any]
+) -> str:
+    """Render Jinja HTML via the toolkit's template engine, without auto-persist.
+
+    Raises:
+        InfographicValidationError: ``TEMPLATE_ENGINE_UNSET`` /
+            ``TEMPLATE_UNKNOWN`` when no source is configured, or
+            ``TEMPLATE_RENDER_ERROR`` on a Jinja render failure.
+    """
+    engine = toolkit._template_engine  # noqa: SLF001 — documented in spec §6 Codebase Contract
+    if engine is None:
+        raise InfographicValidationError(
+            "TEMPLATE_ENGINE_UNSET",
+            {"detail": "No HTML templates configured on the server-owned toolkit."},
+        )
+    try:
+        engine.get_template(parsed.template)
+    except FileNotFoundError as exc:
+        raise InfographicValidationError(
+            "TEMPLATE_UNKNOWN", {"template_name": parsed.template}
+        ) from exc
+
+    context = {
+        "data": payload,
+        "message": {},
+        "meta": {},
+        "theme": parsed.theme,
+        "title": None,
+        "now": datetime.now(timezone.utc),
+    }
+    try:
+        return await engine.render(parsed.template, context)
+    except (ValueError, RuntimeError) as exc:
+        raise InfographicValidationError(
+            "TEMPLATE_RENDER_ERROR", {"template_name": parsed.template, "error": str(exc)}
+        ) from exc
+
+
+async def _persist_render(
+    artifact_store: ArtifactStore,
+    *,
+    artifact_id: str,
+    html: str,
+    template_name: str,
+    theme: Optional[str],
+    user_id: str,
+    agent_id: str,
+    session_id: str,
+) -> None:
+    """Persist a rendered infographic, mirroring ``InfographicToolkit._persist_template``'s
+    artifact shape (same ``definition`` keys) but with THIS call's own attribution."""
+    now = datetime.now(timezone.utc)
+    artifact = Artifact(
+        artifact_id=artifact_id,
+        artifact_type=ArtifactType.INFOGRAPHIC,
+        title=f"Infographic — {template_name}",
+        created_at=now,
+        updated_at=now,
+        created_by=ArtifactCreator.AGENT,
+        definition={
+            "html": html,
+            "template": template_name,
+            "theme": theme,
+            "js_bundles": [],
+        },
+    )
+    await artifact_store.save_artifact(user_id, agent_id, session_id, artifact)
+
+
 __all__ = (
     "DEFAULT_MAX_BODY_SIZE",
     "RenderPayloadError",
@@ -446,4 +890,9 @@ __all__ = (
     "RenderJob",
     "decode_inline_datasets",
     "parse_multipart_render_request",
+    "assemble_section_payload",
+    "publish_to_static_dir",
+    "resolve_response_url",
+    "RenderOutcome",
+    "render_deterministic",
 )
