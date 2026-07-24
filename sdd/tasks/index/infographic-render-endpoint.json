@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-24T14:00:19+02:00",
-  "completed_at": null,
+  "completed_at": "2026-07-24T18:38:44+00:00",
   "tasks": [
     {
       "id": "TASK-1888",
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-327",
       "feature": "infographic-render-endpoint",
       "spec": "sdd/specs/infographic-render-endpoint.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -106,8 +106,8 @@
       "parallelism_notes": "Integration proof + dependency/docs closure — needs every other task done.",
       "assigned_to": null,
       "started_at": "2026-07-24T13:22:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1892-pyarrow-dep-e2e-docs.md"
+      "completed_at": "2026-07-24T18:38:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1892-pyarrow-dep-e2e-docs.md"
     }
   ]
 }
