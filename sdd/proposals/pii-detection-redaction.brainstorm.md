@@ -458,6 +458,8 @@ from parrot.observability.context import current_agent_name  # bots/base.py:56 (
 - [ ] NER-class entities (person names, postal addresses) are not
   regex-detectable; `PIIEngine` Protocol is the extension point for a
   future `SpacyNerEngine` (spacy already in the `agents` extra) — confirm
-  out of scope for FEAT-316. — *Owner: Jesús*
+  out of scope for FEAT-324. — *Owner: Jesús*
+  (Note: this feature was tentatively FEAT-316 when drafted; 316–318 were
+  taken by the eventbus migration, so the spec assigned FEAT-324.)
 - [ ] Streaming UX: holdback window delays the last ≤128 chars of a
   stream — acceptable for AgentTalk/voice consumers? — *Owner: Jesús*
