@@ -75,6 +75,7 @@ cli._lazy_commands = {
     "wiki": "parrot.knowledge.wiki.cli",
     "claude": "parrot.knowledge.wiki.claude_code.cli",
     "generate-keys": "parrot.cli.generate_keys",
+    "devloop": "parrot.cli.devloop",
 }
 
 if __name__ == "__main__":

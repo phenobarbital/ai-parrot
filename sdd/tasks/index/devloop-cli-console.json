@@ -86,15 +86,15 @@
       "feature_id": "FEAT-374",
       "feature": "devloop-cli-console",
       "spec": "sdd/specs/devloop-cli-console.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": ["TASK-1896"],
       "parallel": false,
       "parallelism_notes": "Rewrites the package __init__ created in TASK-1894 and imports DevLoopConsole from TASK-1896; also the only task touching cli/__init__.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-07-24T16:00:00+02:00",
+      "completed_at": "2026-07-24T16:30:00+02:00",
       "file": "sdd/tasks/active/TASK-1897-devloop-click-wiring-docs.md"
     },
     {
