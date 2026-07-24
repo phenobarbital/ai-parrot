@@ -248,6 +248,8 @@ __all__ = (
     "GapReport",
     "validate_descriptor_datasets",
     "validate_payload_shape",
+    # Ad-hoc dataset adapter for the validation gate (FEAT-327)
+    "AdhocDatasetAdapter",
 )
 
 
@@ -269,6 +271,8 @@ _LAZY_CORE_TOOLS = {
     "GapReport": ".infographic_sections",
     "validate_descriptor_datasets": ".infographic_sections",
     "validate_payload_shape": ".infographic_sections",
+    # Ad-hoc dataset adapter for the validation gate (FEAT-327)
+    "AdhocDatasetAdapter": ".infographic_sections",
 }
 
 

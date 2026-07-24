@@ -16,8 +16,10 @@ snapshot timestamps only.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
 
+import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
@@ -307,6 +309,83 @@ def validate_payload_shape(
         raise InfographicValidationError("payload_shape_mismatch", {"sections": deficits})
 
 
+# ---------------------------------------------------------------------------
+# Ad-hoc dataset adapter (FEAT-327, Module 1)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class _AdhocEntry:
+    """Minimal duck-typed dataset entry satisfying the validation gate.
+
+    Attributes:
+        columns: Column names of the wrapped DataFrame.
+    """
+
+    columns: List[str] = field(default_factory=list)
+
+
+class AdhocDatasetAdapter:
+    """``DatasetManager``-shaped adapter over ad-hoc DataFrames.
+
+    :func:`validate_descriptor_datasets` is duck-typed: it only requires a
+    ``dataset_manager.get_dataset_entry(name)`` method returning an object
+    with a ``.columns`` attribute (or ``None`` when the alias is unknown).
+    This adapter satisfies that contract for two ad-hoc sources that are NOT
+    backed by a real ``DatasetManager``:
+
+    - the HTTP render endpoint's ``{name: DataFrame}`` payload dict, and
+    - the in-process authoring path's REPL namespace (e.g.
+      :class:`~parrot.tools.pythonpandas.PythonPandasTool` ``df_locals`` /
+      ``locals_dict``), from which only ``pandas.DataFrame`` values are
+      exposed as datasets — every other local is invisible to the gate and
+      is never executed or evaluated.
+
+    When a name exists in both ``frames`` and ``repl_locals``, ``frames``
+    takes precedence.
+
+    Attributes:
+        frames: Explicit ``{name: DataFrame}`` mapping.
+        repl_locals: A REPL namespace (e.g. ``locals()``) to scan for
+            ``pandas.DataFrame`` values by name.
+    """
+
+    def __init__(
+        self,
+        frames: Optional[Mapping[str, "pd.DataFrame"]] = None,
+        repl_locals: Optional[Mapping[str, Any]] = None,
+    ) -> None:
+        """Initialize the adapter over ad-hoc frames and/or REPL locals.
+
+        Args:
+            frames: Explicit ``{name: DataFrame}`` mapping. Takes precedence
+                over ``repl_locals`` on name collision.
+            repl_locals: A namespace (e.g. a REPL's ``locals()``) scanned for
+                ``pandas.DataFrame`` values; non-DataFrame locals are ignored.
+        """
+        self._frames: Dict[str, pd.DataFrame] = dict(frames) if frames else {}
+        self._repl_locals: Dict[str, Any] = dict(repl_locals) if repl_locals else {}
+
+    def get_dataset_entry(self, name: str) -> Optional[_AdhocEntry]:
+        """Return a ``.columns``-exposing entry for ``name``, or ``None``.
+
+        Args:
+            name: Dataset alias to resolve.
+
+        Returns:
+            An :class:`_AdhocEntry` wrapping the DataFrame's columns, or
+            ``None`` when ``name`` is not a known DataFrame in either
+            ``frames`` or ``repl_locals``.
+        """
+        frame = self._frames.get(name)
+        if frame is None:
+            candidate = self._repl_locals.get(name)
+            if isinstance(candidate, pd.DataFrame):
+                frame = candidate
+        if frame is None:
+            return None
+        return _AdhocEntry(columns=list(frame.columns))
+
+
 __all__ = (
     "SectionSpec",
     "SectionDescriptor",
@@ -315,4 +394,5 @@ __all__ = (
     "GapReport",
     "validate_descriptor_datasets",
     "validate_payload_shape",
+    "AdhocDatasetAdapter",
 )
