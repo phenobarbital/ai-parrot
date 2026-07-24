@@ -73,7 +73,7 @@
       "feature_id": "FEAT-327",
       "feature": "infographic-render-endpoint",
       "spec": "sdd/specs/infographic-render-endpoint.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Wraps the TASK-1890 sync flow in background jobs; touches the same handler file.",
       "assigned_to": null,
       "started_at": "2026-07-24T13:22:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1891-async-job-subsystem.md"
+      "completed_at": "2026-07-24T18:28:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1891-async-job-subsystem.md"
     },
     {
       "id": "TASK-1892",
