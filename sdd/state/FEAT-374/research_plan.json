@@ -1,0 +1,91 @@
+{
+  "feat_id": "FEAT-374",
+  "mode_detected": "enrichment",
+  "mode_rationale": "New feature (CLI front-end) layered on an existing subsystem (dev-loop flow, FEAT-129); research enriches the design with existing dispatch, contracts, and CLI infrastructure.",
+  "queries": [
+    {
+      "id": "Q001",
+      "type": "wiki_query",
+      "params": {"question": "dev-loop flow AgentCrew dispatcher websocket"},
+      "intent": "Locate the dev-loop flow implementation and how it is dispatched today",
+      "priority": 1
+    },
+    {
+      "id": "Q002",
+      "type": "wiki_query",
+      "params": {"question": "parrot CLI command entry point console script"},
+      "intent": "Find existing CLI infrastructure and how commands are installed",
+      "priority": 1
+    },
+    {
+      "id": "Q003",
+      "type": "grep",
+      "params": {"pattern": "dev.?loop", "path": "parrot/", "flags": "-ril"},
+      "intent": "Enumerate all dev-loop related modules",
+      "priority": 1
+    },
+    {
+      "id": "Q004",
+      "type": "read",
+      "params": {"path": "pyproject.toml", "section": "console_scripts / project.scripts + dependencies"},
+      "intent": "How existing commands are installed; whether rich/textual/typer/click/prompt_toolkit are already dependencies",
+      "priority": 1
+    },
+    {
+      "id": "Q005",
+      "type": "read",
+      "params": {"path": "sdd/proposals/console-cli-agents.brainstorm.md"},
+      "intent": "Prior art: existing brainstorm for a console CLI for agents",
+      "priority": 1
+    },
+    {
+      "id": "Q006",
+      "type": "read",
+      "params": {"path": "sdd/proposals/dev-loop-orchestration.brainstorm.md"},
+      "intent": "Prior art: dev-loop orchestration design decisions",
+      "priority": 2
+    },
+    {
+      "id": "Q007",
+      "type": "read",
+      "params": {"path": "sdd/proposals/dev-loop-session-state-hitl.brainstorm.md"},
+      "intent": "Prior art: session state + human-in-the-loop design (interactive gates the CLI must reproduce)",
+      "priority": 2
+    },
+    {
+      "id": "Q008",
+      "type": "read",
+      "params": {"path": "<dev-loop dispatcher / websocket handler discovered in Q001/Q003>"},
+      "intent": "Understand the websocket coupling: what events/messages the UI exchanges with the flow",
+      "priority": 2
+    },
+    {
+      "id": "Q009",
+      "type": "read",
+      "params": {"path": "<dev-loop Pydantic contracts (BugBrief, ResearchOutput, QAReport) discovered in Q001/Q003>"},
+      "intent": "Reuse the structured input models for the CLI's pydantic-driven prompts",
+      "priority": 2
+    },
+    {
+      "id": "Q010",
+      "type": "grep",
+      "params": {"pattern": "entry_points|project.scripts|\\[project\\.scripts\\]", "path": ".", "flags": "-rn --include=*.toml --include=setup.py"},
+      "intent": "Exact mechanism to register `parrot devloop` as an installable command",
+      "priority": 2
+    },
+    {
+      "id": "Q011",
+      "type": "git_log",
+      "params": {"path": "<dev-loop module dir>", "since": "6 months"},
+      "intent": "Recent activity: is dev-loop under active development, by which FEATs",
+      "priority": 3
+    },
+    {
+      "id": "Q012",
+      "type": "wiki_query",
+      "params": {"question": "human in the loop HITL interactive decision node flow"},
+      "intent": "How interactive decisions surface from a running flow (the CLI must answer them)",
+      "priority": 3
+    }
+  ]
+}

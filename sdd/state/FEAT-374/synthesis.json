@@ -1,0 +1,225 @@
+{
+  "feat_id": "FEAT-374",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "summary": "Build `parrot devloop` \u2014 a Rich/prompt_toolkit interactive console registered in the existing LazyGroup CLI \u2014 that collects a WorkBrief via pydantic-driven prompts, dispatches a dev-loop run, renders the live event/envelope stream, and answers HITL gates interactively. Every hard primitive already exists: DevLoopRunner is a complete programmatic command surface (run/resolve_gate/cancel/registry), WorkBrief carries field descriptions usable to auto-generate prompts, the FEAT-322 session-state layer provides sequenced envelopes + snapshot rebuild for both in-process and remote consumption, and the `parrot agent` REPL (console-cli-agents) provides the exact CLI architecture to mirror (Click entry, Rich renderer, slash commands, standalone-vs-server loaders).",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/runner.py",
+      "symbol": "DevLoopRunner",
+      "role": "programmatic surface the CLI drives: run(), run_revision(), resolve_gate(), cancel_run(), get_host(), registry_state()",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/models.py",
+      "symbol": "WorkBrief",
+      "role": "the pydantic structured input to collect interactively (kind, summary, description, existing_issue_key = Jira ticket, acceptance_criteria, ...)",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/streaming.py",
+      "symbol": "FlowStreamMultiplexer",
+      "role": "current WS-only read surface (Redis stream fan-in, view=state snapshot) \u2014 what a server-mode CLI consumes",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/commands.py",
+      "symbol": "register_command_routes",
+      "role": "REST write surface (resolve gate / cancel) \u2014 what a server-mode CLI calls",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/__init__.py",
+      "symbol": "cli._lazy_commands",
+      "role": "registration point: add 'devloop': 'parrot.cli.devloop' (installed via existing [project.scripts] parrot = parrot.cli:cli)",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/",
+      "symbol": "agent_repl/repl/renderer/commands/loaders",
+      "role": "architecture template: Click entry + Rich renderer + SlashCommandDispatcher + standalone/server dual-mode loaders",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/human/cli_companion.py",
+      "symbol": "HITLCompanion",
+      "role": "precedent for Rich-rendered interactive HITL answering from a terminal",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "examples/dev_loop/server.py",
+      "symbol": null,
+      "role": "the only current UI host (aiohttp + vanilla-JS client) \u2014 confirms the 'websocket-UI-only' pain in the source",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "constraints": [
+    {
+      "claim": "rich>=13.0, click>=8.1.7, prompt_toolkit>=3.0 are already core dependencies; textual is NOT \u2014 a full-screen TUI would add a new dependency",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "claim": "models.py (WorkBrief) is import-cheap (zero internal deps beyond pydantic), so the wizard can validate without booting the flow stack",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "claim": "Embedded (in-process) mode requires the real-mode prerequisites: Redis, claude CLI, Jira credentials (per examples/dev_loop/README.md); server mode only needs HTTP/WS reachability",
+      "evidence": [
+        "F004",
+        "F001"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "claim": "dev_loop internals (dispatcher) are hot/actively churning (FEAT-322/323 in last 4 months); the CLI should bind only to DevLoopRunner + envelope/REST surfaces",
+      "evidence": [
+        "F007",
+        "F002"
+      ],
+      "confidence": "high"
+    },
+    {
+      "claim": "HITL gates have TTLs, arbitration and 409-on-double-resolve; reconnect state rebuild exists via multiplexer view=state",
+      "evidence": [
+        "F006",
+        "F004"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "hypotheses": [
+    {
+      "id": "H1",
+      "statement": "Implement `parrot devloop` as a new `parrot.cli.devloop` module mirroring the `parrot agent` REPL architecture: a WorkBrief wizard (pydantic-driven prompts incl. Jira key and proposal/brainstorm path), a run view that renders SessionHost envelopes with Rich Live, interactive gate resolution, and dual attach modes (embedded DevLoopRunner in-process; remote server via WS multiplexer + REST commands).",
+      "supporting": [
+        "F002",
+        "F003",
+        "F004",
+        "F005",
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "Every building block exists and is stable; the feature is a composition + one new rendering loop, not new flow machinery."
+    }
+  ],
+  "confidence_map": [
+    {
+      "claim": "Registration is one dict entry in cli._lazy_commands + one module; command installs as `parrot devloop` via existing [project.scripts]",
+      "confidence": "high",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "claim": "WorkBrief.model_fields carries descriptions/defaults/Literal choices sufficient to auto-generate an interactive wizard",
+      "confidence": "high",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "claim": "DevLoopRunner.run/resolve_gate/cancel_run is sufficient for full interactive control in embedded mode",
+      "confidence": "high",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "claim": "Server-mode reads via WS multiplexer (view=state) + writes via REST commands cover remote attach, including reconnect",
+      "confidence": "high",
+      "evidence": [
+        "F004",
+        "F006"
+      ]
+    },
+    {
+      "claim": "The 'description or path of proposal/brainstorm' input maps onto WorkBrief.description (file contents inlined) \u2014 no model change needed",
+      "confidence": "medium",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "claim": "A run-start REST endpooint for server mode may not exist yet outside examples/dev_loop/server.py (only gate/cancel routes found in core)",
+      "confidence": "medium",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "claim": "Embedded mode works from any checkout with Redis + claude CLI + Jira creds",
+      "confidence": "low",
+      "evidence": [
+        "F001"
+      ]
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Which attach mode should v1 ship: embedded in-process runner, remote client to a running ai-parrot server, or both (like the agent REPL's Standalone/ServerProxy loaders)?",
+      "resolves": [
+        "H1"
+      ],
+      "user_answer": "Embedded only \u2014 in-process DevLoopRunner; no remote server client in v1."
+    },
+    {
+      "id": "U2",
+      "question": "Should the WorkBrief wizard be a generic reusable pydantic-model\u2192interactive-prompt engine (usable by other CLIs), or a hand-written wizard specific to WorkBrief?",
+      "resolves": [
+        "C2"
+      ],
+      "user_answer": "Generic engine \u2014 reusable pydantic-model\u2192interactive-prompt engine, instantiated for WorkBrief/RevisionBrief."
+    },
+    {
+      "id": "U3",
+      "question": "Is v1 scope 'start new runs only', or also list/attach to existing runs (registry_state) and revision-mode runs (RevisionBrief)?",
+      "resolves": [
+        "H1"
+      ],
+      "user_answer": "Everything incl. revision \u2014 new runs, list/attach, and RevisionBrief revision-mode runs in v1."
+    },
+    {
+      "id": "U4",
+      "question": "Console style: Claude-Code-like scrolling Rich Live console (no new deps) vs full-screen TUI (would add textual as a dependency)?",
+      "resolves": [
+        "C1"
+      ],
+      "user_answer": "Rich Live scrolling console (Claude-Code-like); no textual dependency."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and single-hypothesis; the remaining unknowns are product-scope decisions resolvable in Q&A, after which the feature is spec-ready (likely 5-7 tasks)."
+  }
+}
