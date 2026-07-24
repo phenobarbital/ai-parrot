@@ -160,10 +160,26 @@ class TestProvenance:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-24
+**Notes**: Created `parrot/tools/infographic_sections.py` with the five Pydantic
+models (`SectionSpec`, `SectionDescriptor`, `ProvenanceDescriptor`,
+`TransformerGap`, `GapReport`), all `extra="forbid"`. Implemented the fail-fast
+validation gate as two module functions: `validate_descriptor_datasets`
+(aggregates every missing dataset/column across all sections into one
+`InfographicValidationError("sections_unmet", ...)`) and `validate_payload_shape`
+(resolves each section `target` as a plain key or RFC-6901 JSON-pointer, then
+checks the declared `shape`). `InfographicValidationError` is imported lazily
+inside the functions to avoid a circular import with `infographic_toolkit.py`
+(which will import `SectionDescriptor` in TASK-1883). Exported all names via the
+`parrot/tools/__init__.py` lazy-core-tools map + `__all__`. `ProvenanceDescriptor`
+has no code/source field (asserted in a test). 14 unit tests pass; ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Note (infra)**: the worktree lacked the two compiled Cython extensions
+(`parrot/utils/types` and `parrot/utils/parsers/toml`); copied the `.so` files
+from the main repo so the worktree src tree is importable under pytest. These are
+gitignored build artifacts (not committed).
 
-**Deviations from spec**: none
+**Deviations from spec**: none. (Validation gate exposed as two module-level
+functions rather than a class — the task did not prescribe a specific API shape;
+names are exported for downstream tasks.)

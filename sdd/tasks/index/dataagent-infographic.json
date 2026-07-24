@@ -14,7 +14,7 @@
       "feature_id": "FEAT-326",
       "feature": "dataagent-infographic",
       "spec": "sdd/specs/dataagent-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Shared spine (SectionDescriptor) consumed by TASK-1883/1884/1885 — must land first.",
       "assigned_to": null,
       "started_at": "2026-07-24T00:57:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1882-section-descriptor-contract.md"
+      "completed_at": "2026-07-24T01:13:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1882-section-descriptor-contract.md"
     },
     {
       "id": "TASK-1883",
