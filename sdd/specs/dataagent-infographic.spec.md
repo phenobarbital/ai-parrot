@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-326
 **Date**: 2026-07-24
 **Author**: jesuslara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.x
 **Brainstorm**: `sdd/proposals/dataagent-infographic.brainstorm.md` (Recommended Option A)
 
@@ -609,3 +609,4 @@ def splice_into_template(template_html: str, report_data: dict) -> str:
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-24 | jesuslara + Claude | Initial draft from brainstorm (Option A, 6 resolved questions carried forward) |
+| 0.2 | 2026-07-24 | jesuslara | Status → approved |
