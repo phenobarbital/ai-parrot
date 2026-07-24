@@ -93,7 +93,7 @@
       "feature_id": "FEAT-326",
       "feature": "dataagent-infographic",
       "spec": "sdd/specs/dataagent-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -101,8 +101,8 @@
       "parallelism_notes": "Touches only parrot/auth/ + its tests; shares no files or imports with TASK-1882..1885. Could run in a separate worktree, though per-spec sequential is the default.",
       "assigned_to": null,
       "started_at": "2026-07-24T00:57:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1886-system-account-principal.md"
+      "completed_at": "2026-07-24T01:34:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1886-system-account-principal.md"
     },
     {
       "id": "TASK-1887",
