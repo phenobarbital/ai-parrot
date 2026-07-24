@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-374
 **Date**: 2026-07-24
 **Author**: Jesus Lara (research + Q&A via /sdd-proposal, sdd/proposals/devloop-cli-console.proposal.md)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
