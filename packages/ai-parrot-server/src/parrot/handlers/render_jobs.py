@@ -9,10 +9,19 @@ All job state lives in **Redis** (never process memory) so polling works
 regardless of which worker created or rendered the job (resolved decision:
 multi-worker safety). Terminal jobs (``done``/``failed``) carry a **1-day
 TTL**; non-terminal jobs (``pending``/``running``) carry no TTL — an orphaned
-``running`` job (worker died mid-render) is instead caught by the
-**max-runtime watchdog**: each job stores a ``deadline`` timestamp, and
-:meth:`RenderJobStore.get` flips a past-deadline ``running`` job to
-``failed`` at poll time.
+``pending`` OR ``running`` job (worker died before or during the render) is
+instead caught by the **max-runtime watchdog**: every job stores a
+``deadline`` timestamp from the moment it is created, and
+:meth:`RenderJobStore.get` flips a past-deadline ``pending``/``running`` job
+to ``failed`` at poll time — no background daemon.
+
+``set_terminal`` is a best-effort guard against a job's own terminal write
+racing the watchdog's: it refuses to overwrite an ALREADY-terminal record
+with a different terminal status (e.g. a slow render completing just after
+the watchdog already flipped it to ``failed``). This is a plain
+read-then-write check (not a Redis transaction/Lua CAS), so it narrows but
+does not fully close the race under truly concurrent multi-process writers
+— see the method docstring.
 
 This is NEW code — there is no generic KV/job store in ``parrot.memory``
 (only ``ConversationMemory`` subclasses); :class:`RenderJobStore` follows
@@ -98,22 +107,51 @@ class RenderJobStore:
         """Build the Redis key for a job id."""
         return f"{_KEY_PREFIX}{job_id}"
 
-    async def create(self, job: RenderJob) -> None:
-        """Create a new job record (``pending``/``running``) — no TTL.
+    async def create(
+        self, job: RenderJob, *, max_runtime_seconds: Optional[int] = None
+    ) -> None:
+        """Create a new job record — no TTL, but a real watchdog deadline for ``pending``.
+
+        When ``job.status == "pending"`` (the normal case — every job
+        starts pending via ``_enqueue_render_job``), the deadline is stamped
+        from creation time, NOT left at whatever placeholder the caller
+        passed in — so a job whose ``asyncio`` task never runs at all (e.g.
+        the worker died, or the task was garbage-collected before its first
+        await) is STILL recovered by the watchdog instead of sitting
+        ``pending`` forever with no TTL. ``set_running`` stamps a FRESH
+        deadline once the render actually starts, giving it the full
+        runtime budget from that point rather than whatever was left of the
+        enqueue-time one.
+
+        For any OTHER status, the caller's ``job.deadline`` is stored
+        as-is — this lets tests (and any direct-construction caller)
+        seed a job already in a specific state/deadline without this
+        method silently overriding it.
 
         Args:
             job: The job record to store.
+            max_runtime_seconds: Overrides :func:`resolve_max_runtime_seconds`
+                (only consulted when ``job.status == "pending"``).
         """
+        if job.status == "pending":
+            runtime = (
+                max_runtime_seconds
+                if max_runtime_seconds is not None
+                else resolve_max_runtime_seconds()
+            )
+            deadline = datetime.now(timezone.utc) + timedelta(seconds=runtime)
+            job = job.model_copy(update={"deadline": deadline.isoformat()})
         await self._redis.set(self._key(job.job_id), job.model_dump_json())
 
     async def get(self, job_id: str) -> Optional[RenderJob]:
         """Return the job record, applying the watchdog check first.
 
-        A ``running`` job whose ``deadline`` has passed is flipped to
-        ``failed`` (with a structured watchdog error) and persisted with the
-        terminal TTL before being returned — this is how an orphaned job
-        (its worker died mid-render) is recovered, without a background
-        daemon (resolved decision: poll-time check only).
+        A ``pending`` OR ``running`` job whose ``deadline`` has passed is
+        flipped to ``failed`` (with a structured watchdog error) and
+        persisted with the terminal TTL before being returned — this is how
+        an orphaned job (its worker died before starting, or mid-render) is
+        recovered, without a background daemon (resolved decision:
+        poll-time check only).
 
         Args:
             job_id: The job identifier.
@@ -129,8 +167,8 @@ class RenderJobStore:
         return await self._apply_watchdog(job)
 
     async def _apply_watchdog(self, job: RenderJob) -> RenderJob:
-        """Flip a past-deadline ``running`` job to ``failed``; else pass through."""
-        if job.status != "running":
+        """Flip a past-deadline ``pending``/``running`` job to ``failed``; else pass through."""
+        if job.status not in ("pending", "running"):
             return job
         try:
             deadline = datetime.fromisoformat(job.deadline)
@@ -143,18 +181,23 @@ class RenderJobStore:
                 "status": "failed",
                 "error": {
                     "code": "watchdog_timeout",
-                    "detail": f"max-runtime exceeded (deadline={job.deadline})",
+                    "detail": (
+                        f"max-runtime exceeded while {job.status} "
+                        f"(deadline={job.deadline})"
+                    ),
                 },
             }
         )
         await self.set_terminal(failed)
-        logger.warning("Render job %s flipped to failed by watchdog", job.job_id)
+        logger.warning(
+            "Render job %s flipped to failed by watchdog (was %s)", job.job_id, job.status,
+        )
         return failed
 
     async def set_running(
         self, job_id: str, *, max_runtime_seconds: Optional[int] = None
     ) -> RenderJob:
-        """Transition a job to ``running``, stamping a fresh watchdog deadline.
+        """Transition a job to ``running``, stamping a FRESH watchdog deadline.
 
         Args:
             job_id: The job identifier.
@@ -179,18 +222,49 @@ class RenderJobStore:
         await self._redis.set(self._key(job_id), updated.model_dump_json())
         return updated
 
-    async def set_terminal(self, job: RenderJob) -> None:
+    async def set_terminal(self, job: RenderJob, *, force: bool = False) -> RenderJob:
         """Persist a job in a terminal state (``done``/``failed``) with the TTL.
+
+        Best-effort guard against a job's OWN terminal write racing the
+        watchdog's: if the record already holds a DIFFERENT terminal status
+        (e.g. the watchdog already flipped it to ``failed`` while this
+        call's render was still finishing), the existing terminal record
+        wins and this write is skipped (logged) — a completed-late render
+        must never silently resurrect a job the watchdog already closed
+        out. This is a plain ``GET`` then ``SET`` (no Redis transaction/Lua
+        CAS), so it narrows the race window considerably for the common
+        single-writer-per-job case but is NOT a fully atomic guarantee
+        under truly concurrent multi-process writers to the SAME job id —
+        pass ``force=True`` to bypass the guard when the caller has already
+        established it is the sole writer.
 
         Args:
             job: The job record, with ``status`` already set to ``done`` or
                 ``failed``.
+            force: Skip the already-terminal guard and overwrite unconditionally.
+
+        Returns:
+            The record that ended up persisted (``job`` normally; the
+            EXISTING record when the guard refused the overwrite).
         """
         if job.status not in ("done", "failed"):
             raise ValueError(f"set_terminal() requires a terminal status, got {job.status!r}")
         key = self._key(job.job_id)
+        if not force:
+            raw = await self._redis.get(key)
+            if raw is not None:
+                current = RenderJob.model_validate_json(raw)
+                if current.status in ("done", "failed") and current.status != job.status:
+                    logger.warning(
+                        "Refusing to overwrite already-terminal render job %s "
+                        "(currently %s) with %s — keeping the existing terminal "
+                        "state (likely a watchdog/completion race).",
+                        job.job_id, current.status, job.status,
+                    )
+                    return current
         await self._redis.set(key, job.model_dump_json())
         await self._redis.expire(key, TERMINAL_JOB_TTL_SECONDS)
+        return job
 
 
 __all__ = (

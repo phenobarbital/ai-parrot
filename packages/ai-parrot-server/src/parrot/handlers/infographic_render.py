@@ -154,10 +154,14 @@ class RenderResponse(BaseModel):
     """``application/json`` response for a completed render.
 
     Attributes:
-        artifact_id: Identifier of the persisted artifact.
-        url: Resolved URL per the two-behavior rule, or ``None`` when neither
-            ``public`` publication nor S3 presigning applies (retrieval then
-            goes through the artifacts handler).
+        artifact_id: Identifier of the persisted artifact (server-generated
+            even when ``persisted=False`` — nothing is stored under it then).
+        url: Resolved URL per the two-behavior rule, or ``None`` when none
+            applies.
+        url_note: Set whenever ``url`` is ``None`` — a machine-readable
+            explanation (e.g. "not persisted", "retrieve via the artifacts
+            handler using artifact_id") distinguishing the reasons the spec
+            calls out (§2 Overview: "url: null plus an explanatory field").
         template: The template name used.
         sections_validated: Number of descriptor sections that passed the gate.
         persisted: Whether persistence succeeded.
@@ -168,6 +172,7 @@ class RenderResponse(BaseModel):
 
     artifact_id: str
     url: Optional[str]
+    url_note: Optional[str] = None
     template: str
     sections_validated: int
     persisted: bool
@@ -446,8 +451,81 @@ def _verify_declared_parts_present(
     for name in missing:
         raise RenderPayloadError(
             f"{_DATASET_PART_PREFIX}{name}",
-            "declared dataset part not found in multipart body",
+            "declared as null but no matching multipart part was found to hydrate it "
+            "(a JSON-only request has no parts at all)",
         )
+
+
+# ---------------------------------------------------------------------------
+# JSON (non-multipart) body decoding, with the SAME pre-buffering size cap
+# ---------------------------------------------------------------------------
+
+async def parse_json_render_request(
+    request: Any,
+    *,
+    max_body_size: int = DEFAULT_MAX_BODY_SIZE,
+) -> Tuple[RenderRequest, Dict[str, pd.DataFrame]]:
+    """Parse a plain-JSON render body into a ``RenderRequest`` + decoded frames.
+
+    Reads the body via capped chunked reads off ``request.content`` — never
+    buffers past ``max_body_size`` — mirroring
+    :func:`parse_multipart_render_request`'s pre-buffering cap enforcement.
+    This is necessary because the JSON transport is NOT covered by the
+    framework's own ``client_max_size`` at the granularity this endpoint
+    requires (spec: 50 MB, configurable, independent of any app-wide ceiling).
+
+    Args:
+        request: An aiohttp ``web.Request``-shaped object (reads
+            ``request.content.iter_chunked(...)``).
+        max_body_size: Cap, in bytes, on the total body size.
+
+    Returns:
+        The parsed ``RenderRequest`` and a ``{name: DataFrame}`` mapping
+        decoded from its inline datasets.
+
+    Raises:
+        RenderPayloadError: The body is not valid JSON, fails
+            ``RenderRequest`` validation, or declares a ``null`` dataset
+            (impossible to hydrate — a JSON-only request has no multipart
+            parts at all).
+        RenderBodyTooLargeError: The body exceeds ``max_body_size``.
+    """
+    data = await _read_capped_body(request, max_body_size)
+    request_model = _decode_request_part(data)
+    frames = decode_inline_datasets(request_model)
+    _verify_declared_parts_present(request_model, frames)
+    return request_model, frames
+
+
+async def _read_capped_body(
+    request: Any,
+    max_body_size: int,
+    *,
+    chunk_size: int = _MULTIPART_CHUNK_SIZE,
+) -> bytes:
+    """Read ``request.content`` in capped chunks — never buffers past ``max_body_size``.
+
+    Args:
+        request: An aiohttp ``web.Request``-shaped object.
+        max_body_size: Cap, in bytes, on the total body size.
+        chunk_size: Read increment.
+
+    Returns:
+        The full body, as bytes (guaranteed <= ``max_body_size``).
+
+    Raises:
+        RenderBodyTooLargeError: The running total exceeds ``max_body_size``
+            — raised as soon as the offending chunk arrives, before it is
+            appended to the buffer.
+    """
+    buf = bytearray()
+    async for chunk in request.content.iter_chunked(chunk_size):
+        if len(buf) + len(chunk) > max_body_size:
+            raise RenderBodyTooLargeError(
+                f"request body exceeds the {max_body_size} byte cap"
+            )
+        buf.extend(chunk)
+    return bytes(buf)
 
 
 # ---------------------------------------------------------------------------
@@ -570,7 +648,10 @@ async def publish_to_static_dir(html: str, artifact_id: str) -> str:
     """
     from parrot.conf import STATIC_DIR  # local import: keep module import-light
 
-    filename = f"infographic-{artifact_id}.html"
+    # NOTE: artifact_id already carries the "infographic-" prefix (see
+    # render_deterministic's f"infographic-{uuid.uuid4().hex[:12]}") — do
+    # NOT prepend it again here.
+    filename = f"{artifact_id}.html"
     path = STATIC_DIR / filename
 
     def _write() -> None:
@@ -586,44 +667,67 @@ async def resolve_response_url(
     *,
     html: str,
     public: bool,
+    persisted: bool,
     artifact_store: Optional[ArtifactStore],
     user_id: str,
     agent_id: str,
     session_id: str,
     artifact_id: str,
-) -> Optional[str]:
-    """Resolve the response ``url`` per the two-behavior rule (spec §2 Overview).
+) -> Tuple[Optional[str], Optional[str]]:
+    """Resolve the response ``(url, url_note)`` per the two-behavior rule (spec §2 Overview).
 
-    - ``public=True`` → publish ``html`` under ``STATIC_DIR`` and return the
-      static URL (irreversible-ish: the file remains until cleaned up).
-    - ``public=False`` → try :meth:`ArtifactStore.get_public_url` (S3
-      presigned, ALWAYS — infographics are never hosted on public S3); on
-      ``KeyError``/``ValueError`` (inline artifact, local backend, or the
-      artifact was never persisted), return ``None`` — retrieval then goes
-      through the artifacts handler.
+    - ``persisted=False`` → NEVER publishes anywhere, regardless of ``public``.
+      ``persist=False`` is the caller's explicit "do not retain this" signal;
+      honoring ``public=True`` on top of that would silently override it by
+      writing the HTML to the world-readable ``STATIC_DIR`` anyway. ``url``
+      is always ``None`` here, with an explanatory ``url_note``.
+    - ``persisted=True`` and ``public=True`` → publish ``html`` under
+      ``STATIC_DIR`` and return the static URL (irreversible-ish: the file
+      remains until cleaned up).
+    - ``persisted=True`` and ``public=False`` → try
+      :meth:`ArtifactStore.get_public_url` (S3 presigned, ALWAYS —
+      infographics are never hosted on public S3); on ``KeyError``/
+      ``ValueError`` (inline artifact / local backend), ``url`` is ``None``
+      with a note — retrieval then goes through the artifacts handler.
 
     Args:
         html: The rendered HTML (needed only for the ``public=True`` branch).
         public: The request's ``public`` flag.
-        artifact_store: The configured store, or ``None`` when the artifact
-            was not persisted (``persist=False``) — the presigned branch is
-            skipped in that case (nothing to presign).
+        persisted: Whether the artifact was actually saved. Gates BOTH
+            branches — nothing is published when this is ``False``.
+        artifact_store: The configured store (only consulted when
+            ``persisted`` is ``True``).
         user_id: Owning user (storage scope).
         agent_id: Producing agent (storage scope).
         session_id: Owning session (storage scope).
         artifact_id: The artifact identifier.
 
     Returns:
-        The resolved URL, or ``None``.
+        A ``(url, url_note)`` tuple — ``url_note`` is set whenever ``url``
+        is ``None``, explaining why (spec §2: "url: null plus an
+        explanatory field").
     """
+    if not persisted:
+        if public:
+            return None, (
+                "not published: persist=false overrides public=true — "
+                "nothing was persisted, so there is nothing to expose at a URL"
+            )
+        return None, "not persisted (persist=false); no artifact reference or URL is available"
+
     if public:
-        return await publish_to_static_dir(html, artifact_id)
+        return await publish_to_static_dir(html, artifact_id), None
+
     if artifact_store is None:
-        return None
+        return None, "no artifact store configured; retrieval is unavailable"
     try:
-        return await artifact_store.get_public_url(user_id, agent_id, session_id, artifact_id)
+        url = await artifact_store.get_public_url(user_id, agent_id, session_id, artifact_id)
+        return url, None
     except (KeyError, ValueError):
-        return None
+        return None, (
+            "artifact stored inline on the local backend (or missing); "
+            "retrieve it via the artifacts handler using artifact_id"
+        )
 
 
 @dataclass
@@ -636,6 +740,7 @@ class RenderOutcome:
             even when ``persisted=False`` — nothing is stored under it then).
         url: Resolved per the two-behavior rule; ``None`` when neither
             applies (local, non-public, or not persisted).
+        url_note: Explanation for a ``None`` url (spec §2's "explanatory field").
         persisted: Whether the artifact was actually saved.
         sections_validated: Number of descriptor sections that passed the gate.
         timings: Named stage timings, in seconds.
@@ -644,6 +749,7 @@ class RenderOutcome:
     html: str
     artifact_id: str
     url: Optional[str]
+    url_note: Optional[str]
     persisted: bool
     sections_validated: int
     timings: Dict[str, float] = dataclass_field(default_factory=dict)
@@ -742,10 +848,11 @@ async def render_deterministic(
     timings["persist"] = loop.time() - t3
 
     t4 = loop.time()
-    url = await resolve_response_url(
+    url, url_note = await resolve_response_url(
         html=html,
         public=parsed.public,
-        artifact_store=artifact_store if persisted else None,
+        persisted=persisted,
+        artifact_store=artifact_store,
         user_id=user_id,
         agent_id=agent_id,
         session_id=session_id,
@@ -757,6 +864,7 @@ async def render_deterministic(
         html=html,
         artifact_id=artifact_id,
         url=url,
+        url_note=url_note,
         persisted=persisted,
         sections_validated=len(parsed.descriptor.sections),
         timings=timings,
@@ -890,6 +998,7 @@ __all__ = (
     "RenderJob",
     "decode_inline_datasets",
     "parse_multipart_render_request",
+    "parse_json_render_request",
     "assemble_section_payload",
     "publish_to_static_dir",
     "resolve_response_url",

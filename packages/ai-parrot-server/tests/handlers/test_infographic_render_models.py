@@ -27,6 +27,7 @@ from parrot.handlers.infographic_render import (
     RenderRequest,
     RenderResponse,
     decode_inline_datasets,
+    parse_json_render_request,
     parse_multipart_render_request,
 )
 from parrot.tools.infographic_sections import SectionDescriptor
@@ -78,6 +79,23 @@ async def _build_multipart_request(
 def _request_json_bytes(**overrides: Any) -> bytes:
     req = RenderRequest(**_valid_request_kwargs(**overrides))
     return req.model_dump_json(by_alias=True).encode("utf-8")
+
+
+async def _build_json_request(data: bytes):
+    """Build a real aiohttp request with a plain (non-multipart) JSON body.
+
+    Used to test :func:`parse_json_render_request`'s capped-chunk reading
+    against ``request.content`` — the same real ``StreamReader`` plumbing
+    ``_build_multipart_request`` uses for the multipart transport.
+    """
+    loop = asyncio.get_event_loop()
+    protocol = BaseProtocol(loop=loop)
+    stream = StreamReader(protocol, limit=2**20, loop=loop)
+    stream.feed_data(data)
+    stream.feed_eof()
+    return make_mocked_request(
+        "POST", "/render", headers={"Content-Type": "application/json"}, payload=stream
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -292,3 +310,44 @@ class TestMultipartDecoding:
         reader = await request.multipart()
         with pytest.raises(RenderBodyTooLargeError):
             await parse_multipart_render_request(reader, max_body_size=len(request_json) + 10)
+
+
+# ---------------------------------------------------------------------------
+# JSON (non-multipart) body decoding — same pre-buffering size cap as
+# multipart (code-review fix: this transport was previously UNCAPPED at
+# the application level, relying only on the framework's much larger
+# app-wide client_max_size).
+# ---------------------------------------------------------------------------
+
+class TestJsonBodyDecoding:
+    async def test_parses_plain_json_body(self):
+        data = _request_json_bytes()
+        request = await _build_json_request(data)
+        parsed, frames = await parse_json_render_request(request)
+        assert parsed.template == "budget_variance"
+        assert frames == {}
+
+    async def test_body_cap_413(self):
+        data = _request_json_bytes(datasets={"a": None, "b": None, "c": None})
+        request = await _build_json_request(data)
+        with pytest.raises(RenderBodyTooLargeError):
+            await parse_json_render_request(request, max_body_size=len(data) - 10)
+
+    async def test_body_under_cap_succeeds(self):
+        data = _request_json_bytes()
+        request = await _build_json_request(data)
+        parsed, _ = await parse_json_render_request(request, max_body_size=len(data) + 10)
+        assert parsed.template == "budget_variance"
+
+    async def test_malformed_json_raises_payload_error(self):
+        request = await _build_json_request(b"{not valid json")
+        with pytest.raises(RenderPayloadError) as exc:
+            await parse_json_render_request(request)
+        assert exc.value.part_name == "request"
+
+    async def test_null_dataset_without_multipart_raises_payload_error(self):
+        data = _request_json_bytes(datasets={"revenue": None})
+        request = await _build_json_request(data)
+        with pytest.raises(RenderPayloadError) as exc:
+            await parse_json_render_request(request)
+        assert exc.value.part_name == "dataset:revenue"

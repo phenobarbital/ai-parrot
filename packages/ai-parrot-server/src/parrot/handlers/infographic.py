@@ -31,6 +31,7 @@ from .infographic_render import (
     RenderRequest,
     RenderResponse,
     decode_inline_datasets,
+    parse_json_render_request,
     parse_multipart_render_request,
     render_deterministic,
 )
@@ -44,6 +45,7 @@ from ..helpers.infographics import (
     register_theme,
 )
 from ..tools.infographic_toolkit import InfographicToolkit, InfographicValidationError
+from ..conf import INFOGRAPHIC_RENDER_TEMPLATE_DIRS
 
 # Keys consumed or reserved by the handler itself.  They must NOT be
 # forwarded as ``**kwargs`` into ``bot.get_infographic`` because doing so
@@ -339,10 +341,21 @@ class InfographicTalk(AgentTalk):
             ``text/html`` (spliced/rendered HTML) or ``application/json``
             (``RenderResponse``), per ``_negotiate_accept()``; ``202``
             ``{"job_id": ...}`` for ``async=true`` (TASK-1891). ``400`` on a
-            malformed part/body, ``413`` over the body cap, ``404`` on an
-            unknown template, ``422`` on aggregated validation deficits,
-            ``5xx`` otherwise.
+            malformed part/body, ``403`` on PBAC denial, ``413`` over the
+            body cap, ``404`` on an unknown template, ``422`` on aggregated
+            validation deficits, ``5xx`` otherwise.
         """
+        # PBAC gate BEFORE decoding — same existing action/decorator the LLM
+        # generation path already uses (spec's resolution: "no NEW auth
+        # scheme" — this reuses "agent:chat", scoped "*" since there is no
+        # per-agent id here, matching the templates/themes register pattern
+        # at _handle_templates_register/_handle_themes_register). Fails
+        # open (returns None) when PBAC isn't configured, same as every
+        # other action on this handler.
+        pbac_denied = await self._check_pbac_agent_access(agent_id="*", action="agent:chat")
+        if pbac_denied is not None:
+            return pbac_denied
+
         try:
             parsed, frames = await self._decode_render_request()
         except RenderPayloadError as exc:
@@ -415,6 +428,7 @@ class InfographicTalk(AgentTalk):
         payload = RenderResponse(
             artifact_id=outcome.artifact_id,
             url=outcome.url,
+            url_note=outcome.url_note,
             template=parsed.template,
             sections_validated=outcome.sections_validated,
             persisted=outcome.persisted,
@@ -430,11 +444,16 @@ class InfographicTalk(AgentTalk):
             decoded from the JSON body, plus (for multipart) the
             ``dataset:<name>`` parts.
 
+        Both transports enforce the SAME pre-buffering ``DEFAULT_MAX_BODY_SIZE``
+        cap (``parse_json_render_request``/``parse_multipart_render_request``)
+        — the framework's own app-wide ``client_max_size`` does not cover
+        this endpoint's spec-mandated ceiling at the right granularity.
+
         Raises:
-            RenderPayloadError: Malformed body/part, or a declared ``None``
+            RenderPayloadError: Malformed body/part, invalid JSON, a
+                ``RenderRequest`` validation failure, or a declared ``None``
                 dataset with no backing multipart part.
             RenderBodyTooLargeError: The body exceeds the configured cap.
-            pydantic.ValidationError: The JSON body fails ``RenderRequest`` validation.
         """
         content_type = self.request.content_type or ""
         if content_type.startswith("multipart/"):
@@ -444,22 +463,11 @@ class InfographicTalk(AgentTalk):
             frames.update(multipart_frames)
             return parsed, frames
 
-        try:
-            body = await self.request.json()
-        except Exception as exc:
-            raise RenderPayloadError("request", f"invalid JSON body: {exc}") from exc
-        parsed = RenderRequest.model_validate(body)
-        frames = decode_inline_datasets(parsed)
-        missing = [
-            name for name, dataset in parsed.datasets.items()
-            if dataset is None and name not in frames
-        ]
-        for name in missing:
-            raise RenderPayloadError(
-                f"dataset:{name}",
-                "declared as null but the request is not multipart — no part to hydrate it",
-            )
-        return parsed, frames
+        # JSON transport: parse_json_render_request enforces the SAME
+        # pre-buffering DEFAULT_MAX_BODY_SIZE cap as the multipart path —
+        # the framework's own app-wide client_max_size does not cover this
+        # endpoint's spec-mandated 50 MB ceiling at the right granularity.
+        return await parse_json_render_request(self.request)
 
     async def _resolve_render_attribution(self, parsed: RenderRequest):
         """Resolve ``(user_id, agent_id, session_id)`` attribution for a render.
@@ -493,18 +501,40 @@ class InfographicTalk(AgentTalk):
         instance shared across requests. Safe to share: the render flow
         (``render_deterministic``) never mutates toolkit instance state
         (unlike the bot-bound authoring path), so there is no cross-request
-        interference. ``template_dirs`` comes from the (new, minimal)
-        ``app["infographic_render_template_dirs"]`` config key — mirrors the
-        existing ``app["artifact_store"]`` DI convention
-        (``manager.py`` on_startup). Absent config degrades to
-        ``TEMPLATE_ENGINE_UNSET`` at render time rather than failing to build.
+        interference.
+
+        ``template_dirs`` resolution order:
+        1. ``app["infographic_render_template_dirs"]`` — per-app override,
+           mirrors the existing ``app["artifact_store"]`` DI convention
+           (``manager.py`` on_startup).
+        2. ``parrot.conf.INFOGRAPHIC_RENDER_TEMPLATE_DIRS`` — deployment-wide
+           config (``INFOGRAPHIC_RENDER_TEMPLATE_DIRS`` env var, comma-separated).
+
+        When BOTH are empty, a render request will fail with
+        ``TEMPLATE_ENGINE_UNSET`` — a loud warning is logged the first time
+        this happens (not per-request) so the gap is never silent.
         """
         app = self.request.app
         toolkit = app.get("infographic_render_toolkit")
         if toolkit is None:
+            template_dirs = app.get("infographic_render_template_dirs") or (
+                INFOGRAPHIC_RENDER_TEMPLATE_DIRS or None
+            )
+            if not template_dirs:
+                self.logger.warning(
+                    "Building the render-endpoint InfographicToolkit with NO "
+                    "template_dirs configured (app['infographic_render_template_dirs'] "
+                    "and parrot.conf.INFOGRAPHIC_RENDER_TEMPLATE_DIRS are both empty). "
+                    "EVERY render request will fail with TEMPLATE_ENGINE_UNSET until "
+                    "one is set. See docs/api/infographic_render.md."
+                )
+            # artifact_store may legitimately be None here (not yet configured);
+            # the render flow never reads toolkit._artifact_store — persistence
+            # goes through the SAME store passed explicitly to render_deterministic
+            # — so this is safe despite InfographicToolkit's non-Optional param.
             toolkit = InfographicToolkit(
-                artifact_store=app.get("artifact_store"),
-                template_dirs=app.get("infographic_render_template_dirs"),
+                artifact_store=app.get("artifact_store"),  # type: ignore[arg-type]
+                template_dirs=template_dirs,
             )
             app["infographic_render_toolkit"] = toolkit
         return toolkit
@@ -551,17 +581,22 @@ class InfographicTalk(AgentTalk):
             job_id=job_id,
             status="pending",
             created_at=now.isoformat(),
-            deadline=now.isoformat(),
+            deadline=now.isoformat(),  # placeholder — job_store.create() stamps the real one
         )
         await job_store.create(job)
 
-        # Fire-and-forget: same pattern as _auto_save_infographic_artifact's
-        # asyncio.get_running_loop().create_task(...) fire-and-forget save —
-        # the task holds its own reference to `self` via the bound coroutine,
-        # so it outlives this request's return.
-        asyncio.get_running_loop().create_task(
+        # Fire-and-forget, but NOT unreferenced: asyncio only holds a WEAK
+        # reference to a Task with no other referrer, so an unreferenced
+        # task can be garbage-collected before it completes (a well-known
+        # asyncio footgun — see asyncio.create_task's own docs). Keep a
+        # strong reference on `app` for the task's lifetime, self-removing
+        # via a done-callback so this set never grows unbounded.
+        task = asyncio.get_running_loop().create_task(
             self._run_render_job(job_store, job_id, parsed, frames, user_id, agent_id, session_id)
         )
+        pending_tasks = self.request.app.setdefault("infographic_render_tasks", set())
+        pending_tasks.add(task)
+        task.add_done_callback(pending_tasks.discard)
         return self.json_response({"job_id": job_id}, status=202)
 
     async def _run_render_job(
@@ -598,6 +633,7 @@ class InfographicTalk(AgentTalk):
             result = RenderResponse(
                 artifact_id=outcome.artifact_id,
                 url=outcome.url,
+                url_note=outcome.url_note,
                 template=parsed.template,
                 sections_validated=outcome.sections_validated,
                 persisted=outcome.persisted,

@@ -32,6 +32,29 @@ catch-all, so it is never swallowed by agent-id matching.
 
 ---
 
+## Deployment Prerequisites
+
+The render endpoint uses a **server-owned** `InfographicToolkit` — separate
+from the per-agent toolkits the LLM path configures — that MUST be told
+where its HTML template sources live, or every render request fails with
+`TEMPLATE_ENGINE_UNSET` (mapped to `5xx`):
+
+- **`INFOGRAPHIC_RENDER_TEMPLATE_DIRS`** (env var, comma-separated
+  directories; `parrot/conf.py`) — deployment-wide default.
+- **`app["infographic_render_template_dirs"]`** — per-app override, set
+  before `on_startup` completes (same convention as `app["artifact_store"]`).
+
+If BOTH are empty, the server logs a loud warning the first time the
+toolkit is built (not per-request) — check logs for
+`"NO template_dirs configured"` if every render 500s.
+
+Also requires **`app["artifact_store"]`** (standard FEAT-103 wiring,
+`manager.py`'s `on_startup`) when any request sets `persist: true`
+(the default) — without it, `persisted` is always `false` regardless of
+what the caller asked for, and a warning is logged per request.
+
+---
+
 ## Request
 
 ### JSON body (small/medium datasets)
@@ -140,6 +163,7 @@ Priority: `?format=` query param > `Accept` header > default `text/html`
 {
   "artifact_id": "infographic-3f9a2b1c8d4e",
   "url": "https://s3.example.com/...&signature=...",
+  "url_note": null,
   "template": "budget_variance",
   "sections_validated": 1,
   "persisted": true,
@@ -153,25 +177,33 @@ Priority: `?format=` query param > `Accept` header > default `text/html`
 }
 ```
 
+`url_note` is set whenever `url` is `null`, explaining why — the spec's
+"explanatory field" (§2 Overview).
+
 ### The URL two-behavior rule
 
-`RenderResponse.url` is resolved as follows:
+`RenderResponse.url`/`url_note` are resolved as follows. **`persist=false`
+ALWAYS wins**: nothing is ever published anywhere (not even under
+`public=true`) when the caller asked not to persist — `persist=false`
+means "do not retain this," and honoring `public=true` on top of that
+would silently override that intent.
 
-| `public` | Backend / outcome | `url` |
-|---|---|---|
-| `true` | — | The HTML is ALSO written under the server's `STATIC_DIR` (`parrot/conf.py`) and `url` is the resulting `/static/<file>.html` path — served by the app's own `add_static("/static/", ...)` route. **Irreversible-ish**: the file remains until cleaned up; `STATIC_DIR` content is world-readable by definition. |
-| `false` | Artifact offloaded (S3/overflow) | ALWAYS a presigned URL (`ArtifactStore.get_public_url()`) — infographics are **never** hosted on public S3. |
-| `false` | Local backend, inline artifact, or `persist=false` | `url: null` — retrieval goes through the artifacts handler (`GET /api/v1/artifacts/{artifact_id}`) using `artifact_id` from this response. |
+| `persist` | `public` | Backend / outcome | `url` / `url_note` |
+|---|---|---|---|
+| `false` | *(either)* | — | `url: null` — `url_note` explains persistence was skipped (or explicitly overridden by `persist=false`, when `public=true` was also set) |
+| `true` | `true` | — | The HTML is ALSO written under the server's `STATIC_DIR` (`parrot/conf.py`) and `url` is the resulting `/static/<file>.html` path — served by the app's own `add_static("/static/", ...)` route. **Irreversible-ish**: the file remains until cleaned up; `STATIC_DIR` content is world-readable by definition. |
+| `true` | `false` | Artifact offloaded (S3/overflow) | ALWAYS a presigned URL (`ArtifactStore.get_public_url()`) — infographics are **never** hosted on public S3. |
+| `true` | `false` | Local backend or inline artifact | `url: null` — `url_note` says to use the artifacts handler (`GET /api/v1/artifacts/{artifact_id}`) with `artifact_id` from this response. |
 
 ### Error taxonomy
 
 | Status | When |
 |---|---|
 | `400` | Malformed JSON/multipart part (named in the response), or a `null` dataset with no matching multipart part |
+| `403` | PBAC policy denial (only when PBAC is configured for the deployment) |
 | `404` | `template` is not a registered name |
-| `413` | Total request body exceeds the size cap (default **50 MB**, configurable) |
+| `413` | Total request body exceeds the size cap (default **50 MB**, configurable) — enforced for BOTH the JSON and multipart transports |
 | `422` | The FEAT-326 validation gate failed — **every** missing dataset/column across **every** section, aggregated into ONE response |
-| `501` | *(historical seam; async is implemented — see below)* |
 | `5xx` | Persistence failure, or a template registry misconfiguration (see Known Limitation below) |
 
 ```json

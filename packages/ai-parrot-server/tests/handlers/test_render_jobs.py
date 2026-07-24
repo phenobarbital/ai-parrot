@@ -130,6 +130,33 @@ class TestJobStore:
         fetched = await store.get("job-1")
         assert fetched.status == "running"
 
+    async def test_watchdog_flips_orphaned_pending_to_failed(self):
+        """A job whose task never even started (e.g. GC'd before its first
+        await, or the worker died before set_running) is ALSO recovered —
+        not just orphaned `running` jobs. Uses max_runtime_seconds=-1 (a
+        deadline already in the past the instant it's stamped) since
+        create() intentionally ALWAYS stamps a fresh deadline for pending
+        jobs (see test_create_stamps_real_deadline_for_pending_jobs)."""
+        store = RenderJobStore(redis_client=_FakeRedis())
+        await store.create(_job(status="pending"), max_runtime_seconds=-1)
+        fetched = await store.get("job-1")
+        assert fetched.status == "failed"
+        assert fetched.error["code"] == "watchdog_timeout"
+
+    async def test_create_stamps_real_deadline_for_pending_jobs(self):
+        """create() overrides a pending job's placeholder deadline with a
+        REAL now+max_runtime one — a pending job must never be left with
+        no effective watchdog coverage (it previously carried whatever
+        placeholder the caller passed, often just `now`)."""
+        store = RenderJobStore(redis_client=_FakeRedis())
+        before = datetime.now(timezone.utc)
+        # Deliberately pass an already-past placeholder deadline, like
+        # _enqueue_render_job's `deadline=now.isoformat()` at creation time.
+        await store.create(_job(status="pending", deadline=before))
+        fetched = await store.get("job-1")
+        assert fetched.status == "pending"  # NOT flipped — deadline was pushed into the future
+        assert datetime.fromisoformat(fetched.deadline) > before
+
     def test_default_max_runtime_is_600s(self):
         assert DEFAULT_MAX_RUNTIME_SECONDS == 600
         assert resolve_max_runtime_seconds() == 600
@@ -138,6 +165,37 @@ class TestJobStore:
         store = RenderJobStore(redis_client=_FakeRedis())
         with pytest.raises(ValueError):
             await store.set_terminal(_job(status="running"))
+
+    async def test_set_terminal_refuses_to_overwrite_different_terminal_status(self):
+        """The watchdog/own-completion race guard: a job already persisted
+        as `failed` must not be silently overwritten with `done` (or vice
+        versa) by a late-arriving terminal write."""
+        store = RenderJobStore(redis_client=_FakeRedis())
+        job = _job(status="running")
+        await store.create(job)
+        failed = job.model_copy(update={"status": "failed", "error": {"code": "x", "detail": "y"}})
+        await store.set_terminal(failed)
+
+        done = job.model_copy(update={"status": "done"})
+        result = await store.set_terminal(done)
+
+        assert result.status == "failed"  # existing terminal record wins
+        fetched = await store.get("job-1")
+        assert fetched.status == "failed"
+
+    async def test_set_terminal_force_bypasses_the_guard(self):
+        store = RenderJobStore(redis_client=_FakeRedis())
+        job = _job(status="running")
+        await store.create(job)
+        failed = job.model_copy(update={"status": "failed", "error": {"code": "x", "detail": "y"}})
+        await store.set_terminal(failed)
+
+        done = job.model_copy(update={"status": "done"})
+        result = await store.set_terminal(done, force=True)
+
+        assert result.status == "done"
+        fetched = await store.get("job-1")
+        assert fetched.status == "done"
 
 
 # ---------------------------------------------------------------------------

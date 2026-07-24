@@ -175,6 +175,34 @@ def _fixed_handler(request) -> _FixedAttributionInfographicTalk:
 # ---------------------------------------------------------------------------
 
 class TestRenderRoute:
+    async def test_pbac_denial_short_circuits_before_decoding(self, app):
+        """Code-review fix: the render branch previously called
+        _check_pbac_agent_access NOWHERE — inconsistent with every sibling
+        action on this handler (_generate_infographic, templates/themes
+        register). Verifies the gate is wired: when PBAC denies, the 403 it
+        returns is what the route returns, and nothing past it runs."""
+        request = await _json_request(app, _render_body())
+        handler = _handler(request)
+        denial = web.json_response({"error": "denied"}, status=403)
+
+        async def _deny(agent_id, action):
+            assert agent_id == "*"
+            assert action == "agent:chat"
+            return denial
+
+        handler._check_pbac_agent_access = _deny
+        response = await handler._render_infographic_deterministic()
+        assert response is denial
+
+    async def test_pbac_allowed_proceeds_normally(self, app):
+        """Fail-open when PBAC allows (returns None) — same as every other
+        action on this handler; render proceeds as usual."""
+        request = await _json_request(app, _render_body())
+        handler = _handler(request)
+        handler._check_pbac_agent_access = AsyncMock(return_value=None)
+        response = await handler._render_infographic_deterministic()
+        assert response.status == 200
+
     async def test_unknown_template_404(self, app):
         # BaseView.error() RAISES the HTTPException (aiohttp's dispatch layer
         # normally converts it to a response) — direct-call tests catch it.
@@ -272,6 +300,24 @@ class TestRenderRoute:
         response = await _handler(request)._render_infographic_deterministic()
         payload = json.loads(response.body)
         assert payload["url"] is None
+        assert payload["url_note"]
+
+    async def test_public_true_with_persist_false_does_not_publish(
+        self, app, tmp_path, monkeypatch, fake_artifact_store,
+    ):
+        """Code-review fix: persist=false must ALWAYS win — public=true must
+        NEVER write to STATIC_DIR (or anywhere) when the caller explicitly
+        asked not to persist. Previously public=true bypassed persist=false
+        entirely."""
+        monkeypatch.setattr("parrot.conf.STATIC_DIR", tmp_path)
+        request = await _json_request(app, _render_body(public=True, persist=False))
+        response = await _handler(request)._render_infographic_deterministic()
+        payload = json.loads(response.body)
+        assert payload["persisted"] is False
+        assert payload["url"] is None
+        assert "persist=false" in payload["url_note"]
+        assert list(tmp_path.glob("*.html")) == []  # nothing written anywhere
+        fake_artifact_store.save_artifact.assert_not_awaited()
 
     async def test_async_true_returns_202_job_id(self, app):
         """Full async job lifecycle (poll roundtrip, exception handling,
