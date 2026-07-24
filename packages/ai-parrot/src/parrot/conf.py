@@ -815,6 +815,19 @@ VECTOR_HANDLER_MAX_FILE_SIZE = config.getint(
     fallback=25 * 1024 * 1024  # 25MB
 )
 
+## Infographic Render Endpoint (FEAT-327): template source directories for
+## the server-owned, bot-less InfographicToolkit used by
+## POST /api/v1/agents/infographic/render (data-splice/jinja HTML sources —
+## NOT the block-spec metadata registry `parrot.helpers.infographics` uses
+## for the pre-render 404 check; the two are intentionally separate
+## registries, see docs/api/infographic_render.md's Known Limitation).
+## Comma-separated list of directories; empty by default — the render
+## route logs a loud warning and every render request fails with
+## TEMPLATE_ENGINE_UNSET until this is configured for a deployment.
+INFOGRAPHIC_RENDER_TEMPLATE_DIRS: list[str] = config.getlist(
+    "INFOGRAPHIC_RENDER_TEMPLATE_DIRS", fallback=[]
+)
+
 ## Security:
 AWS_ACCESS_KEY_ID = config.get("AWS_ACCESS_KEY_ID", fallback=AWS_ACCESS_KEY)
 AWS_SECRET_ACCESS_KEY = config.get("AWS_SECRET_ACCESS_KEY", fallback=AWS_SECRET_KEY)

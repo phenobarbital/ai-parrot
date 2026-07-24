@@ -22,7 +22,7 @@
       "parallelism_notes": "Core adapter consumed by TASK-1890's validation flow — dependency root, lands first.",
       "assigned_to": null,
       "started_at": "2026-07-24T13:22:23+00:00",
-      "completed_at": "2026-07-24T22:39:53+00:00",
+      "completed_at": "2026-07-24T14:03:47+00:00",
       "file": "sdd/tasks/completed/TASK-1888-adhoc-dataset-adapter.md",
       "verification": "verified"
     },
@@ -43,7 +43,7 @@
       "parallelism_notes": "Creates handlers/infographic_render.py that TASK-1890 extends; imports core models.",
       "assigned_to": null,
       "started_at": "2026-07-24T13:22:23+00:00",
-      "completed_at": "2026-07-24T22:39:54+00:00",
+      "completed_at": "2026-07-24T15:32:46+00:00",
       "file": "sdd/tasks/completed/TASK-1889-render-request-models-decoding.md",
       "verification": "verified"
     },
@@ -65,7 +65,7 @@
       "parallelism_notes": "Modifies handlers/infographic.py + manager routes; consumes adapter and models.",
       "assigned_to": null,
       "started_at": "2026-07-24T13:22:23+00:00",
-      "completed_at": "2026-07-24T22:39:54+00:00",
+      "completed_at": "2026-07-24T17:45:07+00:00",
       "file": "sdd/tasks/completed/TASK-1890-deterministic-render-route.md",
       "verification": "verified"
     },
@@ -86,7 +86,7 @@
       "parallelism_notes": "Wraps the TASK-1890 sync flow in background jobs; touches the same handler file.",
       "assigned_to": null,
       "started_at": "2026-07-24T13:22:23+00:00",
-      "completed_at": "2026-07-24T22:39:54+00:00",
+      "completed_at": "2026-07-24T18:28:33+00:00",
       "file": "sdd/tasks/completed/TASK-1891-async-job-subsystem.md",
       "verification": "verified"
     },
@@ -110,7 +110,7 @@
       "parallelism_notes": "Integration proof + dependency/docs closure — needs every other task done.",
       "assigned_to": null,
       "started_at": "2026-07-24T13:22:23+00:00",
-      "completed_at": "2026-07-24T22:39:54+00:00",
+      "completed_at": "2026-07-24T18:38:44+00:00",
       "file": "sdd/tasks/completed/TASK-1892-pyarrow-dep-e2e-docs.md",
       "verification": "verified"
     }

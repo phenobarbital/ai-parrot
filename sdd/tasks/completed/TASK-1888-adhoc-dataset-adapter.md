@@ -143,10 +143,23 @@ class TestAdhocDatasetAdapter:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-24
+**Notes**: Implemented `AdhocDatasetAdapter` (+ `_AdhocEntry` duck-type helper)
+in `parrot/tools/infographic_sections.py`, wrapping ad-hoc `{name: DataFrame}`
+dicts and REPL locals (frames take precedence on collision; non-DataFrame
+locals are never surfaced or executed). Lazy-exported via
+`parrot/tools/__init__.py` (`_LAZY_CORE_TOOLS` + `__all__`), confirmed
+`from parrot.tools import AdhocDatasetAdapter` resolves. Added
+`test_adhoc_dataset_adapter.py` with the 5 specified tests, including an
+equivalence test proving `validate_descriptor_datasets` raises identical
+`InfographicValidationError.detail` for the adapter vs a `DatasetManager`
+stub on both the pass and deficit paths. All 5 new tests pass; ruff clean
+(pre-existing unrelated `F401` in `tools/__init__.py:142` predates this
+change). Noted (not a regression): 6 tests in the wider
+`tests/unit/tools/` suite fail only when run as part of the FULL directory
+sweep (order-dependent pollution) — reproduced identically on a stashed
+baseline without this task's changes, so it is pre-existing on `dev` and
+out of this task's scope.
 
 **Deviations from spec**: none

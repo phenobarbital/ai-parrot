@@ -151,10 +151,50 @@ Codebase Contract**; 4. **Update status** in
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-24
+**Notes**: Implemented `RenderJobStore` (`handlers/render_jobs.py`) — Redis
+client built exactly like `RedisConversation` (`parrot/memory/redis.py:22-29`),
+`infographic:job:` key prefix, `create`/`get`/`set_running`/`set_terminal`,
+1-day TTL applied ONLY at terminal state, and a poll-time watchdog
+(`_apply_watchdog`) that flips a past-`deadline` `running` job to `failed`
+(structured `watchdog_timeout` error) — no background daemon.
+`resolve_max_runtime_seconds()` isolates the 600s default behind one
+function for future resource-aware replacement. Wired the real `async=true`
+branch into `InfographicTalk.post()` (`_enqueue_render_job` — job created,
+`asyncio.get_running_loop().create_task(...)` fire-and-forget, same pattern
+as `_auto_save_infographic_artifact`'s existing fire-and-forget save;
+`_run_render_job` reuses TASK-1890's `render_deterministic` and NEVER lets
+an exception escape — it lands in the job record as a structured `failed`
+error) and the polling `GET` dispatch (`_get_render_job_status`, registered
+as `{resource:render}/jobs/{job_id}` alongside the render route, before
+`{agent_id}`). 14 new tests pass (store CRUD, TTL, watchdog both directions,
+multi-worker visibility via two `RenderJobStore` instances sharing one fake
+Redis client, 202+poll roundtrip, task-exception→failed, unknown-job 404);
+full `tests/handlers/` suite (215 passed, 1 pre-existing skip) shows no
+regressions.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec / notes**:
+- Used an **injected in-memory fake Redis client** (`_FakeRedis`:
+  `set`/`get`/`expire` only) rather than `fakeredis`, which the task's own
+  scope explicitly allows ("fakeredis OR an injected fake"). `fakeredis` is
+  used elsewhere in this package's tests but is NOT installed in this
+  environment (`ModuleNotFoundError`, confirmed pre-existing/unrelated to
+  this task by reproducing the same failure on an existing fakeredis-based
+  test) — the injected fake keeps this task's tests runnable here without
+  adding a new dependency (out of this task's file scope) or leaving tests
+  uncollectable.
+- **Updated TASK-1890's `test_infographic_render_route.py`**: its
+  `test_async_not_implemented_seam` asserted the OLD 501 placeholder this
+  task explicitly replaces (per TASK-1890's own scope note: "leave the
+  dispatch seam" for TASK-1891 to fill). Renamed to
+  `test_async_true_returns_202_job_id` and updated the assertion to the
+  real 202+job_id behavior; also pre-seeded that file's shared `app` fixture
+  with a fake-Redis-backed `RenderJobStore` so the async path doesn't
+  attempt a real connection to `REDIS_HISTORY_URL` (which points at a dev
+  host unreachable from tests).
+- The template-existence check (`get_template`, 404) now runs BEFORE the
+  `async_` branch (previously it ran after, when TASK-1890 left the async
+  branch as an early-return stub) — this way an unknown template is
+  rejected synchronously with `404` for BOTH sync and async requests,
+  rather than only after a job was already created for the async case.

@@ -183,10 +183,70 @@ class TestRenderRoute:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-24
+**Notes**: Implemented the `render` dispatch branch on `InfographicTalk.post()`
+(`{resource:render}` matched literal, registered in `manager.py` BEFORE
+`{agent_id}` — pinned by `TestRenderRouteRegistration`), `_decode_render_request`
+(JSON or multipart), `_resolve_render_attribution` (session user_id; body
+agent_id/session_id; system defaults), a lazily-cached, app-owned
+`InfographicToolkit` (`app["infographic_render_toolkit"]`), and the full
+validate → assemble → render → persist → resolve-URL flow in
+`infographic_render.render_deterministic` (+ `assemble_section_payload`,
+`resolve_response_url`/`publish_to_static_dir` implementing the two-behavior
+URL rule). 12 route-level tests pass (404/422/400/HTML+JSON negotiation/
+determinism/persist attribution/persist=false/public→STATIC_DIR/S3-style
+presigned/local-null/async-seam) plus the route-ordering assertion; full
+`tests/handlers/` suite (201 passed, 1 pre-existing skip) shows no regressions.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec — three genuine architecture gaps surfaced and
+resolved with documented judgment calls (none contradict the spec; all are
+connective tissue the spec didn't fully wire):**
 
-**Deviations from spec**: none
+1. **`render_data_template`/`render_template` persist UNCONDITIONALLY** under
+   a `_bot`-scope-derived (or `"_anon"`, bot-less) identity, with NO `persist`
+   switch — incompatible with this endpoint's caller-supplied attribution and
+   optional persistence, and `infographic_toolkit.py` is not in this task's
+   file scope to fix directly. Resolution: bypass those two methods entirely
+   and call the toolkit's own lower-level, persist-free primitives instead —
+   `_template_engine` + `InfographicToolkit._splice_payload` (data-splice) /
+   `_template_engine.render` (jinja) — the EXACT same calls those methods
+   make internally. `_splice_payload` is explicitly listed as a verified
+   signature in the SPEC's OWN §6 Codebase Contract, which is the strongest
+   signal this was the intended seam. Persistence then happens via
+   `ArtifactStore.save_artifact` directly, with THIS call's own
+   user_id/agent_id/session_id, only when `persist=True`.
+2. **No app-level `template_dirs` wiring exists anywhere** for a bot-less
+   `InfographicToolkit` (`InfographicAuthoringMixin`/`ResultAgent` only ever
+   build one per-AGENT, at agent-configure time). Resolution: a new,
+   minimal `app["infographic_render_template_dirs"]` config key (read at
+   first render, defaulting to `None`), mirroring the EXISTING
+   `app["artifact_store"]` DI convention (`manager.py on_startup`). Absent
+   config degrades to `TEMPLATE_ENGINE_UNSET`/`TEMPLATE_UNKNOWN` (mapped to
+   500) rather than failing to build — deploy-time config, not this task's
+   concern to populate with real production template paths.
+3. **Two disjoint template registries**: `parrot.helpers.infographics.get_template`
+   (block-spec metadata, used for the 404 pre-check per this task's own
+   contract) is UNRELATED to `InfographicToolkit`'s own Jinja
+   `template_dirs`/`templates=` registry (used for the actual render). A
+   name passing the 404 check can still fail to render if the toolkit's OWN
+   registry doesn't know it — surfaced as a 500 (`InfographicValidationError`
+   not `sections_unmet`/`payload_shape_mismatch`), logged. Flagging for
+   follow-up: reconciling these two registries (e.g. `register_template`
+   also registering the raw HTML source with the render toolkit) is a
+   cross-cutting concern beyond this task's file scope.
+4. **Payload assembly algorithm** (`assemble_section_payload`) is NOT spec'd
+   anywhere beyond "assemble payload per section targets" — no shape
+   transformation algorithm is described. Implemented the narrow, safe
+   common case (exactly ONE dataset alias per section, sliced to
+   `columns[alias]`, shaped per `records`/`table`/`mapping`/`scalar`) and
+   FAIL LOUDLY (`RenderPayloadError`, 400) for sections naming MORE than one
+   dataset alias, rather than guessing a combination strategy. Flagging for
+   product confirmation if multi-dataset sections are a real v1 requirement.
+5. Async mode (`async_=True`) returns `501` with a message naming TASK-1891
+   — the explicit "leave the dispatch seam" instruction; no job/queue logic
+   here.
+6. `self.error(..., status=501)` would silently degrade to `400` —
+   `BaseView.error()` only remaps a fixed status set
+   (400/401/403/404/406/412/428). Used `self.json_response(..., status=501)`
+   instead so the real status code is honored; noted inline.

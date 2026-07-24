@@ -141,10 +141,50 @@ def test_pyarrow_declared_dependency(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-24
+**Notes**: Declared `pyarrow>=25.0` in `packages/ai-parrot-server/pyproject.toml`
+(`[project.dependencies]` — it's the package that actually imports it,
+`handlers/infographic_render.py`); ran `uv lock` to update the (gitignored)
+lockfile. Wrote `tests/integration/test_infographic_render_e2e.py` — 5 tests,
+using a REAL `ArtifactStore` (`ConversationSQLiteBackend` + local-filesystem
+overflow, same pattern as FEAT-326's own
+`test_dataagent_infographic_e2e.py`) rather than mocks, for a genuinely
+end-to-end proof: JSON transport → data-splice render → verified real
+persistence (fetched the artifact back from the store); multipart parquet
+part with dtype-bearing columns → repeat-call determinism (byte-identical
+spliced HTML); async job created against one `RenderJobStore` polled
+through a SECOND instance sharing the same fake Redis client
+(multi-worker simulation); error-taxonomy sweep (400/404/413/422);
+`test_pyarrow_declared_dependency` (parses `pyproject.toml` via `tomllib`).
+Wrote `docs/api/infographic_render.md` matching
+`docs/toolkits/infographic_toolkit.md`'s style — request/response examples
+(JSON + multipart, with curl), the URL two-behavior rule, error taxonomy,
+determinism guarantee, async job lifecycle, limits, and the known
+template-registry-mismatch limitation (documented across TASK-1890/1891's
+Completion Notes). All 5 e2e tests pass; `ruff check` clean; full
+`ai-parrot-server` `tests/` suite (609 passed, 1 skipped, 4 pre-existing
+unrelated failures — A2A fireflies/jira/workiq broker registration + a
+namespace-imports host-stub check for unrelated `spatial_filter_handler.py`/
+`dataset_filter_handler.py` files; 2 pre-existing collection ERRORS on
+`fakeredis`-dependent tests, confirmed missing from this venv and unrelated
+to this task) shows no regressions attributable to this feature.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec / notes**:
+- The reference fixture `sdd/artifacts/budget_variance_dashboard_Template.html`
+  named in this task's Codebase Contract does **not exist** anywhere in the
+  worktree (`artifacts/` is gitignored) — confirmed by FEAT-326's OWN e2e
+  suite, which documents the exact same gap and synthesizes an equivalent
+  compact template carrying the same `report-data` splice marker. Followed
+  that exact precedent (`TEMPLATE_HTML` constant) rather than depending on
+  a file that cannot exist in CI/worktrees.
+- `sdd/artifacts/*` doesn't exist as a checked-in directory in this worktree
+  at all (gitignored), so there was nothing to "read reference visual
+  semantics" from beyond the prior task's own documented workaround.
+- Combined cross-package pytest invocation
+  (`pytest packages/ai-parrot packages/ai-parrot-server -q`) hits a
+  pre-existing `tests.conftest` module-name collision between the two
+  packages — the SAME issue TASK-1873's Completion Note already documents
+  ("run separately due to a pre-existing tests.conftest module-name
+  collision... unrelated to this feature"). Verified each package's own
+  suite green independently instead, per that established precedent.

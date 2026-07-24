@@ -148,10 +148,37 @@ Codebase Contract** (server test layout + config conventions are marked unverifi
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-24
+**Notes**: Created `handlers/infographic_render.py` with `InlineDataset`,
+`RenderRequest` (`async_` aliased to `"async"`, `populate_by_name=True`,
+`descriptor` imported from `parrot.tools` — never redefined), `RenderResponse`,
+`RenderJob` (all `extra="forbid"`); `decode_inline_datasets` for
+`records`/`split`; `parse_multipart_render_request` for the multipart
+transport (one `request` JSON part + `dataset:<name>` parquet/CSV parts),
+with a running-total body-size cap enforced via chunked reads
+(`field.read_chunk`) that abort BEFORE the oversized chunk is buffered
+(`RenderBodyTooLargeError`); malformed parts raise `RenderPayloadError`
+naming the offending part; parquet/CSV decode run via
+`loop.run_in_executor`. Verified the server test layout
+(`packages/ai-parrot-server/tests/handlers/`, mirroring
+`test_infographic_recipes.py`'s sibling-module convention) and created
+`test_infographic_render_models.py` there — 19 tests, all passing, using
+real `aiohttp.MultipartWriter` + `make_mocked_request` to exercise genuine
+multipart wire parsing (not just duck-typed fakes). Confirmed parquet
+round-trip preserves datetime/categorical dtypes.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**:
+- The body-size cap is a **module-level constant** (`DEFAULT_MAX_BODY_SIZE`
+  in `infographic_render.py`, mirroring the existing `MAX_FILE_SIZE`
+  convention in `handlers/datasets.py`) rather than a `parrot.conf`
+  config-driven key (the `stores/handler.py` / `VECTOR_HANDLER_MAX_FILE_SIZE`
+  style). `parrot/conf.py` is not listed in ANY task's Files to
+  Create/Modify across this feature, so touching it would violate file
+  fidelity. The constant is passed as a keyword arg to
+  `parse_multipart_render_request(reader, max_body_size=...)`, so the route
+  (TASK-1890) or app wiring can still override it per-call without a code
+  change here.
+- Status-code mapping (400/413) is NOT done in this module by design — the
+  task scope is decoding only; `RenderPayloadError`/`RenderBodyTooLargeError`
+  carry enough detail (`part_name`) for the route (TASK-1890) to map them.
