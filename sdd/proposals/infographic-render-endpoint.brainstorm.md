@@ -61,7 +61,13 @@ that want render-as-a-service without wiring a parrot agent.
   templates — arbitrary caller HTML persisted and served back is a stored-XSS vector and
   breaks the trusted-template model.
 - **Sync + optional async** (user decision): synchronous render by default; `async=true` ⇒
-  `202 Accepted` + job id + polling route. Needed for large multipart payloads.
+  `202 Accepted` + job id + polling route. Needed for large multipart payloads. Job store:
+  **Redis via `parrot/memory/`** (multi-worker safe; resolved decision).
+- **Body cap 50 MB** (configurable; resolved decision): oversized requests → 413.
+- **Shared validator adapter** (resolved decision): `validate_descriptor_datasets` gets an
+  adapter accepting ad-hoc `{name: DataFrame}` dicts and (possibly) references to dataframes
+  in the python tool's `locals` — one gate for both the HTTP endpoint and the in-process
+  authoring path.
 - **Response content-negotiated** (user decision): `Accept: text/html` → the HTML;
   `application/json` → persisted artifact reference + URL (the handler's existing
   `_negotiate_accept` pattern, line 454).
@@ -233,9 +239,11 @@ Errors are structured and fail-fast: unknown template → 404; descriptor valida
 3. **Dataset decoding**: records/split → `pandas.DataFrame`; parquet part → `pyarrow` →
    DataFrame; CSV part → pandas. Per-dataset row/size caps; total body cap (configurable,
    e.g. 50 MB default) — enforced before decoding where possible.
-4. **Validation gate**: FEAT-326 `validate_descriptor_datasets` (adapted to the ad-hoc
-   dataset dict — see Open Questions: the merged gate takes DatasetManager-style entries) and
-   `validate_payload_shape` per section target; deficits aggregate to one 422.
+4. **Validation gate**: FEAT-326 `validate_descriptor_datasets` through the new **adapter**
+   (resolved decision): the adapter normalizes ad-hoc `{name: DataFrame}` dicts — and,
+   possibly, named references into the python tool's `locals` for the in-process path — into
+   whatever entry shape the merged gate expects; then `validate_payload_shape` per section
+   target; deficits aggregate to one 422.
 5. **Render**: `descriptor.mode == "data-splice"` → assemble payload per section targets and
    call `render_data_template(template, payload, descriptor, marker_id)`;
    `mode == "jinja"` → build context and call `render_template`. The toolkit instance is
@@ -244,9 +252,9 @@ Errors are structured and fail-fast: unknown template → 404; descriptor valida
    path with `user_id` from the session, `agent_id`/`session_id` from the body or system
    defaults (pattern of `_auto_save_infographic_artifact`, but awaited — the deterministic
    caller wants the reference back, not fire-and-forget).
-7. **Async jobs**: thin job registry keyed by `job_id` (uuid4) holding status + result ref;
-   render runs as an `asyncio` task. Store backend = open question (in-memory v1 vs Redis
-   `parrot/memory/` for multi-worker deployments).
+7. **Async jobs**: job registry keyed by `job_id` (uuid4) holding status + result ref,
+   backed by **Redis via `parrot/memory/`** (resolved decision — multi-worker safe; polling
+   works regardless of which worker executed the render). Render runs as an `asyncio` task.
 
 ### Edge Cases & Error Handling
 
@@ -261,8 +269,9 @@ Errors are structured and fail-fast: unknown template → 404; descriptor valida
 - **Persistence failure with `persist=true`** → 502-style structured error; with
   `Accept: text/html` the HTML can still be returned with a `X-Artifact-Persisted: false`
   header (surfaced, never silent).
-- **Worker restart with in-memory jobs** → jobs lost ⇒ 404 on poll; documented limitation of
-  the v1 store choice (drives the open question).
+- **Worker restart mid-job** → job state survives in Redis (resolved store choice), but a
+  render task that died leaves the job `running` forever without a watchdog — jobs need a
+  max-runtime/heartbeat so orphans transition to `failed` instead of hanging pollers.
 
 ---
 
@@ -285,11 +294,11 @@ Errors are structured and fail-fast: unknown template → 404; descriptor valida
 |---|---|---|
 | `packages/ai-parrot-server/src/parrot/handlers/infographic.py` | modifies | render dispatch + request decoding + job polling |
 | `packages/ai-parrot-server/src/parrot/manager/manager.py:1829-1845` | modifies | register the 2 new routes (order matters: literal `render` segment must not be swallowed by `{agent_id}`) |
-| `parrot/tools/infographic_sections.py` (FEAT-326) | depends on / possibly extends | validation gate reuse; may need an adapter for ad-hoc dataset dicts (vs DatasetManager entries) |
+| `parrot/tools/infographic_sections.py` (FEAT-326) | extends | validator ADAPTER (resolved): ad-hoc `{name: DataFrame}` dicts + (possibly) python-tool `locals` references, normalized into the gate's entry shape |
 | `parrot/tools/infographic_toolkit.py` (FEAT-326) | depends on | `render_data_template` (line 625) + `render_template`; server-owned toolkit instance |
 | `parrot/helpers/infographics.py` | depends on | template existence checks (`get_template`:35) |
 | `parrot/storage/` (`ArtifactStore`) | depends on | persistence + artifact URL |
-| `parrot/memory/` (Redis) | possibly depends on | candidate job-store backend (open question) |
+| `parrot/memory/` (Redis) | depends on | job-store backend for async mode (resolved decision) |
 | `pyarrow` | depends on | parquet decoding — confirm declared-dependency status |
 
 No breaking changes to existing routes. Deployment: body-size cap + job TTL become config.
@@ -396,13 +405,16 @@ import pyarrow                                        # 25.0.0 importable in the
 
 ## Open Questions
 
-- [ ] **Job-store backend** for async mode: in-memory dict (single-worker, jobs lost on
-  restart) vs Redis via `parrot/memory/` (multi-worker safe). v1 default? — *Owner: jesuslara*
-- [ ] **Body-size caps**: default total cap (50 MB?), per-dataset caps, and whether multipart
-  streaming enforces the cap pre-buffering. — *Owner: jesuslara*
-- [ ] **Validator adapter**: `validate_descriptor_datasets` (infographic_sections.py:210) was
-  written against DatasetManager entries — confirm its exact input types and whether the
-  endpoint needs a thin adapter for ad-hoc `{name: DataFrame}` dicts. — *Owner: spec author*
+- [x] **Job-store backend** for async mode — *Owner: jesuslara*: **Redis via `parrot/memory/`**
+  (multi-worker safe); no in-memory fallback as the primary store.
+- [x] **Body-size caps** — *Owner: jesuslara*: total body cap **50 MB** (configurable);
+  per-dataset caps and pre-buffering enforcement are spec-level details under that ceiling.
+- [x] **Validator adapter** — *Owner: jesuslara*: ADD an adapter so
+  `validate_descriptor_datasets` (infographic_sections.py:210) accepts **ad-hoc
+  `{name: DataFrame}` dicts** AND, possibly, **references to dataframes living in the python
+  tool's `locals`** (PythonPandasTool REPL namespace) — so the same gate serves the HTTP
+  endpoint (ad-hoc frames) and the in-process authoring path (REPL-built frames) without
+  duplicating validation logic.
 - [ ] **Artifact URL shape** in the JSON response: presigned/overflow URL vs deeplink route —
   follow whatever `_auto_save_infographic_artifact` + artifacts handler already produce.
   — *Owner: spec author*
