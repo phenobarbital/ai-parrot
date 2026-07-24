@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-327
 **Date**: 2026-07-24
 **Author**: jesuslara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.x
 **Brainstorm**: `sdd/proposals/infographic-render-endpoint.brainstorm.md` (Recommended Option A; all 6 open questions resolved)
 
@@ -102,12 +102,15 @@ Extend `InfographicTalk` (ai-parrot-server) with a bot-less deterministic branch
   works regardless of which worker executed the render; render runs as an `asyncio` task;
   terminal jobs carry a **1-day TTL**; a max-runtime watchdog transitions orphaned `running`
   jobs to `failed`.
-- **Artifact URL** in the JSON response (resolved: evaluated during spec development):
-  produced via the existing `ArtifactStore.get_public_url()` (presigned overflow URL,
-  `artifacts.py:177`). NOTE: it raises for inline (non-offloaded) artifacts — rendered HTML
-  documents of real size exceed the 200 KB inline threshold and offload, but the implementer
-  must handle the small-artifact inline case (return a deeplink/handler route or omit `url`
-  with an explanatory field; verify local-backend presigned support — see §8).
+- **Artifact URL — two behaviors** (resolved): the request carries a `public: bool` flag.
+  - `public=true` → the rendered HTML is ALSO written under the project's **`static/` dir**
+    (`STATIC_DIR`, `parrot/conf.py:43-45`) and the response URL is the static URL.
+  - `public=false` with the **S3 overflow backend** → the URL is ALWAYS **presigned**
+    (`ArtifactStore.get_public_url()`, `artifacts.py:177`) — infographics are NEVER hosted
+    on public S3.
+  - `public=false` on the local backend (or an inline, non-offloaded artifact, for which
+    `get_public_url` raises) → return the artifact reference with `url: null` plus an
+    explanatory field; retrieval goes through the artifacts handler.
 
 **Route-matching constraint**: the literal `render` segment must be registered so aiohttp
 matches it BEFORE the existing `'/api/v1/agents/infographic/{agent_id}'` pattern
@@ -166,6 +169,7 @@ class RenderRequest(BaseModel):
     agent_id: Optional[str] = None              # attribution (system default when absent)
     session_id: Optional[str] = None
     persist: bool = True
+    public: bool = False                        # true ⇒ also publish under STATIC_DIR (resolved)
     async_: bool = Field(default=False, alias="async")
 
 class RenderResponse(BaseModel):
@@ -238,8 +242,10 @@ class AdhocDatasetAdapter:
   (404); adapter + FEAT-326 gates (422 with full deficit list); payload assembly per section
   targets; server-owned `InfographicToolkit` (data-splice via `render_data_template`, jinja
   via `render_template`); awaited persistence with session `user_id` + body attribution +
-  system defaults; negotiated response (HTML / `RenderResponse` with `get_public_url`,
-  inline-artifact fallback); route registration BEFORE `{agent_id}`.
+  system defaults; negotiated response (HTML / `RenderResponse`) with the **two-behavior URL
+  rule** (resolved): `public=true` → publish under `STATIC_DIR` + static URL; S3 backend →
+  always presigned via `get_public_url`; local non-public/inline → `url: null` + artifacts
+  handler retrieval; route registration BEFORE `{agent_id}`.
 - **Depends on**: Modules 1-2.
 
 ### Module 4: Async job subsystem
@@ -248,7 +254,9 @@ class AdhocDatasetAdapter:
 - **Responsibility**: `async=true` → `202 {job_id}`; Redis job store using `redis.asyncio`
   with `REDIS_HISTORY_URL` (pattern: `parrot/memory/redis.py:10-29`); render as `asyncio`
   task; polling route `GET .../render/jobs/{job_id}` (404 unknown/expired); **1-day TTL** on
-  terminal jobs; max-runtime watchdog flips orphaned `running` → `failed`.
+  terminal jobs; max-runtime watchdog flips orphaned `running` → `failed` — **default
+  max-runtime 10 minutes** (resolved), designed so a resource-aware computed value can
+  replace the constant later without API changes.
 - **Depends on**: Module 3.
 
 ### Module 5: Dependency declaration, tests, docs
@@ -325,14 +333,17 @@ def sample_frames():
   parquet preserves dtypes
 - [ ] Templates resolve by pre-registered name only; inline template HTML is rejected
 - [ ] Response is content-negotiated: `text/html` → HTML; `application/json` →
-  `RenderResponse` with artifact reference + URL (via `get_public_url`, with a defined
-  inline-artifact fallback)
+  `RenderResponse` with artifact reference + URL per the **two-behavior rule** (resolved):
+  `public=true` → published under `STATIC_DIR` with static URL; S3 backend → presigned
+  ALWAYS (never public S3 hosting); local non-public/inline → `url: null` + artifacts-handler
+  retrieval
 - [ ] Route registered without `{agent_id}`; existing generate/templates/themes routes
   unchanged (no breaking API change)
 - [ ] **Async mode** (resolved): `async=true` → 202 + job id; polling route returns job
   state; job store is **Redis** and works across workers
 - [ ] **Job TTL = 1 day** on terminal jobs (resolved); expired job → 404; watchdog flips
-  orphaned `running` jobs to `failed`
+  orphaned `running` jobs to `failed` with a **10-minute default max-runtime** (resolved;
+  constant replaceable by a resource-computed value later)
 - [ ] **Body cap 50 MB** (configurable; resolved) → 413
 - [ ] **`pyarrow` is a declared direct dependency** (resolved) — verified by a test or CI check
 - [ ] Documentation updated in `docs/` (API examples, limits, job lifecycle)
@@ -353,6 +364,7 @@ from parrot.tools import SectionDescriptor            # lazy export, tools/__ini
 from parrot.helpers.infographics import get_template  # core pkg: packages/ai-parrot/src/parrot/helpers/infographics.py
 from redis.asyncio import Redis                        # pattern: parrot/memory/redis.py:4
 from parrot.conf import REDIS_HISTORY_URL              # imported by parrot/memory/redis.py:7 as ..conf
+from parrot.conf import STATIC_DIR                     # parrot/conf.py:43-45 (Path; env-overridable)
 import pyarrow                                         # 25.0.0 importable; MUST become declared dep (Module 5)
 ```
 
@@ -472,9 +484,12 @@ def register_template(...): ...                                  # line 50
 ### Known Risks / Gotchas
 - **Route shadowing**: `'/api/v1/agents/infographic/{agent_id}'` (manager.py:1845) would
   swallow `render` — register the literal routes first; test pins this.
-- **Inline-artifact URL**: `get_public_url` raises for inline artifacts (artifacts.py:~224);
-  small HTML renders (< 200 KB inline threshold) need the defined fallback. Verify
-  local-overflow presigned behavior (§8).
+- **URL rule enforcement**: `get_public_url` raises for inline artifacts (artifacts.py:~224)
+  — the `url: null` fallback covers it. `public=true` writes into `STATIC_DIR`
+  (`parrot/conf.py:43`): sanitize the generated filename (no caller-controlled path
+  segments), remember static content is world-readable by definition, and document that
+  "public" is irreversible-ish (file remains until cleaned). NEVER serve non-public
+  artifacts from `STATIC_DIR`; NEVER make S3 objects public — presigned only.
 - **CPU-bound decode on the event loop**: multipart parquet/CSV decode must not block aiohttp
   workers — executor offload.
 - **Cap enforcement**: enforce the 50 MB cap at the transport level (aiohttp
@@ -522,11 +537,15 @@ def register_template(...): ...                                  # line 50
   (artifacts.py:177), with an explicit fallback for inline artifacts. → §2 Overview,
   §7 Known Risks.
 
-- [ ] `get_public_url` behavior on the LOCAL overflow backend (presigned URLs are S3
-  semantics — verify what the local `FileManagerInterface` returns and define the fallback
-  precisely). — *Owner: implementer (Module 3)*
-- [ ] Max-runtime watchdog value (job `deadline`) — pick a default (e.g. 10 min) during
-  Module 4. — *Owner: implementer*
+- [x] Artifact URL behavior per backend — *Resolved by user*: TWO behaviors. (1) Infographic
+  declared **public** → saved under the project's `static/` dir (`STATIC_DIR`) and the static
+  URL is returned. (2) **S3 backend** → URL is ALWAYS presigned — infographics are never
+  hosted on public S3. Local non-public/inline artifacts → `url: null` + artifacts-handler
+  retrieval. → §2 Overview, §2 Data Models (`public` flag), §3 Module 3, §5, §7.
+- [x] Max-runtime watchdog value — *Resolved by user*: ideally computed from available
+  resources; **start with 10 (minutes)** as the default constant, designed to be replaced by
+  a resource-aware computation later without API changes. → §2 Overview (Module 4 flow),
+  §3 Module 4, §5.
 
 ---
 
@@ -548,3 +567,4 @@ def register_template(...): ...                                  # line 50
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-24 | jesuslara + Claude | Initial draft from brainstorm (Option A, 6 resolved questions carried forward) |
+| 0.2 | 2026-07-24 | jesuslara | Resolved URL two-behavior rule (public→STATIC_DIR / S3→presigned) + 10-min watchdog default; Status → approved |
