@@ -258,7 +258,7 @@ def _compute_god_nodes(
         betweenness = {}
 
     try:
-        _ec = rustworkx.eigenvector_centrality(graph)
+        _ec = rustworkx.eigenvector_centrality(graph, max_iter=1000)
         eigenvector: dict[int, float] = dict(_ec.items())
     except Exception as exc:
         logger.warning("Could not compute eigenvector centrality: %s", exc)
