@@ -169,10 +169,28 @@ Codebase Contract** (registry export name, RecipeNotFoundError); 4. **Update ind
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-24
+**Notes**: Added the additive optional `section_descriptor: Optional[SectionDescriptor]
+= None` field to `InfographicRecipe` (models.py) — NO schema-version bump
+(kept at 1; the store gate is strict-equality on `SUPPORTED_SCHEMA_VERSION`).
+Imported `SectionDescriptor` from `parrot.tools.infographic_sections` (pydantic-only,
+no DatasetManager import → respects the recipes-core layering rule). Implemented
+`InfographicAuthoringMixin.publish_recipe(name, descriptor, owner=None,
+delivery=None, overwrite=False) -> InfographicRecipe | GapReport`: collision
+check via `store.get` + `RecipeNotFoundError`; section→transformer resolution
+by normalised section name via `transformer_registry.get` (read-only); full
+coverage builds + saves an `InfographicRecipe` with `data_sources`, `transforms`,
+`section_descriptor`, and `RenderSpec(delivery=...)`; ANY gap returns a
+`GapReport` (per-gap `suggested_source` skeleton for HUMAN registration — never
+executed) and saves nothing. 9 new tests pass; 110 existing recipe tests pass;
+`parrot/tools/infographic_recipes/` (RecipeRunner) confirmed untouched via git;
+ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none. Design note: the section→transformer mapping key
+is the section's `name` (normalised to a Python identifier); a data-splice
+recipe's authoritative replay instructions live in `section_descriptor`, while
+`layout` carries a minimal `Infographic` component referencing the template.
+Whether `RecipeRunner` can reproduce a data-splice artifact end-to-end is
+exercised by TASK-1887 (which owns e2e replay); RecipeRunner stays untouched here
+per spec.

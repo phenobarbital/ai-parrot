@@ -73,7 +73,7 @@
       "feature_id": "FEAT-326",
       "feature": "dataagent-infographic",
       "spec": "sdd/specs/dataagent-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Extends the mixin file created in TASK-1884; adds field to recipes/models.py.",
       "assigned_to": null,
       "started_at": "2026-07-24T00:57:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1885-recipe-publication-gap-report.md"
+      "completed_at": "2026-07-24T01:31:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1885-recipe-publication-gap-report.md"
     },
     {
       "id": "TASK-1886",
