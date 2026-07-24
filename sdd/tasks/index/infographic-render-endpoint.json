@@ -52,7 +52,7 @@
       "feature_id": "FEAT-327",
       "feature": "infographic-render-endpoint",
       "spec": "sdd/specs/infographic-render-endpoint.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Modifies handlers/infographic.py + manager routes; consumes adapter and models.",
       "assigned_to": null,
       "started_at": "2026-07-24T13:22:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1890-deterministic-render-route.md"
+      "completed_at": "2026-07-24T17:45:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1890-deterministic-render-route.md"
     },
     {
       "id": "TASK-1891",
