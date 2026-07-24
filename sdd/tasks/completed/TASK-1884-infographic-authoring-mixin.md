@@ -166,10 +166,29 @@ unverified); 4. **Update index** → `"in-progress"`; 5. **Implement**; 6. **Ver
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-24
+**Notes**: Created `parrot/bots/mixins/infographic_authoring.py` with
+`InfographicAuthoringMixin` — a cooperative plain-class mixin mirroring
+`model_switching.py`. `__init__(*args, infographic_toolkit=None,
+artifact_store=None, recipe_store=None, template_dirs=None, **kwargs)` builds
+(or accepts) an `InfographicToolkit`, appends the toolkit **instance** to the
+`tools=` kwarg (verified: `interfaces/tools.py:_initialize_tools` registers a
+toolkit instance via `register_toolkit`), chains `super().__init__`, then calls
+`toolkit.set_bot(self)`. A cooperative `configure(*args, **kwargs)` override
+re-runs `set_bot` (idempotent prompt-guidance injection) before
+`super().configure()`. `generate_infographic(template, descriptor, params)`
+coerces a JSON-string descriptor, runs `validate_descriptor_datasets` fail-fast
+BEFORE any build/render, builds the payload via the overridable
+`_build_section_payload` seam, renders through `render_data_template` (data-splice)
+or `render_template` (jinja), and returns `(InfographicRenderResult,
+ProvenanceDescriptor)` with `tier="one-shot"` and NO code. Exported from
+`mixins/__init__.py`. 7 tests pass (MRO cooperative with PandasAgent +
+IntentRouterMixin intact; tools registered; provenance has no code; gate blocks
+before render); ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none. The REPL "build" step is exposed as the
+`_build_section_payload` hook with a deterministic default (shapes declared
+datasets/columns per `SectionSpec.shape`); conversational authoring drives the
+agent's registered pandas REPL tools. Unit tests mock this seam and the toolkit
+(no live LLM), per the task's "mock LLM/REPL" instruction.
