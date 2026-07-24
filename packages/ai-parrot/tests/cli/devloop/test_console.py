@@ -230,8 +230,8 @@ async def test_console_dispatch_command_unknown():
 @pytest.mark.asyncio
 async def test_console_cmd_quit():
     dc, console, _ = _make_console([])
-    with pytest.raises(SystemExit):
-        await dc._cmd_quit("")
+    await dc._cmd_quit("")
+    assert dc._stop is True
 
 
 @pytest.mark.asyncio

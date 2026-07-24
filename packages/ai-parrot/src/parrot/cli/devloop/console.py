@@ -524,4 +524,3 @@ class DevLoopConsole:
     async def _cmd_quit(self, args: str) -> None:
         """Exit the console."""
         self._stop = True
-        raise SystemExit(0)

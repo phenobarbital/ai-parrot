@@ -104,15 +104,15 @@
       "feature_id": "FEAT-374",
       "feature": "devloop-cli-console",
       "spec": "sdd/specs/devloop-cli-console.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": ["TASK-1897"],
       "parallel": false,
       "parallelism_notes": "Exercises the fully-wired feature (real DevLoopRunner over a fake flow); must run last.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-07-24T18:30:00+02:00",
+      "completed_at": "2026-07-24T20:30:00+02:00",
       "file": "sdd/tasks/active/TASK-1898-devloop-integration-tests.md"
     }
   ]
