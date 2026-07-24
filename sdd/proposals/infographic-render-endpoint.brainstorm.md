@@ -115,7 +115,7 @@ Add to the existing handler:
 📦 **Libraries / Tools:**
 | Package | Purpose | Notes |
 |---|---|---|
-| `pyarrow` | Parquet part decoding | 25.0.0 importable in venv — verify it is a DECLARED dependency, not transitive `(unverified)` |
+| `pyarrow` | Parquet part decoding | 25.0.0 importable in venv — MUST be declared explicitly (non-transitive) in the appropriate `pyproject.toml`/extra (resolved decision) |
 | `pandas` | records/split/CSV decoding | already core |
 | (no new deps) | — | aiohttp multipart is built in |
 
@@ -255,6 +255,7 @@ Errors are structured and fail-fast: unknown template → 404; descriptor valida
 7. **Async jobs**: job registry keyed by `job_id` (uuid4) holding status + result ref,
    backed by **Redis via `parrot/memory/`** (resolved decision — multi-worker safe; polling
    works regardless of which worker executed the render). Render runs as an `asyncio` task.
+   Terminal jobs carry a **1-day Redis TTL** (resolved decision).
 
 ### Edge Cases & Error Handling
 
@@ -265,7 +266,8 @@ Errors are structured and fail-fast: unknown template → 404; descriptor valida
 - **Parquet/CSV decode failure** → 400 naming the offending part and decoder error.
 - **NaN/Inf in payload** → FEAT-326 splice serializer already rejects loudly → surfaces as 422.
 - **Body over cap** → 413 before buffering the full payload where the transport allows.
-- **Job id unknown/expired** → 404; job TTL documented; failed jobs keep the structured error.
+- **Job id unknown/expired** → 404; terminal jobs expire after **1 day** (Redis TTL, resolved
+  decision); failed jobs keep the structured error until expiry.
 - **Persistence failure with `persist=true`** → 502-style structured error; with
   `Accept: text/html` the HTML can still be returned with a `X-Artifact-Persisted: false`
   header (surfaced, never silent).
@@ -415,10 +417,13 @@ import pyarrow                                        # 25.0.0 importable in the
   tool's `locals`** (PythonPandasTool REPL namespace) — so the same gate serves the HTTP
   endpoint (ad-hoc frames) and the in-process authoring path (REPL-built frames) without
   duplicating validation logic.
-- [ ] **Artifact URL shape** in the JSON response: presigned/overflow URL vs deeplink route —
-  follow whatever `_auto_save_infographic_artifact` + artifacts handler already produce.
-  — *Owner: spec author*
-- [ ] **`pyarrow` dependency status**: importable in the venv (25.0.0) but confirm it is a
-  declared dependency of the right package (`ai-parrot` vs `ai-parrot-server` extra) — if
-  transitive, declare it. — *Owner: implementer*
-- [ ] **Job TTL / cleanup policy** for terminal jobs. — *Owner: implementer*
+- [x] **Artifact URL shape** in the JSON response — *Owner: jesuslara*: to be **evaluated by
+  the implementation during spec development** — the spec author examines what
+  `_auto_save_infographic_artifact` + the artifacts handler already produce
+  (presigned/overflow URL vs deeplink) and picks the consistent shape; not a blocking
+  decision here.
+- [x] **`pyarrow` dependency status** — *Owner: jesuslara*: `pyarrow` must be a **declared
+  (non-transitive) dependency** of the appropriate package — add it explicitly to the
+  relevant `pyproject.toml` (or extra) during implementation.
+- [x] **Job TTL / cleanup policy** — *Owner: jesuslara*: terminal jobs expire after **1 day**
+  (Redis TTL); polling an expired job returns 404.
