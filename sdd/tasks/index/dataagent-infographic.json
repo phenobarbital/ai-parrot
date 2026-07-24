@@ -32,7 +32,7 @@
       "feature_id": "FEAT-326",
       "feature": "dataagent-infographic",
       "spec": "sdd/specs/dataagent-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Imports SectionDescriptor from TASK-1882; modifies infographic_toolkit.py.",
       "assigned_to": null,
       "started_at": "2026-07-24T00:57:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1883-data-splice-render-mode.md"
+      "completed_at": "2026-07-24T01:18:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1883-data-splice-render-mode.md"
     },
     {
       "id": "TASK-1884",

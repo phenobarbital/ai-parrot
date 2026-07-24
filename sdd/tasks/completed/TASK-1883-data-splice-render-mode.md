@@ -173,10 +173,26 @@ class TestRenderDataTemplate:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-24
+**Notes**: Added `InfographicToolkit.render_data_template(template_name, payload,
+descriptor=None, marker_id="report-data", title=None)` — auto-exposed as tool
+`infographic_render_data_template` via the idempotent-prefix rule (verified in
+`toolkit.py:452-459`; test asserts the tool name). It loads the RAW template
+source through `self._template_engine.env.loader.get_source(...)` (no Jinja
+render), serialises the payload with `json.dumps(allow_nan=False,
+default=_json_safe_default)` — the new module helper coerces numpy scalars/arrays
+and `isoformat`-able values and rejects NaN/Infinity/non-coercible loudly
+(`PAYLOAD_NOT_SERIALIZABLE`) — then splices via the new `_splice_payload` static
+method (generalizes `daily_report.splice_into_template`; raises
+`SPLICE_MARKER_MISSING` naming the marker id when open/close tag absent).
+Persistence reuses the existing `_persist_template` path unchanged. When a
+`SectionDescriptor` is supplied, `validate_payload_shape` runs BEFORE any
+splice/persist and the descriptor's `splice_marker_id` overrides `marker_id`.
+Constructor signature untouched. 11 new tests pass; 22 existing toolkit tests
+still pass (no regression).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none. One PRE-EXISTING ruff finding remains on the file
+(`F401 OutputMode imported but unused`, line 42 — present in the unmodified
+main-repo file, only referenced inside a docstring string on line 1499); left
+untouched to avoid scope creep. All code added by this task is ruff-clean.
