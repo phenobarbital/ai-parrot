@@ -9,10 +9,12 @@ Provides optional mix-in classes that add capabilities to bots:
 from .intent_router import IntentRouterMixin
 from .identity import IdentityMixin
 from .model_switching import ModelSwitchingMixin, ModelSwitchMode
+from .infographic_authoring import InfographicAuthoringMixin
 
 __all__ = [
     "IntentRouterMixin",
     "IdentityMixin",
     "ModelSwitchingMixin",
     "ModelSwitchMode",
+    "InfographicAuthoringMixin",
 ]

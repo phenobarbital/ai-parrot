@@ -19,7 +19,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, TYPE_CHECKING
 
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError as PydanticValidationError
@@ -51,6 +51,9 @@ from parrot.tools.infographic_recipes.freeze import (
     freeze_session_envelope,
 )
 from parrot.tools.infographic_recipes.runner import RecipeRunException, RecipeRunner
+
+if TYPE_CHECKING:
+    from parrot.tools.infographic_sections import SectionDescriptor
 
 #: Recipe tool method names (Module 6, FEAT-324) — excluded from tool
 #: generation when no recipe store is configured on this toolkit instance.
@@ -84,6 +87,39 @@ _INLINE_THRESHOLD: int = 50_000
 # Maximum number of DataFrame rows serialised into the LLM enhance context.
 # Larger DataFrames are truncated with a warning to avoid excessive token usage.
 MAX_ENHANCE_ROWS: int = 50
+
+
+def _json_safe_default(obj: Any) -> Any:
+    """``json.dumps`` ``default`` hook coercing numpy/pandas values (FEAT-326).
+
+    Used by the data-splice render mode. numpy integer/boolean scalars and
+    arrays, and objects exposing ``isoformat`` (pandas ``Timestamp``,
+    ``datetime``), are coerced to native JSON types. Anything else raises
+    ``TypeError`` so ``json.dumps`` fails loudly rather than emitting invalid
+    JSON. (numpy floats subclass ``float``, so NaN/Infinity are caught by
+    ``allow_nan=False`` before this hook is reached.)
+
+    Args:
+        obj: The value ``json`` could not serialise natively.
+
+    Returns:
+        A JSON-native representation of ``obj``.
+
+    Raises:
+        TypeError: When ``obj`` cannot be safely coerced.
+    """
+    import numpy as np
+
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    isoformat = getattr(obj, "isoformat", None)
+    if callable(isoformat):
+        return isoformat()
+    raise TypeError(
+        f"Object of type {type(obj).__name__} is not JSON serializable"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -585,6 +621,182 @@ class InfographicToolkit(AbstractToolkit):
             enhanced=False,
             a2ui_envelope=a2ui_envelope,
         )
+
+    async def render_data_template(
+        self,
+        template_name: str,
+        payload: Dict[str, Any],
+        descriptor: Optional["SectionDescriptor"] = None,
+        marker_id: str = "report-data",
+        title: Optional[str] = None,
+    ) -> InfographicRenderResult:
+        """Render a self-contained HTML template by *splicing* a JSON payload.
+
+        Unlike ``infographic_render_template`` (Jinja), this **data-splice** mode
+        targets a self-contained HTML dashboard whose client-side JS reads its
+        data from a ``<script type="application/json" id="...">`` marker tag
+        (FEAT-326, generalizing the standalone budget-variance report script).
+        The registered template source is loaded **raw** (never Jinja-rendered),
+        the ``payload`` is JSON-serialised and injected between the marker's
+        open/close tags, and the result is otherwise byte-identical to the
+        template. The artifact is persisted exactly like ``render_template``.
+
+        Call it as the LAST tool in the turn. The result is returned *verbatim* —
+        do NOT summarise it or paste the HTML/envelope into your answer.
+
+        Args:
+            template_name: Name of a template registered via ``template_dirs``,
+                ``templates=`` or ``add_template()``.
+            payload: JSON-serialisable data injected into the marker script tag.
+                numpy/pandas scalars are coerced; ``NaN``/``Infinity`` are
+                rejected loudly (they would otherwise produce invalid JSON).
+            descriptor: Optional :class:`SectionDescriptor`. When supplied, its
+                payload-shape validation gate runs BEFORE any splice/persist, and
+                its ``splice_marker_id`` overrides ``marker_id``.
+            marker_id: HTML ``id`` of the ``<script type="application/json">``
+                marker. Ignored when ``descriptor`` is supplied.
+            title: Optional artifact title (defaults to ``Infographic — <name>``).
+
+        Returns:
+            ``InfographicRenderResult`` with ``artifact_id``, ``html_url`` and
+            optional ``html_inline`` (populated only when the HTML is small).
+
+        Raises:
+            InfographicValidationError: ``TEMPLATE_ENGINE_UNSET`` when no template
+                source is configured; ``TEMPLATE_UNKNOWN`` when ``template_name``
+                is not found; ``SPLICE_MARKER_MISSING`` when the marker (or its
+                closing tag) is absent; ``PAYLOAD_NOT_SERIALIZABLE`` when the
+                payload contains ``NaN``/``Infinity`` or a non-coercible value;
+                ``payload_shape_mismatch`` when a supplied descriptor's gate fails.
+        """
+        if self._template_engine is None:
+            raise InfographicValidationError(
+                "TEMPLATE_ENGINE_UNSET",
+                {
+                    "detail": (
+                        "No HTML templates are configured. Pass template_dirs= "
+                        "or templates= to InfographicToolkit, or call "
+                        "add_template() before rendering."
+                    ),
+                },
+            )
+
+        # Descriptor gate runs FIRST — never splice/persist an invalid payload.
+        effective_marker = marker_id
+        if descriptor is not None:
+            from parrot.tools.infographic_sections import validate_payload_shape
+
+            validate_payload_shape(descriptor, payload)
+            effective_marker = descriptor.splice_marker_id
+
+        # Load the RAW template source (data-splice must NOT Jinja-render it).
+        try:
+            source, _, _ = self._template_engine.env.loader.get_source(
+                self._template_engine.env, template_name
+            )
+        except Exception as exc:  # noqa: BLE001 — TemplateNotFound and friends
+            raise InfographicValidationError(
+                "TEMPLATE_UNKNOWN",
+                {"template_name": template_name},
+            ) from exc
+
+        # Serialise safely: coerce numpy/pandas, reject NaN/Infinity loudly.
+        try:
+            payload_json = json.dumps(
+                payload, allow_nan=False, default=_json_safe_default
+            )
+        except (ValueError, TypeError) as exc:
+            raise InfographicValidationError(
+                "PAYLOAD_NOT_SERIALIZABLE",
+                {"error": str(exc)},
+            ) from exc
+
+        # Neutralise HTML-significant characters before embedding the JSON in a
+        # <script> tag. ``json.dumps`` does NOT escape ``<``/``>``/``&``, so a
+        # payload string containing ``</script>`` would otherwise break out of
+        # the marker element and execute following markup in the browser. The
+        # ``\uXXXX`` forms are valid JSON and decode back to the original
+        # characters client-side (same mitigation as knowledge/graphindex).
+        payload_json = (
+            payload_json.replace("<", "\\u003c")
+            .replace(">", "\\u003e")
+            .replace("&", "\\u0026")
+        )
+
+        html = self._splice_payload(source, payload_json, effective_marker)
+
+        artifact_id, html_url = await self._persist_template(
+            html=html,
+            template_name=template_name,
+            theme=None,
+            title=title,
+        )
+
+        self.logger.info(
+            "Rendered data-splice infographic: template=%s marker=%s size=%d bytes",
+            template_name, effective_marker, len(html),
+        )
+
+        return InfographicRenderResult(
+            artifact_id=artifact_id,
+            html_url=html_url,
+            html_inline=html if len(html) < _INLINE_THRESHOLD else None,
+            template_name=template_name,
+            theme=None,
+            data_variables=[],
+            enhanced=False,
+            a2ui_envelope=None,
+        )
+
+    @staticmethod
+    def _splice_payload(source: str, payload_json: str, marker_id: str) -> str:
+        """Inject ``payload_json`` into the ``id="{marker_id}"`` script marker.
+
+        Generalises ``splice_into_template`` from the standalone report script.
+        Matches the exact marker string with ``marker_id`` interpolated; output
+        is byte-identical to ``source`` except for the swapped payload.
+
+        Args:
+            source: Raw template HTML.
+            payload_json: Pre-serialised JSON string to inject.
+            marker_id: The marker's ``id`` attribute value.
+
+        Returns:
+            The spliced HTML.
+
+        Raises:
+            InfographicValidationError: ``SPLICE_MARKER_MISSING`` when the marker
+                open tag or its closing ``</script>`` is absent.
+        """
+        start_marker = f'<script type="application/json" id="{marker_id}">'
+        end_marker = "</script>"
+        start_idx = source.find(start_marker)
+        if start_idx == -1:
+            raise InfographicValidationError(
+                "SPLICE_MARKER_MISSING",
+                {
+                    "marker_id": marker_id,
+                    "expected": start_marker,
+                    "detail": (
+                        f"No <script type=\"application/json\" id=\"{marker_id}\"> "
+                        "marker found in the template."
+                    ),
+                },
+            )
+        content_start = start_idx + len(start_marker)
+        content_end = source.find(end_marker, content_start)
+        if content_end == -1:
+            raise InfographicValidationError(
+                "SPLICE_MARKER_MISSING",
+                {
+                    "marker_id": marker_id,
+                    "detail": (
+                        "No closing </script> tag found after the "
+                        f'id="{marker_id}" marker.'
+                    ),
+                },
+            )
+        return source[:content_start] + "\n" + payload_json + "\n" + source[content_end:]
 
     def _build_template_context(
         self,

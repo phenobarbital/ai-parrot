@@ -130,10 +130,21 @@ criteria**; 7. **Move file to completed/**; 8. **Update index** → `"done"`;
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-24
+**Notes**: Created `parrot/auth/system_account.py` with a **config-declared**
+system account (spec §8 open question resolved → simplest mechanism, no DB/UI):
+`SystemAccount` (Pydantic, `extra="forbid"`; `account_id`/`tenant_id`/`roles`)
+with `from_env()` (reads `PARROT_SYSTEM_ACCOUNT_ID` / `_TENANT` / `_ROLES`) and
+`to_permission_context(channel)` delegating to the verified
+`build_principal_context(principal, *, channel, tenant_id, roles)`
+(permission.py:166). `resolve_system_account_context()` fails **closed** —
+raises the new `SystemAccountNotProvisioned` (added to `parrot/auth/exceptions.py`,
+the documented auth-exception home) when no account is provisioned, and never
+returns a falsy context. `run_scheduled_refresh(runner, name, ...)` is the
+caller-side guard: it resolves the context (raising if unresolvable) and calls
+`runner.run(name, ..., pctx=ctx)` — `pctx=None` is never forwarded.
+`RecipeRunner` is untouched (verified via git). 7 tests pass; ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none. Open question (§8, owner=implementer) resolved
+in favour of a config/env-declared account over a DB-backed one.

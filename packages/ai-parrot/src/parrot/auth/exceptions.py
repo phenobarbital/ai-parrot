@@ -51,3 +51,15 @@ class AuthorizationRequired(Exception):
             f"AuthorizationRequired(tool_name={self.tool_name!r}, "
             f"provider={self.provider!r}, auth_url={self.auth_url!r})"
         )
+
+
+class SystemAccountNotProvisioned(Exception):
+    """Raised when a scheduled/background operation needs a system-account
+    principal but none is provisioned (FEAT-326, Module 5).
+
+    Fail-closed guarantee: scheduled recipe refreshes MUST run under a real
+    :class:`~parrot.auth.permission.PermissionContext`. A falsy ``pctx`` makes
+    ``DatasetManager``'s PBAC/data-plane guards fail OPEN, so the resolver
+    raises this instead of ever degrading to ``pctx=None``.
+    """
+
