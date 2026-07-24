@@ -1848,6 +1848,12 @@ class BotManager:
             '/api/v1/agents/infographic/{resource:render}',
             InfographicTalk,
         )
+        # Async render job polling (FEAT-327, Module 4) — grouped with the
+        # render route above; also before {agent_id}.
+        router.add_view(
+            '/api/v1/agents/infographic/{resource:render}/jobs/{job_id}',
+            InfographicTalk,
+        )
         router.add_view(
             '/api/v1/agents/infographic/{agent_id}',
             InfographicTalk,

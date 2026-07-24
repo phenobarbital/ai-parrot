@@ -26,6 +26,7 @@ from pydantic import ValidationError
 from .agent import AgentTalk
 from .infographic_render import (
     RenderBodyTooLargeError,
+    RenderJob,
     RenderPayloadError,
     RenderRequest,
     RenderResponse,
@@ -33,6 +34,7 @@ from .infographic_render import (
     parse_multipart_render_request,
     render_deterministic,
 )
+from .render_jobs import RenderJobStore
 from ..helpers.infographics import (
     get_template,
     get_theme,
@@ -118,6 +120,7 @@ class InfographicTalk(AgentTalk):
         Routing logic based on match_info:
             - ``resource == "templates"`` → list or get template
             - ``resource == "themes"``    → list or get theme
+            - ``resource == "render"``    → async render job status (``job_id``)
             - default                     → endpoint info
 
         Returns:
@@ -129,6 +132,11 @@ class InfographicTalk(AgentTalk):
             return await self._handle_templates_get(mi.get("template_name"))
         if resource == "themes":
             return await self._handle_themes_get(mi.get("theme_name"))
+        if resource == "render":
+            job_id = mi.get("job_id")
+            if not job_id:
+                return self.error("Missing job_id in URL.", status=400)
+            return await self._get_render_job_status(job_id)
         return self.json_response({
             "message": "InfographicTalk — get_infographic HTTP handler",
             "version": "1.0",
@@ -329,10 +337,11 @@ class InfographicTalk(AgentTalk):
 
         Returns:
             ``text/html`` (spliced/rendered HTML) or ``application/json``
-            (``RenderResponse``), per ``_negotiate_accept()``. ``400`` on a
+            (``RenderResponse``), per ``_negotiate_accept()``; ``202``
+            ``{"job_id": ...}`` for ``async=true`` (TASK-1891). ``400`` on a
             malformed part/body, ``413`` over the body cap, ``404`` on an
             unknown template, ``422`` on aggregated validation deficits,
-            ``501`` for ``async=true`` (TASK-1891 seam), ``5xx`` otherwise.
+            ``5xx`` otherwise.
         """
         try:
             parsed, frames = await self._decode_render_request()
@@ -348,22 +357,18 @@ class InfographicTalk(AgentTalk):
                 {"error": "Invalid RenderRequest", "details": exc.errors()}, status=400
             )
 
-        if parsed.async_:
-            # TASK-1891 seam: replace with Redis-backed job creation + 202.
-            # NOTE: BaseView.error() only remaps a fixed status set (400/401/
-            # 403/404/406/412/428) — 501 falls through to HTTPBadRequest, so
-            # json_response() is used here to honor the real status code.
-            return self.json_response(
-                {"error": "async=true rendering is not yet implemented (TASK-1891)."},
-                status=501,
-            )
-
         try:
             get_template(parsed.template)
         except KeyError:
             return self.error(f"Unknown template '{parsed.template}'.", status=404)
 
         user_id, agent_id, session_id = await self._resolve_render_attribution(parsed)
+
+        if parsed.async_:
+            return await self._enqueue_render_job(
+                parsed, frames, user_id=user_id, agent_id=agent_id, session_id=session_id
+            )
+
         toolkit = self._get_render_toolkit()
         artifact_store = self.request.app.get("artifact_store") if parsed.persist else None
         if parsed.persist and artifact_store is None:
@@ -503,6 +508,129 @@ class InfographicTalk(AgentTalk):
             )
             app["infographic_render_toolkit"] = toolkit
         return toolkit
+
+    def _get_render_job_store(self) -> RenderJobStore:
+        """Return (lazily building) the shared ``RenderJobStore`` (FEAT-327, Module 4).
+
+        Cached on ``self.request.app["infographic_render_job_store"]`` — ONE
+        instance shared across requests/workers-in-process; the underlying
+        Redis client is what actually makes polling multi-worker-safe.
+        """
+        app = self.request.app
+        store = app.get("infographic_render_job_store")
+        if store is None:
+            store = RenderJobStore()
+            app["infographic_render_job_store"] = store
+        return store
+
+    async def _enqueue_render_job(
+        self,
+        parsed: RenderRequest,
+        frames: Dict[str, Any],
+        *,
+        user_id: str,
+        agent_id: str,
+        session_id: str,
+    ) -> web.Response:
+        """Create a pending job, spawn the render as a background task, return 202.
+
+        Args:
+            parsed: The parsed ``RenderRequest`` (``async_`` is True).
+            frames: Decoded ``{name: DataFrame}`` datasets.
+            user_id: Attribution — session user_id.
+            agent_id: Attribution — body agent_id or system default.
+            session_id: Attribution — body session_id or system default.
+
+        Returns:
+            ``202`` JSON response with ``{"job_id": ...}``.
+        """
+        job_store = self._get_render_job_store()
+        job_id = uuid.uuid4().hex
+        now = datetime.now(timezone.utc)
+        job = RenderJob(
+            job_id=job_id,
+            status="pending",
+            created_at=now.isoformat(),
+            deadline=now.isoformat(),
+        )
+        await job_store.create(job)
+
+        # Fire-and-forget: same pattern as _auto_save_infographic_artifact's
+        # asyncio.get_running_loop().create_task(...) fire-and-forget save —
+        # the task holds its own reference to `self` via the bound coroutine,
+        # so it outlives this request's return.
+        asyncio.get_running_loop().create_task(
+            self._run_render_job(job_store, job_id, parsed, frames, user_id, agent_id, session_id)
+        )
+        return self.json_response({"job_id": job_id}, status=202)
+
+    async def _run_render_job(
+        self,
+        job_store: RenderJobStore,
+        job_id: str,
+        parsed: RenderRequest,
+        frames: Dict[str, Any],
+        user_id: str,
+        agent_id: str,
+        session_id: str,
+    ) -> None:
+        """Run the deterministic render as a background job; NEVER raises.
+
+        Transitions the job to ``running`` (stamping the watchdog deadline),
+        runs :func:`render_deterministic`, and writes ``done``+result or
+        ``failed``+structured error as the terminal state (with TTL). Any
+        exception is captured into the job record — it must never escape
+        and die silently (this coroutine has no caller awaiting it).
+        """
+        try:
+            await job_store.set_running(job_id)
+            toolkit = self._get_render_toolkit()
+            artifact_store = self.request.app.get("artifact_store") if parsed.persist else None
+            outcome = await render_deterministic(
+                parsed,
+                frames,
+                toolkit=toolkit,
+                artifact_store=artifact_store,
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+            )
+            result = RenderResponse(
+                artifact_id=outcome.artifact_id,
+                url=outcome.url,
+                template=parsed.template,
+                sections_validated=outcome.sections_validated,
+                persisted=outcome.persisted,
+                timings=outcome.timings,
+            )
+            job = await job_store.get(job_id)
+            if job is not None:
+                await job_store.set_terminal(job.model_copy(update={"status": "done", "result": result}))
+        except Exception as exc:  # noqa: BLE001 — must never die silently
+            self.logger.exception("Async render job %s failed: %s", job_id, exc)
+            code = exc.code if isinstance(exc, InfographicValidationError) else type(exc).__name__
+            detail = exc.detail if isinstance(exc, InfographicValidationError) else str(exc)
+            job = await job_store.get(job_id)
+            if job is not None:
+                await job_store.set_terminal(
+                    job.model_copy(update={"status": "failed", "error": {"code": code, "detail": detail}})
+                )
+
+    async def _get_render_job_status(self, job_id: str) -> web.Response:
+        """Handle ``GET .../infographic/render/jobs/{job_id}``.
+
+        Args:
+            job_id: The job identifier from the URL.
+
+        Returns:
+            ``200`` with the ``RenderJob`` state, or ``404`` when
+            unknown/expired.
+        """
+        job_store = self._get_render_job_store()
+        job = await job_store.get(job_id)
+        if job is None:
+            return self.error(f"Unknown or expired job '{job_id}'.", status=404)
+        return self.json_response(job.model_dump())
 
     async def _handle_templates_get(
         self, name: Optional[str]

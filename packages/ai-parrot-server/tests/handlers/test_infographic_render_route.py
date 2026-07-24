@@ -70,11 +70,35 @@ def render_toolkit(fake_artifact_store):
     )
 
 
+class _FakeRedis:
+    """Minimal in-memory async Redis double (``set``/``get``/``expire`` only).
+
+    Used instead of a real Redis connection (``REDIS_HISTORY_URL`` points at
+    a dev host unreachable from tests) — an "injected fake", per TASK-1891's
+    own sanctioned test-double option.
+    """
+
+    def __init__(self) -> None:
+        self._data: dict = {}
+
+    async def set(self, key, value):
+        self._data[key] = value
+
+    async def get(self, key):
+        return self._data.get(key)
+
+    async def expire(self, key, seconds):
+        return True
+
+
 @pytest.fixture
 def app(fake_artifact_store, render_toolkit):
+    from parrot.handlers.render_jobs import RenderJobStore
+
     application = web.Application()
     application["artifact_store"] = fake_artifact_store
     application["infographic_render_toolkit"] = render_toolkit
+    application["infographic_render_job_store"] = RenderJobStore(redis_client=_FakeRedis())
     return application
 
 
@@ -249,12 +273,18 @@ class TestRenderRoute:
         payload = json.loads(response.body)
         assert payload["url"] is None
 
-    async def test_async_not_implemented_seam(self, app):
+    async def test_async_true_returns_202_job_id(self, app):
+        """Full async job lifecycle (poll roundtrip, exception handling,
+        watchdog, multi-worker visibility) is covered by TASK-1891's
+        ``test_render_jobs.py`` — this just pins the dispatch seam's
+        real behavior (202 + job_id) now that it is implemented."""
         body = _render_body()
         body["async"] = True
         request = await _json_request(app, body)
         response = await _handler(request)._render_infographic_deterministic()
-        assert response.status == 501
+        assert response.status == 202
+        payload = json.loads(response.body)
+        assert "job_id" in payload
 
 
 class TestRenderRouteRegistration:
