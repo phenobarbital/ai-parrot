@@ -346,6 +346,7 @@ name + params — deterministic re-generation guaranteed by `RecipeRunner`.
 | `parrot/tools/infographic_recipes/runner.py` | depends on | all replay; no changes |
 | `parrot/outputs/a2ui/recipes/` | depends on | `InfographicRecipe`, `TransformStep`, transformer registry, stores; new domain transformers (e.g. `day_totals`, `division_breakdown`) get REGISTERED here or in a domain module |
 | `parrot/storage/` | depends on | `ArtifactStore` + `build_overflow_store` (local now, S3 later); no changes |
+| `parrot/auth/` | extends | new **system account** principal for scheduled refreshes (resolved via `build_principal_context`) — see resolved Open Question 3 |
 | `sdd/artifacts/budget_variance_dashboard_Template.html` | reference asset | first data-splice template; ships as test fixture/registered template |
 
 No new external dependencies. No breaking changes. Deployment: two env vars already govern the
@@ -515,18 +516,27 @@ from parrot.interfaces.file.abstract import FileManagerInterface  # overflow.py:
 
 ## Open Questions
 
-- [ ] Transformer **promotion flow** (agent-proposed transform code → human review → registered
+- [x] Transformer **promotion flow** (agent-proposed transform code → human review → registered
   `@infographic_transformer`): in scope for v1 as a gap-report + suggested-source output only, or
-  does v1 also need tooling (e.g. a `document_skill`-style write path)? — *Owner: jesuslara*
-- [ ] Should tier-1 descriptors persist the ad-hoc REPL code as **audit metadata** (never
-  executed) or omit code entirely to avoid any temptation to replay it? — *Owner: jesuslara*
-- [ ] Which **service principal** do scheduled refreshes run under, and who provisions it
-  (`build_principal_context` inputs) for the daily budget-variance job? — *Owner: jesuslara*
-- [ ] Where does the `SectionDescriptor` live for tier-2 recipes — additive versioned field on
+  does v1 also need tooling (e.g. a `document_skill`-style write path)? — *Owner: jesuslara*:
+  v1 emits the gap report (with suggested transformer source) only; no promotion tooling.
+- [x] Should tier-1 descriptors persist the ad-hoc REPL code as **audit metadata** (never
+  executed) or omit code entirely to avoid any temptation to replay it? — *Owner: jesuslara*:
+  do NOT persist python code — tier-1 descriptors record datasets/params/section mapping only.
+- [x] Which **service principal** do scheduled refreshes run under, and who provisions it
+  (`build_principal_context` inputs) for the daily budget-variance job? — *Owner: jesuslara*:
+  a **system account** entity must be created (new system-principal concept); scheduled
+  refreshes run under it via `build_principal_context`. Provisioning that entity is part of
+  this feature's scope (or a prerequisite task in the spec).
+- [x] Where does the `SectionDescriptor` live for tier-2 recipes — additive versioned field on
   `InfographicRecipe`, or a parallel descriptor store keyed by the same `(name, owner)`? —
-  *Owner: spec author*
-- [ ] Template registration for budget_variance: `template_dirs` on-disk registry vs in-memory
+  *Owner: spec author*: additive versioned field on `InfographicRecipe`.
+- [x] Template registration for budget_variance: `template_dirs` on-disk registry vs in-memory
   `add_template` at agent configure time — and does the 259 KB template ship in the repo or get
-  deployed as data? — *Owner: jesuslara*
-- [ ] Email/Teams **delivery** of the generated report (the original script emailed via Outlook):
-  reuse FEAT-324 `RenderSpec.delivery` in v1 or defer? — *Owner: jesuslara*
+  deployed as data? — *Owner: jesuslara*: registered via `template_dirs`; the template
+  directory stays **gitignored** for now (deployed as data, not versioned). NOTE:
+  `.gitignore` already has a global `templates/` rule (line 245), which covers this if the
+  directory is named `templates/`.
+- [x] Email/Teams **delivery** of the generated report (the original script emailed via Outlook):
+  reuse FEAT-324 `RenderSpec.delivery` in v1 or defer? — *Owner: jesuslara*: v1 MUST use
+  `RenderSpec.delivery` for report delivery.
