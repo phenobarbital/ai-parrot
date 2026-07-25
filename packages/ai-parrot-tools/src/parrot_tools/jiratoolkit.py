@@ -75,6 +75,21 @@ from .toolkit import AbstractToolkit
 from .decorators import tool_schema, requires_permission
 
 
+class JiraAuthenticationError(RuntimeError):
+    """Raised when Jira actively rejects the configured credentials.
+
+    Jira Cloud does not return HTTP 401 for bad basic-auth on most
+    endpoints — it silently downgrades the session to *anonymous*
+    (``X-Seraph-Loginreason: AUTHENTICATED_FAILED``) and then answers
+    with misleading errors such as "No project could be found". This
+    exception surfaces the real problem at toolkit construction time
+    instead. Deliberately NOT a ``ValueError``: ``__init__`` converts
+    ``ValueError`` (missing/partial credentials) into a deferred
+    ``AuthorizationRequired``, whereas *wrong* credentials must fail
+    loudly and immediately.
+    """
+
+
 # -----------------------------
 # Helpers
 # -----------------------------
@@ -727,6 +742,7 @@ class JiraToolkit(AbstractToolkit):
         default_project: Optional[str] = None,
         credential_resolver: Any = None,
         workflow_paths: Optional[Dict[str, Union[str, List[str]]]] = None,
+        verify_credentials: bool = True,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -869,6 +885,59 @@ class JiraToolkit(AbstractToolkit):
             # call time rather than crashing agent construction.
             self.jira = None
             self._auth_error = str(exc)
+            return
+
+        if verify_credentials:
+            self._verify_static_credentials()
+
+    def _verify_static_credentials(self) -> None:
+        """Probe ``/myself`` and fail fast on rejected static credentials.
+
+        Jira Cloud accepts a bad username/token pair without an HTTP error:
+        the session silently becomes anonymous and later calls fail with
+        misleading messages ("No project could be found with key 'X'",
+        "The target project doesn't exist or you don't have permission").
+        Probing right after client construction converts that silent
+        downgrade into an immediate, actionable error.
+
+        Only *definitive* rejections raise — if the probe cannot reach the
+        server at all (offline, DNS, timeout) we log a warning and leave
+        the client in place, since transport problems are not a credential
+        verdict.
+
+        Raises:
+            JiraAuthenticationError: When Jira answered the probe and the
+                session is not authenticated (HTTP 401/403 or a
+                ``X-Seraph-Loginreason`` failure header).
+        """
+        try:
+            probe = self._probe_auth_sync()
+        except Exception as exc:  # noqa: BLE001 — a broken probe is not a verdict
+            self.logger.warning(
+                "Could not verify Jira credentials (probe raised: %s); "
+                "continuing unverified.", exc,
+            )
+            return
+        if probe.get("authenticated"):
+            return
+        if probe.get("status_code") is None:
+            # Transport-level failure: could not reach Jira, so we cannot
+            # judge the credentials. Do not block construction.
+            self.logger.warning(
+                "Could not verify Jira credentials (probe failed: %s); "
+                "continuing unverified.", probe.get("error"),
+            )
+            return
+        raise JiraAuthenticationError(
+            "Jira rejected the configured credentials for "
+            f"{self.server_url!r} (auth_type={self.auth_type}, "
+            f"user={self.username!r}): {probe.get('error')} "
+            "The username/API token pair is wrong, expired, or belongs to "
+            "an account without access to this site. Generate a new token "
+            "at https://id.atlassian.com/manage-profile/security/api-tokens "
+            "and update JIRA_USERNAME / JIRA_API_TOKEN, or pass "
+            "verify_credentials=False to skip this check."
+        )
 
     def _set_jira_client(self):
         """Set the internal Jira client instance."""

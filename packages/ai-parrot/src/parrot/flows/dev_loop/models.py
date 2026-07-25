@@ -116,12 +116,20 @@ WorkKind = Literal["bug", "enhancement", "new_feature"]
 
 
 class LogSource(BaseModel):
-    """A pointer to a log location that ``ResearchNode`` will fetch."""
+    """A pointer to a log location that ``ResearchNode`` will fetch.
 
-    kind: Literal["cloudwatch", "elasticsearch", "attached_file"]
+    The ``inline`` kind carries the log content itself: use it when the
+    reporter pastes a stack trace, log excerpt, or error message directly
+    instead of pointing at a CloudWatch group, ES index, or file on disk.
+    """
+
+    kind: Literal["cloudwatch", "elasticsearch", "attached_file", "inline"]
     locator: str = Field(
         ...,
-        description="Log-group name, ES index, or file path depending on `kind`.",
+        description=(
+            "Log-group name, ES index, or file path depending on `kind`. "
+            "For `inline`, the raw pasted log/stack-trace/error text itself."
+        ),
     )
     time_window_minutes: int = Field(default=60, ge=1, le=1440)
 
