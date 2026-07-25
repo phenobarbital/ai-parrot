@@ -296,8 +296,17 @@ class PydanticWizard:
 
         variants = _get_discriminated_variants(item_type)
 
+        is_required_list = field_info.is_required() and not field_info.default_factory
+
         while True:
             try:
+                if (variants or _is_pydantic_model(item_type)) and not (is_required_list and not items):
+                    skip = await self._prompt(
+                        f"  Add {'another' if items else 'a'} {_humanize(name).lower().rstrip('s')} item? [y/N]: "
+                    )
+                    if skip.lower() not in ("y", "yes"):
+                        break
+
                 if variants:
                     item = await self._collect_variant(name, variants, len(items) + 1)
                 elif _is_pydantic_model(item_type):
@@ -316,15 +325,15 @@ class PydanticWizard:
                 break
 
             items.append(item)
-            try:
-                more = await self._prompt("  Add another? [y/N]: ")
-            except EOFError:
-                break
-            if more.lower() not in ("y", "yes"):
-                break
+            if not (variants or _is_pydantic_model(item_type)):
+                try:
+                    more = await self._prompt("  Add another? [y/N]: ")
+                except EOFError:
+                    break
+                if more.lower() not in ("y", "yes"):
+                    break
 
-        min_length = getattr(field_info, "metadata", None)
-        if not items and field_info.is_required():
+        if not items and is_required_list:
             self.console.print("[yellow]At least one item is required.[/yellow]")
             return await self._collect_list(name, list_type, field_info, override)
         return items

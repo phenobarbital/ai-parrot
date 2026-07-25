@@ -232,24 +232,37 @@ async def test_wizard_workbrief_roundtrip():
         "Customer sync drops last row", # summary
         "Detailed description here",   # description
         "etl-service",                 # affected_component
-        "",                            # log_sources: skip file load
-        "",                            # log_sources: empty = no items (Enter to finish)
-        "",                            # acceptance_criteria: skip file load
-        "1",                           # variant: flowtask
-        "etl/sync.yaml",              # task_path
-        "",                            # args default
-        "",                            # timeout default
-        "",                            # exit code default
-        "criterion-1",                 # name
-        "n",                           # add another? no
+        # -- log_sources (List[LogSource], optional) --
+        "",                            # skip file load
+        "",                            # opt-in "Add a log source item?" → no
+        # -- acceptance_criteria (List[AcceptanceCriterion], required) --
+        "",                            # skip file load
+        "1",                           # variant: flowtask (required list → no opt-in)
+        # FlowtaskCriterion fields (MRO order: name, timeout, exit_code, kind, task_path, args)
+        "criterion-1",                 # name (required str)
+        "",                            # timeout_seconds (default 300)
+        "",                            # expected_exit_code (default 0)
+        "",                            # kind (default "flowtask")
+        "etl/sync.yaml",              # task_path (required str)
+        "",                            # args: skip file load
+        "",                            # args: "Item 1 (or Enter to finish)" → done
+        "n",                           # "Add another criterion?" → no
+        # -- remaining WorkBrief fields --
         "user@example.com",           # escalation_assignee
         "reporter@example.com",       # reporter
-        "",                            # existing_issue_key (optional)
-        "",                            # dev_agents (optional)
-        "",                            # dev_isolation (optional)
+        "",                            # existing_issue_key (optional → None)
+        "",                            # dev_agents: skip file load (list)
+        "",                            # dev_agents: "Item 1 (or Enter to finish)" → done
+        "",                            # dev_isolation (optional Literal → None)
     ]
     wizard = _make_wizard(WorkBrief, inputs)
     result = await wizard.collect()
     assert result.kind == "bug"
     assert result.summary == "Customer sync drops last row"
     assert result.affected_component == "etl-service"
+    assert len(result.log_sources) == 0
+    assert len(result.acceptance_criteria) == 1
+    ac = result.acceptance_criteria[0]
+    assert ac.kind == "flowtask"
+    assert ac.name == "criterion-1"
+    assert ac.task_path == "etl/sync.yaml"

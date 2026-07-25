@@ -718,6 +718,9 @@ JIRA_USERS = [
         "username": "jlara@trocglobal.com"
     }
 ]
+JIRA_URL = config.get("JIRA_URL", fallback="")
+JIRA_USERNAME = config.get("JIRA_USERNAME", fallback="")
+JIRA_API_TOKEN = config.get("JIRA_API_TOKEN", fallback="")
 JIRA_CLIENT_ID = config.get("JIRA_CLIENT_ID")
 JIRA_CLIENT_SECRET = config.get("JIRA_CLIENT_SECRET")
 JIRA_REDIRECT_URI = config.get("JIRA_REDIRECT_URI")

@@ -87,6 +87,49 @@ Consume any OpenAPI spec as a dynamic toolkit using `OpenAPIToolkit`
 - Never run `rm -rf` or system-level deletions
 - No form submissions or logins without user approval
 
+### Adversarial Second Opinion: Codex CLI
+
+The OpenAI `codex` CLI is installed and authenticated. Use it as an
+independent perspective for adversarial code reviews, design opinions,
+brainstorming, research cross-checks, and implementation sanity checks.
+
+Rules:
+- Never feed Codex your reasoning, justification, or preferred conclusion.
+  Give it only the diff, the requirement, and the question. Supplying your
+  conclusions produces ratification, not review.
+- Treat Codex output as advisory. For every substantive finding, explicitly
+  mark it as `CONFIRM` (adopt), `REJECT` (with reason), or `ESCALATE`.
+- Never silently concede to Codex and never silently drop a finding.
+- Run each Codex call as a full background agent session. Typical runtime is
+  30 seconds to 2 minutes; do not call it per edit or from hooks.
+- For parallel perspective, use one Claude subagent and one background
+  `codex exec` with the same neutral brief, then synthesize agreements and
+  disagreements.
+
+Commands:
+```bash
+# Reviews
+codex exec review --uncommitted
+codex exec review --base dev
+codex exec review --commit <sha>
+
+# Opinions, brainstorming, and cross-checks
+codex exec --sandbox read-only -o <scratch-file> "<neutral brief>"
+
+# Follow-up in the same Codex session
+codex exec resume --last "<question>"
+
+# Image generation / mockups / wireframes
+codex exec --sandbox workspace-write -o <out.txt> \
+  "Generate an image: <description>. Save as <name>.png"
+codex exec --sandbox workspace-write -i <screenshot.png> -o <out.txt> \
+  "Generate an image variant: <neutral brief>. Save as <name>.png"
+```
+
+Image-generation gotcha: `resume` does not accept `--sandbox`; use
+`-c sandbox_mode="workspace-write"` on resume when a writable sandbox is
+required.
+
 ## Key References
 - Architecture & patterns: @.agent/CONTEXT.md
 - SDD workflow: @docs/sdd/WORKFLOW.md

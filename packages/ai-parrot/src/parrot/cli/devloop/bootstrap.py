@@ -61,7 +61,7 @@ async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
     # 1. Redis URL
     try:
         from parrot import conf  # noqa: PLC0415
-        redis_url = conf.config.get("REDIS_URL", fallback="")
+        redis_url = getattr(conf, "REDIS_URL", "") or ""
     except Exception:
         redis_url = os.environ.get("REDIS_URL", "")
 
@@ -85,9 +85,9 @@ async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
     jira_hint = ""
     try:
         from parrot import conf  # noqa: PLC0415
-        jira_url = getattr(conf, "JIRA_URL", "") or ""
-        jira_user = getattr(conf, "JIRA_USERNAME", "") or ""
-        jira_token = getattr(conf, "JIRA_API_TOKEN", "") or ""
+        jira_url = getattr(conf, "JIRA_URL", "") or conf.config.get("JIRA_URL", fallback="") or ""
+        jira_user = getattr(conf, "JIRA_USERNAME", "") or conf.config.get("JIRA_USERNAME", fallback="") or ""
+        jira_token = getattr(conf, "JIRA_API_TOKEN", "") or conf.config.get("JIRA_API_TOKEN", fallback="") or ""
         if jira_url and (jira_user or jira_token):
             jira_ok = True
         else:
@@ -240,15 +240,15 @@ def _build_jira_toolkit() -> Any:
     """Build the JiraToolkit if Jira credentials are configured."""
     try:
         from parrot import conf  # noqa: PLC0415
-        from parrot.tools.jira import JiraToolkit  # noqa: PLC0415
+        from parrot_tools.jiratoolkit import JiraToolkit  # noqa: PLC0415
 
         return JiraToolkit(
-            url=conf.JIRA_URL,
-            username=getattr(conf, "JIRA_USERNAME", ""),
-            api_token=getattr(conf, "JIRA_API_TOKEN", ""),
+            server_url=conf.JIRA_URL or None,
+            username=getattr(conf, "JIRA_USERNAME", "") or None,
+            token=getattr(conf, "JIRA_API_TOKEN", "") or None,
         )
     except Exception:
-        logger.warning("JiraToolkit not available; Jira features disabled.")
+        logger.warning("JiraToolkit not available; Jira features disabled.", exc_info=True)
         return None
 
 
