@@ -30,10 +30,9 @@ agents together via sequential, parallel or DAG-based execution.
 ## Read next
 
 - [Agents](../agent.md), [Agent Mesh](../agent_mesh.md)
-- [Crews](../crew.md), [Crew Handler](../crew_handler.md),
-  [Crew Summary](../crew_summary.md)
-- [Orchestration](../orchestration.md) and
-  [Advanced Orchestration](../ORCHESTRATION.md)
+- [Crew Handler](../crew_handler.md)
+- [AgentCrew Guide](../orchestration/agentcrew.md) and
+  [AgentsFlow Guide](../orchestration/agentsflow.md)
 
 ## API reference
 

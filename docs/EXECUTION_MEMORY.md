@@ -613,10 +613,10 @@ Potential future features:
 
 ## Related Documentation
 
-- [AgentsFlow Guide](ORCHESTRATION.md)
-- [DecisionFlowNode Usage](../DECISION_NODE_USAGE.md)
+- [AgentsFlow User Guide](orchestration/agentsflow.md)
+- [AgentCrew User Guide](orchestration/agentcrew.md)
+- [DecisionFlowNode Usage](DECISION_NODE_USAGE.md)
 - [Tool Development](../parrot/tools/README.md)
-- [Crew System](crew_summary.md)
 
 ## Support
 
