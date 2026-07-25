@@ -23,7 +23,7 @@
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
       "completed_at": "2026-05-20T23:36:23+00:00",
-      "file": "sdd/tasks/active/TASK-1265-core-events-models.md"
+      "file": "sdd/tasks/completed/TASK-1265-core-events-models.md"
     },
     {
       "id": "TASK-1266",
@@ -43,7 +43,7 @@
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
       "completed_at": "2026-05-20T23:36:23+00:00",
-      "file": "sdd/tasks/active/TASK-1266-event-registry.md"
+      "file": "sdd/tasks/completed/TASK-1266-event-registry.md"
     },
     {
       "id": "TASK-1267",
@@ -64,7 +64,7 @@
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
       "completed_at": "2026-05-20T23:36:23+00:00",
-      "file": "sdd/tasks/active/TASK-1267-event-dispatcher.md"
+      "file": "sdd/tasks/completed/TASK-1267-event-dispatcher.md"
     },
     {
       "id": "TASK-1268",
@@ -84,7 +84,7 @@
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
       "completed_at": "2026-05-20T23:36:23+00:00",
-      "file": "sdd/tasks/active/TASK-1268-formschema-events-field.md"
+      "file": "sdd/tasks/completed/TASK-1268-formschema-events-field.md"
     },
     {
       "id": "TASK-1269",
@@ -105,7 +105,7 @@
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
       "completed_at": "2026-05-20T23:36:23+00:00",
-      "file": "sdd/tasks/active/TASK-1269-handlers-read-hooks.md"
+      "file": "sdd/tasks/completed/TASK-1269-handlers-read-hooks.md"
     },
     {
       "id": "TASK-1270",
@@ -127,7 +127,7 @@
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
       "completed_at": "2026-05-20T23:36:23+00:00",
-      "file": "sdd/tasks/active/TASK-1270-handlers-submit-hooks.md"
+      "file": "sdd/tasks/completed/TASK-1270-handlers-submit-hooks.md"
     },
     {
       "id": "TASK-1271",
@@ -149,7 +149,7 @@
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
       "completed_at": "2026-05-20T23:36:23+00:00",
-      "file": "sdd/tasks/active/TASK-1271-remote-events-endpoint.md"
+      "file": "sdd/tasks/completed/TASK-1271-remote-events-endpoint.md"
     },
     {
       "id": "TASK-1272",
@@ -170,7 +170,7 @@
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
       "completed_at": "2026-05-20T23:36:23+00:00",
-      "file": "sdd/tasks/active/TASK-1272-html5-renderer-events.md"
+      "file": "sdd/tasks/completed/TASK-1272-html5-renderer-events.md"
     },
     {
       "id": "TASK-1273",
@@ -197,7 +197,7 @@
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
       "completed_at": "2026-05-20T23:36:23+00:00",
-      "file": "sdd/tasks/active/TASK-1273-e2e-tests-and-docs.md"
+      "file": "sdd/tasks/completed/TASK-1273-e2e-tests-and-docs.md"
     }
   ]
 }

@@ -19,10 +19,10 @@
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Independent from TASK-620 and TASK-621 \u2014 touches different files (scraping/, pricestool, sql)",
+      "parallelism_notes": "Independent from TASK-620 and TASK-621 — touches different files (scraping/, pricestool, sql)",
       "assigned_to": null,
       "started_at": "2026-04-07T13:38:18.298337",
-      "file": "sdd/tasks/active/TASK-619-fix-critical-broken-imports.md",
+      "file": "sdd/tasks/completed/TASK-619-fix-critical-broken-imports.md",
       "completed_at": "2026-04-07T13:40:56.487557"
     },
     {
@@ -37,10 +37,10 @@
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Independent from TASK-619 and TASK-621 \u2014 touches different files (docker/, pulumi/)",
+      "parallelism_notes": "Independent from TASK-619 and TASK-621 — touches different files (docker/, pulumi/)",
       "assigned_to": null,
       "started_at": "2026-04-07T13:38:18.298337",
-      "file": "sdd/tasks/active/TASK-620-fix-base-executor-imports.md",
+      "file": "sdd/tasks/completed/TASK-620-fix-base-executor-imports.md",
       "completed_at": "2026-04-07T13:42:28.954774"
     },
     {
@@ -55,16 +55,16 @@
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Independent from TASK-619/620 \u2014 only modifies docstrings, not runtime imports",
+      "parallelism_notes": "Independent from TASK-619/620 — only modifies docstrings, not runtime imports",
       "assigned_to": null,
       "started_at": "2026-04-07T13:38:18.298337",
-      "file": "sdd/tasks/active/TASK-621-fix-docstring-import-references.md",
+      "file": "sdd/tasks/completed/TASK-621-fix-docstring-import-references.md",
       "completed_at": "2026-04-07T13:44:05.570405"
     },
     {
       "id": "TASK-622",
       "slug": "full-import-sweep-audit",
-      "title": "Full Automated Sweep \u2014 Catch Remaining Stale Imports",
+      "title": "Full Automated Sweep — Catch Remaining Stale Imports",
       "feature_id": "FEAT-089",
       "feature": "refactor-tools-imports",
       "spec": "sdd/specs/refactor-tools-imports.spec.md",
@@ -77,10 +77,10 @@
         "TASK-621"
       ],
       "parallel": false,
-      "parallelism_notes": "Must run after all known fixes \u2014 its job is to catch anything the first 3 tasks missed",
+      "parallelism_notes": "Must run after all known fixes — its job is to catch anything the first 3 tasks missed",
       "assigned_to": null,
       "started_at": "2026-04-07T13:38:18.298337",
-      "file": "sdd/tasks/active/TASK-622-full-import-sweep-audit.md",
+      "file": "sdd/tasks/completed/TASK-622-full-import-sweep-audit.md",
       "completed_at": "2026-04-07T13:44:47.131350"
     },
     {
@@ -99,10 +99,10 @@
         "TASK-622"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on all fixes being complete \u2014 tests must pass on clean codebase",
+      "parallelism_notes": "Depends on all fixes being complete — tests must pass on clean codebase",
       "assigned_to": null,
       "started_at": "2026-04-07T13:38:18.298337",
-      "file": "sdd/tasks/active/TASK-623-import-validation-test-suite.md",
+      "file": "sdd/tasks/completed/TASK-623-import-validation-test-suite.md",
       "completed_at": "2026-04-07T13:46:51.217673"
     }
   ]

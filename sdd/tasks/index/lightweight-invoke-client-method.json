@@ -19,10 +19,10 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation types \u2014 must land before all other tasks",
+      "parallelism_notes": "Foundation types — must land before all other tasks",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-480-invoke-result-and-error.md",
+      "file": "sdd/tasks/completed/TASK-480-invoke-result-and-error.md",
       "completed_at": "2026-03-30T13:07:15.055964+00:00"
     },
     {
@@ -42,7 +42,7 @@
       "parallelism_notes": "Depends on TASK-480 (InvokeResult/InvokeError), required by all client tasks",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-481-abstractclient-invoke-infrastructure.md",
+      "file": "sdd/tasks/completed/TASK-481-abstractclient-invoke-infrastructure.md",
       "completed_at": "2026-03-30T13:29:09.867978+00:00"
     },
     {
@@ -59,10 +59,10 @@
         "TASK-481"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of other client invoke() implementations \u2014 only shares base.py (read-only after TASK-481)",
+      "parallelism_notes": "Independent of other client invoke() implementations — only shares base.py (read-only after TASK-481)",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-482-anthropic-invoke.md",
+      "file": "sdd/tasks/completed/TASK-482-anthropic-invoke.md",
       "completed_at": "2026-03-30T13:39:15.877693+00:00"
     },
     {
@@ -79,10 +79,10 @@
         "TASK-481"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only gpt.py",
+      "parallelism_notes": "Independent of other client invoke() implementations — modifies only gpt.py",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-483-openai-invoke.md",
+      "file": "sdd/tasks/completed/TASK-483-openai-invoke.md",
       "completed_at": "2026-03-30T13:43:57.566848+00:00"
     },
     {
@@ -99,10 +99,10 @@
         "TASK-481"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only google/client.py",
+      "parallelism_notes": "Independent of other client invoke() implementations — modifies only google/client.py",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-484-google-invoke.md",
+      "file": "sdd/tasks/completed/TASK-484-google-invoke.md",
       "completed_at": "2026-03-30T13:53:42.252037+00:00"
     },
     {
@@ -119,10 +119,10 @@
         "TASK-481"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only groq.py",
+      "parallelism_notes": "Independent of other client invoke() implementations — modifies only groq.py",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-485-groq-invoke.md",
+      "file": "sdd/tasks/completed/TASK-485-groq-invoke.md",
       "completed_at": "2026-03-30T13:55:46.657264+00:00"
     },
     {
@@ -139,10 +139,10 @@
         "TASK-481"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only grok.py",
+      "parallelism_notes": "Independent of other client invoke() implementations — modifies only grok.py",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-486-grok-invoke.md",
+      "file": "sdd/tasks/completed/TASK-486-grok-invoke.md",
       "completed_at": "2026-03-30T15:26:58.503689+00:00"
     },
     {
@@ -159,10 +159,10 @@
         "TASK-481"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only localllm.py",
+      "parallelism_notes": "Independent of other client invoke() implementations — modifies only localllm.py",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-487-localllm-invoke.md",
+      "file": "sdd/tasks/completed/TASK-487-localllm-invoke.md",
       "completed_at": "2026-03-30T15:40:48.585449+00:00"
     },
     {
@@ -187,7 +187,7 @@
       "parallelism_notes": "Needs all client implementations complete for end-to-end testing",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-488-invoke-integration-tests.md",
+      "file": "sdd/tasks/completed/TASK-488-invoke-integration-tests.md",
       "completed_at": "2026-03-30T15:52:57.220506+00:00"
     }
   ]

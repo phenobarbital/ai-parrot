@@ -23,7 +23,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-05-15T00:26:53+00:00",
-      "file": "sdd/tasks/active/TASK-1160-blob-storage.md",
+      "file": "sdd/tasks/completed/TASK-1160-blob-storage.md",
       "verification": "verified"
     },
     {
@@ -42,7 +42,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-05-15T00:26:53+00:00",
-      "file": "sdd/tasks/active/TASK-1161-callback-registry.md",
+      "file": "sdd/tasks/completed/TASK-1161-callback-registry.md",
       "verification": "verified"
     },
     {
@@ -64,7 +64,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-05-15T00:26:53+00:00",
-      "file": "sdd/tasks/active/TASK-1162-rest-field-resolver.md",
+      "file": "sdd/tasks/completed/TASK-1162-rest-field-resolver.md",
       "verification": "verified"
     },
     {
@@ -83,7 +83,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-05-15T00:26:53+00:00",
-      "file": "sdd/tasks/active/TASK-1163-field-type-rest-enum.md",
+      "file": "sdd/tasks/completed/TASK-1163-field-type-rest-enum.md",
       "verification": "verified"
     },
     {
@@ -104,7 +104,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-05-15T00:26:53+00:00",
-      "file": "sdd/tasks/active/TASK-1164-builtin-metadata-rest.md",
+      "file": "sdd/tasks/completed/TASK-1164-builtin-metadata-rest.md",
       "verification": "verified"
     },
     {
@@ -125,7 +125,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-05-15T00:26:53+00:00",
-      "file": "sdd/tasks/active/TASK-1165-field-helper-snippet.md",
+      "file": "sdd/tasks/completed/TASK-1165-field-helper-snippet.md",
       "verification": "verified"
     },
     {
@@ -147,7 +147,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-05-15T00:26:53+00:00",
-      "file": "sdd/tasks/active/TASK-1166-validator-rest-branch.md",
+      "file": "sdd/tasks/completed/TASK-1166-validator-rest-branch.md",
       "verification": "verified"
     },
     {
@@ -169,7 +169,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-05-15T00:26:53+00:00",
-      "file": "sdd/tasks/active/TASK-1167-renderer-entries.md",
+      "file": "sdd/tasks/completed/TASK-1167-renderer-entries.md",
       "verification": "verified"
     },
     {
@@ -190,7 +190,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-05-15T00:26:53+00:00",
-      "file": "sdd/tasks/active/TASK-1168-extractor-mappings.md",
+      "file": "sdd/tasks/completed/TASK-1168-extractor-mappings.md",
       "verification": "verified"
     },
     {
@@ -209,7 +209,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-05-15T00:26:53+00:00",
-      "file": "sdd/tasks/active/TASK-1169-pyproject-deps.md",
+      "file": "sdd/tasks/completed/TASK-1169-pyproject-deps.md",
       "verification": "verified"
     },
     {
@@ -235,7 +235,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-05-15T00:26:53+00:00",
-      "file": "sdd/tasks/active/TASK-1170-upload-route-handler.md",
+      "file": "sdd/tasks/completed/TASK-1170-upload-route-handler.md",
       "verification": "verified"
     },
     {
@@ -257,7 +257,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-05-15T00:26:53+00:00",
-      "file": "sdd/tasks/active/TASK-1171-bootstrap-wiring.md",
+      "file": "sdd/tasks/completed/TASK-1171-bootstrap-wiring.md",
       "verification": "verified"
     },
     {
@@ -280,7 +280,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-05-15T00:26:53+00:00",
-      "file": "sdd/tasks/active/TASK-1172-frontend-docs-gen.md",
+      "file": "sdd/tasks/completed/TASK-1172-frontend-docs-gen.md",
       "verification": "verified"
     }
   ]

@@ -19,11 +19,11 @@
       "effort": "M",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation task \u2014 M2/M3/M4 depend on the ownership model this introduces.",
+      "parallelism_notes": "Foundation task — M2/M3/M4 depend on the ownership model this introduces.",
       "assigned_to": null,
       "started_at": "2026-05-31T23:20:21+00:00",
       "completed_at": "2026-06-01T00:21:41.296872+00:00",
-      "file": "sdd/tasks/active/TASK-1387-ephemeral-ownership-generalization.md",
+      "file": "sdd/tasks/completed/TASK-1387-ephemeral-ownership-generalization.md",
       "verification": "verified"
     },
     {
@@ -44,7 +44,7 @@
       "assigned_to": null,
       "started_at": "2026-05-31T23:20:21+00:00",
       "completed_at": "2026-06-01T00:21:41.296872+00:00",
-      "file": "sdd/tasks/active/TASK-1388-botmanager-ownership-aware-methods.md",
+      "file": "sdd/tasks/completed/TASK-1388-botmanager-ownership-aware-methods.md",
       "verification": "verified"
     },
     {
@@ -61,11 +61,11 @@
         "TASK-1388"
       ],
       "parallel": false,
-      "parallelism_notes": "Core tool \u2014 calls BotManager methods generalized by M2; must run after M2.",
+      "parallelism_notes": "Core tool — calls BotManager methods generalized by M2; must run after M2.",
       "assigned_to": null,
       "started_at": "2026-05-31T23:20:21+00:00",
       "completed_at": "2026-06-01T00:21:41.296872+00:00",
-      "file": "sdd/tasks/active/TASK-1389-spawn-subagent-tool.md",
+      "file": "sdd/tasks/completed/TASK-1389-spawn-subagent-tool.md",
       "verification": "verified"
     },
     {
@@ -82,11 +82,11 @@
         "TASK-1389"
       ],
       "parallel": false,
-      "parallelism_notes": "Exports the module created in M3 \u2014 strictly sequential.",
+      "parallelism_notes": "Exports the module created in M3 — strictly sequential.",
       "assigned_to": null,
       "started_at": "2026-05-31T23:20:21+00:00",
       "completed_at": "2026-06-01T00:21:41.296872+00:00",
-      "file": "sdd/tasks/active/TASK-1390-spawn-tool-export-registration.md",
+      "file": "sdd/tasks/completed/TASK-1390-spawn-tool-export-registration.md",
       "verification": "verified"
     }
   ]
