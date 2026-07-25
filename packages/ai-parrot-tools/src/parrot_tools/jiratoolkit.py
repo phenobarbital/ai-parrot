@@ -920,9 +920,15 @@ class JiraToolkit(AbstractToolkit):
             return
         if probe.get("authenticated"):
             return
-        if probe.get("status_code") is None:
-            # Transport-level failure: could not reach Jira, so we cannot
-            # judge the credentials. Do not block construction.
+        status = probe.get("status_code")
+        # Definitive rejections only: an explicit 401/403, or a 2xx whose
+        # Seraph header flagged the session as anonymous (Jira Cloud's
+        # silent bad-basic-auth downgrade). Anything else (unreachable
+        # server, 5xx, proxy noise) is not a credential verdict.
+        definitive = status in (401, 403) or (
+            status is not None and 200 <= status < 300
+        )
+        if not definitive:
             self.logger.warning(
                 "Could not verify Jira credentials (probe failed: %s); "
                 "continuing unverified.", probe.get("error"),
@@ -2175,12 +2181,24 @@ class JiraToolkit(AbstractToolkit):
             response = session.get(url) if session is not None else None
         except Exception as exc:  # noqa: BLE001 — surface transport failures too
             self.logger.warning("jira auth probe raised: %s", exc)
-            return {
+            result = {
                 "authenticated": False,
                 "server_url": self.server_url,
                 "auth_type": self.auth_type,
                 "error": f"{type(exc).__name__}: {exc}",
             }
+            # pycontribs' ResilientSession raises JIRAError on non-2xx
+            # instead of returning the response, so a *real* HTTP 401/403
+            # only ever surfaces here. Extract the status so callers can
+            # tell a definitive rejection apart from a transport failure.
+            status = getattr(exc, "status_code", None)
+            if status is None:
+                status = getattr(
+                    getattr(exc, "response", None), "status_code", None
+                )
+            if status is not None:
+                result["status_code"] = status
+            return result
 
         if response is None:
             return {

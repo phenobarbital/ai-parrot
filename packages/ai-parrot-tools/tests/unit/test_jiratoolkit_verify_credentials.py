@@ -95,6 +95,19 @@ class TestRejectedCredentialsRaise:
         with pytest.raises(JiraAuthenticationError):
             _build_toolkit(client)
 
+    def test_jiraerror_401_exception_raises(self):
+        """pycontribs' ResilientSession RAISES on non-2xx instead of
+        returning the response — a real 401 only ever surfaces as an
+        exception carrying ``status_code``. It must still be treated as a
+        definitive rejection, not a transport failure."""
+
+        class _FakeJIRAError(Exception):
+            status_code = 401
+
+        client = _fake_client(get_side_effect=_FakeJIRAError("401 myself"))
+        with pytest.raises(JiraAuthenticationError):
+            _build_toolkit(client)
+
     def test_error_is_not_a_valueerror(self):
         """Must NOT subclass ValueError — __init__ downgrades ValueError to a
         deferred ``_auth_error`` instead of raising, which would silently
@@ -134,6 +147,11 @@ class TestAcceptedOrSkipped:
 class TestTransportFailuresDoNotRaise:
     def test_connection_error_warns_and_continues(self):
         client = _fake_client(get_side_effect=ConnectionError("network down"))
+        toolkit = _build_toolkit(client)
+        assert toolkit.jira is client
+
+    def test_server_error_5xx_is_not_a_credential_verdict(self):
+        client = _fake_client(_FakeResponse(status_code=503, text="maintenance"))
         toolkit = _build_toolkit(client)
         assert toolkit.jira is client
 
