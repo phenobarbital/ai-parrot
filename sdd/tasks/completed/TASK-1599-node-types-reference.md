@@ -1,6 +1,6 @@
 # TASK-1599: Node Types Reference Documentation
 
-**Feature**: FEAT-249 — Update AgentCrew & AgentsFlow Documentation
+**Feature**: FEAT-376 — Update AgentCrew & AgentsFlow Documentation
 **Spec**: `sdd/specs/update-agentcrew-agentflow-documentation.spec.md`
 **Status**: pending
 **Priority**: high

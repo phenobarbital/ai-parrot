@@ -5,7 +5,7 @@ base_branch: dev
 
 # Feature Specification: Update AgentCrew & AgentsFlow Documentation
 
-**Feature ID**: FEAT-249
+**Feature ID**: FEAT-376
 **Date**: 2026-06-20
 **Author**: Jesus Lara
 **Status**: draft

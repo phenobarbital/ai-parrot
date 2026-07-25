@@ -1,6 +1,6 @@
 # TASK-1602: mkdocs.yml Nav Update & Page Cleanup
 
-**Feature**: FEAT-249 — Update AgentCrew & AgentsFlow Documentation
+**Feature**: FEAT-376 — Update AgentCrew & AgentsFlow Documentation
 **Spec**: `sdd/specs/update-agentcrew-agentflow-documentation.spec.md`
 **Status**: pending
 **Priority**: medium
