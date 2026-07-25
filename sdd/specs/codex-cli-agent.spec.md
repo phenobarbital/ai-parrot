@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-375
 **Date**: 2026-07-26
 **Author**: Jesus Lara (proposal research + Q&A: /sdd-proposal FEAT-375)
-**Status**: draft
+**Status**: approved
 **Target version**: next dev release
 **Proposal**: `sdd/proposals/codex-cli-agent.proposal.md` (research audit: `sdd/state/FEAT-375/`)
 
