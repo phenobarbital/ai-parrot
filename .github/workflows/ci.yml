@@ -62,6 +62,51 @@ jobs:
       - name: Run core tests
         run: uv run pytest tests/ -x -q --tb=short --ignore=tests/tools
 
+  test-navrules:
+    name: "Test navrules (rust=${{ matrix.rust }})"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: ["on", "off"]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Rust is needed in both legs: maturin is the build backend. The
+      # "off" leg disables the native matcher at runtime only.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Rust crate unit tests
+        if: matrix.rust == 'on'
+        run: |
+          sudo apt-get update && sudo apt-get install -y python3-dev
+          cd packages/navrules/rust && cargo test
+
+      - name: Python suite (native backend)
+        if: matrix.rust == 'on'
+        run: |
+          cd packages/navrules
+          uv run --no-project --isolated --with pytest --with pytest-asyncio \
+            --with-editable . python -m pytest tests -q
+
+      - name: Python suite (pure-Python fallback)
+        if: matrix.rust == 'off'
+        run: |
+          cd packages/navrules
+          NAVRULES_DISABLE_RUST=1 uv run --no-project --isolated \
+            --with pytest --with pytest-asyncio \
+            --with-editable . python -m pytest tests -q
+
   test-tools:
     name: "Test ai-parrot-tools (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest

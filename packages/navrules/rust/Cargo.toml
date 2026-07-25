@@ -1,0 +1,28 @@
+[package]
+name = "navrules_native"
+version = "0.1.0"
+edition = "2021"
+description = "Native condition-matching backend for navrules"
+license = "MIT"
+
+[lib]
+name = "_navrules"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.24", features = ["abi3-py311"] }
+rayon = "1.10"
+regex = "1.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[features]
+# Enabled by maturin builds (tool.maturin.features); left off for
+# `cargo test` so the test binary can link against libpython.
+extension-module = ["pyo3/extension-module"]
+default = []
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
