@@ -70,7 +70,7 @@
       "feature_id": "FEAT-375",
       "feature": "codex-cli-agent",
       "spec": "sdd/specs/codex-cli-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Extends code_review.py using models (1899), brief (1900), and command shapes (1901).",
       "assigned_to": null,
       "started_at": "2026-07-25T23:44:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1902-advisory-parallel-dispatchers.md"
+      "completed_at": "2026-07-26T00:26:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1902-advisory-parallel-dispatchers.md"
     },
     {
       "id": "TASK-1903",
