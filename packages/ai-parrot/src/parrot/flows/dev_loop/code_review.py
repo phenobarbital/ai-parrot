@@ -220,7 +220,7 @@ class CodexAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         review_commit: str = "",
     ) -> None:
         self._dispatcher = dispatcher
-        self._model = model or getattr(conf, "DEV_LOOP_ADVERSARIAL_MODEL", "gpt-5.5")
+        self._model = model or conf.DEV_LOOP_ADVERSARIAL_MODEL
         self._review_scope = review_scope
         self._review_base = review_base
         self._review_commit = review_commit

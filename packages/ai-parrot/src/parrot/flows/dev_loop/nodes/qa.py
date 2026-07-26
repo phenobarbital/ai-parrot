@@ -453,7 +453,7 @@ class QANode(DevLoopNode):
 
         notes: List[str] = []
         session_host = shared.get("session_host")
-        ttl_seconds = getattr(conf, "DEV_LOOP_GATE_TTL_REVIEW_ESCALATION", 86400)
+        ttl_seconds = conf.DEV_LOOP_GATE_TTL_REVIEW_ESCALATION
         escalated_gate_ids: List[str] = []
 
         for finding in findings:
