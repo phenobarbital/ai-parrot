@@ -166,7 +166,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -176,8 +176,8 @@
       "parallelism_notes": "New file graph_memory.py + own test — technically parallel-safe, but depends on 1909's ontology decision and precedes 1915 in the same worktree.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1914-devloop-graph-memory-facade.md"
+      "completed_at": "2026-07-26T23:44:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1914-devloop-graph-memory-facade.md"
     },
     {
       "id": "TASK-1915",
