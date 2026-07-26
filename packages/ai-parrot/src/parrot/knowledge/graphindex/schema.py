@@ -23,11 +23,14 @@ class Provenance(str, Enum):
         INFERRED: Inferred via embedding similarity (cross-domain resolution).
         AMBIGUOUS: Extraction was attempted but produced uncertain results
             (e.g., dynamic code features, malformed input).
+        ASSERTED: Authored directly by an agent or human (persistent
+            graph memory writes). Attribution lives in ``AssertionMeta``.
     """
 
     EXTRACTED = "extracted"
     INFERRED = "inferred"
     AMBIGUOUS = "ambiguous"
+    ASSERTED = "asserted"
 
 
 class NodeKind(str, Enum):
@@ -73,6 +76,55 @@ class EdgeKind(str, Enum):
     EXTENDS = "extends"
 
 
+class AssertionMeta(BaseModel):
+    """Attribution metadata for an agent- or human-authored graph write.
+
+    Carried by nodes and edges whose knowledge was contributed directly
+    (``Provenance.ASSERTED``) rather than extracted from source material.
+    Keeping the assertion confidence here (instead of on
+    ``UniversalEdge.confidence``) avoids colliding with the
+    embedding-similarity semantics enforced by the edge validator.
+
+    Args:
+        asserted_by: Identity of the writer, e.g. ``"agent:<id>"``,
+            ``"human:<user>"`` or ``"cli:wikitoolkit"``.
+        asserted_at: ISO-8601 UTC timestamp of the write.
+        agent_id: Optional stable agent identifier.
+        run_id: Optional run/session identifier linking the write to the
+            execution that produced it (work-lineage audit).
+        source: Optional citation URI or page id supporting the assertion.
+        confidence: Optional self-reported confidence in [0, 1].
+    """
+
+    asserted_by: str
+    asserted_at: str
+    agent_id: Optional[str] = None
+    run_id: Optional[str] = None
+    source: Optional[str] = None
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+
+def stable_edge_id(source_id: str, target_id: str, kind: str) -> str:
+    """Return a stable, citable identifier for a graph edge.
+
+    The id is a SHA-1 prefix of ``"source::target::kind"`` so the same
+    logical edge always yields the same id — usable as a citation handle
+    in serialized graph context and grounding results.
+
+    Args:
+        source_id: ``node_id`` of the tail node.
+        target_id: ``node_id`` of the head node.
+        kind: Edge kind value (e.g. ``"references"``).
+
+    Returns:
+        A 12-character hex id.
+    """
+    import hashlib
+
+    raw = f"{source_id}::{target_id}::{kind}".encode("utf-8")
+    return hashlib.sha1(raw).hexdigest()[:12]
+
+
 class UniversalNode(BaseModel):
     """A node in the GraphIndex knowledge graph.
 
@@ -90,6 +142,9 @@ class UniversalNode(BaseModel):
             (e.g. ``{"symbol_type": "function"}``, ``{"flat": true}``).
         parent_id: Optional ``node_id`` of the logical parent node.
         provenance: How this node was created.
+        assertion: Attribution metadata when the node was authored by an
+            agent or human (``Provenance.ASSERTED``). ``None`` for
+            pipeline-extracted nodes.
     """
 
     node_id: str
@@ -102,6 +157,7 @@ class UniversalNode(BaseModel):
     domain_tags: dict = Field(default_factory=dict)
     parent_id: Optional[str] = None
     provenance: Provenance = Provenance.EXTRACTED
+    assertion: Optional[AssertionMeta] = None
 
 
 class UniversalEdge(BaseModel):
@@ -118,6 +174,10 @@ class UniversalEdge(BaseModel):
         provenance: How this edge was created.
         confidence: Cosine similarity score in [0, 1].  Required for
             ``INFERRED`` edges; must be ``None`` for others.
+        assertion: Attribution metadata when the edge was authored by an
+            agent or human (``Provenance.ASSERTED``). Assertion-level
+            confidence lives in ``AssertionMeta.confidence`` — it does
+            NOT interact with the similarity ``confidence`` field.
     """
 
     source_id: str
@@ -125,6 +185,7 @@ class UniversalEdge(BaseModel):
     kind: EdgeKind
     provenance: Provenance = Provenance.EXTRACTED
     confidence: Optional[float] = None
+    assertion: Optional[AssertionMeta] = None
 
     @model_validator(mode="after")
     def _validate_confidence_with_provenance(self) -> "UniversalEdge":
@@ -145,6 +206,63 @@ class UniversalEdge(BaseModel):
                 "confidence must be None when provenance is not INFERRED"
             )
         return self
+
+
+class GraphUpdate(BaseModel):
+    """A validated batch of graph writes published by an agent or human.
+
+    This is the unit of durable graph mutation (the "publish pattern"):
+    nodes and edges land in one transaction, and the update is recorded
+    as a commit linked to the run/agent that produced it so every write
+    is auditable and revertible.
+
+    Args:
+        nodes: Nodes to upsert.
+        edges: Edges to upsert.
+        removed_edges: ``(source_id, target_id, kind)`` triples to delete.
+        removed_nodes: ``node_id`` values to delete (e.g. the duplicate
+            side of a merge). Pre-images are captured so the removal is
+            revertible.
+        agent_id: Stable identifier of the writing agent.
+        run_id: Optional run/session identifier for work-lineage linkage.
+        asserted_by: Identity string stamped onto unattributed writes.
+        source: Optional citation URI supporting the whole update.
+        reason: Optional human-readable rationale (e.g. merge rationale).
+        op: Logical operation name (``create_node``, ``link_nodes``,
+            ``merge_nodes``, ``publish``, ...).
+    """
+
+    nodes: list[UniversalNode] = Field(default_factory=list)
+    edges: list[UniversalEdge] = Field(default_factory=list)
+    removed_edges: list[tuple[str, str, str]] = Field(default_factory=list)
+    removed_nodes: list[str] = Field(default_factory=list)
+    agent_id: str
+    run_id: Optional[str] = None
+    asserted_by: str
+    source: Optional[str] = None
+    reason: Optional[str] = None
+    op: str = "publish"
+
+
+class CommitReceipt(BaseModel):
+    """Outcome of a successfully applied :class:`GraphUpdate`.
+
+    Args:
+        commit_id: Unique identifier of the recorded commit.
+        op: Logical operation name copied from the update.
+        node_ids: ``node_id`` of every node upserted.
+        edge_keys: ``(source_id, target_id, kind)`` of every edge
+            upserted or removed.
+        committed_at: ISO-8601 UTC timestamp of the transaction.
+        warnings: Non-fatal issues encountered while applying the update.
+    """
+
+    commit_id: str
+    op: str
+    node_ids: list[str] = Field(default_factory=list)
+    edge_keys: list[tuple[str, str, str]] = Field(default_factory=list)
+    committed_at: str
+    warnings: list[str] = Field(default_factory=list)
 
 
 class SourceConfig(BaseModel):

@@ -19,6 +19,10 @@ from parrot.knowledge.graphindex.schema import (
     EdgeKind,
     UniversalNode,
     UniversalEdge,
+    AssertionMeta,
+    GraphUpdate,
+    CommitReceipt,
+    stable_edge_id,
     SourceConfig,
     GraphProjectionReport,
     BuildResult,
@@ -66,6 +70,14 @@ __all__ = [
     "GraphProjectionReport",
     "BuildResult",
     "IngestResult",
+    "AssertionMeta",
+    "GraphUpdate",
+    "CommitReceipt",
+    "stable_edge_id",
+    "GraphPublisher",
+    "build_graph_memory_toolkit",
+    "HashingGraphEmbedder",
+    "make_stub_tenant_context",
     "SignalRelevance",
     "SignalRelevanceConfig",
     "compute_pairwise_signals",
@@ -96,7 +108,17 @@ __all__ = [
 # stack (aiohttp, navigator, embeddings). Import it lazily (PEP 562) so that
 # ``import parrot.knowledge.graphindex`` — and the local-first CLI / pure graph
 # modules — stay lightweight and usable without those heavyweight dependencies.
-_LAZY_ATTRS = {"GraphIndexLoader": "parrot.knowledge.graphindex.loader"}
+_LAZY_ATTRS = {
+    "GraphIndexLoader": "parrot.knowledge.graphindex.loader",
+    # GraphPublisher is lazy so the publish path stays optional for
+    # consumers that only need the read-side schema/persistence symbols.
+    "GraphPublisher": "parrot.knowledge.graphindex.publish",
+    # The factory returns a GraphIndexToolkit from the sibling
+    # ai-parrot-tools distribution (imported lazily inside the call).
+    "build_graph_memory_toolkit": "parrot.knowledge.graphindex.factory",
+    "HashingGraphEmbedder": "parrot.knowledge.graphindex.factory",
+    "make_stub_tenant_context": "parrot.knowledge.graphindex.factory",
+}
 
 
 def __getattr__(name: str):
