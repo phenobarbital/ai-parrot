@@ -47,6 +47,11 @@ def jira() -> MagicMock:
     j = MagicMock()
     j.jira_add_comment = AsyncMock(return_value={"id": "c1"})
     j.jira_transition_issue = AsyncMock(return_value={"ok": True})
+    # FEAT-377 TASK-1907: FailureHandlerNode now routes through
+    # transition_issue_with_candidates, which prefers the workflow-path
+    # walker (see deployment_handoff.py / close.py fixtures for the same
+    # pattern).
+    j.jira_transition_to = AsyncMock(return_value={"ok": True})
     j.jira_assign_issue = AsyncMock(return_value={"ok": True})
     return j
 
@@ -166,3 +171,55 @@ class TestNeverRaises:
         result = await node.execute(ctx)
         assert result["status"] == "escalation_failed"
         assert "API down" in result["error"]
+
+
+class TestTransitionCandidates:
+    """FEAT-377 TASK-1907: replaces the hard-coded 'Needs Human Review'
+    transition with an ordered-candidates fallback, matching
+    deployment_handoff.py / close.py."""
+
+    @pytest.mark.asyncio
+    async def test_uses_preferred_transition_when_available(
+        self, jira, brief, research
+    ):
+        node = FailureHandlerNode(jira_toolkit=jira)
+        ctx = {
+            "bug_brief": brief,
+            "research_output": research,
+            "failure_kind": "node_error",
+            "failure_payload": {"node_id": "x", "exception_type": "y"},
+        }
+        result = await node.execute(ctx)
+        assert result == {"status": "escalated", "issue_key": "OPS-1"}
+        jira.jira_transition_to.assert_awaited_once_with(
+            issue="OPS-1", target_status="Needs Human Review"
+        )
+
+    @pytest.mark.asyncio
+    async def test_falls_through_candidates_when_workflow_lacks_preferred(
+        self, jira, brief, research
+    ):
+        """A workflow without 'Needs Human Review' or 'Blocked' still
+        succeeds by falling through to 'To Do'."""
+
+        async def _transition_to(*, issue: str, target_status: str, **_kw):
+            if target_status in ("Needs Human Review", "Blocked"):
+                raise ValueError(
+                    f"Invalid transition {target_status!r} for {issue}."
+                )
+            return {"ok": True, "applied": target_status}
+
+        jira.jira_transition_to = AsyncMock(side_effect=_transition_to)
+        node = FailureHandlerNode(jira_toolkit=jira)
+        ctx = {
+            "bug_brief": brief,
+            "research_output": research,
+            "failure_kind": "node_error",
+            "failure_payload": {"node_id": "x", "exception_type": "y"},
+        }
+        result = await node.execute(ctx)
+        assert result == {"status": "escalated", "issue_key": "OPS-1"}
+        assert jira.jira_transition_to.await_count == 3
+        jira.jira_transition_to.assert_awaited_with(
+            issue="OPS-1", target_status="To Do"
+        )

@@ -73,6 +73,7 @@ _GATE_TTL_CONF_ATTR: Dict[GateKind, str] = {
     "manual_criterion": "DEV_LOOP_GATE_TTL_MANUAL",
     "revision_approval": "DEV_LOOP_GATE_TTL_REVISION",
     "plan_approval": "DEV_LOOP_GATE_TTL_PLAN",
+    "review_escalation": "DEV_LOOP_GATE_TTL_REVIEW_ESCALATION",
 }
 
 

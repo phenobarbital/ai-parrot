@@ -25,7 +25,11 @@ from parrot.flows.dev_loop.models import (
     QAReport,
     ResearchOutput,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
+from parrot.flows.dev_loop.nodes.base import (
+    DevLoopNode,
+    register_dev_loop_node,
+    transition_issue_with_candidates,
+)
 
 
 @register_dev_loop_node("dev_loop.failure_handler")
@@ -84,8 +88,11 @@ class FailureHandlerNode(DevLoopNode):
 
         try:
             await self._jira.jira_add_comment(issue=issue_key, body=body)
-            await self._jira.jira_transition_issue(
-                issue=issue_key, transition="Needs Human Review"
+            await transition_issue_with_candidates(
+                self._jira,
+                issue_key,
+                ["Needs Human Review", "Blocked", "To Do"],
+                logger=self.logger,
             )
             if brief is not None and brief.escalation_assignee:
                 await self._jira.jira_assign_issue(
