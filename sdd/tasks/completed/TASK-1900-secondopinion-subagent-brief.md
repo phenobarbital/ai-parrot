@@ -165,4 +165,33 @@ def test_brief_is_advisory_only():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented exactly as specified:
+
+- Created `_subagent_data/sdd-secondopinion.md` (persona adapted from
+  `sdd-codereview.md`'s structure/tone): neutral adversarial reviewer,
+  read-only, advisory-only (no write tools listed, `permissionMode:
+  read-only`), findings must be specific/falsifiable, honest-truncation
+  rule for large diffs, defers to the dispatcher's structured-output
+  schema instead of restating it.
+- Created identical `.claude/agents/sdd-secondopinion.md` copy (required
+  `git add -f` — `.claude/` is globally excluded via `.git/info/exclude`
+  but individual agent files, e.g. `sdd-worker.md`, are already
+  force-tracked; followed the same precedent).
+- Extended `_subagent_defs.py`: added `"sdd-secondopinion"` to
+  `_VALID_NAMES`, updated the module docstring's subagent list, the
+  `load_subagent_definition` Args docstring, and fixed a now-stale
+  "three known subagents" phrase in the Raises docstring to
+  "the known subagents" (pre-existing text made inaccurate by this and
+  the prior FEAT-250 addition — not new scope creep, just keeping the
+  docstring truthful given the change this task makes).
+- `test_secondopinion_brief.py`: 4 tests per the Test Specification
+  (loads + frontmatter stripped, unknown name still raises, dual-source
+  bodies identical, advisory-only wording present).
+
+Verification: `pytest packages/ai-parrot/tests/flows/dev_loop/ -q` →
+618 passed, 1 pre-existing failure (`test_models_module_is_pure`, same
+known test-ordering-pollution issue noted in TASK-1899, unrelated to this
+change), 5 skipped. `ruff check` clean on touched files.
+
+No divergence from the task spec; no files touched outside the declared
+list.

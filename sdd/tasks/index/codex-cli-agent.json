@@ -32,7 +32,7 @@
       "feature_id": "FEAT-375",
       "feature": "codex-cli-agent",
       "spec": "sdd/specs/codex-cli-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Shares no files with TASK-1899 (brief markdown + _subagent_defs.py only); could run in a parallel worktree, though the per-spec strategy is sequential.",
       "assigned_to": null,
       "started_at": "2026-07-25T23:44:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1900-secondopinion-subagent-brief.md"
+      "completed_at": "2026-07-26T00:11:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1900-secondopinion-subagent-brief.md"
     },
     {
       "id": "TASK-1901",
