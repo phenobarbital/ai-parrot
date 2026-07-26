@@ -42,10 +42,37 @@ from parrot.flows.dev_loop.models import (
     TaskScopedBrief,
 )
 from parrot.flows.dev_loop.nodes.base import DevLoopNode, condense_qa_failure, register_dev_loop_node
-from parrot.flows.dev_loop.task_scheduler import TaskScheduler
+from parrot.flows.dev_loop.task_scheduler import TaskRef, TaskScheduler
 from parrot.flows.dev_loop.worktree_manager import SubWorktreeManager
 
 DispatcherBuilder = Callable[[DevAgentSpec], Tuple[DevLoopCodeDispatcher, BaseModel]]
+
+
+def should_fan_out(wave: List[TaskRef], pool_cfg: DevAgentPoolConfig) -> bool:
+    """Deterministic parallelism stop rule (FEAT-377 TASK-1913 — G4).
+
+    A configured dev-agent pool is not automatically worth fanning out
+    into: a straight dependency chain (every wave size 1) gains nothing
+    from parallel workers and only adds pool-orchestration overhead. This
+    is a pure, no-LLM decision — everything needed lives in the two
+    arguments.
+
+    Args:
+        wave: The first dispatchable wave (``TaskScheduler.next_wave()``,
+            called before any task is marked done/failed).
+        pool_cfg: The resolved pool configuration.
+
+    Returns:
+        ``True`` only when the wave has 2 or more independent tasks AND
+        the pool has more than one effective worker slot (``sum(spec.count
+        for spec in pool_cfg.agents)``) — i.e. fanning out could actually
+        run tasks in parallel. ``False`` otherwise, including when the
+        wave is empty (nothing to schedule at all).
+    """
+    if len(wave) < 2:
+        return False
+    effective_slots = sum(spec.count for spec in pool_cfg.agents)
+    return effective_slots > 1
 
 
 @register_dev_loop_node("dev_loop.development")
@@ -132,7 +159,32 @@ class DevelopmentNode(DevLoopNode):
             )
             return await self._execute_single(shared, research)
 
-        return await self._execute_pool(shared, research, pool_cfg)
+        scheduler = await self._build_scheduler(research)
+        if scheduler is None:
+            self.logger.warning(
+                "No readable per-spec task index found for %s under %s; "
+                "degrading to single-agent.",
+                research.feat_id,
+                research.worktree_path,
+            )
+            return await self._execute_single(shared, research)
+
+        # FEAT-377 TASK-1913 (G4): deterministic parallelism stop rule — a
+        # configured pool still degrades to single-agent when the task
+        # graph doesn't actually offer any parallelism (e.g. a straight
+        # dependency chain, every wave size 1).
+        first_wave = scheduler.next_wave()
+        if not should_fan_out(first_wave, pool_cfg):
+            self.logger.info(
+                "should_fan_out(wave=%d task(s), pool_slots=%d) -> False; "
+                "degrading to single-agent for %s.",
+                len(first_wave),
+                sum(spec.count for spec in pool_cfg.agents),
+                research.feat_id,
+            )
+            return await self._execute_single(shared, research)
+
+        return await self._execute_pool(shared, research, pool_cfg, scheduler)
 
     # ------------------------------------------------------------------
     # QA repair-loop re-entry (FEAT-377 TASK-1911)
@@ -277,18 +329,49 @@ class DevelopmentNode(DevLoopNode):
                 return data.get("feature") or path.stem
         return None
 
+    async def _build_scheduler(self, research: ResearchOutput) -> Optional[TaskScheduler]:
+        """Resolve the per-spec index and build a :class:`TaskScheduler`.
+
+        FEAT-377 TASK-1913: split out of ``_execute_pool`` so the
+        fan-out decision (``should_fan_out``, computed in ``execute()``
+        against this same scheduler's first wave) and the pool-execution
+        loop share ONE scheduler instance rather than reading the index
+        twice.
+
+        Args:
+            research: The upstream research output.
+
+        Returns:
+            A :class:`TaskScheduler`, or ``None`` when no readable
+            per-spec index is found (caller degrades to single-agent).
+        """
+        # Index discovery + parsing are small local filesystem reads; keep
+        # them off the event loop to honour the async-first rule.
+        feature_slug = await asyncio.to_thread(
+            self._find_feature_slug, research.worktree_path, research.feat_id
+        )
+        if feature_slug is None:
+            return None
+        return await asyncio.to_thread(
+            TaskScheduler.from_worktree, research.worktree_path, feature_slug
+        )
+
     async def _execute_pool(
         self,
         shared: Dict[str, Any],
         research: ResearchOutput,
         pool_cfg: DevAgentPoolConfig,
+        scheduler: TaskScheduler,
     ) -> DevelopmentOutput:
-        """Orchestrate the multi-agent pool: scheduler, waves, aggregation.
+        """Orchestrate the multi-agent pool: waves, aggregation.
 
         Args:
             shared: The flow's shared state dict.
             research: The upstream research output.
             pool_cfg: The resolved pool configuration.
+            scheduler: The already-built :class:`TaskScheduler` (FEAT-377
+                TASK-1913: built once in ``execute()`` for the
+                ``should_fan_out`` decision, reused here).
 
         Returns:
             The aggregated :class:`DevelopmentOutput`.
@@ -298,27 +381,6 @@ class DevelopmentNode(DevLoopNode):
             SubWorktreeMergeError: Unresolvable merge conflict in 'isolated' mode.
             RuntimeError: Every dispatchable task ended up incomplete.
         """
-        # Index discovery + parsing are small local filesystem reads; keep
-        # them off the event loop to honour the async-first rule.
-        feature_slug = await asyncio.to_thread(
-            self._find_feature_slug, research.worktree_path, research.feat_id
-        )
-        scheduler = (
-            await asyncio.to_thread(
-                TaskScheduler.from_worktree, research.worktree_path, feature_slug
-            )
-            if feature_slug is not None
-            else None
-        )
-        if scheduler is None:
-            self.logger.warning(
-                "No readable per-spec task index found for %s under %s; "
-                "degrading to single-agent.",
-                research.feat_id,
-                research.worktree_path,
-            )
-            return await self._execute_single(shared, research)
-
         pool = DevAgentPool.build(pool_cfg, self._dispatcher_builder, self._pool_max)
         run_id = shared["run_id"]
 
