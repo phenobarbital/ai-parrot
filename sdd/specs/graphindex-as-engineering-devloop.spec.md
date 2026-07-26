@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-377
 **Date**: 2026-07-26
 **Author**: Jesus Lara (research + synthesis: Claude, /sdd-proposal FEAT-377)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Source proposal**: `sdd/proposals/graphindex-as-engineering-devloop.proposal.md` (research audit: `sdd/state/FEAT-377/`)
 
