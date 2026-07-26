@@ -168,6 +168,7 @@ GateKind = Literal[
     "deployment_approval",  # gate before Jira → "Ready to Deploy"
     "revision_approval",    # gate before pushing a revision to the PR
     "plan_approval",        # optional: approve ResearchOutput plan
+    "review_escalation",    # FEAT-375: adversarial-review ESCALATE disposition
 ]
 
 GateStatus = Literal["pending", "approved", "rejected", "expired"]

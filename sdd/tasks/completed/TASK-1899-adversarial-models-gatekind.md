@@ -196,4 +196,30 @@ def test_gatekind_review_escalation():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented exactly as specified:
+
+- `models.py`: widened `CodexCodeDispatchProfile.subagent` to
+  `Literal["sdd-worker", "sdd-secondopinion"]` (default unchanged); added
+  `CodexAdversarialReviewProfile` (mirrors `CodexCodeReviewProfile` pattern,
+  placed right after it) and `AdversarialFinding` / `TriageBrief` /
+  `TriageReport` / `PerspectiveSynthesis` (placed right after
+  `CodeReviewVerdict`). No `__all__` exists in `models.py` (verified via
+  grep), so per the task's "if present" clause, only the package
+  `__init__.py` export was required/added.
+- `session_state.py`: appended `"review_escalation"` to `GateKind` with a
+  comment matching the existing style.
+- `__init__.py`: added the 5 new names to both the `from .models import (...)`
+  block and `__all__`, alphabetically ordered like their neighbors.
+- `test_adversarial_models.py`: 10 unit tests covering every Test
+  Specification case (defaults, no-reasoning-field assertion, disposition
+  literal, GateKind, package-level import re-export identity) plus a few
+  extra default/round-trip checks.
+
+Verification: `pytest packages/ai-parrot/tests/flows/dev_loop/ -q` →
+614 passed, 1 pre-existing failure (`test_models_module_is_pure`, a known
+test-ordering-pollution issue unrelated to this change — confirmed it also
+fails in isolation-run comparison per prior session notes, and passes when
+run standalone), 5 skipped. `ruff check` clean on all 4 touched files.
+
+No divergence from the task spec; no files touched outside the declared
+list.

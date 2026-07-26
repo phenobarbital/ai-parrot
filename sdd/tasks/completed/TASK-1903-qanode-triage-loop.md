@@ -205,4 +205,79 @@ async def test_skip_prefixed_findings_bypass_triage(...):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified, resolving two mechanism choices the task left
+open (both flagged here per "when in doubt" guidance rather than guessed
+silently):
+
+- **Structured verdict access** (contract note: "either extend
+  `_run_code_review` to also return the verdict, or store it on shared —
+  pick one, keep the 3-tuple contract"). Chose the `shared` route:
+  `_run_code_review` now stashes the raw `CodeReviewVerdict` (or `None` on
+  degrade) at `shared["_code_review_verdict"]`; the public 3-tuple return
+  is untouched (`test_qa_codereview.py` passes unmodified). A new
+  `_collect_triage_findings(shared)` reads it back, filters skip-prefixed
+  messages, and coerces any plain `CodeReviewFinding` into
+  `AdversarialFinding` defensively (in practice TASK-1902's dispatchers
+  already tag their findings, so this coercion is a no-op belt-and-suspenders
+  path).
+- **ESCALATE blocking semantics**: the Scope/Acceptance-Criteria text says
+  "any ESCALATE → `code_review_passed=False` until the gate resolves
+  (blocking-gate await mirrors `_resolve_blocking_manual_criteria`)".
+  Implemented literally: for every ESCALATE, `open_gate(kind=
+  "review_escalation", ...)` is called (only when a `SessionHost` is
+  present in `shared`), all escalated gate ids are gathered via
+  `asyncio.gather(*[session_host.wait_gate(gid) ...])` (same pattern as
+  `_resolve_blocking_manual_criteria`), and `escalation_passed = all(gate
+  .status == "approved" for gate in resolved)`. When there ARE findings to
+  triage, `cr_passed` is **replaced** (not ANDed) by `escalation_passed` —
+  this matches "CONFIRM-and-fixed / REJECT do not fail QA by themselves"
+  (the raw advisory verdict's own `passed` opinion is superseded once
+  every finding has gone through triage; only an unresolved/rejected
+  escalation now blocks). When no `SessionHost` exists (legacy
+  construction), the note is still always appended but no gate opens and
+  `escalation_passed` stays `True` (fail-open only in the sense that we
+  cannot block without a host — mirrors `_resolve_blocking_manual_criteria`'s
+  no-host degrade). Covered by both
+  `test_triage_escalate_opens_gate_and_note` (approved → passes) and
+  `test_escalate_rejected_gate_fails_code_review` (rejected →
+  `code_review_passed=False`, `report.passed=False`) — the latter goes
+  beyond the minimal Test Specification to lock in this semantic.
+- CONFIRM fixes: `report.files_modified` from the `TriageReport` is merged
+  into the SAME `files_modified` list that already triggers the existing
+  `qa.py:164-173` rerun block (inserted the triage call between
+  `_run_code_review()` and that `if files_modified:` check) — reuses the
+  rerun path exactly as instructed, no duplicated logic.
+- Missing-disposition fail-closed: one retry dispatch, then any finding
+  still lacking a disposition is synthesized with
+  `disposition="escalate"` + an explanatory `triage_reason`, entering the
+  same ESCALATE branch (gate + note).
+- Write-enabled triage profile mirrors `development.py`'s single-agent
+  `sdd-worker` profile exactly (`permission_mode="acceptEdits"`,
+  `allowed_tools=["Read","Edit","Write","Bash","Grep","Glob"]`,
+  `setting_sources=["project"]`) since the worker may fix CONFIRMed
+  findings and commit.
+- `getattr(conf, "DEV_LOOP_GATE_TTL_REVIEW_ESCALATION", 86400)` used as
+  instructed (TASK-1904 will add the real conf key).
+- Non-advisory path verified byte-identical: `getattr(self
+  ._codereview_dispatcher, "advisory", False)` gates the entire new
+  branch; all 11 pre-existing `test_qa_codereview.py` tests pass
+  unmodified, including the `MagicMock()`-as-reviewer case (its verdict
+  has empty findings, so `_collect_triage_findings` returns `[]` and the
+  triage dispatch never fires even though `MagicMock().advisory` is
+  truthy by default — noted as a latent test-authoring footgun for any
+  *future* test that gives a bare, un-speced `MagicMock()` reviewer real
+  findings without explicitly setting `.advisory = False`).
+
+`test_qa_triage.py`: 7 tests, one per Test Specification scaffold, plus
+`test_escalate_rejected_gate_fails_code_review` for the ESCALATE
+pass/fail semantics above.
+
+Verification: `pytest packages/ai-parrot/tests/flows/dev_loop/test_qa_triage.py
+packages/ai-parrot/tests/flows/dev_loop/test_qa_codereview.py -v` → 18
+passed. Full suite `pytest packages/ai-parrot/tests/flows/dev_loop/ -q` →
+645 passed, 1 pre-existing failure (`test_models_module_is_pure`, same
+known ordering-pollution issue noted in TASK-1899/1900/1901/1902), 5
+skipped. `ruff check` clean on both touched files.
+
+No divergence from the task spec; no files touched outside the declared
+list.

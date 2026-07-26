@@ -58,6 +58,7 @@ from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
 from parrot.flows.dev_loop.models import (
     ClaudeCodeDispatchProfile,
+    CodexAdversarialReviewProfile,
     CodexCodeDispatchProfile,
     GeminiCodeDispatchProfile,
     DispatchEvent,
@@ -1116,6 +1117,15 @@ class CodexCodeDispatcher:
                     except OSError:
                         pass
 
+    # FEAT-375 (Module 3): table mapping `CodexAdversarialReviewProfile.review_scope`
+    # to the `codex exec review` scope flag and the profile field that carries its
+    # value. Kept module-accessible (class attribute) so tests can enumerate shapes
+    # without needing to invoke the CLI.
+    _REVIEW_SCOPE_FLAGS: Dict[str, str] = {
+        "base": "--base",
+        "commit": "--commit",
+    }
+
     def _build_command(
         self,
         *,
@@ -1126,6 +1136,14 @@ class CodexCodeDispatcher:
         prompt: str,
     ) -> List[str]:
         """Build the ``codex exec`` command line."""
+        if isinstance(profile, CodexAdversarialReviewProfile):
+            return self._build_adversarial_review_command(
+                profile=profile,
+                cwd=cwd,
+                schema_path=schema_path,
+                output_path=output_path,
+                prompt=prompt,
+            )
         cmd = [
             self.codex_bin,
             "exec",
@@ -1143,6 +1161,69 @@ class CodexCodeDispatcher:
             "-o",
             output_path,
         ]
+        if profile.ignore_user_config:
+            cmd.append("--ignore-user-config")
+        if profile.ignore_rules:
+            cmd.append("--ignore-rules")
+        cmd.append(prompt)
+        return cmd
+
+    def _build_review_scope_args(self, profile: CodexAdversarialReviewProfile) -> List[str]:
+        """Return the `codex exec review` scope-specific arguments (FEAT-375 G5).
+
+        Table-driven via ``_REVIEW_SCOPE_FLAGS`` so CLI-surface drift is
+        contained to this one mapping. Raises ``ValueError`` when a
+        non-``"uncommitted"`` scope is missing its required target.
+        """
+        if profile.review_scope == "uncommitted":
+            return []
+        flag = self._REVIEW_SCOPE_FLAGS[profile.review_scope]
+        value = profile.review_base if profile.review_scope == "base" else profile.review_commit
+        field_name = "review_base" if profile.review_scope == "base" else "review_commit"
+        if not value:
+            raise ValueError(
+                f"CodexAdversarialReviewProfile.review_scope={profile.review_scope!r} "
+                f"requires a non-empty {field_name}"
+            )
+        return [flag, value]
+
+    def _build_adversarial_review_command(
+        self,
+        *,
+        profile: CodexAdversarialReviewProfile,
+        cwd: str,
+        schema_path: str,
+        output_path: str,
+        prompt: str,
+    ) -> List[str]:
+        """Build `codex exec review` / `codex exec resume --last` shapes (FEAT-375 G5/G6).
+
+        The installed CLI treats ``--cd``, ``--sandbox``, and ``--model`` as
+        options of the top-level ``exec`` command that MUST precede the
+        ``review``/``resume`` subcommand name (verified via ``codex exec
+        review --help`` / ``codex exec resume --help`` — neither subcommand
+        lists them as its own options). ``--json``, ``--output-schema``,
+        ``-o``, ``--ignore-user-config``, and ``--ignore-rules`` are
+        subcommand-level options and follow the subcommand name.
+
+        ``codex exec resume`` does not honor ``--sandbox`` (the gotcha
+        documented in the repo's ``CLAUDE.md``): omit it and pass
+        ``-c sandbox_mode="<mode>"`` instead so the read-only restriction
+        still applies to the resumed turn.
+        """
+        cmd = [self.codex_bin, "exec", "--cd", cwd]
+        if not profile.resume_last:
+            cmd += ["--sandbox", profile.sandbox]
+        cmd += ["--model", profile.model]
+
+        if profile.resume_last:
+            cmd += ["-c", f'sandbox_mode="{profile.sandbox}"']
+            cmd += ["resume", "--last"]
+        else:
+            cmd.append("review")
+            cmd += self._build_review_scope_args(profile)
+
+        cmd += ["--json", "--output-schema", schema_path, "-o", output_path]
         if profile.ignore_user_config:
             cmd.append("--ignore-user-config")
         if profile.ignore_rules:

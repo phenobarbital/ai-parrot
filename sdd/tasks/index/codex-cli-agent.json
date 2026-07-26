@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-26T01:25:00+02:00",
-  "completed_at": null,
+  "completed_at": "2026-07-26T00:44:58+00:00",
   "tasks": [
     {
       "id": "TASK-1899",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-375",
       "feature": "codex-cli-agent",
       "spec": "sdd/specs/codex-cli-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task; every later task imports these models.",
       "assigned_to": null,
       "started_at": "2026-07-25T23:44:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1899-adversarial-models-gatekind.md"
+      "completed_at": "2026-07-26T00:01:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1899-adversarial-models-gatekind.md"
     },
     {
       "id": "TASK-1900",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-375",
       "feature": "codex-cli-agent",
       "spec": "sdd/specs/codex-cli-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Shares no files with TASK-1899 (brief markdown + _subagent_defs.py only); could run in a parallel worktree, though the per-spec strategy is sequential.",
       "assigned_to": null,
       "started_at": "2026-07-25T23:44:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1900-secondopinion-subagent-brief.md"
+      "completed_at": "2026-07-26T00:11:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1900-secondopinion-subagent-brief.md"
     },
     {
       "id": "TASK-1901",
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-375",
       "feature": "codex-cli-agent",
       "spec": "sdd/specs/codex-cli-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Imports CodexAdversarialReviewProfile from TASK-1899.",
       "assigned_to": null,
       "started_at": "2026-07-25T23:44:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1901-codex-command-variants.md"
+      "completed_at": "2026-07-26T00:21:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1901-codex-command-variants.md"
     },
     {
       "id": "TASK-1902",
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-375",
       "feature": "codex-cli-agent",
       "spec": "sdd/specs/codex-cli-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Extends code_review.py using models (1899), brief (1900), and command shapes (1901).",
       "assigned_to": null,
       "started_at": "2026-07-25T23:44:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1902-advisory-parallel-dispatchers.md"
+      "completed_at": "2026-07-26T00:26:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1902-advisory-parallel-dispatchers.md"
     },
     {
       "id": "TASK-1903",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-375",
       "feature": "codex-cli-agent",
       "spec": "sdd/specs/codex-cli-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Consumes the advisory attribute from TASK-1902 and triage models from TASK-1899.",
       "assigned_to": null,
       "started_at": "2026-07-25T23:44:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1903-qanode-triage-loop.md"
+      "completed_at": "2026-07-26T00:34:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1903-qanode-triage-loop.md"
     },
     {
       "id": "TASK-1904",
@@ -113,7 +113,7 @@
       "feature_id": "FEAT-375",
       "feature": "codex-cli-agent",
       "spec": "sdd/specs/codex-cli-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Replaces getattr shims introduced by 1902/1903; must land after both.",
       "assigned_to": null,
       "started_at": "2026-07-25T23:44:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1904-config-and-wiring.md"
+      "completed_at": "2026-07-26T00:38:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1904-config-and-wiring.md"
     },
     {
       "id": "TASK-1905",
@@ -134,7 +134,7 @@
       "feature_id": "FEAT-375",
       "feature": "codex-cli-agent",
       "spec": "sdd/specs/codex-cli-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -149,8 +149,8 @@
       "parallelism_notes": "Closes the feature; needs every module landed.",
       "assigned_to": null,
       "started_at": "2026-07-25T23:44:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1905-integration-tests.md"
+      "completed_at": "2026-07-26T00:44:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1905-integration-tests.md"
     }
   ]
 }

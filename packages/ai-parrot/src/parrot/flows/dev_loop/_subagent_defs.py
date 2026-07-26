@@ -1,6 +1,6 @@
 """Loader for SDD subagent definitions used by the dev-loop dispatcher.
 
-The dev-loop flow binds one of three subagents per dispatch:
+The dev-loop flow binds one of several subagents per dispatch:
 
 * ``sdd-research`` — bug triage, Jira ticket, ``/sdd-spec``, ``/sdd-task``,
   worktree creation.
@@ -9,6 +9,8 @@ The dev-loop flow binds one of three subagents per dispatch:
   ``permission_mode="plan"``.
 * ``sdd-codereview`` — read-only qualitative code-review gate (FEAT-250)
   under ``permission_mode="plan"``.
+* ``sdd-secondopinion`` — read-only adversarial second-opinion review
+  (FEAT-375): advisory findings only, never modifies files.
 
 The Markdown files for each subagent are dual-sourced (per spec §7
 "Patterns"):
@@ -30,7 +32,7 @@ from __future__ import annotations
 from importlib.resources import files
 
 _VALID_NAMES: frozenset[str] = frozenset(
-    {"sdd-research", "sdd-worker", "sdd-qa", "sdd-codereview"}
+    {"sdd-research", "sdd-worker", "sdd-qa", "sdd-codereview", "sdd-secondopinion"}
 )
 
 
@@ -64,14 +66,14 @@ def load_subagent_definition(name: str) -> str:
 
     Args:
         name: One of ``"sdd-research"``, ``"sdd-worker"``, ``"sdd-qa"``,
-            ``"sdd-codereview"``.
+            ``"sdd-codereview"``, ``"sdd-secondopinion"``.
 
     Returns:
         The Markdown body of the subagent definition with the YAML
         frontmatter stripped.
 
     Raises:
-        ValueError: If ``name`` is not one of the three known subagents.
+        ValueError: If ``name`` is not one of the known subagents.
         FileNotFoundError: If the package-bundled data file is missing
             (indicates a packaging error).
     """

@@ -24,6 +24,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializeAsAny,
     field_validator,
     model_validator,
 )
@@ -553,7 +554,7 @@ class CodexCodeDispatchProfile(BaseModel):
     same SDD subagent prompt body used by the Claude Code path.
     """
 
-    subagent: Literal["sdd-worker"] = "sdd-worker"
+    subagent: Literal["sdd-worker", "sdd-secondopinion"] = "sdd-worker"
     model: str = "gpt-5.5"
     sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "workspace-write"
     approval_policy: Literal["untrusted", "on-request", "never"] = "never"
@@ -763,10 +764,16 @@ class CodeReviewVerdict(BaseModel):
     The ``findings`` validator coerces plain strings (the format the old model
     accepted) into ``CodeReviewFinding(message=s, severity="minor")`` so an LLM
     that returns the legacy format doesn't fail Pydantic validation.
+
+    ``findings`` is ``SerializeAsAny``-wrapped (FEAT-375 code-review fix) so
+    that subclass instances — e.g. ``AdversarialFinding``, tagged with
+    ``source``/``disposition``/``triage_reason`` by the advisory reviewers —
+    keep those extra fields when this verdict is ``.model_dump()``'d, instead
+    of being silently truncated down to the base ``CodeReviewFinding`` shape.
     """
 
     passed: bool = True
-    findings: List[CodeReviewFinding] = Field(default_factory=list)
+    findings: List[SerializeAsAny[CodeReviewFinding]] = Field(default_factory=list)
     summary: str = ""
     files_modified: List[str] = Field(default_factory=list)
 
@@ -781,6 +788,54 @@ class CodeReviewVerdict(BaseModel):
                 for item in v
             ]
         return v
+
+
+class AdversarialFinding(CodeReviewFinding):
+    """A finding from an advisory reviewer, awaiting or carrying a triage disposition (FEAT-375)."""
+
+    source: str = "codex-adversarial"
+    disposition: Optional[Literal["confirm", "reject", "escalate"]] = None
+    triage_reason: str = ""
+    finding_id: str = Field(
+        default="",
+        description=(
+            "Stable identifier assigned before a triage round (e.g. "
+            "'finding-0'), so the triage worker's disposition can be matched "
+            "back to the originating finding without relying on exact "
+            "file/message text equality (which an LLM may paraphrase)."
+        ),
+    )
+
+
+class TriageBrief(BaseModel):
+    """Brief for the primary worker's triage dispatch (FEAT-375).
+
+    Neutral by construction: carries only the advisory findings, the
+    acceptance criteria, and the worktree path — no field for the caller's
+    reasoning, so ratification of the adversarial reviewer is structurally
+    impossible.
+    """
+
+    findings: List[AdversarialFinding]
+    acceptance_criteria: List[AcceptanceCriterion]
+    worktree_path: str
+    summary: str = ""
+
+
+class TriageReport(BaseModel):
+    """Every input finding MUST appear with a disposition — none dropped (FEAT-375)."""
+
+    findings: List[AdversarialFinding]
+    files_modified: List[str] = Field(default_factory=list)
+    summary: str = ""
+
+
+class PerspectiveSynthesis(BaseModel):
+    """Deterministic merge of primary + adversarial verdicts (FEAT-375 G7)."""
+
+    agreements: List[AdversarialFinding]
+    disagreements: List[AdversarialFinding]
+    judge_summary: str = ""
 
 
 class ClaudeCodeReviewProfile(ClaudeCodeDispatchProfile):
@@ -814,6 +869,28 @@ class CodexCodeReviewProfile(CodexCodeDispatchProfile):
     model: str = "gpt-5.5"
     sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "workspace-write"
     approval_policy: Literal["untrusted", "on-request", "never"] = "on-request"
+    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+
+
+class CodexAdversarialReviewProfile(CodexCodeDispatchProfile):
+    """Advisory review profile for the Codex adversarial second-opinion (FEAT-375).
+
+    Read-only, neutral-brief, no-writes profile: the dispatcher runs
+    ``codex exec review`` (or ``codex exec resume --last``) in a read-only
+    sandbox with the ``sdd-secondopinion`` subagent brief, which by
+    construction never receives the primary agent's reasoning.
+    """
+
+    subagent: Literal["sdd-secondopinion"] = "sdd-secondopinion"
+    sandbox: Literal["read-only"] = "read-only"
+    approval_policy: Literal["never"] = "never"
+    review_scope: Literal["uncommitted", "base", "commit"] = "uncommitted"
+    review_base: str = ""
+    review_commit: str = ""
+    resume_last: bool = Field(
+        default=False,
+        description="G6: use `codex exec resume --last` to continue the existing review session.",
+    )
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
 
 

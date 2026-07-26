@@ -223,4 +223,70 @@ async def test_judge_not_called_when_disabled():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented exactly as specified, with two documented design decisions
+where the task left the exact mechanism open:
+
+- `advisory: bool = False` added to `AbstractCodeReviewDispatcher`;
+  `CodexAdversarialReviewDispatcher` ("codex-adversarial") and
+  `ParallelPerspectiveReviewDispatcher` ("parallel") both set
+  `advisory = True`. `"codex"` (and `"claude-code"`/`"gemini"`) untouched
+  and covered by a regression test (`test_codex_untouched`).
+- `CodexAdversarialReviewDispatcher.review()` calls `super().review()`
+  (reusing the ABC's degrade-on-infra-error wrapper) then hardens the
+  result: `files_modified` forced to `[]` unconditionally, and every
+  finding is re-wrapped as an `AdversarialFinding(source="codex-adversarial")`
+  via `finding.model_dump()` + `model_copy(update=...)` (which does not
+  revalidate, so the subclass instances survive in the
+  `List[CodeReviewFinding]`-typed field). Model default:
+  `getattr(conf, "DEV_LOOP_ADVERSARIAL_MODEL", "gpt-5.5")` per the task's
+  explicit instruction (conf key lands in TASK-1904).
+- `ParallelPerspectiveReviewDispatcher.review()` fully overrides the ABC
+  (per Implementation Notes): `asyncio.gather(primary.review(...),
+  adversary.review(...), return_exceptions=True)`, per-side degrade via
+  `_resolve_side` (an exception on either side becomes a passing verdict
+  + a "code-review could not run: …" nit finding — mirrors the ABC's own
+  degrade wording so downstream consumers see one consistent phrase).
+  **Design decision #1**: since sides can be duck-typed reviewers without
+  an `agent_name` attribute (as in the given Test Specification's
+  `_StubReviewer`), source tagging uses fixed labels `"primary"` /
+  `"codex-adversarial"` rather than `self._primary.agent_name` — avoids an
+  `AttributeError` on non-`AbstractCodeReviewDispatcher` duck-typed
+  reviewers, at the cost of not reflecting a *different* adversary's
+  actual `agent_name` if one were ever substituted. Flagging this in case
+  a future task wants per-instance labels instead.
+- Deterministic merge (`_merge_verdicts`): agreement key
+  `(finding.file, casefold+whitespace-collapsed message)`; agreements get
+  `source="primary,codex-adversarial"` (comma-joined), disagreements keep
+  their single-source tag; `passed = primary.passed and adversary.passed`;
+  `files_modified` = primary's only. Pure Python, no I/O, matches
+  "unit-testable without any dispatch."
+- **Design decision #2 (judge dispatch, spec §2 G7)**: the judge
+  dispatcher's type is `Optional[Any]` by spec — no concrete interface is
+  given beyond the test's `_Judge.dispatch(**kw)` stub. Implemented
+  `_run_judge()` calling `judge_dispatcher.dispatch(brief=..., primary_verdict=...,
+  adversary_verdict=..., run_id=..., node_id=..., cwd=..., session_host=...)`,
+  accepting either a plain `str` return or an object exposing
+  `.judge_summary` (e.g. a future `PerspectiveSynthesis`-shaped result).
+  This is a best-effort, defensively-coded contract since the task does
+  not pin down the judge's exact signature; any failure (wrong signature,
+  exception) degrades silently to the deterministic merge per spec
+  ("judge failure degrades silently to the deterministic merge, log
+  warning") — verified by `test_judge_failure_degrades_silently`. If a
+  concrete judge-dispatcher type is introduced later (TASK-1904/conf
+  wiring or beyond), this call site may need to be adjusted to match its
+  real signature.
+- `test_adversarial_review.py`: 13 tests — the 6 from the Test
+  Specification (registration ×2, merge agreement, one-side-fail, judge
+  disabled) plus 7 extra covering acceptance criteria not in the minimal
+  scaffold: disagreement single-source tagging, `files_modified` = primary
+  only, judge-enabled summary append, judge-failure degrade, advisory
+  never-carries-files_modified (lying stub), advisory finding source
+  tagging, and adversarial profile defaults.
+
+Verification: `pytest packages/ai-parrot/tests/flows/dev_loop/ -q` →
+638 passed, 1 pre-existing failure (`test_models_module_is_pure`, same
+known ordering-pollution issue noted in TASK-1899/1900/1901), 5 skipped.
+`ruff check` clean on both touched files.
+
+No divergence from the task spec; no files touched outside the declared
+list.

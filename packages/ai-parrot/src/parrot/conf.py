@@ -925,7 +925,9 @@ DEV_LOOP_CODEREVIEW_MODEL: str = config.get(
     "DEV_LOOP_CODEREVIEW_MODEL", fallback="claude-sonnet-4-6"
 )
 # Which code-review dispatcher backs the QA node's code-review gate
-# (FEAT-270): "claude-code" (default), "codex", or "gemini". Selected via
+# (FEAT-270, extended FEAT-375): "claude-code" (default), "codex", "gemini",
+# "codex-adversarial" (read-only advisory second opinion), or "parallel"
+# (primary + codex-adversarial composite). Selected via
 # ``CodeReviewDispatcherFactory.create()`` at server startup.
 DEV_LOOP_CODEREVIEW_AGENT: str = config.get(
     "DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code"
@@ -975,6 +977,43 @@ DEV_LOOP_GATE_TTL_PLAN: int = config.getint(
 # durable audit record — the stream itself is swept after this many days.
 DEV_LOOP_ACTIONS_RETENTION_DAYS: int = config.getint(
     "DEV_LOOP_ACTIONS_RETENTION_DAYS", fallback=7
+)
+
+# FEAT-375: Codex CLI adversarial second-opinion agent. These settings back
+# the "codex-adversarial" / "parallel" ``DEV_LOOP_CODEREVIEW_AGENT`` values
+# above — kept append-only here (rather than reflowing the block near
+# :927-932) to avoid merge conflicts with FEAT-374's in-flight conf.py edits.
+# Model used by the read-only codex-adversarial reviewer's dispatch.
+DEV_LOOP_ADVERSARIAL_MODEL: str = config.get(
+    "DEV_LOOP_ADVERSARIAL_MODEL", fallback="gpt-5.5"
+)
+# Default `codex exec review` scope for the adversarial reviewer:
+# "uncommitted" (default), "base", or "commit".
+DEV_LOOP_ADVERSARIAL_SCOPE: str = config.get(
+    "DEV_LOOP_ADVERSARIAL_SCOPE", fallback="uncommitted"
+)
+# Whether the "parallel" composite reviewer runs an additional LLM-judge
+# dispatch to synthesize a narrative over the primary + adversarial
+# verdicts. Off by default — the deterministic merge alone is authoritative.
+DEV_LOOP_CODEREVIEW_JUDGE: bool = config.getboolean(
+    "DEV_LOOP_CODEREVIEW_JUDGE", fallback=False
+)
+# HITL gate TTL for an ESCALATEd adversarial-review finding
+# (``GateKind="review_escalation"``, FEAT-375). Fail-closed like the other
+# DEV_LOOP_GATE_TTL_* settings above (:961-972).
+DEV_LOOP_GATE_TTL_REVIEW_ESCALATION: int = config.getint(
+    "DEV_LOOP_GATE_TTL_REVIEW_ESCALATION", fallback=86400  # 24h, fail-closed
+)
+# Target ref for the adversarial reviewer when DEV_LOOP_ADVERSARIAL_SCOPE is
+# "base" (e.g. "dev" or "origin/main"). Required in that case — the server
+# bootstrap raises at startup rather than silently degrading every review if
+# "base" scope is selected without a ref configured here (code-review fix,
+# FEAT-375). Not used, and not required, for "uncommitted" (default) scope.
+# "commit" scope is a per-run value (a fixed commit SHA doesn't make sense as
+# a persistent server setting) and is intentionally NOT configurable here —
+# the server bootstrap rejects "commit" scope with a clear error.
+DEV_LOOP_ADVERSARIAL_BASE_REF: str = config.get(
+    "DEV_LOOP_ADVERSARIAL_BASE_REF", fallback=""
 )
 
 # ---------------------------------------------------------------------------
