@@ -236,6 +236,7 @@ def build_dev_loop_flow(
     repos: Optional[list[RepoSpec]] = None,
     codereview_dispatcher: Optional[Any] = None,
     require_deployment_approval: bool = False,
+    graph_memory: Optional[Any] = None,
 ) -> AgentsFlow:
     """Build the eight-node dev-loop ``AgentsFlow`` (FEAT-132).
 
@@ -294,6 +295,11 @@ def build_dev_loop_flow(
             command layer, TASK-1855). Only takes effect when the run also
             has a ``SessionHost`` (seeded by ``DevLoopRunner.run()``) —
             see ``DeploymentHandoffNode``'s docstring.
+        graph_memory: FEAT-377 TASK-1915 — an optional
+            ``DevLoopGraphMemory`` (from ``DevLoopGraphMemory.
+            from_config()``) forwarded to Research/QA/Close/FailureHandler
+            via ``build_dev_loop_node_factories``. ``None`` (default)
+            makes every graph-memory seam a strict no-op.
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -317,6 +323,7 @@ def build_dev_loop_flow(
         repos=repos,
         codereview_dispatcher=codereview_dispatcher,
         require_deployment_approval=require_deployment_approval,
+        graph_memory=graph_memory,
     )
     staged = AgentsFlow.from_definition(
         definition,

@@ -106,6 +106,7 @@ def build_dev_loop_revision_flow(
     git_toolkit: Any,
     redis_url: str,
     codereview_dispatcher: Optional[Any] = None,
+    graph_memory: Optional[Any] = None,
     name: str = "dev-loop-revision",
     publish_flow_events: bool = True,
 ) -> AgentsFlow:
@@ -116,6 +117,12 @@ def build_dev_loop_revision_flow(
     via the node factories, and the graph runs in explicit-edge mode (OR-join
     on the ``failure_handler`` fan-in). Topology: ``development → qa →
     (pass) revision_handoff → close`` / ``(fail) failure_handler``.
+
+    Args:
+        graph_memory: FEAT-377 TASK-1915 — optional ``DevLoopGraphMemory``
+            forwarded to ``QANode``/``DevLoopCloseNode``/
+            ``FailureHandlerNode`` (this graph has no ``research`` node,
+            so seam 2 does not apply here). ``None`` (default) is a no-op.
     """
     definition = build_dev_loop_definition(revision=True)
     factories = build_dev_loop_node_factories(
@@ -124,6 +131,7 @@ def build_dev_loop_revision_flow(
         redis_url=redis_url,
         git_toolkit=git_toolkit,
         codereview_dispatcher=codereview_dispatcher,
+        graph_memory=graph_memory,
     )
     staged = AgentsFlow.from_definition(
         definition,
@@ -173,6 +181,7 @@ class DevLoopRunner:
         git_toolkit: Optional[Any] = None,
         redis_url: Optional[str] = None,
         codereview_dispatcher: Optional[Any] = None,
+        graph_memory: Optional[Any] = None,
     ) -> None:
         self.flow = flow
         self.max_concurrent_runs = int(
@@ -190,6 +199,9 @@ class DevLoopRunner:
         self._git_toolkit = git_toolkit
         self._redis_url = redis_url
         self._codereview_dispatcher = codereview_dispatcher
+        # FEAT-377 TASK-1915: optional DevLoopGraphMemory forwarded to the
+        # revision flow's QA/close/failure_handler nodes. None is a no-op.
+        self._graph_memory = graph_memory
         # Lazily-built, reused revision flow (fixed topology — built once).
         self._rev_flow: Optional[AgentsFlow] = None
         self.logger = logging.getLogger("parrot.dev_loop.runner")
@@ -646,6 +658,7 @@ class DevLoopRunner:
                 git_toolkit=self._git_toolkit,
                 redis_url=self._redis_url,
                 codereview_dispatcher=self._codereview_dispatcher,
+                graph_memory=self._graph_memory,
             )
         rev_flow = self._rev_flow
 

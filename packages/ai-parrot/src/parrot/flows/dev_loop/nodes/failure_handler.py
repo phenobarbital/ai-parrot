@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
+from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import (
     BugBrief,
     QAReport,
@@ -40,10 +41,14 @@ class FailureHandlerNode(DevLoopNode):
         self,
         *,
         jira_toolkit: Any,
+        graph_memory: Optional[DevLoopGraphMemory] = None,
         name: str = "failure_handler",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_jira", jira_toolkit)
+        # FEAT-377 TASK-1915 (G2 seam 3): opt-in run write-back. None
+        # (default) is a strict no-op.
+        object.__setattr__(self, "_graph_memory", graph_memory)
 
     # ------------------------------------------------------------------
     # Execute
@@ -106,6 +111,14 @@ class FailureHandlerNode(DevLoopNode):
                 "issue_key": issue_key,
                 "error": str(exc),
             }
+
+        # FEAT-377 TASK-1915 (G2 seam 3): run write-back. The facade's own
+        # publish_run_outcome already degrades to a logged warning on any
+        # failure — never raises into this terminal node.
+        if self._graph_memory is not None:
+            await self._graph_memory.publish_run_outcome(
+                shared.get("run_id", ""), shared.get("qa_report"), "failed", body,
+            )
 
         return {"status": "escalated", "issue_key": issue_key}
 

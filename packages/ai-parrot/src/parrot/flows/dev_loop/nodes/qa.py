@@ -32,6 +32,7 @@ from parrot.flows.dev_loop.code_review import (
     ClaudeCodeReviewDispatcher,
 )
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import (
     AcceptanceCriterion,
     AdversarialFinding,
@@ -95,6 +96,7 @@ class QANode(DevLoopNode):
         dispatcher: ClaudeCodeDispatcher,
         lint_command: Optional[str] = None,
         codereview_dispatcher: Optional[AbstractCodeReviewDispatcher] = None,
+        graph_memory: Optional[DevLoopGraphMemory] = None,
         name: str = "qa",
     ) -> None:
         super().__init__(node_id=name)
@@ -106,6 +108,9 @@ class QANode(DevLoopNode):
         if codereview_dispatcher is None:
             codereview_dispatcher = ClaudeCodeReviewDispatcher(dispatcher=dispatcher)
         object.__setattr__(self, "_codereview_dispatcher", codereview_dispatcher)
+        # FEAT-377 TASK-1915 (G2 seam 4): opt-in finding grounding. None
+        # (default) is a strict no-op.
+        object.__setattr__(self, "_graph_memory", graph_memory)
 
     # ------------------------------------------------------------------
     # Execute
@@ -165,6 +170,22 @@ class QANode(DevLoopNode):
         cr_skipped = any(
             f.startswith(_CODE_REVIEW_SKIP_PREFIX) for f in cr_findings
         )
+
+        # FEAT-377 TASK-1915 (G2 seam 4): ground code-review findings — an
+        # infra-degrade skip marker is never a real finding, so it is never
+        # sent through grounding. Findings the graph cannot ground are
+        # demoted to notes (never counted as gate-failing); if grounding
+        # drops EVERY finding, the review gate must not fail on
+        # hallucinated findings alone.
+        ungrounded_notes: List[str] = []
+        if self._graph_memory is not None and cr_findings and not cr_skipped:
+            grounded = await self._graph_memory.ground_findings(cr_findings)
+            dropped = [f for f in cr_findings if f not in grounded]
+            if dropped:
+                ungrounded_notes = [f"[ungrounded] {f}" for f in dropped]
+                if not grounded:
+                    cr_passed = True
+                cr_findings = grounded
 
         # FEAT-375 (Module 5): an advisory reviewer (`advisory=True`, e.g.
         # "codex-adversarial"/"parallel") never modifies files itself — its
@@ -227,6 +248,9 @@ class QANode(DevLoopNode):
         # FEAT-375: REJECT/ESCALATE triage notes are always PR-visible, even
         # when the deterministic + code-review gates otherwise pass.
         extra_notes.extend(triage_notes)
+        # FEAT-377 TASK-1915: ungrounded findings are demoted to notes, not
+        # gate-failing (see the grounding block above).
+        extra_notes.extend(ungrounded_notes)
         if extra_notes:
             existing_notes = report.notes or ""
             sep = "\n\n" if existing_notes else ""
