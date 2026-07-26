@@ -23,16 +23,25 @@ class TestProvenance:
 
 
 class TestNodeKind:
-    def test_all_six_values(self):
+    def test_all_values(self):
         kinds = {k.value for k in NodeKind}
-        assert kinds == {"document", "section", "symbol", "concept", "rationale", "skill"}
+        # FEAT-260 added "wiki_page"; graph-knowledge-persistence added
+        # the work-lineage kinds "run" and "claim".
+        assert kinds == {
+            "document", "section", "symbol", "concept", "rationale",
+            "skill", "wiki_page", "run", "claim",
+        }
 
 
 class TestEdgeKind:
-    def test_all_five_values(self):
+    def test_all_values(self):
         kinds = {k.value for k in EdgeKind}
-        # FEAT-240 (TASK-1571) added "extends" for Odoo model inheritance edges
-        assert kinds == {"contains", "references", "defines", "mentions", "explains", "extends"}
+        # FEAT-240 (TASK-1571) added "extends"; graph-knowledge-persistence
+        # added the lineage/grounding kinds.
+        assert kinds == {
+            "contains", "references", "defines", "mentions", "explains",
+            "extends", "produced", "about", "supported_by", "contradicts",
+        }
 
 
 class TestUniversalNode:

@@ -1112,6 +1112,656 @@ def export(path_: Optional[str], output: str) -> None:
     )
 
 
+# --------------------------------------------------------------------------
+# Authoring / persistent-memory commands ("save things in the brain")
+# --------------------------------------------------------------------------
+
+def _authoring_identity(by: Optional[str]) -> str:
+    """Resolve who is asserting a write.
+
+    Precedence: explicit ``--by`` > ``CLAUDE_AGENT_ID`` /
+    ``PARROT_AGENT_ID`` env (prefixed ``agent:``) > the local user
+    (prefixed ``human:``).
+    """
+    import getpass
+    import os
+
+    if by:
+        return by
+    for env_name in ("CLAUDE_AGENT_ID", "PARROT_AGENT_ID"):
+        value = os.environ.get(env_name)
+        if value:
+            return f"agent:{value}"
+    try:
+        return f"human:{getpass.getuser()}"
+    except Exception:  # noqa: BLE001 — no user db in some containers
+        return "human:unknown"
+
+
+def _authoring_run_id() -> Optional[str]:
+    """Session/run identifier from the ambient environment, if any."""
+    import os
+
+    for env_name in ("CLAUDE_SESSION_ID", "PARROT_RUN_ID"):
+        value = os.environ.get(env_name)
+        if value:
+            return value
+    return None
+
+
+def _resolve_write_store(
+    path_: Optional[str],
+    store_opt: Optional[str],
+    backend_opt: Optional[str],
+) -> tuple[BaseWikiStore, Path, Optional[Path], Optional[WikiProjectConfig]]:
+    """Open a store for an authoring command, creating the plane lazily.
+
+    Same precedence as ``_resolve_read_store`` (``--store`` > ``--path``
+    project > ``WIKI_STORE`` env > auto-detected project), but a wiki
+    that was never built is initialised on first write instead of
+    aborting — remembering something must work from a blank slate.
+
+    Returns:
+        ``(store, storage_dir, root, config)`` — ``root``/``config`` are
+        ``None`` for ``--store`` targets (no project context).
+    """
+    store_override = store_opt
+    if not store_override and not path_:
+        store_override = _env_setting("WIKI_STORE")
+    if store_override:
+        backend = backend_opt or _env_setting("WIKI_STORE_BACKEND") or "sqlite"
+        storage_dir = Path(store_override).expanduser()
+        storage_dir.mkdir(parents=True, exist_ok=True)
+        return create_wiki_store(storage_dir, backend=backend), storage_dir, None, None
+    root, config = _resolve_project(path_)
+    return _open_store(root, config), config.storage_path(root), root, config
+
+
+def _sync_memory_to_graph(
+    root: Path,
+    config: WikiProjectConfig,
+    store: BaseWikiStore,
+    page_id: str,
+    title: str,
+    text: str,
+    links: list[tuple[str, str]],
+    asserted_by: str,
+    run_id: Optional[str],
+) -> Optional[str]:
+    """Mirror a remembered fact into the project's GraphIndex plane.
+
+    Publishes one audited commit containing a ``CONCEPT`` node for the
+    memory (plus stub nodes for linked wiki pages so no edge dangles)
+    into ``.parrot/graph/``. GraphIndex imports stay inside this
+    function so the wiki CLI works without the graphindex extra.
+
+    Returns:
+        The commit id, or ``None`` when sync failed/unavailable.
+    """
+    try:
+        from parrot.knowledge.graphindex.factory import make_stub_tenant_context
+        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
+        from parrot.knowledge.graphindex.publish import GraphPublisher
+        from parrot.knowledge.graphindex.schema import (
+            EdgeKind,
+            GraphUpdate,
+            NodeKind,
+            Provenance,
+            UniversalEdge,
+            UniversalNode,
+        )
+    except ImportError as exc:
+        click.echo(f"[graph sync skipped: graphindex unavailable — {exc}]")
+        return None
+
+    try:
+        ctx = make_stub_tenant_context(config.wiki_name)
+        persistence = SQLitePersistence(config.graph_path(root))
+        publisher = GraphPublisher(persistence, ctx)
+
+        nodes = [
+            UniversalNode(
+                node_id=page_id,
+                kind=NodeKind.CONCEPT,
+                title=title,
+                source_uri=f"wiki://{config.wiki_name}/{page_id}",
+                summary=text[:300],
+                provenance=Provenance.ASSERTED,
+            )
+        ]
+        edges = []
+        for target_id, rel in links:
+            target = _run(store.get_page(target_id, include_body=False))
+            if target is None:
+                continue
+            nodes.append(
+                UniversalNode(
+                    node_id=target_id,
+                    kind=NodeKind.CONCEPT,
+                    title=str(target.get("title") or target_id),
+                    source_uri=f"wiki://{config.wiki_name}/{target_id}",
+                    summary=str(target.get("summary") or "")[:300],
+                )
+            )
+            try:
+                kind = EdgeKind(rel)
+            except ValueError:
+                kind = EdgeKind.REFERENCES
+            edges.append(
+                UniversalEdge(source_id=page_id, target_id=target_id, kind=kind)
+            )
+        receipt = _run(
+            publisher.publish(
+                GraphUpdate(
+                    nodes=nodes,
+                    edges=edges,
+                    agent_id=asserted_by.split(":", 1)[-1],
+                    run_id=run_id,
+                    asserted_by=asserted_by,
+                    source=f"wiki://{config.wiki_name}/{page_id}",
+                    op="remember",
+                )
+            )
+        )
+        return receipt.commit_id
+    except Exception as exc:  # noqa: BLE001 — sync must never block the save
+        click.echo(f"[graph sync failed: {exc}]")
+        return None
+
+
+def _extract_into_graph(
+    root: Path,
+    config: WikiProjectConfig,
+    text: str,
+    source_uri: str,
+    asserted_by: str,
+    run_id: Optional[str],
+) -> Optional[dict[str, Any]]:
+    """Run LLM entity/relation extraction into the project graph plane.
+
+    Requires a ``WIKI_EXTRACT_LLM`` provider spec (env / .env, e.g.
+    ``anthropic:claude-haiku-4-5``). All heavyweight imports are lazy;
+    every failure degrades to ``None`` so the plain remember always
+    succeeds.
+
+    Returns:
+        Extraction summary dict, or ``None`` when unavailable/failed.
+    """
+    spec = _env_setting("WIKI_EXTRACT_LLM")
+    if not spec:
+        click.echo(
+            "[extract skipped: set WIKI_EXTRACT_LLM (e.g."
+            " 'anthropic:claude-haiku-4-5') to enable]"
+        )
+        return None
+    try:
+        from parrot.clients.factory import LLMFactory
+        from parrot.knowledge.graphindex.extractors.llm import LLMGraphExtractor
+        from parrot.knowledge.graphindex.factory import make_stub_tenant_context
+        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
+        from parrot.knowledge.graphindex.publish import GraphPublisher
+
+        client = LLMFactory.create(spec, model_args={"temperature": 0.0})
+        ctx = make_stub_tenant_context(config.wiki_name)
+        publisher = GraphPublisher(
+            SQLitePersistence(config.graph_path(root)), ctx
+        )
+        extractor = LLMGraphExtractor(client, publisher)
+        result = _run(
+            extractor.extract_and_publish(
+                text,
+                source_uri=source_uri,
+                agent_id=asserted_by.split(":", 1)[-1],
+                run_id=run_id,
+            )
+        )
+        return {
+            "entities": len(result.extracted.entities),
+            "relations": len(result.extracted.relations),
+            "nodes_written": len(result.update.nodes),
+            "commit_id": result.receipt.commit_id,
+        }
+    except Exception as exc:  # noqa: BLE001 — extraction is best-effort
+        click.echo(f"[extract failed: {exc}]")
+        return None
+
+
+@wiki.command()
+@click.argument("text")
+@path_option
+@_store_options
+@click.option("--title", default=None, help="Short title (default: first line).")
+@click.option(
+    "--category",
+    default="note",
+    help="Memory category: note | decision | lesson | concept.",
+)
+@click.option(
+    "--link",
+    "links",
+    multiple=True,
+    help="Existing page id to link the memory to (repeatable).",
+)
+@click.option("--rel", default="references", help="Relation for --link edges.")
+@click.option("--source", "source_uri", default=None, help="Citation URI.")
+@click.option("--by", default=None, help="Identity asserting this memory.")
+@click.option(
+    "--extract",
+    "extract_",
+    is_flag=True,
+    help="Also run LLM entity/relation extraction over the text into the"
+    " project graph (requires sync_graph and a WIKI_EXTRACT_LLM provider"
+    " spec, e.g. 'anthropic:claude-haiku-4-5'; degrades to a plain"
+    " remember when unavailable).",
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+def remember(
+    text: str,
+    path_: Optional[str],
+    store_opt: Optional[str],
+    backend_opt: Optional[str],
+    title: Optional[str],
+    category: str,
+    links: tuple[str, ...],
+    rel: str,
+    source_uri: Optional[str],
+    by: Optional[str],
+    extract_: bool,
+    as_json: bool,
+) -> None:
+    """Save a fact, decision, or lesson into the wiki (persistent memory).
+
+    The page id is a deterministic hash of title+category, so
+    re-remembering the same thing updates the existing memory instead of
+    duplicating it. With ``sync_graph`` enabled in ``.parrot/wiki.json``
+    the memory is also mirrored into the project's knowledge graph as an
+    audited commit.
+    """
+    import hashlib
+
+    store, storage_dir, root, config = _resolve_write_store(
+        path_, store_opt, backend_opt
+    )
+    asserted_by = _authoring_identity(by)
+    run_id = _authoring_run_id()
+
+    resolved_title = (title or text.strip().splitlines()[0][:80]).strip()
+    if not resolved_title:
+        raise click.ClickException("Cannot remember empty text.")
+    page_id = "mem-" + hashlib.sha1(
+        f"{resolved_title}::{category}".encode("utf-8")
+    ).hexdigest()[:12]
+
+    from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
+
+    existing = _run(store.get_page(page_id, include_body=False))
+    body = text if not source_uri else f"{text}\n\n> Source: {source_uri}"
+    _run(
+        store.upsert_pages([
+            WikiPageRecord(
+                concept_id=page_id,
+                node_id=page_id,
+                title=resolved_title,
+                category=category,
+                summary=text[:300],
+                body=body,
+                token_count=estimate_tokens(body),
+                origin="memory",
+                asserted_by=asserted_by,
+            )
+        ])
+    )
+
+    linked: list[tuple[str, str]] = []
+    skipped_links: list[str] = []
+    for target in links:
+        page = _run(store.get_page(target, include_body=False))
+        if page is None:
+            skipped_links.append(target)
+            continue
+        _run(store.add_edges([(page_id, page["concept_id"], rel, "asserted")]))
+        linked.append((page["concept_id"], rel))
+
+    from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+
+    WikiBookkeeper().log_operation(
+        storage_dir,
+        "REMEMBER",
+        f"page_id: {page_id}, title: {resolved_title!r}, "
+        f"category: {category}, by: {asserted_by}"
+        + (f", run: {run_id}" if run_id else ""),
+    )
+
+    commit_id: Optional[str] = None
+    if root is not None and config is not None and config.sync_graph:
+        commit_id = _sync_memory_to_graph(
+            root, config, store, page_id, resolved_title, text,
+            linked, asserted_by, run_id,
+        )
+
+    extraction: Optional[dict[str, Any]] = None
+    if extract_ and root is not None and config is not None:
+        extraction = _extract_into_graph(
+            root, config, text,
+            source_uri or f"wiki://{config.wiki_name}/{page_id}",
+            asserted_by, run_id,
+        )
+
+    result = {
+        "page_id": page_id,
+        "title": resolved_title,
+        "category": category,
+        "status": "updated" if existing else "created",
+        "asserted_by": asserted_by,
+        "linked": [t for t, _ in linked],
+        "skipped_links": skipped_links,
+    }
+    if commit_id:
+        result["graph_commit"] = commit_id
+    if extraction:
+        result["extraction"] = extraction
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+        return
+    click.echo(
+        f"{'Updated' if existing else 'Saved'} memory {page_id} "
+        f"({category}): {resolved_title!r}"
+    )
+    for target, rel_name in linked:
+        click.echo(f"  linked → {target} ({rel_name})")
+    for target in skipped_links:
+        click.echo(f"  [skipped link: no page {target!r}]")
+    if commit_id:
+        click.echo(f"  graph commit: {commit_id}")
+    if extraction:
+        click.echo(
+            f"  extracted: {extraction.get('entities', 0)} entities,"
+            f" {extraction.get('relations', 0)} relations"
+            f" (commit {extraction.get('commit_id', '?')})"
+        )
+
+
+@wiki.command()
+@click.argument("page_id")
+@click.argument("text")
+@path_option
+@_store_options
+@click.option("--by", default=None, help="Identity asserting this note.")
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+def note(
+    page_id: str,
+    text: str,
+    path_: Optional[str],
+    store_opt: Optional[str],
+    backend_opt: Optional[str],
+    by: Optional[str],
+    as_json: bool,
+) -> None:
+    """Append an attributed note to an existing wiki page."""
+    from datetime import datetime, timezone
+
+    store, storage_dir, _root, _config = _resolve_write_store(
+        path_, store_opt, backend_opt
+    )
+    page = _run(store.get_page(page_id, include_body=True))
+    if page is None:
+        raise click.ClickException(
+            f"Page {page_id!r} not found. Search first: wikitoolkit query \"...\""
+        )
+    asserted_by = _authoring_identity(by)
+    stamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
+    body = str(page.get("body") or "")
+    body += f"\n\n> **Note ({stamp}, {asserted_by}):** {text}"
+
+    from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
+
+    _run(
+        store.upsert_pages([
+            WikiPageRecord(
+                concept_id=page["concept_id"],
+                node_id=page.get("node_id"),
+                title=page.get("title") or page["concept_id"],
+                category=page.get("category") or "concept",
+                summary=page.get("summary") or "",
+                body=body,
+                source_id=page.get("source_id"),
+                token_count=estimate_tokens(body),
+                origin=page.get("origin") or "ingest",
+                asserted_by=asserted_by,
+            )
+        ])
+    )
+    from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+
+    WikiBookkeeper().log_operation(
+        storage_dir,
+        "NOTE",
+        f"page_id: {page['concept_id']}, by: {asserted_by}",
+    )
+    result = {"page_id": page["concept_id"], "status": "noted", "by": asserted_by}
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+    else:
+        click.echo(f"Noted on {page['concept_id']} (by {asserted_by}).")
+
+
+@wiki.command()
+@click.argument("src")
+@click.argument("dst")
+@path_option
+@_store_options
+@click.option("--rel", default="references", help="Edge relation.")
+@click.option("--by", default=None, help="Identity asserting this link.")
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+def link(
+    src: str,
+    dst: str,
+    path_: Optional[str],
+    store_opt: Optional[str],
+    backend_opt: Optional[str],
+    rel: str,
+    by: Optional[str],
+    as_json: bool,
+) -> None:
+    """Connect two existing wiki pages with an asserted, typed edge."""
+    store, storage_dir, _root, _config = _resolve_write_store(
+        path_, store_opt, backend_opt
+    )
+    pages = {}
+    for label, cid in (("src", src), ("dst", dst)):
+        page = _run(store.get_page(cid, include_body=False))
+        if page is None:
+            raise click.ClickException(f"{label} page {cid!r} not found.")
+        pages[label] = page["concept_id"]
+    asserted_by = _authoring_identity(by)
+    _run(store.add_edges([(pages["src"], pages["dst"], rel, "asserted")]))
+
+    from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+
+    WikiBookkeeper().log_operation(
+        storage_dir,
+        "LINK",
+        f"{pages['src']} -{rel}-> {pages['dst']}, by: {asserted_by}",
+    )
+    result = {
+        "src": pages["src"],
+        "dst": pages["dst"],
+        "rel": rel,
+        "status": "linked",
+        "by": asserted_by,
+    }
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+    else:
+        click.echo(f"Linked {pages['src']} -{rel}-> {pages['dst']}.")
+
+
+@wiki.command()
+@path_option
+@_store_options
+@click.option("--category", default=None, help="Filter by category.")
+@click.option("--limit", default=50, type=int, help="Maximum rows.")
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+def memories(
+    path_: Optional[str],
+    store_opt: Optional[str],
+    backend_opt: Optional[str],
+    category: Optional[str],
+    limit: int,
+    as_json: bool,
+) -> None:
+    """List saved memories and agent-authored pages (newest first)."""
+    store, _storage_dir, _root, _config = _resolve_write_store(
+        path_, store_opt, backend_opt
+    )
+    rows = _run(
+        store.list_pages(
+            category=category, limit=limit, origin=["memory", "authored"]
+        )
+    )
+    if as_json:
+        click.echo(json.dumps(rows, indent=2, default=str))
+        return
+    if not rows:
+        click.echo("No memories saved yet. Save one: wikitoolkit remember \"...\"")
+        return
+    for row in rows:
+        click.echo(
+            f"{row['concept_id']}  [{row.get('category')}]"
+            f"  {row.get('title')!r}"
+            f"  — {row.get('asserted_by') or '?'} @ {row.get('updated_at')}"
+        )
+
+
+@wiki.command()
+@path_option
+@_store_options
+@click.option("--limit", default=30, type=int, help="Maximum entries per plane.")
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+def audit(
+    path_: Optional[str],
+    store_opt: Optional[str],
+    backend_opt: Optional[str],
+    limit: int,
+    as_json: bool,
+) -> None:
+    """Show the wiki operation log and graph write commits (audit trail)."""
+    _store, storage_dir, root, config = _resolve_write_store(
+        path_, store_opt, backend_opt
+    )
+    from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+
+    log_text = WikiBookkeeper().read_log(storage_dir, last_n=limit)
+
+    graph_commits: list[dict[str, Any]] = []
+    if root is not None and config is not None:
+        graph_db = config.graph_path(root) / f"{config.wiki_name}.db"
+        if graph_db.exists():
+            try:
+                from parrot.knowledge.graphindex.factory import (
+                    make_stub_tenant_context,
+                )
+                from parrot.knowledge.graphindex.persist_sqlite import (
+                    SQLitePersistence,
+                )
+
+                persistence = SQLitePersistence(config.graph_path(root))
+                ctx = make_stub_tenant_context(config.wiki_name)
+                graph_commits = _run(persistence.list_commits(ctx, limit=limit))
+            except Exception as exc:  # noqa: BLE001
+                click.echo(f"[graph audit unavailable: {exc}]")
+
+    if as_json:
+        click.echo(
+            json.dumps(
+                {"log": log_text.splitlines(), "graph_commits": graph_commits},
+                indent=2,
+                default=str,
+            )
+        )
+        return
+    click.echo("## Wiki operation log")
+    click.echo(log_text or "(empty)")
+    if graph_commits:
+        click.echo("\n## Graph write commits")
+        for c in graph_commits:
+            reverted = " [REVERTED]" if c.get("reverted_at") else ""
+            click.echo(
+                f"{c['commit_id']}  {c['op']}  by {c['asserted_by']}"
+                f"  @ {c['committed_at']}{reverted}"
+            )
+
+
+@wiki.command()
+@click.argument("claim")
+@path_option
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+def ground(
+    claim: str,
+    path_: Optional[str],
+    as_json: bool,
+) -> None:
+    """Check a claim against the project knowledge graph (grounding).
+
+    Requires the project graph plane (``.parrot/graph/``) created by
+    ``remember`` with ``sync_graph`` enabled or by ``--extract``.
+    Returns cited edge-level evidence, or a structured revise
+    instruction listing the missing evidence.
+    """
+    root, config = _resolve_project(path_)
+    graph_db = config.graph_path(root) / f"{config.wiki_name}.db"
+    if not graph_db.exists():
+        raise click.ClickException(
+            f"No graph plane at {graph_db}. Save graph-synced knowledge"
+            " first (enable sync_graph in .parrot/wiki.json, then"
+            " `wikitoolkit remember ...`)."
+        )
+    try:
+        from parrot.knowledge.graphindex.assemble import GraphAssembler
+        from parrot.knowledge.graphindex.factory import (
+            HashingGraphEmbedder,
+            make_stub_tenant_context,
+        )
+        from parrot.knowledge.graphindex.grounding import GroundingEvaluator
+        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
+        from parrot.knowledge.graphindex.retriever import GraphExpandedRetriever
+    except ImportError as exc:
+        raise click.ClickException(f"graphindex unavailable: {exc}") from exc
+
+    async def _ground() -> dict[str, Any]:
+        persistence = SQLitePersistence(config.graph_path(root))
+        ctx = make_stub_tenant_context(config.wiki_name)
+        nodes, edges = await persistence.load_graph(ctx)
+        assembler = GraphAssembler(tenant_id=config.wiki_name)
+        for node in nodes:
+            assembler.add_node(node)
+        for edge in edges:
+            assembler.add_edge(edge)
+        embedder = HashingGraphEmbedder()
+        if nodes:
+            await embedder.embed_nodes(nodes)
+        retriever = GraphExpandedRetriever(
+            graph=assembler.graph, nodes=nodes, embedder=embedder
+        )
+        result = await GroundingEvaluator(retriever).ground_claim(claim)
+        return result.model_dump()
+
+    data = _run(_ground())
+    if as_json:
+        click.echo(json.dumps(data, indent=2))
+        return
+    click.echo(f"Decision: {data['decision'].upper()}")
+    click.echo(f"Reason:   {data['reason']}")
+    if data.get("supported_paths"):
+        click.echo("Evidence paths (stable edge ids):")
+        for path in data["supported_paths"]:
+            click.echo(f"  - {' ; '.join(path)}")
+    if data.get("contradictions"):
+        click.echo(f"Contradictions: {', '.join(data['contradictions'])}")
+    for needed in data.get("required_evidence", []):
+        click.echo(f"Required: {needed}")
+
+
 @wiki.command(name="claude-hook", hidden=True)
 def claude_hook() -> None:
     """Claude Code PreToolUse hook runtime (reads stdin JSON).

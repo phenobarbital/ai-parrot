@@ -115,6 +115,7 @@ class TestNodeKindWikiPage:
         assert NodeKind.RATIONALE.value == "rationale"
         assert NodeKind.SKILL.value == "skill"
 
-    def test_seven_node_kinds(self):
-        """NodeKind now has exactly 7 members (6 original + WIKI_PAGE)."""
-        assert len(NodeKind) == 7
+    def test_node_kind_count(self):
+        """NodeKind members: 6 original + WIKI_PAGE (FEAT-260) + RUN/CLAIM
+        (graph-knowledge-persistence work-lineage kinds)."""
+        assert len(NodeKind) == 9

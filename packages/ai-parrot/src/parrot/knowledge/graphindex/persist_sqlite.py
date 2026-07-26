@@ -17,12 +17,17 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Optional
+
+import uuid
 
 import aiosqlite
 import orjson
 
 from parrot.knowledge.graphindex.schema import (
+    AssertionMeta,
+    CommitReceipt,
+    GraphUpdate,
     UniversalEdge,
     UniversalNode,
 )
@@ -50,7 +55,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     content_ref   TEXT,
     embedding_ref TEXT,
     provenance    TEXT NOT NULL,
-    domain_tags   TEXT
+    domain_tags   TEXT,
+    assertion     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_nodes_source_uri ON nodes(source_uri);
 CREATE INDEX IF NOT EXISTS idx_nodes_parent     ON nodes(parent_id);
@@ -63,6 +69,7 @@ CREATE TABLE IF NOT EXISTS edges (
     provenance  TEXT NOT NULL,
     confidence  REAL,
     source_uri  TEXT,
+    assertion   TEXT,
     PRIMARY KEY (source_id, target_id, kind)
 );
 CREATE INDEX IF NOT EXISTS idx_edges_kind       ON edges(kind, source_id);
@@ -71,7 +78,39 @@ CREATE INDEX IF NOT EXISTS idx_edges_source_uri ON edges(source_uri);
 CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
     node_id UNINDEXED, title, summary, tokenize = 'unicode61'
 );
+
+CREATE TABLE IF NOT EXISTS graph_commits (
+    commit_id    TEXT PRIMARY KEY,
+    op           TEXT NOT NULL,
+    agent_id     TEXT,
+    run_id       TEXT,
+    asserted_by  TEXT NOT NULL,
+    reason       TEXT,
+    committed_at TEXT NOT NULL,
+    payload      TEXT NOT NULL,
+    reverted_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_commits_run   ON graph_commits(run_id);
+CREATE INDEX IF NOT EXISTS idx_commits_agent ON graph_commits(agent_id);
+
+CREATE TABLE IF NOT EXISTS graph_commit_items (
+    commit_id  TEXT NOT NULL,
+    item_type  TEXT NOT NULL,
+    item_key   TEXT NOT NULL,
+    prior      TEXT,
+    PRIMARY KEY (commit_id, item_type, item_key)
+);
+CREATE INDEX IF NOT EXISTS idx_commit_items_key ON graph_commit_items(item_type, item_key);
 """
+
+# Columns added after the original FEAT-240 schema shipped.  ``CREATE TABLE
+# IF NOT EXISTS`` silently skips existing databases, so ``_migrate`` ALTERs
+# these in when missing (idempotent, no data rewrite).
+_MIGRATION_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "nodes": [("assertion", "TEXT")],
+    "edges": [("assertion", "TEXT")],
+    "graph_commits": [("reverted_at", "TEXT")],
+}
 
 
 def _now_iso() -> str:
@@ -82,6 +121,18 @@ def _now_iso() -> str:
 def _tags_json(node: UniversalNode) -> str:
     """Serialize a node's domain_tags to a JSON string via orjson."""
     return orjson.dumps(node.domain_tags).decode()
+
+
+def _assertion_json(item: UniversalNode | UniversalEdge) -> str | None:
+    """Serialize a node/edge ``assertion`` to JSON, or ``None`` when absent."""
+    if item.assertion is None:
+        return None
+    return orjson.dumps(item.assertion.model_dump(exclude_none=True)).decode()
+
+
+def _edge_key(source_id: str, target_id: str, kind: str) -> str:
+    """Compose the canonical ``item_key`` string for an edge."""
+    return f"{source_id}|{target_id}|{kind}"
 
 
 class SQLitePersistence:
@@ -134,8 +185,28 @@ class SQLitePersistence:
         async with aiosqlite.connect(str(self._db_path(ctx))) as conn:
             conn.row_factory = aiosqlite.Row
             await conn.executescript(_SCHEMA_SQL)
+            await self._migrate(conn)
             await conn.commit()
             yield conn
+
+    async def _migrate(self, conn: aiosqlite.Connection) -> None:
+        """Add columns that post-date the original schema when missing.
+
+        ``CREATE TABLE IF NOT EXISTS`` never alters existing tables, so
+        databases created before the assertion/audit columns shipped are
+        upgraded here via idempotent ``ALTER TABLE ... ADD COLUMN``.
+
+        Args:
+            conn: Open database connection (schema already ensured).
+        """
+        for table, columns in _MIGRATION_COLUMNS.items():
+            async with conn.execute(f"PRAGMA table_info({table})") as cur:
+                existing = {row["name"] for row in await cur.fetchall()}
+            for name, col_type in columns:
+                if name not in existing:
+                    await conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {name} {col_type}"
+                    )
 
     async def _upsert_files(
         self,
@@ -214,8 +285,8 @@ class SQLitePersistence:
             await conn.executemany(
                 "INSERT OR REPLACE INTO nodes"
                 " (node_id, kind, title, source_uri, parent_id, summary,"
-                "  content_ref, embedding_ref, provenance, domain_tags)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "  content_ref, embedding_ref, provenance, domain_tags, assertion)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         n.node_id,
@@ -228,6 +299,7 @@ class SQLitePersistence:
                         n.embedding_ref,
                         n.provenance.value,
                         _tags_json(n),
+                        _assertion_json(n),
                     )
                     for n in nodes
                 ],
@@ -235,8 +307,9 @@ class SQLitePersistence:
 
             await conn.executemany(
                 "INSERT OR REPLACE INTO edges"
-                " (source_id, target_id, kind, provenance, confidence, source_uri)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
+                " (source_id, target_id, kind, provenance, confidence,"
+                "  source_uri, assertion)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         e.source_id,
@@ -245,6 +318,7 @@ class SQLitePersistence:
                         e.provenance.value,
                         e.confidence,
                         None,
+                        _assertion_json(e),
                     )
                     for e in edges
                 ],
@@ -323,8 +397,8 @@ class SQLitePersistence:
             await conn.executemany(
                 "INSERT OR REPLACE INTO nodes"
                 " (node_id, kind, title, source_uri, parent_id, summary,"
-                "  content_ref, embedding_ref, provenance, domain_tags)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "  content_ref, embedding_ref, provenance, domain_tags, assertion)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         n.node_id,
@@ -337,6 +411,7 @@ class SQLitePersistence:
                         n.embedding_ref,
                         n.provenance.value,
                         _tags_json(n),
+                        _assertion_json(n),
                     )
                     for n in nodes
                 ],
@@ -354,12 +429,14 @@ class SQLitePersistence:
                     e.provenance.value,
                     e.confidence,
                     src_uri,
+                    _assertion_json(e),
                 ))
 
             await conn.executemany(
                 "INSERT OR REPLACE INTO edges"
-                " (source_id, target_id, kind, provenance, confidence, source_uri)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
+                " (source_id, target_id, kind, provenance, confidence,"
+                "  source_uri, assertion)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
                 edge_rows,
             )
 
@@ -427,3 +504,484 @@ class SQLitePersistence:
             if row["mtime"] != mtime:
                 return True
             return False
+
+    # ------------------------------------------------------------------
+    # Agent write path — GraphUpdate commits (durable graph memory)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _row_to_node(row: aiosqlite.Row) -> Optional[UniversalNode]:
+        """Rehydrate a ``UniversalNode`` from a nodes-table row.
+
+        Returns ``None`` (with a warning) when the row carries an enum
+        value unknown to this code version — forward compatibility with
+        databases written by newer versions.
+        """
+        try:
+            assertion = None
+            raw_assertion = row["assertion"] if "assertion" in row.keys() else None
+            if raw_assertion:
+                assertion = AssertionMeta(**orjson.loads(raw_assertion))
+            return UniversalNode(
+                node_id=row["node_id"],
+                kind=row["kind"],
+                title=row["title"],
+                source_uri=row["source_uri"],
+                parent_id=row["parent_id"],
+                summary=row["summary"],
+                content_ref=row["content_ref"],
+                embedding_ref=row["embedding_ref"],
+                provenance=row["provenance"],
+                domain_tags=orjson.loads(row["domain_tags"]) if row["domain_tags"] else {},
+                assertion=assertion,
+            )
+        except Exception as exc:  # noqa: BLE001 — skip-and-warn on unknown kinds
+            logger.warning(
+                "SQLitePersistence: skipping unreadable node row %r: %s",
+                row["node_id"] if "node_id" in row.keys() else "?",
+                exc,
+            )
+            return None
+
+    @staticmethod
+    def _row_to_edge(row: aiosqlite.Row) -> Optional[UniversalEdge]:
+        """Rehydrate a ``UniversalEdge`` from an edges-table row.
+
+        Returns ``None`` (with a warning) on unknown enum values.
+        """
+        try:
+            assertion = None
+            raw_assertion = row["assertion"] if "assertion" in row.keys() else None
+            if raw_assertion:
+                assertion = AssertionMeta(**orjson.loads(raw_assertion))
+            return UniversalEdge(
+                source_id=row["source_id"],
+                target_id=row["target_id"],
+                kind=row["kind"],
+                provenance=row["provenance"],
+                confidence=row["confidence"],
+                assertion=assertion,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "SQLitePersistence: skipping unreadable edge row (%r → %r): %s",
+                row["source_id"] if "source_id" in row.keys() else "?",
+                row["target_id"] if "target_id" in row.keys() else "?",
+                exc,
+            )
+            return None
+
+    async def load_graph(
+        self,
+        ctx: TenantContext,
+    ) -> tuple[list[UniversalNode], list[UniversalEdge]]:
+        """Load and rehydrate the full tenant graph as schema models.
+
+        Rows with enum values unknown to this code version are skipped
+        with a warning instead of raising, so an older library can still
+        open a database written by a newer one.
+
+        Args:
+            ctx: Tenant context.
+
+        Returns:
+            ``(nodes, edges)`` lists of validated models. Empty lists
+            when the database does not exist yet.
+        """
+        if not self._db_path(ctx).exists():
+            return [], []
+        nodes: list[UniversalNode] = []
+        edges: list[UniversalEdge] = []
+        async with self._connect(ctx) as conn:
+            async with conn.execute("SELECT * FROM nodes") as cur:
+                async for row in cur:
+                    node = self._row_to_node(row)
+                    if node is not None:
+                        nodes.append(node)
+            async with conn.execute("SELECT * FROM edges") as cur:
+                async for row in cur:
+                    edge = self._row_to_edge(row)
+                    if edge is not None:
+                        edges.append(edge)
+        return nodes, edges
+
+    async def apply_update(
+        self,
+        ctx: TenantContext,
+        update: GraphUpdate,
+    ) -> CommitReceipt:
+        """Apply a :class:`GraphUpdate` in one audited transaction.
+
+        Captures the pre-image of every touched row into
+        ``graph_commit_items`` (enabling :meth:`revert_commit`), upserts
+        nodes and edges, deletes ``removed_edges``, refreshes the FTS
+        rows for exactly the written nodes (never the whole index), and
+        records the commit with its full payload snapshot.
+
+        Args:
+            ctx: Tenant context.
+            update: The validated update batch to apply.
+
+        Returns:
+            A :class:`CommitReceipt` describing the recorded commit.
+        """
+        commit_id = uuid.uuid4().hex[:16]
+        committed_at = _now_iso()
+        warnings: list[str] = []
+
+        async with self._connect(ctx) as conn:
+            # --- capture pre-images -----------------------------------
+            node_keys = [(n.node_id, "node") for n in update.nodes] + [
+                (node_id, "node_removed") for node_id in update.removed_nodes
+            ]
+            for node_id, item_type in node_keys:
+                async with conn.execute(
+                    "SELECT * FROM nodes WHERE node_id = ?", (node_id,)
+                ) as cur:
+                    row = await cur.fetchone()
+                prior = orjson.dumps(dict(row)).decode() if row else None
+                await conn.execute(
+                    "INSERT OR REPLACE INTO graph_commit_items"
+                    " (commit_id, item_type, item_key, prior) VALUES (?, ?, ?, ?)",
+                    (commit_id, item_type, node_id, prior),
+                )
+            # Incident edges of removed nodes are implicitly removed —
+            # capture them so the removal is fully revertible.
+            implicit_removed: list[tuple[str, str, str]] = []
+            for node_id in update.removed_nodes:
+                async with conn.execute(
+                    "SELECT source_id, target_id, kind FROM edges"
+                    " WHERE source_id = ? OR target_id = ?",
+                    (node_id, node_id),
+                ) as cur:
+                    for row in await cur.fetchall():
+                        implicit_removed.append(
+                            (row["source_id"], row["target_id"], row["kind"])
+                        )
+            removed_edge_set = {
+                tuple(t) for t in update.removed_edges
+            } | set(implicit_removed)
+
+            edge_triples = [
+                (e.source_id, e.target_id, e.kind.value) for e in update.edges
+            ] + sorted(removed_edge_set)
+            for src, tgt, kind in edge_triples:
+                async with conn.execute(
+                    "SELECT * FROM edges WHERE source_id = ? AND target_id = ?"
+                    " AND kind = ?",
+                    (src, tgt, kind),
+                ) as cur:
+                    row = await cur.fetchone()
+                prior = orjson.dumps(dict(row)).decode() if row else None
+                item_type = (
+                    "edge_removed" if (src, tgt, kind) in removed_edge_set else "edge"
+                )
+                await conn.execute(
+                    "INSERT OR REPLACE INTO graph_commit_items"
+                    " (commit_id, item_type, item_key, prior) VALUES (?, ?, ?, ?)",
+                    (commit_id, item_type, _edge_key(src, tgt, kind), prior),
+                )
+
+            # --- apply writes -----------------------------------------
+            if update.nodes:
+                await conn.executemany(
+                    "INSERT OR REPLACE INTO nodes"
+                    " (node_id, kind, title, source_uri, parent_id, summary,"
+                    "  content_ref, embedding_ref, provenance, domain_tags,"
+                    "  assertion)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        (
+                            n.node_id,
+                            n.kind.value,
+                            n.title,
+                            n.source_uri,
+                            n.parent_id,
+                            n.summary,
+                            n.content_ref,
+                            n.embedding_ref,
+                            n.provenance.value,
+                            _tags_json(n),
+                            _assertion_json(n),
+                        )
+                        for n in update.nodes
+                    ],
+                )
+                # Partial FTS refresh — only the nodes in this update.
+                await self._insert_nodes_fts(conn, update.nodes)
+            if update.edges:
+                await conn.executemany(
+                    "INSERT OR REPLACE INTO edges"
+                    " (source_id, target_id, kind, provenance, confidence,"
+                    "  source_uri, assertion)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        (
+                            e.source_id,
+                            e.target_id,
+                            e.kind.value,
+                            e.provenance.value,
+                            e.confidence,
+                            None,
+                            _assertion_json(e),
+                        )
+                        for e in update.edges
+                    ],
+                )
+            for src, tgt, kind in sorted(removed_edge_set):
+                await conn.execute(
+                    "DELETE FROM edges WHERE source_id = ? AND target_id = ?"
+                    " AND kind = ?",
+                    (src, tgt, kind),
+                )
+            for node_id in update.removed_nodes:
+                await conn.execute(
+                    "DELETE FROM nodes WHERE node_id = ?", (node_id,)
+                )
+                await conn.execute(
+                    "DELETE FROM nodes_fts WHERE node_id = ?", (node_id,)
+                )
+
+            # --- record the commit ------------------------------------
+            await conn.execute(
+                "INSERT INTO graph_commits"
+                " (commit_id, op, agent_id, run_id, asserted_by, reason,"
+                "  committed_at, payload)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    commit_id,
+                    update.op,
+                    update.agent_id,
+                    update.run_id,
+                    update.asserted_by,
+                    update.reason,
+                    committed_at,
+                    orjson.dumps(update.model_dump(mode="json")).decode(),
+                ),
+            )
+            await conn.commit()
+
+        logger.info(
+            "SQLitePersistence.apply_update: commit %s (%s) — %d nodes,"
+            " %d edges, %d removed",
+            commit_id,
+            update.op,
+            len(update.nodes),
+            len(update.edges),
+            len(update.removed_edges),
+        )
+        return CommitReceipt(
+            commit_id=commit_id,
+            op=update.op,
+            node_ids=[n.node_id for n in update.nodes] + list(update.removed_nodes),
+            edge_keys=[
+                (e.source_id, e.target_id, e.kind.value) for e in update.edges
+            ]
+            + sorted(removed_edge_set),
+            committed_at=committed_at,
+            warnings=warnings,
+        )
+
+    async def get_commit(
+        self,
+        ctx: TenantContext,
+        commit_id: str,
+    ) -> Optional[dict[str, Any]]:
+        """Return a recorded commit with its payload and items.
+
+        Args:
+            ctx: Tenant context.
+            commit_id: The commit to fetch.
+
+        Returns:
+            A dict with the commit row, decoded ``payload`` and its
+            ``items``, or ``None`` when unknown.
+        """
+        async with self._connect(ctx) as conn:
+            async with conn.execute(
+                "SELECT * FROM graph_commits WHERE commit_id = ?", (commit_id,)
+            ) as cur:
+                row = await cur.fetchone()
+            if row is None:
+                return None
+            commit = dict(row)
+            commit["payload"] = orjson.loads(commit["payload"])
+            async with conn.execute(
+                "SELECT item_type, item_key, prior FROM graph_commit_items"
+                " WHERE commit_id = ?",
+                (commit_id,),
+            ) as cur:
+                commit["items"] = [dict(r) for r in await cur.fetchall()]
+            return commit
+
+    async def list_commits(
+        self,
+        ctx: TenantContext,
+        run_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """List recorded commits, newest first.
+
+        Args:
+            ctx: Tenant context.
+            run_id: Optional filter on the producing run.
+            agent_id: Optional filter on the producing agent.
+            limit: Maximum rows returned.
+
+        Returns:
+            Commit rows (payload omitted for brevity) as dicts.
+        """
+        if not self._db_path(ctx).exists():
+            return []
+        clauses: list[str] = []
+        params: list[Any] = []
+        if run_id is not None:
+            clauses.append("run_id = ?")
+            params.append(run_id)
+        if agent_id is not None:
+            clauses.append("agent_id = ?")
+            params.append(agent_id)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(int(limit))
+        async with self._connect(ctx) as conn:
+            async with conn.execute(
+                "SELECT commit_id, op, agent_id, run_id, asserted_by, reason,"
+                f" committed_at, reverted_at FROM graph_commits{where}"
+                " ORDER BY committed_at DESC, commit_id DESC LIMIT ?",
+                params,
+            ) as cur:
+                return [dict(r) for r in await cur.fetchall()]
+
+    async def revert_commit(
+        self,
+        ctx: TenantContext,
+        commit_id: str,
+    ) -> dict[str, Any]:
+        """Restore the pre-images captured by a commit.
+
+        Rows that had a pre-image are restored to it; rows created by the
+        commit (no pre-image) are deleted. The revert is refused when a
+        LATER commit touched any of the same item keys — reverting would
+        silently clobber the newer write.
+
+        Args:
+            ctx: Tenant context.
+            commit_id: The commit to revert.
+
+        Returns:
+            ``{"status": "reverted", ...}`` on success or
+            ``{"error": ...}`` on refusal/unknown commit.
+        """
+        async with self._connect(ctx) as conn:
+            async with conn.execute(
+                "SELECT committed_at, reverted_at FROM graph_commits"
+                " WHERE commit_id = ?",
+                (commit_id,),
+            ) as cur:
+                commit_row = await cur.fetchone()
+            if commit_row is None:
+                return {"error": f"revert_commit: unknown commit {commit_id!r}"}
+            if commit_row["reverted_at"]:
+                return {"error": f"revert_commit: {commit_id!r} already reverted"}
+
+            async with conn.execute(
+                "SELECT item_type, item_key, prior FROM graph_commit_items"
+                " WHERE commit_id = ?",
+                (commit_id,),
+            ) as cur:
+                items = [dict(r) for r in await cur.fetchall()]
+            if not items:
+                return {"error": f"revert_commit: commit {commit_id!r} has no items"}
+
+            # Refuse when a later commit touched any of the same keys.
+            # Ordering uses the commits table's implicit rowid — the
+            # ISO timestamp only has 1-second resolution.
+            conflicts: list[str] = []
+            for item in items:
+                item_key = item["item_key"]
+                async with conn.execute(
+                    "SELECT c.commit_id FROM graph_commit_items i"
+                    " JOIN graph_commits c ON c.commit_id = i.commit_id"
+                    " WHERE i.item_key = ? AND i.commit_id != ?"
+                    "  AND c.reverted_at IS NULL"
+                    "  AND c.rowid > (SELECT rowid FROM graph_commits"
+                    "                 WHERE commit_id = ?)",
+                    (item_key, commit_id, commit_id),
+                ) as cur:
+                    later = await cur.fetchall()
+                if later:
+                    conflicts.append(item_key)
+            if conflicts:
+                return {
+                    "error": "revert_commit: later commits touched the same items",
+                    "conflicts": sorted(set(conflicts)),
+                }
+
+            restored, deleted = 0, 0
+            for item in items:
+                prior = orjson.loads(item["prior"]) if item["prior"] else None
+                if item["item_type"] in ("node", "node_removed"):
+                    if prior is None:
+                        await conn.execute(
+                            "DELETE FROM nodes WHERE node_id = ?",
+                            (item["item_key"],),
+                        )
+                        await conn.execute(
+                            "DELETE FROM nodes_fts WHERE node_id = ?",
+                            (item["item_key"],),
+                        )
+                        deleted += 1
+                    else:
+                        columns = list(prior.keys())
+                        await conn.execute(
+                            f"INSERT OR REPLACE INTO nodes ({', '.join(columns)})"
+                            f" VALUES ({', '.join('?' for _ in columns)})",
+                            [prior[c] for c in columns],
+                        )
+                        await conn.execute(
+                            "INSERT OR REPLACE INTO nodes_fts"
+                            " (node_id, title, summary) VALUES (?, ?, ?)",
+                            (
+                                prior.get("node_id"),
+                                prior.get("title", ""),
+                                prior.get("summary") or "",
+                            ),
+                        )
+                        restored += 1
+                else:  # edge / edge_removed
+                    src, tgt, kind = item["item_key"].split("|", 2)
+                    if prior is None:
+                        await conn.execute(
+                            "DELETE FROM edges WHERE source_id = ?"
+                            " AND target_id = ? AND kind = ?",
+                            (src, tgt, kind),
+                        )
+                        deleted += 1
+                    else:
+                        columns = list(prior.keys())
+                        await conn.execute(
+                            f"INSERT OR REPLACE INTO edges ({', '.join(columns)})"
+                            f" VALUES ({', '.join('?' for _ in columns)})",
+                            [prior[c] for c in columns],
+                        )
+                        restored += 1
+
+            await conn.execute(
+                "UPDATE graph_commits SET reverted_at = ? WHERE commit_id = ?",
+                (_now_iso(), commit_id),
+            )
+            await conn.commit()
+
+        logger.info(
+            "SQLitePersistence.revert_commit: %s — %d restored, %d deleted",
+            commit_id,
+            restored,
+            deleted,
+        )
+        return {
+            "status": "reverted",
+            "commit_id": commit_id,
+            "restored": restored,
+            "deleted": deleted,
+        }

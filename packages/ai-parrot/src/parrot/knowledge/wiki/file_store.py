@@ -347,6 +347,8 @@ class InMemoryWikiStore(BaseWikiStore):
                 "source_id",
                 "token_count",
                 "updated_at",
+                "origin",
+                "asserted_by",
             )
         }
 
@@ -374,6 +376,8 @@ class InMemoryWikiStore(BaseWikiStore):
                 "token_count": p.token_count or estimate_tokens(p.body),
                 "created_at": existing.get("created_at") or now,
                 "updated_at": now,
+                "origin": p.origin,
+                "asserted_by": p.asserted_by,
             }
             old_path = (
                 self._page_path(existing) if existing else None
@@ -386,13 +390,18 @@ class InMemoryWikiStore(BaseWikiStore):
         await self._persist_pages(rows)
         return len(rows)
 
-    async def add_edges(self, edges: list[tuple[str, str, str]]) -> int:
-        """Insert typed edges and re-persist affected source pages."""
+    async def add_edges(self, edges: list[tuple]) -> int:
+        """Insert typed edges and re-persist affected source pages.
+
+        Accepts ``(src, dst, rel)`` and ``(src, dst, rel, provenance)``
+        tuples; the in-memory index keeps only the typed triple.
+        """
         if not edges:
             return 0
         await self._ensure_loaded()
         touched: set[str] = set()
-        for src, dst, rel in edges:
+        for edge in edges:
+            src, dst, rel = edge[0], edge[1], edge[2]
             self._index_edge(src, dst, rel)
             touched.add(src)
         # relates_to lives in the source page's frontmatter
@@ -497,13 +506,15 @@ class InMemoryWikiStore(BaseWikiStore):
         self,
         category: Optional[str] = None,
         limit: int = 100,
+        origin: Optional[list[str]] = None,
     ) -> list[dict[str, Any]]:
-        """List page stubs, optionally filtered by category."""
+        """List page stubs, optionally filtered by category/origin."""
         await self._ensure_loaded()
         rows = [
             self._stub(p)
             for p in self._pages.values()
-            if category is None or p.get("category") == category
+            if (category is None or p.get("category") == category)
+            and (not origin or p.get("origin", "ingest") in origin)
         ]
         rows.sort(key=lambda r: str(r.get("updated_at") or ""), reverse=True)
         return rows[:limit]
