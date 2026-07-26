@@ -86,7 +86,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -96,8 +96,8 @@
       "parallelism_notes": "Edits definition.py/flow.py/session_state.py/models.py — core shared files. Depends on 1906 so retried workers dispatch with synced prompts.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1910-qa-repair-loop-topology.md"
+      "completed_at": "2026-07-26T23:04:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1910-qa-repair-loop-topology.md"
     },
     {
       "id": "TASK-1911",
