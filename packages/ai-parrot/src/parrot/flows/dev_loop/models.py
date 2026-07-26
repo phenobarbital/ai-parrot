@@ -520,6 +520,18 @@ class QAReport(BaseModel):
         default_factory=list,
         description="Qualitative findings emitted by the code-review gate.",
     )
+    attempt: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "FEAT-377 TASK-1910: which QA attempt produced this report "
+            "(1-based). Lives ON the report — not merely in shared state — "
+            "because the engine's `cel_evaluator` coerces the node result "
+            "via `model_dump()`, so the qa→development retry / "
+            "qa→failure_handler exhaustion CEL predicates can only "
+            "reference fields on `QAReport` itself."
+        ),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────

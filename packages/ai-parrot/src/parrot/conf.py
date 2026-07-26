@@ -979,6 +979,14 @@ DEV_LOOP_ACTIONS_RETENTION_DAYS: int = config.getint(
     "DEV_LOOP_ACTIONS_RETENTION_DAYS", fallback=7
 )
 
+# FEAT-377 (TASK-1910): bounded QA→development repair-loop cap. A failed QA
+# attempt redispatches development (with QAReport feedback) while
+# `QAReport.attempt < N`; at `attempt >= N` the run escalates to
+# `failure_handler` as before. Read at ``build_dev_loop_definition()`` /
+# ``build_dev_loop_flow()`` call time (not import time) so tests can
+# monkeypatch it per-case.
+DEV_LOOP_QA_MAX_RETRIES: int = config.getint("DEV_LOOP_QA_MAX_RETRIES", fallback=2)
+
 # FEAT-375: Codex CLI adversarial second-opinion agent. These settings back
 # the "codex-adversarial" / "parallel" ``DEV_LOOP_CODEREVIEW_AGENT`` values
 # above — kept append-only here (rather than reflowing the block near

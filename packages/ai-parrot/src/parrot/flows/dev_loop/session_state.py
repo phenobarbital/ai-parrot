@@ -258,6 +258,10 @@ class DevLoopSessionState(_Frozen):
     gates: Dict[str, ApprovalGate] = Field(default_factory=dict)
     cancel_requested_by: str = ""
     error: str = ""
+    # FEAT-377 (TASK-1910): bounded QA→development repair loop. Persisted via
+    # QaAttemptRecorded so the attempt count is replayable via ``view=state``.
+    qa_attempts: int = 0
+    qa_notes: str = ""
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -403,6 +407,23 @@ class PullRequestLinked(_ActionBase):
     changeset: str = ""             # changeset channel URI
 
 
+class QaAttemptRecorded(_ActionBase):
+    """Recorded each time QA fails and a repair retry is dispatched
+    (FEAT-377 TASK-1910 — G1 bounded QA→development repair loop).
+
+    Note: the spec's §2 Data Models sketch names this action's `type`
+    literal ``"qa_attempt_recorded"``; every other action in this union
+    follows a strict ``"<namespace>/camelCase"`` convention (e.g.
+    ``"run/jiraLinked"``), so this uses ``"run/qaAttemptRecorded"``
+    instead for consistency — semantically identical, no reducer dispatch
+    anywhere parses the string structurally.
+    """
+
+    type: Literal["run/qaAttemptRecorded"] = "run/qaAttemptRecorded"
+    attempt: int                    # 1-based attempt that just failed
+    qa_notes: str = ""              # condensed QAReport failure summary
+
+
 DevLoopAction = Annotated[
     Union[
         RunCreated, RunCancelled, RunClosed,
@@ -411,7 +432,7 @@ DevLoopAction = Annotated[
         DispatchToolUse, DispatchToolResult,
         DispatchOutputInvalid, DispatchFailed, DispatchCompleted,
         GateOpened, GateResolved, GateExpired,
-        JiraLinked, PullRequestLinked,
+        JiraLinked, PullRequestLinked, QaAttemptRecorded,
     ],
     Field(discriminator="type"),
 ]
@@ -685,6 +706,13 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
         return state.model_copy(update={"jira_issue_key": action.issue_key})
     if t == "run/prLinked":
         return state.model_copy(update={"pr_url": action.pr_url})
+
+    # -- QA repair loop (FEAT-377 TASK-1910)
+    if t == "run/qaAttemptRecorded":
+        return state.model_copy(update={
+            "qa_attempts": action.attempt,
+            "qa_notes": action.qa_notes,
+        })
 
     return state  # forward-compat: unknown action → no-op
 
@@ -1068,6 +1096,7 @@ __all__ = [
     "NodeState",
     "NodeStatus",
     "PullRequestLinked",
+    "QaAttemptRecorded",
     "ROOT_CHANNEL",
     "RootAction",
     "RunAdded",
