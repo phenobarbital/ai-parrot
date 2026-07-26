@@ -151,4 +151,72 @@ def test_conf_defaults(monkeypatch):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented exactly as specified:
+
+- `conf.py`: 4 new keys appended strictly after
+  `DEV_LOOP_ACTIONS_RETENTION_DAYS` (:976-978) —
+  `DEV_LOOP_ADVERSARIAL_MODEL` (`"gpt-5.5"`), `DEV_LOOP_ADVERSARIAL_SCOPE`
+  (`"uncommitted"`), `DEV_LOOP_CODEREVIEW_JUDGE` (`config.getboolean`,
+  `False`), `DEV_LOOP_GATE_TTL_REVIEW_ESCALATION` (`config.getint`,
+  `86400`, comment mirrors the `DEV_LOOP_GATE_TTL_*` style at :961-972).
+  Plus the one instructed comment-only edit at `DEV_LOOP_CODEREVIEW_AGENT`
+  (:927-929) listing the two new agent values. `git diff conf.py` confirms
+  the change is exactly that: one comment edit + a purely additive block
+  after line 978 (verified — no existing lines reflowed).
+- `code_review.py` / `qa.py`: both `getattr(conf, "...", fallback)` shims
+  from TASK-1902/1903 replaced with direct `conf.DEV_LOOP_ADVERSARIAL_MODEL`
+  / `conf.DEV_LOOP_GATE_TTL_REVIEW_ESCALATION` references (verified no
+  occurrences remain via `test_no_getattr_conf_shims_remain`).
+- `examples/dev_loop/server.py`: extended the existing
+  `codereview_agent` if/elif chain (read `server.py` first per
+  instructions) with two new branches, keeping the original three
+  (`claude-code`/`codex`/`gemini`) byte-identical:
+  - `"codex-adversarial"`: reuses the existing codex-dispatcher-reuse
+    pattern (share `development_dispatcher` when it's already a
+    `CodexCodeDispatcher`, else build one), then
+    `CodeReviewDispatcherFactory.create("codex-adversarial", dispatcher=...,
+    model=conf.DEV_LOOP_ADVERSARIAL_MODEL,
+    review_scope=conf.DEV_LOOP_ADVERSARIAL_SCOPE)`.
+  - `"parallel"`: builds `primary = create("claude-code", dispatcher=dispatcher)`
+    and `adversary = create("codex-adversarial", ...)` (same construction as
+    above), then `create("parallel", primary=..., adversary=...,
+    judge_enabled=conf.DEV_LOOP_CODEREVIEW_JUDGE, judge_dispatcher=dispatcher
+    if conf.DEV_LOOP_CODEREVIEW_JUDGE else None)`.
+  - Mechanism note: since these two new agents build `codereview_dispatcher`
+    directly (their factory kwargs don't fit the old branches' single
+    `dispatcher=` tail call), introduced `codereview_dispatcher: object |
+    None = None` before the chain; the tail call
+    (`CodeReviewDispatcherFactory.create(codereview_agent_key,
+    dispatcher=codereview_underlying_dispatcher)`) now only fires
+    `if codereview_dispatcher is None`, i.e. unchanged for the 3 original
+    agents. `RuntimeError` message updated to list all 5 valid values.
+  - **Flagged caveat** (inherited from TASK-1902's own flagged ambiguity):
+    `judge_dispatcher=dispatcher` wires the raw `ClaudeCodeDispatcher`
+    instance, whose real `.dispatch()` signature requires `profile=`/
+    `output_model=` that `ParallelPerspectiveReviewDispatcher._run_judge()`
+    does not pass. This is the literal wiring the task specifies
+    ("judge_dispatcher=<primary's underlying dispatcher when judge
+    enabled>"), and `DEV_LOOP_CODEREVIEW_JUDGE` defaults to `False` so this
+    path is inert unless an operator explicitly opts in — but opting in
+    today would raise a `TypeError` on the judge dispatch (which
+    `ParallelPerspectiveReviewDispatcher.review()` already catches and
+    degrades silently per its own contract, so it wouldn't crash the run,
+    just silently never produce a judge summary). Surfacing this now in
+    case a future task wants to introduce a dedicated judge-adapter type
+    instead of reusing the raw dev dispatcher.
+- `test_adversarial_conf.py`: the Test Specification's `test_conf_defaults`
+  plus 2 extra — a type-correctness check and a regression test asserting
+  no `getattr(conf, "DEV_LOOP_ADVERSARIAL_MODEL"/"DEV_LOOP_GATE_TTL_REVIEW_ESCALATION", ...)`
+  shim text remains in either module's source.
+
+Verification: `pytest packages/ai-parrot/tests/flows/dev_loop/ -q` →
+648 passed, 1 pre-existing failure (`test_models_module_is_pure`, same
+known ordering-pollution issue noted in TASK-1899-1903), 5 skipped.
+`ruff check` clean on all 5 touched files (a pre-existing,
+unrelated `E402` at `conf.py:450` — verified present before this task's
+changes via `git stash` — is untouched by this diff).
+`python -c "import ast; ast.parse(...)"` confirms `server.py` parses
+cleanly (no aiohttp app boot needed for that check).
+
+No divergence from the task spec; no files touched outside the declared
+list.

@@ -113,7 +113,7 @@
       "feature_id": "FEAT-375",
       "feature": "codex-cli-agent",
       "spec": "sdd/specs/codex-cli-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Replaces getattr shims introduced by 1902/1903; must land after both.",
       "assigned_to": null,
       "started_at": "2026-07-25T23:44:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1904-config-and-wiring.md"
+      "completed_at": "2026-07-26T00:38:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1904-config-and-wiring.md"
     },
     {
       "id": "TASK-1905",
