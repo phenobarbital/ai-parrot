@@ -153,6 +153,7 @@ class ExecutionWikiRecorder:
         embedding_model: Any = None,
         body_max_chars: int = DEFAULT_BODY_MAX_CHARS,
         write_project_config: bool = True,
+        publisher: Any = None,
     ) -> None:
         self.storage_dir = Path(storage_dir)
         self.crew_name = crew_name
@@ -167,6 +168,11 @@ class ExecutionWikiRecorder:
         )
         # Last agent page per execution_id — source of the `follows` edge.
         self._last_agent_page: Dict[str, str] = {}
+        # Optional GraphPublisher — when present, runs are mirrored as
+        # RUN nodes in the knowledge graph and linked (run -produced->
+        # node) to every graph write carrying this run_id, connecting
+        # work lineage to domain knowledge without collapsing them.
+        self.publisher = publisher
         if write_project_config:
             self._write_project_config()
 
@@ -316,9 +322,107 @@ class ExecutionWikiRecorder:
                 token_count=estimate_tokens(body),
             )
             await self._store.upsert_pages([page])
+            await self._mirror_run_node(execution_id, method, task_text)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning(
                 "Failed to record run start for '%s': %s", execution_id, exc
+            )
+
+    async def _mirror_run_node(
+        self,
+        execution_id: str,
+        method: str,
+        task_text: str,
+    ) -> None:
+        """Mirror the run as a RUN node in the knowledge graph.
+
+        No-op without a publisher; failure-tolerant like every recorder
+        path.
+        """
+        if self.publisher is None:
+            return
+        try:
+            from parrot.knowledge.graphindex.schema import (
+                GraphUpdate,
+                NodeKind,
+                Provenance,
+                UniversalNode,
+            )
+
+            node = UniversalNode(
+                node_id=f"run:{execution_id}",
+                kind=NodeKind.RUN,
+                title=f"{self.crew_name} run {execution_id}",
+                source_uri=f"wiki://crew:{self.crew_name}/run:{execution_id}",
+                summary=_clip(f"{method}: {task_text}".replace("\n", " "), 300),
+                provenance=Provenance.ASSERTED,
+            )
+            await self.publisher.publish(
+                GraphUpdate(
+                    nodes=[node],
+                    agent_id=self.crew_name,
+                    run_id=execution_id,
+                    asserted_by=f"crew:{self.crew_name}",
+                    op="record_run",
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "Failed to mirror run node for '%s': %s", execution_id, exc
+            )
+
+    async def _link_run_lineage(self, execution_id: str) -> None:
+        """Link ``(run) -produced-> (node)`` for the run's graph writes.
+
+        Finds every commit stamped with this ``run_id`` (skipping the
+        run-mirror commit itself) and links the run node to each node
+        those commits wrote — the paper's work-lineage/domain-knowledge
+        bridge. No-op without a publisher; failure-tolerant.
+        """
+        if self.publisher is None:
+            return
+        try:
+            from parrot.knowledge.graphindex.schema import (
+                EdgeKind,
+                GraphUpdate,
+                UniversalEdge,
+            )
+
+            run_node_id = f"run:{execution_id}"
+            commits = await self.publisher.list_commits(run_id=execution_id)
+            produced: list[str] = []
+            for commit in commits:
+                if commit.get("op") in ("record_run", "run_lineage"):
+                    continue
+                detail = await self.publisher.get_commit(commit["commit_id"])
+                if not detail:
+                    continue
+                for node in detail.get("payload", {}).get("nodes", []):
+                    node_id = node.get("node_id")
+                    if node_id and node_id != run_node_id:
+                        produced.append(node_id)
+            if not produced:
+                return
+            edges = [
+                UniversalEdge(
+                    source_id=run_node_id,
+                    target_id=node_id,
+                    kind=EdgeKind.PRODUCED,
+                )
+                for node_id in sorted(set(produced))
+            ]
+            await self.publisher.publish(
+                GraphUpdate(
+                    edges=edges,
+                    agent_id=self.crew_name,
+                    run_id=execution_id,
+                    asserted_by=f"crew:{self.crew_name}",
+                    op="run_lineage",
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "Failed to link run lineage for '%s': %s", execution_id, exc
             )
 
     async def record_agent_result(
@@ -497,6 +601,7 @@ class ExecutionWikiRecorder:
             await self._store.upsert_pages([page])
             await self._embed_pages([page])
             self._last_agent_page.pop(execution_id, None)
+            await self._link_run_lineage(execution_id)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning(
                 "Failed to record run end for '%s': %s", execution_id, exc

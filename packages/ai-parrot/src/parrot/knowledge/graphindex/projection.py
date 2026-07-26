@@ -60,6 +60,11 @@ NODE_KIND_TO_CONCEPT_TYPE: dict[NodeKind, ConceptType] = {
     NodeKind.CONCEPT: ConceptType.CONCEPT_NODE,
     NodeKind.RATIONALE: ConceptType.RATIONALE,
     NodeKind.SKILL: ConceptType.SKILL,
+    # Wiki pages carry their real category in domain_tags; the OKF
+    # open-vocabulary fallback is the honest sidecar type here.
+    NodeKind.WIKI_PAGE: ConceptType.OTHER,
+    NodeKind.RUN: ConceptType.RUN,
+    NodeKind.CLAIM: ConceptType.CLAIM,
 }
 
 EDGE_KIND_TO_RELATION_TYPE: dict[EdgeKind, RelationType] = {
@@ -69,6 +74,10 @@ EDGE_KIND_TO_RELATION_TYPE: dict[EdgeKind, RelationType] = {
     EdgeKind.MENTIONS: RelationType.MENTIONS,
     EdgeKind.EXPLAINS: RelationType.EXPLAINS,
     EdgeKind.EXTENDS: RelationType.EXTENDS,
+    EdgeKind.PRODUCED: RelationType.PRODUCED,
+    EdgeKind.ABOUT: RelationType.ABOUT,
+    EdgeKind.SUPPORTED_BY: RelationType.SUPPORTED_BY,
+    EdgeKind.CONTRADICTS: RelationType.CONTRADICTS,
 }
 
 # ---------------------------------------------------------------------------

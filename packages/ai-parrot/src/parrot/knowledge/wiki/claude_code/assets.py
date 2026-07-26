@@ -85,9 +85,30 @@ Only fall back to Grep/Glob/Read (or shell search) once a clean query
 *and* a page/related follow-up have genuinely come up empty — and say
 so before you do. Consider `wikitoolkit build` if results look stale.
 
+**Saving knowledge (persistent memory).** The wiki is also your
+durable memory — what you save here survives this session and is
+found by future `wikitoolkit query` calls ("the agent forgets, the
+graph does not"). When you learn a durable fact, make a decision, or
+extract a lesson worth keeping, SAVE it:
+
+- `wikitoolkit remember "<fact>" --category [note|decision|lesson|concept]
+  [--title "<short title>"] [--link <page_id> --rel <relation>]` —
+  file new knowledge (idempotent: same title+category updates the
+  existing memory). Link it to the pages it is about.
+- `wikitoolkit note <page_id> "<text>"` — append an attributed,
+  dated note to an existing page.
+- `wikitoolkit link <src_id> <dst_id> --rel <relation>` — connect
+  two pages with a typed, asserted edge.
+- `wikitoolkit memories` — list saved memories;
+  `wikitoolkit audit` — the attributed write log.
+
+Save selectively: durable decisions, gotchas, and cross-file
+relationships — not session chatter. Every write is attributed and
+auditable.
+
 The `/parrotwiki` command wraps these (e.g. `/parrotwiki query how
-does ingest work`, `/parrotwiki --wiki` to export a human-readable
-markdown wiki).
+does ingest work`, `/parrotwiki remember <fact>`, `/parrotwiki --wiki`
+to export a human-readable markdown wiki).
 {CLAUDE_MD_END}
 """
 
@@ -97,7 +118,7 @@ markdown wiki).
 
 SLASH_COMMAND_MD = """---
 description: Query or maintain the repository LLM-wiki knowledge graph (wikitoolkit)
-argument-hint: [query <question> | page <id> | related <id> | status | build | --wiki [dir]]
+argument-hint: [query <question> | page <id> | related <id> | remember <fact> | note <id> <text> | link <a> <b> | memories | audit | status | build | --wiki [dir]]
 allowed-tools: Bash(wikitoolkit:*)
 ---
 
@@ -118,6 +139,17 @@ matching `wikitoolkit` command with Bash:
   neighbours connect.
 - `status` — run `wikitoolkit status` and report plane health.
 - `build` — run `wikitoolkit build` and report what changed.
+- `remember <fact>` — save durable knowledge: run
+  `wikitoolkit remember "<fact>" --category <note|decision|lesson|concept>`
+  (add `--title` for a short handle and `--link <page_id>` to connect
+  it to the pages it is about). Report the saved page id.
+- `note <id> <text>` — run `wikitoolkit note <id> "<text>"` to append
+  an attributed note to an existing page.
+- `link <a> <b>` — run `wikitoolkit link <a> <b> --rel <relation>`
+  to connect two pages (default relation `references`).
+- `memories` — run `wikitoolkit memories` and summarise what has
+  been saved.
+- `audit` — run `wikitoolkit audit` and summarise recent writes.
 - `--wiki [dir]` — build a human-readable markdown wiki from the
   graph: run `wikitoolkit export -o <dir>` (default `docs/wiki`) and
   list what was written.
