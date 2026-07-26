@@ -1269,6 +1269,63 @@ def _sync_memory_to_graph(
         return None
 
 
+def _extract_into_graph(
+    root: Path,
+    config: WikiProjectConfig,
+    text: str,
+    source_uri: str,
+    asserted_by: str,
+    run_id: Optional[str],
+) -> Optional[dict[str, Any]]:
+    """Run LLM entity/relation extraction into the project graph plane.
+
+    Requires a ``WIKI_EXTRACT_LLM`` provider spec (env / .env, e.g.
+    ``anthropic:claude-haiku-4-5``). All heavyweight imports are lazy;
+    every failure degrades to ``None`` so the plain remember always
+    succeeds.
+
+    Returns:
+        Extraction summary dict, or ``None`` when unavailable/failed.
+    """
+    spec = _env_setting("WIKI_EXTRACT_LLM")
+    if not spec:
+        click.echo(
+            "[extract skipped: set WIKI_EXTRACT_LLM (e.g."
+            " 'anthropic:claude-haiku-4-5') to enable]"
+        )
+        return None
+    try:
+        from parrot.clients.factory import LLMFactory
+        from parrot.knowledge.graphindex.extractors.llm import LLMGraphExtractor
+        from parrot.knowledge.graphindex.factory import make_stub_tenant_context
+        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
+        from parrot.knowledge.graphindex.publish import GraphPublisher
+
+        client = LLMFactory.create(spec, model_args={"temperature": 0.0})
+        ctx = make_stub_tenant_context(config.wiki_name)
+        publisher = GraphPublisher(
+            SQLitePersistence(config.graph_path(root)), ctx
+        )
+        extractor = LLMGraphExtractor(client, publisher)
+        result = _run(
+            extractor.extract_and_publish(
+                text,
+                source_uri=source_uri,
+                agent_id=asserted_by.split(":", 1)[-1],
+                run_id=run_id,
+            )
+        )
+        return {
+            "entities": len(result.extracted.entities),
+            "relations": len(result.extracted.relations),
+            "nodes_written": len(result.update.nodes),
+            "commit_id": result.receipt.commit_id,
+        }
+    except Exception as exc:  # noqa: BLE001 — extraction is best-effort
+        click.echo(f"[extract failed: {exc}]")
+        return None
+
+
 @wiki.command()
 @click.argument("text")
 @path_option
@@ -1288,6 +1345,15 @@ def _sync_memory_to_graph(
 @click.option("--rel", default="references", help="Relation for --link edges.")
 @click.option("--source", "source_uri", default=None, help="Citation URI.")
 @click.option("--by", default=None, help="Identity asserting this memory.")
+@click.option(
+    "--extract",
+    "extract_",
+    is_flag=True,
+    help="Also run LLM entity/relation extraction over the text into the"
+    " project graph (requires sync_graph and a WIKI_EXTRACT_LLM provider"
+    " spec, e.g. 'anthropic:claude-haiku-4-5'; degrades to a plain"
+    " remember when unavailable).",
+)
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def remember(
     text: str,
@@ -1300,6 +1366,7 @@ def remember(
     rel: str,
     source_uri: Optional[str],
     by: Optional[str],
+    extract_: bool,
     as_json: bool,
 ) -> None:
     """Save a fact, decision, or lesson into the wiki (persistent memory).
@@ -1372,6 +1439,14 @@ def remember(
             linked, asserted_by, run_id,
         )
 
+    extraction: Optional[dict[str, Any]] = None
+    if extract_ and root is not None and config is not None:
+        extraction = _extract_into_graph(
+            root, config, text,
+            source_uri or f"wiki://{config.wiki_name}/{page_id}",
+            asserted_by, run_id,
+        )
+
     result = {
         "page_id": page_id,
         "title": resolved_title,
@@ -1383,6 +1458,8 @@ def remember(
     }
     if commit_id:
         result["graph_commit"] = commit_id
+    if extraction:
+        result["extraction"] = extraction
     if as_json:
         click.echo(json.dumps(result, indent=2))
         return
@@ -1396,6 +1473,12 @@ def remember(
         click.echo(f"  [skipped link: no page {target!r}]")
     if commit_id:
         click.echo(f"  graph commit: {commit_id}")
+    if extraction:
+        click.echo(
+            f"  extracted: {extraction.get('entities', 0)} entities,"
+            f" {extraction.get('relations', 0)} relations"
+            f" (commit {extraction.get('commit_id', '?')})"
+        )
 
 
 @wiki.command()

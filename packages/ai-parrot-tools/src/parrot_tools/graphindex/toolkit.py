@@ -1165,6 +1165,104 @@ class GraphIndexToolkit(AbstractToolkit):
             )
         return result
 
+    async def extract_knowledge(self, text: str, source_uri: str = "") -> dict:
+        """Extract typed entities/relations from text into the graph.
+
+        Runs a schema-constrained LLM extraction, deduplicates entities
+        against the existing graph (additive alias merges — nothing is
+        destroyed), publishes ONE audited commit, and mirrors the new
+        nodes/edges into the in-memory graph so they are immediately
+        searchable.
+
+        Requires both a ``client`` (LLM) and a ``publisher`` (durable
+        plane) on the toolkit.
+
+        Args:
+            text: Free text to extract knowledge from.
+            source_uri: Citation URI recorded on the extracted items.
+
+        Returns:
+            ``{entities, relations, commit_id, node_ids}`` or
+            ``{"error": ...}``.
+        """
+        if self.client is None:
+            return {"error": "extract_knowledge: no LLM client configured"}
+        if self.publisher is None:
+            return {"error": "extract_knowledge: no durable graph plane configured"}
+        try:
+            from parrot.knowledge.graphindex.extractors.llm import (
+                LLMGraphExtractor,
+            )
+
+            extractor = LLMGraphExtractor(self.client, self.publisher)
+            result = await extractor.extract_and_publish(
+                text,
+                source_uri=source_uri,
+                agent_id=self.agent_id,
+                run_id=self.run_id,
+            )
+        except Exception as exc:  # noqa: BLE001 — never raise into the LLM
+            return {"error": f"extract_knowledge: {exc}"}
+
+        # Mirror committed nodes/edges into the in-memory graph (only
+        # possible when the write dependencies are wired).
+        if not self._write_supported:
+            return {
+                "entities": len(result.extracted.entities),
+                "relations": len(result.extracted.relations),
+                "nodes_written": len(result.update.nodes),
+                "edges_written": len(result.update.edges),
+                "node_ids": [n.node_id for n in result.update.nodes],
+                "commit_id": result.receipt.commit_id,
+                "persisted": True,
+                "note": "in-memory graph not updated (no assembler/embedder)",
+            }
+        for node in result.update.nodes:
+            if node.node_id in self.node_map:
+                # Alias merge on an existing node — refresh the payload.
+                try:
+                    self.assembler.add_node(node)
+                except Exception:  # noqa: BLE001
+                    pass
+                continue
+            try:
+                rust_idx = self.assembler.add_node(node)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "extract_knowledge: in-memory add failed for %s: %s",
+                    node.node_id,
+                    exc,
+                )
+                continue
+            self.node_map[node.node_id] = rust_idx
+            try:
+                await self.embedder.embed_nodes([node])
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "extract_knowledge: embed failed for %s: %s",
+                    node.node_id,
+                    exc,
+                )
+            if node.node_id not in self.node_id_list:
+                self.node_id_list.append(node.node_id)
+            self.nodes.append(node)
+        for edge in result.update.edges:
+            try:
+                self.assembler.add_edge(edge)
+            except Exception:  # noqa: BLE001
+                pass
+        self._invalidate_community_cache()
+
+        return {
+            "entities": len(result.extracted.entities),
+            "relations": len(result.extracted.relations),
+            "nodes_written": len(result.update.nodes),
+            "edges_written": len(result.update.edges),
+            "node_ids": [n.node_id for n in result.update.nodes],
+            "commit_id": result.receipt.commit_id,
+            "persisted": True,
+        }
+
     # ==================================================================
     # READ tools — signal + community surface (FEAT-190 / FEAT-191)
     # ==================================================================
