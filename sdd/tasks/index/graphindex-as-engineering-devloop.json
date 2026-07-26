@@ -146,7 +146,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -156,8 +156,8 @@
       "parallelism_notes": "No semantic dependency on 1911, but both edit nodes/development.py — serialized to avoid merge churn.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1913-fan-out-stop-rule.md"
+      "completed_at": "2026-07-26T23:35:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1913-fan-out-stop-rule.md"
     },
     {
       "id": "TASK-1914",
