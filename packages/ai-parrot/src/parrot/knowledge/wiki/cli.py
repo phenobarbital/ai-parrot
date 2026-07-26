@@ -1692,6 +1692,76 @@ def audit(
             )
 
 
+@wiki.command()
+@click.argument("claim")
+@path_option
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+def ground(
+    claim: str,
+    path_: Optional[str],
+    as_json: bool,
+) -> None:
+    """Check a claim against the project knowledge graph (grounding).
+
+    Requires the project graph plane (``.parrot/graph/``) created by
+    ``remember`` with ``sync_graph`` enabled or by ``--extract``.
+    Returns cited edge-level evidence, or a structured revise
+    instruction listing the missing evidence.
+    """
+    root, config = _resolve_project(path_)
+    graph_db = config.graph_path(root) / f"{config.wiki_name}.db"
+    if not graph_db.exists():
+        raise click.ClickException(
+            f"No graph plane at {graph_db}. Save graph-synced knowledge"
+            " first (enable sync_graph in .parrot/wiki.json, then"
+            " `wikitoolkit remember ...`)."
+        )
+    try:
+        from parrot.knowledge.graphindex.assemble import GraphAssembler
+        from parrot.knowledge.graphindex.factory import (
+            HashingGraphEmbedder,
+            make_stub_tenant_context,
+        )
+        from parrot.knowledge.graphindex.grounding import GroundingEvaluator
+        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
+        from parrot.knowledge.graphindex.retriever import GraphExpandedRetriever
+    except ImportError as exc:
+        raise click.ClickException(f"graphindex unavailable: {exc}") from exc
+
+    async def _ground() -> dict[str, Any]:
+        persistence = SQLitePersistence(config.graph_path(root))
+        ctx = make_stub_tenant_context(config.wiki_name)
+        nodes, edges = await persistence.load_graph(ctx)
+        assembler = GraphAssembler(tenant_id=config.wiki_name)
+        for node in nodes:
+            assembler.add_node(node)
+        for edge in edges:
+            assembler.add_edge(edge)
+        embedder = HashingGraphEmbedder()
+        if nodes:
+            await embedder.embed_nodes(nodes)
+        retriever = GraphExpandedRetriever(
+            graph=assembler.graph, nodes=nodes, embedder=embedder
+        )
+        result = await GroundingEvaluator(retriever).ground_claim(claim)
+        return result.model_dump()
+
+    data = _run(_ground())
+    if as_json:
+        click.echo(json.dumps(data, indent=2))
+        return
+    click.echo(f"Decision: {data['decision'].upper()}")
+    click.echo(f"Reason:   {data['reason']}")
+    if data.get("supported_paths"):
+        click.echo("Evidence paths (stable edge ids):")
+        for path in data["supported_paths"]:
+            click.echo(f"  - {' ; '.join(path)}")
+    if data.get("contradictions"):
+        click.echo(f"Contradictions: {', '.join(data['contradictions'])}")
+    for needed in data.get("required_evidence", []):
+        click.echo(f"Required: {needed}")
+
+
 @wiki.command(name="claude-hook", hidden=True)
 def claude_hook() -> None:
     """Claude Code PreToolUse hook runtime (reads stdin JSON).

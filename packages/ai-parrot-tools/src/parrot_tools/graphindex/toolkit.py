@@ -1165,6 +1165,41 @@ class GraphIndexToolkit(AbstractToolkit):
             )
         return result
 
+    async def ground_claim(self, claim: str) -> dict:
+        """Check whether the graph evidences a claim (grounding layer).
+
+        Resolves the claim's entities, looks for supporting edge paths,
+        and returns either cited evidence (stable edge ids) or a
+        structured revise instruction listing the missing evidence.
+        Contradicting relations touching the entities are surfaced.
+
+        Args:
+            claim: Natural-language claim to check.
+
+        Returns:
+            A grounding result dict (``decision``: ``grounded`` |
+            ``revise``) or ``{"error": ...}``.
+        """
+        try:
+            from parrot.knowledge.graphindex.grounding import GroundingEvaluator
+            from parrot.knowledge.graphindex.retriever import (
+                GraphExpandedRetriever,
+            )
+
+            if self.embedder is None:
+                return {"error": "ground_claim: no embedder configured"}
+            retriever = GraphExpandedRetriever(
+                graph=self.graph,
+                nodes=self.nodes,
+                embedder=self.embedder,
+                signal_config=self.signal_config,
+            )
+            evaluator = GroundingEvaluator(retriever, client=self.client)
+            result = await evaluator.ground_claim(claim)
+            return result.model_dump()
+        except Exception as exc:  # noqa: BLE001 — never raise into the LLM
+            return {"error": f"ground_claim: {exc}"}
+
     async def extract_knowledge(self, text: str, source_uri: str = "") -> dict:
         """Extract typed entities/relations from text into the graph.
 

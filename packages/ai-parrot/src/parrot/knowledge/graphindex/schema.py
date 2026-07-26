@@ -44,6 +44,10 @@ class NodeKind(str, Enum):
         RATIONALE: Design rationale from docstring or tagged comment.
         SKILL: Skill definition parsed from a SKILL.md file.
         WIKI_PAGE: LLM-generated wiki page (FEAT-260 LLM Wiki).
+        RUN: An agent/crew execution (work lineage — links what a run
+            produced without collapsing lineage into domain knowledge).
+        CLAIM: A discrete assertion produced by a run, connectable to
+            the entities it is about and the sources supporting it.
     """
 
     DOCUMENT = "document"
@@ -53,6 +57,8 @@ class NodeKind(str, Enum):
     RATIONALE = "rationale"
     SKILL = "skill"
     WIKI_PAGE = "wiki_page"
+    RUN = "run"
+    CLAIM = "claim"
 
 
 class EdgeKind(str, Enum):
@@ -66,6 +72,11 @@ class EdgeKind(str, Enum):
         EXPLAINS: A rationale/docstring explains a symbol.
         EXTENDS: Odoo model inheritance — a class extends a canonical model
             node via ``_inherit`` or ``_inherits``. Added by FEAT-240.
+        PRODUCED: A run produced a claim/node (work lineage).
+        ABOUT: A claim is about an entity.
+        SUPPORTED_BY: A claim is supported by a source/page.
+        CONTRADICTS: Two claims/entities conflict — surfaced (never
+            hidden) by the context builder and grounding evaluator.
     """
 
     CONTAINS = "contains"
@@ -74,6 +85,10 @@ class EdgeKind(str, Enum):
     MENTIONS = "mentions"
     EXPLAINS = "explains"
     EXTENDS = "extends"
+    PRODUCED = "produced"
+    ABOUT = "about"
+    SUPPORTED_BY = "supported_by"
+    CONTRADICTS = "contradicts"
 
 
 class AssertionMeta(BaseModel):

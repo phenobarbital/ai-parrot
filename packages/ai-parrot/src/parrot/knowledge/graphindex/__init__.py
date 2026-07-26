@@ -82,6 +82,8 @@ __all__ = [
     "ContextBuildConfig",
     "GraphContext",
     "GraphMemoryMixin",
+    "GroundingEvaluator",
+    "GroundingResult",
     "SignalRelevance",
     "SignalRelevanceConfig",
     "compute_pairwise_signals",
@@ -126,6 +128,8 @@ _LAZY_ATTRS = {
     "ContextBuildConfig": "parrot.knowledge.graphindex.context_builder",
     "GraphContext": "parrot.knowledge.graphindex.context_builder",
     "GraphMemoryMixin": "parrot.knowledge.graphindex.mixin",
+    "GroundingEvaluator": "parrot.knowledge.graphindex.grounding",
+    "GroundingResult": "parrot.knowledge.graphindex.grounding",
 }
 
 
