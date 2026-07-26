@@ -293,7 +293,9 @@ New configuration keys (navconfig, all optional):
      current behavior). Consulted in two places: `DevAgentPool.run_wave`'s
      single retry (`_next_worker` worker keeps its backend but swaps model),
      and the Module-3 QA-retry redispatch (attempt ≥ 2 uses the escalation
-     model when set).
+     model when set). **No built-in per-backend ladder in v1** — escalation
+     is explicit per spec entry; empty string disables it (decided
+     2026-07-26, see §8).
   3. **G4 stop rule**: `should_fan_out(wave, pool_cfg)` — pure function;
      `DevelopmentNode` degrades to the existing single-agent path when the
      first `TaskScheduler.next_wave()` yields < 2 tasks, even if a pool is
@@ -310,6 +312,9 @@ New configuration keys (navconfig, all optional):
 - **Responsibility**: `DevLoopGraphMemory` facade built from
   `DEV_LOOP_GRAPH_MEMORY_PATH` via `build_graph_memory_toolkit()` internals
   (`SQLitePersistence` + `GraphPublisher` + `GraphExpandedRetriever`).
+  **Write-back targets the SQLite plane only in v1** (decided 2026-07-26,
+  see §8); Arango deployments project the memory kinds later via the
+  Module 2 ontology — no dual publish.
   - *Seam 2*: `ResearchNode` prepends `GraphContext.text` (budget-capped,
     citation-serialized) to the research dispatch prompt.
   - *Seam 3*: `close.py`/`failure_handler.py` publish one `GraphUpdate` per
@@ -324,10 +329,10 @@ New configuration keys (navconfig, all optional):
 - **Depends on**: Module 1 (seam 1 done there), Module 2 (kinds routable)
 
 ### Module 5: plan-approval gate consumer (Phase C)
-- **Path**: `parrot/flows/dev_loop/flow.py` or
-  `parrot/flows/dev_loop/nodes/research.py`, `parrot/flows/dev_loop/runner.py`
-- **Responsibility**: when `DEV_LOOP_REQUIRE_PLAN_APPROVAL=true`, after
-  `ResearchOutput` is produced, open
+- **Path**: `parrot/flows/dev_loop/runner.py`
+- **Responsibility**: when `DEV_LOOP_REQUIRE_PLAN_APPROVAL=true`, the
+  **runner's post-research hook** (decided 2026-07-26, see §8 — no new flow
+  node, no `ResearchNode` change) opens
   `open_gate(kind="plan_approval", on_expiry="approve", ...)` with the plan
   summary (Jira key, spec path, task count) as instructions, and
   `await wait_gate(...)` before the development node dispatches. Fail-open
@@ -341,10 +346,12 @@ New configuration keys (navconfig, all optional):
 - **Responsibility**: when a gate opens and `DEV_LOOP_GATE_PARK=true`, the
   runner releases its semaphore slot (run state → `parked`; the
   event-sourced state is already fully reconstructible from
-  `flow:{run_id}:actions`). On gate resolution, `resume_run(run_id)`
-  re-acquires a slot and continues the wait-side of the gate. v1 is
-  in-process (the runner object survives); cross-process crash resume stays
-  out of scope (Non-Goals).
+  `flow:{run_id}:actions`). **Parking applies uniformly to ALL gate kinds**
+  (decided 2026-07-26, see §8) — one code path, no TTL threshold or
+  per-kind allowlist. On gate resolution, `resume_run(run_id)` re-acquires
+  a slot and continues the wait-side of the gate. v1 is in-process (the
+  runner object survives); cross-process crash resume stays out of scope
+  (Non-Goals).
 - **Depends on**: Module 5 only for end-to-end testing of a parked
   plan-approval gate (unit tests use `deployment_approval`)
 
@@ -674,24 +681,26 @@ async def build_graph_memory_toolkit(db_dir: Path | str, tenant_id: str = "defau
 ## 8. Open Questions
 
 > The FEAT-377 proposal closed research with **zero unknowns** (11/11 claims
-> high-confidence). Items below are implementation-level decisions surfaced
-> while drafting this spec, each with a proposed default.
+> high-confidence). The implementation-level decisions surfaced while
+> drafting this spec were all resolved by the user on 2026-07-26 — no open
+> questions remain.
 
 - [x] Should the spec cover all 6 candidate features or a subset? —
   *Resolved by user (2026-07-26)*: full umbrella, all 6 modules in one spec.
-- [ ] Default escalation ladder per backend (e.g. `claude-code`:
-  `sonnet → opus`)? Proposed: no built-in ladder in v1 — `escalation_model`
-  is explicit per spec entry, empty means disabled. — *Owner: Jesus*
-- [ ] Graph write-back plane for v1: SQLite-only (proposed — matches
-  `build_graph_memory_toolkit` and keeps Arango optional), with Arango
-  parity via Module 2 for deployments that project into Arango. — *Owner: Jesus*
-- [ ] `plan_approval` gate placement: inside `ResearchNode` (after emitting
-  `ResearchOutput`) vs a dedicated gate node between research and
-  development. Proposed: inside the runner's post-research hook, mirroring
-  `deployment_approval`'s wiring — no new flow node. — *Owner: Jesus*
-- [ ] Should Module 6 park on ALL gate kinds or only long-TTL ones?
-  Proposed: all kinds when `DEV_LOOP_GATE_PARK=true` (uniform semantics). —
-  *Owner: Jesus*
+- [x] Default escalation ladder per backend (e.g. `claude-code`:
+  `sonnet → opus`)? — *Resolved by user (2026-07-26)*: **explicit only** —
+  no built-in ladder in v1; `escalation_model` is set per `DevAgentSpec`
+  entry, empty string means escalation disabled. (Applied in Module 3.)
+- [x] Graph write-back plane for v1? — *Resolved by user (2026-07-26)*:
+  **SQLite-only** — write-back via `build_graph_memory_toolkit` internals;
+  Arango deployments project the memory kinds later through the Module 2
+  ontology; no dual publish. (Applied in Module 4.)
+- [x] `plan_approval` gate placement? — *Resolved by user (2026-07-26)*:
+  **runner post-research hook**, mirroring `deployment_approval`'s wiring —
+  no new flow node, no `ResearchNode` change. (Applied in Module 5.)
+- [x] Park on ALL gate kinds or only long-TTL ones? — *Resolved by user
+  (2026-07-26)*: **all gate kinds** when `DEV_LOOP_GATE_PARK=true` —
+  uniform semantics, one code path. (Applied in Module 6.)
 
 ---
 
@@ -715,3 +724,4 @@ async def build_graph_memory_toolkit(db_dir: Path | str, tenant_id: str = "defau
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-26 | Jesus Lara + Claude | Initial draft from FEAT-377 proposal (full-umbrella scope) |
+| 0.2 | 2026-07-26 | Jesus Lara + Claude | All §8 open questions resolved (explicit escalation, SQLite-only write-back, runner-hook plan gate, park all kinds) |
