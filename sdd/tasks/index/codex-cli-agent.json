@@ -50,7 +50,7 @@
       "feature_id": "FEAT-375",
       "feature": "codex-cli-agent",
       "spec": "sdd/specs/codex-cli-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Imports CodexAdversarialReviewProfile from TASK-1899.",
       "assigned_to": null,
       "started_at": "2026-07-25T23:44:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1901-codex-command-variants.md"
+      "completed_at": "2026-07-26T00:21:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1901-codex-command-variants.md"
     },
     {
       "id": "TASK-1902",

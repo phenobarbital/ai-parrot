@@ -188,5 +188,50 @@ def test_resume_no_sandbox_flag(dispatcher):
 
 ## Completion Note
 
-*(Agent fills this in when done — MUST state whether `exec review` supports
-`--json`/`--output-schema` on the installed CLI, and which path was shipped)*
+**CLI verification (installed `codex-cli 0.145.0`):** ran `codex exec
+review --help` and `codex exec resume --help` against the real installed
+binary.
+
+- `--json`, `--output-schema <FILE>`, `-o <FILE>`, `--ignore-user-config`,
+  `--ignore-rules` ARE supported by both `review` and `resume`. **No
+  fallback needed** — shipped the primary path (`codex exec review`/`codex
+  exec resume` with structured output), not the `exec --json` +
+  embedded-diff fallback.
+- Additional CLI-surface finding beyond what the spec anticipated: `--cd`,
+  `--sandbox`, `--model` are options of the top-level `exec` command and
+  MUST be placed BEFORE the `review`/`resume` subcommand token — passing
+  them after (as subcommand args) is a hard parse error
+  (`error: unexpected argument '--sandbox' found`). Implemented
+  `_build_adversarial_review_command` accordingly (global opts first, then
+  the subcommand, then subcommand-level opts).
+- There is no `--ask-for-approval`/`-a` flag anywhere under `codex exec`
+  in this installed CLI version (only under the top-level interactive
+  `codex` command) — confirmed via full `--help` dump. The new
+  review/resume shapes therefore never emit `--ask-for-approval` (nothing
+  to emit it as); this is asserted by
+  `test_adversarial_profile_never_emits_ask_for_approval`. **Note**: this
+  also means the EXISTING legacy `_build_command()` branch (unchanged by
+  this task, using `--ask-for-approval` for bare `codex exec`) would
+  likely fail against this same installed CLI version — a pre-existing
+  CLI-drift risk already flagged by the spec's "Known Risks" section,
+  strictly out of scope for Module 3 (legacy shape is required to stay
+  byte-identical) and not touched here.
+- Followed the task's explicit (and test-enforced) instruction that
+  `resume` omits `--sandbox` and uses `-c sandbox_mode="<mode>"` instead —
+  this matches the documented `CLAUDE.md` gotcha even though `--sandbox`
+  positioned before the subcommand parses without error; the gotcha is
+  about resume's *effective* sandbox at the session-continuation level,
+  not clap parsing, so the config-override form was kept exactly as
+  specified.
+- `_REVIEW_SCOPE_FLAGS` is the table (class attribute) mapping
+  `review_scope` → CLI flag, per the "table-driven" requirement; unit
+  tests exercise every entry plus the required-target validation.
+
+Verification: `pytest packages/ai-parrot/tests/flows/dev_loop/ -q` →
+625 passed, 1 pre-existing failure (`test_models_module_is_pure`, same
+known ordering-pollution issue noted in TASK-1899/1900), 5 skipped.
+`ruff check` clean on both touched files.
+
+No divergence from the task spec; no files touched outside the declared
+list; legacy `_build_command` shape untouched and covered by a regression
+test (`test_legacy_shape_unchanged`).
