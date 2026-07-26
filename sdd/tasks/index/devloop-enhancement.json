@@ -1,0 +1,198 @@
+{
+  "feature": "devloop-enhancement",
+  "feature_id": "FEAT-378",
+  "spec": "sdd/specs/devloop-enhancement.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-26T23:11:57.112397+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1918",
+      "slug": "feature-brief-models",
+      "title": "Feature-mode models — FeatureBrief, judge panel, planner/synthesis/feedback contracts",
+      "feature_id": "FEAT-378",
+      "feature": "devloop-enhancement",
+      "spec": "sdd/specs/devloop-enhancement.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Root of the graph; models.py is shared by every other task.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1918-feature-brief-models.md"
+    },
+    {
+      "id": "TASK-1919",
+      "slug": "session-state-feature-actions",
+      "title": "Session-state extension — feature NodeIds, actions and reducers",
+      "feature_id": "FEAT-378",
+      "feature": "devloop-enhancement",
+      "spec": "sdd/specs/devloop-enhancement.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1918"
+      ],
+      "parallel": false,
+      "parallelism_notes": "session_state.py also touched by FEAT-377; keep sequential.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1919-session-state-feature-actions.md"
+    },
+    {
+      "id": "TASK-1920",
+      "slug": "judge-panel-dispatcher",
+      "title": "JudgePanelReviewDispatcher — N-judge majority code review",
+      "feature_id": "FEAT-378",
+      "feature": "devloop-enhancement",
+      "spec": "sdd/specs/devloop-enhancement.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1918"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only code_review.py + conf.py — no file overlap with 1919/1921-1924; can run in a parallel worktree after 1918.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1920-judge-panel-dispatcher.md"
+    },
+    {
+      "id": "TASK-1921",
+      "slug": "planner-node",
+      "title": "PlannerNode + sdd-planner subagent — document-driven planning",
+      "feature_id": "FEAT-378",
+      "feature": "devloop-enhancement",
+      "spec": "sdd/specs/devloop-enhancement.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1918",
+        "TASK-1919"
+      ],
+      "parallel": false,
+      "parallelism_notes": "New files only, but consumes state actions; sequential in the feature worktree.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1921-planner-node.md"
+    },
+    {
+      "id": "TASK-1922",
+      "slug": "synthesis-node",
+      "title": "SynthesisNode — post-merge reconciliation owner",
+      "feature_id": "FEAT-378",
+      "feature": "devloop-enhancement",
+      "spec": "sdd/specs/devloop-enhancement.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1918",
+        "TASK-1919"
+      ],
+      "parallel": false,
+      "parallelism_notes": "New files only; could parallelize with 1921 but shares test fixtures — keep sequential per spec worktree strategy.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1922-synthesis-node.md"
+    },
+    {
+      "id": "TASK-1923",
+      "slug": "feedback-router-node",
+      "title": "FeedbackRouterNode + sdd-feedback subagent — bounded retry/escalate/accept",
+      "feature_id": "FEAT-378",
+      "feature": "devloop-enhancement",
+      "spec": "sdd/specs/devloop-enhancement.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1918",
+        "TASK-1919",
+        "TASK-1920"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes panel verdict shape from 1920 and FEAT-377/A stop rule when available.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1923-feedback-router-node.md"
+    },
+    {
+      "id": "TASK-1924",
+      "slug": "feature-handoff-node",
+      "title": "FeatureHandoffNode — draft PR, docs artifact, wiki page, graph write-back",
+      "feature_id": "FEAT-378",
+      "feature": "devloop-enhancement",
+      "spec": "sdd/specs/devloop-enhancement.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1918",
+        "TASK-1919"
+      ],
+      "parallel": false,
+      "parallelism_notes": "New file + conf.py (also touched by 1920 — coordinate small conf block).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1924-feature-handoff-node.md"
+    },
+    {
+      "id": "TASK-1925",
+      "slug": "feature-topology-parity",
+      "title": "Feature-mode topology — definition, imperative flow, factories, routing, parity",
+      "feature_id": "FEAT-378",
+      "feature": "devloop-enhancement",
+      "spec": "sdd/specs/devloop-enhancement.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1921",
+        "TASK-1922",
+        "TASK-1923",
+        "TASK-1924"
+      ],
+      "parallel": false,
+      "parallelism_notes": "High-contention core files (definition/flow/runner/factories/classifier); must be last of the code tasks. Composes with FEAT-377/A if merged.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1925-feature-topology-parity.md"
+    },
+    {
+      "id": "TASK-1926",
+      "slug": "cli-feature-brief-loader",
+      "title": "CLI feature-brief loader — parrot devloop run --brief feature.yaml",
+      "feature_id": "FEAT-378",
+      "feature": "devloop-enhancement",
+      "spec": "sdd/specs/devloop-enhancement.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1918",
+        "TASK-1925"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs the runner union from 1925.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1926-cli-feature-brief-loader.md"
+    }
+  ]
+}
