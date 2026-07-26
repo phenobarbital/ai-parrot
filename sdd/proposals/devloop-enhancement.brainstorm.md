@@ -171,11 +171,14 @@ intent_classifier ─(kind=="feature")→ planner → development → synthesis 
   (≤ `DEV_LOOP_QA_MAX_RETRIES`); el stop rule corta siempre.
 - **`FeatureHandoffNode`** (extiende el patrón de `DeploymentHandoffNode`):
   push + draft-PR contra `dev` (gh CLI / REST fallback ya existentes), genera
-  `docs/migration/feat-<id>-<slug>.md` (convención existente) con el resumen
-  de lo implementado, ejecuta `wikitoolkit upsert --changed` en el worktree
-  (mismo comando del git post-commit hook) y publica el run outcome vía
-  `DevLoopGraphMemory.publish_run_outcome()` (FEAT-B). Jira transition solo
-  si hay ticket. **Nunca mergea.**
+  `docs/features/feat-<id>-<slug>.md` (nueva convención; `docs/migration/`
+  queda para migraciones/breaking changes) con el resumen de lo implementado
+  y lo commitea a la rama del PR, ingesta esa página al wiki
+  (`LLMWikiToolkit.create_page`) y publica el run outcome vía
+  `DevLoopGraphMemory.publish_run_outcome()` (FEAT-B). El `wikitoolkit
+  upsert` del **código** se difiere al merge a dev (hook post-commit /
+  automatización post-merge) — el wiki nunca describe código que no entró.
+  Jira transition solo si hay ticket. **Nunca mergea.**
 
 ✅ **Pros:**
 - Máxima reutilización: runner, session_state, CLI, FlowEventPublisher,
@@ -202,7 +205,7 @@ intent_classifier ─(kind=="feature")→ planner → development → synthesis 
 | Package | Purpose | Notes |
 |---|---|---|
 | (ninguna nueva) | — | gh CLI + aiohttp (PR), click (CLI), redis ya presentes |
-| `wikitoolkit` (interno) | Actualización del wiki en handoff | Shell-out a `wikitoolkit upsert --changed`; no hay `build_wiki()` reutilizable |
+| `LLMWikiToolkit` (interno) | Ingesta de la página de docs al wiki en handoff | `create_page` (wiki/toolkit.py:509); el upsert de código va post-merge — no hay `build_wiki()` reutilizable |
 
 🔗 **Existing Code to Reuse:**
 - `parrot/flows/dev_loop/definition.py` + `flow.py` — patrón de segunda topología (revision)
@@ -330,8 +333,9 @@ antes de los nodos que los consumen) y crecimiento del paquete dev_loop.
 3. El flow corre autónomo: planifica, desarrolla en paralelo, sintetiza,
    pasa el panel de QA, itera con feedback acotado si falla.
 4. Al terminar, el usuario recibe: un **draft PR contra `dev`** (nunca
-   merge), un artefacto `docs/migration/feat-<id>-<slug>.md` dentro del PR,
-   el wiki del repo actualizado, y el run registrado en el knowledge graph.
+   merge), un artefacto `docs/features/feat-<id>-<slug>.md` dentro del PR
+   (también ingestado como página wiki consultable), y el run registrado en
+   el knowledge graph. El wiki de código se refresca al mergear el PR.
    Si hay ticket Jira, queda transicionado y comentado con el PR.
 5. Si el panel escala (disenso, o agotados los retries), el run abre el gate
    correspondiente / rutea a `failure_handler` con el estado completo para
@@ -339,7 +343,9 @@ antes de los nodos que los consumen) y crecimiento del paquete dev_loop.
 
 ### Internal Behavior
 
-1. **Intake** (`IntentClassifierNode` extendido): valida `FeatureBrief`
+1. **Intake** (`IntentClassifierNode` extendido): el loader acepta el union
+   discriminado `Brief = WorkBrief | FeatureBrief` (discriminador `kind`;
+   `FeatureBrief.kind = "feature"`, `WorkKind` intacto). Valida `FeatureBrief`
    (document_path existe y es legible; doc_kind coherente), lo publica en
    `shared["feature_brief"]` y retorna kind para el edge condicional
    `_CEL_IS_FEATURE`.
@@ -377,18 +383,22 @@ antes de los nodos que los consumen) y crecimiento del paquete dev_loop.
      respeta `qa_attempts < DEV_LOOP_QA_MAX_RETRIES`),
    - `escalate` → failure_handler (con las notas del panel),
    - `accept_with_notes` → continúa a feature_handoff con las notas
-     anexadas al PR body (solo permitido si los fallos son no-bloqueantes:
-     findings minor/nit y criterios manuales no-blocking).
+     anexadas al PR body. **Sobre determinista duro** (el router solo decide
+     dentro de él): QA determinista pasó ∧ todos los findings pendientes son
+     minor/nit ∧ los criterios manuales fallidos son non-blocking. Fuera del
+     sobre, solo retry/escalate.
 7. **Feature handoff** (`FeatureHandoffNode`): push branch → draft PR
    `--base dev` (gh/REST, retry-once, patrón DeploymentHandoffNode) →
-   genera `docs/migration/feat-<id>-<slug>.md` (qué se implementó, decisiones,
+   genera `docs/features/feat-<id>-<slug>.md` (qué se implementó, decisiones,
    findings aceptados, cómo probar) y lo commitea/pushea a la rama del PR →
-   `wikitoolkit upsert --changed` (subprocess en el worktree; degrade
-   silencioso si wikitoolkit no está instalado/inicializado) →
+   ingesta esa página al wiki (`LLMWikiToolkit.create_page`; degrade
+   silencioso con warning si el wiki no está inicializado) →
    `DevLoopGraphMemory.publish_run_outcome()` (un commit auditado
    RUN/CLAIM/PRODUCED; no-op si FEAT-B no está configurado) → Jira transition
-   + comment **solo si** hay ticket. Retorna `{status, pr_url, pr_number,
-   docs_path, wiki_updated}`.
+   + comment **solo si** hay ticket. El `wikitoolkit upsert` del código NO
+   corre aquí: se difiere al merge a dev (hook post-commit existente /
+   automatización post-merge), para que el wiki nunca describa código no
+   mergeado. Retorna `{status, pr_url, pr_number, docs_path, wiki_page_id}`.
 8. **Close**: `DevLoopCloseNode` actual (tolera ausencia de Jira:
    `closed_without_ticket`).
 
@@ -417,9 +427,9 @@ reducers de session_state se extienden con los nuevos ids/actions.
   default.
 - **Retries agotados** (`qa_attempts ≥ DEV_LOOP_QA_MAX_RETRIES`) → stop rule
   de FEAT-A rutea a failure_handler; el feedback router no puede overridear.
-- **`wikitoolkit` no inicializado / `gh` ausente** → wiki update se omite
-  con warning (no bloquea el PR); PR cae a REST con `GITHUB_TOKEN`; si ambos
-  fallan → `status: blocked` (patrón `_mark_blocked` sin Jira).
+- **Wiki no inicializado / `gh` ausente** → la ingesta de la página wiki se
+  omite con warning (no bloquea el PR); PR cae a REST con `GITHUB_TOKEN`; si
+  ambos fallan → `status: blocked` (patrón `_mark_blocked` sin Jira).
 - **Sin Jira**: todos los pasos Jira son no-ops; `close` retorna
   `closed_without_ticket` (ya soportado).
 - **Feature-mode sin FEAT-A desplegado** → el edge retry no existe; el
@@ -461,7 +471,7 @@ reducers de session_state se extienden con los nuevos ids/actions.
 | `parrot/flows/dev_loop/_subagent_data/` | extends | `sdd-planner.md`, `sdd-feedback.md` (+ espejo en `.claude/agents/`) |
 | `parrot/flows/dev_loop/factories.py` | modifies | +4 factories |
 | `parrot/cli/devloop/` | extends | brief loader detecta FeatureBrief por `kind`; wizard opcional |
-| `parrot/conf.py` | extends | `DEV_LOOP_JUDGE_PANEL` (json/env), `DEV_LOOP_DOCS_ARTIFACT_DIR` (default `docs/migration`), `DEV_LOOP_WIKI_UPDATE` (bool) |
+| `parrot/conf.py` | extends | `DEV_LOOP_JUDGE_PANEL` (json/env), `DEV_LOOP_DOCS_ARTIFACT_DIR` (default `docs/features`), `DEV_LOOP_WIKI_PAGE_INGEST` (bool) |
 | FEAT-377 (A, B, F) | depends on | Retry edge + `DevLoopGraphMemory` + ontología RUN/CLAIM deben aterrizar antes |
 | Bug-loop existente | none | Aditivo; parity test protege la topología actual |
 
@@ -645,7 +655,7 @@ from parrot.knowledge.graphindex.publish import GraphPublisher
 - ~~`build_wiki()` reutilizable~~ — el pipeline de `wikitoolkit build` está inline en el click command (wiki/cli.py:634); `LLMWikiToolkit.rebuild_index` solo regenera `index.md`.
 - ~~Generación de docs / PR en `/sdd-done`~~ — sdd-done pushea y mergea a base local; nunca abre PR ni escribe documentación.
 - ~~PR creation fuera de `deployment_handoff.py`~~ — `revision_handoff` tiene prohibido crear PRs (revision_handoff.py:10).
-- ~~`docs/features/`~~ — no existe; la convención es `docs/migration/`.
+- ~~`docs/features/`~~ — no existe aún; **esta feature la estrena** (decisión Q4; `docs/migration/` queda para migraciones/breaking changes).
 - ~~`sdd-secondopinion` en `ClaudeCodeDispatchProfile.subagent`~~ — es Codex-only (models.py:527 vs :557,:884).
 - ~~`gate_ttl_for("review_escalation")`~~ — KeyError; ese TTL se lee directo de conf (qa.py:473).
 - ~~Persistencia/resume cross-process de SessionHost~~ — in-memory por run; checkpoint/resume es FEAT-D (futuro).
@@ -681,9 +691,9 @@ from parrot.knowledge.graphindex.publish import GraphPublisher
 - [x] ¿Semántica del feedback agent? — *Owner: Jesus*: router LLM sobre el repair loop G1 — retry (≤ DEV_LOOP_QA_MAX_RETRIES) / escalate / accept_with_notes; stop rule inviolable.
 - [x] ¿Gate humano antes del PR? — *Owner: Jesus*: no — autónomo hasta el draft-PR; el humano solo revisa/mergea.
 - [x] ¿Selección de modo y Jira? — *Owner: Jesus*: IntentClassifier rutea el kind feature (también forzable por CLI/config); Jira opcional.
-- [ ] ¿Nuevo `kind` literal (`"feature"`) en un FeatureBrief discriminado, o re-rutear el `"new_feature"` existente de WorkBrief? Re-rutear cambia el comportamiento de briefs new_feature actuales (hoy van a research+Jira). — *Owner: Jesus*
-- [ ] ¿Panel default exacto (backends/modelos de los 3 jueces) y regla ante N par? Propuesta: claude-sonnet + codex/gpt-5.5 (adversarial) + gemini/auto; empate → escalate. — *Owner: Jesus*
-- [ ] ¿`SynthesisNode` como nodo separado (dispatch extra) o como fase final del DevelopmentNode tras `merge_sequential()`? Nodo separado da telemetría/gates propios; fase interna ahorra un dispatch. — *Owner: Jesus*
-- [ ] ¿El artefacto de documentación va a `docs/migration/` (convención actual) o se estrena `docs/features/`? ¿Se ingesta también como página wiki (`LLMWikiToolkit.create_page`)? — *Owner: Jesus*
-- [ ] Wiki update en el worktree del PR vs en dev post-merge: actualizar el wiki desde la rama del PR documenta código aún no mergeado a dev. ¿Aceptable (el PR lo trae consigo) o diferir el `wikitoolkit upsert` al merge? — *Owner: Jesus*
-- [ ] ¿`accept_with_notes` requiere quórum del panel o basta que los fallos sean minor/nit + manual no-blocking? — *Owner: Jesus*
+- [x] ¿Nuevo `kind` literal (`"feature"`) o re-rutear `"new_feature"`? — *Owner: Jesus*: `FeatureBrief` nuevo con `kind="feature"`, union discriminado `Brief = WorkBrief | FeatureBrief` por el mismo loader YAML. `WorkBrief` y sus 3 kinds actuales intactos — cero cambio de comportamiento para briefs existentes.
+- [x] ¿Panel default y regla ante N par? — *Owner: Jesus*: claude-code/claude-sonnet-4-6 + codex/gpt-5.5 vía sdd-secondopinion (juez adversarial) + gemini/auto; mayoría simple; empate o abstención que rompa mayoría → escalate (fail-closed). Overrideable en brief/env.
+- [x] ¿`SynthesisNode` separado o fase del DevelopmentNode? — *Owner: Jesus*: nodo separado `dev_loop.synthesis` — telemetría/eventos propios, on_error individual, owner explícito del merge point. Se acepta el dispatch y NodeId extra.
+- [x] ¿Ubicación del docs artifact e ingesta wiki? — *Owner: Jesus*: se estrena `docs/features/feat-<id>-<slug>.md` (docs/migration/ se reserva para migraciones/breaking changes) y se ingesta como página wiki vía `LLMWikiToolkit.create_page` para quedar consultable por `wikitoolkit query`.
+- [x] ¿Wiki update desde la rama del PR o post-merge? — *Owner: Jesus*: híbrido — en el handoff se publica el run outcome al knowledge graph (`DevLoopGraphMemory`, metadata siempre válida) y se commitea el docs artifact a la rama del PR + página wiki; el `wikitoolkit upsert` del código se difiere al merge a dev (hook post-commit existente / automatización post-merge). El wiki nunca describe código que no entró.
+- [x] ¿Cuándo aplica `accept_with_notes`? — *Owner: Jesus*: regla determinista dura, sin quórum extra — solo si QA determinista pasó Y todos los findings pendientes son minor/nit Y los criterios manuales fallidos son non-blocking. El LLM router decide dentro de ese sobre; fuera de él, solo retry/escalate. Las notas van al PR body.
