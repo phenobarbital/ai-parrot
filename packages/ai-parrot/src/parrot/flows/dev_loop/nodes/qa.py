@@ -44,7 +44,8 @@ from parrot.flows.dev_loop.models import (
     TriageBrief,
     TriageReport,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
+from parrot.flows.dev_loop.nodes.base import DevLoopNode, condense_qa_failure, register_dev_loop_node
+from parrot.flows.dev_loop.session_state import QaAttemptRecorded
 
 
 _DEFAULT_LINT_COMMAND = "ruff check . && mypy --no-incremental"
@@ -231,6 +232,26 @@ class QANode(DevLoopNode):
             sep = "\n\n" if existing_notes else ""
             update["notes"] = f"{existing_notes}{sep}{chr(10).join(extra_notes)}"
         report = report.model_copy(update=update)
+
+        # FEAT-377 TASK-1911 (Module 3 repair loop): stamp the attempt
+        # number the development node owns in shared state (1 on the very
+        # first pass, before development ever bumps it). Lives ON the
+        # report — not merely in shared state — because the engine's
+        # `cel_evaluator` coerces the node result via `model_dump()`, so
+        # the qa->development retry / qa->failure_handler exhaustion CEL
+        # predicates can only reference fields on `QAReport` itself.
+        attempt = shared.get("qa_attempt", 1)
+        report = report.model_copy(update={"attempt": attempt})
+        session_host = shared.get("session_host")
+        if not report.passed and session_host is not None:
+            will_retry = attempt < int(conf.DEV_LOOP_QA_MAX_RETRIES)
+            if will_retry:
+                session_host.apply(
+                    QaAttemptRecorded(
+                        attempt=attempt,
+                        qa_notes=condense_qa_failure(report),
+                    )
+                )
 
         self.logger.info(
             "QA report: passed=%s, deterministic=%s, code_review=%s, "

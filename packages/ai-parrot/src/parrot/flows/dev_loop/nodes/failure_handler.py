@@ -84,7 +84,7 @@ class FailureHandlerNode(DevLoopNode):
             )
             return {"status": "escalated_without_ticket"}
 
-        body = self._build_comment(failure_kind, failure_payload)
+        body = self._build_comment(failure_kind, failure_payload, shared)
 
         try:
             await self._jira.jira_add_comment(issue=issue_key, body=body)
@@ -157,19 +157,23 @@ class FailureHandlerNode(DevLoopNode):
     # Internal — comment construction
     # ------------------------------------------------------------------
 
-    def _build_comment(self, kind: str, payload: Any) -> str:
+    def _build_comment(self, kind: str, payload: Any, shared: Dict[str, Any]) -> str:
         if kind == "qa_failed" and isinstance(payload, QAReport):
             criterion_lines = "\n".join(
                 f"- {r.name}: exit={r.exit_code}, passed={r.passed}, "
                 f"stderr_tail={r.stderr_tail!r}"
                 for r in payload.criterion_results
             ) or "(no criterion results captured)"
-            return (
+            comment = (
                 "flow-bot: QA failed.\n\n"
                 f"Acceptance criterion results:\n{criterion_lines}\n\n"
                 f"Lint passed: {payload.lint_passed}\n"
                 f"Notes: {payload.notes or '(none)'}"
             )
+            trail = self._attempt_trail(shared)
+            if trail:
+                comment += f"\n\nRepair-loop attempt trail:\n{trail}"
+            return comment
         if kind == "node_error":
             d = payload if isinstance(payload, dict) else {}
             node_id = d.get("node_id", "?")
@@ -180,6 +184,27 @@ class FailureHandlerNode(DevLoopNode):
                 f"`{exc_type}`.\n\n```\n{message}\n```"
             )
         return f"flow-bot: flow failed (kind={kind})"
+
+    @staticmethod
+    def _attempt_trail(shared: Dict[str, Any]) -> str:
+        """Reconstruct the QA repair loop's per-attempt trail from session
+        state (FEAT-377 TASK-1911).
+
+        Replays every ``run/qaAttemptRecorded`` action applied to this
+        run's :class:`SessionHost` (TASK-1910) into one line per attempt.
+        Degrades to an empty string when no host is present (legacy
+        ``DevLoopRunner`` construction) — escalation must never fail on a
+        missing AHP host.
+        """
+        host = shared.get("session_host")
+        if host is None:
+            return ""
+        lines = [
+            f"attempt {envelope.action.attempt}: {envelope.action.qa_notes}"
+            for envelope in host.replay_since(0)
+            if envelope.action.type == "run/qaAttemptRecorded"
+        ]
+        return "\n".join(lines)
 
 
 __all__ = ["FailureHandlerNode"]

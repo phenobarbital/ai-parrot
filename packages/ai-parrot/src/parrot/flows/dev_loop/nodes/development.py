@@ -37,10 +37,11 @@ from parrot.flows.dev_loop.models import (
     DevAgentPoolConfig,
     DevAgentSpec,
     DevelopmentOutput,
+    QAReport,
     ResearchOutput,
     TaskScopedBrief,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
+from parrot.flows.dev_loop.nodes.base import DevLoopNode, condense_qa_failure, register_dev_loop_node
 from parrot.flows.dev_loop.task_scheduler import TaskScheduler
 from parrot.flows.dev_loop.worktree_manager import SubWorktreeManager
 
@@ -119,6 +120,7 @@ class DevelopmentNode(DevLoopNode):
         """
         shared = self.shared_state(ctx)
         research: ResearchOutput = shared["research_output"]
+        research = self._with_repair_feedback(shared, research)
 
         pool_cfg = self._resolve_pool_config(shared)
         if pool_cfg is None:
@@ -131,6 +133,49 @@ class DevelopmentNode(DevLoopNode):
             return await self._execute_single(shared, research)
 
         return await self._execute_pool(shared, research, pool_cfg)
+
+    # ------------------------------------------------------------------
+    # QA repair-loop re-entry (FEAT-377 TASK-1911)
+    # ------------------------------------------------------------------
+
+    def _with_repair_feedback(
+        self, shared: Dict[str, Any], research: ResearchOutput
+    ) -> ResearchOutput:
+        """Bump the attempt counter and carry prior-QA feedback on re-entry.
+
+        Re-entry is detected via a failing ``QAReport`` already in shared
+        state (set by ``QANode`` on a previous pass through this run's
+        ``qa -> development`` retry edge — TASK-1910). This node OWNS the
+        ``qa_attempt`` counter (``QANode`` only reads it to stamp
+        ``QAReport.attempt``); a fresh run therefore starts implicitly at
+        attempt 1 (``QANode``'s default) without this method ever running.
+
+        Worktree reuse falls out for free: this only augments
+        ``log_excerpts`` — ``research.worktree_path`` (and every other
+        field) is copied unchanged, and `research` (hence the worktree) is
+        never re-derived because the retry edge never re-enters
+        ``ResearchNode``.
+
+        Args:
+            shared: The flow's shared state dict.
+            research: The upstream research output (read fresh each call).
+
+        Returns:
+            ``research`` unchanged on a first pass or a passing prior
+            report; otherwise a copy with the prior failure condensed into
+            ``log_excerpts`` so both dispatch paths' briefs carry it.
+        """
+        prior_report: Optional[QAReport] = shared.get("qa_report")
+        if prior_report is None or prior_report.passed:
+            return research
+        shared["qa_attempt"] = shared.get("qa_attempt", 1) + 1
+        feedback = condense_qa_failure(prior_report)
+        note = (
+            f"[QA repair-loop feedback — attempt {shared['qa_attempt']}]\n{feedback}"
+        )
+        return research.model_copy(
+            update={"log_excerpts": [*research.log_excerpts, note]}
+        )
 
     # ------------------------------------------------------------------
     # Config cascade
