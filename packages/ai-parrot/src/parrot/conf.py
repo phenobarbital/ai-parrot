@@ -987,6 +987,14 @@ DEV_LOOP_ACTIONS_RETENTION_DAYS: int = config.getint(
 # monkeypatch it per-case.
 DEV_LOOP_QA_MAX_RETRIES: int = config.getint("DEV_LOOP_QA_MAX_RETRIES", fallback=2)
 
+# FEAT-377 (TASK-1914): dev-loop graph-memory wire (G2). Directory holding
+# the SQLite graph plane DevLoopGraphMemory.from_config() opens (one
+# `<tenant>.db` per tenant, same convention as build_graph_memory_toolkit).
+# Unset (default) disables the facade entirely — every dev_loop node
+# behaves byte-identically to today. SQLite-only in v1 (decided
+# 2026-07-26); no Arango dual publish.
+DEV_LOOP_GRAPH_MEMORY_PATH: str = config.get("DEV_LOOP_GRAPH_MEMORY_PATH", fallback="")
+
 # FEAT-375: Codex CLI adversarial second-opinion agent. These settings back
 # the "codex-adversarial" / "parallel" ``DEV_LOOP_CODEREVIEW_AGENT`` values
 # above — kept append-only here (rather than reflowing the block near
