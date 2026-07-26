@@ -367,18 +367,28 @@ class QANode(DevLoopNode):
         ``CodeReviewFinding`` items (should not normally occur for an
         advisory dispatcher, which already tags its own findings) are
         coerced into ``AdversarialFinding`` defensively.
+
+        FEAT-375 code-review fix: assigns a stable, positional ``finding_id``
+        (``"finding-<n>"``) to every collected finding here — the triage
+        worker echoes it back on each disposition, so matching a returned
+        disposition to its originating finding no longer depends on the
+        worker preserving the exact ``file``/``message`` text (an LLM may
+        paraphrase even while faithfully triaging).
         """
         verdict = shared.get("_code_review_verdict")
         if verdict is None:
             return []
         raw_findings = list(getattr(verdict, "findings", []))
-        return [
-            finding
-            if isinstance(finding, AdversarialFinding)
-            else AdversarialFinding(**finding.model_dump())
-            for finding in raw_findings
-            if not finding.message.startswith(_CODE_REVIEW_SKIP_PREFIX)
-        ]
+        collected: List[AdversarialFinding] = []
+        for idx, finding in enumerate(raw_findings):
+            if finding.message.startswith(_CODE_REVIEW_SKIP_PREFIX):
+                continue
+            finding_id = f"finding-{idx}"
+            if isinstance(finding, AdversarialFinding):
+                collected.append(finding.model_copy(update={"finding_id": finding_id}))
+            else:
+                collected.append(AdversarialFinding(**finding.model_dump(), finding_id=finding_id))
+        return collected
 
     async def _run_finding_triage(
         self,
@@ -431,14 +441,18 @@ class QANode(DevLoopNode):
                 session_host=shared.get("session_host"),
             )
 
-        def _index(report: TriageReport) -> Dict[Tuple[str, str], AdversarialFinding]:
-            return {(f.file, f.message): f for f in report.findings}
+        def _index(report: TriageReport) -> Dict[str, AdversarialFinding]:
+            # FEAT-375 code-review fix: match on the stable `finding_id`
+            # assigned by `_collect_triage_findings`, not on exact
+            # `(file, message)` text — robust against an LLM paraphrasing a
+            # finding's message while still faithfully dispositioning it.
+            return {f.finding_id: f for f in report.findings if f.finding_id}
 
-        def _missing(indexed: Dict[Tuple[str, str], AdversarialFinding]) -> List[AdversarialFinding]:
+        def _missing(indexed: Dict[str, AdversarialFinding]) -> List[AdversarialFinding]:
             return [
                 f for f in findings
-                if indexed.get((f.file, f.message)) is None
-                or indexed[(f.file, f.message)].disposition is None
+                if indexed.get(f.finding_id) is None
+                or indexed[f.finding_id].disposition is None
             ]
 
         report = await _dispatch_once()
@@ -456,14 +470,32 @@ class QANode(DevLoopNode):
         ttl_seconds = conf.DEV_LOOP_GATE_TTL_REVIEW_ESCALATION
         escalated_gate_ids: List[str] = []
 
+        files_modified_set = set(report.files_modified)
         for finding in findings:
-            resolved = indexed.get((finding.file, finding.message))
+            resolved = indexed.get(finding.finding_id)
             if resolved is None or resolved.disposition is None:
                 # Fail-closed: still undispositioned after the retry.
                 resolved = finding.model_copy(update={
                     "disposition": "escalate",
                     "triage_reason": (
                         "no disposition returned by the triage worker after one retry"
+                    ),
+                })
+            elif resolved.disposition == "confirm" and not self._confirm_has_evidence(
+                resolved, files_modified_set
+            ):
+                # FEAT-375 code-review fix: a CONFIRM MUST be backed by an
+                # actual file change — otherwise "confirmed" is
+                # indistinguishable from "silently dropped" (nothing else
+                # would have surfaced this in QAReport.notes, and the
+                # deterministic rerun never triggers). Fail closed to
+                # ESCALATE rather than let an agreed-upon defect disappear.
+                resolved = resolved.model_copy(update={
+                    "disposition": "escalate",
+                    "triage_reason": (
+                        f"disposed as 'confirm' but no corresponding fix was found "
+                        f"in files_modified (worker's stated reason: "
+                        f"{resolved.triage_reason or '(none)'}) — escalating fail-closed"
                     ),
                 })
 
@@ -481,9 +513,9 @@ class QANode(DevLoopNode):
                         on_expiry="fail",
                     )
                     escalated_gate_ids.append(gate_id)
-            # CONFIRM: no note of its own — its fix (if any) surfaces via
-            # `report.files_modified`, which triggers the existing
-            # deterministic-QA rerun.
+            # CONFIRM (with verified evidence): no note of its own — its fix
+            # surfaces via `report.files_modified`, which triggers the
+            # existing deterministic-QA rerun.
 
         escalation_passed = True
         if escalated_gate_ids and session_host is not None:
@@ -493,6 +525,20 @@ class QANode(DevLoopNode):
             escalation_passed = all(gate.status == "approved" for gate in resolved_gates)
 
         return notes, list(report.files_modified), escalation_passed
+
+    @staticmethod
+    def _confirm_has_evidence(resolved: AdversarialFinding, files_modified: set) -> bool:
+        """Whether a CONFIRM disposition is backed by an actual file change.
+
+        FEAT-375 code-review fix: when the finding names a specific file,
+        that file must appear in the triage dispatch's ``files_modified``.
+        When the finding isn't file-specific (``file == ""``), fall back to
+        requiring SOME fix happened this round — imprecise, but still far
+        better than accepting a bare, unverified claim.
+        """
+        if resolved.file:
+            return resolved.file in files_modified
+        return bool(files_modified)
 
     @staticmethod
     def _merge_manual_results(

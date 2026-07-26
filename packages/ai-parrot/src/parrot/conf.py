@@ -1004,6 +1004,17 @@ DEV_LOOP_CODEREVIEW_JUDGE: bool = config.getboolean(
 DEV_LOOP_GATE_TTL_REVIEW_ESCALATION: int = config.getint(
     "DEV_LOOP_GATE_TTL_REVIEW_ESCALATION", fallback=86400  # 24h, fail-closed
 )
+# Target ref for the adversarial reviewer when DEV_LOOP_ADVERSARIAL_SCOPE is
+# "base" (e.g. "dev" or "origin/main"). Required in that case — the server
+# bootstrap raises at startup rather than silently degrading every review if
+# "base" scope is selected without a ref configured here (code-review fix,
+# FEAT-375). Not used, and not required, for "uncommitted" (default) scope.
+# "commit" scope is a per-run value (a fixed commit SHA doesn't make sense as
+# a persistent server setting) and is intentionally NOT configurable here —
+# the server bootstrap rejects "commit" scope with a clear error.
+DEV_LOOP_ADVERSARIAL_BASE_REF: str = config.get(
+    "DEV_LOOP_ADVERSARIAL_BASE_REF", fallback=""
+)
 
 # ---------------------------------------------------------------------------
 # Remote Tool Executors (parrot.tools.executors)

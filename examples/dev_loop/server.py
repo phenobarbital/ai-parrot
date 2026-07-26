@@ -169,6 +169,58 @@ def _log_development_agent_selection(backend: str, profile: Any) -> None:
         )
 
 
+def _build_codex_adversarial_reviewer(codex_dispatcher: CodexCodeDispatcher) -> object:
+    """Build the ``codex-adversarial`` reviewer, validating scope wiring (FEAT-375).
+
+    Code-review fix: previously, ``DEV_LOOP_ADVERSARIAL_SCOPE=base``/``commit``
+    had no way to actually supply the review target — ``review_base``/
+    ``review_commit`` were never passed through, so the dispatcher's
+    ``_build_review_scope_args()`` deterministically raised at DISPATCH time,
+    which the degrade-on-infra-error wrapper silently turned into a
+    passing-but-unreviewed verdict, every single run. Rather than let a
+    foreseeable misconfiguration masquerade as an infra fluke, fail loudly
+    here at server startup instead.
+
+    Args:
+        codex_dispatcher: The (possibly shared) ``CodexCodeDispatcher`` to wrap.
+
+    Returns:
+        The registered ``codex-adversarial`` reviewer.
+
+    Raises:
+        RuntimeError: ``DEV_LOOP_ADVERSARIAL_SCOPE="base"`` without
+            ``DEV_LOOP_ADVERSARIAL_BASE_REF`` configured, or
+            ``DEV_LOOP_ADVERSARIAL_SCOPE="commit"`` (not supported for this
+            static server wiring — a commit SHA is inherently per-run, not a
+            persistent setting).
+    """
+    scope = conf.DEV_LOOP_ADVERSARIAL_SCOPE.strip().lower()
+    if scope == "commit":
+        raise RuntimeError(
+            "DEV_LOOP_ADVERSARIAL_SCOPE='commit' is not supported by this "
+            "server's static reviewer wiring — a commit SHA is inherently "
+            "per-run, not a persistent setting. Use 'uncommitted' (default) "
+            "or 'base' with DEV_LOOP_ADVERSARIAL_BASE_REF set, or drive "
+            "'commit' scope via a programmatic "
+            "CodexAdversarialReviewDispatcher(review_scope='commit', "
+            "review_commit=<sha>) construction outside this bootstrap."
+        )
+    if scope == "base" and not conf.DEV_LOOP_ADVERSARIAL_BASE_REF:
+        raise RuntimeError(
+            "DEV_LOOP_ADVERSARIAL_SCOPE='base' requires "
+            "DEV_LOOP_ADVERSARIAL_BASE_REF to be set (e.g. 'dev' or "
+            "'origin/main') — otherwise every adversarial review would "
+            "silently degrade to an unreviewed pass."
+        )
+    return CodeReviewDispatcherFactory.create(
+        "codex-adversarial",
+        dispatcher=codex_dispatcher,
+        model=conf.DEV_LOOP_ADVERSARIAL_MODEL,
+        review_scope=conf.DEV_LOOP_ADVERSARIAL_SCOPE,
+        review_base=conf.DEV_LOOP_ADVERSARIAL_BASE_REF if scope == "base" else "",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Toolkit wiring
 # ---------------------------------------------------------------------------
@@ -597,12 +649,7 @@ async def _on_startup(app: web.Application) -> None:
                 stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
             )
         )
-        codereview_dispatcher = CodeReviewDispatcherFactory.create(
-            "codex-adversarial",
-            dispatcher=codex_adversarial_dispatcher,
-            model=conf.DEV_LOOP_ADVERSARIAL_MODEL,
-            review_scope=conf.DEV_LOOP_ADVERSARIAL_SCOPE,
-        )
+        codereview_dispatcher = _build_codex_adversarial_reviewer(codex_adversarial_dispatcher)
     elif codereview_agent == "parallel":
         # FEAT-375: composite reviewer — primary (write-enabled claude-code)
         # + codex-adversarial (advisory), merged deterministically, with an
@@ -623,12 +670,7 @@ async def _on_startup(app: web.Application) -> None:
         parallel_primary = CodeReviewDispatcherFactory.create(
             "claude-code", dispatcher=dispatcher
         )
-        parallel_adversary = CodeReviewDispatcherFactory.create(
-            "codex-adversarial",
-            dispatcher=codex_adversarial_dispatcher,
-            model=conf.DEV_LOOP_ADVERSARIAL_MODEL,
-            review_scope=conf.DEV_LOOP_ADVERSARIAL_SCOPE,
-        )
+        parallel_adversary = _build_codex_adversarial_reviewer(codex_adversarial_dispatcher)
         codereview_dispatcher = CodeReviewDispatcherFactory.create(
             "parallel",
             primary=parallel_primary,

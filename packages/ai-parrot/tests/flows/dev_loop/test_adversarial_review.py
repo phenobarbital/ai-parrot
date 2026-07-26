@@ -9,6 +9,7 @@ from parrot.flows.dev_loop.code_review import (
     CodeReviewDispatcherFactory,
     CodexAdversarialReviewDispatcher,
     ParallelPerspectiveReviewDispatcher,
+    _JudgeSynthesisOutput,
 )
 from parrot.flows.dev_loop.models import (
     AdversarialFinding,
@@ -132,6 +133,31 @@ async def test_judge_called_when_enabled_appends_summary():
     assert "judge says: looks fine" in v.summary
 
 
+async def test_judge_dispatch_uses_real_dispatcher_contract():
+    """FEAT-375 code-review fix: the judge call must match the real
+    `dispatch(brief=, profile=, output_model=, run_id=, node_id=, cwd=,
+    session_host=)` contract every other dev-loop dispatcher implements —
+    the previous ad hoc `primary_verdict=`/`adversary_verdict=` shape always
+    raised `TypeError` against a real ``ClaudeCodeDispatcher``."""
+
+    class _RealisticJudgeDispatcher:
+        async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
+            assert output_model is _JudgeSynthesisOutput
+            assert profile.subagent == "sdd-worker"
+            assert profile.permission_mode == "plan"
+            assert profile.allowed_tools == ["Read"]
+            assert brief.primary_passed is True
+            assert brief.adversary_passed is True
+            return output_model(judge_summary="both reviewers agree the fix is safe")
+
+    ok = _StubReviewer(CodeReviewVerdict(passed=True, summary="base summary"))
+    d = ParallelPerspectiveReviewDispatcher(
+        primary=ok, adversary=ok, judge_dispatcher=_RealisticJudgeDispatcher(), judge_enabled=True
+    )
+    v = await d.review(brief=None, run_id="r", node_id="n", cwd="/wt")
+    assert "both reviewers agree the fix is safe" in v.summary
+
+
 async def test_judge_failure_degrades_silently():
     class _BrokenJudge:
         async def dispatch(self, **kw):
@@ -143,7 +169,10 @@ async def test_judge_failure_degrades_silently():
     )
     v = await d.review(brief=None, run_id="r", node_id="n", cwd="/wt")
     assert v.passed is True
-    assert v.summary == "base summary"
+    # FEAT-375 code-review fix: both sides' summaries are preserved
+    # (semicolon-joined) rather than only the primary's surviving — `ok` is
+    # reused for both sides here, so the same text appears twice.
+    assert v.summary == "base summary; base summary"
 
 
 async def test_adversarial_never_carries_files_modified_lying_stub():

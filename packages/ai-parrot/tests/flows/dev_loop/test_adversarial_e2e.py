@@ -146,10 +146,12 @@ async def test_e2e_adversarial_review_triage(codex_dispatcher, ctx, monkeypatch)
     confirmed = AdversarialFinding(
         message="Off by one", severity="major", file="a.py", line=10,
         source="codex-adversarial", disposition="confirm", triage_reason="fixed the off-by-one",
+        finding_id="finding-0",
     )
     rejected = AdversarialFinding(
         message="Style nit", severity="minor", file="b.py", line=2,
         source="codex-adversarial", disposition="reject", triage_reason="not actually an issue",
+        finding_id="finding-1",
     )
     triage_report = TriageReport(findings=[confirmed, rejected], files_modified=["a.py"])
 
@@ -191,6 +193,7 @@ async def test_e2e_escalation_opens_gate_and_pr_note(codex_dispatcher, ctx, monk
     escalated = AdversarialFinding(
         message="Possible security issue", severity="critical", file="auth.py", line=5,
         source="codex-adversarial", disposition="escalate", triage_reason="needs a human call",
+        finding_id="finding-0",
     )
     triage_report = TriageReport(findings=[escalated], files_modified=[])
 

@@ -27,7 +27,7 @@ description: |
 
 model: gpt-5.5
 color: purple
-permissionMode: read-only
+permissionMode: plan
 tools: Read, Grep, Glob, Bash
 ---
 

@@ -58,7 +58,9 @@ async def test_triage_confirm_triggers_rerun(ctx):
     verdict = CodeReviewVerdict(passed=False, findings=[finding])
     reviewer = _advisory_reviewer(verdict)
 
-    confirmed = finding.model_copy(update={"disposition": "confirm", "triage_reason": "valid, fixed"})
+    confirmed = finding.model_copy(
+        update={"disposition": "confirm", "triage_reason": "valid, fixed", "finding_id": "finding-0"}
+    )
     triage_report = TriageReport(findings=[confirmed], files_modified=["a.py"])
 
     qa_report = QAReport(passed=True, criterion_results=[], lint_passed=True)
@@ -75,6 +77,77 @@ async def test_triage_confirm_triggers_rerun(ctx):
 
 
 @pytest.mark.asyncio
+async def test_confirm_without_fix_evidence_fails_closed_to_escalate(ctx):
+    """FEAT-375 code-review fix: CONFIRM with no corresponding files_modified
+    entry must NOT silently pass QA — it escalates instead of disappearing."""
+    finding = _finding("Off by one")
+    verdict = CodeReviewVerdict(passed=False, findings=[finding])
+    reviewer = _advisory_reviewer(verdict)
+
+    # The worker claims "confirm" but reports NO files_modified at all —
+    # no evidence the fix was actually applied.
+    unevidenced_confirm = finding.model_copy(
+        update={"disposition": "confirm", "triage_reason": "fixed it", "finding_id": "finding-0"}
+    )
+    triage_report = TriageReport(findings=[unevidenced_confirm], files_modified=[])
+
+    qa_report = QAReport(passed=True, criterion_results=[], lint_passed=True)
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(side_effect=[qa_report, triage_report])
+
+    session_host = MagicMock()
+    session_host.open_gate = MagicMock(return_value=("gate-1", MagicMock()))
+
+    async def _wait_gate(gate_id):
+        resolved = MagicMock()
+        resolved.status = "rejected"
+        return resolved
+
+    session_host.wait_gate = AsyncMock(side_effect=_wait_gate)
+    ctx["session_host"] = session_host
+
+    node = QANode(dispatcher=dispatcher, codereview_dispatcher=reviewer)
+    report = await node.execute(ctx)
+
+    # No rerun happened (no files_modified) — only 2 dispatch calls.
+    assert dispatcher.dispatch.await_count == 2
+    session_host.open_gate.assert_called_once()
+    assert session_host.open_gate.call_args.kwargs["kind"] == "review_escalation"
+    assert "Escalated for human review" in report.notes
+    assert "Off by one" in report.notes
+    # Fail-closed all the way: the gate resolved "rejected", so the run does
+    # NOT get to silently pass over the unevidenced "fix".
+    assert report.code_review_passed is False
+    assert report.passed is False
+
+
+@pytest.mark.asyncio
+async def test_confirm_with_fix_evidence_stays_confirmed(ctx):
+    """Sanity check: a CONFIRM backed by a real files_modified entry is NOT escalated."""
+    finding = _finding("Off by one")
+    verdict = CodeReviewVerdict(passed=False, findings=[finding])
+    reviewer = _advisory_reviewer(verdict)
+
+    confirmed = finding.model_copy(
+        update={"disposition": "confirm", "triage_reason": "valid, fixed", "finding_id": "finding-0"}
+    )
+    triage_report = TriageReport(findings=[confirmed], files_modified=["a.py"])
+
+    qa_report = QAReport(passed=True, criterion_results=[], lint_passed=True)
+    rerun_report = QAReport(passed=True, criterion_results=[], lint_passed=True)
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(side_effect=[qa_report, triage_report, rerun_report])
+
+    node = QANode(dispatcher=dispatcher, codereview_dispatcher=reviewer)
+    report = await node.execute(ctx)
+
+    # Rerun triggered (evidence present) and no escalation note.
+    assert dispatcher.dispatch.await_count == 3
+    assert report.passed is True
+    assert "Escalated for human review" not in (report.notes or "")
+
+
+@pytest.mark.asyncio
 async def test_triage_reject_recorded_in_notes(ctx):
     """REJECT disposition → triage_reason lands in QAReport.notes."""
     finding = _finding("Not actually an issue")
@@ -82,7 +155,11 @@ async def test_triage_reject_recorded_in_notes(ctx):
     reviewer = _advisory_reviewer(verdict)
 
     rejected = finding.model_copy(
-        update={"disposition": "reject", "triage_reason": "false positive — see AC 3"}
+        update={
+            "disposition": "reject",
+            "triage_reason": "false positive — see AC 3",
+            "finding_id": "finding-0",
+        }
     )
     triage_report = TriageReport(findings=[rejected], files_modified=[])
 
@@ -106,7 +183,11 @@ async def test_triage_escalate_opens_gate_and_note(ctx):
     reviewer = _advisory_reviewer(verdict)
 
     escalated = finding.model_copy(
-        update={"disposition": "escalate", "triage_reason": "needs a human call"}
+        update={
+            "disposition": "escalate",
+            "triage_reason": "needs a human call",
+            "finding_id": "finding-0",
+        }
     )
     triage_report = TriageReport(findings=[escalated], files_modified=[])
 
@@ -142,7 +223,11 @@ async def test_escalate_rejected_gate_fails_code_review(ctx):
     reviewer = _advisory_reviewer(verdict)
 
     escalated = finding.model_copy(
-        update={"disposition": "escalate", "triage_reason": "needs a human call"}
+        update={
+            "disposition": "escalate",
+            "triage_reason": "needs a human call",
+            "finding_id": "finding-0",
+        }
     )
     triage_report = TriageReport(findings=[escalated], files_modified=[])
 

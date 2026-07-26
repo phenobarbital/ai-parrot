@@ -25,6 +25,7 @@ from parrot.flows.dev_loop.dispatcher import (
 )
 from parrot.flows.dev_loop.models import (
     AdversarialFinding,
+    ClaudeCodeDispatchProfile,
     ClaudeCodeReviewProfile,
     CodeReviewFinding,
     CodeReviewVerdict,
@@ -33,6 +34,26 @@ from parrot.flows.dev_loop.models import (
     GeminiCodeReviewProfile,
 )
 from parrot.flows.dev_loop.session_state import SessionHost
+
+
+class _JudgeSynthesisBrief(BaseModel):
+    """Brief for the optional LLM-judge synthesis pass (FEAT-375 G7).
+
+    Carries the already-computed deterministic merge (agreements/
+    disagreements) — the judge's only job is a short narrative over that
+    merge, not re-deriving it.
+    """
+
+    agreements: list[AdversarialFinding]
+    disagreements: list[AdversarialFinding]
+    primary_passed: bool
+    adversary_passed: bool
+
+
+class _JudgeSynthesisOutput(BaseModel):
+    """Structured output of the optional LLM-judge synthesis pass (FEAT-375 G7)."""
+
+    judge_summary: str = ""
 
 
 class AbstractCodeReviewDispatcher(ABC):
@@ -338,10 +359,13 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
 
         if self._judge_enabled and self._judge_dispatcher is not None:
             try:
+                agreements = [f for f in merged.findings if "," in f.source]
+                disagreements = [f for f in merged.findings if "," not in f.source]
                 judge_summary = await self._run_judge(
-                    primary=primary_verdict,
-                    adversary=adversary_verdict,
-                    brief=brief,
+                    agreements=agreements,
+                    disagreements=disagreements,
+                    primary_passed=primary_verdict.passed,
+                    adversary_passed=adversary_verdict.passed,
                     run_id=run_id,
                     node_id=node_id,
                     cwd=cwd,
@@ -426,16 +450,20 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
         return CodeReviewVerdict(
             passed=primary.passed and adversary.passed,
             findings=list(merged_by_key.values()),
-            summary=primary.summary or adversary.summary,
+            # FEAT-375 code-review fix: preserve BOTH summaries when present
+            # instead of discarding the adversary's whenever the primary's is
+            # non-empty.
+            summary="; ".join(s for s in (primary.summary, adversary.summary) if s),
             files_modified=list(primary.files_modified),
         )
 
     async def _run_judge(
         self,
         *,
-        primary: CodeReviewVerdict,
-        adversary: CodeReviewVerdict,
-        brief: BaseModel,
+        agreements: list[AdversarialFinding],
+        disagreements: list[AdversarialFinding],
+        primary_passed: bool,
+        adversary_passed: bool,
         run_id: str,
         node_id: str,
         cwd: str,
@@ -443,17 +471,40 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
     ) -> str:
         """Best-effort optional LLM-judge dispatch (spec §2 G7, gated by conf).
 
-        The judge dispatcher's concrete type is intentionally left generic
-        (``Any``, per spec §2's ``judge_dispatcher: Optional[Any]``) — this
-        method calls its ``dispatch(...)`` coroutine with both verdicts and
-        the original brief, and accepts either a plain string or an object
-        exposing ``judge_summary`` (e.g. a ``PerspectiveSynthesis``-shaped
-        result) as the narrative to append.
+        FEAT-375 code-review fix: the judge dispatcher's concrete type is
+        intentionally left generic (``Any``, per spec §2's ``judge_dispatcher:
+        Optional[Any]``), but it MUST implement the same
+        ``dispatch(brief=, profile=, output_model=, run_id=, node_id=, cwd=,
+        session_host=)`` contract every other dev-loop dispatcher does — the
+        previous version called it with an ad hoc
+        ``primary_verdict=``/``adversary_verdict=`` shape that no real
+        dispatcher accepts, so an enabled judge always raised ``TypeError``
+        (silently degraded by the caller's ``except Exception``, but never
+        actually ran). The judge's job is a short narrative over the
+        ALREADY-COMPUTED deterministic merge (``agreements``/
+        ``disagreements``) — it does not re-derive the merge itself.
+
+        The read-only ``sdd-worker`` profile assumes a Claude-compatible
+        dispatcher (matching the default server wiring, which reuses the
+        primary ``ClaudeCodeDispatcher``); a non-Claude judge dispatcher
+        would need a different profile shape.
         """
+        judge_brief = _JudgeSynthesisBrief(
+            agreements=agreements,
+            disagreements=disagreements,
+            primary_passed=primary_passed,
+            adversary_passed=adversary_passed,
+        )
+        profile = ClaudeCodeDispatchProfile(
+            subagent="sdd-worker",
+            permission_mode="plan",
+            allowed_tools=["Read"],
+            setting_sources=["project"],
+        )
         result = await self._judge_dispatcher.dispatch(
-            brief=brief,
-            primary_verdict=primary,
-            adversary_verdict=adversary,
+            brief=judge_brief,
+            profile=profile,
+            output_model=_JudgeSynthesisOutput,
             run_id=run_id,
             node_id=node_id,
             cwd=cwd,

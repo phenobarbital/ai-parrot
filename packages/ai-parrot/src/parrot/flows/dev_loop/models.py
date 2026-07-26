@@ -24,6 +24,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializeAsAny,
     field_validator,
     model_validator,
 )
@@ -755,10 +756,16 @@ class CodeReviewVerdict(BaseModel):
     The ``findings`` validator coerces plain strings (the format the old model
     accepted) into ``CodeReviewFinding(message=s, severity="minor")`` so an LLM
     that returns the legacy format doesn't fail Pydantic validation.
+
+    ``findings`` is ``SerializeAsAny``-wrapped (FEAT-375 code-review fix) so
+    that subclass instances — e.g. ``AdversarialFinding``, tagged with
+    ``source``/``disposition``/``triage_reason`` by the advisory reviewers —
+    keep those extra fields when this verdict is ``.model_dump()``'d, instead
+    of being silently truncated down to the base ``CodeReviewFinding`` shape.
     """
 
     passed: bool = True
-    findings: List[CodeReviewFinding] = Field(default_factory=list)
+    findings: List[SerializeAsAny[CodeReviewFinding]] = Field(default_factory=list)
     summary: str = ""
     files_modified: List[str] = Field(default_factory=list)
 
@@ -781,6 +788,15 @@ class AdversarialFinding(CodeReviewFinding):
     source: str = "codex-adversarial"
     disposition: Optional[Literal["confirm", "reject", "escalate"]] = None
     triage_reason: str = ""
+    finding_id: str = Field(
+        default="",
+        description=(
+            "Stable identifier assigned before a triage round (e.g. "
+            "'finding-0'), so the triage worker's disposition can be matched "
+            "back to the originating finding without relying on exact "
+            "file/message text equality (which an LLM may paraphrase)."
+        ),
+    )
 
 
 class TriageBrief(BaseModel):

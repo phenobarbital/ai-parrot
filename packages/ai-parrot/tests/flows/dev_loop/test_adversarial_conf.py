@@ -10,6 +10,9 @@ def test_conf_defaults():
     assert conf.DEV_LOOP_ADVERSARIAL_SCOPE == "uncommitted"
     assert conf.DEV_LOOP_CODEREVIEW_JUDGE is False
     assert conf.DEV_LOOP_GATE_TTL_REVIEW_ESCALATION == 86400
+    # Code-review fix follow-up: DEV_LOOP_ADVERSARIAL_BASE_REF backs "base"
+    # scope wiring in examples/dev_loop/server.py.
+    assert conf.DEV_LOOP_ADVERSARIAL_BASE_REF == ""
 
 
 def test_conf_new_envs_are_correct_types():
@@ -19,6 +22,7 @@ def test_conf_new_envs_are_correct_types():
     assert isinstance(conf.DEV_LOOP_ADVERSARIAL_SCOPE, str)
     assert isinstance(conf.DEV_LOOP_CODEREVIEW_JUDGE, bool)
     assert isinstance(conf.DEV_LOOP_GATE_TTL_REVIEW_ESCALATION, int)
+    assert isinstance(conf.DEV_LOOP_ADVERSARIAL_BASE_REF, str)
 
 
 def test_no_getattr_conf_shims_remain():
