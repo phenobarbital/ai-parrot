@@ -302,6 +302,17 @@ class RevisionBrief(BaseModel):
         ...,
         description="Head SHA at trigger time; used for dedup (mirrors GitHubReviewer).",
     )
+    acceptance_criteria: Optional[List[AcceptanceCriterion]] = Field(
+        default=None,
+        description=(
+            "The original feature's acceptance criteria (FEAT-377 TASK-1908). "
+            "When present and non-empty, `run_revision` re-verifies them "
+            "alongside the lint gate instead of running lint-only. `None` "
+            "(the default) preserves legacy lint-only revision QA exactly — "
+            "no caller populates this yet; graph memory write-back "
+            "(TASK-1915) is the intended future source."
+        ),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────

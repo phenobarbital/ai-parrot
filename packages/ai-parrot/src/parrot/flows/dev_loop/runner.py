@@ -650,10 +650,14 @@ class DevLoopRunner:
         rev_flow = self._rev_flow
 
         # Seed a synthetic ResearchOutput so Development/QA run against the
-        # existing clone without re-cloning. v1 note: the original acceptance
-        # criteria are not carried on RevisionBrief, so QA re-runs a lint gate
-        # by default; the reviewer feedback is surfaced in shared state and the
-        # context's initial_task.
+        # existing clone without re-cloning. FEAT-377 TASK-1908: when the
+        # original feature's acceptance criteria are carried on
+        # `RevisionBrief.acceptance_criteria`, QA re-verifies them alongside
+        # the lint gate; when absent (`None`/empty — no caller populates this
+        # yet, graph memory write-back in TASK-1915 is the intended future
+        # source), QA re-runs a lint-only gate exactly as before. The
+        # reviewer feedback is surfaced in shared state and the context's
+        # initial_task either way.
         research = ResearchOutput(
             jira_issue_key=brief.jira_issue_key,
             spec_path="",
@@ -671,7 +675,10 @@ class DevLoopRunner:
             # NOT run through ACCEPTANCE_CRITERION_ALLOWLIST. It is injected by
             # the runner (trusted internal input, run via exec — no shell), so
             # the allowlist bypass is intentional and safe.
-            acceptance_criteria=[ShellCriterion(name="lint", command="ruff check .")],
+            acceptance_criteria=[
+                *(brief.acceptance_criteria or []),
+                ShellCriterion(name="lint", command="ruff check ."),
+            ],
             escalation_assignee="",
             reporter="",
         )
