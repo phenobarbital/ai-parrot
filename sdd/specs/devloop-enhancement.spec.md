@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-378
 **Date**: 2026-07-27
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Brainstorm**: `sdd/proposals/devloop-enhancement.brainstorm.md` (Recommended Option: B)
 
