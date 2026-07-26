@@ -78,6 +78,10 @@ __all__ = [
     "build_graph_memory_toolkit",
     "HashingGraphEmbedder",
     "make_stub_tenant_context",
+    "GraphContextBuilder",
+    "ContextBuildConfig",
+    "GraphContext",
+    "GraphMemoryMixin",
     "SignalRelevance",
     "SignalRelevanceConfig",
     "compute_pairwise_signals",
@@ -118,6 +122,10 @@ _LAZY_ATTRS = {
     "build_graph_memory_toolkit": "parrot.knowledge.graphindex.factory",
     "HashingGraphEmbedder": "parrot.knowledge.graphindex.factory",
     "make_stub_tenant_context": "parrot.knowledge.graphindex.factory",
+    "GraphContextBuilder": "parrot.knowledge.graphindex.context_builder",
+    "ContextBuildConfig": "parrot.knowledge.graphindex.context_builder",
+    "GraphContext": "parrot.knowledge.graphindex.context_builder",
+    "GraphMemoryMixin": "parrot.knowledge.graphindex.mixin",
 }
 
 

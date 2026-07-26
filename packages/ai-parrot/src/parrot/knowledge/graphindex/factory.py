@@ -173,6 +173,32 @@ class HashingGraphEmbedder:
             node.embedding_ref = f"faiss:{self._node_id_map.index(node.node_id)}"
         return nodes
 
+    def get_embedding(self, node_id: str) -> Optional[np.ndarray]:
+        """Return the stored vector for a node id, or ``None``."""
+        return self._vectors.get(node_id)
+
+    async def search_similar(
+        self, query: str, top_k: int = 10
+    ) -> list[tuple[str, float]]:
+        """FAISS L2 search over the embedded nodes.
+
+        Args:
+            query: Natural-language query text.
+            top_k: Maximum results.
+
+        Returns:
+            ``(node_id, distance)`` pairs, closest first.
+        """
+        if self.index.ntotal == 0:
+            return []
+        vec = self.model.encode([query])
+        distances, positions = self.index.search(vec, min(top_k, self.index.ntotal))
+        results: list[tuple[str, float]] = []
+        for pos, dist in zip(positions[0], distances[0]):
+            if 0 <= pos < len(self._node_id_map):
+                results.append((self._node_id_map[pos], float(dist)))
+        return results
+
 
 async def build_graph_memory_toolkit(
     db_dir: Path | str,

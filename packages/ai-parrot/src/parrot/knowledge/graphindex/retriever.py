@@ -63,6 +63,10 @@ class ExpansionConfig(BaseModel):
         include_community_centroids: When ``True`` and a ``CommunitiesResult``
             is available, add the centroid node of each touched community to
             the result set if not already present.
+        allowed_edge_kinds: When set, expansion only traverses edges whose
+            ``kind`` is in this list (e.g. ``["references", "explains"]``).
+            ``None`` (default) traverses every edge — the pre-existing
+            behavior.
     """
 
     max_hops: int = Field(default=2, ge=1, le=4)
@@ -70,6 +74,7 @@ class ExpansionConfig(BaseModel):
     min_signal_threshold: float = Field(default=0.1, ge=0.0)
     max_expanded_nodes: int = Field(default=50, ge=1)
     include_community_centroids: bool = False
+    allowed_edge_kinds: Optional[list[str]] = None
 
 
 class BudgetConfig(BaseModel):
@@ -406,19 +411,40 @@ class GraphExpandedRetriever:
                 if parent_idx is None:
                     continue
 
+                allowed_kinds = (
+                    set(config.allowed_edge_kinds)
+                    if config.allowed_edge_kinds
+                    else None
+                )
+
+                def _edge_allowed(payload: Any) -> bool:
+                    if allowed_kinds is None:
+                        return True
+                    return (
+                        isinstance(payload, dict)
+                        and payload.get("kind") in allowed_kinds
+                    )
+
                 if parent_idx is not None:
                     out_neighbors = [
                         self.graph[t].get("node_id")
-                        for _s, t, _ in self.graph.out_edges(parent_idx)
-                        if isinstance(self.graph[t], dict)
+                        for _s, t, e in self.graph.out_edges(parent_idx)
+                        if isinstance(self.graph[t], dict) and _edge_allowed(e)
                     ]
                     in_neighbors = [
                         self.graph[s].get("node_id")
-                        for s, _t, _ in self.graph.in_edges(parent_idx)
-                        if isinstance(self.graph[s], dict)
+                        for s, _t, e in self.graph.in_edges(parent_idx)
+                        if isinstance(self.graph[s], dict) and _edge_allowed(e)
                     ]
                     all_adj = [nid for nid in (out_neighbors + in_neighbors) if nid]
-                    if len(all_adj) > 100:
+                    if allowed_kinds is not None:
+                        # Edge-kind filter active: the pool is always the
+                        # (filtered) adjacency, so expansion cannot leave
+                        # the allowed edge set via signal shortcuts.
+                        candidate_pool = all_adj[:100]
+                        if not candidate_pool:
+                            continue
+                    elif len(all_adj) > 100:
                         # Cap to first 100 neighbours to bound computation
                         candidate_pool = all_adj[:100]
 
