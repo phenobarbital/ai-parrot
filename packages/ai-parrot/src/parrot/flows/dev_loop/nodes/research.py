@@ -380,6 +380,12 @@ class ResearchNode(DevLoopNode):
         return excerpts
 
     async def _fetch_logs(self, source: LogSource) -> List[str]:
+        if source.kind == "inline":
+            # The locator IS the pasted log/stack-trace text — nothing to
+            # fetch. Keep the tail so oversized pastes don't bloat the
+            # Jira ticket (same 4000-byte cap as attached files).
+            content = source.locator.strip()
+            return [content[-4000:]] if content else []
         if source.kind == "cloudwatch":
             toolkit = self._log_toolkits.get("cloudwatch")
             if toolkit is None:
