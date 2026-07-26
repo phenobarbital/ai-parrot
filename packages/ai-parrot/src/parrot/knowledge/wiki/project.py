@@ -53,6 +53,9 @@ class WikiProjectConfig(BaseModel):
         body_max_chars: Cap on stored page body length.
         max_file_kb: Files larger than this many KiB are skipped.
         claude: Claude Code integration settings.
+        sync_graph: When ``True``, authoring commands (``remember`` /
+            ``link``) also mirror their writes into the project's
+            GraphIndex plane (``.parrot/graph/``) as audited commits.
     """
 
     wiki_name: str = Field(default="codebase")
@@ -65,6 +68,11 @@ class WikiProjectConfig(BaseModel):
     claude: ClaudeIntegrationConfig = Field(
         default_factory=ClaudeIntegrationConfig
     )
+    sync_graph: bool = Field(default=False)
+
+    def graph_path(self, root: Path) -> Path:
+        """Directory of the project's GraphIndex plane (``.parrot/graph``)."""
+        return root / PARROT_DIR / "graph"
 
     def storage_path(self, root: Path) -> Path:
         """Resolve the wiki storage directory against the repo root."""

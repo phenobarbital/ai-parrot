@@ -16,11 +16,13 @@ from typing import Any, TextIO
 NUDGE = (
     "This repository has an ai-parrot LLM-wiki. Before scanning source files, "
     "run `wikitoolkit query \"<focused question>\"`, then inspect a result "
-    "with `wikitoolkit page <id>` or `wikitoolkit related <id>`."
+    "with `wikitoolkit page <id>` or `wikitoolkit related <id>`. When you "
+    "learn a durable fact or decision, save it: "
+    "`wikitoolkit remember \"<fact>\" --category decision`."
 )
 SKILL = """---
 name: parrot-wiki
-description: Query the repository LLM-wiki before raw source scans.
+description: Query the repository LLM-wiki before raw source scans, and save durable knowledge into it.
 ---
 
 # Parrot Wiki
@@ -28,6 +30,14 @@ description: Query the repository LLM-wiki before raw source scans.
 Start codebase investigations with `wikitoolkit query \"<focused question>\"`,
 then use `wikitoolkit page <id>` and `wikitoolkit related <id>`. Fall back to
 raw search only after those paths are empty.
+
+The wiki is also persistent memory. When you learn a durable fact, make a
+decision, or extract a lesson worth keeping, save it with
+`wikitoolkit remember \"<fact>\" --category <note|decision|lesson|concept>`
+(add `--link <page_id>` to connect it to related pages). Annotate existing
+pages with `wikitoolkit note <id> \"<text>\"`, connect pages with
+`wikitoolkit link <a> <b> --rel <relation>`, and review saved knowledge via
+`wikitoolkit memories` / `wikitoolkit audit`.
 """
 
 _AGENTS = {

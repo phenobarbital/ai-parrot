@@ -78,6 +78,7 @@ class LLMWikiToolkit(AbstractToolkit):
         graphindex_toolkit: Any,
         okf_toolkit: Any,
         config: WikiConfig,
+        agent_id: str = "agent",
         **kwargs: Any,
     ) -> None:
         """Initialise the LLMWikiToolkit with composed dependencies.
@@ -87,6 +88,8 @@ class LLMWikiToolkit(AbstractToolkit):
             graphindex_toolkit: A ``GraphIndexToolkit`` instance for graph ops.
             okf_toolkit: An ``OKFToolkit`` instance for schema/lint ops.
             config: :class:`WikiConfig` for this wiki instance.
+            agent_id: Identity stamped (as ``agent:<id>``) onto pages the
+                agent authors via ``create_page`` / ``remember``.
             **kwargs: Forwarded to :class:`AbstractToolkit`.
         """
         super().__init__(**kwargs)
@@ -94,6 +97,7 @@ class LLMWikiToolkit(AbstractToolkit):
         self._gi = graphindex_toolkit
         self._okf = okf_toolkit
         self._config = config
+        self.agent_id = agent_id
 
         # Initialise helper components.  The WikiStore plane is the
         # retrieval backend — SQLite (storage_dir/wiki.db) or the
@@ -557,6 +561,8 @@ class LLMWikiToolkit(AbstractToolkit):
                 summary=content[:300],
                 body=content,
                 token_count=estimate_tokens(content),
+                origin="authored",
+                asserted_by=f"agent:{self.agent_id}",
             )
             await self._store.upsert_pages([record])
             if related_pages:
@@ -603,6 +609,10 @@ class LLMWikiToolkit(AbstractToolkit):
     ) -> dict[str, Any]:
         """Update the content of an existing wiki page.
 
+        Refreshes the WikiStore retrieval plane (row, FTS) so queries see
+        the new content immediately, and best-effort re-inserts the
+        markdown into the PageIndex authoring plane.
+
         Args:
             wiki_name: Wiki name containing the page.
             page_id: Node ID of the page to update.
@@ -610,12 +620,34 @@ class LLMWikiToolkit(AbstractToolkit):
             reason: Optional reason for the update (logged).
 
         Returns:
-            Dict with keys: page_id, status, reason.
+            Dict with keys: page_id, status, reason. ``status`` is
+            ``"not_found"`` when the page does not exist in the store.
         """
+        existing = await self._store.get_page(page_id, include_body=False)
+        if existing is None:
+            return {"page_id": page_id, "status": "not_found", "reason": reason}
+
+        # The WikiStore plane is the retrieval backend — update it first
+        # so FTS/queries never go stale (the pre-fix behavior only wrote
+        # the PageIndex tree, leaving this plane with the old body).
+        record = WikiPageRecord(
+            concept_id=existing["concept_id"],
+            node_id=existing.get("node_id"),
+            title=existing.get("title") or page_id,
+            category=existing.get("category") or "concept",
+            summary=content[:300],
+            body=content,
+            source_id=existing.get("source_id"),
+            token_count=estimate_tokens(content),
+            origin="authored",
+            asserted_by=f"agent:{self.agent_id}",
+        )
+        await self._store.upsert_pages([record])
+
         try:
             await self._pi.insert_markdown(wiki_name, content, doc_name=page_id)
         except Exception as exc:  # noqa: BLE001
-            self.logger.warning("update_page failed: %s", exc)
+            self.logger.warning("update_page PageIndex insert failed: %s", exc)
 
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
@@ -624,6 +656,71 @@ class LLMWikiToolkit(AbstractToolkit):
             f"page_id: {page_id}, reason: {reason!r}",
         )
         return {"page_id": page_id, "status": "updated", "reason": reason}
+
+    async def remember(
+        self,
+        wiki_name: str,
+        text: str,
+        title: Optional[str] = None,
+        category: str = "note",
+        related_pages: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        """Save a fact, decision, or lesson into the wiki as durable memory.
+
+        The page id is a deterministic hash of the title/text, so
+        remembering the same thing twice updates the existing memory
+        instead of duplicating it. Links to related pages are recorded
+        as ``asserted`` edges.
+
+        Args:
+            wiki_name: Wiki to save the memory in.
+            text: The knowledge to remember (markdown allowed).
+            title: Optional short title; derived from the text when
+                omitted.
+            category: One of ``note``, ``decision``, ``lesson``,
+                ``concept`` (open string).
+            related_pages: Optional page ids to link the memory to.
+
+        Returns:
+            Dict with keys: page_id, title, category, status.
+        """
+        import hashlib
+
+        title = (title or text.strip().splitlines()[0][:80]).strip()
+        page_id = "mem-" + hashlib.sha1(
+            f"{title}::{category}".encode("utf-8")
+        ).hexdigest()[:12]
+
+        existing = await self._store.get_page(page_id, include_body=False)
+        record = WikiPageRecord(
+            concept_id=page_id,
+            node_id=page_id,
+            title=title,
+            category=category,
+            summary=text[:300],
+            body=text,
+            token_count=estimate_tokens(text),
+            origin="memory",
+            asserted_by=f"agent:{self.agent_id}",
+        )
+        await self._store.upsert_pages([record])
+        if related_pages:
+            await self._store.add_edges(
+                [(page_id, str(rp), "references", "asserted") for rp in related_pages]
+            )
+
+        await asyncio.to_thread(
+            self._bookkeeper.log_operation,
+            self._config_for(wiki_name).storage_dir,
+            "REMEMBER",
+            f"page_id: {page_id}, title: {title!r}, category: {category}",
+        )
+        return {
+            "page_id": page_id,
+            "title": title,
+            "category": category,
+            "status": "updated" if existing else "created",
+        }
 
     async def delete_page(
         self,
