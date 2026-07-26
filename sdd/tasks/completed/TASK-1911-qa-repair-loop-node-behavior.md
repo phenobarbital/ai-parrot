@@ -93,6 +93,18 @@ class CriterionResult(BaseModel):
 - ~~a feedback field on `QAReport`~~ — compose the summary from `criterion_results` + `lint_output` + `notes` + `code_review_findings`; do not add a new field
 - ~~automatic attempt increment in the engine~~ — the development node owns the counter
 
+### Contract resolution (found during implementation, 2026-07-26)
+- `_ensure_worktree_safe` DOES exist (`nodes/research.py:924`), but it is
+  irrelevant to this task: it verifies a worktree isn't stale junk when
+  **ResearchNode** first creates/discovers it (relaxation for re-running
+  against an already-known incident), called exactly once per flow run.
+  The repair-loop retry edge is `qa -> development` — it never re-enters
+  `ResearchNode` — so worktree reuse across attempts falls out for free:
+  `shared["research_output"]` (and its `worktree_path`) is set once and
+  read unchanged by every `DevelopmentNode.execute()` re-entry. No call to
+  `_ensure_worktree_safe` (or any other helper) was needed in
+  `development.py`.
+
 ---
 
 ## Implementation Notes
@@ -153,10 +165,81 @@ async def test_repair_loop_exhaustion_e2e(always_failing_dispatcher):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-26
 **Notes**:
+- `nodes/base.py`: added `condense_qa_failure(report, max_chars=2000) ->
+  str` — a shared helper (imports `QAReport` from `models.py`; verified no
+  circular import) composing failed-criterion names + `stderr_tail`/
+  `stdout_tail` (last 300 chars) + lint tail + notes + code-review
+  findings, budget-capped. Used by both `qa.py` (attempt-recorded notes)
+  and `development.py` (redispatch feedback) so both surfaces describe a
+  failure identically, per the task's "do not add a new field" note.
+- `nodes/qa.py`: after the final report is assembled, stamps
+  `report.attempt = shared.get("qa_attempt", 1)` (development owns the
+  counter; QA only reads it — defaults to 1 before development ever
+  runs). When the (now-stamped) report fails AND
+  `attempt < DEV_LOOP_QA_MAX_RETRIES` (a retry WILL occur), emits
+  `session_host.apply(QaAttemptRecorded(attempt=..., qa_notes=
+  condense_qa_failure(report)))` when a host is present (mirrors the
+  existing `review_escalation` gate-opening call one method below, which
+  already calls `session_host` methods directly from within this node —
+  established precedent, not a new pattern).
+- `nodes/development.py`: new `_with_repair_feedback(shared, research)`
+  called at the top of `execute()`. Detects re-entry via a failing
+  `QAReport` already in `shared["qa_report"]` (set by `QANode` on the
+  previous pass through the retry edge); when found, increments
+  `shared["qa_attempt"]` (this node's counter — `QANode` only reads it)
+  and returns a `research.model_copy(update={"log_excerpts": [...,
+  <condensed feedback>]})` — reusing the existing `ResearchOutput
+  .log_excerpts` free-text field rather than adding a new one (out of
+  this task's file scope; `models.py` isn't listed). Both `_execute_single`
+  (`brief=research`) and `_execute_pool` (`research=research` → wrapped
+  into every `TaskScopedBrief` by `agent_pool.py`) receive the identical
+  augmented object automatically since only the local variable changes,
+  not a new parameter — covers both dispatch paths per the acceptance
+  criterion. `research.worktree_path` (and every other field) is
+  byte-identical across the copy, so path/cwd logic downstream is
+  unaffected.
+- `nodes/failure_handler.py`: `_build_comment` gained a `shared` parameter
+  and a new `_attempt_trail(shared)` static method that replays
+  `session_host.replay_since(0)`, filters `action.type ==
+  "run/qaAttemptRecorded"` (TASK-1910's naming-corrected literal), and
+  renders one `"attempt N: <qa_notes>"` line per retry — appended to the
+  `qa_failed` comment as "Repair-loop attempt trail:". Degrades to an
+  empty string (no trail section) when no `session_host` is present
+  (legacy construction) — escalation must never fail on a missing host.
+- `tests/integration/test_repair_loop.py` (new): drives the REAL
+  `DevLoopRunner.run()` / `build_dev_loop_flow()` stack (mocked
+  dispatcher/Jira, harness style copied from `test_runner.py` +
+  `test_pool_e2e.py` — no shared fixtures existed to reuse across
+  directories, so `brief`/`mock_jira`/`patch_handoff`/
+  `patch_worktree_base`/`_build_flow` are duplicated locally, matching
+  this test suite's existing per-file-fixture convention).
+  - `test_repair_loop_e2e`: QA fails attempt 1 (with a `CriterionResult`
+    carrying a distinctive `stderr_tail`) → development redispatches with
+    that text verifiably present in `log_excerpts` → QA passes attempt 2
+    → flow reaches `close` with `final_report.attempt == 2`; verifies
+    attempt 1's brief carries NO feedback (nothing to redispatch from yet).
+  - `test_repair_loop_exhaustion_e2e`: QA fails every attempt up to
+    `DEV_LOOP_QA_MAX_RETRIES` → `failure_handler`; the Jira comment
+    contains exactly `N-1` attempt-trail lines (the N-th, exhausting
+    failure never dispatches a retry, so `QANode` never emits a
+    `QaAttemptRecorded` for it — verified by asserting `f"attempt {n}:"`
+    is absent from the trail).
+- Fixed an unrelated regression discovered by the full suite:
+  `test_repointing.py::test_devloop_{development,qa}_uses_canonical_node`
+  string-match the literal source substring `"parrot.flows.dev_loop.nodes
+  .base import DevLoopNode"` on one line — my initial multi-line `import
+  (...)` block broke that exact-substring check. Fixed by keeping the
+  `nodes.base` import single-line in both files (well under the 120-col
+  limit) rather than touching the string-matching test itself.
+- `pytest packages/ai-parrot/tests/flows/dev_loop/ -m "not live"` (minus
+  the pre-existing `hypothesis`-missing file): 664 passed, 1 skipped,
+  same one pre-existing unrelated test-order-dependent failure noted in
+  every prior task this session.
+- `ruff check` clean on every touched file.
 
-**Deviations from spec**: none
+**Deviations from spec**: none beyond the two documented, non-behavioral
+corrections above (worktree-helper contract resolution; single-line
+import to satisfy an unrelated pre-existing string-match test).
