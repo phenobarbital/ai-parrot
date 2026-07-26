@@ -343,6 +343,12 @@ class DevelopmentNode(DevLoopNode):
                 path, description, pool=pool, research=research, run_id=run_id
             )
 
+        # FEAT-377 TASK-1912 (G3): on a QA repair-loop redispatch
+        # (attempt >= 2 — stamped by `_with_repair_feedback` above), every
+        # worker's dispatch in this run uses its `escalation_model` when
+        # set, not just an internal within-wave retry.
+        escalate = shared.get("qa_attempt", 1) >= 2
+
         wave_results: List[WaveResult] = []
         try:
             while True:
@@ -351,7 +357,8 @@ class DevelopmentNode(DevLoopNode):
                     break
 
                 result = await pool.run_wave(
-                    wave, research=research, run_id=run_id, cwd_for=_cwd_for
+                    wave, research=research, run_id=run_id, cwd_for=_cwd_for,
+                    escalate=escalate,
                 )
                 wave_results.append(result)
 

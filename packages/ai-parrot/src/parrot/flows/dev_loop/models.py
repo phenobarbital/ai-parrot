@@ -402,6 +402,19 @@ class DevAgentSpec(BaseModel):
     count: int = Field(
         default=1, ge=1, description="Number of replicas of this spec in the pool."
     )
+    escalation_model: str = Field(
+        default="",
+        description=(
+            "FEAT-377 TASK-1912 (G3): model used on retry/redispatch instead "
+            "of `model` — same backend, stronger tier (e.g. 'claude-code' "
+            "sonnet -> opus). Consulted by DevAgentPool.run_wave's single "
+            "retry AND the QA repair-loop's development redispatch "
+            "(attempt >= 2). '' (default) disables escalation — the retry "
+            "uses `model`, byte-identical to pre-TASK-1912 behavior. No "
+            "built-in per-backend ladder in v1 (decided 2026-07-26, spec §8) "
+            "— explicit only."
+        ),
+    )
 
 
 class DevAgentPoolConfig(BaseModel):
