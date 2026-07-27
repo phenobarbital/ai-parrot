@@ -55,7 +55,7 @@ class DevLoopConsole:
         """Run the interactive console session.
 
         Returns:
-            Exit code (0 = success, 1 = preflight failure).
+            Exit code (0 = success, 1 = preflight failure or invalid brief).
         """
         self.console.print(
             Panel(
@@ -78,6 +78,13 @@ class DevLoopConsole:
         except (EOFError, KeyboardInterrupt):
             self.console.print("\n[dim]Cancelled.[/dim]")
             return 0
+        except (FileNotFoundError, ValueError) as exc:
+            # FEAT-378: pydantic.ValidationError subclasses ValueError, so
+            # this also catches an invalid FeatureBrief (e.g. unreadable
+            # document_path) / WorkBrief / malformed JSON fallback — a
+            # friendly message + non-zero exit, never a raw traceback.
+            self.console.print(f"[bold red]Brief error:[/bold red] {exc}")
+            return 1
 
         # Main command loop
         return await self._command_loop()
@@ -97,12 +104,22 @@ class DevLoopConsole:
             await self._dispatch_run(brief)
 
     async def _collect_work_brief(self, brief_file: Optional[str] = None) -> Any:
-        """Collect a WorkBrief via wizard or file."""
-        from parrot.flows.dev_loop.models import WorkBrief  # noqa: PLC0415
+        """Collect a WorkBrief (or, from a file, a FeatureBrief) — FEAT-378.
+
+        The interactive wizard remains WorkBrief-only (a FeatureBrief
+        wizard is explicitly out of scope, spec §2). Loading from a file
+        routes through the ``Brief`` union (:func:`parse_brief`,
+        TASK-1918): ``kind: feature`` files load as a
+        :class:`~parrot.flows.dev_loop.models.FeatureBrief`; every other
+        file (or one with no ``kind`` at all) loads as a ``WorkBrief`` —
+        byte-identical to the pre-FEAT-378 behavior.
+        """
         from parrot.cli.wizard import PydanticWizard, WizardConfig, WizardFieldOverride  # noqa: PLC0415
 
         if brief_file:
-            return self._load_brief_file(brief_file, WorkBrief)
+            return self._load_brief(brief_file)
+
+        from parrot.flows.dev_loop.models import WorkBrief  # noqa: PLC0415
 
         config = WizardConfig(
             overrides={
@@ -143,6 +160,47 @@ class DevLoopConsole:
 
     def _load_brief_file(self, path_str: str, model_type: type) -> Any:
         """Load a brief from a YAML or JSON file."""
+        data = self._read_brief_data(path_str)
+        return model_type(**data)
+
+    def _load_brief(self, path_str: str) -> Any:
+        """Load a ``WorkBrief`` or ``FeatureBrief`` from a YAML/JSON file (FEAT-378).
+
+        Routes through the ``Brief`` discriminated union
+        (:func:`~parrot.flows.dev_loop.models.parse_brief`, TASK-1918):
+        ``kind: feature`` → :class:`FeatureBrief`; anything else (or no
+        ``kind`` at all) → ``WorkBrief`` — byte-identical to the
+        pre-FEAT-378 ``_load_brief_file(path, WorkBrief)`` behavior.
+
+        Args:
+            path_str: Path to the YAML/JSON brief file.
+
+        Returns:
+            A validated ``WorkBrief`` or ``FeatureBrief`` instance.
+
+        Raises:
+            FileNotFoundError: When ``path_str`` does not resolve to a file.
+            pydantic.ValidationError: When the loaded data fails validation
+                against the resolved brief model.
+        """
+        from parrot.flows.dev_loop.models import parse_brief  # noqa: PLC0415
+
+        data = self._read_brief_data(path_str)
+        return parse_brief(data)
+
+    @staticmethod
+    def _read_brief_data(path_str: str) -> Dict[str, Any]:
+        """Read + parse a YAML/JSON brief file into a raw ``dict``.
+
+        Args:
+            path_str: Path to the brief file.
+
+        Returns:
+            The parsed mapping.
+
+        Raises:
+            FileNotFoundError: When ``path_str`` does not resolve to a file.
+        """
         path = Path(path_str).expanduser()
         if not path.is_file():
             raise FileNotFoundError(f"Brief file not found: {path}")
@@ -152,11 +210,40 @@ class DevLoopConsole:
             data = yaml.safe_load(text)
         except Exception:
             data = json.loads(text)
-        return model_type(**data)
+        return data
+
+    def _print_feature_brief_summary(self, brief: Any) -> None:
+        """Render a confirmation summary panel for a ``FeatureBrief`` (FEAT-378).
+
+        Mirrors the existing gate/header ``Panel`` rendering style — the
+        WorkBrief path has no equivalent pre-dispatch summary today, so
+        this is additive only (zero behavior change for WorkBrief runs).
+
+        Args:
+            brief: The validated ``FeatureBrief`` about to be dispatched.
+        """
+        judges = "default (3-judge panel)"
+        if brief.judge_panel is not None:
+            judges = ", ".join(j.agent for j in brief.judge_panel.judges)
+        self.console.print(
+            Panel(
+                f"[bold]document_path[/bold]: {brief.document_path}\n"
+                f"[bold]document_kind[/bold]: {brief.document_kind}\n"
+                f"[bold]jira_issue_key[/bold]: {brief.jira_issue_key or '(none)'}\n"
+                f"[bold]judge_panel[/bold]: {judges}",
+                title="Feature Brief",
+                border_style="green",
+            )
+        )
 
     async def _dispatch_run(self, brief: Any) -> str:
         """Dispatch a new dev-loop run and attach a RunView."""
         import uuid  # noqa: PLC0415
+        from parrot.flows.dev_loop.models import FeatureBrief  # noqa: PLC0415
+
+        if isinstance(brief, FeatureBrief):
+            self._print_feature_brief_summary(brief)
+
         run_id = f"run-{uuid.uuid4().hex[:8]}"
         runner = self._runtime.runner
 
