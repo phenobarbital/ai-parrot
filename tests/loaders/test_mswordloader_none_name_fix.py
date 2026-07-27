@@ -50,6 +50,20 @@ def mock_paragraph_body():
 
 
 @pytest.fixture
+def mock_paragraph_none_style_name():
+    """Return a mock docx Paragraph with a Style object whose .name is None.
+
+    Simulates a corrupt document where python-docx returns a Style instance
+    but its .name attribute is None.
+    """
+    para = MagicMock()
+    para.style = MagicMock()
+    para.style.name = None
+    para.text = "Paragraph with null style name"
+    return para
+
+
+@pytest.fixture
 def loader():
     """Return an MSWordLoader with LLM/device setup mocked out."""
     with (
@@ -80,6 +94,17 @@ class TestNoneStyleParagraph:
             result = loader.docx_to_markdown("/tmp/fake.docx")
 
         assert "Body paragraph without style" in result
+
+    def test_none_style_name_treated_as_body(
+        self, loader, mock_paragraph_none_style_name
+    ):
+        """Para with style.name=None renders as plain text without raising."""
+        mock_doc = _make_mock_doc([mock_paragraph_none_style_name])
+
+        with patch("parrot_loaders.docx.docx.Document", return_value=mock_doc):
+            result = loader.docx_to_markdown("/tmp/fake.docx")
+
+        assert "Paragraph with null style name" in result
 
     def test_none_style_no_attribute_error(self, loader, mock_paragraph_none_style):
         """docx_to_markdown() must not raise AttributeError for None style."""
