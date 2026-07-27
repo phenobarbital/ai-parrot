@@ -169,10 +169,23 @@ async def test_vector_mode_offloaded():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-07-27
+**Notes**: Implemented `PageIndexOrigin` with `mode` dispatch
+(`hybrid`/`llm`/`vector`, default `hybrid`, validated at construction);
+`hybrid` normalizes `HybridPageIndexSearch.search()` dict rows; `llm`
+resolves `PageIndexRetriever.search()`'s `TreeSearchResult.node_list` ids
+to title/summary via `find_node_by_id(retriever.structure, ...)`;
+`vector` embeds the query via an injected async `embed_fn` then runs the
+sync `FlatMatrixSearch.search` through `loop.run_in_executor` so it never
+blocks the event loop (verified with a concurrent-ticker test). Exported
+`PageIndexOrigin` from `origins/__init__.py`. 11 unit tests added, all
+passing (including the event-loop-responsiveness test); `ruff check`
+clean; full `multistoresearch/` suite (21 tests) still green.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none — one implementation detail not spelled
+out in the spec/task and resolved here: for `vector` mode,
+`FlatMatrixSearch` only returns `(node_id, score)` pairs (no title/summary
+available without a tree lookup that isn't part of its contract), so its
+hits use `content=node_id` per the task's own "or equivalent" allowance;
+`llm`/`hybrid` modes both resolve full title+summary content.

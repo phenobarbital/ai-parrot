@@ -102,7 +102,16 @@ from .conference import (
     ConferenceRound,
     ConferenceResult,
 )
-from .stores import StoreType, StoreConfig, SearchResult
+from .stores import (
+    StoreType,
+    StoreConfig,
+    SearchResult,
+    SearchOriginKind,
+    OriginHit,
+    OriginSection,
+    MultiSearchResponse,
+    MultiSearch,
+)
 
 __all__ = (
     "OutputFormat",
@@ -198,4 +207,10 @@ __all__ = (
     "StoreType",
     "StoreConfig",
     "SearchResult",
+    # Multi-search origins + protocol (FEAT-379)
+    "SearchOriginKind",
+    "OriginHit",
+    "OriginSection",
+    "MultiSearchResponse",
+    "MultiSearch",
 )

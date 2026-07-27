@@ -23,12 +23,6 @@ from parrot.registry.routing import (
 from parrot.models import StoreType
 
 try:
-    from parrot_tools.multistoresearch import MultiStoreSearchTool
-    _MULTITOOL_AVAILABLE = True
-except ImportError:
-    _MULTITOOL_AVAILABLE = False
-
-try:
     from parrot.stores.faiss_store import FAISSStore
     _FAISS_AVAILABLE = True
 except ImportError:
@@ -159,15 +153,19 @@ async def test_router_llm_path_with_mock():
 
 @pytest.mark.asyncio
 async def test_router_with_multistore_fallback_mock():
-    """FAN_OUT policy delegates to MultiStoreSearchTool._execute."""
+    """FAN_OUT policy delegates to any MultiSearch-satisfying object's .search()."""
     cfg = StoreRouterConfig(fallback_policy=StoreFallbackPolicy.FAN_OUT, cache_size=4)
     router = StoreRouter(cfg)
     mock_store = _MockStore("pgvector")
     stores = {StoreType.PGVECTOR: mock_store}
 
-    # Build a fake MultiStoreSearchTool
-    tool = MagicMock()
-    tool._execute = AsyncMock(return_value=[{"content": "fan out result"}])
+    # Build a plain MultiSearch-protocol-satisfying fake (no concrete
+    # toolkit import — core decouples from parrot_tools).
+    class FakeMultiSearch:
+        def __init__(self):
+            self.search = AsyncMock(return_value=[{"content": "fan out result"}])
+
+    tool = FakeMultiSearch()
 
     # Craft a fallback decision
     from parrot.registry.routing.models import StoreRoutingDecision
@@ -175,7 +173,7 @@ async def test_router_with_multistore_fallback_mock():
         rankings=[], fallback_used=True, path="fast"
     )
     results = await router.execute(fallback_decision, "query", stores, multistore_tool=tool)
-    tool._execute.assert_awaited_once()
+    tool.search.assert_awaited_once()
     assert isinstance(results, list)
 
 

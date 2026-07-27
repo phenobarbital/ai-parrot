@@ -195,10 +195,31 @@ async def test_fts_skips_non_capable():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-07-27
+**Notes**: Implemented `MultiStoreSearchToolkit(AbstractToolkit)` with
+`store_search`/`batch_search`/`fts_search`/`list_search_origins`
+(`search` excluded from tool generation via `exclude_tools` and used to
+satisfy `MultiSearch`). Per-origin isolation via
+`asyncio.wait_for(..., timeout=origin.timeout or default_timeout)` +
+`asyncio.gather(..., return_exceptions=True)`; timeouts → status
+`"timeout"`, other exceptions → status `"error"` with `repr(exc)`;
+FTS-incapable origins → status `"skipped"` without ever being called.
+`batch_search` dispatches the full N×M origin-call plan through exactly
+ONE `asyncio.gather` (verified: `grep -rn to_thread` finds only a
+docstring mention in `pageindex.py`, no actual usage anywhere in the
+package). BM25 rerank + ID/content-hash dedup lifted from
+`_legacy_tool.py` and adapted to `OriginHit` — origin-native scores are
+left untouched (never blended into the ranking), only the merged
+block's ORDER is BM25-derived, matching the spec's
+non-comparable-scores decision. 26 new tests (16 toolkit + 2
+tool-generation, plus reruns of the 8 pre-existing adapter/origin
+tests) — full `multistoresearch/` suite is 50 tests, all passing;
+`ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Dropped the `bm25s`-then-force-fallback dead
+code path present in the legacy tool (`_legacy_tool.py:224-253`, whose
+own `try` block deliberately raised to always fall through to
+`rank_bm25`) — the spec's External Dependencies section explicitly
+allows "keep optional or drop the dead path"; `rank_bm25` is used
+directly. No other deviation.

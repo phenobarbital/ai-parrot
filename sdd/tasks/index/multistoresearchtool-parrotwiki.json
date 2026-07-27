@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-27T14:21:46+02:00",
-  "completed_at": null,
+  "completed_at": "2026-07-27T16:48:25+00:00",
   "tasks": [
     {
       "id": "TASK-1930",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-379",
       "feature": "multistoresearchtool-parrotwiki",
       "spec": "sdd/specs/multistoresearchtool-parrotwiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — every other task imports these types.",
       "assigned_to": null,
       "started_at": "2026-07-27T13:49:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1930-core-models-searchoriginkind-multisearch.md"
+      "completed_at": "2026-07-27T14:09:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1930-core-models-searchoriginkind-multisearch.md"
     },
     {
       "id": "TASK-1931",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-379",
       "feature": "multistoresearchtool-parrotwiki",
       "spec": "sdd/specs/multistoresearchtool-parrotwiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Touches hot core files (bots/abstract.py, routing/store_router.py); could run beside TASK-1932+ in principle but per-spec isolation keeps it sequential.",
       "assigned_to": null,
       "started_at": "2026-07-27T13:49:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1931-storerouter-abstractbot-decoupling.md"
+      "completed_at": "2026-07-27T14:15:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1931-storerouter-abstractbot-decoupling.md"
     },
     {
       "id": "TASK-1932",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-379",
       "feature": "multistoresearchtool-parrotwiki",
       "spec": "sdd/specs/multistoresearchtool-parrotwiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Creates the parrot_tools/multistoresearch package skeleton and performs the module→package move; must precede all adapter tasks.",
       "assigned_to": null,
       "started_at": "2026-07-27T13:49:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1932-searchorigin-contract-vector-adapter.md"
+      "completed_at": "2026-07-27T14:24:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1932-searchorigin-contract-vector-adapter.md"
     },
     {
       "id": "TASK-1933",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-379",
       "feature": "multistoresearchtool-parrotwiki",
       "spec": "sdd/specs/multistoresearchtool-parrotwiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Own adapter file + own test file; independent of TASK-1934/1935 (all three only append an export line to origins/__init__.py). Spec still recommends per-spec sequential execution.",
       "assigned_to": null,
       "started_at": "2026-07-27T13:49:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1933-pageindex-origin-adapter.md"
+      "completed_at": "2026-07-27T14:45:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1933-pageindex-origin-adapter.md"
     },
     {
       "id": "TASK-1934",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-379",
       "feature": "multistoresearchtool-parrotwiki",
       "spec": "sdd/specs/multistoresearchtool-parrotwiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Own adapter file + own test file; independent of TASK-1933/1935 except the shared export line in origins/__init__.py.",
       "assigned_to": null,
       "started_at": "2026-07-27T13:49:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1934-graphindex-origin-adapter.md"
+      "completed_at": "2026-07-27T14:47:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1934-graphindex-origin-adapter.md"
     },
     {
       "id": "TASK-1935",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-379",
       "feature": "multistoresearchtool-parrotwiki",
       "spec": "sdd/specs/multistoresearchtool-parrotwiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Own adapter file + own test file; independent of TASK-1933/1934 except the shared export line in origins/__init__.py.",
       "assigned_to": null,
       "started_at": "2026-07-27T13:49:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1935-parrotwiki-origin-adapter.md"
+      "completed_at": "2026-07-27T15:05:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1935-parrotwiki-origin-adapter.md"
     },
     {
       "id": "TASK-1936",
@@ -132,7 +132,7 @@
       "feature_id": "FEAT-379",
       "feature": "multistoresearchtool-parrotwiki",
       "spec": "sdd/specs/multistoresearchtool-parrotwiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -145,8 +145,8 @@
       "parallelism_notes": "Integrates all adapters; must follow them.",
       "assigned_to": null,
       "started_at": "2026-07-27T13:49:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1936-multistoresearch-toolkit-core.md"
+      "completed_at": "2026-07-27T15:12:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1936-multistoresearch-toolkit-core.md"
     },
     {
       "id": "TASK-1937",
@@ -155,7 +155,7 @@
       "feature_id": "FEAT-379",
       "feature": "multistoresearchtool-parrotwiki",
       "spec": "sdd/specs/multistoresearchtool-parrotwiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -166,8 +166,8 @@
       "parallelism_notes": "Point of no return across both packages; strictly last code task.",
       "assigned_to": null,
       "started_at": "2026-07-27T13:49:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1937-clean-break-migration-registry.md"
+      "completed_at": "2026-07-27T16:36:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1937-clean-break-migration-registry.md"
     },
     {
       "id": "TASK-1938",
@@ -176,7 +176,7 @@
       "feature_id": "FEAT-379",
       "feature": "multistoresearchtool-parrotwiki",
       "spec": "sdd/specs/multistoresearchtool-parrotwiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -187,8 +187,8 @@
       "parallelism_notes": "Documents final implemented signatures; must follow the code tasks.",
       "assigned_to": null,
       "started_at": "2026-07-27T13:49:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1938-docs-multistoresearch-toolkit.md"
+      "completed_at": "2026-07-27T16:43:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1938-docs-multistoresearch-toolkit.md"
     }
   ]
 }

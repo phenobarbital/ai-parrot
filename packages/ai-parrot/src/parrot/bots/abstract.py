@@ -40,6 +40,7 @@ from ..clients.base import (
 from ..clients.models import LLMConfig
 from ..models import (
     AIMessage,
+    MultiSearch,
     SourceDocument,
     StructuredOutputConfig
 )
@@ -114,7 +115,6 @@ from ..models.status import AgentStatus
 try:
     from parrot.registry.routing import StoreRouter, StoreRouterConfig
     from parrot.models import StoreType as _StoreType
-    from parrot_tools.multistoresearch import MultiStoreSearchTool as _MultiStoreSearchTool
     from parrot.stores.postgres import PgVectorStore as _PgVectorStore
     from parrot.stores.arango import ArangoDBStore as _ArangoDBStore
     try:
@@ -126,7 +126,6 @@ except ImportError:
     StoreRouter = None  # type: ignore[assignment,misc]
     StoreRouterConfig = None  # type: ignore[assignment,misc]
     _StoreType = None  # type: ignore[assignment]
-    _MultiStoreSearchTool = None  # type: ignore[assignment]
     _PgVectorStore = None  # type: ignore[assignment]
     _ArangoDBStore = None  # type: ignore[assignment]
     _FAISSStore = None  # type: ignore[assignment]
@@ -574,7 +573,7 @@ class AbstractBot(
         self.stores: List[AbstractStore] = []
         # FEAT-111: StoreRouter — assigned via configure_store_router()
         self._store_router: Optional["StoreRouter"] = None
-        self._multi_store_tool: Optional[Any] = None
+        self._multi_store_tool: Optional[MultiSearch] = None
 
         # NEW: Unified Conversation Memory System
         self.conversation_memory: Optional[ConversationMemory] = None
@@ -2037,7 +2036,7 @@ class AbstractBot(
         self,
         config: Any,
         ontology_resolver: Optional[Any] = None,
-        multi_store_tool: Optional[Any] = None,
+        multi_store_tool: Optional[MultiSearch] = None,
     ) -> None:
         """Configure the store-level router for this bot.
 
@@ -2052,9 +2051,8 @@ class AbstractBot(
                 instance.
             ontology_resolver: Optional ontology resolver forwarded to
                 :class:`~parrot.registry.routing.OntologyPreAnnotator`.
-            multi_store_tool: Optional
-                :class:`~parrot_tools.multistoresearch.MultiStoreSearchTool`
-                used when ``fallback_policy=FAN_OUT``.
+            multi_store_tool: Optional :class:`~parrot.models.MultiSearch`-satisfying
+                instance used when ``fallback_policy=FAN_OUT``.
         """
         if not _STORE_ROUTER_AVAILABLE:
             self.logger.warning(
