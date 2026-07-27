@@ -949,6 +949,35 @@ class DevLoopRunner:
         self._run_completion.pop(rid, None)
         return result
 
+    def _feature_codereview_dispatcher(self) -> Any:
+        """Resolve the code-review dispatcher for the feature-mode flow.
+
+        Code-review finding (post-TASK-1925): this runner has a single
+        ``self._codereview_dispatcher`` field shared by ``run()``/
+        ``run_revision()`` (bug/revision QA) and ``_run_feature()``
+        (feature-mode QA) — an explicit caller-supplied dispatcher applies
+        to both, unchanged. But when the caller left it unset (``None``,
+        today's default), feature-mode QA silently fell through to
+        ``QANode``'s own bare fallback (a single
+        ``ClaudeCodeReviewDispatcher``) instead of the N-judge panel spec
+        §2/§4 (Module 4, TASK-1920) describes as feature-mode's default
+        review gate. Only feature-mode gets this default upgrade — bug/
+        revision behavior is unchanged (still ``None`` -> QANode's own
+        fallback) — because only feature-mode's QA is documented to
+        default to the judge panel.
+
+        Returns:
+            ``self._codereview_dispatcher`` when explicitly configured,
+            otherwise a freshly-built ``JudgePanelReviewDispatcher`` (its
+            own constructor resolves ``DEV_LOOP_JUDGE_PANEL`` / falls back
+            to ``default_judge_panel()``).
+        """
+        if self._codereview_dispatcher is not None:
+            return self._codereview_dispatcher
+        from parrot.flows.dev_loop.code_review import JudgePanelReviewDispatcher
+
+        return JudgePanelReviewDispatcher(redis_url=self._redis_url)
+
     async def _run_feature(
         self,
         brief: FeatureBrief,
@@ -1006,7 +1035,7 @@ class DevLoopRunner:
                 git_toolkit=self._git_toolkit,
                 wiki_toolkit=self._wiki_toolkit,
                 redis_url=self._redis_url,
-                codereview_dispatcher=self._codereview_dispatcher,
+                codereview_dispatcher=self._feature_codereview_dispatcher(),
             )
         feature_flow = self._feature_flow
 

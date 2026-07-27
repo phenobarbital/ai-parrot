@@ -384,3 +384,23 @@ class TestFeatureModeDispatch:
 
         with pytest.raises(RuntimeError, match="feature-mode run requires"):
             await runner.run(fb)
+
+    def test_feature_codereview_dispatcher_defaults_to_judge_panel(self):
+        """Code-review finding: an unconfigured codereview_dispatcher must
+        default feature-mode QA to a real JudgePanelReviewDispatcher, not
+        silently fall through to QANode's own bare ClaudeCodeReviewDispatcher
+        fallback (which bug/revision-mode already uses by default)."""
+        from parrot.flows.dev_loop.code_review import JudgePanelReviewDispatcher
+
+        runner = DevLoopRunner(MagicMock(), redis_url="redis://fake")
+        dispatcher = runner._feature_codereview_dispatcher()
+        assert isinstance(dispatcher, JudgePanelReviewDispatcher)
+
+    def test_feature_codereview_dispatcher_respects_explicit_override(self):
+        """An explicitly-configured codereview_dispatcher still wins for
+        feature-mode too — unchanged from before this fix."""
+        explicit = MagicMock()
+        runner = DevLoopRunner(
+            MagicMock(), redis_url="redis://fake", codereview_dispatcher=explicit,
+        )
+        assert runner._feature_codereview_dispatcher() is explicit

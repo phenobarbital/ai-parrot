@@ -19,6 +19,7 @@ from parrot.flows.dev_loop.models import (
     JudgeSpec,
     default_judge_panel,
 )
+from parrot.flows.dev_loop.session_state import SessionHost
 
 
 class _StubJudge:
@@ -174,3 +175,68 @@ def test_unsupported_judge_backend_raises():
     )
     with pytest.raises(ValueError, match="grok"):
         dispatcher._build_judge(JudgeSpec(agent="grok"))
+
+
+# ---------------------------------------------------------------------------
+# JudgeVerdictRecorded (code-review finding: the action existed but was
+# never applied — session_host.state.judge_verdicts was always empty).
+# ---------------------------------------------------------------------------
+
+
+async def test_review_records_judge_verdicts_when_session_host_present():
+    panel = _panel({
+        "claude-code": _StubJudge(_v(True, findings=[CodeReviewFinding(message="ok", severity="nit")])),
+        "codex": _StubJudge(_v(False)),
+    })
+    host = SessionHost(run_id="r1")
+
+    await panel.review(
+        brief=None, run_id="r1", node_id="qa", cwd="/wt",
+        session_host=host, round="qa-1",
+    )
+
+    recorded = host.state.judge_verdicts["qa-1"]
+    assert {v.judge_id for v in recorded} == {"claude-code", "codex"}
+    claude_verdict = next(v for v in recorded if v.judge_id == "claude-code")
+    assert claude_verdict.passed is True
+    assert claude_verdict.findings_count == 1
+    codex_verdict = next(v for v in recorded if v.judge_id == "codex")
+    assert codex_verdict.passed is False
+
+
+async def test_review_records_errored_judge_as_failed_verdict():
+    panel = _panel({
+        "claude-code": _StubJudge(_v(True)),
+        "codex": _StubJudge(None, raises=RuntimeError("boom")),
+    })
+    host = SessionHost(run_id="r1")
+
+    await panel.review(
+        brief=None, run_id="r1", node_id="qa", cwd="/wt",
+        session_host=host, round="qa-1",
+    )
+
+    codex_verdict = next(
+        v for v in host.state.judge_verdicts["qa-1"] if v.judge_id == "codex"
+    )
+    assert codex_verdict.passed is False
+    assert "infra error" in codex_verdict.summary
+
+
+async def test_review_without_session_host_does_not_raise():
+    """session_host=None (default) must degrade to a no-op, not raise."""
+    panel = _panel({"claude-code": _StubJudge(_v(True))})
+    verdict = await panel.review(brief=None, run_id="r", node_id="n", cwd="/wt")
+    assert verdict.passed is True
+
+
+async def test_review_without_round_still_records():
+    """A round-less caller (round="", the default) still records verdicts
+    — just without per-QA-attempt partitioning."""
+    panel = _panel({"claude-code": _StubJudge(_v(True))})
+    host = SessionHost(run_id="r1")
+
+    await panel.review(brief=None, run_id="r1", node_id="qa", cwd="/wt", session_host=host)
+
+    assert "" in host.state.judge_verdicts
+    assert host.state.judge_verdicts[""][0].judge_id == "claude-code"

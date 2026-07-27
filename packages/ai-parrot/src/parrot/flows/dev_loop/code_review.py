@@ -37,7 +37,7 @@ from parrot.flows.dev_loop.models import (
     JudgeSpec,
     default_judge_panel,
 )
-from parrot.flows.dev_loop.session_state import SessionHost
+from parrot.flows.dev_loop.session_state import JudgeVerdictRecorded, SessionHost
 
 # Signature: ``(key, fallback) -> Any`` (mirrors ``agent_builder.ConfigGetter``)
 # — kept local rather than imported to avoid a module-level dependency on
@@ -109,6 +109,7 @@ class AbstractCodeReviewDispatcher(ABC):
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        round: str = "",
     ) -> CodeReviewVerdict:
         """Run code review, optionally fix issues, return a verdict.
 
@@ -124,6 +125,10 @@ class AbstractCodeReviewDispatcher(ABC):
             session_host: FEAT-322 — the run's ``SessionHost``, if any
                 (threaded through to the underlying dispatcher so
                 dispatch-level events fold into session state).
+            round: FEAT-378 — the QA round identifier (e.g. ``"qa-1"``),
+                threaded through so :class:`JudgePanelReviewDispatcher` can
+                stamp ``JudgeVerdictRecorded.round``. Unused by this base
+                implementation and every non-panel dispatcher.
         """
         try:
             return await self._dispatcher.dispatch(
@@ -287,6 +292,7 @@ class CodexAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        round: str = "",
     ) -> CodeReviewVerdict:
         """Run the advisory review, then enforce the no-writes contract.
 
@@ -303,6 +309,7 @@ class CodexAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
             node_id=node_id,
             cwd=cwd,
             session_host=session_host,
+            round=round,
         )
         tagged_findings = [
             finding
@@ -363,13 +370,16 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        round: str = "",
     ) -> CodeReviewVerdict:
         primary_result, adversary_result = await asyncio.gather(
             self._primary.review(
-                brief=brief, run_id=run_id, node_id=node_id, cwd=cwd, session_host=session_host
+                brief=brief, run_id=run_id, node_id=node_id, cwd=cwd,
+                session_host=session_host, round=round,
             ),
             self._adversary.review(
-                brief=brief, run_id=run_id, node_id=node_id, cwd=cwd, session_host=session_host
+                brief=brief, run_id=run_id, node_id=node_id, cwd=cwd,
+                session_host=session_host, round=round,
             ),
             return_exceptions=True,
         )
@@ -692,6 +702,7 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        round: str = "",
     ) -> CodeReviewVerdict:
         judges = [self._build_judge(spec) for spec in self._judge_specs]
 
@@ -703,6 +714,7 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
                     node_id=node_id,
                     cwd=cwd,
                     session_host=session_host,
+                    round=round,
                 )
                 for _judge_id, judge in judges
             ),
@@ -718,6 +730,31 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
                 verdicts.append((judge_id, None))
             else:
                 verdicts.append((judge_id, result))
+
+        # FEAT-378 (code-review finding): record each judge's verdict as a
+        # JudgeVerdictRecorded action so `session_host.state.judge_verdicts`
+        # — and downstream readers like FeedbackRouterNode's judge-verdict
+        # summary — actually see the panel's individual votes, not just the
+        # merged CodeReviewVerdict this method returns. One action per judge
+        # per QA round (spec §2 item 5); a round-less caller (round="")
+        # still records, just without per-attempt partitioning.
+        if session_host is not None:
+            for (judge_id, _judge), spec, (_jid, verdict) in zip(
+                judges, self._judge_specs, verdicts
+            ):
+                if verdict is None:
+                    session_host.apply(JudgeVerdictRecorded(
+                        round=round, judge_id=judge_id, backend=judge_id,
+                        model=spec.model, passed=False, findings_count=0,
+                        summary="judge review could not run (infra error)",
+                    ))
+                else:
+                    session_host.apply(JudgeVerdictRecorded(
+                        round=round, judge_id=judge_id, backend=judge_id,
+                        model=spec.model, passed=verdict.passed,
+                        findings_count=len(verdict.findings),
+                        summary=verdict.summary,
+                    ))
 
         panel_size = len(verdicts)
         errored_count = sum(1 for _judge_id, v in verdicts if v is None)
