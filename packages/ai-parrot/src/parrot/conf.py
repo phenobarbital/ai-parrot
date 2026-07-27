@@ -1016,6 +1016,16 @@ DEV_LOOP_ADVERSARIAL_BASE_REF: str = config.get(
     "DEV_LOOP_ADVERSARIAL_BASE_REF", fallback=""
 )
 
+# FEAT-378: JSON spec of the feature-mode QA judge panel used by
+# ``JudgePanelReviewDispatcher`` (registered as "judge-panel"), e.g.
+# '{"judges": [{"agent": "claude-code", "model": "claude-sonnet-4-6"},
+# {"agent": "codex", "model": "gpt-5.5"}, {"agent": "gemini"}],
+# "decision": "majority"}' — matches ``JudgePanelConfig``'s shape. Empty
+# (default) falls back to ``default_judge_panel()`` (3 judges: claude-code,
+# codex via the adversarial ``sdd-secondopinion`` profile, gemini; simple
+# majority, tie/majority-breaking abstention → escalate, fail-closed).
+DEV_LOOP_JUDGE_PANEL: str = config.get("DEV_LOOP_JUDGE_PANEL", fallback="")
+
 # ---------------------------------------------------------------------------
 # Remote Tool Executors (parrot.tools.executors)
 # ---------------------------------------------------------------------------
