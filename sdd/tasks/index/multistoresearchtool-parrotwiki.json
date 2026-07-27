@@ -32,7 +32,7 @@
       "feature_id": "FEAT-379",
       "feature": "multistoresearchtool-parrotwiki",
       "spec": "sdd/specs/multistoresearchtool-parrotwiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Touches hot core files (bots/abstract.py, routing/store_router.py); could run beside TASK-1932+ in principle but per-spec isolation keeps it sequential.",
       "assigned_to": null,
       "started_at": "2026-07-27T13:49:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1931-storerouter-abstractbot-decoupling.md"
+      "completed_at": "2026-07-27T14:15:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1931-storerouter-abstractbot-decoupling.md"
     },
     {
       "id": "TASK-1932",
