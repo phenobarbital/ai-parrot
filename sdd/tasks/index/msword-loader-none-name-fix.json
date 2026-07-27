@@ -1,0 +1,43 @@
+{
+  "feature": "msword-loader-none-name-fix",
+  "feature_id": "FEAT-385",
+  "spec": "sdd/specs/msword-loader-none-name-fix.spec.md",
+  "type": "hotfix",
+  "base_branch": "dev",
+  "created_at": "2026-07-27T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1948",
+      "feature_id": "FEAT-385",
+      "feature": "msword-loader-none-name-fix",
+      "slug": "guard-para-style-none-name",
+      "title": "Guard para.style None access in MSWordLoader.docx_to_markdown",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1948-guard-para-style-none-name.md"
+    },
+    {
+      "id": "TASK-1949",
+      "feature_id": "FEAT-385",
+      "feature": "msword-loader-none-name-fix",
+      "slug": "test-none-name-coverage",
+      "title": "Add pytest coverage for para.style is None scenario (NAV-9269)",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": ["TASK-1948"],
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1949-test-none-name-coverage.md"
+    }
+  ]
+}
