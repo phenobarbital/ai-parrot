@@ -1,4 +1,4 @@
-# TASK-1960: Documentation + changelog for the compression pipeline
+# TASK-1962: Documentation + changelog for the compression pipeline
 
 **Feature**: FEAT-380 — Tool Result Compression Pipeline
 **Spec**: `sdd/specs/tool-result-compression.spec.md`
