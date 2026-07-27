@@ -14,14 +14,14 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Root of the graph; models.py is shared by every other task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-27T00:18:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1918-feature-brief-models.md"
     },
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -41,7 +41,7 @@
       "parallel": false,
       "parallelism_notes": "session_state.py also touched by FEAT-377; keep sequential.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-27T00:18:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1919-session-state-feature-actions.md"
     },
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,7 +61,7 @@
       "parallel": true,
       "parallelism_notes": "Only code_review.py + conf.py — no file overlap with 1919/1921-1924; can run in a parallel worktree after 1918.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-27T00:18:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1920-judge-panel-dispatcher.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,7 +82,7 @@
       "parallel": false,
       "parallelism_notes": "New files only, but consumes state actions; sequential in the feature worktree.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-27T00:18:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1921-planner-node.md"
     },
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -103,7 +103,7 @@
       "parallel": false,
       "parallelism_notes": "New files only; could parallelize with 1921 but shares test fixtures — keep sequential per spec worktree strategy.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-27T00:18:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1922-synthesis-node.md"
     },
@@ -114,7 +114,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,7 +125,7 @@
       "parallel": false,
       "parallelism_notes": "Consumes panel verdict shape from 1920 and FEAT-377/A stop rule when available.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-27T00:18:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1923-feedback-router-node.md"
     },
@@ -136,7 +136,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -146,7 +146,7 @@
       "parallel": false,
       "parallelism_notes": "New file + conf.py (also touched by 1920 — coordinate small conf block).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-27T00:18:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1924-feature-handoff-node.md"
     },
@@ -157,7 +157,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -169,7 +169,7 @@
       "parallel": false,
       "parallelism_notes": "High-contention core files (definition/flow/runner/factories/classifier); must be last of the code tasks. Composes with FEAT-377/A if merged.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-27T00:18:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1925-feature-topology-parity.md"
     },
@@ -180,7 +180,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -190,7 +190,7 @@
       "parallel": false,
       "parallelism_notes": "Needs the runner union from 1925.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-27T00:18:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1926-cli-feature-brief-loader.md"
     }
