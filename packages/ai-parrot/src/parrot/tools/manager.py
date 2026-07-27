@@ -8,6 +8,9 @@ from enum import Enum
 import aiohttp
 import pandas as pd
 from .abstract import AbstractTool, ToolResult
+from .compression import CompressionStage, CompressorRegistry
+from .compression import codecs as _compression_codecs  # noqa: F401 — import side effect: registers built-in codecs (json_compact, ...) before CompressorRegistry.load() validates the core manifest below
+from .compression.budget import BudgetRouter
 from .mcp_mixin import MCPToolManagerMixin
 from ..a2a.models import RegisteredAgent, AgentCard
 from ..auth.exceptions import AuthorizationRequired
@@ -276,6 +279,18 @@ class ToolManager(MCPToolManagerMixin):
         self.enable_redaction: bool = False
         self.pandas_tool_name: str = "python_pandas"
         self._wired_toolkits: set = set()  # Track auto-wired toolkit instances
+
+        # FEAT-380: tool-result compression pipeline. Loaded once per
+        # manager, at construction — a malformed TOML manifest or an
+        # unknown codec name must fail loudly here, never silently at the
+        # first tool call. `clone()` shares the registry by reference but
+        # gives each session its own router (fresh circuit-breaker state).
+        self._compression_registry: CompressorRegistry = CompressorRegistry.load()
+        self._compression_router: BudgetRouter = BudgetRouter()
+        self._compression_stage: CompressionStage = CompressionStage(
+            registry=self._compression_registry,
+            router=self._compression_router,
+        )
 
         # Permission resolver for Layer 2 enforcement (optional)
         self._resolver: Optional["AbstractPermissionResolver"] = resolver
@@ -1503,6 +1518,22 @@ class ToolManager(MCPToolManagerMixin):
                     meta = {}
                 self._postprocess_result(tool_name, out, meta)
                 self._run_result_hooks(tool_name, out, meta)
+
+                # FEAT-380: compression stage runs AFTER extraction/hooks,
+                # which both observed the ORIGINAL payload above (Q1) — this
+                # is the only place tool results are compressed (G1). The
+                # stage never raises; on any gate/error/passthrough it
+                # returns `out` unchanged plus a `compression_skipped`
+                # reason. `meta` is the same object as `result.metadata`
+                # when `result` is a ToolResult, so merging here makes the
+                # `_compressed` marker travel with it.
+                out, comp_meta = await self._compression_stage.run(
+                    tool_name, out,
+                    status=result.status if isinstance(result, ToolResult) else "success",
+                    metadata=meta,
+                    return_direct=getattr(tool, "return_direct", False),
+                )
+                meta.update(comp_meta)
                 return out
             else:
                 raise ValueError(
@@ -1710,6 +1741,12 @@ class ToolManager(MCPToolManagerMixin):
             - ``_result_hooks``
             - ``_wired_toolkits`` (auto-wire tracking)
             - MCP state initialised by ``_init_mcp``
+            - FEAT-380 compression metrics/circuit-breaker state
+              (``_compression_router`` and ``_compression_stage``'s router):
+              one user's degraded codec must never leak into another's
+              session. The ``_compression_registry`` (parsed TOML config)
+              IS shared by reference — schemas must stay identical across
+              users, and re-parsing per clone would be wasted I/O.
 
         Args:
             include_search_tool: Whether the clone should auto-register the
@@ -1744,6 +1781,11 @@ class ToolManager(MCPToolManagerMixin):
         new_tm.auto_share_dataframes = self.auto_share_dataframes
         new_tm.auto_push_to_pandas = self.auto_push_to_pandas
         new_tm.pandas_tool_name = self.pandas_tool_name
+        # FEAT-380: share the parsed compressor registry by reference (the
+        # clone's own __init__ already gave it a fresh, independent
+        # BudgetRouter/CircuitBreaker — do not touch that).
+        new_tm._compression_registry = self._compression_registry
+        new_tm._compression_stage._registry = self._compression_registry
         return new_tm
 
     def share_dataframe(self, name: str, df: "pd.DataFrame", meta: Dict[str, Any] = None) -> str:
