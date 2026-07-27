@@ -1,20 +1,44 @@
-"""FEAT-129 / FEAT-250 / FEAT-253 — Dev-Loop Orchestration: real demo server.
+"""FEAT-129 / FEAT-250 / FEAT-253 / FEAT-377 / FEAT-378 — Dev-Loop demo server.
 
-Hosts an aiohttp app that wires the **real** eight-node ``AgentsFlow``
-(IntentClassifier → [BugIntake →] Research → Development → QA →
-DeploymentHandoff → Close, with a FailureHandler ``on_error`` fan-in)
-behind three HTTP endpoints, plus a vanilla-JS UI client at ``/`` that
-visualises the merged event stream.
+Hosts an aiohttp app that wires the **real** dev-loop topologies behind a
+small HTTP/WebSocket API, plus a vanilla-JS console at ``/``:
+
+* **bug mode** — the eight-node ``AgentsFlow`` (IntentClassifier →
+  [BugIntake →] Research → Development → QA → DeploymentHandoff → Close,
+  with a FailureHandler ``on_error`` fan-in).
+* **feature mode** (FEAT-378) — the document-driven topology
+  (IntentClassifier → Planner → Development → Synthesis → QA →
+  FeatureHandoff → Close, with a FeedbackRouter on the QA-fail edge),
+  selected by posting a brief with ``kind: "feature"``.
+
+Adversarial code review is **mandatory** in this server (never optional):
+bug-mode runs always get a ``parallel`` reviewer whose adversary is the
+read-only Codex ``sdd-secondopinion`` seat, and feature-mode runs always
+get a ``judge-panel`` containing a Codex judge — whatever
+``DEV_LOOP_CODEREVIEW_AGENT`` / ``DEV_LOOP_JUDGE_PANEL`` say. See
+:func:`_resolve_codereview_dispatcher` and :func:`_ensure_adversarial_judge`.
 
 Endpoints:
 
 * ``GET  /``                            — UI client (served from ``static/``)
-* ``POST /api/flow/run``                — start a real flow run; body is a
-                                          ``BugBrief`` JSON (or omit to use
-                                          the bundled sample brief)
+* ``GET  /api/config``                  — LLM backend/model catalog + defaults
+                                          the console renders its pickers from
+* ``POST /api/flow/run``                — start a real flow run; the JSON body
+                                          is either a work-brief form payload
+                                          (bug/enhancement/new_feature) or a
+                                          feature-brief form payload
+                                          (``kind: "feature"``)
 * ``GET  /api/flow/{run_id}/ws``        — WebSocket multiplexer
-                                          (``parrot.flows.dev_loop.flow_stream_ws``)
+                                          (``parrot.flows.dev_loop.flow_stream_ws``);
+                                          ``?view=both`` for the event log,
+                                          ``?view=state`` for the authoritative
+                                          session-state projection
 * ``GET  /api/flow/{run_id}/replay``    — JSON dump of stored events for a run
+* ``GET  /api/flow/{run_id}/bundle``    — the run bundle (FEAT-378 Module 8):
+                                          ``?format=md`` (default) serves the
+                                          markdown closing report, ``?format=json``
+                                          the structured bundle, and
+                                          ``?download=1`` forces an attachment
 
 Runtime requirements:
 
@@ -78,10 +102,11 @@ import functools
 import json
 import logging
 import os
+import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import redis.asyncio as aioredis
 from aiohttp import web
@@ -110,12 +135,26 @@ from parrot.flows.dev_loop import (
 from parrot.flows.dev_loop.agent_builder import build_dispatcher, parse_pool_env, resolve_pool_max
 from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
-from parrot.flows.dev_loop.models import DevAgentSpec
+from parrot.flows.dev_loop.models import (
+    DevAgentSpec,
+    FeatureBrief,
+    JudgePanelConfig,
+    JudgeSpec,
+)
+from parrot.flows.dev_loop.runner import build_dev_loop_feature_flow
 from parrot_tools.gittoolkit import GitToolkit
 from parrot_tools.jiratoolkit import JiraToolkit
 
+# The console's LLM catalog is a sibling module of this example, not a
+# library import — make it resolvable whether the server is launched as a
+# script (`python examples/dev_loop/server.py`, which already puts this
+# directory on sys.path) or imported from elsewhere.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import llm_catalog  # noqa: E402
+
 logger = logging.getLogger("dev_loop.server")
 STATIC_DIR = Path(__file__).parent / "static"
+RUN_ARTIFACT_DIR = Path(conf.OUTPUT_DIR) / "dev_loop_runs"
 
 # FEAT-323: per-backend max-concurrent env var, mirroring the original
 # inline if/elif in ``_on_startup`` verbatim (Module 3 extraction).
@@ -222,6 +261,220 @@ def _build_codex_adversarial_reviewer(codex_dispatcher: CodexCodeDispatcher) -> 
     )
 
 
+def _ensure_adversarial_judge(judges: list[JudgeSpec]) -> list[JudgeSpec]:
+    """Guarantee a Codex seat in a feature-mode judge panel.
+
+    The adversarial review is not optional in this server. In feature
+    mode the adversary is a *judge*: ``JudgePanelReviewDispatcher`` maps
+    the ``"codex"`` backend to :class:`CodexAdversarialReviewDispatcher`,
+    the read-only ``sdd-secondopinion`` reviewer. A panel without a Codex
+    judge is therefore a panel with no adversarial perspective, so one is
+    appended rather than rejected — the operator's other judges are kept
+    intact.
+
+    Args:
+        judges: The panel as configured (brief override, or
+            ``DEV_LOOP_JUDGE_PANEL`` / ``default_judge_panel()``).
+
+    Returns:
+        The same list when it already holds a Codex judge, otherwise a
+        copy with one appended.
+    """
+    if any(j.agent == llm_catalog.ADVERSARIAL_BACKEND for j in judges):
+        return judges
+    logger.warning(
+        "Judge panel had no %r judge — appending the mandatory adversarial "
+        "seat (model=%s). Adversarial review is not optional in this server.",
+        llm_catalog.ADVERSARIAL_BACKEND,
+        conf.DEV_LOOP_ADVERSARIAL_MODEL,
+    )
+    return [
+        *judges,
+        JudgeSpec(
+            agent=llm_catalog.ADVERSARIAL_BACKEND,
+            model=conf.DEV_LOOP_ADVERSARIAL_MODEL,
+        ),
+    ]
+
+
+def _codex_dispatcher_for(
+    development_dispatcher: object, redis_url: str
+) -> CodexCodeDispatcher:
+    """Reuse the development Codex dispatcher, or build a dedicated one.
+
+    Avoids a second CLI-spawning dispatcher instance when the Development
+    node already runs on Codex (the FEAT-270 reuse pattern).
+
+    Args:
+        development_dispatcher: The dispatcher wired into DevelopmentNode.
+        redis_url: Redis URL for a freshly-built dispatcher.
+
+    Returns:
+        A :class:`CodexCodeDispatcher` suitable for the adversarial seat.
+    """
+    if isinstance(development_dispatcher, CodexCodeDispatcher):
+        return development_dispatcher
+    return CodexCodeDispatcher(
+        max_concurrent=conf.config.getint(
+            "CODEX_CODE_MAX_CONCURRENT_DISPATCHES",
+            fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+        ),
+        redis_url=redis_url,
+        stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+    )
+
+
+def _build_primary_reviewer(
+    agent: str, *, dispatcher: object, development_dispatcher: object, redis_url: str
+) -> object:
+    """Build the write-enabled primary reviewer for ``agent`` (FEAT-270).
+
+    Args:
+        agent: ``"claude-code"``, ``"codex"`` or ``"gemini"``.
+        dispatcher: The shared ``ClaudeCodeDispatcher``.
+        development_dispatcher: DevelopmentNode's dispatcher, reused when
+            its backend matches ``agent``.
+        redis_url: Redis URL for any dispatcher built here.
+
+    Returns:
+        The registered primary review dispatcher.
+
+    Raises:
+        RuntimeError: If ``agent`` has no primary-review mapping.
+    """
+    if agent in {"claude", "claude-code"}:
+        return CodeReviewDispatcherFactory.create("claude-code", dispatcher=dispatcher)
+    if agent == "codex":
+        return CodeReviewDispatcherFactory.create(
+            "codex",
+            dispatcher=_codex_dispatcher_for(development_dispatcher, redis_url),
+        )
+    if agent == "gemini":
+        underlying = (
+            development_dispatcher
+            if isinstance(development_dispatcher, GeminiCodeDispatcher)
+            else GeminiCodeDispatcher(
+                max_concurrent=conf.config.getint(
+                    "GEMINI_CODE_MAX_CONCURRENT_DISPATCHES",
+                    fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+                ),
+                redis_url=redis_url,
+                stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+            )
+        )
+        return CodeReviewDispatcherFactory.create("gemini", dispatcher=underlying)
+    raise RuntimeError(
+        "DEV_LOOP_CODEREVIEW_AGENT must be 'claude-code', 'codex', 'gemini', "
+        f"'codex-adversarial', or 'parallel', got {agent!r}"
+    )
+
+
+def _resolve_codereview_dispatcher(
+    *, dispatcher: object, development_dispatcher: object, redis_url: str
+) -> tuple[object, str]:
+    """Build the QA node's code-review dispatcher, adversary included.
+
+    **Adversarial review is not optional in this server.** Of the five
+    registered reviewers only ``codex-adversarial`` and ``parallel``
+    involve the Codex ``sdd-secondopinion`` seat; the three single-agent
+    reviewers (``claude-code``/``codex``/``gemini``) do not. Rather than
+    reject those three — which would make the common default
+    (``DEV_LOOP_CODEREVIEW_AGENT=claude-code``) un-runnable — this
+    function *upgrades* them: the configured agent stays the write-enabled
+    primary, and a ``parallel`` reviewer pairs it with the adversary.
+
+    Args:
+        dispatcher: The shared ``ClaudeCodeDispatcher``.
+        development_dispatcher: DevelopmentNode's dispatcher (reused when
+            the reviewer needs the same backend).
+        redis_url: Redis URL for any dispatcher built here.
+
+    Returns:
+        A ``(dispatcher, agent_key)`` tuple; ``agent_key`` names the
+        reviewer actually wired up, which may differ from the configured
+        value when it was upgraded.
+
+    Raises:
+        RuntimeError: If ``DEV_LOOP_CODEREVIEW_AGENT`` is unknown, or the
+            adversarial scope is misconfigured (see
+            :func:`_build_codex_adversarial_reviewer`).
+    """
+    configured = conf.config.get(
+        "DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code"
+    ).strip().lower()
+
+    adversary = _build_codex_adversarial_reviewer(
+        _codex_dispatcher_for(development_dispatcher, redis_url)
+    )
+
+    if configured == "codex-adversarial":
+        # Advisory-only review: already adversarial, nothing to upgrade.
+        return adversary, "codex-adversarial"
+
+    primary_agent = "claude-code" if configured == "parallel" else configured
+    primary = _build_primary_reviewer(
+        primary_agent,
+        dispatcher=dispatcher,
+        development_dispatcher=development_dispatcher,
+        redis_url=redis_url,
+    )
+    if configured != "parallel":
+        logger.warning(
+            "DEV_LOOP_CODEREVIEW_AGENT=%r has no adversarial perspective — "
+            "upgrading to the 'parallel' reviewer (primary=%s + "
+            "codex-adversarial). Adversarial review is not optional in this "
+            "server.",
+            configured,
+            primary_agent,
+        )
+    return (
+        CodeReviewDispatcherFactory.create(
+            "parallel",
+            primary=primary,
+            adversary=adversary,
+            judge_enabled=conf.DEV_LOOP_CODEREVIEW_JUDGE,
+            judge_dispatcher=dispatcher if conf.DEV_LOOP_CODEREVIEW_JUDGE else None,
+        ),
+        "parallel",
+    )
+
+
+def _build_judge_panel_dispatcher(
+    *, redis_url: str, judges: Optional[list[JudgeSpec]] = None
+) -> object:
+    """Build the feature-mode ``judge-panel`` reviewer (FEAT-378 Module 4).
+
+    Args:
+        redis_url: Redis URL forwarded to every per-judge dispatcher.
+        judges: Explicit panel (a per-run brief override). When ``None``
+            the catalog resolves ``DEV_LOOP_JUDGE_PANEL`` /
+            ``default_judge_panel()``.
+
+    Returns:
+        A ``JudgePanelReviewDispatcher`` whose panel always contains the
+        mandatory Codex adversarial judge.
+    """
+    resolved = _ensure_adversarial_judge(
+        judges
+        if judges is not None
+        else [
+            JudgeSpec(**spec)
+            for spec in llm_catalog.default_judge_panel_payload()
+        ]
+    )
+    logger.info(
+        "Feature-mode QA judge panel: %s",
+        ", ".join(f"{j.agent}{f':{j.model}' if j.model else ''}" for j in resolved),
+    )
+    return CodeReviewDispatcherFactory.create(
+        "judge-panel",
+        judges=resolved,
+        redis_url=redis_url,
+        max_concurrent=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+        stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Toolkit wiring
 # ---------------------------------------------------------------------------
@@ -271,6 +524,40 @@ def _build_git_toolkit() -> GitToolkit:
         github_token=conf.config.get("GITHUB_TOKEN", fallback=None),
         default_branch=conf.config.get("GIT_DEFAULT_BRANCH", fallback="main"),
     )
+
+
+def _build_wiki_toolkit() -> object | None:
+    """Build the optional ``LLMWikiToolkit`` for feature-mode handoff.
+
+    ``FeatureHandoffNode`` ingests its ``docs/features/…`` artifact as a
+    wiki page so the finished work is queryable by ``wikitoolkit query``.
+    That ingest is explicitly degradable (spec §7: "wiki uninitialized →
+    skipped with warning, does not block the PR"), and it is gated on
+    ``DEV_LOOP_WIKI_PAGE_INGEST``, so every failure path here returns
+    ``None`` rather than refusing to boot the server.
+
+    Returns:
+        A wired ``LLMWikiToolkit``, or ``None`` when the ingest is
+        disabled or the toolkit cannot be constructed.
+    """
+    if not conf.DEV_LOOP_WIKI_PAGE_INGEST:
+        logger.info(
+            "DEV_LOOP_WIKI_PAGE_INGEST is off — feature handoff will skip "
+            "the wiki page ingest."
+        )
+        return None
+    try:
+        from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
+
+        toolkit = LLMWikiToolkit()
+        logger.info("LLMWikiToolkit ready for feature-mode docs ingest")
+        return toolkit
+    except Exception as exc:  # noqa: BLE001 - wiki ingest is best-effort
+        logger.warning(
+            "LLMWikiToolkit unavailable (%s); feature handoff will skip the "
+            "wiki page ingest.", exc,
+        )
+        return None
 
 
 def _build_log_toolkits() -> dict[str, object]:
@@ -409,6 +696,15 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
     existing = (form.get("existing_issue_key") or "").strip()
     if existing:
         payload["existing_issue_key"] = existing
+
+    # FEAT-323: per-run dev-agent pool override. Absent → the flow's own
+    # cascade (env pool, then single-agent) decides, exactly as before.
+    dev_agents = _parse_dev_agents(form.get("dev_agents"))
+    if dev_agents:
+        payload["dev_agents"] = dev_agents
+        isolation = (form.get("dev_isolation") or "").strip().lower()
+        if isolation in {"shared", "isolated"}:
+            payload["dev_isolation"] = isolation
     return payload
 
 
@@ -477,6 +773,145 @@ def _normalise_criteria(raw: Any) -> list[dict[str, Any]]:
     return out
 
 
+def _parse_dev_agents(raw: Any) -> Optional[list[DevAgentSpec]]:
+    """Translate the UI's dev-agent rows into ``DevAgentSpec`` objects.
+
+    Args:
+        raw: A list of ``{"agent": str, "model": str, "count": int}``
+            dicts (the console's "Agents & models" tab), or anything else
+            — non-lists and empty lists both mean "no override".
+
+    Returns:
+        The parsed specs, or ``None`` when no pool was declared (which
+        leaves the library's own cascade — brief → env → single-agent —
+        untouched).
+
+    Raises:
+        ValueError: If a row names a backend the dev-loop cannot build.
+    """
+    if not isinstance(raw, list) or not raw:
+        return None
+    specs: list[DevAgentSpec] = []
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        agent = str(row.get("agent") or "").strip()
+        if not agent:
+            continue
+        if llm_catalog.get_backend(agent) is None:
+            raise ValueError(
+                f"unknown dev agent backend {agent!r} — supported: "
+                f"{', '.join(b.id for b in llm_catalog.BACKENDS)}"
+            )
+        specs.append(
+            DevAgentSpec(
+                agent=agent,
+                model=str(row.get("model") or "").strip(),
+                count=max(1, int(row.get("count") or 1)),
+            )
+        )
+    return specs or None
+
+
+def _parse_judge_panel(raw: Any) -> Optional[list[JudgeSpec]]:
+    """Translate the UI's judge rows into ``JudgeSpec`` objects.
+
+    Args:
+        raw: A list of ``{"agent": str, "model": str}`` dicts, or anything
+            else (meaning "use the configured default panel").
+
+    Returns:
+        The parsed judges, or ``None`` when none were declared.
+
+    Raises:
+        ValueError: If a row names a backend with no review dispatcher —
+            ``JudgePanelReviewDispatcher`` supports only claude-code,
+            codex and gemini.
+    """
+    if not isinstance(raw, list) or not raw:
+        return None
+    judges: list[JudgeSpec] = []
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        agent = str(row.get("agent") or "").strip()
+        if not agent:
+            continue
+        if agent not in llm_catalog.JUDGE_BACKENDS:
+            raise ValueError(
+                f"backend {agent!r} cannot serve as a QA judge — supported: "
+                f"{', '.join(llm_catalog.JUDGE_BACKENDS)}"
+            )
+        judges.append(JudgeSpec(agent=agent, model=str(row.get("model") or "").strip()))
+    return judges or None
+
+
+def _build_feature_brief_from_form(form: dict[str, Any]) -> FeatureBrief:
+    """Translate the console's feature-mode form into a ``FeatureBrief``.
+
+    Feature-mode intake is document-driven: instead of a summary plus log
+    sources plus executable criteria, the run points at an existing SDD
+    markdown (brainstorm, proposal or already-resolved spec) and lets
+    ``PlannerNode`` generate whatever is still missing.
+
+    Required form fields:
+
+    * ``document_path`` — path to the driving markdown. Validated eagerly
+      by ``FeatureBrief`` itself (must exist and be readable), so a typo
+      fails here rather than after a dispatch has been spent.
+    * ``document_kind`` — ``brainstorm`` | ``proposal`` | ``spec``.
+
+    Optional form fields:
+
+    * ``jira_issue_key`` — feature-mode never *creates* a ticket; when
+      set, downstream nodes only link/transition/comment on it.
+    * ``dev_agents`` — explicit dev-agent pool rows; when omitted the
+      planner sizes the pool from the first ``TaskScheduler`` wave.
+    * ``judge_panel`` — explicit QA judge rows; the mandatory Codex
+      adversarial seat is appended later regardless
+      (:func:`_ensure_adversarial_judge`).
+
+    Args:
+        form: The decoded JSON body posted by the console.
+
+    Returns:
+        The validated :class:`FeatureBrief`.
+
+    Raises:
+        ValueError: On a missing/unreadable document, an unknown backend,
+            or an incoherent document kind (raised by the model's own
+            validators).
+    """
+    document_path = (form.get("document_path") or "").strip()
+    if not document_path:
+        raise ValueError(
+            "document_path is required in feature mode — point it at the "
+            "brainstorm, proposal or spec markdown that drives the run."
+        )
+    document_kind = (form.get("document_kind") or "").strip().lower()
+    if document_kind not in {"brainstorm", "proposal", "spec"}:
+        raise ValueError(
+            "document_kind must be 'brainstorm', 'proposal' or 'spec', got "
+            f"{document_kind!r}"
+        )
+
+    payload: dict[str, Any] = {
+        "kind": "feature",
+        "document_path": document_path,
+        "document_kind": document_kind,
+    }
+    issue_key = (form.get("jira_issue_key") or "").strip()
+    if issue_key:
+        payload["jira_issue_key"] = issue_key
+    dev_agents = _parse_dev_agents(form.get("dev_agents"))
+    if dev_agents:
+        payload["dev_agents"] = dev_agents
+    judges = _parse_judge_panel(form.get("judge_panel"))
+    if judges:
+        payload["judge_panel"] = JudgePanelConfig(judges=judges)
+    return FeatureBrief.model_validate(payload)
+
+
 # ---------------------------------------------------------------------------
 # HTTP handlers
 # ---------------------------------------------------------------------------
@@ -486,12 +921,74 @@ async def handle_index(request: web.Request) -> web.FileResponse:
     return web.FileResponse(STATIC_DIR / "index.html")
 
 
-async def handle_run(request: web.Request) -> web.Response:
-    """Start a real ``flow.run_flow(...)`` invocation.
+async def handle_config(request: web.Request) -> web.Response:
+    """Serve the console's configuration catalog.
 
-    Body must be the JSON form payload described in
-    :func:`_build_brief_from_form`. The UI client at ``/`` posts it from
-    the incident form.
+    The UI renders every ``<select>`` from this payload — LLM backends and
+    their models per role, the resolved judge panel, the acceptance-criteria
+    shell allowlist, and the operator-visible defaults — so the console
+    never hardcodes what the server supports.
+    """
+    app = request.app
+    return web.json_response(
+        {
+            **llm_catalog.catalog_payload(),
+            "kinds": [
+                {"value": "bug", "label": "Bug"},
+                {"value": "enhancement", "label": "Enhancement"},
+                {"value": "new_feature", "label": "New Feature"},
+                {"value": "feature", "label": "Feature (SDD)"},
+            ],
+            "shell_criteria_heads": sorted(_ALLOWED_SHELL_HEADS),
+            "document_kinds": ["brainstorm", "proposal", "spec"],
+            "defaults": {
+                "development_agent": conf.config.get(
+                    "DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code"
+                ),
+                "codereview_agent": app.get("codereview_agent_key", "parallel"),
+                "codereview_agent_configured": conf.config.get(
+                    "DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code"
+                ),
+                "log_group": conf.config.get(
+                    "CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch"
+                ),
+                "time_window_minutes": 60,
+                "jira_project": conf.config.get("JIRA_PROJECT") or "NAV",
+                "qa_max_retries": conf.DEV_LOOP_QA_MAX_RETRIES,
+                "docs_artifact_dir": conf.DEV_LOOP_DOCS_ARTIFACT_DIR,
+                "wiki_page_ingest": conf.DEV_LOOP_WIKI_PAGE_INGEST,
+                "development_pool_max": app.get("development_pool_max", 4),
+                "max_concurrent_runs": getattr(
+                    app.get("runner"), "max_concurrent_runs", None
+                ),
+            },
+            "adversarial_review": {
+                "mandatory": True,
+                "scope": conf.DEV_LOOP_ADVERSARIAL_SCOPE,
+                "base_ref": conf.DEV_LOOP_ADVERSARIAL_BASE_REF,
+                "note": (
+                    "Every run pairs the primary reviewer with the read-only "
+                    "Codex sdd-secondopinion seat; feature-mode runs carry it "
+                    "as a judge in the QA panel. It cannot be switched off."
+                ),
+            },
+            "feature_mode": {
+                "available": bool(app.get("feature_mode_available")),
+                "reason": app.get("feature_mode_reason", ""),
+            },
+        }
+    )
+
+
+async def handle_run(request: web.Request) -> web.Response:
+    """Start a real ``runner.run(...)`` invocation in either mode.
+
+    The JSON body is a console form payload. ``kind`` selects the
+    topology: ``"feature"`` builds a :class:`FeatureBrief` and runs the
+    FEAT-378 document-driven flow; anything else builds a ``BugBrief``
+    and runs the original bug/enhancement/new_feature topology. Both are
+    dispatched through the same :class:`DevLoopRunner`, which routes on
+    the brief's own type.
     """
     if not request.can_read_body:
         return web.json_response({"error": "JSON body required"}, status=400)
@@ -502,9 +999,28 @@ async def handle_run(request: web.Request) -> web.Response:
     if not isinstance(form, dict):
         return web.json_response({"error": "body must be a JSON object"}, status=400)
 
+    is_feature = (form.get("kind") or "").strip().lower().replace(" ", "_") == "feature"
+    if is_feature and not request.app.get("feature_mode_available"):
+        return web.json_response(
+            {
+                "error": (
+                    "feature mode is unavailable on this server: "
+                    f"{request.app.get('feature_mode_reason') or 'not wired'}"
+                )
+            },
+            status=409,
+        )
+
+    brief: Any
     try:
-        payload = _build_brief_from_form(form)
-        brief = BugBrief.model_validate(payload)
+        if is_feature:
+            brief = _build_feature_brief_from_form(form)
+            initial_task = f"feature: {Path(brief.document_path).name}"
+            label = brief.document_path
+        else:
+            brief = BugBrief.model_validate(_build_brief_from_form(form))
+            initial_task = f"resolve: {brief.summary[:120]}"
+            label = brief.summary
     except (ValueError, TypeError) as exc:
         return web.json_response({"error": str(exc)}, status=400)
     except Exception as exc:  # noqa: BLE001 - validation surface
@@ -516,11 +1032,14 @@ async def handle_run(request: web.Request) -> web.Response:
 
     async def _run() -> None:
         try:
-            logger.info("Starting flow run_id=%s", run_id)
+            logger.info(
+                "Starting %s flow run_id=%s (%s)",
+                "FEATURE" if is_feature else "bug", run_id, label,
+            )
             result = await runner.run(
                 brief,
                 run_id=run_id,
-                initial_task=f"resolve: {brief.summary[:120]}",
+                initial_task=initial_task,
             )
             logger.info("Flow run_id=%s finished status=%s in %.1fs", run_id, result.status, time.time() - started_at)
         except Exception:
@@ -530,7 +1049,86 @@ async def handle_run(request: web.Request) -> web.Response:
     request.app["flow_tasks"].add(task)
     task.add_done_callback(request.app["flow_tasks"].discard)
 
-    return web.json_response({"run_id": run_id, "ws_url": f"/api/flow/{run_id}/ws"})
+    return web.json_response(
+        {
+            "run_id": run_id,
+            "mode": "feature" if is_feature else "bug",
+            "ws_url": f"/api/flow/{run_id}/ws",
+            "state_ws_url": f"/api/flow/{run_id}/ws?view=state",
+            "bundle_url": f"/api/flow/{run_id}/bundle",
+        }
+    )
+
+
+def _run_id_is_safe(run_id: str) -> bool:
+    """Reject run ids that could escape the artifact directory.
+
+    Run ids are server-minted (``run-<hex8>`` / ``rev-<hex8>``), but the
+    bundle endpoint interpolates one into a filesystem path, so the value
+    coming off the URL is validated rather than trusted.
+
+    Args:
+        run_id: The id from the request path.
+
+    Returns:
+        ``True`` when the id is a plain identifier with no path syntax.
+    """
+    return bool(run_id) and all(c.isalnum() or c in "-_" for c in run_id)
+
+
+async def handle_bundle(request: web.Request) -> web.Response:
+    """Serve a finished run's exported bundle (FEAT-378 Module 8).
+
+    ``DevLoopRunner._close_host`` writes ``{run_id}.bundle.json`` and
+    ``{run_id}.report.md`` under ``conf.OUTPUT_DIR/dev_loop_runs/`` when
+    a run terminates. This endpoint is a thin reader over those artifacts
+    — deliberately not a second implementation of the bundle, so the
+    console's "Download run bundle" and the on-disk report can never
+    disagree.
+
+    Query parameters:
+
+    * ``format`` — ``md`` (default) or ``json``.
+    * ``download`` — truthy forces a ``Content-Disposition: attachment``.
+
+    Returns:
+        The artifact, or 404 while the run is still in flight / the
+        export has not landed.
+    """
+    run_id = request.match_info["run_id"]
+    if not _run_id_is_safe(run_id):
+        return web.json_response({"error": "invalid run_id"}, status=400)
+
+    fmt = (request.query.get("format") or "md").strip().lower()
+    if fmt not in {"md", "json"}:
+        return web.json_response(
+            {"error": "format must be 'md' or 'json'"}, status=400
+        )
+
+    suffix = "report.md" if fmt == "md" else "bundle.json"
+    path = RUN_ARTIFACT_DIR / f"{run_id}.{suffix}"
+    if not path.is_file():
+        return web.json_response(
+            {
+                "error": (
+                    f"no run bundle for {run_id} yet — the export is written "
+                    "when the run terminates."
+                ),
+                "expected_path": str(path),
+            },
+            status=404,
+        )
+
+    body = await asyncio.to_thread(path.read_text)
+    headers = {}
+    if request.query.get("download"):
+        headers["Content-Disposition"] = f'attachment; filename="{path.name}"'
+    return web.Response(
+        body=body.encode("utf-8"),
+        content_type="text/markdown" if fmt == "md" else "application/json",
+        charset="utf-8",
+        headers=headers,
+    )
 
 
 async def handle_replay(request: web.Request) -> web.Response:
@@ -591,105 +1189,14 @@ async def _on_startup(app: web.Application) -> None:
             f"got {development_agent!r}"
         )
 
-    # FEAT-270: select the QA node's code-review dispatcher. Reuses the
-    # matching development dispatcher instance when one is already wired up
-    # for the same agent (avoids a second CLI-spawning dispatcher instance);
-    # otherwise a dedicated dispatcher is created for the reviewer.
-    codereview_agent = conf.config.get(
-        "DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code"
-    ).strip().lower()
-    # FEAT-375: pre-built when the agent is "codex-adversarial"/"parallel"
-    # (their factory kwargs differ from the single-`dispatcher=` shape the
-    # generic tail call below uses); left `None` for the three original
-    # FEAT-270 agents so that tail call fires unchanged.
-    codereview_dispatcher: object | None = None
-    if codereview_agent in {"claude", "claude-code"}:
-        codereview_agent_key = "claude-code"
-        codereview_underlying_dispatcher: object = dispatcher
-    elif codereview_agent == "codex":
-        codereview_agent_key = "codex"
-        codereview_underlying_dispatcher = (
-            development_dispatcher
-            if isinstance(development_dispatcher, CodexCodeDispatcher)
-            else CodexCodeDispatcher(
-                max_concurrent=conf.config.getint(
-                    "CODEX_CODE_MAX_CONCURRENT_DISPATCHES",
-                    fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
-                ),
-                redis_url=redis_url,
-                stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
-            )
-        )
-    elif codereview_agent == "gemini":
-        codereview_agent_key = "gemini"
-        codereview_underlying_dispatcher = (
-            development_dispatcher
-            if isinstance(development_dispatcher, GeminiCodeDispatcher)
-            else GeminiCodeDispatcher(
-                max_concurrent=conf.config.getint(
-                    "GEMINI_CODE_MAX_CONCURRENT_DISPATCHES",
-                    fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
-                ),
-                redis_url=redis_url,
-                stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
-            )
-        )
-    elif codereview_agent == "codex-adversarial":
-        # FEAT-375: read-only advisory second opinion. Reuses the same
-        # codex-dispatcher-reuse pattern as the "codex" branch above.
-        codereview_agent_key = "codex-adversarial"
-        codex_adversarial_dispatcher = (
-            development_dispatcher
-            if isinstance(development_dispatcher, CodexCodeDispatcher)
-            else CodexCodeDispatcher(
-                max_concurrent=conf.config.getint(
-                    "CODEX_CODE_MAX_CONCURRENT_DISPATCHES",
-                    fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
-                ),
-                redis_url=redis_url,
-                stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
-            )
-        )
-        codereview_dispatcher = _build_codex_adversarial_reviewer(codex_adversarial_dispatcher)
-    elif codereview_agent == "parallel":
-        # FEAT-375: composite reviewer — primary (write-enabled claude-code)
-        # + codex-adversarial (advisory), merged deterministically, with an
-        # optional judge dispatch gated by DEV_LOOP_CODEREVIEW_JUDGE.
-        codereview_agent_key = "parallel"
-        codex_adversarial_dispatcher = (
-            development_dispatcher
-            if isinstance(development_dispatcher, CodexCodeDispatcher)
-            else CodexCodeDispatcher(
-                max_concurrent=conf.config.getint(
-                    "CODEX_CODE_MAX_CONCURRENT_DISPATCHES",
-                    fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
-                ),
-                redis_url=redis_url,
-                stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
-            )
-        )
-        parallel_primary = CodeReviewDispatcherFactory.create(
-            "claude-code", dispatcher=dispatcher
-        )
-        parallel_adversary = _build_codex_adversarial_reviewer(codex_adversarial_dispatcher)
-        codereview_dispatcher = CodeReviewDispatcherFactory.create(
-            "parallel",
-            primary=parallel_primary,
-            adversary=parallel_adversary,
-            judge_enabled=conf.DEV_LOOP_CODEREVIEW_JUDGE,
-            judge_dispatcher=dispatcher if conf.DEV_LOOP_CODEREVIEW_JUDGE else None,
-        )
-    else:
-        raise RuntimeError(
-            "DEV_LOOP_CODEREVIEW_AGENT must be 'claude-code', 'codex', "
-            "'gemini', 'codex-adversarial', or 'parallel', got "
-            f"{codereview_agent!r}"
-        )
-    if codereview_dispatcher is None:
-        codereview_dispatcher = CodeReviewDispatcherFactory.create(
-            codereview_agent_key, dispatcher=codereview_underlying_dispatcher
-        )
+    codereview_dispatcher, codereview_agent_key = _resolve_codereview_dispatcher(
+        dispatcher=dispatcher,
+        development_dispatcher=development_dispatcher,
+        redis_url=redis_url,
+    )
     logger.info("QA code-review gate using %s reviewer", codereview_agent_key)
+
+    judge_panel_dispatcher = _build_judge_panel_dispatcher(redis_url=redis_url)
 
     # FEAT-253: parse DEV_LOOP_REPOS -> list[RepoSpec] and wire git_toolkit.
     # When DEV_LOOP_REPOS is unset/empty, repos == [] and the flow falls
@@ -746,9 +1253,11 @@ async def _on_startup(app: web.Application) -> None:
         getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False)
     )
 
+    jira_toolkit = _build_jira_toolkit()
+    git_toolkit = _build_git_toolkit()
     app["flow"] = build_dev_loop_flow(
         dispatcher=dispatcher,
-        jira_toolkit=_build_jira_toolkit(),
+        jira_toolkit=jira_toolkit,
         log_toolkits=_build_log_toolkits(),
         redis_url=redis_url,
         development_dispatcher=development_dispatcher,
@@ -757,22 +1266,75 @@ async def _on_startup(app: web.Application) -> None:
         development_dispatcher_builder=development_dispatcher_builder,
         development_pool_max=development_pool_max,
         name="dev-loop-demo",
-        git_toolkit=_build_git_toolkit(),
+        git_toolkit=git_toolkit,
         repos=repos,
         codereview_dispatcher=codereview_dispatcher,
         graph_memory=graph_memory,
         require_plan_approval=require_plan_approval,
     )
     # Orchestrator-side run cap (FLOW_MAX_CONCURRENT_RUNS) — spec G5.
-    # graph_memory is forwarded here too (inert today — this demo server
-    # never calls run_revision(), but DevLoopRunner only consults it for
-    # the lazily-built revision flow, so this keeps both call sites
-    # consistent for whenever revision-mode wiring lands here).
-    app["runner"] = DevLoopRunner(app["flow"], graph_memory=graph_memory)
+    # The extra deps let the runner build the revision (FEAT-250) and
+    # feature (FEAT-378) topologies on demand. graph_memory is forwarded
+    # for the lazily-built revision flow (FEAT-377 TASK-1914/1915), keeping
+    # both call sites consistent.
+    wiki_toolkit = _build_wiki_toolkit()
+    runner = DevLoopRunner(
+        app["flow"],
+        dispatcher=dispatcher,
+        jira_toolkit=jira_toolkit,
+        git_toolkit=git_toolkit,
+        wiki_toolkit=wiki_toolkit,
+        redis_url=redis_url,
+        codereview_dispatcher=codereview_dispatcher,
+        graph_memory=graph_memory,
+    )
+
+    # Feature mode (FEAT-378). `DevLoopRunner._run_feature` builds its flow
+    # with `build_dev_loop_feature_flow`'s defaults, which leave
+    # DevelopmentNode without a dispatcher builder and without the judge
+    # panel — i.e. single-agent development and the bug-mode reviewer. The
+    # console lets an operator size the pool and pick judges per run, so the
+    # flow is pre-built here with the full wiring and seeded into the
+    # runner's cache; `_run_feature` then reuses it instead of building a
+    # thinner one.
+    app["feature_mode_available"] = False
+    app["feature_mode_reason"] = ""
+    try:
+        runner._feature_flow = build_dev_loop_feature_flow(  # noqa: SLF001
+            dispatcher=dispatcher,
+            jira_toolkit=jira_toolkit,
+            git_toolkit=git_toolkit,
+            wiki_toolkit=wiki_toolkit,
+            redis_url=redis_url,
+            codereview_dispatcher=judge_panel_dispatcher,
+            development_dispatcher_builder=functools.partial(
+                build_dispatcher,
+                redis_url=redis_url,
+                max_concurrent=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+                stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+            ),
+            development_pool_max=development_pool_max,
+        )
+        app["feature_mode_available"] = True
+        logger.info(
+            "Feature-mode topology ready (planner → development → synthesis "
+            "→ qa[judge-panel] → feature_handoff → close; pool_max=%d)",
+            development_pool_max,
+        )
+    except Exception as exc:  # noqa: BLE001 - feature mode is additive
+        app["feature_mode_reason"] = str(exc)
+        logger.warning(
+            "Feature-mode topology unavailable (%s); the console will only "
+            "offer bug/enhancement/new_feature runs.", exc,
+        )
+
+    app["runner"] = runner
+    app["codereview_agent_key"] = codereview_agent_key
+    app["development_pool_max"] = development_pool_max
     app["flow_tasks"] = set()
     logger.info(
         "Dev-loop flow ready (max %d concurrent runs)",
-        app["runner"].max_concurrent_runs,
+        runner.max_concurrent_runs,
     )
 
 
@@ -813,7 +1375,9 @@ def build_app(redis_url: str = "redis://localhost:6379/0") -> web.Application:
 
     app.router.add_get("/", handle_index)
     app.router.add_static("/static/", STATIC_DIR, show_index=False)
+    app.router.add_get("/api/config", handle_config)
     app.router.add_post("/api/flow/run", handle_run)
+    app.router.add_get("/api/flow/{run_id}/bundle", handle_bundle)
     app.router.add_get("/api/flow/{run_id}/replay", handle_replay)
     app.router.add_get("/api/flow/{run_id}/ws", flow_stream_ws)
     return app
