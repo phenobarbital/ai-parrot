@@ -12,6 +12,7 @@ import threading
 import contextlib
 import base64
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 logging.getLogger(name="matplotlib").setLevel(logging.INFO)
 
@@ -197,6 +198,7 @@ class PythonREPLTool(AbstractTool):
         return_plot_as_base64: bool = False,
         debug: bool = False,
         policy=None,  # FEAT-252 (TASK-1614): PythonExecutionPolicy | None
+        executor_max_workers: int = 4,
         **kwargs,
     ):
         """
@@ -214,6 +216,10 @@ class PythonREPLTool(AbstractTool):
             return_plot_as_base64: Whether to return plots as base64 strings
             policy: ``PythonExecutionPolicy`` for the allowlist-first AST gate.
                 Defaults to ``general_profile()``.
+            executor_max_workers: Size of the dedicated thread pool used to run
+                generated code (FEAT-380 Module 1 / AC1). A runaway loop then
+                only exhausts this REPL-scoped pool instead of the framework's
+                shared default executor.
             **kwargs: Additional arguments for AbstractTool
         """
         # Check Python version
@@ -243,6 +249,18 @@ class PythonREPLTool(AbstractTool):
         # Initialize execution environment
         self.locals = locals_dict or {}
         self.globals = globals_dict or {}
+
+        # FEAT-380 Module 1 (AC1): dedicated, bounded executor for generated
+        # code — a runaway loop then only hijacks this REPL-scoped pool
+        # instead of the framework's shared default ThreadPoolExecutor.
+        self._repl_executor = ThreadPoolExecutor(
+            max_workers=executor_max_workers,
+            thread_name_prefix="python-repl",
+        )
+        self.logger.debug(
+            "Created dedicated python-repl executor (max_workers=%s)",
+            executor_max_workers,
+        )
 
         # Setup matplotlib to use non-interactive backend
         self._setup_charts()
@@ -965,9 +983,11 @@ print("Use 'execution_results' dict to store intermediate results.")
         try:
             self.logger.info(f"Executing Python code: {code[:100]}...")
 
-            # Execute the code in a thread to avoid blocking
+            # Execute the code in a thread to avoid blocking. FEAT-380 Module 1
+            # (AC1): dedicated bounded executor — never the framework's shared
+            # default ThreadPoolExecutor (a runaway loop must not hijack it).
             loop = asyncio.get_event_loop()
-            output = await loop.run_in_executor(None, self._execute_code, code, debug)
+            output = await loop.run_in_executor(self._repl_executor, self._execute_code, code, debug)
         except Exception as e:
             self.logger.error(f"Error executing Python code: {e}")
             msg = f"ToolError: {type(e).__name__}: {str(e)}"
