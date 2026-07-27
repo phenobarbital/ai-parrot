@@ -179,6 +179,8 @@ def build_dev_loop_feature_flow(
     codereview_dispatcher: Optional[Any] = None,
     development_dispatcher_builder: Optional[Any] = None,
     development_pool_max: int = 4,
+    graph_memory: Optional[Any] = None,
+    require_plan_approval: bool = False,
     name: str = "dev-loop-feature",
     publish_flow_events: bool = True,
 ) -> AgentsFlow:
@@ -216,6 +218,21 @@ def build_dev_loop_feature_flow(
             pool-worker materialization.
         development_pool_max: Hard cap on total pool workers (FEAT-323),
             also passed to ``PlannerNode`` for its own pool-sizing cap.
+        graph_memory: FEAT-377 TASK-1914/1915 (G2) — an optional
+            ``DevLoopGraphMemory`` (from ``DevLoopGraphMemory.
+            from_config()``) forwarded to ``QANode``, ``DevLoopCloseNode``
+            and ``FailureHandlerNode`` via ``build_dev_loop_node_factories``
+            (feature-mode has no ``ResearchNode``, so seam 2 — research
+            context injection — does not apply here). ``None`` (default)
+            makes every graph-memory seam a strict no-op, same as
+            bug/revision mode.
+        require_plan_approval: FEAT-377 TASK-1916 (G5) — forwarded to
+            ``DevelopmentNode`` via ``build_dev_loop_node_factories``.
+            ``False`` (default) preserves current behavior exactly; set
+            ``True`` to require a ``plan_approval`` HITL gate before the
+            agent fleet dispatches — arguably even more apt in feature
+            mode, since ``PlannerNode`` produces the very plan being
+            approved.
         name: Flow name (default ``"dev-loop-feature"``).
         publish_flow_events: When True (default), attach a
             :class:`FlowEventPublisher` to the engine's ``on_node_event`` hook.
@@ -233,6 +250,8 @@ def build_dev_loop_feature_flow(
         development_dispatcher_builder=development_dispatcher_builder,
         development_pool_max=development_pool_max,
         codereview_dispatcher=codereview_dispatcher,
+        graph_memory=graph_memory,
+        require_plan_approval=require_plan_approval,
     )
     staged = AgentsFlow.from_definition(
         definition,
@@ -1036,6 +1055,15 @@ class DevLoopRunner:
                 wiki_toolkit=self._wiki_toolkit,
                 redis_url=self._redis_url,
                 codereview_dispatcher=self._feature_codereview_dispatcher(),
+                # FEAT-377 TASK-1914/1915: mirrors run_revision's lazy
+                # ``_rev_flow`` build — forwards the same instance-level
+                # graph_memory so this fallback default flow isn't a
+                # strict subset of the pre-seeded one server.py builds.
+                # require_plan_approval has no stored instance attribute
+                # (like the revision flow, this thin default path doesn't
+                # expose it) — callers who want it pre-seed self._feature_flow
+                # themselves (see examples/dev_loop/server.py).
+                graph_memory=self._graph_memory,
             )
         feature_flow = self._feature_flow
 

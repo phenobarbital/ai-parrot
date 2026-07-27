@@ -209,6 +209,56 @@ async def test_server_wires_graph_memory_and_plan_approval(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_server_feature_mode_wires_graph_memory_and_plan_approval(monkeypatch) -> None:
+    """FEAT-377 TASK-1914/1915/1916 extended to feature mode (FEAT-378):
+    the pre-seeded runner._feature_flow build (build_dev_loop_feature_flow)
+    must receive the SAME graph_memory/require_plan_approval already
+    computed for the bug-mode build_dev_loop_flow() call above it — not a
+    second, silently-dropped copy."""
+    feature_captured: dict[str, Any] = {}
+    sentinel_memory = object()
+
+    def fake_build_feature_flow(**kwargs: Any) -> MagicMock:
+        feature_captured.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(conf, "DEV_LOOP_REPOS", [])
+    monkeypatch.setattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", True, raising=False)
+
+    server_mod = _load_server_module()
+
+    monkeypatch.setattr(server_mod, "build_dev_loop_flow", lambda **kw: MagicMock())
+    monkeypatch.setattr(server_mod, "build_dev_loop_feature_flow", fake_build_feature_flow)
+    monkeypatch.setattr(server_mod, "_build_log_toolkits", lambda: {})
+    monkeypatch.setattr(server_mod, "_build_jira_toolkit", lambda: MagicMock())
+    monkeypatch.setattr(
+        server_mod.aioredis,
+        "from_url",
+        lambda url, **kw: _make_fake_redis(),
+    )
+    monkeypatch.setattr(
+        server_mod,
+        "ClaudeCodeDispatcher",
+        MagicMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(
+        server_mod, "DevLoopRunner", MagicMock(return_value=MagicMock(max_concurrent_runs=1))
+    )
+    monkeypatch.setattr(
+        server_mod.DevLoopGraphMemory,
+        "from_config",
+        AsyncMock(return_value=sentinel_memory),
+    )
+
+    app = _FakeApp()
+    app["redis_url"] = "redis://localhost:6379/0"
+    await server_mod._on_startup(app)
+
+    assert feature_captured["graph_memory"] is sentinel_memory
+    assert feature_captured["require_plan_approval"] is True
+
+
+@pytest.mark.asyncio
 async def test_server_graph_memory_disabled_by_default(monkeypatch) -> None:
     """DEV_LOOP_GRAPH_MEMORY_PATH unset (default) -> from_config() returns
     None, and _on_startup must still pass graph_memory=None explicitly,

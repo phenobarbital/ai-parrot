@@ -1314,6 +1314,12 @@ async def _on_startup(app: web.Application) -> None:
                 stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
             ),
             development_pool_max=development_pool_max,
+            # FEAT-377 TASK-1914/1915/1916: same graph_memory/
+            # require_plan_approval already computed above for the
+            # bug-mode build_dev_loop_flow() call — feature mode gets the
+            # identical opt-in wiring instead of silently dropping it.
+            graph_memory=graph_memory,
+            require_plan_approval=require_plan_approval,
         )
         app["feature_mode_available"] = True
         logger.info(
