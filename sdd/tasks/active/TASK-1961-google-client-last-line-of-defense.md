@@ -120,7 +120,7 @@ that overridability.
   context `_process_tool_result_for_api()` has before promising it in the
   message.
 - If you raise the threshold, keep it a class attribute and mention the new
-  value in the Completion Note so TASK-1960 can document it.
+  value in the Completion Note so TASK-1962 can document it.
 - Do not import anything from `parrot.tools.compression` into this file.
 
 ### References in Codebase

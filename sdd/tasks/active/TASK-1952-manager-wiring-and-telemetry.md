@@ -62,7 +62,7 @@ stage's output is what `execute_tool()` returns and what persists.
 - `clients/google/client.py` → TASK-1961.
 - The savings report → TASK-1957.
 - The changelog entry for the `result_size_bytes` semantic change →
-  TASK-1960 (this task only re-documents the field's docstring).
+  TASK-1962 (this task only re-documents the field's docstring).
 
 ---
 

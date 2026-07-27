@@ -52,7 +52,7 @@ Rust path must pass **the exact same test suite**.
 - Parity test suite: run TASK-1954's tests against the Rust path, skipped
   cleanly when the extension is not compiled.
 - Document the build (`maturin develop`) in the feature docs stub for
-  TASK-1960.
+  TASK-1962.
 
 **NOT in scope**:
 - Rewriting `json_compact` in Rust — `MINIMAL` is inline-only by design.
@@ -180,7 +180,7 @@ def _rust():
   all tests green. Extension present → parity suite green.
 - Adding a Rust module to the core wheel makes the build depend on the Rust
   toolchain. Runtime optionality (G8) is unchanged, but call this out in the
-  Completion Note so TASK-1960 documents it.
+  Completion Note so TASK-1962 documents it.
 - `cargo test` for internal Rust logic; `pytest` for the exposed API.
 
 ### References in Codebase
@@ -281,7 +281,7 @@ def test_lazy_import_fallback(monkeypatch, caplog):
 7. **Move this file** to `sdd/tasks/completed/`.
 8. **Update index** → `"done"`.
 9. **Fill in the Completion Note** — including the wheel-build/toolchain
-   implication for TASK-1960 to document.
+   implication for TASK-1962 to document.
 
 ---
 

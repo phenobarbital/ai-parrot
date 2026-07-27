@@ -56,7 +56,7 @@ prove:
 **NOT in scope**:
 - Latency/p99 benchmarks → TASK-1959.
 - Rust parity → TASK-1955 owns that suite.
-- Documentation → TASK-1960.
+- Documentation → TASK-1962.
 
 ---
 

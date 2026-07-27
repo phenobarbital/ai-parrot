@@ -221,7 +221,7 @@
         "TASK-1952"
       ],
       "parallel": true,
-      "parallelism_notes": "Spec worktree C. Owns report.py exclusively. Lowest priority; can trail the rest without blocking anything except TASK-1960.",
+      "parallelism_notes": "Spec worktree C. Owns report.py exclusively. Lowest priority; can trail the rest without blocking anything except TASK-1962.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
