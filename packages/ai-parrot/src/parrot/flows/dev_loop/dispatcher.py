@@ -237,6 +237,8 @@ class ClaudeCodeDispatcher:
         self._redis_url = redis_url
         self.stream_ttl_seconds = stream_ttl_seconds
         self._redis: Any = None  # lazy aioredis.Redis
+        self._cached_dispatch_env: Optional[Dict[str, str]] = None
+        self._client_cache: Dict[str, Any] = {}  # model -> ClaudeAgentClient
 
     # ------------------------------------------------------------------
     # Public API
@@ -313,7 +315,11 @@ class ClaudeCodeDispatcher:
                 # (spec §7 R2).
                 run_options = self._resolve_run_options(profile, cwd)
 
-                client = LLMFactory.create(f"claude-agent:{profile.model}")
+                cache_key = profile.model or ""
+                client = self._client_cache.get(cache_key)
+                if client is None:
+                    client = LLMFactory.create(f"claude-agent:{profile.model}")
+                    self._client_cache[cache_key] = client
 
                 await self._publish_event(
                     stream_key,
@@ -569,9 +575,17 @@ class ClaudeCodeDispatcher:
         * ``"subscription"`` — always blank the key (force subscription).
         * ``"api-key"`` — inherit the key unchanged (API billing).
 
+        The result is cached on the instance: the auth policy and the
+        credentials file are both stable for the lifetime of the server
+        process, so re-reading the file on every dispatch is pure waste
+        (and noisy — the DEBUG log fires once per dispatch).
+
         Returns a dict suitable for ``ClaudeAgentRunOptions.env``; empty
         means "inherit the parent environment unchanged".
         """
+        if self._cached_dispatch_env is not None:
+            return self._cached_dispatch_env
+
         mode = (getattr(conf, "CLAUDE_CODE_DISPATCH_AUTH", "") or "").strip()
         if mode == "api-key":
             chosen = "api-key (inherited ANTHROPIC_API_KEY)"
@@ -582,13 +596,12 @@ class ClaudeCodeDispatcher:
         else:  # prefer-subscription (default / unknown values)
             if self._subscription_available():
                 chosen = "subscription (detected claude.ai login)"
-                # Blank the key only for the subprocess; the parent process
-                # keeps it for the AnthropicClient summarizer / plan LLM.
                 env = {"ANTHROPIC_API_KEY": ""}
             else:
                 chosen = "api-key (no subscription login detected)"
                 env = {}
         self.logger.debug("Dispatch auth resolved: %s", chosen)
+        self._cached_dispatch_env = env
         return env
 
     @staticmethod
@@ -938,21 +951,39 @@ class ClaudeCodeDispatcher:
         Messages with ToolResultBlocks → ``dispatch.tool_result``.
         ResultMessage / SystemMessage / UserMessage → ``dispatch.message``
         (catch-all).
+
+        Each event carries structured metadata so the live stream shows
+        *what* happened (tool name, text snippet), not just the message
+        class.
         """
         kind = "dispatch.message"
+        payload: Dict[str, Any] = {
+            "message_class": type(message).__name__,
+        }
         content = getattr(message, "content", None)
         if isinstance(content, list):
+            tool_names: List[str] = []
+            text_snippet = ""
             for block in content:
                 cls_name = type(block).__name__
                 if cls_name == "ToolUseBlock":
                     kind = "dispatch.tool_use"
-                    break
-                if cls_name == "ToolResultBlock":
+                    name = getattr(block, "name", None)
+                    if name:
+                        tool_names.append(name)
+                elif cls_name == "ToolResultBlock":
                     kind = "dispatch.tool_result"
-                    break
-        payload: Dict[str, Any] = {
-            "message_class": type(message).__name__,
-        }
+                    name = getattr(block, "tool_use_id", None) or getattr(block, "name", None)
+                    if name:
+                        tool_names.append(name)
+                elif cls_name == "TextBlock" and not text_snippet:
+                    raw = getattr(block, "text", "") or ""
+                    if raw:
+                        text_snippet = raw[:200]
+            if tool_names:
+                payload["tools"] = tool_names
+            if text_snippet:
+                payload["text"] = text_snippet
         # Surface terminal-result error metadata inline so the live stream
         # shows *why* a dispatch died, not just that a ResultMessage arrived.
         if getattr(message, "is_error", False):

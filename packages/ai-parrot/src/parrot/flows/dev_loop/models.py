@@ -500,9 +500,9 @@ class CriterionResult(BaseModel):
     """Result of running a single acceptance criterion in QA."""
 
     name: str
-    kind: Literal["flowtask", "shell", "manual"]
-    exit_code: int
-    duration_seconds: float
+    kind: Literal["flowtask", "shell", "manual"] = "shell"
+    exit_code: int = 0
+    duration_seconds: float = 0.0
     stdout_tail: str = Field("", max_length=4000)
     stderr_tail: str = Field("", max_length=4000)
     passed: bool

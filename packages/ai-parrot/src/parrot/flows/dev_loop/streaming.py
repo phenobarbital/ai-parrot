@@ -186,6 +186,14 @@ class FlowStreamMultiplexer:
     # Tail / live
     # ------------------------------------------------------------------
 
+    # Terminal flow event kinds — when any of these is seen, the tail
+    # yields the envelope and then stops. The flow is finished and no
+    # further events will arrive.
+    _TERMINAL_EVENT_KINDS = frozenset({
+        "flow.flow_completed",
+        "flow.flow_failed",
+    })
+
     async def tail(self) -> AsyncIterator[Dict[str, Any]]:
         """Forward live events as they arrive.
 
@@ -193,6 +201,11 @@ class FlowStreamMultiplexer:
         :meth:`replay` (or initialised to ``"$"`` for streams discovered
         only after replay). Periodically re-discovers dispatch streams
         so events from late-arriving nodes are picked up.
+
+        Stops automatically when a terminal flow event
+        (``flow.flow_completed`` / ``flow.flow_failed``) is received, so
+        the WebSocket handler exits cleanly instead of blocking until
+        the client disconnects.
         """
         last_discovery = 0.0
         while not self._closed.is_set():
@@ -231,6 +244,9 @@ class FlowStreamMultiplexer:
                     if envelope is None:
                         continue
                     yield envelope
+                    if envelope.get("event_kind") in self._TERMINAL_EVENT_KINDS:
+                        self._closed.set()
+                        return
 
     async def close(self) -> None:
         """Stop the tail loop. Idempotent."""
@@ -325,6 +341,10 @@ class FlowStreamMultiplexer:
                 "payload": envelope.model_dump(),
             }
 
+    # Action types that signal the run is finished — when the state-view
+    # tail sees one it yields the envelope and stops.
+    _TERMINAL_ACTION_TYPES = frozenset({"run/closed", "run/cancelled"})
+
     async def state_tail(self) -> AsyncIterator[Dict[str, Any]]:
         """``view="state"`` live continuation after :meth:`state_replay`.
 
@@ -332,6 +352,10 @@ class FlowStreamMultiplexer:
         ``state_replay``, or ``"$"`` — new entries only — if that method
         was never called). Malformed entries are logged and skipped, same
         forward-compat contract as :meth:`_read_action_envelopes`.
+
+        Stops automatically when a terminal action (``run/closed`` or
+        ``run/cancelled``) arrives, so the WebSocket handler exits
+        cleanly.
         """
         while not self._closed.is_set():
             try:
@@ -364,13 +388,17 @@ class FlowStreamMultiplexer:
                             "for run=%s", entry_id, self._run_id, exc_info=True,
                         )
                         continue
-                    yield {
+                    out = {
                         "source": "state",
                         "node_id": None,
                         "event_kind": "action",
                         "ts": envelope.action.ts,
                         "payload": envelope.model_dump(),
                     }
+                    yield out
+                    if getattr(envelope.action, "type", None) in self._TERMINAL_ACTION_TYPES:
+                        self._closed.set()
+                        return
 
     # ------------------------------------------------------------------
     # Envelope helpers

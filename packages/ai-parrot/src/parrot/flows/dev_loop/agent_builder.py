@@ -243,6 +243,8 @@ def resolve_pool_max(config_getter: ConfigGetter, *, default: int = 4) -> int:
         The resolved cap, always ``>= 1``.
     """
     raw = config_getter("DEV_LOOP_DEV_POOL_MAX", default)
+    if raw is None:
+        return default
     try:
         return max(1, int(raw))
     except (TypeError, ValueError):

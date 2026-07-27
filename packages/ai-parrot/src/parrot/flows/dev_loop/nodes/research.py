@@ -411,7 +411,8 @@ class ResearchNode(DevLoopNode):
         if source.kind == "cloudwatch":
             toolkit = self._log_toolkits.get("cloudwatch")
             if toolkit is None:
-                raise ValueError("CloudWatch toolkit not configured")
+                self.logger.warning("CloudWatch toolkit not configured — skipping log source")
+                return []
             # Per project policy the log group is configured at toolkit
             # construction time (default_log_group); the per-source
             # locator is informational and only forwarded if a non-empty
@@ -426,7 +427,8 @@ class ResearchNode(DevLoopNode):
         if source.kind == "elasticsearch":
             toolkit = self._log_toolkits.get("elasticsearch")
             if toolkit is None:
-                raise ValueError("Elasticsearch toolkit not configured")
+                self.logger.warning("Elasticsearch toolkit not configured — skipping log source")
+                return []
             result = await toolkit.search(
                 index=source.locator,
                 window_minutes=source.time_window_minutes,

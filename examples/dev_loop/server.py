@@ -400,7 +400,7 @@ def _resolve_codereview_dispatcher(
             :func:`_build_codex_adversarial_reviewer`).
     """
     configured = conf.config.get(
-        "DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code"
+        "DEV_LOOP_CODEREVIEW_AGENT", fallback="parallel"
     ).strip().lower()
 
     adversary = _build_codex_adversarial_reviewer(
@@ -567,22 +567,32 @@ def _build_log_toolkits() -> dict[str, object]:
     and ``default_log_group`` per project policy — the per-source log
     group from each :class:`LogSource` is no longer forwarded as a
     per-query kwarg.
+
+    CloudWatch is optional: when AWS credentials are missing the server
+    starts without log-fetching capability and ResearchNode gracefully
+    skips the ``cloudwatch`` source.
     """
     from parrot_tools.aws.cloudwatch import CloudWatchToolkit
 
     aws_id = conf.config.get("AWS_PROFILE", fallback="cloudwatch")
     log_group = conf.config.get("CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch")
-    toolkits: dict[str, object] = {
-        "cloudwatch": CloudWatchToolkit(
+    toolkits: dict[str, object] = {}
+    try:
+        toolkits["cloudwatch"] = CloudWatchToolkit(
             aws_id=aws_id,
             default_log_group=log_group,
-        ),
-    }
-    logger.info(
-        "CloudWatch toolkit ready (profile=%s, log_group=%s)",
-        aws_id,
-        log_group,
-    )
+        )
+        logger.info(
+            "CloudWatch toolkit ready (profile=%s, log_group=%s)",
+            aws_id,
+            log_group,
+        )
+    except (ValueError, ImportError) as exc:
+        logger.warning(
+            "CloudWatch toolkit disabled — missing credentials or "
+            "dependency (%s). Log-fetching will be unavailable.",
+            exc,
+        )
     return toolkits
 
 
@@ -947,7 +957,7 @@ async def handle_config(request: web.Request) -> web.Response:
                 ),
                 "codereview_agent": app.get("codereview_agent_key", "parallel"),
                 "codereview_agent_configured": conf.config.get(
-                    "DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code"
+                    "DEV_LOOP_CODEREVIEW_AGENT", fallback="parallel"
                 ),
                 "log_group": conf.config.get(
                     "CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch"
