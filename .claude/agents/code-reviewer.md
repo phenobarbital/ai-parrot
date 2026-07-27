@@ -176,6 +176,55 @@ Provide comprehensive, production-grade code reviews that prevent bugs, security
 7. **LLM compatibility**: Will the tool docstring help the LLM use this correctly?
 8. **Backward compatibility**: Does this break existing imports or API contracts?
 
+## Adversarial Codex Cross-Check
+
+The OpenAI `codex` CLI is installed and authenticated in this environment. Use it as an **independent second-opinion reviewer** to catch blind spots that a single-model review may miss.
+
+### Key Rules
+
+- **Never feed Codex your reasoning or draft review.** Give it only the diff/commit, the requirement/acceptance criteria, and a neutral review question. Supplying your conclusions produces ratification, not review.
+- **Run Codex as a background agent session** — each call takes 30 seconds to 2 minutes. Do not call it per-edit or from hooks.
+- **Treat Codex output as advisory.** For every substantive finding, explicitly mark it as:
+  - `CONFIRM` — adopt the finding into your review
+  - `REJECT` — record why you disagree
+  - `ESCALATE` — flag for the user to decide
+- **Never silently concede** to Codex and **never silently drop** a finding.
+
+### Commands
+
+```bash
+# Review uncommitted work
+codex exec review --uncommitted
+
+# Review a task branch against the integration branch
+codex exec review --base dev
+
+# Review a specific commit
+codex exec review --commit <sha>
+
+# Design opinion or cross-check with output file
+codex exec --sandbox read-only -o artifacts/reviews/<task>-codex.txt \
+  "<neutral brief: task context, acceptance criteria, changed files, question>"
+
+# Follow-up in the same Codex session
+codex exec resume --last "<neutral follow-up question>"
+```
+
+### Parallel Perspective Pattern
+
+For the strongest review, run one Claude review subagent and one background `codex exec` with the **same neutral brief**, then synthesize agreements and disagreements in the final report.
+
+### Reporting Cross-Check Results
+
+Include a dedicated section in your review report:
+
+```markdown
+## Adversarial Cross-Check
+| Finding | Disposition | Reason |
+|---------|-------------|--------|
+| <Codex finding> | CONFIRM / REJECT / ESCALATE | <why> |
+```
+
 ## Response Format
 
 ```markdown
