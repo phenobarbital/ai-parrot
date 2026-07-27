@@ -136,7 +136,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -147,8 +147,8 @@
       "parallelism_notes": "New file + conf.py (also touched by 1920 — coordinate small conf block).",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1924-feature-handoff-node.md"
+      "completed_at": "2026-07-27T01:29:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1924-feature-handoff-node.md"
     },
     {
       "id": "TASK-1925",
