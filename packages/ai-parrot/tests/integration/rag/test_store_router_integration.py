@@ -160,7 +160,7 @@ async def test_router_with_multistore_fallback_mock():
     stores = {StoreType.PGVECTOR: mock_store}
 
     # Build a plain MultiSearch-protocol-satisfying fake (no concrete
-    # MultiStoreSearchTool import — core decouples from parrot_tools).
+    # toolkit import — core decouples from parrot_tools).
     class FakeMultiSearch:
         def __init__(self):
             self.search = AsyncMock(return_value=[{"content": "fan out result"}])

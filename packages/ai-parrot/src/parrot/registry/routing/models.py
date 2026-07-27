@@ -28,8 +28,12 @@ class StoreFallbackPolicy(str, Enum):
     """What the router does when no store scores above ``confidence_floor``.
 
     Attributes:
-        FAN_OUT: Delegate to ``MultiStoreSearchTool._execute()`` for parallel
-            fan-out across all configured stores + BM25 reranking.
+        FAN_OUT: Delegate to the configured ``MultiSearch``-protocol
+            instance's ``search()`` (see ``parrot.models.MultiSearch``,
+            typically an ``ai-parrot-tools`` ``MultiStoreSearchToolkit``)
+            for parallel fan-out across all configured origins + BM25
+            reranking; falls back to a direct parallel fan-out across
+            ``stores`` when no such instance is configured.
         FIRST_AVAILABLE: Use the first configured store in insertion order.
         EMPTY: Return an empty result list without raising.
         RAISE: Raise ``NoSuitableStoreError``.

@@ -3,7 +3,7 @@
 Wraps a single duck-typed vector store (pgvector / FAISS / ArangoDB) via
 its ``similarity_search(query, limit=...)`` method — never a concrete
 store class, preserving the "no concrete store imports at load time"
-convention from the original ``MultiStoreSearchTool``.
+convention from the pre-FEAT-379 single-tool implementation.
 """
 from typing import Any, List, Optional
 

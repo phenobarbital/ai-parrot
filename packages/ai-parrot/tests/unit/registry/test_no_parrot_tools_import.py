@@ -11,8 +11,8 @@ unrelated MetaPath-finder that dynamically redirects
 name only in docstrings/comments describing that mechanism). Rewriting
 that dynamic-loading pattern is out of scope for FEAT-379, whose
 decoupling requirement is specifically about ``StoreRouter`` and
-``AbstractBot`` no longer statically importing the old
-``MultiStoreSearchTool``. This test therefore checks those two modules
+``AbstractBot`` no longer statically importing the old single-module
+multi-store search tool. This test therefore checks those two modules
 for real ``import parrot_tools`` / ``from parrot_tools ...`` statements
 (AST-based, so it also flags TYPE_CHECKING-guarded imports).
 """

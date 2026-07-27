@@ -1,22 +1,17 @@
 """``MultiStoreSearch`` package (FEAT-379).
 
-Replaces the old single-module ``MultiStoreSearchTool`` with a package of
-``SearchOrigin`` adapters (vector stores, PageIndex, GraphIndex,
-ParrotWiki) plus a ``MultiStoreSearchToolkit`` (added by TASK-1936).
+A package of ``SearchOrigin`` adapters (vector stores, PageIndex,
+GraphIndex, ParrotWiki) plus ``MultiStoreSearchToolkit`` — the
+agent-facing toolkit orchestrating them (``store_search``,
+``batch_search``, ``fts_search``, ``list_search_origins``).
 
-Module→package transition note: the old ``MultiStoreSearchTool`` /
-``MultiStoreSearchSchema`` still live in ``_legacy_tool.py`` (unchanged)
-and are re-exported here so the existing registry entry
-(``parrot_tools.multistoresearch.MultiStoreSearchTool``) and
-``StoreRouter`` integration keep resolving. This re-export — and
-``_legacy_tool.py`` itself — are REMOVED by the clean-break migration
-(TASK-1937).
+Clean-break migration note (TASK-1937): the legacy single-module tool
+and its input-schema model (formerly ``multistoresearch.py``, briefly
+``_legacy_tool.py`` during the module→package transition) have been
+REMOVED — no deprecation shim. Use ``MultiStoreSearchToolkit`` instead.
 """
-from ._legacy_tool import MultiStoreSearchTool, MultiStoreSearchSchema
 from .toolkit import MultiStoreSearchToolkit
 
 __all__ = (
-    "MultiStoreSearchTool",
-    "MultiStoreSearchSchema",
     "MultiStoreSearchToolkit",
 )
