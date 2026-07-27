@@ -169,12 +169,27 @@ def test_panel_from_conf_malformed_json_falls_back(monkeypatch):
     assert [j.agent for j in dispatcher._judge_specs] == [j.agent for j in expected]
 
 
-def test_unsupported_judge_backend_raises():
-    dispatcher = JudgePanelReviewDispatcher(
-        judges=[JudgeSpec(agent="grok")], redis_url="redis://fake"
-    )
+def test_unsupported_judge_backend_rejected_at_construction():
+    """Code-review finding: JudgeSpec.agent is typed as the full 7-value
+    DevAgentBackend Literal, but only 3 backends have a review profile —
+    JudgeSpec now validates eagerly at construction time (config-load
+    time) instead of failing silently inside asyncio.gather at dispatch
+    time (JudgePanelReviewDispatcher._build_judge, still exercised below
+    for a backend that somehow bypassed validation)."""
     with pytest.raises(ValueError, match="grok"):
-        dispatcher._build_judge(JudgeSpec(agent="grok"))
+        JudgeSpec(agent="grok")
+
+
+def test_build_judge_raises_for_unsupported_backend():
+    """Belt-and-suspenders: _build_judge itself still rejects an
+    unsupported backend even if a JudgeSpec is constructed via
+    model_construct() (bypassing validation)."""
+    dispatcher = JudgePanelReviewDispatcher(
+        judges=[JudgeSpec(agent="claude-code")], redis_url="redis://fake"
+    )
+    bypassed_spec = JudgeSpec.model_construct(agent="grok", model="")
+    with pytest.raises(ValueError, match="grok"):
+        dispatcher._build_judge(bypassed_spec)
 
 
 # ---------------------------------------------------------------------------

@@ -1096,9 +1096,18 @@ class FeatureBrief(BaseModel):
 class JudgeSpec(BaseModel):
     """A single judge declaration inside a :class:`JudgePanelConfig`.
 
-    Reuses the 7-backend :data:`DevAgentBackend` Literal — a judge is
-    materialized into a dispatcher via ``build_dispatcher()`` exactly
-    like a dev-agent, just used for review instead of development.
+    Reuses the 7-backend :data:`DevAgentBackend` Literal for the field's
+    type — a judge is materialized into a dispatcher via
+    ``build_dispatcher()`` exactly like a dev-agent, just used for review
+    instead of development — but only 3 backends actually have a review
+    profile (see :class:`JudgePanelReviewDispatcher._build_judge` in
+    ``code_review.py``): ``agent`` is validated eagerly against that same
+    supported set so a misconfigured ``DEV_LOOP_JUDGE_PANEL`` (or
+    programmatic ``JudgePanelConfig``) fails at config-load time with a
+    clear message, instead of surfacing as a swallowed
+    ``asyncio.gather(..., return_exceptions=True)`` failure deep inside
+    ``JudgePanelReviewDispatcher.review()`` at dispatch time (code-review
+    finding).
     """
 
     agent: DevAgentBackend = Field(
@@ -1107,6 +1116,17 @@ class JudgeSpec(BaseModel):
     model: str = Field(
         default="", description="'' ⇒ use the backend's default model."
     )
+
+    @field_validator("agent")
+    @classmethod
+    def _agent_must_have_review_profile(cls, v: str) -> str:
+        supported = ("claude-code", "codex", "gemini")
+        if v not in supported:
+            raise ValueError(
+                f"JudgeSpec.agent={v!r} has no review profile — "
+                f"JudgePanelReviewDispatcher only supports {supported}."
+            )
+        return v
 
 
 class JudgePanelConfig(BaseModel):
