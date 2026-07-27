@@ -533,6 +533,24 @@ class QAReport(BaseModel):
         default_factory=list,
         description="Qualitative findings emitted by the code-review gate.",
     )
+
+    @field_validator("code_review_findings", mode="before")
+    @classmethod
+    def _coerce_finding_dicts(cls, v: Any) -> Any:
+        """Coerce structured finding dicts to plain strings.
+
+        The sdd-qa agent sees the full QAReport schema and may return
+        CodeReviewFinding-shaped dicts instead of strings.
+        """
+        if isinstance(v, list):
+            return [
+                item.get("message", "") or str(item)
+                if isinstance(item, dict)
+                else item
+                for item in v
+            ]
+        return v
+
     attempt: int = Field(
         default=1,
         ge=1,
@@ -824,15 +842,22 @@ class CodeReviewVerdict(BaseModel):
 
     @field_validator("findings", mode="before")
     @classmethod
-    def _coerce_plain_strings(cls, v: Any) -> Any:
-        if isinstance(v, list):
-            return [
-                CodeReviewFinding(message=item, severity="minor")
-                if isinstance(item, str)
-                else item
-                for item in v
-            ]
-        return v
+    def _coerce_findings(cls, v: Any) -> Any:
+        if not isinstance(v, list):
+            return v
+        out = []
+        for item in v:
+            if isinstance(item, str):
+                out.append(CodeReviewFinding(message=item, severity="minor"))
+            elif isinstance(item, dict):
+                if "message" not in item:
+                    item = {**item, "message": item.get("summary", item.get("description", "(no message)"))}
+                if "severity" not in item:
+                    item = {**item, "severity": "minor"}
+                out.append(item)
+            else:
+                out.append(item)
+        return out
 
 
 class AdversarialFinding(CodeReviewFinding):
@@ -850,6 +875,14 @@ class AdversarialFinding(CodeReviewFinding):
             "file/message text equality (which an LLM may paraphrase)."
         ),
     )
+
+    @field_validator("disposition", mode="before")
+    @classmethod
+    def _normalize_disposition(cls, v: Any) -> Any:
+        """Accept uppercase dispositions from subagents (CONFIRM → confirm)."""
+        if isinstance(v, str):
+            return v.lower()
+        return v
 
 
 class TriageBrief(BaseModel):

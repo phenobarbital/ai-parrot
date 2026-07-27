@@ -190,6 +190,7 @@ textarea.input { resize: vertical; }
   </span>
   <span class="mono muted" style="font-size:12px" id="run-label">no run yet</span>
   <span class="tag tag-outline"><i class="dot" id="conn-dot"></i><span id="conn-label">idle</span></span>
+  <button class="btn btn-danger hidden" type="button" id="stop-btn">Stop run</button>
   <button class="btn" type="button" id="restart-btn">Restart run</button>
   <button class="btn" type="button" id="theme-toggle" title="Toggle dark/light mode"></button>
 </div>
@@ -415,7 +416,7 @@ const app = {
     affectedComponent: "", existingIssueKey: "", jiraIssueKey: "",
     logGroup: "", timeWindow: "60",
     devAgents: [], devIsolation: "shared",
-    judges: [],
+    judges: [], skipQa: false, skipJira: false,
   },
 };
 
@@ -607,6 +608,18 @@ function connect(runId) {
     if (isTerminal(app.s.phase) && app.phase === "running") finish();
     scheduleRender();
   });
+  sts.addEventListener("close", () => {
+    if (app.phase === "running") {
+      if (isTerminal(app.s.phase)) {
+        finish();
+      } else {
+        markNodesTerminal();
+        app.s.phase = "closed";
+        finish();
+      }
+      scheduleRender();
+    }
+  });
   app.wsState = sts;
 }
 
@@ -621,6 +634,12 @@ function closeSockets() {
 function finish() {
   app.phase = "done";
   $("summary-section").classList.remove("hidden");
+}
+
+function markNodesTerminal() {
+  for (const n of Object.values(app.s.nodes)) {
+    if (n.status === "running") n.status = "completed";
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -649,6 +668,7 @@ function renderChrome() {
     : app.phase === "done" ? "stream closed" : "idle";
   $("conn-dot").className = "dot" +
     (app.phase === "running" && app.connected ? " running" : app.phase === "done" ? " completed" : "");
+  $("stop-btn").classList.toggle("hidden", app.phase !== "running");
   $("submit-label").textContent = app.phase === "idle" ? "Dispatch run" : "Re-dispatch run";
 }
 
@@ -694,6 +714,8 @@ function renderReady() {
         ["dev agents", f.devAgents.length ? f.devAgents.map((a) => `${a.agent}×${a.count}`).join(" ") : "planner-sized"],
         ["judges", `${effectiveJudges().length} · majority`],
         ["jira", f.jiraIssueKey || "none (optional)"],
+        ["QA", f.skipQa ? "SKIPPED" : "full"],
+        ["Jira", f.skipJira ? "SKIPPED" : "active"],
       ]
     : [
         ["kind", app.kind],
@@ -701,6 +723,8 @@ function renderReady() {
         ["criteria", criteriaSummary()],
         ["dev agents", f.devAgents.length ? f.devAgents.map((a) => `${a.agent}×${a.count}`).join(" ") : "server default"],
         ["review", `${app.config?.defaults?.codereview_agent || "parallel"} + adversary`],
+        ["QA", f.skipQa ? "SKIPPED" : "full"],
+        ["Jira", f.skipJira ? "SKIPPED" : "active"],
       ];
   $("ready-rows").innerHTML = rows.map(([k, v]) => `
     <span style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px">
@@ -1212,7 +1236,23 @@ function tabBodyHtml(tab) {
     </div>`;
   }
   // guardrails
+  const skipQaChecked = f.skipQa ? "checked" : "";
+  const skipJiraChecked = f.skipJira ? "checked" : "";
   return grid(`
+    <div class="field" style="grid-column:1/-1">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="chk-skip-qa" ${skipQaChecked} style="width:16px;height:16px" />
+        <span class="field-label" style="margin:0">Skip QA for this run</span>
+      </label>
+      <p class="hint">Bypasses deterministic acceptance tests and code review — returns a synthetic pass. Use for trivial fixes (typos, syntax) where the 7-minute QA cycle is not worth the wait. Server default: <span class="mono">${d.skip_qa ? "on" : "off"}</span></p>
+    </div>
+    <div class="field" style="grid-column:1/-1">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="chk-skip-jira" ${skipJiraChecked} style="width:16px;height:16px" />
+        <span class="field-label" style="margin:0">Skip Jira for this run</span>
+      </label>
+      <p class="hint">No ticket creation, no transitions, no comments. Research still runs (logs + triage + sdd-research dispatch) but without Jira integration. Use for local experiments or when Jira is down.</p>
+    </div>
     <div class="field"><span class="field-label">QA repair retries (DEV_LOOP_QA_MAX_RETRIES)</span>
       <input class="input mono" value="${esc(String(d.qa_max_retries ?? "—"))}" disabled /></div>
     <div class="field"><span class="field-label">Concurrent runs (FLOW_MAX_CONCURRENT_RUNS)</span>
@@ -1284,6 +1324,8 @@ function buildPayload() {
     if (f.jiraIssueKey.trim()) payload.jira_issue_key = f.jiraIssueKey.trim();
     if (f.devAgents.length) payload.dev_agents = f.devAgents;
     if (f.judges.length) payload.judge_panel = f.judges;
+    if (f.skipQa) payload.skip_qa = true;
+    if (f.skipJira) payload.skip_jira = true;
     return payload;
   }
   const payload = {
@@ -1300,6 +1342,8 @@ function buildPayload() {
     payload.dev_agents = f.devAgents;
     payload.dev_isolation = f.devIsolation;
   }
+  if (f.skipQa) payload.skip_qa = true;
+  if (f.skipJira) payload.skip_jira = true;
   return payload;
 }
 
@@ -1357,6 +1401,22 @@ async function submit(ev) {
     showError(err.message);
   } finally {
     $("submit-btn").disabled = false;
+  }
+}
+
+async function stopRun() {
+  if (!app.runId || app.phase !== "running") return;
+  $("stop-btn").disabled = true;
+  try {
+    const res = await fetch(`/api/flow/${app.runId}/cancel`, { method: "POST" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      console.warn("stop failed:", data.error || res.statusText);
+    }
+  } catch (err) {
+    console.warn("stop failed:", err);
+  } finally {
+    $("stop-btn").disabled = false;
   }
 }
 
@@ -1453,6 +1513,8 @@ document.addEventListener("click", (e) => {
       renderTabs(); renderReady(); break;
     case "edit-request-btn":
       app.requestOpen = true; applyRequestCollapse(); break;
+    case "stop-btn":
+      stopRun(); break;
     case "restart-btn":
     case "another-btn":
       restart(); break;
@@ -1460,6 +1522,14 @@ document.addEventListener("click", (e) => {
       if (app.runId) loadReport(); break;
     case "bundle-btn":
       if (app.runId) location.href = `/api/flow/${app.runId}/bundle?format=md&download=1`;
+      break;
+    case "chk-skip-qa":
+      app.form.skipQa = t.checked;
+      renderReady();
+      break;
+    case "chk-skip-jira":
+      app.form.skipJira = t.checked;
+      renderReady();
       break;
   }
 });
@@ -1512,6 +1582,7 @@ $("request-form").addEventListener("submit", submit);
     };
   }
   app.form.timeWindow = String(app.config.defaults?.time_window_minutes ?? 60);
+  app.form.skipQa = !!app.config.defaults?.skip_qa;
   applyMode();
   render();
 })();

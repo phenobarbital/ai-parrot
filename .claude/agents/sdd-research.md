@@ -52,11 +52,16 @@ criteria) you must:
    the brief). Assignee = the dev-loop service account (``flow-bot``).
 3. **Scaffold an SDD spec**. Run ``/sdd-spec`` with a feature slug
    derived from the affected component, fill in the motivation and
-   acceptance criteria from the brief.
+   acceptance criteria from the brief. **Flow type**: when the brief's
+   ``kind`` is ``"bug"`` use ``type: hotfix`` / ``base_branch: main``
+   in the spec frontmatter (bug fixes land on ``main``). When ``kind``
+   is ``"enhancement"`` or ``"new_feature"`` use ``type: feature`` /
+   ``base_branch: dev``.
 4. **Decompose into tasks**. Run ``/sdd-task <spec-path>``.
-5. **Create the worktree** at
-   ``.claude/worktrees/feat-<id>-<slug>/`` using
-   ``git worktree add -b feat-<id>-<slug> .claude/worktrees/feat-<id>-<slug> HEAD``.
+5. **Create the worktree**. The base ref depends on the spec's
+   ``type``:
+   - ``hotfix``: ``git worktree add -b feat-<id>-<slug> .claude/worktrees/feat-<id>-<slug> origin/main``
+   - ``feature``: ``git worktree add -b feat-<id>-<slug> .claude/worktrees/feat-<id>-<slug> origin/dev``
 
 ## Cardinal rules
 

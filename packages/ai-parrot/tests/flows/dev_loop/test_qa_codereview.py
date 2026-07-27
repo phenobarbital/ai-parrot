@@ -113,7 +113,7 @@ async def test_codereview_dispatch_error_does_not_block(ctx):
 
 
 @pytest.mark.asyncio
-async def test_codereview_cwd_prefers_repo_path(ctx):
+async def test_codereview_cwd_uses_worktree_path(ctx):
     ctx["research_output"] = ctx["research_output"].model_copy(
         update={"repo_path": "/abs/.claude/worktrees/repos/r1/nav"}
     )
@@ -122,7 +122,7 @@ async def test_codereview_cwd_prefers_repo_path(ctx):
     node = QANode(dispatcher=_dispatcher(qa, verdict))
     await node.execute(ctx)
     cr_cwd = node._dispatcher.dispatch.await_args_list[1].kwargs["cwd"]
-    assert cr_cwd == "/abs/.claude/worktrees/repos/r1/nav"
+    assert cr_cwd == ctx["research_output"].worktree_path
 
 
 @pytest.mark.asyncio

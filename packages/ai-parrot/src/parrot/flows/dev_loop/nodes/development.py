@@ -41,7 +41,12 @@ from parrot.flows.dev_loop.models import (
     ResearchOutput,
     TaskScopedBrief,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode, condense_qa_failure, register_dev_loop_node
+from parrot.flows.dev_loop.nodes.base import (
+    DevLoopNode,
+    condense_qa_failure,
+    register_dev_loop_node,
+    transition_issue_with_candidates,
+)
 from parrot.flows.dev_loop.task_scheduler import TaskRef, TaskScheduler
 from parrot.flows.dev_loop.worktree_manager import SubWorktreeManager
 
@@ -49,13 +54,14 @@ DispatcherBuilder = Callable[[DevAgentSpec], Tuple[DevLoopCodeDispatcher, BaseMo
 
 
 def should_fan_out(wave: List[TaskRef], pool_cfg: DevAgentPoolConfig) -> bool:
-    """Deterministic parallelism stop rule (FEAT-377 TASK-1913 — G4).
+    """Check whether the first wave actually benefits from parallelism.
 
     A configured dev-agent pool is not automatically worth fanning out
     into: a straight dependency chain (every wave size 1) gains nothing
-    from parallel workers and only adds pool-orchestration overhead. This
-    is a pure, no-LLM decision — everything needed lives in the two
-    arguments.
+    from parallel workers.  This is a pure, no-LLM decision used as an
+    **advisory log hint** — it no longer gates pool-vs-single dispatch.
+    When a pool is configured, the pool path always runs; this function
+    only tells callers whether true parallelism will occur.
 
     Args:
         wave: The first dispatchable wave (``TaskScheduler.next_wave()``,
@@ -64,10 +70,8 @@ def should_fan_out(wave: List[TaskRef], pool_cfg: DevAgentPoolConfig) -> bool:
 
     Returns:
         ``True`` only when the wave has 2 or more independent tasks AND
-        the pool has more than one effective worker slot (``sum(spec.count
-        for spec in pool_cfg.agents)``) — i.e. fanning out could actually
-        run tasks in parallel. ``False`` otherwise, including when the
-        wave is empty (nothing to schedule at all).
+        the pool has more than one effective worker slot — i.e. fanning
+        out could actually run tasks in parallel.
     """
     if len(wave) < 2:
         return False
@@ -88,6 +92,7 @@ class DevelopmentNode(DevLoopNode):
         dispatcher_builder: Optional[DispatcherBuilder] = None,
         pool_max: int = 4,
         require_plan_approval: bool = False,
+        jira_toolkit: Any = None,
         name: str = "development",
     ) -> None:
         """Initialise the node.
@@ -116,6 +121,8 @@ class DevelopmentNode(DevLoopNode):
                 existing gate is opened and awaited FROM WITHIN the node
                 that would otherwise act next, which is what actually
                 blocks the scheduler's dispatch of that node's own work.
+            jira_toolkit: Optional Jira toolkit for transitioning the
+                ticket to "In Progress" at the start of development.
             name: Node id.
         """
         super().__init__(node_id=name)
@@ -124,6 +131,7 @@ class DevelopmentNode(DevLoopNode):
         object.__setattr__(self, "_pool_config", pool_config)
         object.__setattr__(self, "_dispatcher_builder", dispatcher_builder)
         object.__setattr__(self, "_pool_max", pool_max)
+        object.__setattr__(self, "_jira", jira_toolkit)
         object.__setattr__(self, "_require_plan_approval", require_plan_approval)
 
     # ------------------------------------------------------------------
@@ -160,7 +168,22 @@ class DevelopmentNode(DevLoopNode):
         """
         shared = self.shared_state(ctx)
         research: ResearchOutput = shared["research_output"]
+
+        # Transition ticket to "In Progress" before dispatching work.
+        issue_key = research.jira_issue_key
+        if issue_key and self._jira and not shared.get("skip_jira", False):
+            try:
+                await transition_issue_with_candidates(
+                    self._jira,
+                    issue_key,
+                    ["In Progress", "Start Progress"],
+                    logger=self.logger,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
         await self._check_plan_approval(shared, research)
+        research = self._with_prior_work_context(shared, research)
         research = self._with_repair_feedback(shared, research)
 
         pool_cfg = self._resolve_pool_config(shared)
@@ -183,20 +206,16 @@ class DevelopmentNode(DevLoopNode):
             )
             return await self._execute_single(shared, research)
 
-        # FEAT-377 TASK-1913 (G4): deterministic parallelism stop rule — a
-        # configured pool still degrades to single-agent when the task
-        # graph doesn't actually offer any parallelism (e.g. a straight
-        # dependency chain, every wave size 1).
         first_wave = scheduler.next_wave()
         if not should_fan_out(first_wave, pool_cfg):
+            effective_slots = sum(spec.count for spec in pool_cfg.agents)
             self.logger.info(
                 "should_fan_out(wave=%d task(s), pool_slots=%d) -> False; "
-                "degrading to single-agent for %s.",
+                "pool will dispatch tasks sequentially for %s.",
                 len(first_wave),
-                sum(spec.count for spec in pool_cfg.agents),
+                effective_slots,
                 research.feat_id,
             )
-            return await self._execute_single(shared, research)
 
         return await self._execute_pool(shared, research, pool_cfg, scheduler)
 
@@ -276,6 +295,59 @@ class DevelopmentNode(DevLoopNode):
         if scheduler is None:
             return None
         return len(scheduler._tasks)  # noqa: SLF001 - same-package internal read
+
+    # ------------------------------------------------------------------
+    # Prior-work context (worktree reuse)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _with_prior_work_context(
+        shared: Dict[str, Any], research: ResearchOutput
+    ) -> ResearchOutput:
+        """Inject prior-work context when reusing a worktree.
+
+        When ``ResearchNode`` detects an existing worktree with prior
+        commits, it stores a ``prior_work_context`` dict in shared
+        state. This method folds a concise summary into
+        ``research.log_excerpts`` so the sdd-worker's prompt includes
+        what already exists — preventing it from repeating work.
+
+        Consumed once: the key is popped so QA-repair re-entries
+        (which also call this path) don't re-inject stale context.
+        """
+        prior = shared.pop("prior_work_context", None)
+        if not prior:
+            return research
+
+        commits = prior.get("commits", [])
+        diff_stat = prior.get("diff_stat", "")
+        uncommitted = prior.get("uncommitted_stat", "")
+
+        lines = [
+            "[PRIOR WORK — worktree reused from a previous run]",
+            f"Branch: {prior.get('branch', '?')}",
+            f"Commits since merge-base: {prior.get('commit_count', 0)}",
+        ]
+        if commits:
+            lines.append("Recent commits:")
+            for c in commits[:15]:
+                lines.append(f"  {c}")
+            if len(commits) > 15:
+                lines.append(f"  ... and {len(commits) - 15} more")
+        if diff_stat:
+            lines.append(f"Diff stat:\n{diff_stat}")
+        if uncommitted:
+            lines.append(f"Uncommitted changes:\n{uncommitted}")
+        lines.append(
+            "IMPORTANT: Review the existing code in the worktree BEFORE "
+            "making changes. If work is already done for a task, verify "
+            "and commit it — do NOT redo it from scratch."
+        )
+
+        note = "\n".join(lines)
+        return research.model_copy(
+            update={"log_excerpts": [note, *research.log_excerpts]}
+        )
 
     # ------------------------------------------------------------------
     # QA repair-loop re-entry (FEAT-377 TASK-1911)

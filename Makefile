@@ -301,6 +301,7 @@ release: lint test clean check-registry
 	uv build --package parrot-formdesigner
 	uv build --package ai-parrot-server
 	uv build --package ai-parrot-advisors
+	uv build --package navrules
 	uv publish dist/ai_parrot-*.tar.gz dist/ai_parrot-*.whl
 	uv publish dist/ai_parrot_tools-*.tar.gz dist/ai_parrot_tools-*.whl
 	uv publish dist/ai_parrot_loaders-*.tar.gz dist/ai_parrot_loaders-*.whl
@@ -311,6 +312,7 @@ release: lint test clean check-registry
 	uv publish dist/parrot_formdesigner-*.tar.gz dist/parrot_formdesigner-*.whl
 	uv publish dist/ai_parrot_server-*.tar.gz dist/ai_parrot_server-*.whl
 	uv publish dist/ai_parrot_advisors-*.tar.gz dist/ai_parrot_advisors-*.whl
+	uv publish dist/navrules-*.tar.gz dist/navrules-*.whl
 
 # Alternative release using flit
 release-flit: lint test clean
@@ -352,7 +354,7 @@ remove:
 # Compile Cython extensions using setup.py
 build-cython:
 	@echo "Compiling Cython extensions..."
-	python setup.py build_ext
+	cd packages/ai-parrot && python setup.py build_ext
 
 # Build Cython extensions in place (for development)
 build-inplace:
@@ -372,6 +374,7 @@ build: clean
 	uv build --package parrot-formdesigner
 	uv build --package ai-parrot-server
 	uv build --package ai-parrot-advisors
+	uv build --package navrules
 
 # ============================================================
 # Tool Registry Management
