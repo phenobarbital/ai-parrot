@@ -93,7 +93,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "New files only; could parallelize with 1921 but shares test fixtures — keep sequential per spec worktree strategy.",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1922-synthesis-node.md"
+      "completed_at": "2026-07-27T01:16:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1922-synthesis-node.md"
     },
     {
       "id": "TASK-1923",
