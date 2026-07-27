@@ -8,6 +8,7 @@ This package deliberately has NO dependency on ``parrot.tools.manager`` or
 ``parrot.tools.abstract`` — importing it must never pull in
 ``parrot.tools.manager`` (avoids an import cycle with ``parrot.tools.__init__``).
 """
+from .budget import BudgetRouter, Route
 from .config import CompressorConfig, CompressorEntry
 from .levels import FilterLevel, cap
 from .protocol import (
@@ -30,4 +31,6 @@ __all__ = [
     "CompressorEntry",
     "CompressorConfig",
     "CompressorRegistry",
+    "Route",
+    "BudgetRouter",
 ]
