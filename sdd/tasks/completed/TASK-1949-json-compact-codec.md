@@ -257,10 +257,20 @@ class TestJsonCompact:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-27
+**Notes**: Implemented `JsonCompactCodec` (`codecs/json_compact.py`) with
+the three lossless transformations: separator-compact serialization via
+`datamodel.parsers.json.json_encoder`, recursive null-key elision
+(all-null dict guard keeps `{}` rather than dropping the parent key),
+and exact sibling dedup (`{"_repeat": N, "_value": v}` marker for runs
+>= 2, with a guard against re-collapsing an already-marker-shaped value).
+`FilterLevel.NONE` and non-serializable payloads both passthrough with
+`lossy=False`; any internal exception is caught and also passes through
+(defense in depth). `codecs/__init__.py` now imports the module so
+`@register_codec` fires on package import. 15 new tests pass (round-trip
+losslessness, 100x determinism, non-serializable passthrough, dedup
+marker shape, dedup-disabled param, marker-recollapse guard, always
+`lossy=False`); full compression suite is 29/29 green. `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

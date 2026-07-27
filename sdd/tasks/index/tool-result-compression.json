@@ -52,7 +52,7 @@
       "feature_id": "FEAT-380",
       "feature": "tool-result-compression",
       "spec": "sdd/specs/tool-result-compression.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Owns codecs/json_compact.py exclusively. Depends only on the frozen contract from TASK-1947; disjoint from 1948, 1950 and 1954.",
       "assigned_to": null,
       "started_at": "2026-07-27T17:11:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1949-json-compact-codec.md"
+      "completed_at": "2026-07-27T19:03:14+00:00",
+      "file": "sdd/tasks/completed/TASK-1949-json-compact-codec.md"
     },
     {
       "id": "TASK-1950",
