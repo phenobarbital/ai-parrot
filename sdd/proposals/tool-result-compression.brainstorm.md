@@ -7,7 +7,7 @@ base_branch: dev
 # Brainstorm: Tool Result Compression Pipeline
 
 **Date**: 2026-07-27
-**Author**: <name>
+**Author**: Jesus Lara
 **Status**: exploration
 **Recommended Option**: Option B
 
@@ -129,7 +129,7 @@ Punto clave: `ToolManager.add_result_hook()` tiene la firma `Callable[[str, Any,
 - `parrot/tools/toolkit.py` — `AbstractToolkit._post_execute()`, que **sí** devuelve el resultado transformado; es el precedente del contrato que queremos
 - `parrot/tools/discovery.py` + `parrot/tools/registry.py` — mecánica de descubrimiento multi-fuente a replicar para los TOML
 - `parrot/tools/working_memory/tool.py` — `store_result()`, `get_result()`
-- `parrot/core/events/lifecycle/events.py` — `AfterToolCallEvent.result_size_bytes`
+- `parrot/core/events/lifecycle/events/tool.py` — `AfterToolCallEvent.result_size_bytes`
 
 ---
 
@@ -176,7 +176,7 @@ El segundo argumento es la disponibilidad de contexto. En `ToolManager.execute_t
 - *Un concepto nuevo que documentar.* Se acepta a cambio de que sea un concepto y no veinte implementaciones ad hoc.
 - *Un cambio semántico en telemetría.* `AfterToolCallEvent.result_size_bytes` pasa a significar tamaño post-compresión. Se prefiere esto a proliferar eventos, pero exige entrada de changelog.
 
-*Nota: la brecha de `clients/live.py` — que invoca `tool._execute()` saltándose `ToolManager` — se detectó durante este brainstorm y entra en alcance en vez de quedar como deuda. Es exactamente el tipo de ruta que, dejada fuera, invalida la garantía de punto único que justifica esta opción.*
+*Nota: la brecha de `clients/live.py` — que invoca `tool._execute()` saltándose `ToolManager` — se detectó durante este brainstorm y entra en alcance en vez de quedar como deuda. Es exactamente el tipo de ruta que, dejada fuera, invalida la garantía de punto único que justifica esta opción. La verificación del codebase reveló además que la brecha es más grave de lo estimado: ver la fila de `clients/live.py` en **Impact & Integration**.*
 
 Se toma de la Opción C una idea concreta: el registro permite que un toolkit **declare** su compresor preferido, de modo que el autor de la herramienta conserva la voz sin quedarse con toda la responsabilidad.
 
@@ -341,7 +341,7 @@ El umbral de heterogeneidad sí queda por calibrar; `min_rows = 20` está fijado
 
 **Implementación Rust: dónde paga y dónde no.**
 
-*Confirmado: el codebase ya integra PyO3 con maturin, así que no hay coste de arranque de toolchain.*
+*Confirmado: el codebase ya integra PyO3 con maturin — dos crates existentes: `yaml-rs` dentro del propio paquete ai-parrot y `packages/navrules`. Ver Code Context §17. No hay coste de arranque de toolchain.*
 
 El criterio de diseño que decide la arquitectura: **no cruzar la frontera FFI con estructuras Python**. Si el payload ya es un `dict` materializado, `PyO3::extract()` sobre cada `PyDict` cruza la frontera una vez por fila con el GIL tomado — para grafos de objetos esto puede salir **más lento que Python puro**. La ganancia de Rust se evapora si se paga en conversiones.
 
@@ -473,11 +473,11 @@ El registro se carga una vez por proceso y se cachea. `ToolManager.clone()` comp
 | `parrot/tools/compression/` | new | Paquete nuevo: registro, `FilterLevel`, Protocol, codecs |
 | `parrot/tools/working_memory/tool.py` | depends on | Consumidor de `store_result()` / `get_result()`. Sin cambios de API |
 | `parrot/clients/google/client.py` | modifies | `MAX_TOOL_RESULT_CHARS` pasa a ser última línea de defensa, no primera. Evaluar si sube el umbral |
-| `parrot/core/events/lifecycle/events.py` | extends | Campos de compresión en `AfterToolCallEvent` o evento nuevo |
+| `parrot/core/events/lifecycle/events/tool.py` | extends | Campos de compresión en `AfterToolCallEvent` (dataclass frozen; los campos nuevos necesitan default) |
 | `parrot/tools/discovery.py` | extends | Descubrimiento de TOML de compresores junto al de `TOOL_REGISTRY` |
 | `parrot/tools/databasequery/` | depends on | Primer consumidor real del codec columnar |
-| `parrot/clients/live.py` | modifies | **En alcance.** Invoca `tool._execute()` saltándose `ToolManager` — brecha real detectada en este brainstorm. Debe redirigirse al pipeline. Ojo: es la ruta de voz, donde `voice_text` y `display_data` del `ToolResult` tienen tratamiento especial y **no** deben comprimirse |
-| Extensión Rust (`parrot_codec`) | new / extends | Nuevo módulo o extensión del crate existente. Ver *Open Questions* |
+| `parrot/clients/live.py` | modifies | **En alcance.** `execute_tool()` (live.py:367) invoca el **privado** `tool._execute(**tool_args)` en live.py:401, saltándose no solo `ToolManager` sino también `AbstractTool.execute()` — es decir, sin permisos, sin credential broker, sin redacción y sin `ToolResult` estandarizado. Debe redirigirse al pipeline. Ojo: es la ruta de voz, donde `voice_text` y `display_data` del `ToolResult` tienen tratamiento especial (live.py:416-437) y **no** deben comprimirse |
+| Extensión Rust (`parrot_codec`) | new / extends | Nuevo módulo o extensión de un crate existente (`yaml-rs` en el paquete, `navrules` como precedente separado). Ver *Open Questions* |
 
 **Breaking changes:** ninguno previsto. `MINIMAL` por defecto solo aplica transformaciones sin pérdida; el kill switch por variable de entorno restaura el comportamiento exacto.
 
@@ -487,12 +487,14 @@ El registro se carga una vez por proceso y se cachea. `ToolManager.clone()` comp
 
 ## Code Context
 
-> ⚠️ **Los números de línea NO están verificados.** Las rutas de fichero y las
-> firmas de abajo se han confirmado leyendo el codebase, pero las líneas exactas
-> deben verificarse con `grep`/`rg` en el repo antes de convertir este brainstorm
-> en spec. Se marcan como `:TBD` deliberadamente en lugar de inventarlas — un
-> número de línea falso en esta sección es peor que ninguno, porque el objetivo
-> de la sección es prevenir alucinaciones aguas abajo.
+> ✅ **Verificado el 2026-07-27 contra el codebase real.** Todas las firmas y
+> números de línea de abajo se confirmaron leyendo el código fuente.
+>
+> **Mapeo de rutas**: en todo este documento `parrot/...` significa
+> `packages/ai-parrot/src/parrot/...` — el paquete NO vive en la raíz del repo.
+> Existe además una copia stale de build en
+> `packages/ai-parrot/build/lib.linux-x86_64-cpython-311/parrot/` que debe
+> ignorarse: cualquier grep debe restringirse a `packages/ai-parrot/src/`.
 
 ### User-Provided Code
 
@@ -517,229 +519,340 @@ def compressor_for(*names: str):
 #### Classes & Signatures
 
 ```python
-# From parrot/tools/abstract.py:TBD
+# From parrot/tools/abstract.py:91
 class ToolResult(BaseModel):
-    success: bool = Field(default=True)
-    status: str = Field(default="success")
-    result: Any
-    error: Optional[str] = Field(default=None)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    timestamp: str
-    files: Optional[list] = Field(default_factory=list)
-    images: Optional[list] = Field(default_factory=list)
-    voice_text: Optional[str] = Field(default=None)
-    display_data: Optional[Dict[str, Any]] = Field(default=None)
+    """Standardized tool result format."""
+    success: bool = Field(default=True, ...)
+    status: str = Field(default="success", ...)
+    result: Any = Field(description="The actual result of the tool operation")
+    error: Optional[str] = Field(default=None, ...)
+    metadata: Dict[str, Any] = Field(default_factory=dict, ...)
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    files: Optional[list] = Field(default_factory=list, ...)
+    images: Optional[list] = Field(default_factory=list, ...)
+    voice_text: Optional[str] = Field(default=None, ...)          # voz
+    display_data: Optional[Dict[str, Any]] = Field(default=None)  # visual
 
     @property
-    def spoken_content(self) -> str: ...
+    def spoken_content(self) -> str: ...       # línea 113
     @property
-    def has_display_content(self) -> bool: ...
+    def has_display_content(self) -> bool: ... # línea 120
 ```
 
 ```python
-# From parrot/tools/manager.py:TBD
+# From parrot/tools/abstract.py:126
+class AbstractTool(EventEmitterMixin, ABC):
+    return_direct: bool = False                       # línea 144
+
+    async def execute(self, *args, **kwargs) -> ToolResult: ...  # línea 527
+    # execute() gestiona _permission_context/_resolver/_broker y puede
+    # devolver status='forbidden' antes de llegar a _execute (L559-569).
+
+    async def _execute(self, **kwargs) -> Any: ...    # abstract, línea 293
+```
+
+```python
+# From parrot/tools/manager.py:229  (class ToolManager)
 # Hook API EXISTENTE — observa, NO transforma (devuelve None).
-def add_result_hook(self, fn: Callable[[str, Any, Dict[str, Any]], None]) -> None:
-    """Register a function(tool_name, result, metadata) -> None run after each tool."""
-
-def _run_result_hooks(self, tool_name: str, result: Any, metadata: Dict[str, Any]) -> None: ...
+def add_result_hook(self, fn: Callable[[str, Any, Dict[str, Any]], None]) -> None: ...  # línea 1777
+def _run_result_hooks(self, tool_name: str, result: Any, metadata: Dict[str, Any]) -> None: ...  # línea 1781
+# _result_hooks se inicializa en línea 266; los hooks tragan excepciones con warning.
 ```
 
 ```python
-# From parrot/tools/manager.py:TBD — punto de inserción del pipeline.
-# Fragmento real de execute_tool():
+# From parrot/tools/manager.py:1379 — execute_tool(); punto de inserción del pipeline.
+async def execute_tool(
+    self,
+    tool_name: str,
+    parameters: Dict[str, Any],
+    permission_context: Optional["PermissionContext"] = None,
+) -> Any: ...
+
+# Fragmento real, líneas 1490-1506:
 result = await tool.execute(**exec_kwargs)
 if isinstance(result, ToolResult):
     if result.status == 'forbidden':
-        return result
+        return result                          # forbidden vuelve intacto
     if result.status == "error":
-        raise ValueError(result.error)     # ← descarta result.result; bloquea el tee
+        raise ValueError(result.error)         # ← descarta result.result; bloquea el tee
     out = result.result
     meta = getattr(result, "metadata", {}) or {}
 else:
     out = result
     meta = {}
-self._postprocess_result(tool_name, out, meta)
+self._postprocess_result(tool_name, out, meta)     # def en línea 1663
 self._run_result_hooks(tool_name, out, meta)
-return out
+return out                                          # ← devuelve el payload DESEMPAQUETADO
 ```
 
 ```python
-# From parrot/tools/toolkit.py:TBD
+# From parrot/tools/manager.py:1697 — clone()
+def clone(self, *, include_search_tool: bool = False) -> "ToolManager": ...
+# Comparte por referencia: instancias de tools (_tools), _resolver, _broker, logger.
+# Copia: _categories, auto_share_dataframes (L272), auto_push_to_pandas (L273), pandas_tool_name.
+# NO clona (docstring L1707-1712): _shared, _registered_agents, _result_hooks,
+# _wired_toolkits, estado MCP. ← lista a extender con el estado de métricas de compresión.
+```
+
+```python
+# From parrot/tools/toolkit.py:390
 # Precedente del contrato transformador que queremos (SÍ devuelve el resultado).
-async def _post_execute(self, tool_name: str, result: Any, **kwargs) -> Any:
-    """The return value replaces the original result."""
+# Nota: `result` es positional-only (marcador `/`).
+async def _post_execute(self, tool_name: str, result: Any, /, **kwargs) -> Any:
+    """... The return value replaces the original result."""
     return result
+
+# ToolkitTool en toolkit.py:32; AbstractToolkit en toolkit.py:207.
 ```
 
 ```python
-# From parrot/tools/working_memory/tool.py:TBD
+# From parrot/tools/working_memory/tool.py:44
 class WorkingMemoryToolkit(AbstractToolkit):
-    name: str = "working_memory"
-    tool_prefix: str = "wm"
+    name: str = "working_memory"          # línea 77
+    tool_prefix: str = "wm"               # línea 78
+    exclude_tools: tuple[str, ...] = ("store",)   # línea 86
 
-    @tool_schema(StoreResultInput)
+    @tool_schema(StoreResultInput)        # línea 204
     async def store_result(
         self, key: str, data: Any, data_type: str = "auto",
         description: str = "", metadata: Optional[dict] = None,
         turn_id: Optional[str] = None,
     ) -> dict: ...          # → {"status": "stored", "summary": entry.compact_summary()}
 
-    @tool_schema(GetResultInput)
+    @tool_schema(DropStoredInput)         # línea 238
+    async def drop_stored(self, key: str) -> dict: ...
+
+    @tool_schema(GetResultInput)          # línea 255
     async def get_result(
         self, key: str, max_length: int = 500, include_raw: bool = False,
     ) -> dict: ...
-
-    @tool_schema(DropStoredInput)
-    async def drop_stored(self, key: str) -> dict: ...
 ```
 
 ```python
-# From parrot/tools/working_memory/models.py:TBD
+# From parrot/tools/working_memory/models.py:15
 class EntryType(str, Enum):
     DATAFRAME = "dataframe"
-    TEXT      = "text"
-    JSON      = "json"
-    MESSAGE   = "message"
-    BINARY    = "binary"
-    OBJECT    = "object"
+    TEXT      = "text"      # plain str
+    JSON      = "json"      # dict or list
+    MESSAGE   = "message"   # duck-typed: has .content and .role
+    BINARY    = "binary"    # bytes
+    OBJECT    = "object"    # fallback
 ```
 
 ```python
-# From parrot/tools/working_memory/internals.py:TBD
+# From parrot/tools/working_memory/internals.py:70
 @dataclass
 class GenericEntry:
     key: str
     data: Any
     entry_type: EntryType
-    created_at: float
+    created_at: float = field(default_factory=time.time)
     description: str = ""
     turn_id: Optional[str] = None
     session_id: Optional[str] = None
     metadata: dict = field(default_factory=dict)
 
-    def compact_summary(self, max_length: int = 500) -> dict: ...
+    def compact_summary(self, max_length: int = 500) -> dict: ...  # línea 96
 
-def _detect_entry_type(data: Any) -> EntryType: ...
+def _detect_entry_type(data: Any) -> EntryType: ...  # línea 34
+# Orden de detección: str→TEXT, bytes→BINARY, dict|list→JSON,
+# .content+.role→MESSAGE, DataFrame→DATAFRAME, resto→OBJECT.
+
+# También en internals.py: CatalogEntry (línea 175, compact_summary con OTRA firma:
+# max_rows/max_cols), WorkingMemoryCatalog (línea 458; put_generic en 499 —
+# sobrescribe silenciosamente, relevante para la colisión de claves del tee).
 ```
 
 ```python
-# From parrot/tools/databasequery/base.py:TBD
+# From parrot/tools/databasequery/base.py:148
 # OBJETIVO PRINCIPAL del codec columnar: rows es list[dict], claves repetidas por fila.
 class QueryResult(BaseModel):
     driver: str
-    rows: list[dict[str, Any]]
+    rows: list[dict[str, Any]]      # línea 160
     row_count: int
     columns: list[str]
     execution_time_ms: float
 ```
 
 ```python
-# From parrot/bots/data.py:TBD
+# From parrot/bots/data.py:70
 # FORMATO DESTINO del codec columnar — ya existe y el prompt ya lo enseña al LLM.
-Scalar = Union[str, int, float, bool, None]
+Scalar = Union[str, int, float, bool, None]   # línea 62
 
 class PandasTable(BaseModel):
-    columns: List[str]
-    rows: List[List[Scalar]]
+    columns: List[str]              # línea 72
+    rows: List[List[Scalar]]        # línea 75
 
-    @field_validator('rows')
+    @field_validator('rows')        # línea 85
     @classmethod
     def validate_rows_alignment(cls, v, info): ...
+    # Ojo: NO lanza en desalineación — rellena filas cortas con None y trunca largas.
 ```
 
 ```python
-# From parrot/clients/google/client.py:TBD
+# From parrot/clients/google/client.py
 # Truncado actual — posicional, solo en este cliente.
-MAX_TOOL_RESULT_CHARS: int = 200_000
+# ATRIBUTO DE CLASE del cliente, no constante de módulo:
+MAX_TOOL_RESULT_CHARS: int = 200_000                                    # línea 1197
 
-def _truncate_large_result(self, data: Any, max_chars: int) -> Any: ...
-def _process_tool_result_for_api(self, result) -> dict: ...
-def _summarize_tool_result(self, result: Any, max_length: int = 1200) -> str: ...
+def _truncate_large_result(self, data: Any, max_chars: int) -> Any: ... # línea 1199
+def _process_tool_result_for_api(self, result) -> dict: ...             # línea 1358
+def _summarize_tool_result(self, result: Any, max_length: int = 1200) -> str: ...  # línea 1444
 ```
 
 ```python
-# From parrot/core/events/lifecycle/events.py:TBD
-# Telemetría ya existente — base del reporte de ahorro. Se EXTIENDE (no se sustituye).
-AfterToolCallEvent(
-    trace_context=..., tool_name=..., duration_ms=...,
-    result_status=..., result_size_bytes=...,
-    source_type="tool", source_name=...,
-)
+# From parrot/core/events/lifecycle/events/tool.py
+# OJO: `events` es un PAQUETE (core/events/lifecycle/events/), no events.py.
+# Los eventos de tool viven en events/tool.py y se re-exportan en events/__init__.py.
+# Son @dataclass(frozen=True) sobre navigator_eventbus.lifecycle.base.LifecycleEvent
+# → los campos nuevos de compresión necesitarán default.
+
+class BeforeToolCallEvent(...): ...   # línea 12
+
+class AfterToolCallEvent(...):        # línea 30
+    tool_name: str = ""               # línea 42
+    duration_ms: float = 0.0
+    result_status: str = ""           # "success" | "partial"
+    result_size_bytes: int = 0        # línea 45 ← pasa a significar tamaño POST-compresión
+
+class ToolCallFailedEvent(...): ...   # línea 49  (tool_name, duration_ms, error_type, error_message)
 ```
 
 ```python
-# From parrot/tools/pythonrepl.py:TBD
+# From parrot/tools/pythonrepl.py:950
 # Ejecución IN-PROCESS — confirma que rtk NO aplica aquí (no hay subproceso).
 # También es el precedente de offload a executor que imita el pipeline.
-async def _execute(self, code: str, debug: bool = False, **kwargs) -> Dict[str, Any]:
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, self._execute_code, code, debug)
+async def _execute(self, code: str, debug: bool = False, **kwargs) -> Any:
+    ...
+    loop = asyncio.get_event_loop()                                      # línea 969
+    output = await loop.run_in_executor(None, self._execute_code, code, debug)
 
-# _execute_code() usa: redirect_stdout(io_buffer) + exec() sobre self.locals/self.globals
-# Devuelve: output (stdout capturado) + context_report (vars nuevas creadas)
+# _execute_code (línea 701) tiene un tercer parámetro con default:
+def _execute_code(self, query: str, debug: bool = False, enforce_security: bool = True) -> str: ...
+# Usa redirect_stdout(io_buffer) (línea 768) + exec() (líneas 773, 825).
 ```
 
 ```python
-# From parrot/clients/claude_agent.py:TBD
+# From parrot/clients/claude_agent.py:231
 # OBJETIVO CORRECTO de rtk: envuelve el CLI `claude` como SUBPROCESO con capacidad bash.
 class ClaudeAgentClient(AbstractClient):
-    client_type: str = "claude_agent"
-    _default_model: str = "claude-sonnet-4-6"
-    # "wraps the bundled `claude` CLI as a subprocess ... file-aware, bash-capable"
+    client_type: str = "claude_agent"                     # línea 247
+    _default_model: str = "claude-sonnet-4-6"             # línea 250
+    _lightweight_model: str = "claude-haiku-4-5-20251001" # línea 251
+```
+
+```python
+# From parrot/clients/live.py:367 — la brecha, verificada y PEOR de lo estimado.
+# execute_tool() del adaptador live devuelve (FunctionResponse, display_data):
+async def execute_tool(...): ...                          # línea 367
+
+# Línea 401 — llama al PRIVADO _execute, saltándose AbstractTool.execute() entero:
+if hasattr(tool, '_execute'):
+    # AbstractTool
+    result = await tool._execute(**tool_args)
+# Consecuencia: sin permisos (_permission_context/_resolver), sin credential
+# broker, sin redacción, sin lifecycle events y sin ToolResult estandarizado.
+# El isinstance(result, ToolResult) de la línea 419 rara vez es True porque
+# _execute devuelve Any crudo.
+
+# voice_text / display_data — tratamiento especial, líneas 416-437:
+if isinstance(result, ToolResult):
+    if result.status == "success":
+        if result.display_data:
+            display_data = result.display_data
+        if result.voice_text:
+            response_data = {"output": result.voice_text}
+        elif isinstance(result.result, dict):
+            response_data = result.result
+# display_data se propaga a metadata del mensaje en líneas 924/956-957 y 1227/1252-1255.
+```
+
+```python
+# From parrot/_imports.py:84 — patrón para la extensión Rust opcional.
+def lazy_import(
+    module_path: str,
+    package_name: str | None = None,
+    extra: str | None = None,
+) -> ModuleType: ...
+```
+
+```python
+# From parrot/tools/discovery.py — mecánica multi-fuente a replicar para los TOML.
+DEFAULT_SOURCES = [...]                                              # línea 22
+def discover_from_registry(sources=None) -> Dict[str, str]: ...      # línea 31
+def discover_from_walk(sources=None, filter_fn=None) -> Dict[str, Type]: ...  # línea 64
+def discover_all(sources=None) -> Dict[str, Union[str, Type]]: ...   # línea 111
+def resolve_class(dotted_path: str) -> Type: ...                     # línea 139
+# TOOL_REGISTRY es una CONVENCIÓN (dict declarado en el __init__.py de paquetes
+# externos), no un símbolo definido en discovery.py/registry.py.
+# registry.py: ToolkitRegistry (línea 42), get_supported_toolkits (línea 78).
 ```
 
 #### Verified Imports
 
 ```python
-# Confirmados leyendo el codebase (verificar rutas exactas en el repo):
+# Confirmados contra los __init__.py reales (2026-07-27):
 from parrot.tools import AbstractTool, ToolResult, AbstractToolkit, ToolkitTool
+    # re-export en tools/__init__.py:142-143; __all__ en 216-219
 from parrot.tools.toolkit import AbstractToolkit
-from parrot.tools.decorators import tool_schema
+from parrot.tools.decorators import tool_schema        # decorators.py:37
 from parrot.tools.working_memory import (
-    WorkingMemoryToolkit, EntryType, GenericEntry,
+    WorkingMemoryToolkit, EntryType, GenericEntry,     # todos en __all__
 )
 from parrot.tools.working_memory.internals import (
-    WorkingMemoryCatalog, CatalogEntry, _detect_entry_type,
+    WorkingMemoryCatalog, CatalogEntry, _detect_entry_type,   # sin __all__, import directo OK
 )
-from parrot.memory import AnswerMemory
-from parrot._imports import lazy_import        # patrón para la extensión Rust opcional
+from parrot.memory import AnswerMemory                 # memory/__init__.py:5
+from parrot._imports import lazy_import                # _imports.py:84
 from datamodel.parsers.json import json_decoder, json_encoder, JSONContent
+    # ya usado en tools/abstract.py:13
 from parrot.core.events.lifecycle.events import (
     BeforeToolCallEvent, AfterToolCallEvent, ToolCallFailedEvent,
+    # `events` es paquete; símbolos en events/tool.py, re-export en events/__init__.py.
+    # tools/abstract.py:22 ya usa exactamente este import.
 )
 ```
 
 #### Key Attributes & Constants
 
-- `ToolResult.status` → `str` — valores observados: `"success"`, `"error"`, `"forbidden"`, `"pending"`, `"authorization_required"`
+- `ToolResult.status` → `str` — literales verificados en `parrot/tools/`: `"success"`, `"error"`, `"forbidden"`, `"pending"`, `"authorization_required"`, `"not_found"` (manager.py:1403, tool desconocido), `"done_with_errors"`; además `"cancelled"` / `"timeout"` alcanzables vía `status=confirm_decision.status` (manager.py:1460)
 - `ToolResult.metadata` → `Dict[str, Any]` — destino de las métricas de compresión
 - `WorkingMemoryToolkit.tool_prefix` → `"wm"` — los tools quedan como `wm_store_result`, `wm_get_result`
-- `AbstractTool.return_direct` → `bool` — **revisar**: si es `True` el resultado puede saltarse el pipeline
-- `ToolManager.auto_share_dataframes` / `auto_push_to_pandas` → `bool` — interacción a verificar: `_postprocess_result()` ya extrae DataFrames de resultados; el orden respecto a la compresión importa
-- `google/client.py::MAX_TOOL_RESULT_CHARS` → `200_000`
+- `AbstractTool.return_direct` → `bool = False` (abstract.py:144) — si es `True` el pipeline se salta por completo
+- `ToolManager.auto_share_dataframes` → `bool = True` (manager.py:272) / `auto_push_to_pandas` → `bool = True` (manager.py:273) — interacción a resolver: `_postprocess_result()` (manager.py:1663) extrae DataFrames de resultados; el orden respecto a la compresión importa
+- `GoogleGenAIClient.MAX_TOOL_RESULT_CHARS` → `200_000` (google/client.py:1197, **atributo de clase**, no constante de módulo)
+
+#### Rust / PyO3 (verificado — C8 tiene precedente real)
+
+- **`parrot/yaml-rs/`** — crate PyO3 dentro del propio paquete ai-parrot: `pyo3 = "0.29"` con `extension-module`, `crate-type = ["cdylib"]`, serde/serde_json/serde_yaml. Config maturin en `packages/ai-parrot/pyproject.toml:617-621` (`module-name = "parrot.yaml_rs._yaml_rs"`). ⚠️ Discrepancia a vigilar si el codec se cuelga de este setup: `python-source = "src/parrot/yaml_rs"` (guion bajo) vs directorio real `src/parrot/yaml-rs` (guion).
+- **`packages/navrules/`** — segundo crate maturin/PyO3 (`pyo3 0.24`, `abi3-py311`), precedente de paquete satélite con extensión nativa.
+- `maturin==1.9.6` pineado como dependencia dev en el `pyproject.toml` raíz (línea 69).
 
 ### Does NOT Exist (Anti-Hallucination)
 
+*Verificado por búsqueda exhaustiva el 2026-07-27 (restringida a `packages/ai-parrot/src/`):*
+
 - ~~`rtk` como crate librería / `rtk::filter()`~~ — RTK es crate **binario**; enrutado vía enum `Commands` de Clap en `src/main.rs`. No hay API pública enlazable desde PyO3
 - ~~`ToolManager.add_result_hook` con retorno transformador~~ — la firma es `Callable[[str, Any, Dict[str, Any]], None]`. Los hooks **observan**, no transforman. Hace falta una cadena nueva y separada
-- ~~`ToolResult.compress()` / `ToolResult.compressed`~~ — no existe ningún método ni campo de compresión en `ToolResult` hoy
-- ~~`AbstractTool.compress_result()`~~ — no existe (era la Opción C, descartada)
-- ~~`MAX_TOOL_RESULT_CHARS` fuera de `clients/google/client.py`~~ — Claude, Groq y Grok **no** tienen equivalente
-- ~~`FilterLevel` en el codebase~~ — el nombre viene de RTK, no existe en ai-parrot
-- ~~`parrot.tools.compression`~~ — paquete a crear, no existe
+- ~~`ToolResult.compress()` / `ToolResult.compressed`~~ — cero apariciones; no existe ningún método ni campo de compresión en `ToolResult` hoy
+- ~~`AbstractTool.compress_result()`~~ — cero apariciones (era la Opción C, descartada)
+- ~~`MAX_TOOL_RESULT_CHARS` fuera de `clients/google/client.py`~~ — verificado: solo aparece en ese fichero. `claude.py`, `groq.py` y `grok.py` **no** tienen truncado equivalente de tool results (los únicos hits son slices `[:100]` de logging y un warning de max-tokens, nada de tool results)
+- ~~`FilterLevel` en el codebase~~ — cero apariciones; el nombre viene de RTK, no existe en ai-parrot
+- ~~`parrot.tools.compression`~~ — ni el paquete ni ningún import; a crear desde cero
 - ~~Un tokenizer en el pipeline~~ — no hay ninguno disponible. Las estimaciones de tokens serán `bytes/4`, igual que RTK. **Los porcentajes son fiables; los valores absolutos son aproximados** y hay que documentarlo así
 - ~~`AbstractToolkit._post_execute()` invocado para `AbstractTool` plano~~ — es un hook de toolkit; los tools no-toolkit no pasan por él
-- ~~Subproceso o shell en `PythonREPLTool` / `PythonPandasTool`~~ — ejecutan **in-process** con `exec()` y `redirect_stdout` a `StringIO`. **RTK no aplica ahí**: no hay comando que interceptar
+- ~~Subproceso o shell en `PythonREPLTool` / `PythonPandasTool`~~ — ejecutan **in-process** con `exec()` (pythonrepl.py:773, 825) y `redirect_stdout` a `StringIO` (línea 768). **RTK no aplica ahí**: no hay comando que interceptar
 - ~~Un "Sandbox" verificado en el codebase~~ — no localizado en lo indexado. Confirmar existencia y ruta antes de asumir que lanza procesos
 - ~~`py.allow_threads()` disponible desde Python puro~~ — la liberación del GIL solo es posible desde la extensión Rust. Sin extensión compilada, `run_in_executor` no compra paralelismo real
+- ~~`parrot/core/events/lifecycle/events.py` como fichero~~ — `events` es un **paquete**; los eventos de tool viven en `events/tool.py`. El import documentado funciona igual vía re-export
+- ~~`parrot/` en la raíz del repo~~ — el paquete vive en `packages/ai-parrot/src/parrot/`. Cualquier ruta de este documento se resuelve contra ese prefijo
 
 ---
 
 ## Parallelism Assessment
 
 - **Internal parallelism**: Alta, tras una fase de bloqueo. `tool-result-compression` debe completarse primero porque congela el `ResultCompressor` Protocol y el `CompressionOutcome`. Una vez fusionado ese contrato, `compression-tee` y `columnar-codec` avanzan en worktrees independientes: tocan ficheros disjuntos (`compression/tee.py` vs `compression/codecs/columnar.py`) y solo comparten la definición del Protocol, que ya es inmutable en ese punto. Dentro de `columnar-codec`, el camino Python y el binding Rust también se separan — el Python es la referencia y el Rust debe pasar exactamente los mismos tests.
-- **Cross-feature independence**: El fichero de riesgo es `parrot/tools/manager.py`, que es central y probablemente tenga otras specs en vuelo tocándolo. `execute_tool()` en concreto acumula lógica de permisos, credenciales y autorización. Antes de arrancar hay que revisar specs activas que lo modifiquen. Riesgo secundario menor: `parrot/tools/abstract.py` (solo se añaden claves a `metadata`, sin cambio de firma) y `parrot/core/events/lifecycle/events.py`.
+- **Cross-feature independence**: El fichero de riesgo es `parrot/tools/manager.py`, que es central y probablemente tenga otras specs en vuelo tocándolo. `execute_tool()` en concreto acumula lógica de permisos, credenciales y autorización. Antes de arrancar hay que revisar specs activas que lo modifiquen. Riesgo secundario menor: `parrot/tools/abstract.py` (solo se añaden claves a `metadata`, sin cambio de firma) y `parrot/core/events/lifecycle/events/tool.py`.
 - **Recommended isolation**: mixed — un worktree secuencial para `tool-result-compression`, y luego dos worktrees paralelos para `compression-tee` y `columnar-codec`. `rtk-subprocess-filter` es totalmente independiente (no toca Python del pipeline) y puede ir en cualquier momento por cualquiera.
 - **Nota sobre el orden dentro de `columnar-codec`**: el camino Python se implementa **primero** y es la especificación ejecutable; el binding Rust debe pasar exactamente la misma suite. Esto permite además que el presupuesto de latencia se mida contra una referencia real en vez de contra una estimación.
 - **Rationale**: El coste de paralelizar prematuramente es alto: si las tres capabilities arrancan a la vez, las tres redefinen el Protocol y el merge es doloroso. El coste de serializar la primera fase es bajo — es la capability más pequeña de las tres (registro + enum + Protocol + una etapa en el pipeline). Serializar lo barato para paralelizar lo caro.
@@ -750,21 +863,22 @@ from parrot.core.events.lifecycle.events import (
 
 ### Resueltas
 
-- [x] ¿Qué mecanismo usa el soporte Rust ya integrado? — *Owner: <name>*: **PyO3 con maturin, ya integrado en ai-parrot.** El codec se construye como módulo de ese mismo setup. Sin coste de arranque de toolchain.
-- [x] ¿Extendemos `AfterToolCallEvent` o emitimos evento nuevo? — *Owner: <name>*: **Extender `AfterToolCallEvent`.** Sin evento nuevo. Implica que `result_size_bytes` pasa a ser el tamaño post-compresión y el original va en campo aparte — anotar en changelog.
-- [x] ¿Se recomprime al reproducir historial? — *Owner: <name>*: **Solo ejecución fresca.** El payload comprimido es el que se persiste en memoria conversacional; se comprime una vez y viaja comprimido. Marcador `_compressed` en metadata como guarda de idempotencia.
-- [x] ¿Cuál es el `min_rows` real del codec columnar? — *Owner: <name>*: **20.** Fijado como default, configurable por herramienta en el TOML.
-- [x] ¿Reordenar la rama `status == "error"` de `execute_tool()`? — *Owner: <name>*: **Sí.** El payload se captura para el tee antes del `raise`; la excepción se sigue lanzando igual, sin cambio observable para los llamantes.
-- [x] ¿`clients/live.py` es deuda o entra en alcance? — *Owner: <name>*: **Entra en alcance.** Brecha inadvertida hasta ahora. Cuidado con `voice_text` y `display_data`, que en esa ruta tienen tratamiento especial y no deben comprimirse.
-- [x] ¿`return_direct = True` salta el pipeline? — *Owner: <name>*: **Sí, lo salta por completo**, tee incluido. Comprimir alteraría un resultado que la herramienta emite deliberadamente directo al usuario.
-- [x] ¿Usar el binario `rtk` para tools que lanzan subprocesos? — *Owner: <name>*: **Sí, como capability de seguimiento** — pero **el objetivo correcto no es `PythonREPLTool`**. Ver nota de corrección abajo.
+- [x] ¿Qué mecanismo usa el soporte Rust ya integrado? — *Owner: Jesus Lara*: **PyO3 con maturin, ya integrado en ai-parrot** — verificado: crate `yaml-rs` dentro del propio paquete (pyo3 0.29 + config maturin en pyproject) y crate `navrules` como paquete satélite (pyo3 0.24, abi3-py311). El codec se construye como módulo de ese mismo setup. Sin coste de arranque de toolchain.
+- [x] ¿Extendemos `AfterToolCallEvent` o emitimos evento nuevo? — *Owner: Jesus Lara*: **Extender `AfterToolCallEvent`.** Sin evento nuevo. Implica que `result_size_bytes` pasa a ser el tamaño post-compresión y el original va en campo aparte — anotar en changelog. Nota de implementación: es `@dataclass(frozen=True)`, los campos nuevos necesitan default.
+- [x] ¿Se recomprime al reproducir historial? — *Owner: Jesus Lara*: **Solo ejecución fresca.** El payload comprimido es el que se persiste en memoria conversacional; se comprime una vez y viaja comprimido. Marcador `_compressed` en metadata como guarda de idempotencia.
+- [x] ¿Cuál es el `min_rows` real del codec columnar? — *Owner: Jesus Lara*: **20.** Fijado como default, configurable por herramienta en el TOML.
+- [x] ¿Reordenar la rama `status == "error"` de `execute_tool()`? — *Owner: Jesus Lara*: **Sí.** El payload se captura para el tee antes del `raise`; la excepción se sigue lanzando igual, sin cambio observable para los llamantes.
+- [x] ¿`clients/live.py` es deuda o entra en alcance? — *Owner: Jesus Lara*: **Entra en alcance.** Brecha inadvertida hasta ahora — y verificada como más grave: live.py:401 llama al privado `_execute()`, saltándose también permisos, credenciales y redacción. Cuidado con `voice_text` y `display_data`, que en esa ruta tienen tratamiento especial (live.py:416-437) y no deben comprimirse.
+- [x] ¿`return_direct = True` salta el pipeline? — *Owner: Jesus Lara*: **Sí, lo salta por completo**, tee incluido. Comprimir alteraría un resultado que la herramienta emite deliberadamente directo al usuario.
+- [x] ¿Usar el binario `rtk` para tools que lanzan subprocesos? — *Owner: Jesus Lara*: **Sí, como capability de seguimiento** — pero **el objetivo correcto no es `PythonREPLTool`**. Ver nota de corrección abajo.
 
 ### Abiertas
 
-- [ ] Interacción con `_postprocess_result()` y `auto_share_dataframes`: ¿la compresión va antes o después de la extracción de DataFrames? Si va antes, la extracción puede no encontrar el DataFrame que esperaba. — *Owner: <name>*
-- [ ] Calibrar el umbral inline/executor (propuesta inicial: 256 KB o 5.000 filas) y el ratio unión/intersección de claves que dispara el passthrough por heterogeneidad. — *Owner: <name>*
-- [ ] ¿Qué ventana y qué política de rearme para el circuit breaker de latencia? — *Owner: <name>*
-- [ ] En `clients/live.py`, ¿el pipeline se aplica antes o después de la extracción de `voice_text` / `display_data`? — *Owner: <name>*
+- [ ] Interacción con `_postprocess_result()` y `auto_share_dataframes`: ¿la compresión va antes o después de la extracción de DataFrames? Si va antes, la extracción puede no encontrar el DataFrame que esperaba. — *Owner: Jesus Lara*
+- [ ] Calibrar el umbral inline/executor (propuesta inicial: 256 KB o 5.000 filas) y el ratio unión/intersección de claves que dispara el passthrough por heterogeneidad. — *Owner: Jesus Lara*
+- [ ] ¿Qué ventana y qué política de rearme para el circuit breaker de latencia? — *Owner: Jesus Lara*
+- [ ] En `clients/live.py`, ¿el pipeline se aplica antes o después de la extracción de `voice_text` / `display_data`? Nota: redirigir esa ruta al pipeline arrastra además la corrección del bypass de `AbstractTool.execute()` (permisos/credenciales/redacción) — decidir si esa corrección va en esta feature o en una propia. — *Owner: Jesus Lara*
+- [ ] La extensión Rust del codec: ¿módulo nuevo dentro del setup maturin de ai-parrot (junto a `yaml-rs`) o crate satélite tipo `navrules`? Resolver antes la discrepancia `python-source` guion/guion-bajo del pyproject. — *Owner: Jesus Lara*
 
 ### Nota de corrección: dónde aplica realmente `rtk`
 
@@ -774,6 +888,6 @@ Se verificó el codebase y la premisa inicial era incorrecta en dos de los tres 
 - **`PythonPandasTool` — NO aplica.** Hereda de `PythonREPLTool`; mismo motor de ejecución, misma conclusión.
 - **Sandbox — sin verificar.** No se localizó un componente de sandbox en lo indexado. Si existe y lanza procesos (docker exec, subprocess), sí sería objetivo válido. Pendiente de confirmar la ruta.
 
-**El objetivo correcto es `ClaudeAgentClient`** (`parrot/clients/claude_agent.py`), que envuelve el CLI `claude` como subproceso para delegar trabajo "file-aware, bash-capable" a un sub-agente de Claude Code. Ese sub-agente ejecuta comandos bash reales, que es exactamente el caso de uso para el que RTK está diseñado: un `rtk init` en el entorno del sub-agente comprime su salida sin tocar una línea de ai-parrot.
+**El objetivo correcto es `ClaudeAgentClient`** (`parrot/clients/claude_agent.py:231`), que envuelve el CLI `claude` como subproceso para delegar trabajo "file-aware, bash-capable" a un sub-agente de Claude Code. Ese sub-agente ejecuta comandos bash reales, que es exactamente el caso de uso para el que RTK está diseñado: un `rtk init` en el entorno del sub-agente comprime su salida sin tocar una línea de ai-parrot.
 
 Para lo que sí genera ruido dentro de `PythonREPLTool`, el camino no es RTK sino un codec propio: su `_execute_code()` ya devuelve `output` más un `context_report` de variables creadas, y ese stdout capturado (trazas largas, prints en bucle, warnings repetidos de pandas) es un objetivo natural para un codec `repl_stdout` con deduplicación y recorte de traceback — dentro del mismo pipeline, sin dependencia externa.
