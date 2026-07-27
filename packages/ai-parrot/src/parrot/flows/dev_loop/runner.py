@@ -26,7 +26,7 @@ import asyncio
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Set
+from typing import Any, Callable, Dict, Optional, Set, Union
 
 from navconfig.logging import logging
 
@@ -39,10 +39,14 @@ from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.flow import (
     FlowEventPublisher,
     _NullAgentRegistry,
+    _feedback_accept,
+    _feedback_escalate,
+    _is_feature,
     _qa_failed,
     _qa_passed,
 )
 from parrot.flows.dev_loop.models import (
+    FeatureBrief,
     ResearchOutput,
     RevisionBrief,
     ShellCriterion,
@@ -153,6 +157,108 @@ def build_dev_loop_revision_flow(
     return flow
 
 
+def build_dev_loop_feature_flow(
+    *,
+    dispatcher: Any,
+    jira_toolkit: Optional[Any] = None,
+    git_toolkit: Optional[Any] = None,
+    wiki_toolkit: Optional[Any] = None,
+    redis_url: str,
+    codereview_dispatcher: Optional[Any] = None,
+    development_dispatcher_builder: Optional[Any] = None,
+    development_pool_max: int = 4,
+    name: str = "dev-loop-feature",
+    publish_flow_events: bool = True,
+) -> AgentsFlow:
+    """Build the feature-mode ``AgentsFlow`` (FEAT-378).
+
+    Mirrors ``build_dev_loop_flow``'s declarative-materialize-then-explicit
+    execution pattern (precedent: ``build_dev_loop_revision_flow`` above):
+    the nodes come from ``build_dev_loop_definition(feature=True)`` via the
+    node factories, and the graph runs in the engine's explicit-edge mode
+    (OR-join on the ``feature_handoff``/``failure_handler`` fan-ins — see
+    ``definition.py``'s ``_build_feature_definition`` docstring).
+
+    Topology: ``intent_classifier`` -(kind=="feature")-> ``planner`` ->
+    ``development`` -> ``synthesis`` -> ``qa`` -(passed)-> ``feature_handoff``
+    -> ``close`` / -(failed)-> ``feedback_router`` -(escalate)->
+    ``failure_handler`` / -(accept_with_notes)-> ``feature_handoff``. No
+    retry edge — FEAT-377/A had not merged to ``dev`` as of this task (spec
+    §7 documented degradation; see the CEL predicate comments in
+    ``definition.py``).
+
+    Args:
+        dispatcher: Shared ``ClaudeCodeDispatcher`` for Planner/Synthesis/
+            QA/FeedbackRouter.
+        jira_toolkit: Optional service-account ``JiraToolkit`` — feature-mode
+            Jira is link-only; ``None`` means zero Jira calls anywhere.
+        git_toolkit: Optional ``GitToolkit`` (parity with the bug/revision
+            flows — currently unused by the bare HTTP PR fallback).
+        wiki_toolkit: Optional pre-wired ``LLMWikiToolkit`` for
+            ``FeatureHandoffNode``'s docs-page ingest.
+        redis_url: Redis URL for intake/flow-lifecycle events.
+        codereview_dispatcher: Optional ``AbstractCodeReviewDispatcher`` for
+            ``QANode`` (typically a ``JudgePanelReviewDispatcher``, TASK-1920).
+        development_dispatcher_builder: Optional ``(DevAgentSpec) ->
+            (dispatcher, profile)`` callable (FEAT-323) for ``DevelopmentNode``
+            pool-worker materialization.
+        development_pool_max: Hard cap on total pool workers (FEAT-323),
+            also passed to ``PlannerNode`` for its own pool-sizing cap.
+        name: Flow name (default ``"dev-loop-feature"``).
+        publish_flow_events: When True (default), attach a
+            :class:`FlowEventPublisher` to the engine's ``on_node_event`` hook.
+
+    Returns:
+        A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
+    """
+    definition = build_dev_loop_definition(feature=True)
+    factories = build_dev_loop_node_factories(
+        dispatcher=dispatcher,
+        jira_toolkit=jira_toolkit,
+        redis_url=redis_url,
+        git_toolkit=git_toolkit,
+        wiki_toolkit=wiki_toolkit,
+        development_dispatcher_builder=development_dispatcher_builder,
+        development_pool_max=development_pool_max,
+        codereview_dispatcher=codereview_dispatcher,
+    )
+    staged = AgentsFlow.from_definition(
+        definition,
+        agent_registry=_NullAgentRegistry(),
+        node_factories=factories,
+    )
+    nodes = staged._materialize_nodes()
+
+    run_id_holder: Dict[str, str] = {}
+    publisher = (
+        FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
+    )
+    flow = AgentsFlow(name=name, on_node_event=publisher)
+    flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
+    flow._event_publisher = publisher  # type: ignore[attr-defined]
+    flow._dev_loop_definition = definition  # type: ignore[attr-defined]
+
+    for node in nodes.values():
+        flow.add_node(node)
+
+    flow.add_edge("intent_classifier", "planner", predicate=_is_feature)
+    flow.add_edge("planner", "development")
+    flow.add_edge("development", "synthesis")
+    flow.add_edge("synthesis", "qa")
+    flow.add_edge("qa", "feature_handoff", predicate=_qa_passed)
+    flow.add_edge("qa", "feedback_router", predicate=_qa_failed)
+    flow.add_edge("feedback_router", "failure_handler", predicate=_feedback_escalate)
+    flow.add_edge("feedback_router", "feature_handoff", predicate=_feedback_accept)
+    flow.add_edge("feature_handoff", "close")
+    for source in (
+        "intent_classifier", "planner", "development", "synthesis",
+        "qa", "feedback_router", "feature_handoff",
+    ):
+        flow.add_edge(source, "failure_handler", condition="on_error")
+
+    return flow
+
+
 class DevLoopRunner:
     """Hosts dev-loop flow runs behind a global concurrency cap.
 
@@ -170,6 +276,7 @@ class DevLoopRunner:
         dispatcher: Optional[Any] = None,
         jira_toolkit: Optional[Any] = None,
         git_toolkit: Optional[Any] = None,
+        wiki_toolkit: Optional[Any] = None,
         redis_url: Optional[str] = None,
         codereview_dispatcher: Optional[Any] = None,
     ) -> None:
@@ -187,10 +294,13 @@ class DevLoopRunner:
         self._dispatcher = dispatcher
         self._jira_toolkit = jira_toolkit
         self._git_toolkit = git_toolkit
+        self._wiki_toolkit = wiki_toolkit
         self._redis_url = redis_url
         self._codereview_dispatcher = codereview_dispatcher
         # Lazily-built, reused revision flow (fixed topology — built once).
         self._rev_flow: Optional[AgentsFlow] = None
+        # Lazily-built, reused feature-mode flow (FEAT-378, fixed topology).
+        self._feature_flow: Optional[AgentsFlow] = None
         self.logger = logging.getLogger("parrot.dev_loop.runner")
 
         # ── AHP-style host state (FEAT-322) ─────────────────────────────
@@ -521,7 +631,7 @@ class DevLoopRunner:
 
     async def run(
         self,
-        brief: WorkBrief,
+        brief: Union[WorkBrief, FeatureBrief],
         *,
         run_id: Optional[str] = None,
         initial_task: str = "",
@@ -532,8 +642,15 @@ class DevLoopRunner:
         Blocks (cooperatively) while ``max_concurrent_runs`` runs are
         already in flight.
 
+        FEAT-378: ``brief`` accepts the ``Brief`` discriminated union
+        (``WorkBrief | FeatureBrief``, TASK-1918). A :class:`FeatureBrief`
+        is routed to :meth:`_run_feature` (the feature-mode topology,
+        lazily built/reused like ``run_revision``'s ``_rev_flow``); the
+        ``WorkBrief`` path below is otherwise byte-identical to before.
+
         Args:
-            brief: The validated :class:`WorkBrief` / ``BugBrief`` to process.
+            brief: The validated :class:`WorkBrief` / ``BugBrief`` /
+                :class:`FeatureBrief` to process.
             run_id: Optional externally-minted run identifier; one is
                 generated (``run-<hex8>``) when omitted.
             initial_task: Optional human-readable task line stored as the
@@ -543,6 +660,14 @@ class DevLoopRunner:
         Returns:
             The aggregated :class:`FlowResult` for the run.
         """
+        if isinstance(brief, FeatureBrief):
+            return await self._run_feature(
+                brief,
+                run_id=run_id,
+                initial_task=initial_task,
+                extra_shared=extra_shared,
+            )
+
         rid = run_id or f"run-{uuid.uuid4().hex[:8]}"
 
         # AHP-style host: create + register before the flow runs, seed it
@@ -587,6 +712,100 @@ class DevLoopRunner:
 
         self.logger.info(
             "Dev-loop run %s finished status=%s", rid, result.status
+        )
+        self._close_host(host, result, ctx)
+        return result
+
+    async def _run_feature(
+        self,
+        brief: FeatureBrief,
+        *,
+        run_id: Optional[str] = None,
+        initial_task: str = "",
+        extra_shared: Optional[Dict[str, Any]] = None,
+    ) -> FlowResult:
+        """Execute one feature-mode dev-loop run for *brief* (FEAT-378).
+
+        Builds (and reuses, like ``run_revision``'s ``_rev_flow``) the
+        feature-mode flow, seeds ``shared["feature_brief"]``, and runs it.
+        Mirrors :meth:`run`'s AHP-host lifecycle exactly — the only
+        differences are the flow topology and the seeded brief key.
+
+        Args:
+            brief: The validated :class:`FeatureBrief`.
+            run_id: Optional externally-minted id (``run-<hex8>`` otherwise).
+            initial_task: Optional human-readable task line.
+            extra_shared: Extra entries merged into ``shared_data``.
+
+        Returns:
+            The aggregated :class:`FlowResult` for the run.
+
+        Raises:
+            RuntimeError: If the runner was constructed without the deps
+                needed to build the feature flow (dispatcher + redis_url).
+        """
+        if not all((self._dispatcher, self._redis_url)):
+            raise RuntimeError(
+                "feature-mode run requires the runner to be constructed "
+                "with dispatcher and redis_url."
+            )
+
+        rid = run_id or f"run-{uuid.uuid4().hex[:8]}"
+
+        host = self._register_host(rid)
+        # NOTE: RunCreated.work_kind is a closed Literal["bug","enhancement",
+        # "new_feature"] deliberately NOT extended with "feature" (TASK-1918)
+        # — FeatureBrief carries its own `kind` field instead. "bug" here is
+        # a structural placeholder only (never read on this path — no
+        # ResearchNode / Jira-issuetype selection happens in feature-mode).
+        host.apply(RunCreated(
+            run_id=rid, revision=False, work_kind="bug",
+            summary=f"Feature: {brief.document_path}",
+        ))
+        self._apply_root_action(RunAdded(summary=self._run_summary_from_host(host)))
+
+        # Build the feature flow once (fixed topology) and reuse it — fresh
+        # node FSMs are materialized per run by the scheduler, like ``run``.
+        if self._feature_flow is None:
+            self._feature_flow = build_dev_loop_feature_flow(
+                dispatcher=self._dispatcher,
+                jira_toolkit=self._jira_toolkit,
+                git_toolkit=self._git_toolkit,
+                wiki_toolkit=self._wiki_toolkit,
+                redis_url=self._redis_url,
+                codereview_dispatcher=self._codereview_dispatcher,
+            )
+        feature_flow = self._feature_flow
+
+        shared: Dict[str, Any] = {
+            "feature_brief": brief,
+            "run_id": rid,
+            "session_host": host,
+        }
+        if extra_shared:
+            shared.update(extra_shared)
+
+        ctx = FlowContext(
+            initial_task=initial_task or f"Feature: {brief.document_path}",
+            shared_data=shared,
+        )
+
+        async with self._semaphore:
+            self._active.add(rid)
+            holder = getattr(feature_flow, "_run_id_holder", None)
+            if isinstance(holder, dict):
+                holder["run_id"] = rid
+            self.logger.info(
+                "Starting dev-loop FEATURE run %s (%d/%d active)",
+                rid, len(self._active), self.max_concurrent_runs,
+            )
+            try:
+                result = await feature_flow.run_flow(ctx)
+            finally:
+                self._active.discard(rid)
+
+        self.logger.info(
+            "Dev-loop feature run %s finished status=%s", rid, result.status
         )
         self._close_host(host, result, ctx)
         return result
@@ -742,7 +961,12 @@ class DevLoopRunner:
         run_id = host.state.run_id
         outcome = self._outcome_from_status(result.status)
         jira_issue_key = str(ctx.shared_data.get("jira_issue_key", "") or "")
-        handoff_resp = result.responses.get("deployment_handoff")
+        # FEAT-378: feature-mode's handoff node id is "feature_handoff"
+        # rather than "deployment_handoff" — check both so this projection
+        # generalizes across topologies without a mode flag.
+        handoff_resp = result.responses.get("deployment_handoff") or result.responses.get(
+            "feature_handoff"
+        )
         pr_url = ""
         if isinstance(handoff_resp, dict):
             pr_url = str(handoff_resp.get("pr_url", "") or "")
@@ -758,4 +982,9 @@ class DevLoopRunner:
         self._discard_host(run_id)
 
 
-__all__ = ["DevLoopRunner", "build_dev_loop_revision_flow", "gate_ttl_for"]
+__all__ = [
+    "DevLoopRunner",
+    "build_dev_loop_revision_flow",
+    "build_dev_loop_feature_flow",
+    "gate_ttl_for",
+]

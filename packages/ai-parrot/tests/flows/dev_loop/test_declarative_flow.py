@@ -36,7 +36,53 @@ _DEV_LOOP_TYPES = [
     "dev_loop.failure_handler",
     "dev_loop.close",
     "dev_loop.revision_handoff",  # FEAT-250 TASK-012
+    "dev_loop.planner",  # FEAT-378 TASK-1925
+    "dev_loop.synthesis",  # FEAT-378 TASK-1925
+    "dev_loop.feedback_router",  # FEAT-378 TASK-1925
+    "dev_loop.feature_handoff",  # FEAT-378 TASK-1925
 ]
+
+# Snapshot of the pre-FEAT-378 bug + revision definitions (git history,
+# 2026-07-27) — asserted byte-identical (node ids + edge (from, to,
+# condition, predicate) tuples) after this feature's changes, per
+# TASK-1925's "byte-identical" acceptance criterion.
+_BUG_NODE_IDS = {
+    "intent_classifier", "bug_intake", "research", "development",
+    "qa", "deployment_handoff", "failure_handler", "close",
+}
+_BUG_EDGES = {
+    ("intent_classifier", "bug_intake", "on_condition", 'result.kind == "bug"'),
+    ("intent_classifier", "research", "on_condition", 'result.kind != "bug"'),
+    ("bug_intake", "research", "on_success", None),
+    ("research", "development", "on_success", None),
+    ("development", "qa", "on_success", None),
+    ("qa", "deployment_handoff", "on_condition", "result.passed == true"),
+    ("qa", "failure_handler", "on_condition", "result.passed == false"),
+    ("deployment_handoff", "close", "on_success", None),
+    ("intent_classifier", "failure_handler", "on_error", None),
+    ("bug_intake", "failure_handler", "on_error", None),
+    ("research", "failure_handler", "on_error", None),
+    ("development", "failure_handler", "on_error", None),
+    ("qa", "failure_handler", "on_error", None),
+    ("deployment_handoff", "failure_handler", "on_error", None),
+}
+_REVISION_NODE_IDS = {"development", "qa", "revision_handoff", "failure_handler", "close"}
+_REVISION_EDGES = {
+    ("development", "qa", "on_success", None),
+    ("qa", "revision_handoff", "on_condition", "result.passed == true"),
+    ("qa", "failure_handler", "on_condition", "result.passed == false"),
+    ("revision_handoff", "close", "on_success", None),
+    ("development", "failure_handler", "on_error", None),
+    ("qa", "failure_handler", "on_error", None),
+    ("revision_handoff", "failure_handler", "on_error", None),
+}
+
+
+def _edge_tuples(defn) -> set:
+    return {
+        (e.from_, e.to, e.condition, getattr(e, "predicate", None))
+        for e in defn.edges
+    }
 
 
 def _brief(kind: str) -> WorkBrief:
@@ -91,6 +137,49 @@ def test_definition_revision_graph():
     ids = {n.id for n in defn.nodes}
     assert ids == {"development", "qa", "revision_handoff", "failure_handler", "close"}
     assert "research" not in ids and "intent_classifier" not in ids
+
+
+def test_definition_feature_graph():
+    # FEAT-378 TASK-1925 authored the feature-mode graph.
+    defn = build_dev_loop_definition(feature=True)
+    ids = {n.id for n in defn.nodes}
+    assert ids == {
+        "intent_classifier", "planner", "development", "synthesis",
+        "qa", "feedback_router", "feature_handoff", "failure_handler", "close",
+    }
+    assert "research" not in ids and "bug_intake" not in ids
+    assert all(n.type.startswith("dev_loop.") for n in defn.nodes)
+
+    edges = _edge_tuples(defn)
+    assert ("intent_classifier", "planner", "on_condition", 'result.kind == "feature"') in edges
+    assert ("planner", "development", "on_success", None) in edges
+    assert ("development", "synthesis", "on_success", None) in edges
+    assert ("synthesis", "qa", "on_success", None) in edges
+    assert ("qa", "feature_handoff", "on_condition", "result.passed == true") in edges
+    assert ("qa", "feedback_router", "on_condition", "result.passed == false") in edges
+    assert (
+        "feedback_router", "failure_handler", "on_condition", 'result.decision == "escalate"'
+    ) in edges
+    assert (
+        "feedback_router", "feature_handoff", "on_condition",
+        'result.decision == "accept_with_notes"',
+    ) in edges
+    assert ("feature_handoff", "close", "on_success", None) in edges
+    # No retry edge — FEAT-377/A absent as of this task (spec §7).
+    assert not any(
+        e[0] == "feedback_router" and e[1] == "development" for e in edges
+    )
+
+
+def test_bug_topology_unchanged():
+    """Bug + revision topologies are byte-identical to the pre-FEAT-378 snapshot."""
+    bug_defn = build_dev_loop_definition()
+    assert {n.id for n in bug_defn.nodes} == _BUG_NODE_IDS
+    assert _edge_tuples(bug_defn) == _BUG_EDGES
+
+    rev_defn = build_dev_loop_definition(revision=True)
+    assert {n.id for n in rev_defn.nodes} == _REVISION_NODE_IDS
+    assert _edge_tuples(rev_defn) == _REVISION_EDGES
 
 
 # ── factories ──────────────────────────────────────────────────────────
@@ -265,3 +354,35 @@ async def test_routing_qa_fail_goes_to_failure(monkeypatch):
     assert "failure_handler" in ran
     assert "deployment_handoff" not in ran
     assert "close" not in ran
+
+
+# ── FEAT-378 feature-mode CEL parity ────────────────────────────────────
+
+
+def test_cel_predicates_match_feature_mode_semantics():
+    from parrot.flows.dev_loop.models import FeatureBrief, FeedbackDecision
+
+    feature = FeedbackDecision(decision="escalate")
+    accept = FeedbackDecision(decision="accept_with_notes")
+    assert CELPredicateEvaluator('result.decision == "escalate"')(feature) is True
+    assert CELPredicateEvaluator('result.decision == "escalate"')(accept) is False
+    assert CELPredicateEvaluator('result.decision == "accept_with_notes"')(accept) is True
+
+    def _feature_brief(tmp_path):
+        doc = tmp_path / "x.proposal.md"
+        doc.write_text("# p")
+        return FeatureBrief(document_path=str(doc), document_kind="proposal")
+
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as td:
+        fb = _feature_brief(Path(td))
+        assert CELPredicateEvaluator('result.kind == "feature"')(fb) is True
+        assert CELPredicateEvaluator('result.kind == "bug"')(fb) is False
+
+
+# FEAT-378 IntentClassifierNode routing, end-to-end feature-flow routing,
+# and declarative/imperative parity for the feature topology all live in
+# test_feature_flow.py (TASK-1925) — this file stays scoped to the
+# declarative definition + factories + CEL-predicate suite.
