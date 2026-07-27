@@ -419,8 +419,9 @@ def test_action_union_schema_has_discriminator():
     assert "oneOf" in schema
     assert "discriminator" in schema
     assert schema["discriminator"]["propertyName"] == "type"
-    # All 20 documented action types are present in the mapping.
-    assert len(schema["discriminator"]["mapping"]) == 20
+    # All 23 documented action types are present in the mapping (FEAT-378
+    # added JudgeVerdictRecorded/FeedbackDecisionRecorded/DocsArtifactLinked).
+    assert len(schema["discriminator"]["mapping"]) == 23
 
 
 def test_root_action_union_schema_has_discriminator():

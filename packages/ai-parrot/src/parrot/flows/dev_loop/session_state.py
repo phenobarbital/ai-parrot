@@ -146,6 +146,11 @@ NodeId = Literal[
     "revision_handoff",
     "failure_handler",
     "close",
+    # -- feature-mode topology (FEAT-378) --
+    "planner",
+    "synthesis",
+    "feedback_router",
+    "feature_handoff",
 ]
 
 NodeStatus = Literal["idle", "running", "completed", "failed", "skipped"]
@@ -236,6 +241,42 @@ class ApprovalGate(_Frozen):
     comment: str = ""
 
 
+class JudgeVerdict(_Frozen):
+    """One judge's verdict within a QA round (feature-mode, FEAT-378).
+
+    Recorded by :class:`JudgeVerdictRecorded` — one action per judge per
+    QA round, so ``JudgePanelReviewDispatcher``'s N-judge majority review
+    is fully auditable in session state.
+    """
+
+    judge_id: str
+    backend: str = ""               # "claude-code", "codex", "gemini", ...
+    model: str = ""
+    passed: bool = False
+    findings_count: int = 0
+    summary: str = ""
+    ts: float = 0.0
+
+
+class FeedbackDecisionRecord(_Frozen):
+    """Recorded ``FeedbackRouterNode`` decision for one QA round (FEAT-378)."""
+
+    decision: Literal["retry", "escalate", "accept_with_notes"]
+    dev_brief: str = ""
+    notes: str = ""
+    qa_attempt: int = 0
+    ts: float = 0.0
+
+
+class DocsArtifact(_Frozen):
+    """Linked docs artifact for a run — feature page + wiki ingest (FEAT-378)."""
+
+    docs_path: str = ""
+    wiki_page_id: Optional[str] = None
+    pr_url: Optional[str] = None
+    ts: float = 0.0
+
+
 class DevLoopSessionState(_Frozen):
     """Authoritative, immutable state tree for one dev-loop run.
 
@@ -258,6 +299,10 @@ class DevLoopSessionState(_Frozen):
     gates: Dict[str, ApprovalGate] = Field(default_factory=dict)
     cancel_requested_by: str = ""
     error: str = ""
+    # -- feature-mode projections (FEAT-378) — keyed/appended by round --
+    judge_verdicts: Dict[str, List[JudgeVerdict]] = Field(default_factory=dict)
+    feedback_decisions: List[FeedbackDecisionRecord] = Field(default_factory=list)
+    docs_artifacts: List[DocsArtifact] = Field(default_factory=list)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -403,6 +448,43 @@ class PullRequestLinked(_ActionBase):
     changeset: str = ""             # changeset channel URI
 
 
+# -- feature-mode projections (new capability, FEAT-378) ---------------
+
+
+class JudgeVerdictRecorded(_ActionBase):
+    """One judge's verdict inside a QA round (``JudgePanelReviewDispatcher``).
+
+    Keyed by ``round`` so retries accumulate a fresh list rather than
+    overwriting the previous panel's verdicts.
+    """
+
+    type: Literal["feature/judgeVerdictRecorded"] = "feature/judgeVerdictRecorded"
+    round: str                      # QA round identifier the verdict belongs to
+    judge_id: str
+    backend: str = ""
+    model: str = ""
+    passed: bool = False
+    findings_count: int = 0
+    summary: str = ""
+
+
+class FeedbackDecisionRecorded(_ActionBase):
+    type: Literal["feature/feedbackDecisionRecorded"] = (
+        "feature/feedbackDecisionRecorded"
+    )
+    decision: Literal["retry", "escalate", "accept_with_notes"]
+    dev_brief: str = ""
+    notes: str = ""
+    qa_attempt: int = 0
+
+
+class DocsArtifactLinked(_ActionBase):
+    type: Literal["feature/docsArtifactLinked"] = "feature/docsArtifactLinked"
+    docs_path: str = ""
+    wiki_page_id: Optional[str] = None
+    pr_url: Optional[str] = None
+
+
 DevLoopAction = Annotated[
     Union[
         RunCreated, RunCancelled, RunClosed,
@@ -412,6 +494,7 @@ DevLoopAction = Annotated[
         DispatchOutputInvalid, DispatchFailed, DispatchCompleted,
         GateOpened, GateResolved, GateExpired,
         JiraLinked, PullRequestLinked,
+        JudgeVerdictRecorded, FeedbackDecisionRecorded, DocsArtifactLinked,
     ],
     Field(discriminator="type"),
 ]
@@ -685,6 +768,45 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
         return state.model_copy(update={"jira_issue_key": action.issue_key})
     if t == "run/prLinked":
         return state.model_copy(update={"pr_url": action.pr_url})
+
+    # -- feature-mode projections (FEAT-378)
+    if t == "feature/judgeVerdictRecorded":
+        verdict = JudgeVerdict(
+            judge_id=action.judge_id,
+            backend=action.backend,
+            model=action.model,
+            passed=action.passed,
+            findings_count=action.findings_count,
+            summary=action.summary,
+            ts=action.ts,
+        )
+        round_verdicts = state.judge_verdicts.get(action.round, [])
+        judge_verdicts = {
+            **state.judge_verdicts,
+            action.round: [*round_verdicts, verdict],
+        }
+        return state.model_copy(update={"judge_verdicts": judge_verdicts})
+    if t == "feature/feedbackDecisionRecorded":
+        record = FeedbackDecisionRecord(
+            decision=action.decision,
+            dev_brief=action.dev_brief,
+            notes=action.notes,
+            qa_attempt=action.qa_attempt,
+            ts=action.ts,
+        )
+        return state.model_copy(
+            update={"feedback_decisions": [*state.feedback_decisions, record]}
+        )
+    if t == "feature/docsArtifactLinked":
+        artifact = DocsArtifact(
+            docs_path=action.docs_path,
+            wiki_page_id=action.wiki_page_id,
+            pr_url=action.pr_url,
+            ts=action.ts,
+        )
+        return state.model_copy(
+            update={"docs_artifacts": [*state.docs_artifacts, artifact]}
+        )
 
     return state  # forward-compat: unknown action → no-op
 
