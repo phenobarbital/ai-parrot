@@ -42,6 +42,7 @@ from parrot.flows.dev_loop.models import (
     DevAgentSpec,
     FeatureBrief,
     PlannerOutput,
+    ResearchOutput,
 )
 from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
 from parrot.flows.dev_loop.task_scheduler import TaskScheduler
@@ -160,6 +161,24 @@ class PlannerNode(DevLoopNode):
         planner_out = planner_out.model_copy(update={"suggested_pool": pool_cfg})
 
         shared["planner_output"] = planner_out
+        # Compat bridge (code-review finding, post-TASK-1925): every
+        # downstream node reused from the bug/revision topologies
+        # (DevelopmentNode, SynthesisNode, QANode, FeedbackRouterNode) reads
+        # the mandatory ``shared["research_output"]`` (a ResearchOutput) —
+        # feature-mode never populated it, so every real run KeyError'd at
+        # the very next node. PlannerOutput carries the same
+        # spec/feat/branch/worktree/repo/jira fields ResearchNode's output
+        # does, so bridge it here rather than touching four already-shared
+        # node bodies (``log_excerpts`` defaults to ``[]``, matching a bug
+        # run before ResearchNode's own log-excerpt gathering runs).
+        shared["research_output"] = ResearchOutput(
+            jira_issue_key=planner_out.jira_issue_key or "",
+            spec_path=planner_out.spec_path,
+            feat_id=planner_out.feat_id,
+            branch_name=planner_out.branch_name,
+            worktree_path=planner_out.worktree_path,
+            repo_path=planner_out.repo_path,
+        )
         return planner_out
 
     # ------------------------------------------------------------------

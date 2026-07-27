@@ -15,6 +15,7 @@ from parrot.flows.dev_loop.models import (
     DevAgentSpec,
     FeatureBrief,
     PlannerOutput,
+    ResearchOutput,
 )
 from parrot.flows.dev_loop.nodes.planner import PlannerNode
 
@@ -83,6 +84,51 @@ async def test_planner_happy_path_proposal(tmp_path, monkeypatch):
     dispatcher.dispatch.assert_awaited_once()
     _, kwargs = dispatcher.dispatch.call_args
     assert kwargs["profile"].subagent == "sdd-planner"
+
+
+async def test_planner_bridges_research_output_for_downstream_nodes(tmp_path, monkeypatch):
+    """Code-review finding: DevelopmentNode/SynthesisNode/QANode/
+    FeedbackRouterNode all read the mandatory ``shared["research_output"]``
+    (a ResearchOutput) — feature-mode never populated it, so every real
+    run KeyError'd at the first reused node. PlannerNode must bridge its
+    PlannerOutput into a ResearchOutput with matching worktree/branch/spec/
+    feat/jira fields."""
+    monkeypatch.setattr(conf, "WORKTREE_BASE_PATH", str(tmp_path))
+    slug = "my-feature"
+    planner_out = _planner_output(tmp_path, slug, jira_issue_key="OPS-42")
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(return_value=planner_out)
+
+    node = _node(dispatcher)
+    shared = {"feature_brief": _brief(tmp_path), "run_id": "r1"}
+
+    await node.execute(shared)
+
+    research = shared["research_output"]
+    assert isinstance(research, ResearchOutput)
+    assert research.jira_issue_key == "OPS-42"
+    assert research.spec_path == planner_out.spec_path
+    assert research.feat_id == planner_out.feat_id
+    assert research.branch_name == planner_out.branch_name
+    assert research.worktree_path == planner_out.worktree_path
+    assert research.log_excerpts == []
+
+
+async def test_planner_bridges_research_output_without_jira(tmp_path, monkeypatch):
+    """A missing Jira key (feature-mode Jira is optional) must bridge to
+    ResearchOutput's required ``jira_issue_key: str`` as ``""``, not raise."""
+    monkeypatch.setattr(conf, "WORKTREE_BASE_PATH", str(tmp_path))
+    slug = "my-feature"
+    planner_out = _planner_output(tmp_path, slug, jira_issue_key=None)
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(return_value=planner_out)
+
+    node = _node(dispatcher)
+    shared = {"feature_brief": _brief(tmp_path), "run_id": "r1"}
+
+    await node.execute(shared)
+
+    assert shared["research_output"].jira_issue_key == ""
 
 
 async def test_planner_spec_passthrough_skips_sdd_spec():
