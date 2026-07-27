@@ -92,7 +92,7 @@
       "feature_id": "FEAT-380",
       "feature": "tool-result-compression",
       "spec": "sdd/specs/tool-result-compression.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Join point: needs the registry, at least one real codec, and the budget router before it can be meaningfully implemented or tested. Sequential barrier between the parallel codec/registry work and the manager wiring.",
       "assigned_to": null,
       "started_at": "2026-07-27T17:11:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1951-compression-stage.md"
+      "completed_at": "2026-07-27T20:24:14+00:00",
+      "file": "sdd/tasks/completed/TASK-1951-compression-stage.md"
     },
     {
       "id": "TASK-1952",

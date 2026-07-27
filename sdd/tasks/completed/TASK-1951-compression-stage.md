@@ -341,10 +341,27 @@ class TestMetrics:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-27
+**Notes**: Implemented `CompressionStage` (`stage.py`) exactly per the
+given pattern: three entry gates (kill switch, `return_direct`,
+`_compressed` marker) each short-circuit with a `compression_skipped`
+reason before the tee callback could ever be invoked; 5-rule effective-level
+precedence (`_effective_level`, with rules 3+4 delegated to
+`CompressorRegistry.resolve()`'s exact>glob>wildcard match, rule 5 as a
+defensive MINIMAL fallback for an entry-less registry); codec dispatch via
+`BudgetRouter.route()` → inline / `run_in_executor` (via `functools.partial`)
+/ passthrough; the whole dispatch wrapped in `try/except/finally` so a
+broken codec always returns the original payload with a warning and
+`BudgetRouter.record()` always fires. Metadata dict built fresh (never
+mutates the caller's `metadata`) with all 7 documented keys plus
+`compression_tee_key` when teed. Did NOT touch `manager.py` or the events
+package (verified out of scope). Exported `CompressionStage` from
+`compression/__init__.py`. 36 new tests pass (gates never invoking tee,
+all 5 precedence rules incl. override-outranks-error-status, codec
+exception safety, record-called-on-exception, unknown-codec passthrough via
+a hand-built unvalidated registry, tee invocation on lossy outcomes with and
+without a callback, budget passthrough/executor routes). Full compression
+suite: 65/65 green. `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
