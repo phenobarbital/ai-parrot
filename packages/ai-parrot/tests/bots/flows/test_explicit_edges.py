@@ -386,6 +386,59 @@ class TestCycleValidation:
         assert _ran(ctx) == ["dev", "qa", "dev", "qa", "end"]
         assert attempts["qa"] == 2
 
+    @pytest.mark.asyncio
+    async def test_join_nodes_forward_edge_not_misclassified_as_back_edge(self) -> None:
+        """Regression (FEAT-377/A): a JOIN node with its OWN outgoing
+        back-edge must not cause the engine to misclassify the ORDINARY
+        forward edge feeding that join as a cyclic back-edge too.
+
+        Mirrors dev-loop feature-mode's shape: ``gate -> router`` (an
+        ordinary forward ``on_condition`` edge, fired on every failure)
+        sits on the same undirected cycle as ``router -> dev`` (the
+        genuine back-edge, also ``on_condition``) once ``router`` also
+        routes back to ``dev``. Before this fix, "cyclic back-edge" was
+        classified by cycle MEMBERSHIP alone (any `on_condition` edge
+        whose target can reach its source), which flagged BOTH edges —
+        so `gate -> router` firing (which happens on every ordinary gate
+        failure, not just a bounded retry) was (mis)treated as a
+        retry-reset trigger, live-locking any run where the gate always
+        routes to the router. The fix uses a proper DFS white/gray/black
+        back-edge test, which classifies only `router -> dev` as cyclic.
+        """
+        calls: dict[str, int] = {"router": 0}
+
+        class RouterNode(StubNode):
+            async def execute(self, ctx: FlowContext, deps: Any, **kwargs: Any) -> Any:
+                ctx.shared_data.setdefault("order", []).append(self.node_id)
+                calls["router"] += 1
+                return "retry" if calls["router"] == 1 else "escalate"
+
+        flow = _flow()
+        flow.add_node(StubNode(node_id="dev"))
+        flow.add_node(StubNode(node_id="synth"))
+        flow.add_node(StubNode(node_id="gate", result="fail"))
+        flow.add_node(RouterNode(node_id="router"))
+        flow.add_node(StubNode(node_id="end"))
+        flow.add_edge("dev", "synth")
+        flow.add_edge("synth", "gate")
+        flow.add_edge("gate", "router", predicate=lambda r: r == "fail")
+        flow.add_edge("router", "dev", predicate=lambda r: r == "retry")
+        flow.add_edge("router", "end", predicate=lambda r: r == "escalate")
+
+        ctx = FlowContext(initial_task="")
+        # A hard timeout — if the misclassification regresses, this test
+        # must fail fast (a bounded loop with two on_condition edges on
+        # its cycle live-locks otherwise) rather than hang the suite.
+        result = await asyncio.wait_for(flow.run_flow(ctx), timeout=5.0)
+
+        assert result.status.value == "completed"
+        assert _ran(ctx) == [
+            "dev", "synth", "gate", "router",
+            "dev", "synth", "gate", "router",
+            "end",
+        ]
+        assert calls["router"] == 2
+
 
 class TestFsmLifecycle:
     @staticmethod

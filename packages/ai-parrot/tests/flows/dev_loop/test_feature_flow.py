@@ -21,12 +21,10 @@ from parrot.flows.dev_loop.nodes.failure_handler import FailureHandlerNode
 from parrot.flows.dev_loop.nodes.qa import QANode
 from parrot.flows.dev_loop.runner import build_dev_loop_feature_flow
 
-# FEAT-377/A (the repair-loop attempt counter) had not merged to `dev` as
-# of this task (2026-07-27) — `FeedbackRouterNode._retry_allowed()`
-# unconditionally returns False and no retry edge is wired (spec §7
-# documented degradation). Flip to False once FEAT-377/A lands and the
-# retry edge is wired in definition.py/runner.py.
-FEAT_377A_ABSENT = True
+# FEAT-377/A landed: FeedbackRouterNode._retry_allowed() now bounds
+# retries against DEV_LOOP_QA_MAX_RETRIES, and the feedback_router ->
+# development retry edge is wired in both definition.py and runner.py.
+FEAT_377A_ABSENT = False
 
 
 def _ran(result) -> set:
@@ -136,8 +134,25 @@ async def test_classifier_invalid_document_fails_early(tmp_path):
 
 
 def _stub_feature_executes(
-    monkeypatch, *, qa_passed: bool, feedback_decision: str = "escalate"
-):
+    monkeypatch,
+    *,
+    qa_passed: bool,
+    feedback_decision: "str | list[str]" = "escalate",
+) -> dict:
+    """Monkeypatch every feature-mode node's ``execute()`` with a stub.
+
+    ``feedback_decision`` may be a single string (every call returns the
+    same decision — the pre-existing shape) or a list (FEAT-377/A: each
+    call consumes the next entry, clamped to the last once exhausted —
+    lets a test simulate "retry" then "escalate" across repeated QA-fail
+    rounds without touching the real dispatcher/enforcement path).
+
+    Returns:
+        A ``{node_id: call_count}`` dict, mutated in place as the stubs
+        run — callers can assert on it after ``run_flow()`` to verify a
+        node re-entered the cycle the expected number of times (``_ran()``
+        only reports SET membership, not call counts).
+    """
     from parrot.flows.dev_loop.models import (
         DevelopmentOutput,
         FeedbackDecision,
@@ -150,11 +165,22 @@ def _stub_feature_executes(
     from parrot.flows.dev_loop.nodes.planner import PlannerNode
     from parrot.flows.dev_loop.nodes.synthesis import SynthesisNode
 
+    calls: dict = {
+        "intent_classifier": 0, "planner": 0, "development": 0, "synthesis": 0,
+        "qa": 0, "feedback_router": 0, "feature_handoff": 0, "failure_handler": 0,
+        "close": 0,
+    }
+    decisions = (
+        [feedback_decision] if isinstance(feedback_decision, str) else list(feedback_decision)
+    )
+
     async def intent_exec(self, ctx, deps=None, **kw):
+        calls["intent_classifier"] += 1
         shared = self.shared_state(ctx)
         return shared["feature_brief"]
 
     async def planner_exec(self, ctx, deps=None, **kw):
+        calls["planner"] += 1
         shared = self.shared_state(ctx)
         out = PlannerOutput(
             spec_path="sdd/specs/x.spec.md",
@@ -167,36 +193,45 @@ def _stub_feature_executes(
         return out
 
     async def dev_exec(self, ctx, deps=None, **kw):
+        calls["development"] += 1
         out = DevelopmentOutput(files_changed=["a.py"], commit_shas=["abc"], summary="ok")
         self.shared_state(ctx)["development_output"] = out
         return out
 
     async def synthesis_exec(self, ctx, deps=None, **kw):
+        calls["synthesis"] += 1
         out = SynthesisReport(consistent=True, adjustments=[], summary="clean")
         self.shared_state(ctx)["synthesis_report"] = out
         return out
 
     async def qa_exec(self, ctx, deps=None, **kw):
+        calls["qa"] += 1
         return QAReport(passed=qa_passed, criterion_results=[], lint_passed=qa_passed)
 
     async def feedback_exec(self, ctx, deps=None, **kw):
+        i = min(calls["feedback_router"], len(decisions) - 1)
+        decision = decisions[i]
+        calls["feedback_router"] += 1
         out = FeedbackDecision(
-            decision=feedback_decision,
-            notes="minor notes" if feedback_decision == "accept_with_notes" else "",
+            decision=decision,
+            notes="minor notes" if decision == "accept_with_notes" else "",
         )
         self.shared_state(ctx)["feedback_decision"] = out
         return out
 
     async def handoff_exec(self, ctx, deps=None, **kw):
+        calls["feature_handoff"] += 1
         return {
             "status": "ready_to_deploy", "pr_url": "u", "pr_number": 1,
             "docs_path": "docs/features/feat-999-x.md", "wiki_page_id": None,
         }
 
     async def failure_exec(self, ctx, deps=None, **kw):
+        calls["failure_handler"] += 1
         return {"status": "escalated"}
 
     async def close_exec(self, ctx, deps=None, **kw):
+        calls["close"] += 1
         return {"status": "closed"}
 
     monkeypatch.setattr(IntentClassifierNode, "execute", intent_exec)
@@ -208,6 +243,7 @@ def _stub_feature_executes(
     monkeypatch.setattr(FeatureHandoffNode, "execute", handoff_exec)
     monkeypatch.setattr(FailureHandlerNode, "execute", failure_exec)
     monkeypatch.setattr(DevLoopCloseNode, "execute", close_exec)
+    return calls
 
 
 def _feature_flow():
@@ -303,14 +339,33 @@ def test_feature_flow_forwards_graph_memory_and_plan_approval():
 
 @pytest.mark.skipif(FEAT_377A_ABSENT, reason="retry edge requires FEAT-377/A")
 @pytest.mark.asyncio
-async def test_feature_flow_feedback_retry(monkeypatch, tmp_path):  # pragma: no cover
-    """Once FEAT-377/A lands and the retry edge is wired, a "retry"
-    FeedbackDecision should route feedback_router -> development again."""
-    _stub_feature_executes(monkeypatch, qa_passed=False, feedback_decision="retry")
+async def test_feature_flow_feedback_retry(monkeypatch, tmp_path):
+    """A "retry" FeedbackDecision routes feedback_router -> development
+    again (FEAT-377/A) — QA keeps failing, so the stub's decision
+    sequence (["retry", "escalate"]) simulates the repair loop firing
+    once, then exhausting to escalate, exactly like the real
+    FeedbackRouterNode._enforce()/_retry_allowed() bound would once
+    DEV_LOOP_QA_MAX_RETRIES is reached."""
+    calls = _stub_feature_executes(
+        monkeypatch, qa_passed=False, feedback_decision=["retry", "escalate"]
+    )
     flow = _feature_flow()
     res = await flow.run_flow(_FeatureCtx(_feature_brief(tmp_path)))
     ran = _ran(res)
 
-    assert "feedback_router" in ran
-    # A second development pass would be observable once the retry edge
-    # and re-entrant wave tracking exist — left for the FEAT-377/A follow-up.
+    assert {
+        "intent_classifier", "planner", "development", "synthesis",
+        "qa", "feedback_router", "failure_handler",
+    }.issubset(ran)
+    assert "feature_handoff" not in ran
+    assert "close" not in ran
+
+    # The observable proof a real re-entrant loop happened, not just a
+    # routing decision string: development/synthesis/qa/feedback_router
+    # each ran TWICE (planner ran once — it's upstream of the cycle).
+    assert calls["planner"] == 1
+    assert calls["development"] == 2
+    assert calls["synthesis"] == 2
+    assert calls["qa"] == 2
+    assert calls["feedback_router"] == 2
+    assert calls["failure_handler"] == 1

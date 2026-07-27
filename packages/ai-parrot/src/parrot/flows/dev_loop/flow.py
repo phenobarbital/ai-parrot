@@ -94,6 +94,24 @@ def _feedback_accept(result: Any) -> bool:
     return getattr(result, "decision", None) == "accept_with_notes"
 
 
+def _feedback_retry(result: Any) -> bool:
+    """True when the router's ``FeedbackDecision.decision == "retry"``
+    (FEAT-377/A).
+
+    Unlike the bug-mode ``qa -> development`` retry edge (whose CEL/Python
+    predicate encodes the ``attempt < N`` bound directly, because it reads
+    the bound straight off ``QAReport.attempt``), this predicate carries
+    NO bound of its own — ``FeedbackDecision`` has no attempt counter.
+    The bound lives entirely in ``FeedbackRouterNode._retry_allowed()`` /
+    ``_enforce()``: a proposed ``"retry"`` is downgraded to ``"escalate"``
+    in Python, before this predicate is ever evaluated, once
+    ``DEV_LOOP_QA_MAX_RETRIES`` is reached. By the time the engine reads
+    ``result.decision``, it has already been bounded — this predicate
+    only has to route on the (already-enforced) label.
+    """
+    return getattr(result, "decision", None) == "retry"
+
+
 def _make_qa_retry(max_retries: int) -> Callable[[Any], bool]:
     """Closure: QA failed but the bounded repair loop (FEAT-377 TASK-1910
     — G1) still has attempts left → redispatch development."""

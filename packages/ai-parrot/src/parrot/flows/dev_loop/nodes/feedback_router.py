@@ -14,13 +14,12 @@ post-parse (spec §2 item 6, §7 "Known Risks"):**
   blocking manual criterion failed. Outside that envelope, a proposed
   ``accept_with_notes`` downgrades to ``retry`` (if attempts remain) or
   ``escalate``.
-* ``retry`` is bounded by the FEAT-377/A repair-loop stop rule. FEAT-377/A
-  (``DEV_LOOP_QA_MAX_RETRIES`` / ``QaAttemptRecorded``) had not merged to
-  ``dev`` as of this task (2026-07-27) — per the spec's documented
-  degradation, retry is therefore UNCONDITIONALLY disallowed for now:
-  every proposed ``retry`` downgrades to ``escalate`` with a warning log.
-  :meth:`FeedbackRouterNode._retry_allowed` is the single seam to flip once
-  FEAT-377/A lands.
+* ``retry`` is bounded by the FEAT-377/A repair-loop stop rule
+  (``DEV_LOOP_QA_MAX_RETRIES``, shared with the bug-mode ``qa ->
+  development`` back-edge): a proposed ``retry`` is honored while
+  ``current_attempt < DEV_LOOP_QA_MAX_RETRIES``, else it downgrades to
+  ``escalate`` with a warning log. :meth:`FeedbackRouterNode._retry_allowed`
+  is the single seam this comparison lives in — see its docstring.
 """
 
 from __future__ import annotations
@@ -29,6 +28,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
+from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
@@ -215,22 +215,27 @@ class FeedbackRouterNode(DevLoopNode):
     # ------------------------------------------------------------------
 
     def _retry_allowed(self, session_host: Optional[SessionHost]) -> bool:
-        """Stop-rule check — the FEAT-377/A repair-loop counter integration seam.
+        """Stop-rule check — the FEAT-377/A repair-loop counter seam.
 
-        FEAT-377 (``DEV_LOOP_QA_MAX_RETRIES`` / ``QaAttemptRecorded``) had
-        not merged to ``dev`` as of this task (2026-07-27). Per the spec's
-        documented degradation, this unconditionally returns ``False`` —
-        no retries are permitted — until FEAT-377/A lands. Isolated in its
-        own method so wiring the real attempt-vs-max-retries comparison is
-        a one-line change.
+        Bounds the ``feedback_router -> development`` back-edge the same
+        way the bug-mode ``qa -> development`` edge is bounded (TASK-1910)
+        — reusing the same ``DEV_LOOP_QA_MAX_RETRIES`` config knob — except
+        feature-mode has no ``QAReport.attempt`` field to read the counter
+        off of (a ``FeedbackDecision`` carries no attempt number), so the
+        comparison uses :meth:`_current_attempt`'s session-state-derived
+        count instead: the number of feedback rounds already recorded in
+        this run (1-indexed), mirroring ``QAReport.attempt``'s semantics
+        exactly (both are "which attempt is this" counters, just sourced
+        differently).
 
         Args:
             session_host: The run's :class:`SessionHost`, if any.
 
         Returns:
-            ``False`` (always, for now).
+            ``True`` while ``_current_attempt(session_host) <
+            conf.DEV_LOOP_QA_MAX_RETRIES``, else ``False``.
         """
-        return False
+        return self._current_attempt(session_host) < int(conf.DEV_LOOP_QA_MAX_RETRIES)
 
     def _current_attempt(self, session_host: Optional[SessionHost]) -> int:
         """Best-effort QA-attempt number for ``FeedbackDecisionRecorded``.
@@ -284,9 +289,9 @@ class FeedbackRouterNode(DevLoopNode):
 
         if decision == "retry" and not retry_allowed:
             self.logger.warning(
-                "sdd-feedback proposed retry but the stop rule disallows "
-                "it (FEAT-377/A repair-loop counter unavailable, or "
-                "attempts exhausted); downgrading to escalate.",
+                "sdd-feedback proposed retry but the repair-loop stop "
+                "rule disallows it (DEV_LOOP_QA_MAX_RETRIES attempts "
+                "exhausted); downgrading to escalate.",
             )
             decision = "escalate"
 

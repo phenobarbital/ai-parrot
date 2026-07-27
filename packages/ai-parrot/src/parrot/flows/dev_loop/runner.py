@@ -41,6 +41,7 @@ from parrot.flows.dev_loop.flow import (
     _NullAgentRegistry,
     _feedback_accept,
     _feedback_escalate,
+    _feedback_retry,
     _is_feature,
     _qa_failed,
     _qa_passed,
@@ -196,10 +197,10 @@ def build_dev_loop_feature_flow(
     Topology: ``intent_classifier`` -(kind=="feature")-> ``planner`` ->
     ``development`` -> ``synthesis`` -> ``qa`` -(passed)-> ``feature_handoff``
     -> ``close`` / -(failed)-> ``feedback_router`` -(escalate)->
-    ``failure_handler`` / -(accept_with_notes)-> ``feature_handoff``. No
-    retry edge — FEAT-377/A had not merged to ``dev`` as of this task (spec
-    §7 documented degradation; see the CEL predicate comments in
-    ``definition.py``).
+    ``failure_handler`` / -(accept_with_notes)-> ``feature_handoff`` /
+    -(retry)-> ``development`` (bounded repair loop, FEAT-377/A — the
+    stop rule lives in ``FeedbackRouterNode._retry_allowed()``, not on
+    this edge; see ``flow._feedback_retry``'s docstring).
 
     Args:
         dispatcher: Shared ``ClaudeCodeDispatcher`` for Planner/Synthesis/
@@ -280,6 +281,12 @@ def build_dev_loop_feature_flow(
     flow.add_edge("qa", "feedback_router", predicate=_qa_failed)
     flow.add_edge("feedback_router", "failure_handler", predicate=_feedback_escalate)
     flow.add_edge("feedback_router", "feature_handoff", predicate=_feedback_accept)
+    # FEAT-377/A: bounded repair loop back-edge. The engine's cyclic
+    # re-entry support (TASK-1910) resets every node on the
+    # development->synthesis->qa->feedback_router cycle and re-dispatches
+    # development. Unbounded by this predicate itself — see
+    # _feedback_retry's docstring.
+    flow.add_edge("feedback_router", "development", predicate=_feedback_retry)
     flow.add_edge("feature_handoff", "close")
     for source in (
         "intent_classifier", "planner", "development", "synthesis",

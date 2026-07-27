@@ -60,14 +60,16 @@ _CEL_QA_FAILED = "result.passed == false"
 _CEL_IS_FEATURE = 'result.kind == "feature"'
 _CEL_FEEDBACK_ESCALATE = 'result.decision == "escalate"'
 _CEL_FEEDBACK_ACCEPT = 'result.decision == "accept_with_notes"'
-# NOTE (spec §7 documented degradation): a `result.decision == "retry"`
-# predicate for a `feedback_router -> development` edge is intentionally
-# NOT defined here. FEAT-377/A (the repair-loop attempt counter) had not
-# merged to `dev` as of this task (2026-07-27), and
-# `FeedbackRouterNode._retry_allowed()` unconditionally returns `False`
-# until it does — every proposed "retry" is downgraded to "escalate" in
-# Python before a `FeedbackDecision` is ever returned, so a retry edge
-# would be permanently dead code. Revisit once FEAT-377/A lands.
+# FEAT-377/A: the `feedback_router -> development` retry edge. Unlike the
+# bug-mode qa->development retry edge (whose predicate bounds the loop via
+# `result.attempt < N`, read off QAReport), this predicate carries NO
+# bound of its own — FeedbackDecision has no attempt counter. The bound
+# lives entirely in FeedbackRouterNode._retry_allowed()/_enforce(): a
+# proposed "retry" is downgraded to "escalate" in Python, before a
+# FeedbackDecision is ever returned, once DEV_LOOP_QA_MAX_RETRIES is
+# reached — so by the time this predicate reads `result.decision`, it has
+# already been bounded.
+_CEL_FEEDBACK_RETRY = 'result.decision == "retry"'
 
 
 def _cel_qa_retry(max_retries: int) -> str:
@@ -236,7 +238,7 @@ def _build_feature_definition() -> FlowDefinition:
 
         intent_classifier ─(kind=="feature")→ planner → development → synthesis → qa ─(passed)→ feature_handoff → close
                                                               ↑                     │
-                                                              └─(retry, N/A)────────┘
+                                                              └─(retry, bounded)────┤
                                                                                     │
                                                 (escalate / accept_with_notes)→ feedback_router
                                                                                     ├─(escalate)→ failure_handler
@@ -251,9 +253,13 @@ def _build_feature_definition() -> FlowDefinition:
     reference/validation/visualization source; ``build_dev_loop_feature_flow``
     (runner.py) re-declares every edge imperatively for actual execution.
 
-    The ``feedback_router -> development`` retry edge is NOT wired — see
-    the ``_CEL_FEEDBACK_ESCALATE``/``_CEL_FEEDBACK_ACCEPT`` comment above
-    for why (FEAT-377/A absence, spec §7 documented degradation).
+    The ``feedback_router -> development`` retry edge (FEAT-377/A) is a
+    genuine cycle — tolerated by the ``on_condition``-edge exemption in
+    ``FlowDefinition._validate_acyclic`` and given real re-entry semantics
+    by the engine's cyclic-retry support (both TASK-1910, shared with the
+    bug-mode ``qa -> development`` back-edge). See
+    ``_CEL_FEEDBACK_RETRY``'s comment above for why this predicate carries
+    no bound of its own.
     """
     nodes = [
         _node(INTENT),
@@ -289,6 +295,10 @@ def _build_feature_definition() -> FlowDefinition:
         EdgeDefinition(
             **{"from": FEEDBACK_ROUTER}, to=FEATURE_HANDOFF,
             condition="on_condition", predicate=_CEL_FEEDBACK_ACCEPT,
+        ),
+        EdgeDefinition(
+            **{"from": FEEDBACK_ROUTER}, to=DEVELOPMENT,
+            condition="on_condition", predicate=_CEL_FEEDBACK_RETRY,
         ),
         EdgeDefinition(**{"from": FEATURE_HANDOFF}, to=CLOSE, condition="on_success"),
     ]

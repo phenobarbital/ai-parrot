@@ -869,15 +869,63 @@ class AgentsFlow(PersistenceMixin):
                             stack.append(nxt)
                 return seen
 
+            # Which `on_condition` edges are genuine cyclic *back*-edges (as
+            # opposed to a forward/tree edge that merely happens to sit on
+            # the same undirected cycle as one) is a graph-theoretic
+            # question, not a "does a cycle exist through here" one —
+            # `edge.from_ in _reachable(tgt, full_adj)` (cycle MEMBERSHIP)
+            # was the original TASK-1910 test, and it is too coarse once a
+            # cycle has more than one `on_condition` edge on it (FEAT-377/A:
+            # dev-loop feature-mode's `feedback_router -> development` retry
+            # edge closes a cycle that ALSO contains the pre-existing
+            # `qa -> feedback_router` forward-routing edge — both satisfy
+            # "cycle membership", but only the former is meant to trigger a
+            # retry-reset; misclassifying the latter turned every ordinary
+            # QA failure into a spurious repair-loop reset, live-locking the
+            # run). The correct test is the classic DFS white/gray/black
+            # back-edge definition: edge u->v is a back-edge iff v is still
+            # on the active DFS stack (a true ancestor of u) when the edge
+            # is explored — a tree/forward/cross edge to an already-visited
+            # node never re-triggers `_dfs` and is never gray at that point.
+            _WHITE, _GRAY, _BLACK = 0, 1, 2
+            _color: Dict[str, int] = dict.fromkeys(nodes, _WHITE)
+            _dfs_back_edges: List[Any] = []
+            _edges_by_source: Dict[str, List[Any]] = defaultdict(list)
             for edge in edges:
-                if edge.condition != "on_condition":
-                    continue
-                for tgt in ([edge.to] if isinstance(edge.to, str) else list(edge.to)):
-                    # A back-edge fires INTO a node that can already reach the
-                    # edge's own source — i.e. dispatching `tgt` would revisit
-                    # a node already on the path to `edge.from_`.
-                    if edge.from_ not in _reachable(tgt, full_adj):
+                _edges_by_source[edge.from_].append(edge)
+
+            def _dfs(start: str) -> None:
+                # Iterative DFS (explicit stack of (node, out-edge index)
+                # frames) — recursion would also work for dev-loop-sized
+                # graphs, but an explicit stack avoids any dependency on
+                # graph size staying well under the interpreter's recursion
+                # limit for arbitrary `AgentsFlow` callers.
+                call_stack: List[Tuple[str, int]] = [(start, 0)]
+                _color[start] = _GRAY
+                while call_stack:
+                    u, i = call_stack[-1]
+                    out_edges = _edges_by_source.get(u, ())
+                    if i >= len(out_edges):
+                        _color[u] = _BLACK
+                        call_stack.pop()
                         continue
+                    call_stack[-1] = (u, i + 1)
+                    edge = out_edges[i]
+                    for v in ([edge.to] if isinstance(edge.to, str) else list(edge.to)):
+                        if v not in _color:
+                            continue  # defensive: edge to an unknown node id
+                        if _color[v] == _WHITE:
+                            _color[v] = _GRAY
+                            call_stack.append((v, 0))
+                        elif _color[v] == _GRAY and edge.condition == "on_condition":
+                            _dfs_back_edges.append(edge)
+
+            for nid in nodes:
+                if _color[nid] == _WHITE:
+                    _dfs(nid)
+
+            for edge in _dfs_back_edges:
+                for tgt in ([edge.to] if isinstance(edge.to, str) else list(edge.to)):
                     forward_from_tgt = _reachable(tgt, full_adj)
                     backward_to_src = _reachable(edge.from_, reverse_adj)
                     cycle_members = forward_from_tgt & backward_to_src

@@ -182,10 +182,11 @@ def test_definition_feature_graph():
         'result.decision == "accept_with_notes"',
     ) in edges
     assert ("feature_handoff", "close", "on_success", None) in edges
-    # No retry edge — FEAT-377/A absent as of this task (spec §7).
-    assert not any(
-        e[0] == "feedback_router" and e[1] == "development" for e in edges
-    )
+    # FEAT-377/A: bounded repair-loop retry edge — the bound lives in
+    # FeedbackRouterNode._retry_allowed(), not on this predicate.
+    assert (
+        "feedback_router", "development", "on_condition", 'result.decision == "retry"'
+    ) in edges
 
 
 def test_bug_topology_unchanged():
