@@ -1004,6 +1004,15 @@ DEV_LOOP_REQUIRE_PLAN_APPROVAL: bool = config.getboolean(
     "DEV_LOOP_REQUIRE_PLAN_APPROVAL", fallback=False
 )
 
+# FEAT-377 (TASK-1917): release a run's FLOW_MAX_CONCURRENT_RUNS slot while
+# it is `awaiting_gate` (ANY gate kind, uniformly — no per-kind allowlist),
+# re-acquiring it once the gate resolves. True (default) per spec §2 —
+# unlike the other FEAT-377 flags, parking defaults ON since holding a slot
+# for a gate's whole TTL (up to 72h for manual_criterion) is the behavior
+# this task exists to fix. Set False to keep the pre-TASK-1917 behavior
+# (a gate wait holds its slot for the run's entire duration).
+DEV_LOOP_GATE_PARK: bool = config.getboolean("DEV_LOOP_GATE_PARK", fallback=True)
+
 # FEAT-375: Codex CLI adversarial second-opinion agent. These settings back
 # the "codex-adversarial" / "parallel" ``DEV_LOOP_CODEREVIEW_AGENT`` values
 # above — kept append-only here (rather than reflowing the block near
