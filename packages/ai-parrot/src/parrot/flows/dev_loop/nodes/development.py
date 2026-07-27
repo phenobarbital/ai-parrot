@@ -49,13 +49,14 @@ DispatcherBuilder = Callable[[DevAgentSpec], Tuple[DevLoopCodeDispatcher, BaseMo
 
 
 def should_fan_out(wave: List[TaskRef], pool_cfg: DevAgentPoolConfig) -> bool:
-    """Deterministic parallelism stop rule (FEAT-377 TASK-1913 — G4).
+    """Check whether the first wave actually benefits from parallelism.
 
     A configured dev-agent pool is not automatically worth fanning out
     into: a straight dependency chain (every wave size 1) gains nothing
-    from parallel workers and only adds pool-orchestration overhead. This
-    is a pure, no-LLM decision — everything needed lives in the two
-    arguments.
+    from parallel workers.  This is a pure, no-LLM decision used as an
+    **advisory log hint** — it no longer gates pool-vs-single dispatch.
+    When a pool is configured, the pool path always runs; this function
+    only tells callers whether true parallelism will occur.
 
     Args:
         wave: The first dispatchable wave (``TaskScheduler.next_wave()``,
@@ -64,10 +65,8 @@ def should_fan_out(wave: List[TaskRef], pool_cfg: DevAgentPoolConfig) -> bool:
 
     Returns:
         ``True`` only when the wave has 2 or more independent tasks AND
-        the pool has more than one effective worker slot (``sum(spec.count
-        for spec in pool_cfg.agents)``) — i.e. fanning out could actually
-        run tasks in parallel. ``False`` otherwise, including when the
-        wave is empty (nothing to schedule at all).
+        the pool has more than one effective worker slot — i.e. fanning
+        out could actually run tasks in parallel.
     """
     if len(wave) < 2:
         return False
@@ -183,20 +182,16 @@ class DevelopmentNode(DevLoopNode):
             )
             return await self._execute_single(shared, research)
 
-        # FEAT-377 TASK-1913 (G4): deterministic parallelism stop rule — a
-        # configured pool still degrades to single-agent when the task
-        # graph doesn't actually offer any parallelism (e.g. a straight
-        # dependency chain, every wave size 1).
         first_wave = scheduler.next_wave()
         if not should_fan_out(first_wave, pool_cfg):
+            effective_slots = sum(spec.count for spec in pool_cfg.agents)
             self.logger.info(
                 "should_fan_out(wave=%d task(s), pool_slots=%d) -> False; "
-                "degrading to single-agent for %s.",
+                "pool will dispatch tasks sequentially for %s.",
                 len(first_wave),
-                sum(spec.count for spec in pool_cfg.agents),
+                effective_slots,
                 research.feat_id,
             )
-            return await self._execute_single(shared, research)
 
         return await self._execute_pool(shared, research, pool_cfg, scheduler)
 

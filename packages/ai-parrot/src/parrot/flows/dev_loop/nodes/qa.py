@@ -97,6 +97,7 @@ class QANode(DevLoopNode):
         lint_command: Optional[str] = None,
         codereview_dispatcher: Optional[AbstractCodeReviewDispatcher] = None,
         graph_memory: Optional[DevLoopGraphMemory] = None,
+        skip_qa: bool = False,
         name: str = "qa",
     ) -> None:
         super().__init__(node_id=name)
@@ -111,6 +112,7 @@ class QANode(DevLoopNode):
         # FEAT-377 TASK-1915 (G2 seam 4): opt-in finding grounding. None
         # (default) is a strict no-op.
         object.__setattr__(self, "_graph_memory", graph_memory)
+        object.__setattr__(self, "_skip_qa", skip_qa)
 
     # ------------------------------------------------------------------
     # Execute
@@ -136,6 +138,24 @@ class QANode(DevLoopNode):
         shared = self.shared_state(ctx)
         research: ResearchOutput = shared["research_output"]
         brief: BugBrief = shared["bug_brief"]
+
+        if self._skip_qa:
+            self.logger.info(
+                "QA bypass enabled (skip_qa=True) for %s — returning synthetic pass.",
+                research.jira_issue_key or research.feat_id,
+            )
+            report = QAReport(
+                passed=True,
+                criterion_results=[],
+                lint_passed=True,
+                lint_output="(skipped: skip_qa=True)",
+                notes="QA bypassed (skip_qa=True).",
+                code_review_passed=True,
+                code_review_findings=[],
+                attempt=shared.get("qa_attempt", 1),
+            )
+            shared["qa_report"] = report
+            return report
 
         manual: List[ManualCriterion] = [
             c for c in brief.acceptance_criteria
@@ -213,7 +233,7 @@ class QANode(DevLoopNode):
             )
             report = await self._run_deterministic_qa(
                 shared, research, brief, executable,
-                cwd_override=research.repo_path or research.worktree_path,
+                cwd_override=research.worktree_path,
             )
             deterministic_passed = report.passed
 
@@ -373,7 +393,7 @@ class QANode(DevLoopNode):
         structured findings for triage without widening this method's
         public 3-tuple contract (existing callers/tests assert on it).
         """
-        review_cwd = research.repo_path or research.worktree_path
+        review_cwd = research.worktree_path
         review_brief = _CodeReviewBrief(
             acceptance_criteria=list(brief.acceptance_criteria),
             worktree_path=review_cwd,
@@ -464,7 +484,7 @@ class QANode(DevLoopNode):
             resolved to something other than ``"approved"`` (or is still
             pending when a ``SessionHost`` degrade path applies).
         """
-        worktree_path = research.repo_path or research.worktree_path
+        worktree_path = research.worktree_path
         triage_brief = TriageBrief(
             findings=findings,
             acceptance_criteria=list(brief.acceptance_criteria),

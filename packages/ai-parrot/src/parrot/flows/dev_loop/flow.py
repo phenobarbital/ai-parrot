@@ -277,6 +277,7 @@ def build_dev_loop_flow(
     require_deployment_approval: bool = False,
     graph_memory: Optional[Any] = None,
     require_plan_approval: bool = False,
+    skip_qa: bool = False,
 ) -> AgentsFlow:
     """Build the eight-node dev-loop ``AgentsFlow`` (FEAT-132).
 
@@ -343,6 +344,9 @@ def build_dev_loop_flow(
         require_plan_approval: FEAT-377 TASK-1916 — forwarded to
             ``DevelopmentNode`` via ``build_dev_loop_node_factories``.
             ``False`` (default) preserves current behavior exactly.
+        skip_qa: When ``True``, ``QANode`` returns a synthetic passing
+            ``QAReport`` without running deterministic checks or code
+            review. ``False`` (default) preserves the full QA gate.
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -368,6 +372,7 @@ def build_dev_loop_flow(
         require_deployment_approval=require_deployment_approval,
         graph_memory=graph_memory,
         require_plan_approval=require_plan_approval,
+        skip_qa=skip_qa,
     )
     staged = AgentsFlow.from_definition(
         definition,

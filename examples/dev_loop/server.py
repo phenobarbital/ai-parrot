@@ -967,6 +967,7 @@ async def handle_config(request: web.Request) -> web.Response:
                 "qa_max_retries": conf.DEV_LOOP_QA_MAX_RETRIES,
                 "docs_artifact_dir": conf.DEV_LOOP_DOCS_ARTIFACT_DIR,
                 "wiki_page_ingest": conf.DEV_LOOP_WIKI_PAGE_INGEST,
+                "skip_qa": bool(getattr(conf, "DEV_LOOP_SKIP_QA", False)),
                 "development_pool_max": app.get("development_pool_max", 4),
                 "max_concurrent_runs": getattr(
                     app.get("runner"), "max_concurrent_runs", None
@@ -1262,6 +1263,7 @@ async def _on_startup(app: web.Application) -> None:
     require_plan_approval = bool(
         getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False)
     )
+    skip_qa = bool(getattr(conf, "DEV_LOOP_SKIP_QA", False))
 
     jira_toolkit = _build_jira_toolkit()
     git_toolkit = _build_git_toolkit()
@@ -1281,6 +1283,7 @@ async def _on_startup(app: web.Application) -> None:
         codereview_dispatcher=codereview_dispatcher,
         graph_memory=graph_memory,
         require_plan_approval=require_plan_approval,
+        skip_qa=skip_qa,
     )
     # Orchestrator-side run cap (FLOW_MAX_CONCURRENT_RUNS) — spec G5.
     # The extra deps let the runner build the revision (FEAT-250) and
@@ -1330,6 +1333,7 @@ async def _on_startup(app: web.Application) -> None:
             # identical opt-in wiring instead of silently dropping it.
             graph_memory=graph_memory,
             require_plan_approval=require_plan_approval,
+            skip_qa=skip_qa,
         )
         app["feature_mode_available"] = True
         logger.info(

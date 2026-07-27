@@ -1004,6 +1004,12 @@ DEV_LOOP_REQUIRE_PLAN_APPROVAL: bool = config.getboolean(
     "DEV_LOOP_REQUIRE_PLAN_APPROVAL", fallback=False
 )
 
+# Skip the QA node entirely (deterministic checks + code review) and emit a
+# synthetic passing QAReport. Useful for trivial fixes (e.g. syntax errors)
+# where the QA cycle costs more than the research + development combined.
+# False (default) preserves the full QA gate.
+DEV_LOOP_SKIP_QA: bool = config.getboolean("DEV_LOOP_SKIP_QA", fallback=False)
+
 # FEAT-377 (TASK-1917): release a run's FLOW_MAX_CONCURRENT_RUNS slot while
 # it is `awaiting_gate` (ANY gate kind, uniformly — no per-kind allowlist),
 # re-acquiring it once the gate resolves. True (default) per spec §2 —
