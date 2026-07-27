@@ -170,10 +170,20 @@ def test_multisearch_protocol_runtime_check():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-07-27
+**Notes**: Added `SearchOriginKind`, `OriginHit`, `OriginSection`,
+`MultiSearchResponse`, and the `@runtime_checkable` `MultiSearch` protocol
+to `parrot/models/stores.py`, exported from `parrot/models/__init__.py`.
+`StoreType` left untouched. 7 unit tests added in
+`packages/ai-parrot/tests/unit/models/test_search_origin_models.py`, all
+passing; `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Note: before starting this task, 9 stale/bogus task-file stubs for this
+same feature (unedited templates, no implementation) were found
+misplaced under `sdd/tasks/completed/` — an artifact of an unrelated
+devloop-enhancement (FEAT-378) test-fixture merge that collided on this
+feature's name. They were moved back to `sdd/tasks/active/` (commit
+"sdd: repair FEAT-379 task-file placement") before any real work began.
 
 **Deviations from spec**: none

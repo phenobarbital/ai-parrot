@@ -181,10 +181,16 @@ async def test_backend_error_propagates():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-07-27
+**Notes**: Created `parrot_tools/multistoresearch/` package (`origins/base.py`
+`SearchOrigin` ABC, `origins/vector.py` `VectorStoreOrigin`); `git mv`'d
+the old module into the package as `_legacy_tool.py`, re-exporting
+`MultiStoreSearchTool`/`MultiStoreSearchSchema` from the package
+`__init__.py` — both `from parrot_tools.multistoresearch import
+MultiStoreSearchTool` and `from parrot_tools.multistoresearch.origins
+import SearchOrigin, VectorStoreOrigin` verified working. 10 unit tests
+added (`test_origins_base.py`, `test_vector_origin.py`), all passing;
+`ruff check` clean on the new package/tests.
 
 **Deviations from spec**: none

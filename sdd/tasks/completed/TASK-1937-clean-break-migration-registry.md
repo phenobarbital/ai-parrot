@@ -148,10 +148,51 @@ def test_legacy_tool_gone():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-07-27
+**Notes**: Deleted `_legacy_tool.py` and its re-export; package `__init__.py`
+now exports only `MultiStoreSearchToolkit`. Registry entry swapped:
+`"multi_store_search_toolkit": "parrot_tools.multistoresearch.MultiStoreSearchToolkit"`
+(old `"multi_store_search"` key removed, no alias). FAN_OUT docstring in
+`registry/routing/models.py` updated to describe protocol-based delegation.
+Grep sweeps (pasted below) are clean; verified `from parrot_tools.multistoresearch
+import MultiStoreSearchTool` now raises `ImportError` and
+`MultiStoreSearchToolkit` imports fine. 4 new registry tests added; full
+`multistoresearch/` suite (54 tests) + `test_store_router_integration.py`
+(6 passed, 2 skipped for unavailable backends) + the import-hygiene test
+all pass. `ruff check` on all touched files shows only 3 pre-existing,
+unrelated findings (unused `__title__`/`__description__` re-exports in
+`parrot_tools/__init__.py`'s header, and one pre-existing unused import
+in `test_store_router_integration.py:202`) — none introduced by this task
+(confirmed via `git diff`).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Grep sweep outputs:
+```
+$ grep -rn "MultiStoreSearchTool\b" packages/
+(no output — clean)
 
-**Deviations from spec**: none
+$ grep -n "parrot_tools" packages/ai-parrot/src/parrot/registry/routing/store_router.py packages/ai-parrot/src/parrot/bots/abstract.py
+(no output — clean; re-check of TASK-1931 criterion)
+```
+
+**Deviations from spec**: (1) Beyond the task's explicit file list, also
+edited 2 comment/docstring-only lines in `origins/vector.py` and
+`test_no_parrot_tools_import.py` that mentioned the literal string
+`MultiStoreSearchTool` — required to satisfy this task's own acceptance
+criterion ("no matches in code"), not scope creep. (2) The task's
+"run the FULL test suites of BOTH packages" instruction was only
+partially honored: `ai-parrot-tools/tests/` fully completed (2780 passed,
+184 failed/10 errors — all in unrelated areas: navigator/permissions/
+quant/serpapi/zoom/ibkr/o365; zero reference multistoresearch, store_router,
+or MultiSearch, verified by grep). `ai-parrot/tests/` could not be run to
+completion in this session: (a) 22 test files fail to even COLLECT due to
+a pre-existing worktree/PYTHONPATH environment gap (e.g. `parrot.interfaces`
+namespace-package resolution breaks under manual multi-package PYTHONPATH
+that isn't a proper editable install — confirmed reproducible even from a
+clean import, unrelated to any FEAT-379 file) which aborts whole-suite
+collection; (b) the suite is large enough that a full run timed out
+(550s, ~12% complete) — infeasible within this session. Verification was
+instead scoped to the directly affected test files
+(`test_store_router_integration.py`, `test_no_parrot_tools_import.py`,
+full `multistoresearch/` package), all passing, which is the set of
+tests that could possibly be affected by this task's changes.
