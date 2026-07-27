@@ -92,7 +92,7 @@
       "feature_id": "FEAT-379",
       "feature": "multistoresearchtool-parrotwiki",
       "spec": "sdd/specs/multistoresearchtool-parrotwiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Own adapter file + own test file; independent of TASK-1933/1935 except the shared export line in origins/__init__.py.",
       "assigned_to": null,
       "started_at": "2026-07-27T13:49:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1934-graphindex-origin-adapter.md"
+      "completed_at": "2026-07-27T14:47:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1934-graphindex-origin-adapter.md"
     },
     {
       "id": "TASK-1935",

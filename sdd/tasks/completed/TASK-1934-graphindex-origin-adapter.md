@@ -177,10 +177,25 @@ async def test_search_flattens_retrieval_result():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-07-27
+**Notes**: Implemented `GraphIndexOrigin` wrapping
+`GraphExpandedRetriever.search()`, flattening `GraphRetrievalResult.nodes`
+(already sorted by `combined_score` descending) into ordered
+`OriginHit`s. `supports_fts` reflects whether a reader was configured;
+`fts_search` delegates to `search_symbols(query, limit=k)`, preserving
+the reader's best-first order while carrying the raw NEGATIVE FTS5 BM25
+score through unmodified (documented in `metadata["score_convention"]`).
+15 unit tests added across the three test files touched this task
+session (26 total in `multistoresearch/`), all passing; `ruff check`
+clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Corrected a stale Codebase Contract reference
+BEFORE implementing (per Cardinal Rule: verify before writing code) — the
+reader class is actually named `SQLiteGraphReader`
+(`parrot/knowledge/graphindex/sqlite_reader.py:47`), not
+`GraphIndexSQLiteReader` as written in the original task/spec text. The
+task file's contract section was corrected first (see the "Contract
+correction" note inserted above); `search_symbols`'s signature, location,
+and semantics were all otherwise accurate as specified. No other
+deviation.
