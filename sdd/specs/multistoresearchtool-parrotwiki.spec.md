@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-379
 **Date**: 2026-07-27
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Brainstorm**: `sdd/proposals/multistoresearchtool-parrotwiki.brainstorm.md`
 
@@ -102,7 +102,7 @@ Built-in adapters:
 |---|---|---|
 | `VectorStoreOrigin` | any duck-typed `similarity_search(query, limit=...)` store (pgvector / FAISS / Arango) | same duck-typing as today; one adapter instance per store |
 | `PageIndexOrigin` | PageIndex | retrieval `mode` config: `vector` (`FlatMatrixSearch.search`, sync — wrapped so it never blocks the loop) \| `hybrid` (`HybridPageIndexSearch.search`) \| `llm` (`PageIndexRetriever.search`, token-spending); **default `hybrid`** (decision) |
-| `GraphIndexOrigin` | `GraphExpandedRetriever.search` | 4-phase graph retrieval result flattened to hits |
+| `GraphIndexOrigin` | `GraphExpandedRetriever.search`; FTS leg via `GraphIndexSQLiteReader.search_symbols` when a reader is configured (decision) | 4-phase graph retrieval result flattened to hits; `supports_fts` reflects reader presence |
 | `ParrotWikiOrigin` | `WikiStore.search_fts` / `search_vector` **directly** (decision — no `WikiCombinedSearch` delegation) | vector leg requires an async `embedder`; FTS leg is native |
 
 Adapters normalize their backend's native result type (`SearchResult`,
@@ -122,8 +122,9 @@ The toolkit's public async methods become the agent tools automatically
 - **`fts_search(query, k)`** — runs only on adapters with
   `supports_fts=True`; response notes which enabled origins were skipped and
   why.
-- **`list_search_origins()`** — static configuration view: name, kind,
-  description, FTS capability, key settings (e.g. PageIndex mode, timeout).
+- **`list_search_origins()`** — static configuration view only in v1
+  (decision — no live health/staleness probing): name, kind, description,
+  FTS capability, key settings (e.g. PageIndex mode, timeout).
 
 **Core decoupling**: core gains a narrow runtime-checkable protocol
 (`MultiSearch`-style: `async search(query, k) -> list[dict]`) that
@@ -202,8 +203,8 @@ class MultiSearchResponse(BaseModel):
 ### New Public Interfaces
 
 ```python
-# Core protocol — new module (e.g. parrot/interfaces/search.py); exact home
-# confirmed at implementation, MUST live in ai-parrot core, not parrot_tools.
+# Core protocol — lives in parrot/models/stores.py beside SearchOriginKind
+# (decision: parrot/interfaces/ is external-service interfaces, wrong home).
 @runtime_checkable
 class MultiSearch(Protocol):
     async def search(self, query: str, k: Optional[int] = None, **kwargs) -> Any: ...
@@ -241,7 +242,7 @@ class MultiStoreSearchToolkit(AbstractToolkit):
 - **Depends on**: nothing new.
 
 ### Module 2: Core `MultiSearch` protocol + StoreRouter/AbstractBot decoupling
-- **Path**: new core module (e.g. `packages/ai-parrot/src/parrot/interfaces/search.py`), `parrot/registry/routing/store_router.py`, `parrot/bots/abstract.py`
+- **Path**: `packages/ai-parrot/src/parrot/models/stores.py` (protocol beside the Module 1 models), `parrot/registry/routing/store_router.py`, `parrot/bots/abstract.py`
 - **Responsibility**: define the narrow protocol; retype `multistore_tool`/`_multi_store_tool`; FAN_OUT calls `protocol.search()`; remove `parrot_tools` imports from core.
 - **Depends on**: Module 1.
 
@@ -257,7 +258,7 @@ class MultiStoreSearchToolkit(AbstractToolkit):
 
 ### Module 5: `GraphIndexOrigin` adapter
 - **Path**: `parrot_tools/multistoresearch/origins/graphindex.py`
-- **Responsibility**: wrap `GraphExpandedRetriever.search(query, seed_top_k, ...)`; flatten `GraphRetrievalResult` → `OriginHit` list.
+- **Responsibility**: wrap `GraphExpandedRetriever.search(query, seed_top_k, ...)`; flatten `GraphRetrievalResult` → `OriginHit` list. FTS leg: `supports_fts=True` only when configured with a `GraphIndexSQLiteReader`, delegating to `search_symbols(query, limit=k)` and normalizing FTS5's negative-ascending BM25 scores into rank order.
 - **Depends on**: Module 3.
 
 ### Module 6: `ParrotWikiOrigin` adapter
@@ -294,6 +295,7 @@ class MultiStoreSearchToolkit(AbstractToolkit):
 | `test_vector_origin_error_isolated` | 3 | Store raising → empty hits + status="error" note |
 | `test_pageindex_origin_mode_dispatch` | 4 | `vector`/`hybrid`/`llm` route to the right backend; default is `hybrid`; sync path doesn't block loop |
 | `test_graphindex_origin_flattens_result` | 5 | `GraphRetrievalResult` fake → ordered `OriginHit` list |
+| `test_graphindex_origin_fts_leg` | 5 | With reader: `supports_fts` True, `search_symbols` hits normalized (negative-ascending BM25 → rank order); without reader: `supports_fts` False |
 | `test_wiki_origin_fts_and_vector` | 6 | `search_fts` rows normalized; vector leg only when embedder present; `supports_fts` True |
 | `test_store_search_grouped_and_merged` | 7 | Response has one section per enabled origin (native order) + BM25-merged deduped top-k |
 | `test_store_search_timeout_note` | 7 | Slow origin (`wait_for` expiry) → status="timeout", others unaffected |
@@ -412,6 +414,13 @@ class GraphExpandedRetriever:                             # line 168
                      expansion: Optional[ExpansionConfig] = None,
                      budget: Optional[BudgetConfig] = None) -> GraphRetrievalResult  # line 658
 
+# packages/ai-parrot/src/parrot/knowledge/graphindex/sqlite_reader.py
+class GraphIndexSQLiteReader:
+    async def search_symbols(self, query: str, *, limit: int = 20) -> list[dict]  # line 320
+    # FTS5/BM25 lexical search over title+summary; auto-load()s; scores are
+    # NEGATIVE, ascending = best match. Result keys: node_id, kind, title,
+    # source_uri, summary, score, domain_tags.
+
 # packages/ai-parrot/src/parrot/knowledge/wiki/store.py
 class BaseWikiStore(ABC):                                 # line 268
     async def search_fts(self, query: str, category: Optional[str] = None,
@@ -445,9 +454,9 @@ class WikiCombinedSearch:                                 # line 32
 - ~~FAISS FTS~~ — impossible; FAISS is vectors only.
 - ~~`StoreType.PAGEINDEX` / `StoreType.GRAPHINDEX` / `StoreType.WIKI`~~ — `StoreType` has only PGVECTOR/FAISS/ARANGO and MUST stay that way; the new enum is `SearchOriginKind`.
 - ~~`SearchOriginKind`, `OriginHit`, `OriginSection`, `MultiSearchResponse`, `SearchOrigin`, `MultiStoreSearchToolkit`, `MultiSearch` protocol~~ — none exist yet; **created by this feature**.
-- ~~`parrot/interfaces/search.py`~~ — does not exist yet (module home for the protocol; `parrot/interfaces/tools.py` exists as a sibling reference).
+- ~~`parrot/interfaces/search.py`~~ — does not exist and will NOT be created; the `MultiSearch` protocol lives in `parrot/models/stores.py` (decision; `parrot/interfaces/` is external-service interfaces).
 - ~~`asyncio.to_thread` in current search paths~~ — everything relevant is async except `FlatMatrixSearch.search`.
-- ~~GraphIndex public `fts_search`~~ — GraphIndex FTS is an internal SQLite detail (`persist_sqlite.py:242 _insert_nodes_fts`); exposing it through the adapter requires a reader-level query (see `sqlite_reader.py:320 search_symbols`), to be confirmed at implementation.
+- ~~GraphIndex public `fts_search`~~ — no such method on GraphIndex itself; the adapter's FTS leg uses `GraphIndexSQLiteReader.search_symbols` (verified `sqlite_reader.py:320`, see signature above). FTS storage is internal (`persist_sqlite.py:242 _insert_nodes_fts`) — never query `nodes_fts` directly from the adapter.
 
 ---
 
@@ -515,9 +524,9 @@ No new external dependencies.
 - [x] StoreRouter FAN_OUT coupling — *Resolved (spec Q&A 2026-07-27)*: narrow `MultiSearch` protocol defined in core; core never imports `parrot_tools`, even under TYPE_CHECKING.
 - [x] ParrotWiki adapter backend — *Resolved (spec Q&A 2026-07-27)*: call `WikiStore.search_fts`/`search_vector` directly; no `WikiCombinedSearch` delegation.
 - [x] Per-origin timeout — *Resolved (spec Q&A 2026-07-27)*: 30 s default at toolkit level, per-origin override; timeout degrades to a section note.
-- [ ] `list_search_origins` output: static config only, or include live health/staleness info (e.g. wiki plane staleness)? Default to static config in v1 unless trivially cheap. — *Owner: Jesus (decide during implementation)*
-- [ ] Exact core home for the `MultiSearch` protocol (`parrot/interfaces/search.py` proposed; confirm against `parrot/interfaces/` layout at implementation). — *Owner: implementer*
-- [ ] GraphIndex FTS leg for `fts_search`: expose via `sqlite_reader` query or mark GraphIndex `supports_fts=False` in v1? — *Owner: implementer*
+- [x] `list_search_origins` output — *Resolved (spec approval 2026-07-27)*: static configuration only in v1 (name, kind, description, FTS capability, mode, timeout); no live health/staleness probing.
+- [x] Core home for the `MultiSearch` protocol — *Resolved (spec approval 2026-07-27)*: `parrot/models/stores.py`, beside `SearchOriginKind` and the payload models. `parrot/interfaces/` was inspected and is a collection of external-service interfaces (aws, o365, soap, …) — wrong home; keeping all FEAT-379 core types in one module means both consumers (`StoreRouter`, `AbstractBot`) import only from `parrot.models`.
+- [x] GraphIndex FTS leg — *Resolved (spec approval 2026-07-27)*: `supports_fts=True` when the adapter is configured with a `GraphIndexSQLiteReader`; the FTS leg calls `search_symbols(query, limit=k)` (verified `parrot/knowledge/graphindex/sqlite_reader.py:320` — async FTS5/BM25 over title+summary). Without a reader, `supports_fts=False`. Note: FTS5 BM25 scores are negative, ascending = best; the adapter must normalize rank order when building `OriginHit`s.
 
 ---
 
@@ -543,3 +552,4 @@ No new external dependencies.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-27 | Jesus | Initial draft from brainstorm + spec Q&A |
+| 0.2 | 2026-07-27 | Jesus | Resolved remaining open questions (protocol home = `parrot/models/stores.py`; GraphIndex FTS via `search_symbols` when reader configured; `list_search_origins` static-only v1); status → approved |
