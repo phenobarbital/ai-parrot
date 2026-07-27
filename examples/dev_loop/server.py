@@ -109,6 +109,7 @@ from parrot.flows.dev_loop import (
 )
 from parrot.flows.dev_loop.agent_builder import build_dispatcher, parse_pool_env, resolve_pool_max
 from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
+from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import DevAgentSpec
 from parrot_tools.gittoolkit import GitToolkit
 from parrot_tools.jiratoolkit import JiraToolkit
@@ -733,6 +734,18 @@ async def _on_startup(app: web.Application) -> None:
             "DevelopmentNode runs single-agent mode."
         )
 
+    # FEAT-377 TASK-1914/1915 (G2): opt-in GraphIndex facade. from_config()
+    # returns None when DEV_LOOP_GRAPH_MEMORY_PATH is unset — every seam it
+    # backs (research context, run write-back, grounded findings) degrades
+    # to a no-op, so this is a strict extension, never a behavior change.
+    graph_memory = await DevLoopGraphMemory.from_config()
+
+    # FEAT-377 TASK-1916 (G5): opt-in plan_approval gate. False (default)
+    # preserves current behavior exactly.
+    require_plan_approval = bool(
+        getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False)
+    )
+
     app["flow"] = build_dev_loop_flow(
         dispatcher=dispatcher,
         jira_toolkit=_build_jira_toolkit(),
@@ -747,9 +760,15 @@ async def _on_startup(app: web.Application) -> None:
         git_toolkit=_build_git_toolkit(),
         repos=repos,
         codereview_dispatcher=codereview_dispatcher,
+        graph_memory=graph_memory,
+        require_plan_approval=require_plan_approval,
     )
     # Orchestrator-side run cap (FLOW_MAX_CONCURRENT_RUNS) — spec G5.
-    app["runner"] = DevLoopRunner(app["flow"])
+    # graph_memory is forwarded here too (inert today — this demo server
+    # never calls run_revision(), but DevLoopRunner only consults it for
+    # the lazily-built revision flow, so this keeps both call sites
+    # consistent for whenever revision-mode wiring lands here).
+    app["runner"] = DevLoopRunner(app["flow"], graph_memory=graph_memory)
     app["flow_tasks"] = set()
     logger.info(
         "Dev-loop flow ready (max %d concurrent runs)",
