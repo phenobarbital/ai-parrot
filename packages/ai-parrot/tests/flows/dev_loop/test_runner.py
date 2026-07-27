@@ -77,7 +77,16 @@ def mock_jira():
 
 
 def _dispatcher_returning(research_out, qa_passed: bool = True, fail_node: str = ""):
-    """Dispatcher mock that answers per output_model; optionally raises."""
+    """Dispatcher mock that answers per output_model; optionally raises.
+
+    FEAT-377 TASK-1910: a failing QAReport is stamped at the repair-loop's
+    exhaustion threshold (``conf.DEV_LOOP_QA_MAX_RETRIES``) so a single-shot
+    "QA fails" stub still routes straight to `failure_handler` instead of
+    looping through the (now real) `qa -> development` retry edge forever —
+    exercising the retry-then-pass/retry-then-exhaust sequence itself is
+    TASK-1911's job (attempt stamping, feedback redispatch, e2e tests).
+    """
+    from parrot import conf
 
     async def dispatch(*, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
         if fail_node and node_id == fail_node:
@@ -92,7 +101,8 @@ def _dispatcher_returning(research_out, qa_passed: bool = True, fail_node: str =
             )
         if output_model is QAReport:
             return QAReport(
-                passed=qa_passed, criterion_results=[], lint_passed=qa_passed
+                passed=qa_passed, criterion_results=[], lint_passed=qa_passed,
+                attempt=1 if qa_passed else int(conf.DEV_LOOP_QA_MAX_RETRIES),
             )
         raise AssertionError(f"unexpected output_model {output_model}")
 

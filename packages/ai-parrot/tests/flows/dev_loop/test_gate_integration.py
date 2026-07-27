@@ -25,6 +25,7 @@ from parrot.flows.dev_loop import (
     ResearchOutput,
 )
 from parrot.flows.dev_loop.nodes.deployment_handoff import DeploymentHandoffNode
+from parrot.flows.dev_loop.nodes.development import DevelopmentNode
 from parrot.flows.dev_loop.nodes.qa import QANode
 from parrot.flows.dev_loop.session_state import SessionHost
 
@@ -291,3 +292,163 @@ async def test_handoff_no_host_falls_back_with_warning(handoff_ctx, jira, caplog
     assert result["status"] == "ready_to_deploy"
     jira.jira_transition_to.assert_awaited()
     assert any("no session_host" in rec.message for rec in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# DevelopmentNode — plan_approval gate (FEAT-377 TASK-1916)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def dev_ctx() -> dict:
+    return {
+        "run_id": RUN_ID,
+        "research_output": ResearchOutput(
+            jira_issue_key="OPS-1",
+            spec_path="sdd/specs/x.spec.md",
+            feat_id="FEAT-130",
+            branch_name="feat-130-fix",
+            worktree_path="/tmp/feat-130-fix-plan-gate",
+            log_excerpts=[],
+        ),
+    }
+
+
+@pytest.fixture
+def dev_dispatcher() -> MagicMock:
+    d = MagicMock()
+    d.dispatch = AsyncMock(
+        return_value=DevelopmentOutput(files_changed=["a.py"], commit_shas=["s1"], summary="ok")
+    )
+    return d
+
+
+@pytest.mark.asyncio
+async def test_development_default_skips_plan_gate_even_with_host_present(
+    dev_ctx, dev_dispatcher
+):
+    """Regression guard (mirrors the deployment_approval one above):
+    DevLoopRunner.run() always seeds a live SessionHost — the gate MUST
+    stay off by default or every existing/legacy run would block forever."""
+    node = DevelopmentNode(dispatcher=dev_dispatcher)  # default: opt-out
+    dev_ctx["session_host"] = SessionHost(RUN_ID)
+
+    result = await node.execute(dev_ctx)
+
+    assert isinstance(result, DevelopmentOutput)
+    dev_dispatcher.dispatch.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_development_plan_gate_approved_proceeds(dev_ctx, dev_dispatcher):
+    node = DevelopmentNode(dispatcher=dev_dispatcher, require_plan_approval=True)
+    host = SessionHost(RUN_ID)
+    dev_ctx["session_host"] = host
+
+    async def _approve_soon():
+        await asyncio.sleep(0.01)
+        assert dev_dispatcher.dispatch.await_count == 0  # not dispatched yet
+        gate_id = next(iter(host.state.gates))
+        host.resolve_gate(gate_id, "approved", resolved_by="alice")
+
+    resolver = asyncio.ensure_future(_approve_soon())
+    result = await node.execute(dev_ctx)
+    await resolver
+
+    assert isinstance(result, DevelopmentOutput)
+    dev_dispatcher.dispatch.assert_awaited()
+    gate = host.state.gates[next(iter(host.state.gates))]
+    assert gate.status == "approved"
+    assert gate.on_expiry == "approve"
+
+
+@pytest.mark.asyncio
+async def test_development_plan_gate_rejected_raises(dev_ctx, dev_dispatcher):
+    """A rejected plan_approval gate terminates the run — DevelopmentNode
+    raises (routing to failure_handler via the on_error edge), the same
+    "stop the run" effect a rejected deployment_approval gate has."""
+    node = DevelopmentNode(dispatcher=dev_dispatcher, require_plan_approval=True)
+    host = SessionHost(RUN_ID)
+    dev_ctx["session_host"] = host
+
+    async def _reject_soon():
+        await asyncio.sleep(0.01)
+        gate_id = next(iter(host.state.gates))
+        host.resolve_gate(gate_id, "rejected", resolved_by="bob", comment="not ready")
+
+    resolver = asyncio.ensure_future(_reject_soon())
+    with pytest.raises(RuntimeError, match="plan_approval rejected by bob"):
+        await node.execute(dev_ctx)
+    await resolver
+
+    dev_dispatcher.dispatch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_development_plan_gate_expiry_approves(dev_ctx, dev_dispatcher):
+    """on_expiry="approve" (fail-open) — a TTL sweep resolves the gate to
+    'approved' by the system, and the node proceeds to dispatch."""
+    node = DevelopmentNode(dispatcher=dev_dispatcher, require_plan_approval=True)
+    host = SessionHost(RUN_ID)
+    dev_ctx["session_host"] = host
+
+    async def _expire_soon():
+        await asyncio.sleep(0.01)
+        # Drive the fail-open expiry path directly via the host's sweep,
+        # exactly as the runner's periodic sweep would.
+        gate_id = next(iter(host.state.gates))
+        gate = host.state.gates[gate_id]
+        host.expire_due_gates(now=(gate.expires_at or 0) + 1)
+
+    resolver = asyncio.ensure_future(_expire_soon())
+    result = await node.execute(dev_ctx)
+    await resolver
+
+    assert isinstance(result, DevelopmentOutput)
+    gate = host.state.gates[next(iter(host.state.gates))]
+    assert gate.status == "approved"
+    assert gate.resolved_by == "system:ttl-auto-approve"
+
+
+@pytest.mark.asyncio
+async def test_development_plan_gate_no_host_falls_back_with_warning(
+    dev_ctx, dev_dispatcher, caplog
+):
+    node = DevelopmentNode(dispatcher=dev_dispatcher, require_plan_approval=True)
+
+    with caplog.at_level(logging.WARNING):
+        result = await node.execute(dev_ctx)
+
+    assert isinstance(result, DevelopmentOutput)
+    dev_dispatcher.dispatch.assert_awaited()
+    assert any("no session_host" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_development_plan_gate_checked_only_once_across_retries(
+    dev_ctx, dev_dispatcher
+):
+    """A QA-repair-loop re-entry (attempt >= 2) must NOT re-open the gate
+    — the plan was already approved on the first entry."""
+    node = DevelopmentNode(dispatcher=dev_dispatcher, require_plan_approval=True)
+    host = SessionHost(RUN_ID)
+    dev_ctx["session_host"] = host
+
+    async def _approve_soon():
+        await asyncio.sleep(0.01)
+        gate_id = next(iter(host.state.gates))
+        host.resolve_gate(gate_id, "approved", resolved_by="alice")
+
+    resolver = asyncio.ensure_future(_approve_soon())
+    await node.execute(dev_ctx)
+    await resolver
+    assert len(host.state.gates) == 1
+
+    # Simulate a QA-repair-loop retry: a failing report already in shared
+    # state, same run's shared dict (dev_ctx is reused, mirroring how
+    # ctx.shared_data persists across a real run's retry edge).
+    dev_ctx["qa_report"] = QAReport(passed=False, criterion_results=[], lint_passed=False)
+    await node.execute(dev_ctx)
+
+    # No second gate was opened.
+    assert len(host.state.gates) == 1

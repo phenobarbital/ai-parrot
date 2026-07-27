@@ -19,14 +19,21 @@ The dev-loop flow binds one of several subagents per dispatch:
   QAReport + judge-panel verdicts; the deterministic envelope and stop
   rule are enforced in Python, never trusted from the proposal alone.
 
-The Markdown files for each subagent are dual-sourced (per spec §7
-"Patterns"):
+``load_subagent_definition`` reads **only** the package-shipped copy at
+``_subagent_data/<name>.md`` — this is the canonical, always-available
+source for dispatch (it keeps working when ``ai-parrot`` is installed as
+a wheel outside the repo). It does NOT read ``.claude/agents/`` at
+runtime.
 
-1. **Repo-level**: ``.claude/agents/<name>.md`` — loaded by Claude Code
-   from the project source tree when ``setting_sources=["project"]``.
-2. **Package-shipped**: ``_subagent_data/<name>.md`` — bundled with the
-   ``ai-parrot`` wheel so dispatches keep working when the package is
-   installed outside the repo.
+Four of the five prompts (``sdd-research``, ``sdd-worker``, ``sdd-qa``,
+``sdd-secondopinion``) additionally have a repo-level twin at
+``.claude/agents/<name>.md``, used by Claude Code interactively when
+``setting_sources=["project"]``. ``sdd-codereview`` is dev-loop-internal
+only and has no repo-level counterpart. Byte-parity between the two
+copies of each dual-sourced prompt (repo is the newer, edited-by-humans
+copy; package is what dispatch actually uses) is enforced by
+``tests/flows/dev_loop/test_subagent_parity.py`` — keeping them in sync
+is a review/test discipline, not a runtime behavior.
 
 This module exposes a single helper, :func:`load_subagent_definition`,
 that returns the **body** of a definition (with the YAML frontmatter

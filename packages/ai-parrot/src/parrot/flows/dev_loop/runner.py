@@ -60,8 +60,10 @@ from parrot.flows.dev_loop.session_state import (
     RunCancelled,
     RunClosed,
     RunCreated,
+    RunParked,
     RunRegistryState,
     RunRemoved,
+    RunResumed,
     RunSummary,
     RunSummaryChanged,
     SessionHost,
@@ -77,6 +79,7 @@ _GATE_TTL_CONF_ATTR: Dict[GateKind, str] = {
     "manual_criterion": "DEV_LOOP_GATE_TTL_MANUAL",
     "revision_approval": "DEV_LOOP_GATE_TTL_REVISION",
     "plan_approval": "DEV_LOOP_GATE_TTL_PLAN",
+    "review_escalation": "DEV_LOOP_GATE_TTL_REVIEW_ESCALATION",
 }
 
 
@@ -109,6 +112,7 @@ def build_dev_loop_revision_flow(
     git_toolkit: Any,
     redis_url: str,
     codereview_dispatcher: Optional[Any] = None,
+    graph_memory: Optional[Any] = None,
     name: str = "dev-loop-revision",
     publish_flow_events: bool = True,
 ) -> AgentsFlow:
@@ -119,6 +123,12 @@ def build_dev_loop_revision_flow(
     via the node factories, and the graph runs in explicit-edge mode (OR-join
     on the ``failure_handler`` fan-in). Topology: ``development → qa →
     (pass) revision_handoff → close`` / ``(fail) failure_handler``.
+
+    Args:
+        graph_memory: FEAT-377 TASK-1915 — optional ``DevLoopGraphMemory``
+            forwarded to ``QANode``/``DevLoopCloseNode``/
+            ``FailureHandlerNode`` (this graph has no ``research`` node,
+            so seam 2 does not apply here). ``None`` (default) is a no-op.
     """
     definition = build_dev_loop_definition(revision=True)
     factories = build_dev_loop_node_factories(
@@ -127,6 +137,7 @@ def build_dev_loop_revision_flow(
         redis_url=redis_url,
         git_toolkit=git_toolkit,
         codereview_dispatcher=codereview_dispatcher,
+        graph_memory=graph_memory,
     )
     staged = AgentsFlow.from_definition(
         definition,
@@ -279,6 +290,7 @@ class DevLoopRunner:
         wiki_toolkit: Optional[Any] = None,
         redis_url: Optional[str] = None,
         codereview_dispatcher: Optional[Any] = None,
+        graph_memory: Optional[Any] = None,
     ) -> None:
         self.flow = flow
         self.max_concurrent_runs = int(
@@ -288,6 +300,16 @@ class DevLoopRunner:
         )
         self._semaphore = asyncio.Semaphore(self.max_concurrent_runs)
         self._active: Set[str] = set()
+        # FEAT-377 TASK-1917 (G6): gate-park bookkeeping. `_parked` is
+        # disjoint from `_active` — a run_id is in at most one of them
+        # while its flow is in flight. `_pending_gate_count` tracks
+        # concurrently-open gates per run so a run with several blocking
+        # criteria parks once (0->1) and resumes once (1->0), not per gate.
+        # `_run_completion` lets `resume_run()` (and any other caller) await
+        # the SAME eventual FlowResult the original `run()` call produces.
+        self._parked: Set[str] = set()
+        self._pending_gate_count: Dict[str, int] = {}
+        self._run_completion: Dict[str, "asyncio.Future[FlowResult]"] = {}
         # Deps needed to build the revision-mode flow on demand (FEAT-250 G6).
         # Optional so the legacy ``DevLoopRunner(flow)`` construction keeps
         # working; ``run_revision`` raises a clear error when they are absent.
@@ -297,6 +319,9 @@ class DevLoopRunner:
         self._wiki_toolkit = wiki_toolkit
         self._redis_url = redis_url
         self._codereview_dispatcher = codereview_dispatcher
+        # FEAT-377 TASK-1915: optional DevLoopGraphMemory forwarded to the
+        # revision flow's QA/close/failure_handler nodes. None is a no-op.
+        self._graph_memory = graph_memory
         # Lazily-built, reused revision flow (fixed topology — built once).
         self._rev_flow: Optional[AgentsFlow] = None
         # Lazily-built, reused feature-mode flow (FEAT-378, fixed topology).
@@ -405,18 +430,44 @@ class DevLoopRunner:
         task rather than blocking the reducer — the in-memory fold has
         already happened by the time this is called, so a slow/failing
         sink can never affect run correctness (never-break-a-run).
+
+        FEAT-377 TASK-1917 (G6): also the park/resume trigger point — this
+        is the ONE place every gate open/resolve passes through regardless
+        of which node opened it, so parking applies uniformly to every
+        ``GateKind`` with no per-kind special-casing.
         """
 
         def _sink(envelope: ActionEnvelope) -> None:
-            if not self._redis_url:
-                return  # no redis configured — host still folds in-memory
-            try:
-                asyncio.get_running_loop().create_task(
-                    self._xadd_envelope(run_id, envelope)
+            if self._redis_url:
+                try:
+                    asyncio.get_running_loop().create_task(
+                        self._xadd_envelope(run_id, envelope)
+                    )
+                except RuntimeError:
+                    # No running loop (e.g. sync test harness) — drop silently.
+                    pass
+
+            t = envelope.action.type
+            if t == "gate/opened":
+                self._pending_gate_count[run_id] = (
+                    self._pending_gate_count.get(run_id, 0) + 1
                 )
-            except RuntimeError:
-                # No running loop (e.g. sync test harness) — drop silently.
-                pass
+                if conf.DEV_LOOP_GATE_PARK and self._pending_gate_count[run_id] == 1:
+                    self._park(run_id)
+            elif t in ("gate/resolved", "gate/expired"):
+                remaining = max(0, self._pending_gate_count.get(run_id, 0) - 1)
+                self._pending_gate_count[run_id] = remaining
+                if (
+                    conf.DEV_LOOP_GATE_PARK
+                    and remaining == 0
+                    and run_id in self._parked
+                ):
+                    try:
+                        asyncio.get_running_loop().create_task(
+                            self._auto_resume(run_id)
+                        )
+                    except RuntimeError:
+                        pass
 
         return _sink
 
@@ -620,12 +671,117 @@ class DevLoopRunner:
 
     @property
     def active_runs(self) -> Set[str]:
-        """Run IDs currently executing (copy)."""
+        """Run IDs currently HOLDING a concurrency slot (copy).
+
+        Excludes parked runs (FEAT-377 TASK-1917) — a parked run's flow is
+        still in flight (blocked on a gate) but has released its slot, so
+        it does not count against ``FLOW_MAX_CONCURRENT_RUNS``. See
+        :attr:`parked_runs` for the other half.
+        """
         return set(self._active)
 
     def is_active(self, run_id: str) -> bool:
-        """True while *run_id* is executing."""
+        """True while *run_id* is holding a concurrency slot."""
         return run_id in self._active
+
+    @property
+    def parked_runs(self) -> Set[str]:
+        """Run IDs whose flow is in flight but has released its slot
+        (FEAT-377 TASK-1917 — awaiting a gate with ``DEV_LOOP_GATE_PARK``
+        enabled). Copy."""
+        return set(self._parked)
+
+    def is_parked(self, run_id: str) -> bool:
+        """True while *run_id* is parked (awaiting a gate, slot released)."""
+        return run_id in self._parked
+
+    # ── Gate park / resume (FEAT-377 TASK-1917 — G6) ────────────────────────
+
+    def _park(self, run_id: str) -> None:
+        """Release ``run_id``'s concurrency slot immediately (synchronous).
+
+        Called from the envelope sink on the first gate a run opens
+        (``_pending_gate_count`` 0->1). ``asyncio.Semaphore.release()`` has
+        no per-task ownership, so releasing here — from a different
+        logical call stack than the ``acquire()`` in :meth:`run` — is
+        safe; the exactly-once invariant is enforced by the ``run_id in
+        self._active`` guard (a run can only be parked from the active
+        state) together with the sink's own 0->1 transition guard.
+
+        Args:
+            run_id: The run whose slot is being released.
+        """
+        if run_id not in self._active:
+            return  # already parked, or not a slot-holding run — no-op
+        self._active.discard(run_id)
+        self._parked.add(run_id)
+        self._apply_root_action(RunParked(run_id=run_id))
+        self._semaphore.release()
+        self.logger.info(
+            "Dev-loop run %s parked (gate opened); slot released (%d/%d active).",
+            run_id, len(self._active), self.max_concurrent_runs,
+        )
+
+    async def _auto_resume(self, run_id: str) -> None:
+        """Fire-and-forget wrapper: resume ``run_id`` when its last
+        pending gate resolves, without requiring a caller to await it.
+
+        Errors are logged, never raised — the resolving gate's own
+        resolution has already succeeded by this point; a failure here
+        must not look like the gate resolution itself failed.
+        """
+        try:
+            await self.resume_run(run_id)
+        except Exception as exc:  # noqa: BLE001 - never break gate resolution
+            self.logger.warning(
+                "Auto-resume failed for parked run %s: %s", run_id, exc
+            )
+
+    async def resume_run(self, run_id: str) -> FlowResult:
+        """Re-acquire a slot for a parked run and await its eventual result.
+
+        Safe to call whether or not ``run_id`` is currently parked (a
+        no-op re-acquire step is skipped when it is not — e.g. called
+        twice, or called after the run already resumed on its own) — the
+        run's flow continues on its own once the gate resolves (via
+        ``SessionHost.wait_gate``'s internal ``asyncio.Event``,
+        independent of slot bookkeeping); this method's job is purely to
+        restore the concurrency-slot invariant and hand back the run's
+        eventual :class:`FlowResult` to whoever calls it (the automatic
+        gate-resolution hook does not consume it; a REST caller might).
+
+        Args:
+            run_id: The run to resume.
+
+        Returns:
+            The same :class:`FlowResult` the original :meth:`run` call
+            for ``run_id`` will eventually return.
+
+        Raises:
+            KeyError: No in-progress run is tracked for ``run_id`` (never
+                started, or already finished and cleaned up).
+        """
+        fut = self._run_completion.get(run_id)
+        if fut is None:
+            raise KeyError(f"No in-progress dev-loop run found for {run_id!r}.")
+        if run_id in self._parked and not fut.done():
+            await self._semaphore.acquire()
+            # Re-check after the await: the run may have finished WHILE we
+            # were waiting for a free slot (a fast/mocked flow can finish
+            # before this coroutine gets scheduled at all — see the
+            # sink's `create_task(self._auto_resume(...))`). Release
+            # immediately rather than leaking an acquired-but-unused slot.
+            if fut.done():
+                self._semaphore.release()
+            else:
+                self._parked.discard(run_id)
+                self._active.add(run_id)
+                self._apply_root_action(RunResumed(run_id=run_id))
+                self.logger.info(
+                    "Dev-loop run %s resumed; slot re-acquired (%d/%d active).",
+                    run_id, len(self._active), self.max_concurrent_runs,
+                )
+        return await fut
 
     # ── Execution ─────────────────────────────────────────────────────────
 
@@ -695,25 +851,59 @@ class DevLoopRunner:
             shared_data=shared,
         )
 
-        async with self._semaphore:
-            self._active.add(rid)
-            # Point the flow's event publisher at this run's stream.
-            holder = getattr(self.flow, "_run_id_holder", None)
-            if isinstance(holder, dict):
-                holder["run_id"] = rid
-            self.logger.info(
-                "Starting dev-loop run %s (%d/%d active)",
-                rid, len(self._active), self.max_concurrent_runs,
-            )
-            try:
-                result = await self.flow.run_flow(ctx)
-            finally:
+        # FEAT-377 TASK-1917 (G6): a manual acquire/release (not `async
+        # with self._semaphore`) is required because a park can release
+        # the slot WHILE `run_flow()` below is still in flight (the
+        # release happens synchronously from the envelope sink, invoked
+        # from deep inside whichever node opens a gate) — a context
+        # manager spanning the call cannot express "release, then maybe
+        # someone else re-acquires before I get back control".
+        loop = asyncio.get_running_loop()
+        completion: "asyncio.Future[FlowResult]" = loop.create_future()
+        self._run_completion[rid] = completion
+        await self._semaphore.acquire()
+        self._active.add(rid)
+        # Point the flow's event publisher at this run's stream.
+        holder = getattr(self.flow, "_run_id_holder", None)
+        if isinstance(holder, dict):
+            holder["run_id"] = rid
+        self.logger.info(
+            "Starting dev-loop run %s (%d/%d active)",
+            rid, len(self._active), self.max_concurrent_runs,
+        )
+        try:
+            result = await self.flow.run_flow(ctx)
+        except BaseException as exc:
+            # Propagate to any `resume_run()` awaiter too — a future that
+            # never resolves would hang them forever. Popped from the
+            # registry (not left for `finally`) so it happens BEFORE the
+            # exception continues propagating out of this method.
+            if not completion.done():
+                completion.set_exception(exc)
+            self._run_completion.pop(rid, None)
+            raise
+        finally:
+            # Exactly-once release: only if this run is STILL holding its
+            # slot (i.e. it was never parked, or it was parked and already
+            # resumed by the time `run_flow()` returned/raised). A run
+            # that finishes WHILE still parked releases nothing here —
+            # `_park` already released its slot, and `resume_run`'s own
+            # `fut.done()` re-check prevents a late resume from acquiring
+            # a slot for a run that no longer needs one.
+            if rid in self._active:
                 self._active.discard(rid)
+                self._semaphore.release()
+            else:
+                self._parked.discard(rid)
+            self._pending_gate_count.pop(rid, None)
 
         self.logger.info(
             "Dev-loop run %s finished status=%s", rid, result.status
         )
         self._close_host(host, result, ctx)
+        if not completion.done():
+            completion.set_result(result)
+        self._run_completion.pop(rid, None)
         return result
 
     async def _run_feature(
@@ -864,14 +1054,19 @@ class DevLoopRunner:
                 git_toolkit=self._git_toolkit,
                 redis_url=self._redis_url,
                 codereview_dispatcher=self._codereview_dispatcher,
+                graph_memory=self._graph_memory,
             )
         rev_flow = self._rev_flow
 
         # Seed a synthetic ResearchOutput so Development/QA run against the
-        # existing clone without re-cloning. v1 note: the original acceptance
-        # criteria are not carried on RevisionBrief, so QA re-runs a lint gate
-        # by default; the reviewer feedback is surfaced in shared state and the
-        # context's initial_task.
+        # existing clone without re-cloning. FEAT-377 TASK-1908: when the
+        # original feature's acceptance criteria are carried on
+        # `RevisionBrief.acceptance_criteria`, QA re-verifies them alongside
+        # the lint gate; when absent (`None`/empty — no caller populates this
+        # yet, graph memory write-back in TASK-1915 is the intended future
+        # source), QA re-runs a lint-only gate exactly as before. The
+        # reviewer feedback is surfaced in shared state and the context's
+        # initial_task either way.
         research = ResearchOutput(
             jira_issue_key=brief.jira_issue_key,
             spec_path="",
@@ -889,7 +1084,10 @@ class DevLoopRunner:
             # NOT run through ACCEPTANCE_CRITERION_ALLOWLIST. It is injected by
             # the runner (trusted internal input, run via exec — no shell), so
             # the allowlist bypass is intentional and safe.
-            acceptance_criteria=[ShellCriterion(name="lint", command="ruff check .")],
+            acceptance_criteria=[
+                *(brief.acceptance_criteria or []),
+                ShellCriterion(name="lint", command="ruff check ."),
+            ],
             escalation_assignee="",
             reporter="",
         )
@@ -912,24 +1110,43 @@ class DevLoopRunner:
             initial_task=brief.feedback or "revision", shared_data=shared
         )
 
-        async with self._semaphore:
-            self._active.add(rid)
-            holder = getattr(rev_flow, "_run_id_holder", None)
-            if isinstance(holder, dict):
-                holder["run_id"] = rid
-            self.logger.info(
-                "Starting dev-loop REVISION run %s (PR #%s, branch %s)",
-                rid, brief.pr_number, brief.branch,
-            )
-            try:
-                result = await rev_flow.run_flow(ctx)
-            finally:
+        # FEAT-377 TASK-1917 (G6): same manual acquire/park-aware structure
+        # as `run()` — a revision run's QA can open `manual_criterion`
+        # gates too, so parking must apply here identically.
+        loop = asyncio.get_running_loop()
+        completion: "asyncio.Future[FlowResult]" = loop.create_future()
+        self._run_completion[rid] = completion
+        await self._semaphore.acquire()
+        self._active.add(rid)
+        holder = getattr(rev_flow, "_run_id_holder", None)
+        if isinstance(holder, dict):
+            holder["run_id"] = rid
+        self.logger.info(
+            "Starting dev-loop REVISION run %s (PR #%s, branch %s)",
+            rid, brief.pr_number, brief.branch,
+        )
+        try:
+            result = await rev_flow.run_flow(ctx)
+        except BaseException as exc:
+            if not completion.done():
+                completion.set_exception(exc)
+            self._run_completion.pop(rid, None)
+            raise
+        finally:
+            if rid in self._active:
                 self._active.discard(rid)
+                self._semaphore.release()
+            else:
+                self._parked.discard(rid)
+            self._pending_gate_count.pop(rid, None)
 
         self.logger.info(
             "Dev-loop revision run %s finished status=%s", rid, result.status
         )
         self._close_host(host, result, ctx)
+        if not completion.done():
+            completion.set_result(result)
+        self._run_completion.pop(rid, None)
         return result
 
     # ── Host terminal handling (FEAT-322) ───────────────────────────────────

@@ -57,6 +57,8 @@ def build_dev_loop_node_factories(
     codereview_dispatcher: Optional[Any] = None,
     require_deployment_approval: bool = False,
     wiki_toolkit: Optional[Any] = None,
+    graph_memory: Optional[Any] = None,
+    require_plan_approval: bool = False,
 ) -> Dict[str, NodeFactory]:
     """Return the ``{dev_loop.* type: factory}`` map binding live deps.
 
@@ -98,6 +100,21 @@ def build_dev_loop_node_factories(
         wiki_toolkit: FEAT-378 — optional pre-wired ``LLMWikiToolkit``
             used by ``FeatureHandoffNode``'s docs-page ingest (feature-mode
             only; ``None`` degrades that ingest step with a warning).
+        graph_memory: FEAT-377 TASK-1915 — an optional
+            ``DevLoopGraphMemory`` (built via ``DevLoopGraphMemory.
+            from_config()``) forwarded to ``ResearchNode``, ``QANode``,
+            ``DevLoopCloseNode`` and ``FailureHandlerNode``. ``None``
+            (default) makes every graph-memory seam in those nodes a
+            strict no-op — byte-identical to pre-TASK-1914 behavior.
+        require_plan_approval: FEAT-377 TASK-1916 (G5) — forwarded to
+            ``DevelopmentNode``. Defaults to ``False`` (today's behavior,
+            unchanged); set ``True`` to require a ``plan_approval`` HITL
+            gate (opened by ``DevelopmentNode`` on its first entry — the
+            earliest point after ``ResearchNode`` where a node can block
+            the engine's dispatch of the next step, mirroring
+            ``require_deployment_approval``'s node-side shape) before the
+            agent fleet dispatches. Only takes effect when the run also
+            has a ``SessionHost``.
 
     Returns:
         A mapping suitable for ``node_factories=`` on
@@ -121,6 +138,7 @@ def build_dev_loop_node_factories(
                 log_toolkits=log_toolkits,
                 git_toolkit=git_toolkit,
                 repos=repos,
+                graph_memory=graph_memory,
                 name=nd.id,
             ),
             deps,
@@ -135,6 +153,7 @@ def build_dev_loop_node_factories(
                 pool_config=development_pool_config,
                 dispatcher_builder=development_dispatcher_builder,
                 pool_max=development_pool_max,
+                require_plan_approval=require_plan_approval,
                 name=nd.id,
             ),
             deps,
@@ -146,6 +165,7 @@ def build_dev_loop_node_factories(
             QANode(
                 dispatcher=dispatcher,
                 codereview_dispatcher=codereview_dispatcher,
+                graph_memory=graph_memory,
                 name=nd.id,
             ),
             deps,
@@ -163,10 +183,20 @@ def build_dev_loop_node_factories(
         )
 
     def failure_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
-        return _with_graph(FailureHandlerNode(jira_toolkit=jira_toolkit, name=nd.id), deps, succs)
+        return _with_graph(
+            FailureHandlerNode(
+                jira_toolkit=jira_toolkit, graph_memory=graph_memory, name=nd.id,
+            ),
+            deps,
+            succs,
+        )
 
     def close_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
-        return _with_graph(DevLoopCloseNode(jira_toolkit, name=nd.id), deps, succs)
+        return _with_graph(
+            DevLoopCloseNode(jira_toolkit, graph_memory=graph_memory, name=nd.id),
+            deps,
+            succs,
+        )
 
     def revision_handoff_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(RevisionHandoffNode(git_toolkit, name=nd.id), deps, succs)

@@ -439,6 +439,43 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
 - **Depends on**: Modules 1-6; FEAT-377/A (shares definition.py/flow.py edits
   — coordinate/sequence).
 
+### Module 8: Run bundle export — dispatch telemetry harvest + closing report (v0.2 amendment)
+- **Path**: `parrot/flows/dev_loop/run_bundle.py` (NEW),
+  `dispatcher.py`, `session_state.py`, `runner.py`, package `__init__.py`
+- **Responsibility**: exportable **run bundle** for EVERY dev-loop run
+  (bug, revision AND feature modes) — the full execution summary of the
+  agents plus a human-readable closing report:
+  1. **Telemetry harvest** (dispatcher): on the success path, extract from
+     the buffered terminal `ResultMessage` (duck-typed `getattr`, same
+     pattern as `_extract_result_error`, dispatcher.py:716) the fields
+     `usage` (input/output/cache tokens), `total_cost_usd`, `num_turns`,
+     `duration_ms`, and attach them to the `dispatch.completed` event
+     payload (dispatcher.py:433; other dispatcher families attach whatever
+     subset they have — all fields optional).
+  2. **State fold** (session_state): `DispatchCompleted` action +
+     `DispatchState` gain optional usage fields;
+     `action_from_dispatch_event` (session_state.py:1010) passes them
+     through; the reducer folds them on completion. Event-sourced, no
+     mutable state (FEAT-322).
+  3. **`RunBundle` model + renderer** (`run_bundle.py`, pure — no I/O):
+     `build_run_bundle(snapshot, envelopes, shared) -> RunBundle`
+     assembles run metadata (id, mode, work_kind, outcome, total
+     duration), links (Jira, PR), per-node/agent telemetry (status,
+     timing, dispatcher, message/tool counters, tokens/cost/turns),
+     gate audit trail, and the "what was developed" section
+     (`ResearchOutput` — spec/tasks/worktree —, `QAReport` criteria +
+     code-review findings, deployment/revision/synthesis results when
+     present, all duck-typed optional). `render_markdown(bundle) -> str`
+     renders the closing report.
+  4. **Runner wiring**: `_close_host` (runner.py:718) — with the host and
+     `ctx` still live, before `_discard_host` — writes
+     `{run_id}.bundle.json` + `{run_id}.report.md` under
+     `conf.OUTPUT_DIR/dev_loop_runs/` next to the existing terminal
+     snapshot, using the same never-break-a-run swallow pattern as
+     `_persist_terminal_snapshot` (runner.py:345).
+- **Depends on**: Module 7 (session_state.py contention — sequence after
+  TASK-1919). Independent of Modules 2-6.
+
 ---
 
 ## 4. Test Specification
@@ -534,6 +571,22 @@ def judge_panel_config():
       `DEV_LOOP_WIKI_PAGE_INGEST`.
 - [ ] The run is autonomous intake→PR (no human gates); escalation paths open
       the existing gates / route to failure_handler.
+- [ ] **Run bundle (v0.2)**: every terminated run (succeeded, failed or
+      cancelled; bug, revision or feature mode) leaves
+      `{run_id}.bundle.json` AND `{run_id}.report.md` under
+      `conf.OUTPUT_DIR/dev_loop_runs/`; export failures are swallowed and
+      logged, never breaking the run.
+- [ ] **Telemetry (v0.2)**: successful Claude Code dispatches record
+      tokens, `total_cost_usd`, `num_turns` and `duration_ms` in
+      `DispatchState` via the `dispatch.completed` payload; all fields are
+      optional and other dispatcher families degrade to whatever subset
+      they emit (including none).
+- [ ] **Report content (v0.2)**: the markdown report contains run
+      metadata + outcome, Jira/PR links, a per-node agent table (status,
+      duration, dispatcher, messages, tool-uses, tokens/cost when
+      available), the gate audit trail, and the "what was developed"
+      section (spec/tasks/worktree, QA criteria results, code-review
+      findings, PR).
 - [ ] No new external dependencies; async/await throughout; all unit +
       integration tests pass (`pytest tests/ -v` for the dev_loop suites).
 
@@ -846,3 +899,4 @@ Re-verified 2026-07-27 on `dev` (FEAT-377 worktree not merged):
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-27 | Jesus Lara (with Claude) | Initial draft from devloop-enhancement.brainstorm.md (Option B; 15/15 questions resolved) |
+| 0.2 | 2026-07-27 | Jesus Lara (with Claude) | Amendment: Module 8 — run-bundle export (dispatch telemetry harvest, `RunBundle` + markdown closing report, runner wiring). Tasks TASK-1927..1929 |

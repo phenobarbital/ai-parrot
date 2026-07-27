@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-26T23:11:57.112397+00:00",
-  "completed_at": "2026-07-27T02:05:22+00:00",
+  "completed_at": null,
   "tasks": [
     {
       "id": "TASK-1918",
@@ -193,6 +193,66 @@
       "started_at": "2026-07-27T00:18:14+00:00",
       "completed_at": "2026-07-27T02:05:22+00:00",
       "file": "sdd/tasks/completed/TASK-1926-cli-feature-brief-loader.md"
+    },
+    {
+      "id": "TASK-1927",
+      "slug": "dispatch-telemetry-harvest",
+      "title": "Dispatch telemetry harvest — usage/cost/turns from the terminal ResultMessage",
+      "feature_id": "FEAT-378",
+      "feature": "devloop-enhancement",
+      "spec": "sdd/specs/devloop-enhancement.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1919"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches session_state.py + dispatcher.py — sequence after 1919 in the feature worktree.",
+      "file": "sdd/tasks/active/TASK-1927-dispatch-telemetry-harvest.md"
+    },
+    {
+      "id": "TASK-1928",
+      "slug": "run-bundle-model-renderer",
+      "title": "RunBundle model + builder + markdown closing-report renderer",
+      "feature_id": "FEAT-378",
+      "feature": "devloop-enhancement",
+      "spec": "sdd/specs/devloop-enhancement.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1927"
+      ],
+      "parallel": false,
+      "parallelism_notes": "New pure module run_bundle.py; needs 1927's DispatchState telemetry fields.",
+      "file": "sdd/tasks/active/TASK-1928-run-bundle-model-renderer.md"
+    },
+    {
+      "id": "TASK-1929",
+      "slug": "run-bundle-runner-wiring",
+      "title": "Run-bundle runner wiring — export bundle.json + report.md at run close",
+      "feature_id": "FEAT-378",
+      "feature": "devloop-enhancement",
+      "spec": "sdd/specs/devloop-enhancement.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1928"
+      ],
+      "parallel": false,
+      "parallelism_notes": "runner.py contention with 1925 — run last.",
+      "file": "sdd/tasks/active/TASK-1929-run-bundle-runner-wiring.md"
     }
   ]
 }

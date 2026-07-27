@@ -27,8 +27,9 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
+from parrot import conf
 from parrot.bots.flows import AgentsFlow
 from parrot.flows.dev_loop.definition import build_dev_loop_definition
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
@@ -63,7 +64,12 @@ def _qa_passed(result: Any) -> bool:
 
 
 def _qa_failed(result: Any) -> bool:
-    """True when the QAReport's ``passed`` flag is exactly False."""
+    """True when the QAReport's ``passed`` flag is exactly False.
+
+    Kept as-is (no attempt/retry awareness) — this is also used by
+    ``build_dev_loop_revision_flow`` (``runner.py``), whose QA failure path
+    is NOT retried (spec §7: repair is scoped to the main loop only).
+    """
     return getattr(result, "passed", True) is False
 
 
@@ -86,6 +92,32 @@ def _feedback_escalate(result: Any) -> bool:
 def _feedback_accept(result: Any) -> bool:
     """True when the router's ``FeedbackDecision.decision == "accept_with_notes"``."""
     return getattr(result, "decision", None) == "accept_with_notes"
+
+
+def _make_qa_retry(max_retries: int) -> Callable[[Any], bool]:
+    """Closure: QA failed but the bounded repair loop (FEAT-377 TASK-1910
+    — G1) still has attempts left → redispatch development."""
+
+    def _qa_retry(result: Any) -> bool:
+        return (
+            getattr(result, "passed", True) is False
+            and getattr(result, "attempt", 1) < max_retries
+        )
+
+    return _qa_retry
+
+
+def _make_qa_exhausted(max_retries: int) -> Callable[[Any], bool]:
+    """Closure: QA failed and the repair loop is exhausted → escalate to
+    the failure handler."""
+
+    def _qa_exhausted(result: Any) -> bool:
+        return (
+            getattr(result, "passed", True) is False
+            and getattr(result, "attempt", 1) >= max_retries
+        )
+
+    return _qa_exhausted
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +257,8 @@ def build_dev_loop_flow(
     repos: Optional[list[RepoSpec]] = None,
     codereview_dispatcher: Optional[Any] = None,
     require_deployment_approval: bool = False,
+    graph_memory: Optional[Any] = None,
+    require_plan_approval: bool = False,
 ) -> AgentsFlow:
     """Build the eight-node dev-loop ``AgentsFlow`` (FEAT-132).
 
@@ -283,6 +317,14 @@ def build_dev_loop_flow(
             command layer, TASK-1855). Only takes effect when the run also
             has a ``SessionHost`` (seeded by ``DevLoopRunner.run()``) —
             see ``DeploymentHandoffNode``'s docstring.
+        graph_memory: FEAT-377 TASK-1915 — an optional
+            ``DevLoopGraphMemory`` (from ``DevLoopGraphMemory.
+            from_config()``) forwarded to Research/QA/Close/FailureHandler
+            via ``build_dev_loop_node_factories``. ``None`` (default)
+            makes every graph-memory seam a strict no-op.
+        require_plan_approval: FEAT-377 TASK-1916 — forwarded to
+            ``DevelopmentNode`` via ``build_dev_loop_node_factories``.
+            ``False`` (default) preserves current behavior exactly.
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -306,6 +348,8 @@ def build_dev_loop_flow(
         repos=repos,
         codereview_dispatcher=codereview_dispatcher,
         require_deployment_approval=require_deployment_approval,
+        graph_memory=graph_memory,
+        require_plan_approval=require_plan_approval,
     )
     staged = AgentsFlow.from_definition(
         definition,
@@ -361,9 +405,14 @@ def build_dev_loop_flow(
     flow.add_edge("research", "development")
     flow.add_edge("development", "qa")
 
-    # QA branch: passed=True → handoff, passed=False → failure handler.
+    # QA branch: passed=True → handoff; passed=False → bounded repair retry
+    # to development (FEAT-377 TASK-1910 — G1) while attempts remain, else
+    # escalate to the failure handler once the repair loop is exhausted.
+    # Mirrors definition.py's _cel_qa_retry / _cel_qa_exhausted edge-for-edge.
+    max_retries = int(conf.DEV_LOOP_QA_MAX_RETRIES)
     flow.add_edge("qa", "deployment_handoff", predicate=_qa_passed)
-    flow.add_edge("qa", "failure_handler", predicate=_qa_failed)
+    flow.add_edge("qa", "development", predicate=_make_qa_retry(max_retries))
+    flow.add_edge("qa", "failure_handler", predicate=_make_qa_exhausted(max_retries))
 
     # Success path terminates at the close node (FEAT-250 G7).
     flow.add_edge("deployment_handoff", "close")

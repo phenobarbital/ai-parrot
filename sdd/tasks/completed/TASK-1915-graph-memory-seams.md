@@ -107,6 +107,32 @@ from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory  # created by 
 - ~~graph tools in subagent `allowed_tools`~~ — context is injected text; do not grant tools
 - ~~a criteria store for revisions~~ — if wiring criteria into run write-back enables TASK-1908's future source, note it; do not build extra plumbing
 
+### Contract resolution (found during implementation, 2026-07-26)
+- `WorkBrief`/`BugBrief` has no dedicated "context injection" field either
+  — mirrored TASK-1911's own precedent (reusing `ResearchOutput
+  .log_excerpts` for repair-loop feedback) by reusing `WorkBrief
+  .description` ("Long-form incident details... embedded in the Jira
+  ticket description; never forwarded to `summary`") for the graph
+  context, on a LOCAL dispatch-only copy (`brief.model_copy(...)`) built
+  AFTER the Jira ticket description is already constructed from the
+  original `brief` — so the graph context never leaks into the Jira
+  ticket text, only into the LLM dispatch prompt.
+- `build_dev_loop_revision_flow`/`DevLoopRunner.__init__` (`runner.py`)
+  also call `build_dev_loop_node_factories` directly (for the revision
+  graph's `qa`/`close`/`failure_handler` nodes) — both needed the same
+  `graph_memory` parameter threaded through, even though neither is
+  explicitly named in this task's Scope prose (only inferred from "and/or
+  flow.py, runner.py" in the Files table). The revision graph has no
+  `research` node, so seam 2 does not apply there.
+- The construction call site (`DevLoopGraphMemory.from_config()`) was
+  intentionally NOT wired into `cli/devloop/bootstrap.py` (not in this
+  task's — or any FEAT-377 task's — file list): `build_dev_loop_flow`/
+  `build_dev_loop_node_factories`/`DevLoopRunner` all accept
+  `graph_memory` as an externally-supplied optional instance, exactly
+  like `dispatcher`/`jira_toolkit` — activating it in the CLI bootstrap
+  is a follow-up, not required by any acceptance criterion here (all of
+  which test the four nodes + factories, not the CLI).
+
 ---
 
 ## Implementation Notes
@@ -163,10 +189,69 @@ async def test_graph_memory_round_trip(stub_flow, tmp_graph_memory): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-26
 **Notes**:
+- `factories.py`: `build_dev_loop_node_factories(..., graph_memory=None)`
+  forwarded into `research_factory`/`qa_factory`/`close_factory`/
+  `failure_factory` (`DeploymentHandoffNode`/`DevelopmentNode`/
+  `RevisionHandoffNode` untouched — no seam there).
+- `flow.py`: `build_dev_loop_flow(..., graph_memory=None)` forwarded to
+  `build_dev_loop_node_factories`.
+- `runner.py`: `build_dev_loop_revision_flow(..., graph_memory=None)`
+  forwarded the same way; `DevLoopRunner.__init__` gained
+  `graph_memory=None` (stored `self._graph_memory`), forwarded into the
+  lazily-built revision flow inside `run_revision`.
+- `nodes/research.py` (seam 2): `graph_memory` ctor param; in `execute()`,
+  builds a LOCAL `dispatch_brief` (never touching the original `brief`
+  used for the Jira ticket description) with
+  `f"{brief.description}\n\n## Graph memory context\n{context}"` when
+  `build_research_context` returns non-empty — dispatches with
+  `dispatch_brief`, not `brief`.
+- `nodes/qa.py` (seam 4): `graph_memory` ctor param; right after
+  `_run_code_review` (before the `cr_skipped` check, so the infra-degrade
+  skip marker is never sent through grounding), grounds `cr_findings`,
+  demotes dropped findings to `"[ungrounded] {finding}"` notes, and — per
+  the Implementation Notes constraint — forces `cr_passed = True` when
+  grounding drops EVERY finding (a report whose only failures were
+  ungrounded findings must pass the review gate).
+- `nodes/close.py` / `nodes/failure_handler.py` (seam 3): `graph_memory`
+  ctor param; each calls `publish_run_outcome(run_id, qa_report, outcome,
+  body)` — `outcome="succeeded"` (close) / `"failed"` (failure_handler) —
+  right before their own terminal success return (never inside the
+  Jira-call `try/except`, so a Jira failure and a graph-publish failure
+  are independently handled, each already degrading on its own).
+- `integration/test_graph_memory_seams.py` (new, 7 tests, all driving the
+  REAL `DevLoopRunner.run()`/`build_dev_loop_flow()` stack against a real
+  tmp-path SQLite plane — no mocking of the graph store):
+  `test_graph_memory_disabled_noop`, `test_research_brief_contains_graph_context`
+  (seeds a plane via a real `publish_run_outcome`, re-opens it with a
+  FRESH facade instance — proving on-disk persistence, not just in-memory
+  state — then asserts the seeded content surfaces in a new run's
+  dispatch brief), `test_close_publishes_run_outcome` +
+  `test_failure_handler_publishes_run_outcome` (assert exactly one commit
+  each via `publisher.list_commits(run_id=...)`),
+  `test_publish_failure_does_not_fail_close` (broken publisher, close
+  still returns `"closed"`), `test_ungrounded_findings_demoted` (a real
+  `ClaudeCodeReviewDispatcher` wrapping the stub dispatcher, a grounding
+  evaluator forced to return `"revise"` for everything — asserts
+  `code_review_passed is True`, `code_review_findings == []`, and the
+  `"[ungrounded] ..."` note), and `test_graph_memory_round_trip` (run 1 →
+  close write-back → run 2, with a fresh facade instance, sees run 1's
+  content in its research brief).
+- `pytest packages/ai-parrot/tests/flows/dev_loop/
+  packages/ai-parrot/tests/knowledge/graphindex/ -m "not live"` (minus the
+  pre-existing `hypothesis`-missing file): 1315 passed, 1 skipped, same
+  one pre-existing unrelated failure noted in every prior task this
+  session. Explicitly re-verified `test_close_node.py`/
+  `test_failure_handler.py`/`test_qa.py`/`test_declarative_flow.py`
+  (constructors changed) pass unchanged — all existing callers use
+  keyword args, so the new `graph_memory` params (placed keyword-only or
+  defaulted) introduced zero positional-argument ambiguity.
+- `ruff check` clean on every touched file.
 
-**Deviations from spec**: none
+**Deviations from spec**: none beyond the two documented, non-behavioral
+resolutions above (the `description`-field reuse for context injection,
+mirroring TASK-1911's `log_excerpts` precedent; and threading
+`graph_memory` through `runner.py`'s revision-flow path, inferred from
+"and/or flow.py, runner.py" rather than spelled out).

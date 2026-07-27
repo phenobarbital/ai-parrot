@@ -259,13 +259,18 @@ class TestPartial:
             ],
         )
         research = research_output(str(tmp_path))
-        # TASK-2 fails twice (initial dispatch + the single retry) -> incomplete.
-        d1 = FakeDispatcher(fail_counts={"TASK-2": 2})
-        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code")])
+        # FEAT-377 TASK-1913: should_fan_out requires >=2 independent
+        # first-wave tasks AND >1 effective worker slot to reach the pool
+        # path at all — a 2-worker pool with TASK-1/TASK-2 satisfies both.
+        # TASK-2 fails on its initial dispatch (w2/d2) AND its single
+        # retry (which lands on the OTHER worker, w1/d1) -> incomplete.
+        d1 = FakeDispatcher(fail_counts={"TASK-2": 1})
+        d2 = FakeDispatcher(fail_counts={"TASK-2": 1})
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
         node = DevelopmentNode(
             dispatcher=MagicMock(),
             pool_config=pool_config,
-            dispatcher_builder=_pool_dispatcher_builder([d1]),
+            dispatcher_builder=_pool_dispatcher_builder([d1, d2]),
         )
 
         ctx = {"run_id": "run-partial", "research_output": research}

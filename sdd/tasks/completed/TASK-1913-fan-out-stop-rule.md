@@ -79,6 +79,23 @@ def next_wave(self) -> List[TaskRef]:   # line 166 — dependency-satisfied pend
 - ~~a runtime parallelism decision anywhere~~ — today it is config-only
 - ~~`TaskScheduler.peek_wave()`~~ — *(unverified — check whether `next_wave()` mutates scheduler state; if it consumes the wave, either construct a throwaway scheduler for the decision or capture the first wave and pass it into the pool loop — do NOT call next_wave() twice blindly)*
 
+### Contract resolution (found during implementation, 2026-07-26)
+- `next_wave()` does NOT mutate scheduler state (confirmed by reading it in
+  full: only `mark_done`/`mark_failed` touch `_pending`/`_done`/`_failed`).
+  Calling it twice (once in `execute()` for the `should_fan_out` decision,
+  once more as the first iteration of `_execute_pool`'s `while True:` loop)
+  is safe and idempotent — no throwaway scheduler needed. To avoid
+  re-reading the per-spec index file twice, though, the scheduler
+  CONSTRUCTION (`_find_feature_slug` + `TaskScheduler.from_worktree`) was
+  hoisted out of `_execute_pool` into a new `_build_scheduler(research)`
+  helper, called once from `execute()`; the resulting scheduler is passed
+  into `_execute_pool` as a new parameter instead of rebuilding it there.
+- `next_wave()`'s own docstring states it returns tasks "in no particular
+  order" — `TaskScheduler._pending` is a plain `Set[str]`, not an
+  order-preserving structure. Several pre-existing tests asserted which
+  specific task landed on `development.w1` vs `w2`; those assertions were
+  fixed to be order-independent (see Completion Note).
+
 ---
 
 ## Implementation Notes
@@ -131,10 +148,60 @@ async def test_development_degrades_to_single_agent_on_chain(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-26
 **Notes**:
+- `nodes/development.py`: added module-level `should_fan_out(wave,
+  pool_cfg) -> bool` — pure, no I/O/LLM/config reads. Returns `True` only
+  when `len(wave) >= 2` AND `sum(spec.count for spec in pool_cfg.agents) >
+  1`. Wired into `execute()`: after the existing `pool_cfg is None` /
+  `dispatcher_builder is None` degradation checks, builds the scheduler
+  once (new `_build_scheduler(research)` helper, extracted from
+  `_execute_pool` — see Codebase Contract resolution), computes
+  `scheduler.next_wave()`, and degrades to `_execute_single` (logged via
+  `self.logger.info` with the wave size and effective slot count) when
+  `should_fan_out` is `False`. `_execute_pool` now takes the already-built
+  `scheduler` as a parameter instead of rebuilding it (no double index
+  read).
+- Fixed 6 pre-existing tests across 2 files whose pool configs had only
+  1 effective worker slot (`DevAgentSpec(agent=..., count=1)` default) —
+  under the new stop rule these ALWAYS degrade to single-agent regardless
+  of wave size, since `effective_slots=1` fails `>1` unconditionally. Not
+  in this task's listed file scope, but genuine regressions from the
+  correct new behavior (same policy applied to test fixture breaks in
+  every prior task this session):
+  - `test_development_node.py` (5 tests, `TestCascade`/`TestPoolPath`):
+    bumped to `count=2` (or 2 explicit specs) and added a second
+    independent first-wave task where needed, preserving each test's
+    original intent (cascade config resolution, multi-wave dispatch,
+    all-incomplete, isolated-mode cleanup — the latter two now use 2
+    dispatchers/managers instead of 1). Discovered and fixed an
+    order-dependent assertion in `test_injected_pool_used_when_no_brief_pool`
+    while doing this — `next_wave()`'s "no particular order" contract
+    means asserting task-1-lands-on-worker-1 was already latent-fragile;
+    rewrote to assert set membership instead of position.
+  - `integration/test_pool_e2e.py::test_partial_completion_reaches_qa`:
+    bumped to a 2-worker pool with BOTH dispatchers configured to fail
+    "TASK-2" once, so the failure survives landing on either worker
+    (initial attempt or the round-robin retry) — preserves the original
+    "TASK-2 fails twice → incomplete, TASK-3 skipped transitively"
+    assertion regardless of which worker gets which task.
+- New tests: `TestShouldFanOut` (5 cases covering the acceptance
+  criteria: 2-task+multi-slot fans out, single-task wave never fans out,
+  empty wave never fans out, single-slot pool never fans out even with a
+  2-task wave, and effective-slot summation across multiple specs) and
+  `TestFanOutWiring` (`test_development_degrades_to_single_agent_on_chain`
+  — 3-task straight chain + 4-worker pool still runs single-agent;
+  `test_development_takes_pool_path_when_wave_has_two_tasks` — unchanged
+  pool-path behavior).
+- `pytest packages/ai-parrot/tests/flows/dev_loop/ -m "not live"` (minus
+  the pre-existing `hypothesis`-missing file): 676 passed, 1 skipped,
+  same one pre-existing unrelated failure noted in every prior task.
+  Re-ran the fixed files 3x each to rule out the `set`-ordering
+  discovery being a flake rather than a real fix — stable.
+- `ruff check` clean on all touched files.
 
-**Deviations from spec**: none
+**Deviations from spec**: none beyond the documented, non-behavioral test
+fixture fixes above (all caused by the new stop rule correctly changing
+single-worker-pool behavior, which the spec's own acceptance criteria
+require).

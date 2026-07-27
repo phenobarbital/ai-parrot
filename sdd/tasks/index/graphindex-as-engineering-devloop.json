@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-26T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-27T00:44:13+00:00",
   "tasks": [
     {
       "id": "TASK-1906",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only _subagent_data/*.md prompts, _subagent_defs.py docstring, and its own new test file — no shared files with any other task.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1906-subagent-prompt-sync-parity.md"
+      "completed_at": "2026-07-26T22:16:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1906-subagent-prompt-sync-parity.md"
     },
     {
       "id": "TASK-1907",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Edits runner.py and failure_handler.py, shared with TASK-1908/1911/1915/1916/1917 — run sequentially in the feature worktree.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1907-hygiene-transition-ttl-deadcode.md"
+      "completed_at": "2026-07-26T22:24:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1907-hygiene-transition-ttl-deadcode.md"
     },
     {
       "id": "TASK-1908",
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "Edits models.py and runner.py, shared with TASK-1907/1910/1912/1916/1917.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1908-revision-brief-criteria.md"
+      "completed_at": "2026-07-26T22:28:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1908-revision-brief-criteria.md"
     },
     {
       "id": "TASK-1909",
@@ -68,7 +68,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -76,8 +76,8 @@
       "parallelism_notes": "Touches only parrot/knowledge/graphindex/ — disjoint from every dev_loop task.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1909-graphindex-ontology-completion.md"
+      "completed_at": "2026-07-26T22:33:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1909-graphindex-ontology-completion.md"
     },
     {
       "id": "TASK-1910",
@@ -86,7 +86,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -96,8 +96,8 @@
       "parallelism_notes": "Edits definition.py/flow.py/session_state.py/models.py — core shared files. Depends on 1906 so retried workers dispatch with synced prompts.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1910-qa-repair-loop-topology.md"
+      "completed_at": "2026-07-26T23:04:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1910-qa-repair-loop-topology.md"
     },
     {
       "id": "TASK-1911",
@@ -106,7 +106,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -116,8 +116,8 @@
       "parallelism_notes": "Consumes TASK-1910's attempt counter and action; edits qa.py/development.py/failure_handler.py.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1911-qa-repair-loop-node-behavior.md"
+      "completed_at": "2026-07-26T23:18:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1911-qa-repair-loop-node-behavior.md"
     },
     {
       "id": "TASK-1912",
@@ -126,7 +126,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -136,8 +136,8 @@
       "parallelism_notes": "Uses the attempt semantics from 1910; edits models.py/agent_pool.py/development.py shared with 1911/1913.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1912-escalation-model-retry.md"
+      "completed_at": "2026-07-26T23:25:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1912-escalation-model-retry.md"
     },
     {
       "id": "TASK-1913",
@@ -146,7 +146,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -156,8 +156,8 @@
       "parallelism_notes": "No semantic dependency on 1911, but both edit nodes/development.py — serialized to avoid merge churn.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1913-fan-out-stop-rule.md"
+      "completed_at": "2026-07-26T23:35:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1913-fan-out-stop-rule.md"
     },
     {
       "id": "TASK-1914",
@@ -166,7 +166,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -176,8 +176,8 @@
       "parallelism_notes": "New file graph_memory.py + own test — technically parallel-safe, but depends on 1909's ontology decision and precedes 1915 in the same worktree.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1914-devloop-graph-memory-facade.md"
+      "completed_at": "2026-07-26T23:44:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1914-devloop-graph-memory-facade.md"
     },
     {
       "id": "TASK-1915",
@@ -186,7 +186,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -196,8 +196,8 @@
       "parallelism_notes": "Wires the 1914 facade into research/close/failure/qa nodes — shared with 1907/1911.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1915-graph-memory-seams.md"
+      "completed_at": "2026-07-26T23:57:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1915-graph-memory-seams.md"
     },
     {
       "id": "TASK-1916",
@@ -206,7 +206,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -214,8 +214,8 @@
       "parallelism_notes": "Edits runner.py, shared with 1907/1908/1917.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1916-plan-approval-gate.md"
+      "completed_at": "2026-07-27T00:07:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1916-plan-approval-gate.md"
     },
     {
       "id": "TASK-1917",
@@ -224,7 +224,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -234,8 +234,8 @@
       "parallelism_notes": "Reworks runner.py slot lifecycle; e2e test uses the 1916 plan gate. Run last.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1917-gate-park-resume.md"
+      "completed_at": "2026-07-27T00:43:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1917-gate-park-resume.md"
     }
   ]
 }

@@ -173,6 +173,37 @@ class DevAgentPool:
         idx = next(i for i, w in enumerate(self.workers) if w is failed_worker)
         return self.workers[(idx + 1) % len(self.workers)]
 
+    @staticmethod
+    def _escalated_profile(worker: PoolWorker) -> BaseModel:
+        """Return ``worker.profile`` with its model swapped to
+        ``worker.spec.escalation_model`` (FEAT-377 TASK-1912 — G3).
+
+        Same backend, stronger tier — only the model changes. Handles both
+        dispatch-profile shapes ``agent_builder.build_dispatcher`` produces:
+        a direct ``model`` field (claude-code/codex/gemini/grok/zai/
+        moonshot), or the combined ``llm="<backend>:<model>"`` field
+        (``LLMCodeDispatchProfile``, used by the "nvidia" backend).
+        Degrades to the unescalated profile (never raises) if neither
+        shape matches — validating the escalation model string itself is
+        the dispatcher's existing failure domain (spec §7).
+
+        Args:
+            worker: The pool worker whose profile is being escalated.
+
+        Returns:
+            A new profile instance (frozen model copy); ``worker.profile``
+            itself is never mutated.
+        """
+        escalation = worker.spec.escalation_model
+        profile = worker.profile
+        if hasattr(profile, "model"):
+            return profile.model_copy(update={"model": escalation})
+        if hasattr(profile, "llm"):
+            return profile.model_copy(
+                update={"llm": f"{worker.spec.agent}:{escalation}"}
+            )
+        return profile  # pragma: no cover - defensive, no known profile lacks both
+
     async def _dispatch_one(
         self,
         task: TaskRef,
@@ -181,6 +212,7 @@ class DevAgentPool:
         research: ResearchOutput,
         run_id: str,
         cwd_for: Callable[[str], str],
+        escalate: bool = False,
     ) -> _DispatchAttempt:
         """Dispatch a single task to a single worker, never raising.
 
@@ -191,6 +223,11 @@ class DevAgentPool:
             run_id: The flow run id (forwarded to ``dispatch()``).
             cwd_for: ``worker_id -> cwd`` resolver (shared worktree in
                 'shared' mode, sub-worktree path in 'isolated' mode).
+            escalate: FEAT-377 TASK-1912 — when ``True`` and
+                ``worker.spec.escalation_model`` is non-empty, dispatch with
+                that model instead of ``worker.spec.model`` (same backend).
+                Only the retry call site passes ``True``; first attempts
+                always use the worker's base profile unchanged.
 
         Returns:
             A ``(task_id, worker_id, output, error)`` tuple. Exactly one of
@@ -205,10 +242,18 @@ class DevAgentPool:
             commits itself.
         """
         brief = TaskScopedBrief(research=research, task_id=task.id)
+        profile = worker.profile
+        if escalate and worker.spec.escalation_model:
+            profile = self._escalated_profile(worker)
+            self.logger.info(
+                "retrying task %s on escalation model %s",
+                task.id,
+                worker.spec.escalation_model,
+            )
         try:
             output = await worker.dispatcher.dispatch(
                 brief=brief,
-                profile=worker.profile,
+                profile=profile,
                 output_model=DevelopmentOutput,
                 run_id=run_id,
                 node_id=worker.worker_id,
@@ -241,12 +286,20 @@ class DevAgentPool:
         research: ResearchOutput,
         run_id: str,
         cwd_for: Callable[[str], str],
+        escalate: bool = False,
     ) -> WaveResult:
         """Dispatch one wave of tasks across the pool, round-robin, with retry.
 
         Args:
             tasks: The dispatchable tasks for this wave (see
                 ``TaskScheduler.next_wave()``).
+            escalate: FEAT-377 TASK-1912 — when ``True``, every worker's
+                FIRST-attempt dispatch in this wave also uses
+                ``worker.spec.escalation_model`` (when set), not just the
+                within-wave retry (which already escalates unconditionally
+                per worker). Set by ``DevelopmentNode`` when this wave is
+                itself a QA repair-loop redispatch (``attempt >= 2``) — the
+                caller, not this method, decides when that applies.
             research: Shared research output (wrapped per-task in a
                 :class:`TaskScopedBrief`).
             run_id: The flow run id.
@@ -270,7 +323,10 @@ class DevAgentPool:
 
         first_attempts = await asyncio.gather(
             *(
-                self._dispatch_one(t, assignments[t.id], research=research, run_id=run_id, cwd_for=cwd_for)
+                self._dispatch_one(
+                    t, assignments[t.id], research=research, run_id=run_id,
+                    cwd_for=cwd_for, escalate=escalate,
+                )
                 for t in tasks
             )
         )
@@ -299,6 +355,7 @@ class DevAgentPool:
                         research=research,
                         run_id=run_id,
                         cwd_for=cwd_for,
+                        escalate=True,
                     )
                     for (task, _fw), retry_worker in zip(retry_targets, retry_workers)
                 )
