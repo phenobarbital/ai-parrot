@@ -52,7 +52,7 @@
       "feature_id": "FEAT-379",
       "feature": "multistoresearchtool-parrotwiki",
       "spec": "sdd/specs/multistoresearchtool-parrotwiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Creates the parrot_tools/multistoresearch package skeleton and performs the module→package move; must precede all adapter tasks.",
       "assigned_to": null,
       "started_at": "2026-07-27T13:49:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1932-searchorigin-contract-vector-adapter.md"
+      "completed_at": "2026-07-27T14:24:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1932-searchorigin-contract-vector-adapter.md"
     },
     {
       "id": "TASK-1933",
