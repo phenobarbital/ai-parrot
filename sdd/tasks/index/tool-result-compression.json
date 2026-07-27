@@ -14,7 +14,7 @@
       "feature_id": "FEAT-380",
       "feature": "tool-result-compression",
       "spec": "sdd/specs/tool-result-compression.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Blocking foundation. Module 1 freezes the ResultCompressor Protocol and CompressionOutcome; everything else codes against that contract. Serializing it avoids three parallel worktrees redefining the same types and a painful merge (spec Worktree Strategy, Phase 1).",
       "assigned_to": null,
       "started_at": "2026-07-27T17:11:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1947-compression-contract-primitives.md"
+      "completed_at": "2026-07-27T17:54:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1947-compression-contract-primitives.md"
     },
     {
       "id": "TASK-1948",
