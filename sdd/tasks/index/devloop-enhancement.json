@@ -201,10 +201,10 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "pending",
+      "status": "done",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-07-27T10:59:05+00:00",
+      "completed_at": "2026-07-27T10:59:15+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -212,7 +212,7 @@
       ],
       "parallel": false,
       "parallelism_notes": "Touches session_state.py + dispatcher.py — sequence after 1919 in the feature worktree.",
-      "file": "sdd/tasks/active/TASK-1927-dispatch-telemetry-harvest.md"
+      "file": "sdd/tasks/completed/TASK-1927-dispatch-telemetry-harvest.md"
     },
     {
       "id": "TASK-1928",
