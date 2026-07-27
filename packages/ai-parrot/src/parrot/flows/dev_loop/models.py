@@ -24,6 +24,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializeAsAny,
     field_validator,
     model_validator,
 )
@@ -116,12 +117,20 @@ WorkKind = Literal["bug", "enhancement", "new_feature"]
 
 
 class LogSource(BaseModel):
-    """A pointer to a log location that ``ResearchNode`` will fetch."""
+    """A pointer to a log location that ``ResearchNode`` will fetch.
 
-    kind: Literal["cloudwatch", "elasticsearch", "attached_file"]
+    The ``inline`` kind carries the log content itself: use it when the
+    reporter pastes a stack trace, log excerpt, or error message directly
+    instead of pointing at a CloudWatch group, ES index, or file on disk.
+    """
+
+    kind: Literal["cloudwatch", "elasticsearch", "attached_file", "inline"]
     locator: str = Field(
         ...,
-        description="Log-group name, ES index, or file path depending on `kind`.",
+        description=(
+            "Log-group name, ES index, or file path depending on `kind`. "
+            "For `inline`, the raw pasted log/stack-trace/error text itself."
+        ),
     )
     time_window_minutes: int = Field(default=60, ge=1, le=1440)
 
@@ -293,6 +302,17 @@ class RevisionBrief(BaseModel):
         ...,
         description="Head SHA at trigger time; used for dedup (mirrors GitHubReviewer).",
     )
+    acceptance_criteria: Optional[List[AcceptanceCriterion]] = Field(
+        default=None,
+        description=(
+            "The original feature's acceptance criteria (FEAT-377 TASK-1908). "
+            "When present and non-empty, `run_revision` re-verifies them "
+            "alongside the lint gate instead of running lint-only. `None` "
+            "(the default) preserves legacy lint-only revision QA exactly — "
+            "no caller populates this yet; graph memory write-back "
+            "(TASK-1915) is the intended future source."
+        ),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -382,6 +402,19 @@ class DevAgentSpec(BaseModel):
     count: int = Field(
         default=1, ge=1, description="Number of replicas of this spec in the pool."
     )
+    escalation_model: str = Field(
+        default="",
+        description=(
+            "FEAT-377 TASK-1912 (G3): model used on retry/redispatch instead "
+            "of `model` — same backend, stronger tier (e.g. 'claude-code' "
+            "sonnet -> opus). Consulted by DevAgentPool.run_wave's single "
+            "retry AND the QA repair-loop's development redispatch "
+            "(attempt >= 2). '' (default) disables escalation — the retry "
+            "uses `model`, byte-identical to pre-TASK-1912 behavior. No "
+            "built-in per-backend ladder in v1 (decided 2026-07-26, spec §8) "
+            "— explicit only."
+        ),
+    )
 
 
 class DevAgentPoolConfig(BaseModel):
@@ -467,9 +500,9 @@ class CriterionResult(BaseModel):
     """Result of running a single acceptance criterion in QA."""
 
     name: str
-    kind: Literal["flowtask", "shell", "manual"]
-    exit_code: int
-    duration_seconds: float
+    kind: Literal["flowtask", "shell", "manual"] = "shell"
+    exit_code: int = 0
+    duration_seconds: float = 0.0
     stdout_tail: str = Field("", max_length=4000)
     stderr_tail: str = Field("", max_length=4000)
     passed: bool
@@ -500,6 +533,18 @@ class QAReport(BaseModel):
         default_factory=list,
         description="Qualitative findings emitted by the code-review gate.",
     )
+    attempt: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "FEAT-377 TASK-1910: which QA attempt produced this report "
+            "(1-based). Lives ON the report — not merely in shared state — "
+            "because the engine's `cel_evaluator` coerces the node result "
+            "via `model_dump()`, so the qa→development retry / "
+            "qa→failure_handler exhaustion CEL predicates can only "
+            "reference fields on `QAReport` itself."
+        ),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -515,7 +560,16 @@ class ClaudeCodeDispatchProfile(BaseModel):
     and the dispatcher falls back to a generic session.
     """
 
-    subagent: Optional[Literal["sdd-research", "sdd-worker", "sdd-qa", "sdd-codereview"]] = "sdd-worker"
+    subagent: Optional[
+        Literal[
+            "sdd-research",
+            "sdd-worker",
+            "sdd-qa",
+            "sdd-codereview",
+            "sdd-planner",
+            "sdd-feedback",
+        ]
+    ] = "sdd-worker"
     system_prompt_override: Optional[str] = None
     allowed_tools: List[str] = Field(default_factory=list)
     permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "default"
@@ -545,7 +599,7 @@ class CodexCodeDispatchProfile(BaseModel):
     same SDD subagent prompt body used by the Claude Code path.
     """
 
-    subagent: Literal["sdd-worker"] = "sdd-worker"
+    subagent: Literal["sdd-worker", "sdd-secondopinion"] = "sdd-worker"
     model: str = "gpt-5.5"
     sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "workspace-write"
     approval_policy: Literal["untrusted", "on-request", "never"] = "never"
@@ -755,10 +809,16 @@ class CodeReviewVerdict(BaseModel):
     The ``findings`` validator coerces plain strings (the format the old model
     accepted) into ``CodeReviewFinding(message=s, severity="minor")`` so an LLM
     that returns the legacy format doesn't fail Pydantic validation.
+
+    ``findings`` is ``SerializeAsAny``-wrapped (FEAT-375 code-review fix) so
+    that subclass instances — e.g. ``AdversarialFinding``, tagged with
+    ``source``/``disposition``/``triage_reason`` by the advisory reviewers —
+    keep those extra fields when this verdict is ``.model_dump()``'d, instead
+    of being silently truncated down to the base ``CodeReviewFinding`` shape.
     """
 
     passed: bool = True
-    findings: List[CodeReviewFinding] = Field(default_factory=list)
+    findings: List[SerializeAsAny[CodeReviewFinding]] = Field(default_factory=list)
     summary: str = ""
     files_modified: List[str] = Field(default_factory=list)
 
@@ -773,6 +833,54 @@ class CodeReviewVerdict(BaseModel):
                 for item in v
             ]
         return v
+
+
+class AdversarialFinding(CodeReviewFinding):
+    """A finding from an advisory reviewer, awaiting or carrying a triage disposition (FEAT-375)."""
+
+    source: str = "codex-adversarial"
+    disposition: Optional[Literal["confirm", "reject", "escalate"]] = None
+    triage_reason: str = ""
+    finding_id: str = Field(
+        default="",
+        description=(
+            "Stable identifier assigned before a triage round (e.g. "
+            "'finding-0'), so the triage worker's disposition can be matched "
+            "back to the originating finding without relying on exact "
+            "file/message text equality (which an LLM may paraphrase)."
+        ),
+    )
+
+
+class TriageBrief(BaseModel):
+    """Brief for the primary worker's triage dispatch (FEAT-375).
+
+    Neutral by construction: carries only the advisory findings, the
+    acceptance criteria, and the worktree path — no field for the caller's
+    reasoning, so ratification of the adversarial reviewer is structurally
+    impossible.
+    """
+
+    findings: List[AdversarialFinding]
+    acceptance_criteria: List[AcceptanceCriterion]
+    worktree_path: str
+    summary: str = ""
+
+
+class TriageReport(BaseModel):
+    """Every input finding MUST appear with a disposition — none dropped (FEAT-375)."""
+
+    findings: List[AdversarialFinding]
+    files_modified: List[str] = Field(default_factory=list)
+    summary: str = ""
+
+
+class PerspectiveSynthesis(BaseModel):
+    """Deterministic merge of primary + adversarial verdicts (FEAT-375 G7)."""
+
+    agreements: List[AdversarialFinding]
+    disagreements: List[AdversarialFinding]
+    judge_summary: str = ""
 
 
 class ClaudeCodeReviewProfile(ClaudeCodeDispatchProfile):
@@ -806,6 +914,28 @@ class CodexCodeReviewProfile(CodexCodeDispatchProfile):
     model: str = "gpt-5.5"
     sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "workspace-write"
     approval_policy: Literal["untrusted", "on-request", "never"] = "on-request"
+    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+
+
+class CodexAdversarialReviewProfile(CodexCodeDispatchProfile):
+    """Advisory review profile for the Codex adversarial second-opinion (FEAT-375).
+
+    Read-only, neutral-brief, no-writes profile: the dispatcher runs
+    ``codex exec review`` (or ``codex exec resume --last``) in a read-only
+    sandbox with the ``sdd-secondopinion`` subagent brief, which by
+    construction never receives the primary agent's reasoning.
+    """
+
+    subagent: Literal["sdd-secondopinion"] = "sdd-secondopinion"
+    sandbox: Literal["read-only"] = "read-only"
+    approval_policy: Literal["never"] = "never"
+    review_scope: Literal["uncommitted", "base", "commit"] = "uncommitted"
+    review_base: str = ""
+    review_commit: str = ""
+    resume_last: bool = Field(
+        default=False,
+        description="G6: use `codex exec resume --last` to continue the existing review session.",
+    )
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
 
 
@@ -850,3 +980,295 @@ class DispatchEvent(BaseModel):
         default_factory=dict,
         description="Raw SDK event dict, or error context.",
     )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Feature-mode contracts (FEAT-378) — document-driven planning, judge
+# panel, synthesis and feedback-router outputs, feature handoff.
+# ─────────────────────────────────────────────────────────────────────
+
+
+class FeatureBrief(BaseModel):
+    """Document-based intake for the feature-mode dev-loop topology.
+
+    Unlike :class:`WorkBrief` (log-driven bug/enhancement/new_feature
+    triage), a ``FeatureBrief`` points at an existing SDD document
+    (brainstorm, proposal, or already-resolved spec) and lets
+    ``PlannerNode`` generate whatever SDD artifacts are still missing
+    (spec via ``/sdd-spec``, task index via ``/sdd-task``) plus the
+    feature worktree. Jira is optional end-to-end in feature-mode: only
+    linked when ``jira_issue_key`` is populated.
+    """
+
+    kind: Literal["feature"] = "feature"
+    document_path: str = Field(
+        ...,
+        description=(
+            "Path to the brainstorm/proposal/spec markdown driving this "
+            "run. Must exist and be a readable file — validated eagerly "
+            "at model construction so an invalid brief fails before any "
+            "dispatch."
+        ),
+    )
+    document_kind: Literal["brainstorm", "proposal", "spec"] = Field(
+        ...,
+        description=(
+            "Which SDD phase the document represents. 'spec' skips "
+            "PlannerNode's /sdd-spec step and goes straight to /sdd-task "
+            "(or validates an existing task index)."
+        ),
+    )
+    jira_issue_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional Jira issue key. Feature-mode never creates a Jira "
+            "issue; when set, downstream nodes only link/transition/"
+            "comment on the existing ticket."
+        ),
+    )
+    dev_agents: Optional[List[DevAgentSpec]] = Field(
+        default=None,
+        description=(
+            "Optional explicit dev-agent pool. When unset, PlannerNode "
+            "derives the pool from the width of the first "
+            "``TaskScheduler`` wave, capped at ``development_pool_max``."
+        ),
+    )
+    judge_panel: Optional["JudgePanelConfig"] = Field(
+        default=None,
+        description=(
+            "Optional QA judge-panel override. When unset, "
+            "``JudgePanelReviewDispatcher`` uses ``default_judge_panel()`` "
+            "or the ``DEV_LOOP_JUDGE_PANEL`` conf key."
+        ),
+    )
+
+    @field_validator("document_path")
+    @classmethod
+    def _document_path_must_be_readable(cls, v: str) -> str:
+        """Fail fast when the intake document does not exist or is unreadable.
+
+        Args:
+            v: Raw ``document_path`` value.
+
+        Returns:
+            The path unchanged if it resolves to a readable file.
+
+        Raises:
+            ValueError: If the path does not exist, is not a file, or
+                cannot be opened for reading.
+        """
+        from pathlib import Path
+
+        path = Path(v)
+        if not path.is_file():
+            raise ValueError(f"document_path does not exist or is not a file: {v!r}")
+        try:
+            with path.open("r", encoding="utf-8"):
+                pass
+        except OSError as exc:
+            raise ValueError(f"document_path is not readable: {v!r} ({exc})") from exc
+        return v
+
+    @model_validator(mode="after")
+    def _warn_on_doc_kind_suffix_mismatch(self) -> "FeatureBrief":
+        """Warn (not fail) when ``document_kind`` disagrees with the filename suffix."""
+        import logging
+
+        suffix_map = {
+            ".brainstorm.md": "brainstorm",
+            ".proposal.md": "proposal",
+            ".spec.md": "spec",
+        }
+        name = self.document_path
+        for suffix, expected_kind in suffix_map.items():
+            if name.endswith(suffix) and expected_kind != self.document_kind:
+                logging.getLogger(__name__).warning(
+                    "FeatureBrief.document_kind=%r does not match the "
+                    "filename convention for %r (expected %r)",
+                    self.document_kind,
+                    name,
+                    expected_kind,
+                )
+        return self
+
+
+class JudgeSpec(BaseModel):
+    """A single judge declaration inside a :class:`JudgePanelConfig`.
+
+    Reuses the 7-backend :data:`DevAgentBackend` Literal for the field's
+    type — a judge is materialized into a dispatcher via
+    ``build_dispatcher()`` exactly like a dev-agent, just used for review
+    instead of development — but only 3 backends actually have a review
+    profile (see :class:`JudgePanelReviewDispatcher._build_judge` in
+    ``code_review.py``): ``agent`` is validated eagerly against that same
+    supported set so a misconfigured ``DEV_LOOP_JUDGE_PANEL`` (or
+    programmatic ``JudgePanelConfig``) fails at config-load time with a
+    clear message, instead of surfacing as a swallowed
+    ``asyncio.gather(..., return_exceptions=True)`` failure deep inside
+    ``JudgePanelReviewDispatcher.review()`` at dispatch time (code-review
+    finding).
+    """
+
+    agent: DevAgentBackend = Field(
+        ..., description="Backend → existing dispatcher (claude-code, codex, ...)."
+    )
+    model: str = Field(
+        default="", description="'' ⇒ use the backend's default model."
+    )
+
+    @field_validator("agent")
+    @classmethod
+    def _agent_must_have_review_profile(cls, v: str) -> str:
+        supported = ("claude-code", "codex", "gemini")
+        if v not in supported:
+            raise ValueError(
+                f"JudgeSpec.agent={v!r} has no review profile — "
+                f"JudgePanelReviewDispatcher only supports {supported}."
+            )
+        return v
+
+
+class JudgePanelConfig(BaseModel):
+    """N-judge QA panel configuration for :class:`JudgePanelReviewDispatcher`.
+
+    Simple majority decision; a tie or an abstention that breaks
+    majority escalates (fail-closed) rather than passing by default.
+    """
+
+    judges: List[JudgeSpec] = Field(..., min_length=1)
+    decision: Literal["majority"] = "majority"
+
+
+def default_judge_panel() -> JudgePanelConfig:
+    """Return the resolved default 3-judge panel (spec §2).
+
+    claude-code/claude-sonnet-4-6 + codex/gpt-5.5 (the adversarial judge,
+    dispatched via the ``sdd-secondopinion`` profile) + gemini/auto.
+
+    Returns:
+        The default :class:`JudgePanelConfig`.
+    """
+    return JudgePanelConfig(
+        judges=[
+            JudgeSpec(agent="claude-code", model="claude-sonnet-4-6"),
+            JudgeSpec(agent="codex", model="gpt-5.5"),
+            JudgeSpec(agent="gemini", model=""),
+        ],
+        decision="majority",
+    )
+
+
+class PlannerOutput(BaseModel):
+    """Structured output from the ``sdd-planner`` dispatch.
+
+    Mirrors :class:`ResearchOutput`'s field shape (minus the
+    always-present Jira key, since feature-mode Jira is optional and
+    never created by the planner).
+    """
+
+    spec_path: str = Field(..., description="Path to the spec, inside the worktree.")
+    task_index_path: str = Field(
+        ..., description="Path to the per-spec task index JSON."
+    )
+    feat_id: str = Field(..., description="e.g. 'FEAT-378'")
+    branch_name: str = Field(..., description="e.g. 'feat-378-devloop-enhancement'")
+    worktree_path: str = Field(..., description="Absolute on-disk worktree path.")
+    repo_path: str = Field(
+        default="",
+        description=(
+            "Absolute path of the primary repository the Development node "
+            "will `cd` into. Defaults to '' — callers fall back to "
+            "``worktree_path``."
+        ),
+    )
+    jira_issue_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "Passed through from ``FeatureBrief.jira_issue_key`` when "
+            "present. The planner NEVER creates a Jira issue."
+        ),
+    )
+    suggested_pool: Optional[DevAgentPoolConfig] = Field(
+        default=None,
+        description="Pool sized from the first ``TaskScheduler`` wave width.",
+    )
+
+
+class SynthesisReport(BaseModel):
+    """Structured output from the ``SynthesisNode`` reconciliation dispatch."""
+
+    consistent: bool = Field(
+        ...,
+        description=(
+            "False when the synthesis agent found unresolved inter-worker "
+            "inconsistencies or the integration pytest run failed."
+        ),
+    )
+    adjustments: List[str] = Field(
+        default_factory=list,
+        description="Reconciliation adjustments the agent made/committed.",
+    )
+    summary: str = ""
+
+
+class FeedbackDecision(BaseModel):
+    """Structured output from the ``sdd-feedback`` dispatch.
+
+    The LLM only *proposes* a decision — :class:`FeedbackRouterNode`
+    re-checks the deterministic ``accept_with_notes`` envelope and the
+    ``DEV_LOOP_QA_MAX_RETRIES`` stop rule in Python, post-parse, and
+    downgrades the decision when the proposal violates either.
+    """
+
+    decision: Literal["retry", "escalate", "accept_with_notes"]
+    dev_brief: str = Field(
+        default="",
+        description="Actionable brief injected into the retry dispatch.",
+    )
+    notes: str = Field(
+        default="",
+        description="Appended to the PR body when decision='accept_with_notes'.",
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Discriminated brief union (FEAT-378)
+# ─────────────────────────────────────────────────────────────────────
+
+# NOTE: ``WorkBrief.kind`` defaults to "bug" and is a 3-value Literal, not
+# a single tag. A plain ``Annotated[Union[WorkBrief, FeatureBrief],
+# Field(discriminator="kind")]`` works fine for dicts that *carry* a
+# ``kind`` key (pydantic's discriminated-union machinery reads the value
+# and dispatches to the matching member), but callers that omit ``kind``
+# entirely rely on ``WorkBrief``'s own default — which the discriminator
+# fast-path does not apply for missing keys the same way plain
+# ``TypeAdapter`` validation does for a non-discriminated union. To keep
+# "existing briefs with no `kind` key still parse as WorkBrief" byte-
+# identical, ``parse_brief`` is a thin loader shim used everywhere instead
+# of validating ``Brief`` directly against a bare dict.
+Brief = Annotated[Union[WorkBrief, FeatureBrief], Field(discriminator="kind")]
+
+
+def parse_brief(data: Dict[str, Any]) -> Union[WorkBrief, FeatureBrief]:
+    """Parse a raw brief dict into a :class:`WorkBrief` or :class:`FeatureBrief`.
+
+    Loader shim around the ``Brief`` discriminated union: routes on the
+    ``kind`` field when present (``"feature"`` → ``FeatureBrief``,
+    anything else → ``WorkBrief``), and falls back to ``WorkBrief`` when
+    ``kind`` is absent entirely — preserving ``WorkBrief.kind``'s own
+    ``"bug"`` default for pre-FEAT-378 callers (zero behavior change).
+
+    Args:
+        data: Raw brief mapping, e.g. loaded from YAML.
+
+    Returns:
+        A validated ``WorkBrief`` or ``FeatureBrief`` instance.
+
+    Raises:
+        pydantic.ValidationError: If the dict fails validation against
+            the resolved model.
+    """
+    if data.get("kind") == "feature":
+        return FeatureBrief(**data)
+    return WorkBrief(**data)

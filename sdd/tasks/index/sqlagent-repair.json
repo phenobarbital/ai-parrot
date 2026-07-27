@@ -19,10 +19,10 @@
       "effort": "M",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation \u2014 all other tasks depend on CacheManager",
+      "parallelism_notes": "Foundation — all other tasks depend on CacheManager",
       "assigned_to": null,
       "started_at": "2026-04-04T15:20:43.688039Z",
-      "file": "sdd/tasks/active/TASK-568-cache-manager.md",
+      "file": "sdd/tasks/completed/TASK-568-cache-manager.md",
       "completed_at": "2026-04-04T15:56:28.857534Z"
     },
     {
@@ -42,13 +42,13 @@
       "parallelism_notes": "Depends on CachePartition from TASK-568",
       "assigned_to": null,
       "started_at": "2026-04-04T15:20:43.688039Z",
-      "file": "sdd/tasks/active/TASK-569-database-toolkit-base.md",
+      "file": "sdd/tasks/completed/TASK-569-database-toolkit-base.md",
       "completed_at": "2026-04-04T16:24:10.085415Z"
     },
     {
       "id": "TASK-570",
       "slug": "sql-toolkit",
-      "title": "SQLToolkit \u2014 Common SQL Operations",
+      "title": "SQLToolkit — Common SQL Operations",
       "feature_id": "FEAT-082",
       "feature": "sqlagent-repair",
       "spec": "sdd/specs/sqlagent-repair.spec.md",
@@ -62,13 +62,13 @@
       "parallelism_notes": "Depends on DatabaseToolkit base from TASK-569",
       "assigned_to": null,
       "started_at": "2026-04-04T15:20:43.688039Z",
-      "file": "sdd/tasks/active/TASK-570-sql-toolkit.md",
+      "file": "sdd/tasks/completed/TASK-570-sql-toolkit.md",
       "completed_at": "2026-04-04T16:32:13.877595Z"
     },
     {
       "id": "TASK-571",
       "slug": "postgres-toolkit",
-      "title": "PostgresToolkit \u2014 PostgreSQL-Specific Overrides",
+      "title": "PostgresToolkit — PostgreSQL-Specific Overrides",
       "feature_id": "FEAT-082",
       "feature": "sqlagent-repair",
       "spec": "sdd/specs/sqlagent-repair.spec.md",
@@ -82,13 +82,13 @@
       "parallelism_notes": "Depends on SQLToolkit from TASK-570",
       "assigned_to": null,
       "started_at": "2026-04-04T15:20:43.688039Z",
-      "file": "sdd/tasks/active/TASK-571-postgres-toolkit.md",
+      "file": "sdd/tasks/completed/TASK-571-postgres-toolkit.md",
       "completed_at": "2026-04-04T16:40:36.125528Z"
     },
     {
       "id": "TASK-572",
       "slug": "bigquery-toolkit",
-      "title": "BigQueryToolkit \u2014 BigQuery-Specific Overrides",
+      "title": "BigQueryToolkit — BigQuery-Specific Overrides",
       "feature_id": "FEAT-082",
       "feature": "sqlagent-repair",
       "spec": "sdd/specs/sqlagent-repair.spec.md",
@@ -99,16 +99,16 @@
         "TASK-570"
       ],
       "parallel": true,
-      "parallelism_notes": "Can run in parallel with TASK-571 \u2014 both depend on SQLToolkit but don't share files",
+      "parallelism_notes": "Can run in parallel with TASK-571 — both depend on SQLToolkit but don't share files",
       "assigned_to": null,
       "started_at": "2026-04-04T15:20:43.688039Z",
-      "file": "sdd/tasks/active/TASK-572-bigquery-toolkit.md",
+      "file": "sdd/tasks/completed/TASK-572-bigquery-toolkit.md",
       "completed_at": "2026-04-04T16:40:36.125528Z"
     },
     {
       "id": "TASK-573",
       "slug": "influxdb-toolkit",
-      "title": "InfluxDBToolkit \u2014 InfluxDB Flux Query Support",
+      "title": "InfluxDBToolkit — InfluxDB Flux Query Support",
       "feature_id": "FEAT-082",
       "feature": "sqlagent-repair",
       "spec": "sdd/specs/sqlagent-repair.spec.md",
@@ -119,16 +119,16 @@
         "TASK-569"
       ],
       "parallel": true,
-      "parallelism_notes": "Can run in parallel with SQL toolkits \u2014 only depends on DatabaseToolkit base, no shared files",
+      "parallelism_notes": "Can run in parallel with SQL toolkits — only depends on DatabaseToolkit base, no shared files",
       "assigned_to": null,
       "started_at": "2026-04-04T15:20:43.688039Z",
-      "file": "sdd/tasks/active/TASK-573-influxdb-toolkit.md",
+      "file": "sdd/tasks/completed/TASK-573-influxdb-toolkit.md",
       "completed_at": "2026-04-04T16:40:36.125528Z"
     },
     {
       "id": "TASK-574",
       "slug": "elastic-toolkit",
-      "title": "ElasticToolkit \u2014 Elasticsearch DSL Support",
+      "title": "ElasticToolkit — Elasticsearch DSL Support",
       "feature_id": "FEAT-082",
       "feature": "sqlagent-repair",
       "spec": "sdd/specs/sqlagent-repair.spec.md",
@@ -139,16 +139,16 @@
         "TASK-569"
       ],
       "parallel": true,
-      "parallelism_notes": "Can run in parallel with other toolkits \u2014 only depends on DatabaseToolkit base",
+      "parallelism_notes": "Can run in parallel with other toolkits — only depends on DatabaseToolkit base",
       "assigned_to": null,
       "started_at": "2026-04-04T15:20:43.688039Z",
-      "file": "sdd/tasks/active/TASK-574-elastic-toolkit.md",
+      "file": "sdd/tasks/completed/TASK-574-elastic-toolkit.md",
       "completed_at": "2026-04-04T16:40:36.125528Z"
     },
     {
       "id": "TASK-575",
       "slug": "documentdb-toolkit",
-      "title": "DocumentDBToolkit \u2014 MongoDB Query Language Support",
+      "title": "DocumentDBToolkit — MongoDB Query Language Support",
       "feature_id": "FEAT-082",
       "feature": "sqlagent-repair",
       "spec": "sdd/specs/sqlagent-repair.spec.md",
@@ -159,16 +159,16 @@
         "TASK-569"
       ],
       "parallel": true,
-      "parallelism_notes": "Can run in parallel with other toolkits \u2014 only depends on DatabaseToolkit base",
+      "parallelism_notes": "Can run in parallel with other toolkits — only depends on DatabaseToolkit base",
       "assigned_to": null,
       "started_at": "2026-04-04T15:20:43.688039Z",
-      "file": "sdd/tasks/active/TASK-575-documentdb-toolkit.md",
+      "file": "sdd/tasks/completed/TASK-575-documentdb-toolkit.md",
       "completed_at": "2026-04-04T16:40:36.125528Z"
     },
     {
       "id": "TASK-576",
       "slug": "extended-router",
-      "title": "Extended Router \u2014 Database Selection + Role Inference",
+      "title": "Extended Router — Database Selection + Role Inference",
       "feature_id": "FEAT-082",
       "feature": "sqlagent-repair",
       "spec": "sdd/specs/sqlagent-repair.spec.md",
@@ -179,16 +179,16 @@
         "TASK-569"
       ],
       "parallel": true,
-      "parallelism_notes": "Modifies router.py and models.py only \u2014 independent from toolkit implementations",
+      "parallelism_notes": "Modifies router.py and models.py only — independent from toolkit implementations",
       "assigned_to": null,
       "started_at": "2026-04-04T15:20:43.688039Z",
-      "file": "sdd/tasks/active/TASK-576-extended-router.md",
+      "file": "sdd/tasks/completed/TASK-576-extended-router.md",
       "completed_at": "2026-04-04T16:52:39.382360Z"
     },
     {
       "id": "TASK-577",
       "slug": "extended-retry-handler",
-      "title": "Extended RetryHandler \u2014 Generalized for Non-SQL Databases",
+      "title": "Extended RetryHandler — Generalized for Non-SQL Databases",
       "feature_id": "FEAT-082",
       "feature": "sqlagent-repair",
       "spec": "sdd/specs/sqlagent-repair.spec.md",
@@ -199,16 +199,16 @@
         "TASK-569"
       ],
       "parallel": true,
-      "parallelism_notes": "Modifies retries.py only \u2014 independent from toolkit implementations",
+      "parallelism_notes": "Modifies retries.py only — independent from toolkit implementations",
       "assigned_to": null,
       "started_at": "2026-04-04T15:20:43.688039Z",
-      "file": "sdd/tasks/active/TASK-577-extended-retry-handler.md",
+      "file": "sdd/tasks/completed/TASK-577-extended-retry-handler.md",
       "completed_at": "2026-04-04T16:52:39.382360Z"
     },
     {
       "id": "TASK-578",
       "slug": "database-agent",
-      "title": "DatabaseAgent \u2014 Unified Agent with Multi-Toolkit Support",
+      "title": "DatabaseAgent — Unified Agent with Multi-Toolkit Support",
       "feature_id": "FEAT-082",
       "feature": "sqlagent-repair",
       "spec": "sdd/specs/sqlagent-repair.spec.md",
@@ -224,16 +224,16 @@
         "TASK-577"
       ],
       "parallel": false,
-      "parallelism_notes": "Integration task \u2014 requires CacheManager, base toolkit, SQLToolkit, PostgresToolkit, router, and retry handler",
+      "parallelism_notes": "Integration task — requires CacheManager, base toolkit, SQLToolkit, PostgresToolkit, router, and retry handler",
       "assigned_to": null,
       "started_at": "2026-04-04T15:20:43.688039Z",
-      "file": "sdd/tasks/active/TASK-578-database-agent.md",
+      "file": "sdd/tasks/completed/TASK-578-database-agent.md",
       "completed_at": "2026-04-04T21:43:54.520564Z"
     },
     {
       "id": "TASK-579",
       "slug": "cleanup-migration",
-      "title": "Cleanup & Migration \u2014 Delete Old Code, Update Exports",
+      "title": "Cleanup & Migration — Delete Old Code, Update Exports",
       "feature_id": "FEAT-082",
       "feature": "sqlagent-repair",
       "spec": "sdd/specs/sqlagent-repair.spec.md",
@@ -244,10 +244,10 @@
         "TASK-578"
       ],
       "parallel": false,
-      "parallelism_notes": "Must run last \u2014 deletes old code after everything else is verified",
+      "parallelism_notes": "Must run last — deletes old code after everything else is verified",
       "assigned_to": null,
       "started_at": "2026-04-04T15:20:43.688039Z",
-      "file": "sdd/tasks/active/TASK-579-cleanup-migration.md",
+      "file": "sdd/tasks/completed/TASK-579-cleanup-migration.md",
       "completed_at": "2026-04-04T21:46:11.878823Z"
     }
   ]

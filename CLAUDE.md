@@ -87,6 +87,49 @@ Consume any OpenAPI spec as a dynamic toolkit using `OpenAPIToolkit`
 - Never run `rm -rf` or system-level deletions
 - No form submissions or logins without user approval
 
+### Adversarial Second Opinion: Codex CLI
+
+The OpenAI `codex` CLI is installed and authenticated. Use it as an
+independent perspective for adversarial code reviews, design opinions,
+brainstorming, research cross-checks, and implementation sanity checks.
+
+Rules:
+- Never feed Codex your reasoning, justification, or preferred conclusion.
+  Give it only the diff, the requirement, and the question. Supplying your
+  conclusions produces ratification, not review.
+- Treat Codex output as advisory. For every substantive finding, explicitly
+  mark it as `CONFIRM` (adopt), `REJECT` (with reason), or `ESCALATE`.
+- Never silently concede to Codex and never silently drop a finding.
+- Run each Codex call as a full background agent session. Typical runtime is
+  30 seconds to 2 minutes; do not call it per edit or from hooks.
+- For parallel perspective, use one Claude subagent and one background
+  `codex exec` with the same neutral brief, then synthesize agreements and
+  disagreements.
+
+Commands:
+```bash
+# Reviews
+codex exec review --uncommitted
+codex exec review --base dev
+codex exec review --commit <sha>
+
+# Opinions, brainstorming, and cross-checks
+codex exec --sandbox read-only -o <scratch-file> "<neutral brief>"
+
+# Follow-up in the same Codex session
+codex exec resume --last "<question>"
+
+# Image generation / mockups / wireframes
+codex exec --sandbox workspace-write -o <out.txt> \
+  "Generate an image: <description>. Save as <name>.png"
+codex exec --sandbox workspace-write -i <screenshot.png> -o <out.txt> \
+  "Generate an image variant: <neutral brief>. Save as <name>.png"
+```
+
+Image-generation gotcha: `resume` does not accept `--sandbox`; use
+`-c sandbox_mode="workspace-write"` on resume when a writable sandbox is
+required.
+
 ## Key References
 - Architecture & patterns: @.agent/CONTEXT.md
 - SDD workflow: @docs/sdd/WORKFLOW.md
@@ -337,12 +380,13 @@ Authoritative reference: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
 
 This repository maintains a machine-first knowledge graph of the
 codebase (pages + typed edges over a local SQLite plane, built by
-`wikitoolkit build`). For questions about the codebase — where
-something lives, how modules relate, what a subsystem does — PREFER
-scoped wiki queries over reading whole files or grepping raw source:
+`wikitoolkit build`). For ANY question about the codebase — where
+something lives, how modules relate, what a subsystem does — you MUST
+run a scoped wiki query FIRST, before Grep/Glob/Read or any shell
+search (`grep`/`rg`/`find`/`cat` via Bash):
 
 - `wikitoolkit query "<question>"` — token-budgeted, ranked page
-  stubs for a scoped question. Start here.
+  stubs for a scoped question. ALWAYS start here.
 - `wikitoolkit page <id>` — read one page in full (file summaries,
   API outlines, content). Use the ids returned by `query`.
 - `wikitoolkit related <id>` — follow typed edges (`contains`,
@@ -355,24 +399,42 @@ scoped wiki queries over reading whole files or grepping raw source:
 "fails" — which are usually caller error, not missing coverage):
 
 1. **Query for the *thing*, not for your *hypothesis* about it.** The
-   ranking is semantic — extra concept words steer it toward those
-   concepts. To locate the `EventBus` class, ask
-   `"EventBus class publish subscribe events"` (returns the class page
-   at score 1.00), NOT `"EventBus backends message queue MQ transport"`
-   (the "message queue / transport" terms pull in unrelated broker/
-   transport pages and bury the class). Name the symbol/module/
-   subsystem you want; add your hypothesis terms only after you've
-   found the page and are reading it.
-2. **Follow the thread before falling back to grep.** If a result
-   scores low, or names a "re-export" / "canonical location" / parent
-   module, that is a breadcrumb — resolve it with `wikitoolkit page
-   <id>` or `wikitoolkit related <id>` (one hop usually lands the real
-   page). Do NOT jump to `grep`/`find` just because the first `query`
-   didn't rank the exact page first.
+   ranking is lexical — extra concept words steer it toward those
+   concepts. To locate a class or feature, name the symbol/module/
+   subsystem you want (`"attestation model service"`), not your theory
+   about where it might live.
+2. **Follow the thread before falling back.** If a result scores low
+   or names a parent module, resolve it with `wikitoolkit page <id>`
+   or `wikitoolkit related <id>` — one hop usually lands the real
+   page. Do NOT jump to grep just because the first `query` didn't
+   rank the exact page first.
+
+Only fall back to Grep/Glob/Read (or shell search) once a clean query
+*and* a page/related follow-up have genuinely come up empty — and say
+so before you do. Consider `wikitoolkit build` if results look stale.
+
+**Saving knowledge (persistent memory).** The wiki is also your
+durable memory — what you save here survives this session and is
+found by future `wikitoolkit query` calls ("the agent forgets, the
+graph does not"). When you learn a durable fact, make a decision, or
+extract a lesson worth keeping, SAVE it:
+
+- `wikitoolkit remember "<fact>" --category [note|decision|lesson|concept]
+  [--title "<short title>"] [--link <page_id> --rel <relation>]` —
+  file new knowledge (idempotent: same title+category updates the
+  existing memory). Link it to the pages it is about.
+- `wikitoolkit note <page_id> "<text>"` — append an attributed,
+  dated note to an existing page.
+- `wikitoolkit link <src_id> <dst_id> --rel <relation>` — connect
+  two pages with a typed, asserted edge.
+- `wikitoolkit memories` — list saved memories;
+  `wikitoolkit audit` — the attributed write log.
+
+Save selectively: durable decisions, gotchas, and cross-file
+relationships — not session chatter. Every write is attributed and
+auditable.
 
 The `/parrotwiki` command wraps these (e.g. `/parrotwiki query how
-does ingest work`, `/parrotwiki --wiki` to export a human-readable
-markdown wiki). Only fall back to Grep/Glob/Read once a clean query
-*and* a page/related follow-up have genuinely come up empty, and
-consider `wikitoolkit build` if results look stale.
+does ingest work`, `/parrotwiki remember <fact>`, `/parrotwiki --wiki`
+to export a human-readable markdown wiki).
 <!-- parrot:wiki:end -->

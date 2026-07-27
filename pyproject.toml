@@ -20,6 +20,7 @@ dependencies = [
     "ai-parrot-integrations",
     "ai-parrot-server",
     "ai-parrot-advisors",
+    "navrules",
 ]
 
 [project.optional-dependencies]
@@ -204,6 +205,7 @@ ai-parrot-pipelines = { workspace = true }
 ai-parrot-integrations = { workspace = true }
 ai-parrot-advisors = { workspace = true }
 ai-parrot-server = { workspace = true }
+navrules = { workspace = true }
 # asyncdb = { path = "../asyncdb", editable = true }
 # querysource = { path = "../../parallel/querysource", editable = true }
 

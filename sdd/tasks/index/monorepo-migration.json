@@ -19,16 +19,16 @@
       "effort": "L",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation \u2014 all other tasks depend on the workspace structure",
+      "parallelism_notes": "Foundation — all other tasks depend on the workspace structure",
       "assigned_to": null,
       "started_at": "2026-03-23T03:09:32.481442",
-      "file": "sdd/tasks/active/TASK-398-workspace-scaffolding.md",
+      "file": "sdd/tasks/completed/TASK-398-workspace-scaffolding.md",
       "completed_at": "2026-03-23T03:15:23.598779"
     },
     {
       "id": "TASK-399",
       "slug": "import-proxy-tools",
-      "title": "Import Proxy \u2014 Tools",
+      "title": "Import Proxy — Tools",
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
@@ -42,13 +42,13 @@
       "parallelism_notes": "Touches parrot/tools/__init__.py only, parallel with TASK-400 (loaders proxy)",
       "assigned_to": null,
       "started_at": "2026-03-23T03:16:04.808250",
-      "file": "sdd/tasks/active/TASK-399-import-proxy-tools.md",
+      "file": "sdd/tasks/completed/TASK-399-import-proxy-tools.md",
       "completed_at": "2026-03-23T03:17:50.732308"
     },
     {
       "id": "TASK-400",
       "slug": "import-proxy-loaders",
-      "title": "Import Proxy \u2014 Loaders",
+      "title": "Import Proxy — Loaders",
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
@@ -82,7 +82,7 @@
       "parallelism_notes": "Depends on tools proxy; modifies manager.py and creates discovery.py",
       "assigned_to": null,
       "started_at": "2026-03-23T03:29:42.040941",
-      "file": "sdd/tasks/active/TASK-401-tool-discovery-system.md",
+      "file": "sdd/tasks/completed/TASK-401-tool-discovery-system.md",
       "completed_at": "2026-03-23T03:32:08.435922"
     },
     {
@@ -102,13 +102,13 @@
       "parallelism_notes": "Only creates ai-parrot-tools pyproject + __init__, parallel with proxies",
       "assigned_to": null,
       "started_at": "2026-03-23T03:18:16.434794",
-      "file": "sdd/tasks/active/TASK-402-tools-package-setup.md",
+      "file": "sdd/tasks/completed/TASK-402-tools-package-setup.md",
       "completed_at": "2026-03-23T03:19:07.610396"
     },
     {
       "id": "TASK-403",
       "slug": "tools-migration-batch1",
-      "title": "Tools Migration \u2014 Batch 1 (Simple Tools)",
+      "title": "Tools Migration — Batch 1 (Simple Tools)",
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
@@ -123,13 +123,13 @@
       "parallelism_notes": "Must have proxy + tools package ready; moves files both packages share",
       "assigned_to": null,
       "started_at": "2026-03-23T03:19:41.420962",
-      "file": "sdd/tasks/active/TASK-403-tools-migration-batch1.md",
+      "file": "sdd/tasks/completed/TASK-403-tools-migration-batch1.md",
       "completed_at": "2026-03-23T03:22:47.701399"
     },
     {
       "id": "TASK-404",
       "slug": "tools-migration-batch2",
-      "title": "Tools Migration \u2014 Batch 2 (Toolkit-Based Tools)",
+      "title": "Tools Migration — Batch 2 (Toolkit-Based Tools)",
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
@@ -140,16 +140,16 @@
         "TASK-403"
       ],
       "parallel": false,
-      "parallelism_notes": "Sequential after batch 1 \u2014 same files (TOOL_REGISTRY, pyproject extras)",
+      "parallelism_notes": "Sequential after batch 1 — same files (TOOL_REGISTRY, pyproject extras)",
       "assigned_to": null,
       "started_at": "2026-03-23T03:23:19.479909",
-      "file": "sdd/tasks/active/TASK-404-tools-migration-batch2.md",
+      "file": "sdd/tasks/completed/TASK-404-tools-migration-batch2.md",
       "completed_at": "2026-03-23T03:25:07.376676"
     },
     {
       "id": "TASK-405",
       "slug": "tools-migration-batch3",
-      "title": "Tools Migration \u2014 Batch 3 (Complex/Heavy Tools)",
+      "title": "Tools Migration — Batch 3 (Complex/Heavy Tools)",
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
@@ -160,10 +160,10 @@
         "TASK-404"
       ],
       "parallel": false,
-      "parallelism_notes": "Sequential after batch 2 \u2014 same files (TOOL_REGISTRY, pyproject extras)",
+      "parallelism_notes": "Sequential after batch 2 — same files (TOOL_REGISTRY, pyproject extras)",
       "assigned_to": null,
       "started_at": "2026-03-23T03:26:00.936321",
-      "file": "sdd/tasks/active/TASK-405-tools-migration-batch3.md",
+      "file": "sdd/tasks/completed/TASK-405-tools-migration-batch3.md",
       "completed_at": "2026-03-23T03:28:53.536735"
     },
     {
@@ -180,7 +180,7 @@
         "TASK-400"
       ],
       "parallel": true,
-      "parallelism_notes": "Touches only loaders files \u2014 can run in parallel with tools migration (TASK-403..405)",
+      "parallelism_notes": "Touches only loaders files — can run in parallel with tools migration (TASK-403..405)",
       "assigned_to": null,
       "started_at": "2026-03-23T04:10:00.000000",
       "file": "sdd/tasks/completed/TASK-406-loaders-migration.md",
@@ -200,7 +200,7 @@
         "TASK-403"
       ],
       "parallel": true,
-      "parallelism_notes": "Only creates scripts/ file \u2014 parallel with batch 2/3 and loaders",
+      "parallelism_notes": "Only creates scripts/ file — parallel with batch 2/3 and loaders",
       "assigned_to": null,
       "started_at": "2026-03-23T04:35:00.000000",
       "file": "sdd/tasks/completed/TASK-407-registry-generation-script.md",
@@ -254,7 +254,7 @@
         "TASK-408"
       ],
       "parallel": false,
-      "parallelism_notes": "Final validation \u2014 depends on ALL previous tasks",
+      "parallelism_notes": "Final validation — depends on ALL previous tasks",
       "assigned_to": null,
       "started_at": "2026-03-23T05:05:00.000000",
       "file": "sdd/tasks/completed/TASK-409-monorepo-tests-validation.md",

@@ -17,9 +17,10 @@ from parrot.flows.dev_loop.task_scheduler import TaskRef
 class FakeDispatcher:
     """Fulfils the ``DevLoopCodeDispatcher`` Protocol.
 
-    Records every dispatch call and can be programmed to fail (raise) for
-    specific task ids — only on the FIRST call for that id, so a retry on
-    a different worker succeeds.
+    Records every dispatch call (including the ``profile`` actually used,
+    for FEAT-377 TASK-1912's escalation-model assertions) and can be
+    programmed to fail (raise) for specific task ids — only on the FIRST
+    call for that id, so a retry on a different worker succeeds.
     """
 
     def __init__(self, fail_ids=()):
@@ -27,7 +28,7 @@ class FakeDispatcher:
         self.fail_ids = set(fail_ids)
 
     async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd):
-        self.calls.append((brief.task_id, node_id, cwd))
+        self.calls.append((brief.task_id, node_id, cwd, profile))
         if brief.task_id in self.fail_ids:
             self.fail_ids.discard(brief.task_id)
             raise RuntimeError("boom")
@@ -78,6 +79,25 @@ def _build_pool(dispatchers, *, pool_max=99):
         d = dispatchers[idx]
         _builder.built.append(d)
         return d, object()
+
+    _builder.built = []
+    return DevAgentPool.build(config, _builder, pool_max)
+
+
+def _build_pool_with_specs(dispatchers, specs, *, pool_max=99):
+    """Build a DevAgentPool with explicit ``DevAgentSpec``s (FEAT-377
+    TASK-1912) and a real ``model``-bearing dispatch profile per worker
+    (``ClaudeCodeDispatchProfile`` — the pool only ever reads/copies its
+    ``model`` field via ``model_copy``, never anything Claude-specific)."""
+    from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile
+
+    config = DevAgentPoolConfig(agents=list(specs))
+
+    def _builder(spec):
+        idx = len(_builder.built)
+        d = dispatchers[idx]
+        _builder.built.append(d)
+        return d, ClaudeCodeDispatchProfile(model=spec.model or "base-model")
 
     _builder.built = []
     return DevAgentPool.build(config, _builder, pool_max)
@@ -153,6 +173,109 @@ class TestPool:
             await pool.run_wave(
                 _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
             )
+
+
+@pytest.mark.asyncio
+class TestEscalationModel:
+    """FEAT-377 TASK-1912: escalation_model — stronger model on retry."""
+
+    async def test_retry_uses_escalation_model(self):
+        d1 = FakeDispatcher(fail_ids={"TASK-1"})  # single worker: retries itself
+        spec = DevAgentSpec(
+            agent="claude-code", model="claude-sonnet-4-6",
+            escalation_model="claude-opus-4-6",
+        )
+        pool = _build_pool_with_specs([d1], [spec])
+
+        result = await pool.run_wave(
+            _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
+        )
+
+        assert "TASK-1" in result.completed
+        assert len(d1.calls) == 2
+        first_profile = d1.calls[0][3]
+        retry_profile = d1.calls[1][3]
+        assert first_profile.model == "claude-sonnet-4-6"
+        assert retry_profile.model == "claude-opus-4-6"
+
+    async def test_retry_same_model_when_unset(self):
+        d1 = FakeDispatcher(fail_ids={"TASK-1"})
+        spec = DevAgentSpec(agent="claude-code", model="claude-sonnet-4-6")
+        pool = _build_pool_with_specs([d1], [spec])
+
+        result = await pool.run_wave(
+            _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
+        )
+
+        assert "TASK-1" in result.completed
+        assert len(d1.calls) == 2
+        assert d1.calls[0][3].model == "claude-sonnet-4-6"
+        assert d1.calls[1][3].model == "claude-sonnet-4-6"
+
+    async def test_first_attempt_never_escalates(self):
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        specs = [
+            DevAgentSpec(
+                agent="claude-code", model="claude-sonnet-4-6",
+                escalation_model="claude-opus-4-6",
+            ),
+            DevAgentSpec(
+                agent="claude-code", model="claude-sonnet-4-6",
+                escalation_model="claude-opus-4-6",
+            ),
+        ]
+        pool = _build_pool_with_specs([d1, d2], specs)
+
+        result = await pool.run_wave(
+            _tasks("TASK-1", "TASK-2"), research=_research(), run_id="run-1",
+            cwd_for=_cwd_for,
+        )
+
+        assert set(result.completed) == {"TASK-1", "TASK-2"}
+        assert d1.calls[0][3].model == "claude-sonnet-4-6"
+        assert d2.calls[0][3].model == "claude-sonnet-4-6"
+
+    async def test_escalation_on_different_retry_worker_uses_that_workers_spec(self):
+        """The retry may land on a DIFFERENT worker (round-robin) — the
+        escalation model used must be the RETRY worker's own spec, not the
+        originally-failed worker's."""
+        d1 = FakeDispatcher(fail_ids={"TASK-1"})
+        d2 = FakeDispatcher()
+        specs = [
+            DevAgentSpec(agent="claude-code", model="m1", escalation_model=""),
+            DevAgentSpec(agent="claude-code", model="m2", escalation_model="m2-strong"),
+        ]
+        pool = _build_pool_with_specs([d1, d2], specs)
+
+        result = await pool.run_wave(
+            _tasks("TASK-1", "TASK-2"), research=_research(), run_id="run-1",
+            cwd_for=_cwd_for,
+        )
+
+        assert "TASK-1" in result.completed
+        # TASK-1 originally assigned to w1 (d1, fails), retried on w2 (d2).
+        retry_call = next(c for c in d2.calls if c[0] == "TASK-1")
+        assert retry_call[3].model == "m2-strong"
+
+    async def test_escalated_profile_handles_llm_field_profile(self):
+        """FEAT-377 TASK-1912: the 'nvidia' backend's LLMCodeDispatchProfile
+        carries the model in a combined ``llm="nvidia:<model>"`` field, not
+        a plain ``model`` field."""
+        from parrot.flows.dev_loop.agent_pool import DevAgentPool, PoolWorker
+        from parrot.flows.dev_loop.models import LLMCodeDispatchProfile
+
+        spec = DevAgentSpec(
+            agent="nvidia", model="kimi-k2", escalation_model="kimi-k3-strong",
+        )
+        worker = PoolWorker(
+            worker_id="development.w1", spec=spec,
+            dispatcher=FakeDispatcher(),
+            profile=LLMCodeDispatchProfile(llm="nvidia:kimi-k2"),
+        )
+        escalated = DevAgentPool._escalated_profile(worker)
+        assert escalated.llm == "nvidia:kimi-k3-strong"
+        # The original worker profile is never mutated.
+        assert worker.profile.llm == "nvidia:kimi-k2"
 
 
 class TestAggregate:

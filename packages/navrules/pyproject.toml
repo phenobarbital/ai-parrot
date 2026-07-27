@@ -1,0 +1,55 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "navrules"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "Generic, low-latency rule evaluation engine (priority, first-match, all-match policies) with optional Rust backend"
+readme = "README.md"
+authors = [
+    {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
+]
+license = "MIT"
+keywords = ["rules", "rule-engine", "policy", "first-match", "evaluation", "asyncio"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
+]
+# The core engine is dependency-free by design: consumers (rewards, payrate
+# systems) must be able to install it without dragging frameworks along.
+dependencies = []
+
+[project.optional-dependencies]
+pandas = ["pandas>=2.0"]
+cel = ["cel-python>=0.1.5"]
+
+[project.urls]
+Homepage = "https://github.com/phenobarbital/ai-parrot"
+Repository = "https://github.com/phenobarbital/ai-parrot"
+
+[tool.maturin]
+python-source = "src"
+manifest-path = "rust/Cargo.toml"
+module-name = "navrules._native._navrules"
+features = ["pyo3/extension-module"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-benchmark>=4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

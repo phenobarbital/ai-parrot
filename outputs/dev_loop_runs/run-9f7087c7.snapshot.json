@@ -1,0 +1,146 @@
+{
+  "channel": "parrot-session:/run-9f7087c7",
+  "state": {
+    "run_id": "run-9f7087c7",
+    "channel": "parrot-session:/run-9f7087c7",
+    "revision": false,
+    "phase": "failed",
+    "created_at": 1785169863.2753592,
+    "finished_at": 1785170782.2874296,
+    "work_kind": "enhancement",
+    "summary": "EventBus replacement",
+    "jira_issue_key": "NAV-9266",
+    "pr_url": "",
+    "nodes": {
+      "intent_classifier": {
+        "node_id": "intent_classifier",
+        "status": "completed",
+        "started_at": 1785169863.3167012,
+        "finished_at": 1785169863.3255837,
+        "error": "",
+        "dispatch": null,
+        "summary": {}
+      },
+      "bug_intake": {
+        "node_id": "bug_intake",
+        "status": "skipped",
+        "started_at": null,
+        "finished_at": null,
+        "error": "",
+        "dispatch": null,
+        "summary": {}
+      },
+      "research": {
+        "node_id": "research",
+        "status": "completed",
+        "started_at": 1785169863.3650389,
+        "finished_at": 1785170204.461729,
+        "error": "",
+        "dispatch": {
+          "status": "completed",
+          "dispatcher": "",
+          "started_at": 1785169873.14115,
+          "finished_at": 1785170204.432608,
+          "message_count": 148,
+          "tool_use_count": 42,
+          "last_error": "",
+          "terminal": "",
+          "input_tokens": 35,
+          "output_tokens": 15749,
+          "cache_creation_input_tokens": 85462,
+          "cache_read_input_tokens": 2158537,
+          "total_cost_usd": 1.3966731000000003,
+          "num_turns": 43,
+          "duration_ms": 329062
+        },
+        "summary": {}
+      },
+      "development": {
+        "node_id": "development",
+        "status": "completed",
+        "started_at": 1785170204.4626184,
+        "finished_at": 1785170498.3447316,
+        "error": "",
+        "dispatch": {
+          "status": "completed",
+          "dispatcher": "",
+          "started_at": 1785170204.4645493,
+          "finished_at": 1785170498.3428583,
+          "message_count": 96,
+          "tool_use_count": 43,
+          "last_error": "",
+          "terminal": "",
+          "input_tokens": 50,
+          "output_tokens": 11728,
+          "cache_creation_input_tokens": 57687,
+          "cache_read_input_tokens": 2644212,
+          "total_cost_usd": 1.3154556000000002,
+          "num_turns": 44,
+          "duration_ms": 292563
+        },
+        "summary": {}
+      },
+      "qa": {
+        "node_id": "qa",
+        "status": "failed",
+        "started_at": 1785170498.3456337,
+        "finished_at": 1785170774.6028254,
+        "error": "Output failed QAReport validation: 4 validation errors for QAReport\ncriterion_results.0.kind\n  Field required [type=missing, input_value={'name': 'ruff-criterion-...ption).', 'error': None}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing\ncriterion_results.0.duration_seconds\n  Field required [type=missing, input_value={'name': 'ruff-criterion-...ption).', 'error': None}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2",
+        "dispatch": {
+          "status": "output_invalid",
+          "dispatcher": "",
+          "started_at": 1785170498.3464782,
+          "finished_at": null,
+          "message_count": 105,
+          "tool_use_count": 14,
+          "last_error": "",
+          "terminal": "",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cache_creation_input_tokens": null,
+          "cache_read_input_tokens": null,
+          "total_cost_usd": null,
+          "num_turns": null,
+          "duration_ms": null
+        },
+        "summary": {}
+      },
+      "deployment_handoff": {
+        "node_id": "deployment_handoff",
+        "status": "skipped",
+        "started_at": null,
+        "finished_at": null,
+        "error": "",
+        "dispatch": null,
+        "summary": {}
+      },
+      "failure_handler": {
+        "node_id": "failure_handler",
+        "status": "running",
+        "started_at": 1785170774.603184,
+        "finished_at": null,
+        "error": "",
+        "dispatch": null,
+        "summary": {}
+      },
+      "close": {
+        "node_id": "close",
+        "status": "skipped",
+        "started_at": null,
+        "finished_at": null,
+        "error": "",
+        "dispatch": null,
+        "summary": {}
+      }
+    },
+    "gates": {},
+    "cancel_requested_by": "",
+    "error": "Output failed QAReport validation: 4 validation errors for QAReport\ncriterion_results.0.kind\n  Field required [type=missing, input_value={'name': 'ruff-criterion-...ption).', 'error': None}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing\ncriterion_results.0.duration_seconds\n  Field required [type=missing, input_value={'name': 'ruff-criterion-...ption).', 'error': None}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2",
+    "judge_verdicts": {},
+    "feedback_decisions": [],
+    "docs_artifacts": [],
+    "qa_attempts": 0,
+    "qa_notes": ""
+  },
+  "from_seq": 570
+}

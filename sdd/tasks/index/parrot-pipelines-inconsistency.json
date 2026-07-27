@@ -19,10 +19,10 @@
       "effort": "M",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation task \u2014 all other tasks depend on these models",
+      "parallelism_notes": "Foundation task — all other tasks depend on these models",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-583-grid-models-package.md"
+      "file": "sdd/tasks/done/TASK-583-grid-models-package.md"
     },
     {
       "id": "TASK-584",
@@ -41,7 +41,7 @@
       "parallelism_notes": "Depends on grid models from TASK-583",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-584-abstract-grid-strategy.md"
+      "file": "sdd/tasks/done/TASK-584-abstract-grid-strategy.md"
     },
     {
       "id": "TASK-585",
@@ -60,7 +60,7 @@
       "parallelism_notes": "Depends on AbstractGridStrategy from TASK-584",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-585-horizontal-bands-strategy.md"
+      "file": "sdd/tasks/done/TASK-585-horizontal-bands-strategy.md"
     },
     {
       "id": "TASK-586",
@@ -79,7 +79,7 @@
       "parallelism_notes": "Only depends on grid models (TASK-583), can run parallel with TASK-584/585",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-586-cell-result-merger.md"
+      "file": "sdd/tasks/done/TASK-586-cell-result-merger.md"
     },
     {
       "id": "TASK-587",
@@ -97,10 +97,10 @@
         "TASK-586"
       ],
       "parallel": false,
-      "parallelism_notes": "Core orchestrator \u2014 depends on models, strategy, and merger",
+      "parallelism_notes": "Core orchestrator — depends on models, strategy, and merger",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-587-grid-detector.md"
+      "file": "sdd/tasks/done/TASK-587-grid-detector.md"
     },
     {
       "id": "TASK-588",
@@ -119,7 +119,7 @@
       "parallelism_notes": "Only needs DetectionGridConfig from TASK-583, can run parallel with strategies",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-588-config-model-extensions.md"
+      "file": "sdd/tasks/done/TASK-588-config-model-extensions.md"
     },
     {
       "id": "TASK-589",
@@ -138,7 +138,7 @@
       "parallelism_notes": "Only needs AbstractGridStrategy, can run parallel with TASK-585/586/588",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-589-abstract-type-grid-integration.md"
+      "file": "sdd/tasks/done/TASK-589-abstract-type-grid-integration.md"
     },
     {
       "id": "TASK-590",
@@ -157,10 +157,10 @@
         "TASK-589"
       ],
       "parallel": false,
-      "parallelism_notes": "Integration task \u2014 wires all components together, must run after all grid infrastructure",
+      "parallelism_notes": "Integration task — wires all components together, must run after all grid infrastructure",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-590-product-on-shelves-refactor.md"
+      "file": "sdd/tasks/done/TASK-590-product-on-shelves-refactor.md"
     },
     {
       "id": "TASK-591",
@@ -176,10 +176,10 @@
         "TASK-590"
       ],
       "parallel": false,
-      "parallelism_notes": "Final validation \u2014 must run after full integration",
+      "parallelism_notes": "Final validation — must run after full integration",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-591-integration-tests.md"
+      "file": "sdd/tasks/done/TASK-591-integration-tests.md"
     }
   ]
 }

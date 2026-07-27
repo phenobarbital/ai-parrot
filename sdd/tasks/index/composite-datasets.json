@@ -19,7 +19,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation module \u2014 all other tasks depend on this",
+      "parallelism_notes": "Foundation module — all other tasks depend on this",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
       "file": "sdd/tasks/completed/TASK-427-computed-columns-foundation.md",
@@ -39,7 +39,7 @@
         "TASK-427"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on base types \u2014 all sources depend on this",
+      "parallelism_notes": "Depends on base types — all sources depend on this",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
       "file": "sdd/tasks/completed/TASK-428-datasetentry-computed-integration.md",
@@ -48,7 +48,7 @@
     {
       "id": "TASK-429",
       "slug": "dbtoolkit-sql-sources-core",
-      "title": "Core SQL Sources \u2014 PostgreSQL, MySQL, SQLite",
+      "title": "Core SQL Sources — PostgreSQL, MySQL, SQLite",
       "feature_id": "FEAT-062",
       "feature": "composite-datasets",
       "spec": "sdd/specs/composite-datasets.spec.md",
@@ -68,7 +68,7 @@
     {
       "id": "TASK-430",
       "slug": "dbtoolkit-sql-sources-extended",
-      "title": "Extended SQL Sources \u2014 BigQuery, Oracle, ClickHouse, DuckDB",
+      "title": "Extended SQL Sources — BigQuery, Oracle, ClickHouse, DuckDB",
       "feature_id": "FEAT-062",
       "feature": "composite-datasets",
       "spec": "sdd/specs/composite-datasets.spec.md",
@@ -79,7 +79,7 @@
         "TASK-428"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies tool.py \u2014 sequential with TASK-429 to avoid conflicts",
+      "parallelism_notes": "Modifies tool.py — sequential with TASK-429 to avoid conflicts",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
       "file": "sdd/tasks/completed/TASK-430-llm-runtime-computed-columns.md",
@@ -99,10 +99,10 @@
         "TASK-427"
       ],
       "parallel": false,
-      "parallelism_notes": "New file (sources/composite.py) \u2014 could theoretically parallel with TASK-428/429 but shares test fixtures and sources/__init__.py",
+      "parallelism_notes": "New file (sources/composite.py) — could theoretically parallel with TASK-428/429 but shares test fixtures and sources/__init__.py",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-431-composite-datasource.md",
+      "file": "sdd/tasks/completed/TASK-431-composite-datasource.md",
       "completed_at": "2026-03-25T13:36:15.050071Z"
     },
     {
@@ -123,7 +123,7 @@
       "parallelism_notes": "Depends on CompositeDataSource (TASK-431) and DatasetEntry computed integration (TASK-428)",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-432-add-composite-dataset.md",
+      "file": "sdd/tasks/completed/TASK-432-add-composite-dataset.md",
       "completed_at": "2026-03-25T13:41:28.720516Z"
     },
     {
@@ -140,7 +140,7 @@
         "TASK-432"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on MongoSource (TASK-432) \u2014 extends it",
+      "parallelism_notes": "Depends on MongoSource (TASK-432) — extends it",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/completed/TASK-433-dbtoolkit-documentdb-atlas.md",

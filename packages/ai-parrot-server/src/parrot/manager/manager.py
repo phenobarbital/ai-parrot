@@ -1841,6 +1841,19 @@ class BotManager:
             '/api/v1/agents/infographic/{resource:themes}/{theme_name}',
             InfographicTalk,
         )
+        # Deterministic render route (FEAT-327) — bot-less, LLM-free. The
+        # literal `render` resource MUST be registered before the {agent_id}
+        # catch-all below, same reasoning as templates/themes above.
+        router.add_view(
+            '/api/v1/agents/infographic/{resource:render}',
+            InfographicTalk,
+        )
+        # Async render job polling (FEAT-327, Module 4) — grouped with the
+        # render route above; also before {agent_id}.
+        router.add_view(
+            '/api/v1/agents/infographic/{resource:render}/jobs/{job_id}',
+            InfographicTalk,
+        )
         router.add_view(
             '/api/v1/agents/infographic/{agent_id}',
             InfographicTalk,

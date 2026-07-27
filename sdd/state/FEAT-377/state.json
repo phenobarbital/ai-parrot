@@ -1,0 +1,48 @@
+{
+  "feat_id": "FEAT-377",
+  "slug": "graphindex-as-engineering-devloop",
+  "phase": "proposal_drafted",
+  "started_at": "2026-07-26T00:00:00Z",
+  "updated_at": "2026-07-26T00:00:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 35,
+    "grep_calls": 22,
+    "git_calls": 6,
+    "depth_reached": 2
+  },
+  "source": {
+    "kind": "file",
+    "path": "sdd/proposals/graph-engineering-devloop.proposal.md",
+    "jira_key": null,
+    "summary_oneline": "Graph Engineering evaluation — mapping the 14-step framework onto GraphIndex + dev_loop"
+  },
+  "phases": {
+    "source": { "status": "complete" },
+    "plan": { "status": "complete" },
+    "research": {
+      "status": "complete",
+      "agents": 4,
+      "findings": 8,
+      "wiki_queries": 4
+    },
+    "synthesis": { "status": "complete" },
+    "review_gate": { "status": "pending" },
+    "qa": { "status": "skipped", "reason": "zero unknowns" },
+    "output": {
+      "status": "complete",
+      "proposal_path": "sdd/proposals/graphindex-as-engineering-devloop.proposal.md"
+    }
+  },
+  "wiki_available": true,
+  "truncated": false,
+  "truncation_reason": null
+}

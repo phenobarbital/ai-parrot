@@ -505,7 +505,7 @@ class FormattedEmployeesTool(EmployeesTool):
 - [AbstractTool Documentation](../abstract.md)
 - [EmployeeHierarchyManager Interface](../../interfaces/hierarchy.md)
 - [BasicAgent Documentation](../../bots/agent.md)
-- [AgentCrew Documentation](../../bots/orchestration/crew.md)
+- [AgentCrew Documentation](orchestration/agentcrew.md)
 
 ## 🤝 Contributing
 

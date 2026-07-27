@@ -23,7 +23,7 @@
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
       "completed_at": "2026-06-15T21:41:53+00:00",
-      "file": "sdd/tasks/active/TASK-1552-okf-ontology.md"
+      "file": "sdd/tasks/completed/TASK-1552-okf-ontology.md"
     },
     {
       "id": "TASK-1553",
@@ -41,7 +41,7 @@
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
       "completed_at": "2026-06-15T21:41:53+00:00",
-      "file": "sdd/tasks/active/TASK-1553-okf-concept-id.md"
+      "file": "sdd/tasks/completed/TASK-1553-okf-concept-id.md"
     },
     {
       "id": "TASK-1554",
@@ -61,7 +61,7 @@
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
       "completed_at": "2026-06-15T21:41:53+00:00",
-      "file": "sdd/tasks/active/TASK-1554-okf-frontmatter.md"
+      "file": "sdd/tasks/completed/TASK-1554-okf-frontmatter.md"
     },
     {
       "id": "TASK-1555",
@@ -82,7 +82,7 @@
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
       "completed_at": "2026-06-15T21:41:53+00:00",
-      "file": "sdd/tasks/active/TASK-1555-okf-graph.md"
+      "file": "sdd/tasks/completed/TASK-1555-okf-graph.md"
     },
     {
       "id": "TASK-1556",
@@ -103,7 +103,7 @@
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
       "completed_at": "2026-06-15T21:41:53+00:00",
-      "file": "sdd/tasks/active/TASK-1556-okf-projection.md"
+      "file": "sdd/tasks/completed/TASK-1556-okf-projection.md"
     },
     {
       "id": "TASK-1557",
@@ -127,7 +127,7 @@
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
       "completed_at": "2026-06-15T21:41:53+00:00",
-      "file": "sdd/tasks/active/TASK-1557-okf-migrate.md"
+      "file": "sdd/tasks/completed/TASK-1557-okf-migrate.md"
     },
     {
       "id": "TASK-1558",
@@ -148,7 +148,7 @@
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
       "completed_at": "2026-06-15T21:41:53+00:00",
-      "file": "sdd/tasks/active/TASK-1558-okf-tools.md"
+      "file": "sdd/tasks/completed/TASK-1558-okf-tools.md"
     },
     {
       "id": "TASK-1559",
@@ -174,7 +174,7 @@
       "assigned_to": null,
       "started_at": "2026-06-15T16:58:08+00:00",
       "completed_at": "2026-06-15T21:41:53+00:00",
-      "file": "sdd/tasks/active/TASK-1559-okf-integration.md"
+      "file": "sdd/tasks/completed/TASK-1559-okf-integration.md"
     }
   ]
 }

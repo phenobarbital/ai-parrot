@@ -1,0 +1,897 @@
+{
+	"info": {
+		"_postman_id": "ai-parrot-agentcrew-api",
+		"name": "AI-Parrot — AgentCrew Management API",
+		"description": "Complete REST API collection for AgentCrew management in AI-Parrot.\n\nCovers:\n- Crew CRUD (definitions)\n- Crew execution (run, monitor, interact)\n- Execution history (list, replay, schedule)\n- Builder catalogs (tools, special nodes)\n\n**Path convention:**\n- `/api/v1/crew` (singular) — definition CRUD\n- `/api/v1/crews` (plural) — execution & monitoring\n- `/api/v1/crew/executions` — saved execution history\n- `/api/v1/crew/tools` — tool catalog\n- `/api/v1/crew/special_nodes` — special node catalog",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5000",
+			"type": "string"
+		},
+		{
+			"key": "tenant",
+			"value": "global",
+			"type": "string"
+		},
+		{
+			"key": "crew_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "crew_name",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "job_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "execution_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "agent_id",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. Crew Definitions (CRUD)",
+			"description": "Create, read, update, and delete crew definitions.\nHandler: `CrewHandler` — `/api/v1/crew`",
+			"item": [
+				{
+					"name": "Create Crew",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"research_crew\",\n  \"tenant\": \"{{tenant}}\",\n  \"description\": \"A crew that researches a topic and writes a report\",\n  \"execution_mode\": \"sequential\",\n  \"agents\": [\n    {\n      \"agent_id\": \"researcher\",\n      \"agent_class\": \"BaseAgent\",\n      \"name\": \"Researcher\",\n      \"config\": {\n        \"llm\": \"anthropic:claude-sonnet-4-20250514\",\n        \"temperature\": 0.7\n      },\n      \"tools\": [\"google_search\"],\n      \"system_prompt\": \"You are a thorough researcher. Search the web and compile detailed findings.\"\n    },\n    {\n      \"agent_id\": \"writer\",\n      \"agent_class\": \"BaseAgent\",\n      \"name\": \"Writer\",\n      \"config\": {\n        \"llm\": \"anthropic:claude-sonnet-4-20250514\",\n        \"temperature\": 0.3\n      },\n      \"tools\": [],\n      \"system_prompt\": \"You are a professional writer. Take the research and produce a polished report.\"\n    }\n  ],\n  \"tool_nodes\": [],\n  \"flow_relations\": [],\n  \"shared_tools\": [],\n  \"max_parallel_tasks\": 10,\n  \"generate_infographic\": false,\n  \"result_agent_name\": \"result-agent\",\n  \"enable_execution_wiki\": true,\n  \"metadata\": {}\n}"
+						},
+						"description": "Create a new AgentCrew from a `CrewDefinition`.\n\n**Response:** 201 with crew_id, name, execution_mode, agent list, and created_at."
+					},
+					"response": [
+						{
+							"name": "201 — Crew Created",
+							"status": "Created",
+							"code": 201,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"message\": \"Crew created successfully\",\n  \"crew_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n  \"tenant\": \"global\",\n  \"name\": \"research_crew\",\n  \"execution_mode\": \"sequential\",\n  \"agents\": [\"researcher\", \"writer\"],\n  \"created_at\": \"2025-07-24T12:00:00+00:00\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Create Crew (Flow Mode)",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"analysis_flow_crew\",\n  \"tenant\": \"{{tenant}}\",\n  \"description\": \"A DAG-based crew: data collector feeds analyst and fact-checker in parallel, then synthesizer merges results\",\n  \"execution_mode\": \"flow\",\n  \"agents\": [\n    {\n      \"agent_id\": \"collector\",\n      \"agent_class\": \"BaseAgent\",\n      \"name\": \"Data Collector\",\n      \"config\": { \"llm\": \"openai:gpt-4o\" },\n      \"tools\": [\"google_search\"],\n      \"system_prompt\": \"Collect raw data on the given topic.\"\n    },\n    {\n      \"agent_id\": \"analyst\",\n      \"agent_class\": \"BaseAgent\",\n      \"name\": \"Analyst\",\n      \"config\": { \"llm\": \"anthropic:claude-sonnet-4-20250514\" },\n      \"tools\": [],\n      \"system_prompt\": \"Analyze the collected data and identify key insights.\"\n    },\n    {\n      \"agent_id\": \"fact_checker\",\n      \"agent_class\": \"BaseAgent\",\n      \"name\": \"Fact Checker\",\n      \"config\": { \"llm\": \"anthropic:claude-sonnet-4-20250514\" },\n      \"tools\": [\"google_search\"],\n      \"system_prompt\": \"Verify the accuracy of the collected data.\"\n    },\n    {\n      \"agent_id\": \"synthesizer\",\n      \"agent_class\": \"BaseAgent\",\n      \"name\": \"Synthesizer\",\n      \"config\": { \"llm\": \"anthropic:claude-sonnet-4-20250514\" },\n      \"tools\": [],\n      \"system_prompt\": \"Synthesize the analysis and fact-check results into a final report.\"\n    }\n  ],\n  \"flow_relations\": [\n    { \"source\": \"Data Collector\", \"target\": \"Analyst\" },\n    { \"source\": \"Data Collector\", \"target\": \"Fact Checker\" },\n    { \"source\": [\"Analyst\", \"Fact Checker\"], \"target\": \"Synthesizer\" }\n  ],\n  \"shared_tools\": [],\n  \"max_parallel_tasks\": 10,\n  \"generate_infographic\": true,\n  \"metadata\": {}\n}"
+						},
+						"description": "Create a crew using `flow` execution mode with DAG-based agent dependencies via `flow_relations`.\n\nThe `source`/`target` fields reference agent `name` values (or `agent_id` when name is null). Lists are supported for fan-in edges."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Crew (with Tool Nodes)",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"data_pipeline_crew\",\n  \"tenant\": \"{{tenant}}\",\n  \"description\": \"Crew mixing LLM agents with deterministic tool nodes\",\n  \"execution_mode\": \"flow\",\n  \"agents\": [\n    {\n      \"agent_id\": \"analyst\",\n      \"agent_class\": \"BaseAgent\",\n      \"name\": \"Analyst\",\n      \"config\": { \"llm\": \"openai:gpt-4o\" },\n      \"tools\": [],\n      \"system_prompt\": \"Analyze the fetched data.\"\n    }\n  ],\n  \"tool_nodes\": [\n    {\n      \"node_id\": \"fetch_data\",\n      \"tool\": \"http_get\",\n      \"name\": \"Fetch Data\",\n      \"description\": \"Fetch raw data from the API endpoint\",\n      \"args\": [],\n      \"kwargs\": {\n        \"url\": \"https://api.example.com/data\",\n        \"headers\": { \"Authorization\": \"Bearer {input}\" }\n      }\n    }\n  ],\n  \"flow_relations\": [\n    { \"source\": \"Fetch Data\", \"target\": \"Analyst\" }\n  ],\n  \"metadata\": {}\n}"
+						},
+						"description": "Create a crew that mixes LLM agents with deterministic `tool_nodes`.\n\nTool nodes invoke tools directly without LLM tokens. String values in `args`/`kwargs` support `{input}` and `{nodes.<node_name>.output}` placeholders."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Crew",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew/{{crew_id}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew", "{{crew_id}}"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"research_crew\",\n  \"tenant\": \"{{tenant}}\",\n  \"description\": \"Updated description\",\n  \"execution_mode\": \"parallel\",\n  \"agents\": [\n    {\n      \"agent_id\": \"researcher\",\n      \"agent_class\": \"BaseAgent\",\n      \"name\": \"Researcher\",\n      \"config\": { \"llm\": \"anthropic:claude-sonnet-4-20250514\" },\n      \"tools\": [\"google_search\"],\n      \"system_prompt\": \"You are a thorough researcher.\"\n    },\n    {\n      \"agent_id\": \"writer\",\n      \"agent_class\": \"BaseAgent\",\n      \"name\": \"Writer\",\n      \"config\": { \"llm\": \"anthropic:claude-sonnet-4-20250514\" },\n      \"tools\": [],\n      \"system_prompt\": \"You are a professional writer.\"\n    }\n  ],\n  \"metadata\": {}\n}"
+						},
+						"description": "Update an existing crew definition by its ID or name.\n\n**Response:** 202 on success, 404 if crew not found."
+					},
+					"response": [
+						{
+							"name": "202 — Crew Updated",
+							"status": "Accepted",
+							"code": 202,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"message\": \"Crew updated successfully\",\n  \"crew_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n  \"tenant\": \"global\",\n  \"name\": \"research_crew\",\n  \"execution_mode\": \"parallel\",\n  \"agents\": [\"researcher\", \"writer\"],\n  \"created_at\": \"2025-07-24T12:00:00+00:00\"\n}"
+						}
+					]
+				},
+				{
+					"name": "List All Crews",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew?tenant={{tenant}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew"],
+							"query": [
+								{
+									"key": "tenant",
+									"value": "{{tenant}}",
+									"description": "Tenant filter (default: global)"
+								}
+							]
+						},
+						"description": "List all registered crew definitions for a tenant.\n\nReturns a summary with agent_count (not full definitions)."
+					},
+					"response": [
+						{
+							"name": "200 — Crew List",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"crews\": [\n    {\n      \"crew_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n      \"tenant\": \"global\",\n      \"name\": \"research_crew\",\n      \"description\": \"A crew that researches a topic and writes a report\",\n      \"execution_mode\": \"sequential\",\n      \"agent_count\": 2,\n      \"created_at\": \"2025-07-24T12:00:00+00:00\"\n    }\n  ],\n  \"total\": 1\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Crew by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew/{{crew_id}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew", "{{crew_id}}"]
+						},
+						"description": "Get the full definition of a specific crew by its UUID or name (path segment)."
+					},
+					"response": [
+						{
+							"name": "200 — Full Crew Definition",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"crew_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n  \"tenant\": \"global\",\n  \"name\": \"research_crew\",\n  \"description\": \"A crew that researches a topic and writes a report\",\n  \"execution_mode\": \"sequential\",\n  \"agents\": [\n    {\n      \"agent_id\": \"researcher\",\n      \"agent_class\": \"BaseAgent\",\n      \"name\": \"Researcher\",\n      \"config\": { \"llm\": \"anthropic:claude-sonnet-4-20250514\" },\n      \"tools\": [\"google_search\"],\n      \"system_prompt\": \"You are a thorough researcher.\"\n    },\n    {\n      \"agent_id\": \"writer\",\n      \"agent_class\": \"BaseAgent\",\n      \"name\": \"Writer\",\n      \"config\": { \"llm\": \"anthropic:claude-sonnet-4-20250514\" },\n      \"tools\": [],\n      \"system_prompt\": \"You are a professional writer.\"\n    }\n  ],\n  \"flow_relations\": [],\n  \"shared_tools\": [],\n  \"max_parallel_tasks\": 10,\n  \"created_at\": \"2025-07-24T12:00:00+00:00\",\n  \"updated_at\": \"2025-07-24T12:00:00+00:00\",\n  \"metadata\": {}\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Crew by Name (query param)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew?name={{crew_name}}&tenant={{tenant}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew"],
+							"query": [
+								{
+									"key": "name",
+									"value": "{{crew_name}}",
+									"description": "Crew name"
+								},
+								{
+									"key": "tenant",
+									"value": "{{tenant}}",
+									"description": "Tenant (default: global)"
+								}
+							]
+						},
+						"description": "Get a specific crew by name using query parameter instead of path segment."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Crew by ID",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew/{{crew_id}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew", "{{crew_id}}"]
+						},
+						"description": "Delete a crew definition by UUID (path segment)."
+					},
+					"response": [
+						{
+							"name": "200 — Crew Deleted",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"message\": \"Crew 'research_crew' deleted successfully\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Delete Crew by Name (query param)",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew?name={{crew_name}}&tenant={{tenant}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew"],
+							"query": [
+								{
+									"key": "name",
+									"value": "{{crew_name}}",
+									"description": "Crew name to delete"
+								},
+								{
+									"key": "tenant",
+									"value": "{{tenant}}",
+									"description": "Tenant (default: global)"
+								}
+							]
+						},
+						"description": "Delete a crew definition by name using query parameters."
+					},
+					"response": []
+				},
+				{
+					"name": "Upload Crew from File",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew:upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew:upload"]
+						},
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "",
+									"description": "JSON file containing a CrewDefinition"
+								}
+							]
+						},
+						"description": "Upload a crew definition from a JSON file (multipart/form-data).\n\nThe file must contain a valid `CrewDefinition` JSON object."
+					},
+					"response": [
+						{
+							"name": "201 — Crew Uploaded",
+							"status": "Created",
+							"code": 201,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"message\": \"Crew uploaded and created successfully\",\n  \"crew_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n  \"tenant\": \"global\",\n  \"name\": \"research_crew\",\n  \"execution_mode\": \"sequential\",\n  \"agents\": [\"researcher\", \"writer\"],\n  \"created_at\": \"2025-07-24T12:00:00+00:00\"\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "2. Crew Execution & Monitoring",
+			"description": "Execute crews, monitor jobs, and interact with running executions.\nHandler: `CrewExecutionHandler` — `/api/v1/crews`",
+			"item": [
+				{
+					"name": "Execute Crew (Sequential)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crews",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crews"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"crew_id\": \"{{crew_name}}\",\n  \"query\": \"Analyze the current state of AI agent frameworks and produce a 2-page report\",\n  \"tenant\": \"{{tenant}}\",\n  \"user_id\": \"user123\",\n  \"session_id\": \"sess456\",\n  \"kwargs\": {\n    \"max_tokens\": 4096,\n    \"temperature\": 0.1\n  }\n}"
+						},
+						"description": "Start an asynchronous crew execution job.\n\n`crew_id` can be either a UUID or the crew's name.\n`query` is a string prompt for sequential/flow modes.\n\n**Response:** 202 with job_id to poll for results."
+					},
+					"response": [
+						{
+							"name": "202 — Execution Started",
+							"status": "Accepted",
+							"code": 202,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"job_id\": \"f47ac10b-58cc-4372-a567-0e02b2c3d479\",\n  \"crew_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n  \"status\": \"pending\",\n  \"message\": \"Crew execution started\",\n  \"created_at\": \"2025-07-24T12:00:00+00:00\",\n  \"execution_mode\": \"sequential\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Execute Crew (Parallel — multi-query)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crews",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crews"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"crew_id\": \"{{crew_name}}\",\n  \"query\": {\n    \"researcher\": \"Find the latest AI agent framework benchmarks\",\n    \"writer\": \"Draft an executive summary template for tech reports\"\n  },\n  \"tenant\": \"{{tenant}}\",\n  \"execution_mode\": \"parallel\",\n  \"kwargs\": {\n    \"max_tokens\": 4096\n  }\n}"
+						},
+						"description": "Execute a crew in parallel mode with per-agent queries.\n\nPass `query` as a dict mapping agent_id → prompt for parallel execution."
+					},
+					"response": []
+				},
+				{
+					"name": "Execute Crew (Loop Mode)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crews",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crews"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"crew_id\": \"{{crew_name}}\",\n  \"query\": \"Iteratively refine this business plan until it passes quality review\",\n  \"tenant\": \"{{tenant}}\",\n  \"execution_mode\": \"loop\",\n  \"kwargs\": {\n    \"condition\": \"The output meets all quality criteria and no further improvements are needed\",\n    \"max_iterations\": 3,\n    \"agent_sequence\": [\"drafter\", \"reviewer\"]\n  }\n}"
+						},
+						"description": "Execute a crew in loop mode — iterates agents until a stop condition is met or `max_iterations` is reached."
+					},
+					"response": []
+				},
+				{
+					"name": "Execute Crew (with Synthesis Prompt)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crews",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crews"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"crew_id\": \"{{crew_name}}\",\n  \"query\": \"Compare React, Vue, and Svelte for enterprise dashboards\",\n  \"tenant\": \"{{tenant}}\",\n  \"synthesis_prompt\": \"Synthesize all agent outputs into a structured comparison table with pros, cons, and a final recommendation.\",\n  \"kwargs\": {\n    \"max_tokens\": 8192\n  }\n}"
+						},
+						"description": "Execute a crew with a custom `synthesis_prompt` that merges all agent outputs into a unified final result."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Job Status / Results",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crews?job_id={{job_id}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crews"],
+							"query": [
+								{
+									"key": "job_id",
+									"value": "{{job_id}}",
+									"description": "Job UUID returned by POST /api/v1/crews"
+								}
+							]
+						},
+						"description": "Poll the status and results of a crew execution job.\n\nReturns `status` (pending | running | completed | failed), elapsed time, and the result object when completed."
+					},
+					"response": [
+						{
+							"name": "200 — Running",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"job_id\": \"f47ac10b-58cc-4372-a567-0e02b2c3d479\",\n  \"crew_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n  \"status\": \"running\",\n  \"elapsed_time\": 5.2,\n  \"created_at\": \"2025-07-24T12:00:00+00:00\",\n  \"started_at\": \"2025-07-24T12:00:01+00:00\",\n  \"execution_mode\": \"sequential\",\n  \"crew_active\": true,\n  \"metadata\": {}\n}"
+						},
+						{
+							"name": "200 — Completed",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"job_id\": \"f47ac10b-58cc-4372-a567-0e02b2c3d479\",\n  \"crew_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n  \"status\": \"completed\",\n  \"elapsed_time\": 12.5,\n  \"created_at\": \"2025-07-24T12:00:00+00:00\",\n  \"completed_at\": \"2025-07-24T12:00:12+00:00\",\n  \"execution_mode\": \"sequential\",\n  \"crew_active\": false,\n  \"result\": {\n    \"output\": \"Final crew output...\",\n    \"agent_results\": {}\n  },\n  \"metadata\": {}\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Job Status (with Agent Statuses)",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crews?job_id={{job_id}}&scope=agents",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crews"],
+							"query": [
+								{
+									"key": "job_id",
+									"value": "{{job_id}}"
+								},
+								{
+									"key": "scope",
+									"value": "agents",
+									"description": "Include per-agent statuses in response"
+								}
+							]
+						},
+						"description": "Get job status with per-agent status breakdown using `scope=agents`."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Specific Agent Result from Job",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crews?job_id={{job_id}}&scope=agent_result&agent_id={{agent_id}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crews"],
+							"query": [
+								{
+									"key": "job_id",
+									"value": "{{job_id}}"
+								},
+								{
+									"key": "scope",
+									"value": "agent_result"
+								},
+								{
+									"key": "agent_id",
+									"value": "{{agent_id}}",
+									"description": "Agent ID to get the result for"
+								}
+							]
+						},
+						"description": "Get the result of a specific agent within a job using `scope=agent_result`."
+					},
+					"response": []
+				},
+				{
+					"name": "List Active Jobs",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crews?mode=active_jobs",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crews"],
+							"query": [
+								{
+									"key": "mode",
+									"value": "active_jobs"
+								}
+							]
+						},
+						"description": "List all currently running crew execution jobs."
+					},
+					"response": [
+						{
+							"name": "200 — Active Jobs",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "[\n  {\n    \"job_id\": \"f47ac10b-58cc-4372-a567-0e02b2c3d479\",\n    \"crew_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n    \"crew_name\": \"research_crew\",\n    \"status\": \"running\",\n    \"created_at\": \"2025-07-24T12:00:00+00:00\",\n    \"query\": \"Analyze the current state of AI agent frameworks\",\n    \"execution_mode\": \"sequential\"\n  }\n]"
+						}
+					]
+				},
+				{
+					"name": "List Completed Jobs",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crews?mode=completed_jobs",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crews"],
+							"query": [
+								{
+									"key": "mode",
+									"value": "completed_jobs"
+								}
+							]
+						},
+						"description": "List completed/failed crew execution jobs (up to 50 most recent)."
+					},
+					"response": [
+						{
+							"name": "200 — Completed Jobs",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "[\n  {\n    \"job_id\": \"f47ac10b-58cc-4372-a567-0e02b2c3d479\",\n    \"crew_name\": \"research_crew\",\n    \"crew_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n    \"status\": \"completed\",\n    \"created_at\": \"2025-07-24T12:00:00+00:00\",\n    \"query\": \"Analyze the current state of AI agent frameworks\",\n    \"execution_mode\": \"sequential\"\n  }\n]"
+						}
+					]
+				},
+				{
+					"name": "Get All Agent Statuses (path params)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crews/{{job_id}}/{{crew_id}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crews", "{{job_id}}", "{{crew_id}}"]
+						},
+						"description": "Get the status of all agents in a crew execution job using path parameters."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Specific Agent Result (path params)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crews/{{job_id}}/{{crew_id}}/{{agent_id}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crews", "{{job_id}}", "{{crew_id}}", "{{agent_id}}"]
+						},
+						"description": "Get the result (NodeResult) of a specific agent in a running/completed job."
+					},
+					"response": []
+				},
+				{
+					"name": "Ask Question to Running Crew",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crews/{{job_id}}/{{crew_id}}/ask",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crews", "{{job_id}}", "{{crew_id}}", "ask"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"question\": \"What has the researcher found so far about transformer architectures?\"\n}"
+						},
+						"description": "Ask a question to a running crew execution. The crew processes the question using its active context and returns a response."
+					},
+					"response": [
+						{
+							"name": "200 — Answer",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"response\": \"Based on the research so far, the key findings about transformer architectures are...\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Crew Execution Summary",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crews/{{job_id}}/{{crew_id}}/summary",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crews", "{{job_id}}", "{{crew_id}}", "summary"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"mode\": \"executive_summary\",\n  \"summary_prompt\": \"Provide a concise executive summary highlighting key findings and recommendations.\",\n  \"kwargs\": {}\n}"
+						},
+						"description": "Get an LLM-generated summary of a crew execution.\n\n`mode` defaults to `executive_summary`. Optionally provide a `summary_prompt` to guide the summary generation."
+					},
+					"response": [
+						{
+							"name": "200 — Summary",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"summary\": \"Executive Summary: The crew analyzed AI agent frameworks across three dimensions...\"\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "3. Execution History",
+			"description": "Browse, replay, schedule, and delete saved crew execution records.\nHandler: `CrewExecutionHistoryHandler` — `/api/v1/crew/executions`",
+			"item": [
+				{
+					"name": "List Saved Executions",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew/executions?tenant={{tenant}}&limit=20&offset=0",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew", "executions"],
+							"query": [
+								{
+									"key": "tenant",
+									"value": "{{tenant}}",
+									"description": "Tenant filter (default: global)"
+								},
+								{
+									"key": "limit",
+									"value": "20",
+									"description": "Page size (default: 20)"
+								},
+								{
+									"key": "offset",
+									"value": "0",
+									"description": "Pagination offset (default: 0)"
+								},
+								{
+									"key": "crew_name",
+									"value": "",
+									"description": "Filter by crew name",
+									"disabled": true
+								},
+								{
+									"key": "method",
+									"value": "",
+									"description": "Filter by execution method (run_sequential, run_parallel, run_flow, run_loop)",
+									"disabled": true
+								},
+								{
+									"key": "date_from",
+									"value": "",
+									"description": "Filter: start date (ISO-8601)",
+									"disabled": true
+								},
+								{
+									"key": "date_to",
+									"value": "",
+									"description": "Filter: end date (ISO-8601)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "List saved crew execution records with optional filtering and pagination."
+					},
+					"response": [
+						{
+							"name": "200 — Execution List",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"items\": [\n    {\n      \"id\": \"exec-001\",\n      \"crew_name\": \"research_crew\",\n      \"method\": \"run_sequential\",\n      \"query\": \"Analyze AI trends\",\n      \"status\": \"completed\",\n      \"created_at\": \"2025-07-24T12:00:00+00:00\"\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Execution Detail",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew/executions/{{execution_id}}?tenant={{tenant}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew", "executions", "{{execution_id}}"],
+							"query": [
+								{
+									"key": "tenant",
+									"value": "{{tenant}}"
+								}
+							]
+						},
+						"description": "Get the full detail of a saved execution record, including payload, session_id, and complete results."
+					},
+					"response": []
+				},
+				{
+					"name": "Replay Execution",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew/executions/{{execution_id}}/replay",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew", "executions", "{{execution_id}}", "replay"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"user_id\": \"user123\"\n}"
+						},
+						"description": "Replay a saved execution — re-runs the crew with the original parameters.\n\nThe crew definition and query are read from the saved record."
+					},
+					"response": [
+						{
+							"name": "200 — Replay Submitted",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"job_id\": \"new-job-uuid\",\n  \"crew_name\": \"research_crew\",\n  \"method\": \"run_sequential\",\n  \"status\": \"submitted\",\n  \"result\": {}\n}"
+						}
+					]
+				},
+				{
+					"name": "Schedule Execution",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew/executions/{{execution_id}}/schedule",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew", "executions", "{{execution_id}}", "schedule"]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"user_id\": \"user123\",\n  \"schedule_type\": \"DAILY\",\n  \"schedule_config\": {\n    \"hour\": 9,\n    \"minute\": 0,\n    \"timezone\": \"America/New_York\"\n  },\n  \"created_by\": 1,\n  \"created_email\": \"user@example.com\",\n  \"metadata\": {},\n  \"callbacks\": []\n}"
+						},
+						"description": "Schedule a saved execution to run on a recurring basis.\n\n`schedule_type` options: `DAILY`, `WEEKLY`, `MONTHLY`, `ONCE`, `INTERVAL`, `CRON`, `CRONTAB`.\n`schedule_config` varies by type."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Saved Execution",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew/executions/{{execution_id}}?tenant={{tenant}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew", "executions", "{{execution_id}}"],
+							"query": [
+								{
+									"key": "tenant",
+									"value": "{{tenant}}"
+								}
+							]
+						},
+						"description": "Delete a saved execution record."
+					},
+					"response": [
+						{
+							"name": "200 — Deleted",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "{\n  \"deleted\": true,\n  \"execution_id\": \"exec-001\"\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "4. Builder Catalogs",
+			"description": "Tool and special node catalogs used by the Crew Builder UI.\nAuthentication required.",
+			"item": [
+				{
+					"name": "List Available Tools",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew/tools",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew", "tools"]
+						},
+						"description": "Get the curated catalog of tools/toolkits available when configuring agents in the Crew Builder.\n\nCategories include: `research`, `geolocation`, `finance`, `company_intel`, `data_analysis`.\n\nRequires authentication."
+					},
+					"response": [
+						{
+							"name": "200 — Tool Catalog",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "[\n  {\n    \"slug\": \"google_search\",\n    \"name\": \"GoogleSearchTool\",\n    \"display_name\": \"Google Search\",\n    \"description\": \"Search the web using Google Custom Search API\",\n    \"category\": \"research\",\n    \"type\": \"tool\",\n    \"config_schema\": null\n  },\n  {\n    \"slug\": \"google_maps\",\n    \"name\": \"GoogleMapsTool\",\n    \"display_name\": \"Google Maps\",\n    \"description\": \"Geocode addresses and find nearby places\",\n    \"category\": \"geolocation\",\n    \"type\": \"tool\",\n    \"config_schema\": null\n  }\n]"
+						}
+					]
+				},
+				{
+					"name": "List Special Node Types",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/crew/special_nodes",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "crew", "special_nodes"]
+						},
+						"description": "Get the catalog of non-agent node types (deterministic tool-execution nodes) available in the Crew Builder.\n\nRequires authentication."
+					},
+					"response": [
+						{
+							"name": "200 — Special Nodes Catalog",
+							"status": "OK",
+							"code": 200,
+							"header": [{"key": "Content-Type", "value": "application/json"}],
+							"body": "[\n  {\n    \"slug\": \"tool_node\",\n    \"name\": \"ToolNode\",\n    \"display_name\": \"Deterministic Tool Call\",\n    \"description\": \"Executes a tool directly without LLM involvement\",\n    \"category\": \"deterministic\",\n    \"type\": \"special_node\",\n    \"config_schema\": {\n      \"node_id\": { \"type\": \"string\", \"description\": \"Unique node identifier\" },\n      \"tool\": { \"type\": \"string\", \"description\": \"Tool slug to invoke\" },\n      \"args\": { \"type\": \"array\", \"description\": \"Positional arguments\" },\n      \"kwargs\": { \"type\": \"object\", \"description\": \"Keyword arguments (supports {input} placeholders)\" },\n      \"description\": { \"type\": \"string\", \"description\": \"Node purpose\" }\n    }\n  }\n]"
+						}
+					]
+				}
+			]
+		}
+	]
+}

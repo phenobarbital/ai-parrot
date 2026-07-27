@@ -33,6 +33,7 @@ from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import (
     BugBrief,
     ClaudeCodeDispatchProfile,
@@ -140,6 +141,7 @@ class ResearchNode(DevLoopNode):
         plan_llm: Optional[str] = None,
         git_toolkit: Optional[Any] = None,
         repos: Optional[List[RepoSpec]] = None,
+        graph_memory: Optional[DevLoopGraphMemory] = None,
         name: str = "research",
     ) -> None:
         super().__init__(node_id=name)
@@ -154,6 +156,9 @@ class ResearchNode(DevLoopNode):
         object.__setattr__(self, "_summarizer_client", None)
         object.__setattr__(self, "_plan_llm", plan_llm or _plan_llm_default())
         object.__setattr__(self, "_plan_client", None)
+        # FEAT-377 TASK-1915 (G2 seam 2): opt-in graph-memory context
+        # injection. None (default) is a strict no-op.
+        object.__setattr__(self, "_graph_memory", graph_memory)
 
     # ------------------------------------------------------------------
     # Execute
@@ -258,8 +263,25 @@ class ResearchNode(DevLoopNode):
         # log_sources; the prompt builder embeds excerpts separately.
         shared["log_excerpts"] = excerpts
 
+        # FEAT-377 TASK-1915 (G2 seam 2): prepend graph-memory context to
+        # the dispatch brief when the facade is configured and finds
+        # something relevant. Reuses the existing `description` free-text
+        # field (never forwarded to the Jira `summary` field) rather than
+        # adding a new one — the ORIGINAL `brief` (used above for the Jira
+        # ticket description) is untouched; only this local dispatch copy
+        # carries the graph context.
+        dispatch_brief = brief
+        if self._graph_memory is not None:
+            graph_context = await self._graph_memory.build_research_context(brief)
+            if graph_context:
+                dispatch_brief = brief.model_copy(update={
+                    "description": (
+                        f"{brief.description}\n\n## Graph memory context\n{graph_context}"
+                    ).strip(),
+                })
+
         research_out: ResearchOutput = await self._dispatcher.dispatch(
-            brief=brief,
+            brief=dispatch_brief,
             profile=profile,
             output_model=ResearchOutput,
             run_id=shared["run_id"],
@@ -380,10 +402,17 @@ class ResearchNode(DevLoopNode):
         return excerpts
 
     async def _fetch_logs(self, source: LogSource) -> List[str]:
+        if source.kind == "inline":
+            # The locator IS the pasted log/stack-trace text — nothing to
+            # fetch. Keep the tail so oversized pastes don't bloat the
+            # Jira ticket (same 4000-byte cap as attached files).
+            content = source.locator.strip()
+            return [content[-4000:]] if content else []
         if source.kind == "cloudwatch":
             toolkit = self._log_toolkits.get("cloudwatch")
             if toolkit is None:
-                raise ValueError("CloudWatch toolkit not configured")
+                self.logger.warning("CloudWatch toolkit not configured — skipping log source")
+                return []
             # Per project policy the log group is configured at toolkit
             # construction time (default_log_group); the per-source
             # locator is informational and only forwarded if a non-empty
@@ -398,7 +427,8 @@ class ResearchNode(DevLoopNode):
         if source.kind == "elasticsearch":
             toolkit = self._log_toolkits.get("elasticsearch")
             if toolkit is None:
-                raise ValueError("Elasticsearch toolkit not configured")
+                self.logger.warning("Elasticsearch toolkit not configured — skipping log source")
+                return []
             result = await toolkit.search(
                 index=source.locator,
                 window_minutes=source.time_window_minutes,

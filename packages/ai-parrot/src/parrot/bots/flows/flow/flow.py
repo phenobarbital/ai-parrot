@@ -17,6 +17,7 @@ See sdd/specs/agentsflow-refactor-spec3.spec.md for the full design.
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Set, Tuple, Type, Union
 
@@ -789,8 +790,17 @@ class AgentsFlow(PersistenceMixin):
             # nodes unexecuted and end the run with a misleading
             # "completed" status (FlowDefinition validates this itself;
             # programmatic graphs are validated here).
+            #
+            # ``on_condition`` edges are exempt (FEAT-377 TASK-1910), mirroring
+            # FlowDefinition._validate_acyclic: a CEL/callable-gated back-edge
+            # is a deliberate, bounded repair/retry loop (e.g. dev-loop's
+            # ``qa -> development`` edge, gated by an attempt-count
+            # predicate) that this explicit-edge executor's OR-join +
+            # skip-propagation semantics support. A genuinely unconditional
+            # cycle still raises — those edges have no predicate to bound
+            # iteration.
             unique_sources = {
-                nid: {e.from_ for e in in_edges}
+                nid: {e.from_ for e in in_edges if e.condition != "on_condition"}
                 for nid, in_edges in incoming.items()
             }
             in_degree = {nid: len(srcs) for nid, srcs in unique_sources.items()}
@@ -816,6 +826,116 @@ class AgentsFlow(PersistenceMixin):
                     "are never reachable from an entry node. Break the "
                     "cycle or use conditional edges with a terminal path."
                 )
+
+        # ── Cyclic back-edge support (FEAT-377 TASK-1910) ───────────────────
+        #
+        # A bounded repair/retry loop (e.g. dev-loop's `qa -> development`
+        # edge, CEL/callable-gated on an attempt counter) is a genuine graph
+        # cycle that `_validate_acyclic`-style checks above now tolerate for
+        # `on_condition` edges. But tolerating the cycle structurally is not
+        # enough for EXECUTION: the plain OR-join gate ("dispatch once every
+        # incoming edge is resolved") would deadlock forever on a node's
+        # first-ever dispatch, since the back-edge's source cannot resolve
+        # until the very node it points at has already run at least once.
+        #
+        # Two additions close that gap:
+        #   1. `_forward_in_edges[tgt]` — `incoming[tgt]` minus any edge that
+        #      is part of a cycle — gates a node's FIRST dispatch. Back-edges
+        #      never block a node from running the first time.
+        #   2. `_resolve_retries()` — after a back-edge SOURCE completes and
+        #      its predicate fires, reset every node on the cycle (target
+        #      through source, inclusive) and re-dispatch the target. This is
+        #      the mechanism that actually re-enters the loop.
+        _back_edges: List[Tuple[Any, Set[str]]] = []
+        _back_edge_ids: Set[int] = set()
+        if explicit_mode:
+            full_adj: Dict[str, List[str]] = defaultdict(list)
+            for edge in edges:
+                for tgt in ([edge.to] if isinstance(edge.to, str) else list(edge.to)):
+                    full_adj[edge.from_].append(tgt)
+            reverse_adj: Dict[str, List[str]] = defaultdict(list)
+            for src, tgts in full_adj.items():
+                for tgt in tgts:
+                    reverse_adj[tgt].append(src)
+
+            def _reachable(start: str, adj: Dict[str, List[str]]) -> Set[str]:
+                seen = {start}
+                stack = [start]
+                while stack:
+                    cur = stack.pop()
+                    for nxt in adj.get(cur, ()):
+                        if nxt not in seen:
+                            seen.add(nxt)
+                            stack.append(nxt)
+                return seen
+
+            # Which `on_condition` edges are genuine cyclic *back*-edges (as
+            # opposed to a forward/tree edge that merely happens to sit on
+            # the same undirected cycle as one) is a graph-theoretic
+            # question, not a "does a cycle exist through here" one —
+            # `edge.from_ in _reachable(tgt, full_adj)` (cycle MEMBERSHIP)
+            # was the original TASK-1910 test, and it is too coarse once a
+            # cycle has more than one `on_condition` edge on it (FEAT-377/A:
+            # dev-loop feature-mode's `feedback_router -> development` retry
+            # edge closes a cycle that ALSO contains the pre-existing
+            # `qa -> feedback_router` forward-routing edge — both satisfy
+            # "cycle membership", but only the former is meant to trigger a
+            # retry-reset; misclassifying the latter turned every ordinary
+            # QA failure into a spurious repair-loop reset, live-locking the
+            # run). The correct test is the classic DFS white/gray/black
+            # back-edge definition: edge u->v is a back-edge iff v is still
+            # on the active DFS stack (a true ancestor of u) when the edge
+            # is explored — a tree/forward/cross edge to an already-visited
+            # node never re-triggers `_dfs` and is never gray at that point.
+            _WHITE, _GRAY, _BLACK = 0, 1, 2
+            _color: Dict[str, int] = dict.fromkeys(nodes, _WHITE)
+            _dfs_back_edges: List[Any] = []
+            _edges_by_source: Dict[str, List[Any]] = defaultdict(list)
+            for edge in edges:
+                _edges_by_source[edge.from_].append(edge)
+
+            def _dfs(start: str) -> None:
+                # Iterative DFS (explicit stack of (node, out-edge index)
+                # frames) — recursion would also work for dev-loop-sized
+                # graphs, but an explicit stack avoids any dependency on
+                # graph size staying well under the interpreter's recursion
+                # limit for arbitrary `AgentsFlow` callers.
+                call_stack: List[Tuple[str, int]] = [(start, 0)]
+                _color[start] = _GRAY
+                while call_stack:
+                    u, i = call_stack[-1]
+                    out_edges = _edges_by_source.get(u, ())
+                    if i >= len(out_edges):
+                        _color[u] = _BLACK
+                        call_stack.pop()
+                        continue
+                    call_stack[-1] = (u, i + 1)
+                    edge = out_edges[i]
+                    for v in ([edge.to] if isinstance(edge.to, str) else list(edge.to)):
+                        if v not in _color:
+                            continue  # defensive: edge to an unknown node id
+                        if _color[v] == _WHITE:
+                            _color[v] = _GRAY
+                            call_stack.append((v, 0))
+                        elif _color[v] == _GRAY and edge.condition == "on_condition":
+                            _dfs_back_edges.append(edge)
+
+            for nid in nodes:
+                if _color[nid] == _WHITE:
+                    _dfs(nid)
+
+            for edge in _dfs_back_edges:
+                for tgt in ([edge.to] if isinstance(edge.to, str) else list(edge.to)):
+                    forward_from_tgt = _reachable(tgt, full_adj)
+                    backward_to_src = _reachable(edge.from_, reverse_adj)
+                    cycle_members = forward_from_tgt & backward_to_src
+                    _back_edges.append((edge, cycle_members))
+                    _back_edge_ids.add(id(edge))
+
+        _forward_in_edges: Dict[str, List[Any]] = {
+            nid: [e for e in in_edges if id(e) not in _back_edge_ids]
+            for nid, in_edges in incoming.items()
+        }
 
         def _deps_for(node_id: str) -> DependencyResults:
             """Build dependency result dict for a node."""
@@ -915,11 +1035,17 @@ class AgentsFlow(PersistenceMixin):
             Runs to a fixpoint so a skip cascades through its descendants in
             the same pass (e.g. a failed node skips its whole success path,
             which in turn resolves a downstream error-handler's fan-in).
+
+            Gates on ``_forward_in_edges`` (FEAT-377 TASK-1910) rather than
+            the raw ``incoming`` index: a cyclic back-edge must never block a
+            node's first-ever dispatch (its source cannot resolve until the
+            node it points at has already run once) — re-entry after a
+            back-edge fires is handled separately by ``_resolve_retries()``.
             """
             progress = True
             while progress:
                 progress = False
-                for tgt, in_edges in incoming.items():
+                for tgt, in_edges in _forward_in_edges.items():
                     if not in_edges:
                         continue  # entry node — dispatched at start
                     if (
@@ -949,16 +1075,65 @@ class AgentsFlow(PersistenceMixin):
                         )
                     progress = True
 
+        def _resolve_retries() -> bool:
+            """Re-enter a bounded repair loop when a back-edge fires.
+
+            When a cyclic back-edge's source has resolved and its predicate
+            passes, every node on the cycle (target through source,
+            inclusive) is reset to "never ran" and the target is
+            re-dispatched. Only meaningful once the target has already
+            completed at least once — the loop's first pass is a normal
+            forward dispatch, never a retry.
+
+            Returns:
+                True if a retry was triggered (the caller should skip the
+                normal OR-join pass for this event — the reset invalidates
+                the state it would otherwise act on).
+            """
+            for edge, members in _back_edges:
+                src = edge.from_
+                tgt = edge.to if isinstance(edge.to, str) else None
+                if tgt is None or tgt not in completed:
+                    continue
+                if src not in completed and src not in failed:
+                    continue
+                if not _edge_fired(edge):
+                    continue
+                for member in members:
+                    completed.discard(member)
+                    failed.discard(member)
+                    skipped.discard(member)
+                    results.pop(member, None)
+                    errors.pop(member, None)
+                    tasks.pop(member, None)
+                    old_node = nodes[member]
+                    try:
+                        nodes[member] = old_node.model_copy(
+                            update={"fsm": AgentTaskMachine(agent_name=member)}
+                        )
+                    except Exception:  # noqa: BLE001 - fallback: keep old node
+                        pass
+                self.logger.info(
+                    "Repair-loop retry: edge %r -> %r fired; reset %s and "
+                    "re-dispatched %r",
+                    src, tgt, sorted(members), tgt,
+                )
+                _spawn(tgt)
+                return True
+            return False
+
         # Run-level bracket: flow_started precedes every node_started.
         self._notify_node_event(
             "flow_started", "",
             {"flow": self.name, "context": ctx, "node_count": len(nodes)},
         )
 
-        # Initial dispatch — entry nodes.
+        # Initial dispatch — entry nodes. Gated on `_forward_in_edges`
+        # (FEAT-377 TASK-1910) so a node whose ONLY incoming edges are
+        # cyclic back-edges still counts as an entry node.
         if explicit_mode:
             for nid in nodes:
-                if not incoming[nid]:
+                if not _forward_in_edges[nid]:
                     _spawn(nid)
         else:
             for nid, node in nodes.items():
@@ -1023,6 +1198,12 @@ class AgentsFlow(PersistenceMixin):
                 )
 
             if explicit_mode:
+                # A cyclic back-edge firing takes precedence over the normal
+                # OR-join pass for this event (FEAT-377 TASK-1910): the reset
+                # it performs invalidates the very state the OR-join pass
+                # would otherwise read.
+                if _back_edges and _resolve_retries():
+                    continue
                 # OR-join + skip-propagation over the whole graph.
                 _resolve_ready_targets()
                 continue

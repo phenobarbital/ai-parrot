@@ -718,6 +718,9 @@ JIRA_USERS = [
         "username": "jlara@trocglobal.com"
     }
 ]
+JIRA_URL = config.get("JIRA_URL", fallback="")
+JIRA_USERNAME = config.get("JIRA_USERNAME", fallback="")
+JIRA_API_TOKEN = config.get("JIRA_API_TOKEN", fallback="")
 JIRA_CLIENT_ID = config.get("JIRA_CLIENT_ID")
 JIRA_CLIENT_SECRET = config.get("JIRA_CLIENT_SECRET")
 JIRA_REDIRECT_URI = config.get("JIRA_REDIRECT_URI")
@@ -815,6 +818,19 @@ VECTOR_HANDLER_MAX_FILE_SIZE = config.getint(
     fallback=25 * 1024 * 1024  # 25MB
 )
 
+## Infographic Render Endpoint (FEAT-327): template source directories for
+## the server-owned, bot-less InfographicToolkit used by
+## POST /api/v1/agents/infographic/render (data-splice/jinja HTML sources —
+## NOT the block-spec metadata registry `parrot.helpers.infographics` uses
+## for the pre-render 404 check; the two are intentionally separate
+## registries, see docs/api/infographic_render.md's Known Limitation).
+## Comma-separated list of directories; empty by default — the render
+## route logs a loud warning and every render request fails with
+## TEMPLATE_ENGINE_UNSET until this is configured for a deployment.
+INFOGRAPHIC_RENDER_TEMPLATE_DIRS: list[str] = config.getlist(
+    "INFOGRAPHIC_RENDER_TEMPLATE_DIRS", fallback=[]
+)
+
 ## Security:
 AWS_ACCESS_KEY_ID = config.get("AWS_ACCESS_KEY_ID", fallback=AWS_ACCESS_KEY)
 AWS_SECRET_ACCESS_KEY = config.get("AWS_SECRET_ACCESS_KEY", fallback=AWS_SECRET_KEY)
@@ -909,7 +925,9 @@ DEV_LOOP_CODEREVIEW_MODEL: str = config.get(
     "DEV_LOOP_CODEREVIEW_MODEL", fallback="claude-sonnet-4-6"
 )
 # Which code-review dispatcher backs the QA node's code-review gate
-# (FEAT-270): "claude-code" (default), "codex", or "gemini". Selected via
+# (FEAT-270, extended FEAT-375): "claude-code" (default), "codex", "gemini",
+# "codex-adversarial" (read-only advisory second opinion), or "parallel"
+# (primary + codex-adversarial composite). Selected via
 # ``CodeReviewDispatcherFactory.create()`` at server startup.
 DEV_LOOP_CODEREVIEW_AGENT: str = config.get(
     "DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code"
@@ -959,6 +977,104 @@ DEV_LOOP_GATE_TTL_PLAN: int = config.getint(
 # durable audit record — the stream itself is swept after this many days.
 DEV_LOOP_ACTIONS_RETENTION_DAYS: int = config.getint(
     "DEV_LOOP_ACTIONS_RETENTION_DAYS", fallback=7
+)
+
+# FEAT-377 (TASK-1910): bounded QA→development repair-loop cap. A failed QA
+# attempt redispatches development (with QAReport feedback) while
+# `QAReport.attempt < N`; at `attempt >= N` the run escalates to
+# `failure_handler` as before. Read at ``build_dev_loop_definition()`` /
+# ``build_dev_loop_flow()`` call time (not import time) so tests can
+# monkeypatch it per-case.
+DEV_LOOP_QA_MAX_RETRIES: int = config.getint("DEV_LOOP_QA_MAX_RETRIES", fallback=2)
+
+# FEAT-377 (TASK-1914): dev-loop graph-memory wire (G2). Directory holding
+# the SQLite graph plane DevLoopGraphMemory.from_config() opens (one
+# `<tenant>.db` per tenant, same convention as build_graph_memory_toolkit).
+# Unset (default) disables the facade entirely — every dev_loop node
+# behaves byte-identically to today. SQLite-only in v1 (decided
+# 2026-07-26); no Arango dual publish.
+DEV_LOOP_GRAPH_MEMORY_PATH: str = config.get("DEV_LOOP_GRAPH_MEMORY_PATH", fallback="")
+
+# FEAT-377 (TASK-1916): opt-in plan_approval gate (G5) — approve the Jira
+# ticket + spec + task decomposition BEFORE the agent fleet burns tokens
+# implementing it. False (default) preserves current behavior exactly
+# (mirrors the FEAT-322 require_deployment_approval flag's shape; unlike
+# that flag, this one IS conf-backed per this task's explicit design).
+DEV_LOOP_REQUIRE_PLAN_APPROVAL: bool = config.getboolean(
+    "DEV_LOOP_REQUIRE_PLAN_APPROVAL", fallback=False
+)
+
+# FEAT-377 (TASK-1917): release a run's FLOW_MAX_CONCURRENT_RUNS slot while
+# it is `awaiting_gate` (ANY gate kind, uniformly — no per-kind allowlist),
+# re-acquiring it once the gate resolves. True (default) per spec §2 —
+# unlike the other FEAT-377 flags, parking defaults ON since holding a slot
+# for a gate's whole TTL (up to 72h for manual_criterion) is the behavior
+# this task exists to fix. Set False to keep the pre-TASK-1917 behavior
+# (a gate wait holds its slot for the run's entire duration).
+DEV_LOOP_GATE_PARK: bool = config.getboolean("DEV_LOOP_GATE_PARK", fallback=True)
+
+# FEAT-375: Codex CLI adversarial second-opinion agent. These settings back
+# the "codex-adversarial" / "parallel" ``DEV_LOOP_CODEREVIEW_AGENT`` values
+# above — kept append-only here (rather than reflowing the block near
+# :927-932) to avoid merge conflicts with FEAT-374's in-flight conf.py edits.
+# Model used by the read-only codex-adversarial reviewer's dispatch.
+DEV_LOOP_ADVERSARIAL_MODEL: str = config.get(
+    "DEV_LOOP_ADVERSARIAL_MODEL", fallback="gpt-5.5"
+)
+# Default `codex exec review` scope for the adversarial reviewer:
+# "uncommitted" (default), "base", or "commit".
+DEV_LOOP_ADVERSARIAL_SCOPE: str = config.get(
+    "DEV_LOOP_ADVERSARIAL_SCOPE", fallback="uncommitted"
+)
+# Whether the "parallel" composite reviewer runs an additional LLM-judge
+# dispatch to synthesize a narrative over the primary + adversarial
+# verdicts. Off by default — the deterministic merge alone is authoritative.
+DEV_LOOP_CODEREVIEW_JUDGE: bool = config.getboolean(
+    "DEV_LOOP_CODEREVIEW_JUDGE", fallback=False
+)
+# HITL gate TTL for an ESCALATEd adversarial-review finding
+# (``GateKind="review_escalation"``, FEAT-375). Fail-closed like the other
+# DEV_LOOP_GATE_TTL_* settings above (:961-972).
+DEV_LOOP_GATE_TTL_REVIEW_ESCALATION: int = config.getint(
+    "DEV_LOOP_GATE_TTL_REVIEW_ESCALATION", fallback=86400  # 24h, fail-closed
+)
+# Target ref for the adversarial reviewer when DEV_LOOP_ADVERSARIAL_SCOPE is
+# "base" (e.g. "dev" or "origin/main"). Required in that case — the server
+# bootstrap raises at startup rather than silently degrading every review if
+# "base" scope is selected without a ref configured here (code-review fix,
+# FEAT-375). Not used, and not required, for "uncommitted" (default) scope.
+# "commit" scope is a per-run value (a fixed commit SHA doesn't make sense as
+# a persistent server setting) and is intentionally NOT configurable here —
+# the server bootstrap rejects "commit" scope with a clear error.
+DEV_LOOP_ADVERSARIAL_BASE_REF: str = config.get(
+    "DEV_LOOP_ADVERSARIAL_BASE_REF", fallback=""
+)
+
+# FEAT-378: JSON spec of the feature-mode QA judge panel used by
+# ``JudgePanelReviewDispatcher`` (registered as "judge-panel"), e.g.
+# '{"judges": [{"agent": "claude-code", "model": "claude-sonnet-4-6"},
+# {"agent": "codex", "model": "gpt-5.5"}, {"agent": "gemini"}],
+# "decision": "majority"}' — matches ``JudgePanelConfig``'s shape. Empty
+# (default) falls back to ``default_judge_panel()`` (3 judges: claude-code,
+# codex via the adversarial ``sdd-secondopinion`` profile, gemini; simple
+# majority, tie/majority-breaking abstention → escalate, fail-closed).
+DEV_LOOP_JUDGE_PANEL: str = config.get("DEV_LOOP_JUDGE_PANEL", fallback="")
+
+# FEAT-378: directory (relative to the feature worktree root) where
+# ``FeatureHandoffNode`` generates ``feat-<id>-<slug>.md`` docs artifacts
+# describing what was implemented — committed to the PR branch alongside
+# the change. ``docs/migration/`` stays reserved for migrations/breaking
+# changes (spec §2).
+DEV_LOOP_DOCS_ARTIFACT_DIR: str = config.get(
+    "DEV_LOOP_DOCS_ARTIFACT_DIR", fallback="docs/features"
+)
+# FEAT-378: whether ``FeatureHandoffNode`` ingests the docs artifact as a
+# queryable wiki page via ``LLMWikiToolkit.create_page``. Off by default —
+# requires a wiki_toolkit to actually be wired by the caller; when on but
+# no toolkit is configured (or the wiki is otherwise unavailable), the
+# node degrades with a warning rather than blocking the handoff.
+DEV_LOOP_WIKI_PAGE_INGEST: bool = config.getboolean(
+    "DEV_LOOP_WIKI_PAGE_INGEST", fallback=False
 )
 
 # ---------------------------------------------------------------------------

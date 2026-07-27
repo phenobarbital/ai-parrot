@@ -27,6 +27,10 @@ classifiers = [
 ]
 dependencies = [
     "ai-parrot",
+    # Parquet dataset-part decoding for the infographic render endpoint
+    # (FEAT-327) — dtype-preserving via pyarrow. Declared here (not
+    # transitive through pandas) per the resolved brainstorm decision.
+    "pyarrow>=25.0",
 ]
 
 [project.optional-dependencies]

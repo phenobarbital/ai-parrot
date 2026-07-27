@@ -441,3 +441,48 @@ class TestCloudWatchExcerptCleaning:
 
     def test_non_dict_results_unchanged(self):
         assert ResearchNode._tail_text("plain log text") == ["plain log text"]
+
+
+class TestInlineLogSource:
+    """`inline` log sources carry the pasted text itself — no fetch."""
+
+    def test_model_accepts_inline_kind(self):
+        src = LogSource(kind="inline", locator="ValueError: boom")
+        assert src.kind == "inline"
+        assert src.locator == "ValueError: boom"
+
+    @pytest.mark.asyncio
+    async def test_fetch_returns_pasted_text_verbatim(self, node):
+        trace = "Traceback (most recent call last):\n  ...\nValueError: boom"
+        out = await node._fetch_logs(LogSource(kind="inline", locator=trace))
+        assert out == [trace]
+
+    @pytest.mark.asyncio
+    async def test_fetch_tails_oversized_paste(self, node):
+        big = "x" * 10_000
+        out = await node._fetch_logs(LogSource(kind="inline", locator=big))
+        assert out == ["x" * 4000]
+
+    @pytest.mark.asyncio
+    async def test_blank_paste_yields_no_excerpts(self, node):
+        out = await node._fetch_logs(LogSource(kind="inline", locator="   \n"))
+        assert out == []
+
+    @pytest.mark.asyncio
+    async def test_collect_excerpts_needs_no_log_toolkits(
+        self, research_out_fixture, monkeypatch, tmp_path
+    ):
+        # Inline sources must work even when NO log toolkit is configured.
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.nodes.research.conf.WORKTREE_BASE_PATH",
+            str(tmp_path),
+        )
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(return_value=research_out_fixture)
+        bare_node = ResearchNode(
+            dispatcher=dispatcher, jira_toolkit=MagicMock(), log_toolkits={}
+        )
+        out = await bare_node._collect_log_excerpts(
+            [LogSource(kind="inline", locator="ERROR: it broke")]
+        )
+        assert out == ["ERROR: it broke"]

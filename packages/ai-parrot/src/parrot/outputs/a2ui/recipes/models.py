@@ -19,6 +19,11 @@ from typing import Any, Literal, Optional
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+# FEAT-326: additive optional descriptor field. ``infographic_sections`` is a
+# pydantic-only module (it does NOT import DatasetManager/bots/clients), so this
+# import respects FEAT-324's "recipes core stays data-plane-free" rule.
+from parrot.tools.infographic_sections import SectionDescriptor
+
 __all__ = [
     "RecipeParam",
     "DataSourceSpec",
@@ -166,6 +171,12 @@ class InfographicRecipe(BaseModel):
         schedule: Optional scheduled-replay configuration (spec G8).
         updated_at: Last-write timestamp; set by stores on save (overwrite
             semantics, spec G5) — not auto-populated by the model itself.
+        section_descriptor: Optional authoring descriptor (FEAT-326) recording
+            the template + render mode + per-section data contract that produced
+            this recipe. Additive/optional — pre-existing recipes (field absent)
+            still load. NOT a schema-version bump (the store gate is a strict
+            equality on ``SUPPORTED_SCHEMA_VERSION``, so a bump would refuse
+            every legacy recipe).
     """
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
@@ -182,6 +193,7 @@ class InfographicRecipe(BaseModel):
     render: RenderSpec = Field(default_factory=RenderSpec)
     schedule: Optional[ScheduleSpec] = None
     updated_at: datetime
+    section_descriptor: Optional[SectionDescriptor] = None
 
     def to_yaml(self) -> str:
         """Serialize this recipe to a YAML document.
