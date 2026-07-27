@@ -52,6 +52,7 @@ from parrot.flows.dev_loop.models import (
     ShellCriterion,
     WorkBrief,
 )
+from parrot.flows.dev_loop.run_bundle import build_run_bundle, render_markdown
 from parrot.flows.dev_loop.session_state import (
     ActionEnvelope,
     ActionOrigin,
@@ -524,6 +525,48 @@ class DevLoopRunner:
         except Exception:  # noqa: BLE001 - artifact persistence must not break a run
             self.logger.warning(
                 "Failed to persist terminal snapshot for run %s",
+                host.state.run_id, exc_info=True,
+            )
+
+    def _persist_run_bundle(
+        self, host: SessionHost, ctx: Optional[FlowContext],
+    ) -> None:
+        """Persist the run bundle + markdown closing report (FEAT-378 TASK-1929).
+
+        Mirrors :meth:`_persist_terminal_snapshot`: two files under
+        ``conf.OUTPUT_DIR/dev_loop_runs/`` — ``{run_id}.bundle.json`` and
+        ``{run_id}.report.md``. Independent of the terminal-snapshot
+        export (one failing must not skip the other); failures are
+        logged and swallowed — bundle export must NEVER break or delay
+        run teardown.
+
+        Args:
+            host: The run's terminal :class:`SessionHost`.
+            ctx: The flow's :class:`FlowContext` (or a plain dict, or
+                ``None``) — read defensively for ``shared_data``, same
+                duck-typing as ``DevLoopNode.shared_state``.
+        """
+        try:
+            if isinstance(ctx, FlowContext):
+                shared: Dict[str, Any] = ctx.shared_data
+            elif isinstance(ctx, dict):
+                shared = ctx
+            else:
+                shared = {}
+            bundle = build_run_bundle(host.snapshot(), host.replay_since(0), shared)
+            out_dir = Path(conf.OUTPUT_DIR) / "dev_loop_runs"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            bundle_path = out_dir / f"{host.state.run_id}.bundle.json"
+            report_path = out_dir / f"{host.state.run_id}.report.md"
+            bundle_path.write_text(bundle.model_dump_json(indent=2))
+            report_path.write_text(render_markdown(bundle))
+            self.logger.info(
+                "Persisted run bundle for run %s at %s and %s",
+                host.state.run_id, bundle_path, report_path,
+            )
+        except Exception:  # noqa: BLE001 - artifact persistence must not break a run
+            self.logger.warning(
+                "Failed to persist run bundle for run %s",
                 host.state.run_id, exc_info=True,
             )
 
@@ -1154,11 +1197,14 @@ class DevLoopRunner:
     def _close_host(
         self, host: SessionHost, result: FlowResult, ctx: FlowContext,
     ) -> None:
-        """Fold ``run/closed``, persist the terminal snapshot, and retire the host.
+        """Fold ``run/closed``, persist the terminal snapshot + run bundle,
+        and retire the host.
 
-        Order (spec §3 M3): apply ``RunClosed`` -> persist the terminal
-        snapshot -> schedule actions-stream retention -> fold the final
-        ``RunSummaryChanged`` -> discard the host. ``RunRemoved`` is
+        Order (spec §3 M3, extended by the v0.2 run-bundle amendment):
+        apply ``RunClosed`` -> persist the terminal snapshot -> persist
+        the run bundle (FEAT-378 TASK-1929) -> schedule actions-stream
+        retention -> fold the final ``RunSummaryChanged`` -> discard the
+        host. ``RunRemoved`` is
         deliberately NOT applied here — per spec §3 M3 ("RunRemoved AFTER
         retention"), the finished run stays visible in the root catalogue
         (``registry_state``) with its final summary until
@@ -1192,6 +1238,7 @@ class DevLoopRunner:
             outcome=outcome, jira_issue_key=jira_issue_key, pr_url=pr_url,
         ))
         self._persist_terminal_snapshot(host)
+        self._persist_run_bundle(host, ctx)
         self._schedule_actions_retention(run_id)
         self._apply_root_action(
             RunSummaryChanged(summary=self._run_summary_from_host(host))
