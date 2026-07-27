@@ -155,7 +155,7 @@
       "feature_id": "FEAT-379",
       "feature": "multistoresearchtool-parrotwiki",
       "spec": "sdd/specs/multistoresearchtool-parrotwiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -166,8 +166,8 @@
       "parallelism_notes": "Point of no return across both packages; strictly last code task.",
       "assigned_to": null,
       "started_at": "2026-07-27T13:49:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1937-clean-break-migration-registry.md"
+      "completed_at": "2026-07-27T16:36:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1937-clean-break-migration-registry.md"
     },
     {
       "id": "TASK-1938",
