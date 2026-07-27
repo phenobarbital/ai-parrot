@@ -14,6 +14,7 @@ from parrot.flows.dev_loop.code_review import (
     CodeReviewDispatcherFactory,
     CodexCodeReviewDispatcher,
     GeminiCodeReviewDispatcher,
+    ParallelPerspectiveReviewDispatcher,
 )
 from parrot.flows.dev_loop.models import (
     ClaudeCodeReviewProfile,
@@ -490,7 +491,9 @@ class TestServerWiringIntegration:
 
     @pytest.mark.asyncio
     async def test_server_wiring_default(self, monkeypatch):
-        """No DEV_LOOP_CODEREVIEW_AGENT set -> default Claude reviewer."""
+        """No DEV_LOOP_CODEREVIEW_AGENT set -> default Claude reviewer,
+        upgraded to 'parallel' (adversarial review is mandatory in this
+        server — see _resolve_codereview_dispatcher's docstring)."""
         captured: dict = {}
         server_mod = _load_server_module()
         self._patch_common(monkeypatch, server_mod, captured)
@@ -502,11 +505,14 @@ class TestServerWiringIntegration:
         app["redis_url"] = "redis://localhost:6379/0"
         await server_mod._on_startup(app)
 
-        assert isinstance(captured["codereview_dispatcher"], ClaudeCodeReviewDispatcher)
+        dispatcher = captured["codereview_dispatcher"]
+        assert isinstance(dispatcher, ParallelPerspectiveReviewDispatcher)
+        assert isinstance(dispatcher._primary, ClaudeCodeReviewDispatcher)
 
     @pytest.mark.asyncio
     async def test_server_wiring_codex(self, monkeypatch):
-        """DEV_LOOP_CODEREVIEW_AGENT=codex -> Codex reviewer."""
+        """DEV_LOOP_CODEREVIEW_AGENT=codex -> Codex primary, upgraded to
+        'parallel' (mandatory adversarial review)."""
         captured: dict = {}
         server_mod = _load_server_module()
         self._patch_common(monkeypatch, server_mod, captured)
@@ -516,11 +522,14 @@ class TestServerWiringIntegration:
         app["redis_url"] = "redis://localhost:6379/0"
         await server_mod._on_startup(app)
 
-        assert isinstance(captured["codereview_dispatcher"], CodexCodeReviewDispatcher)
+        dispatcher = captured["codereview_dispatcher"]
+        assert isinstance(dispatcher, ParallelPerspectiveReviewDispatcher)
+        assert isinstance(dispatcher._primary, CodexCodeReviewDispatcher)
 
     @pytest.mark.asyncio
     async def test_server_wiring_gemini(self, monkeypatch):
-        """DEV_LOOP_CODEREVIEW_AGENT=gemini -> Gemini reviewer."""
+        """DEV_LOOP_CODEREVIEW_AGENT=gemini -> Gemini primary, upgraded to
+        'parallel' (mandatory adversarial review)."""
         captured: dict = {}
         server_mod = _load_server_module()
         self._patch_common(monkeypatch, server_mod, captured)
@@ -530,7 +539,9 @@ class TestServerWiringIntegration:
         app["redis_url"] = "redis://localhost:6379/0"
         await server_mod._on_startup(app)
 
-        assert isinstance(captured["codereview_dispatcher"], GeminiCodeReviewDispatcher)
+        dispatcher = captured["codereview_dispatcher"]
+        assert isinstance(dispatcher, ParallelPerspectiveReviewDispatcher)
+        assert isinstance(dispatcher._primary, GeminiCodeReviewDispatcher)
 
     @pytest.mark.asyncio
     async def test_server_wiring_invalid(self, monkeypatch):
