@@ -135,7 +135,7 @@ Un proceso hijo de vida larga por sesión que mantiene el namespace del REPL. El
 
 🔗 **Existing Code to Reuse:**
 - `parrot/tools/pythonrepl.py:701-830` — `_execute_code()` se mueve **tal cual** al worker; es el corazón y no debería reescribirse
-- `parrot/tools/pythonrepl.py:558-574` — `_check_ast_security()` sigue corriendo, en el host o en el worker (decidir)
+- `parrot/tools/pythonrepl.py:558-574` — `_check_ast_security()` sigue corriendo, en el host **y** en el worker (decidido 2026-07-27: ambos)
 - `parrot/tools/pythonrepl.py:231-233, 730-742` — gate del `PythonCodeSanitizer`, se conserva
 - `parrot/tools/pythonrepl.py:627-700` — `_serialize_execution_results()`, precedente directo para el protocolo de salida
 - `parrot/tools/pythonrepl.py:871` — `_describe_new_var()`, debe ejecutarse **en el worker** (inspecciona objetos vivos); solo viaja el texto
@@ -215,7 +215,7 @@ Cada sesión ejecuta en un contenedor: perfil seccomp, sin red, sistema de fiche
          directorio de salida compartido (plots, reports)
 ```
 
-El gate estático se queda en el host: falla barato, sin pagar un round-trip por código que va a rechazarse igualmente.
+El gate estático corre en **ambos lados** (decisión 2026-07-27): el host falla barato, sin pagar un round-trip por código que va a rechazarse igualmente, y el worker revalida antes de `exec` como defensa en profundidad.
 
 ### Protocolo de control
 
@@ -248,7 +248,7 @@ Valores por defecto configurables por despliegue. `RLIMIT_AS` es el delicado: pa
 ### Ciclo de vida del worker
 
 - **Arranque perezoso**: al primer `_execute()` de la sesión, no en `__init__`. Muchas sesiones nunca tocan el REPL.
-- **Pre-calentado opcional**: un pool pequeño de workers ya arrancados con las librerías importadas, asignados a demanda. Convierte 1–3 s en milisegundos. Recomendado para producción, opcional en desarrollo.
+- **Pre-calentado (v1)**: un pool pequeño de workers ya arrancados con las librerías importadas, asignados a demanda. Convierte 1–3 s en milisegundos. **Decisión 2026-07-27: se incluye en v1** (tamaño configurable, default pequeño).
 - **Expulsión por inactividad**: TTL configurable. Un worker con pandas cargado no debería sobrevivir a una sesión abandonada.
 - **Techo de concurrencia**: máximo de workers vivos; superado, se rechaza con error claro en vez de agotar la memoria del host.
 - **Reinicio ante crash**: worker muerto inesperadamente → se levanta otro y se informa al LLM de que el namespace se perdió.
@@ -303,7 +303,7 @@ Para el agente LLM: dos mensajes de error nuevos que debe entender —tiempo exc
 
 - `repl-worker-runtime`: proceso worker, protocolo de control, rlimits vía `preexec_fn`, timeout con `SIGKILL`, lifecycle (arranque perezoso, pre-calentado, TTL, techo, reinicio, huérfanos). Base de la que dependen las demás.
 - `repl-state-transport`: transferencia host↔worker de DataFrames vía Arrow/memoria compartida, recreación de los closures del namespace en el worker, directorio de salida compartido, inspección de namespace.
-- `shell-rtk-integration`: integrar el binario `rtk` en `ShellTool` para reducir la salida de comandos, **con el guard de sanitizer que impide que `rtk` se convierta en un bypass del allowlist**. Independiente de las dos anteriores.
+- ~~`shell-rtk-integration`~~ — **escindida (2026-07-27) a su propio brainstorm**: `sdd/proposals/shelltool-hardening.brainstorm.md`, donde se resolvieron sus decisiones (rtk como dependencia dura sin escape hatch, mapa de comandos, guard de sanitizer). Este documento queda reducido a `repl-worker-runtime` + `repl-state-transport`.
 
 ### Modified Capabilities
 
@@ -337,6 +337,14 @@ Para el agente LLM: dos mensajes de error nuevos que debe entender —tiempo exc
 > ✅ **Números de línea verificados** contra los ficheros subidos
 > (`pythonrepl.py`, 1.208 líneas; `shell/tool.py`, 467 líneas).
 > Pueden haber derivado respecto a HEAD — confirmar con `rg` antes de implementar.
+>
+> ⚠️ **Corrección de rutas (2026-07-27, verificado contra HEAD de `dev`)**: las rutas
+> reales en el repo son `packages/ai-parrot/src/parrot/tools/pythonrepl.py` (1.208
+> líneas — coincide; `run_in_executor` sigue en `:970`) y
+> `packages/ai-parrot-tools/src/parrot_tools/shell_tool/tool.py` (467 líneas —
+> coincide). Las referencias `parrot/tools/shell/*` de este documento apuntan al
+> paquete satélite `parrot_tools`; el sanitizer genérico vive ahora en core:
+> `packages/ai-parrot/src/parrot/security/command_sanitizer.py` (FEAT-252).
 
 ### User-Provided Code
 
@@ -507,19 +515,25 @@ from .models import CommandObject, ShellToolArgs, PlanStep           # shell/too
 
 ## Open Questions
 
-- [ ] **Paliativo inmediato**: ¿se sustituye `run_in_executor(None, ...)` en `pythonrepl.py:970` por un `ThreadPoolExecutor` dedicado y acotado, mientras se construye el worker? No arregla el DoS, pero contiene el daño al pool compartido del framework. Decisión de días, no de semanas. — *Owner: <name>*
-- [ ] Auditar todos los accesos externos a `PythonREPLTool.locals` / `.globals`. Es la superficie de rotura real de la migración y hay que conocerla **antes** de empezar. — *Owner: <name>*
-- [ ] Closures del namespace: ¿worker autónomo escribiendo a directorio compartido (recomendado) o stubs RPC de vuelta al host? — *Owner: <name>*
-- [ ] ¿Dónde corre el gate estático — host, worker, o ambos? La propuesta es el host (falla barato), pero ejecutarlo también en el worker es defensa en profundidad casi gratis. — *Owner: <name>*
-- [ ] Calibrar `RLIMIT_AS` contra cargas reales de pandas. Demasiado bajo mata análisis legítimos; demasiado alto no protege. — *Owner: <name>*
-- [ ] Windows: `preexec_fn` y `setrlimit` son POSIX. ¿Se soporta Windows, y si sí, vía Job Objects o se degrada a solo-timeout? — *Owner: <name>*
-- [ ] Techo de workers concurrentes y TTL de inactividad: ¿valores por defecto, y qué se hace al alcanzar el techo — rechazar o encolar? — *Owner: <name>*
-- [ ] ¿Pool de pre-calentado en v1 o se difiere? Afecta a C4 en producción pero añade complejidad de lifecycle. — *Owner: <name>*
-- [ ] ¿Cómo se comunica al LLM la pérdida de namespace tras un kill, de forma que no reintente con variables muertas? Redacción del mensaje de error. — *Owner: <name>*
+> Todas resueltas interactivamente con el usuario el 2026-07-27 (sesión /sdd-brainstorm).
+
+- [x] **Paliativo inmediato**: ¿se sustituye `run_in_executor(None, ...)` en `pythonrepl.py:970` por un `ThreadPoolExecutor` dedicado y acotado, mientras se construye el worker? — *Owner: Jesus Lara*: **Sí, se despliega ya.** Cambio pequeño e independiente que aterriza en `dev` antes de la feature (executor dedicado y acotado, p.ej. 4 hilos). Un bucle desbocado agota solo el pool del REPL, no el pool compartido del framework.
+- [x] Auditar todos los accesos externos a `PythonREPLTool.locals` / `.globals`. — *Owner: Jesus Lara*: **Auditoría hecha (2026-07-27, verificada por grep sobre `packages/ai-parrot/src/parrot/`).** Superficie real — 5 módulos: (1) `bots/data.py` — lecturas directas múltiples de `pandas_tool.locals` (`:1800, :2329, :2626-2628, :2655, :2743-2748, :2810-2815`), incluye `execution_results`; (2) `bots/agent.py:174-219` — la working memory guarda una **referencia viva** a `tool.locals` (`wm._tool_locals[key] = tool.locals`), semántica imposible de preservar cruzando proceso; (3) `tools/agent.py:421-427` — **escrituras** host→namespace (`python_repl.globals['previous_result']`, `f'{safe_name}_result'`); (4) `outputs/formats/base.py:137` — devuelve `tool.locals`; (5) `tools/pythonpandas.py:218-236, 292` — `clone()` copia locals/globals y fusiona `df_locals`. **Decisión: API de namespace explícita** (`get_var` / `set_var` / `list_vars` / `snapshot`) respaldada por el protocolo del worker, y portar los 5 call sites. Sin dict-proxy de compatibilidad (round-trips por clave, semántica de iteración sutil, y la referencia viva rompería igual en silencio).
+- [x] Closures del namespace: ¿worker autónomo o stubs RPC? — *Owner: Jesus Lara*: **Worker autónomo escribiendo a directorio compartido** (lo ya recomendado). Los closures se recrean en el worker apuntando a un directorio visible por el host; solo viaja la ruta (o base64). Sin canal RPC worker→host.
+- [x] ¿Dónde corre el gate estático? — *Owner: Jesus Lara*: **Ambos.** El host rechaza barato y temprano (sin round-trip para código condenado); el worker revalida antes de `exec` como defensa en profundidad — protege incluso si algún caller futuro llega al worker sin pasar por la ruta del host. Coste: un parse AST extra, despreciable.
+- [x] Calibrar `RLIMIT_AS`. — *Owner: Jesus Lara*: **Default configurable y generoso (~4 GiB) + tarea explícita de calibración** en la spec que mida cargas reales de pandas (cargas de datasets, merges, plots) antes de fijar el default definitivo. La calibración es trabajo empírico, no decisión de brainstorm.
+- [x] Windows. — *Owner: Jesus Lara*: **POSIX completo, Windows degradado.** v1: rlimits completos en Linux/macOS; en Windows el worker corre igualmente en proceso separado con timeout duro + terminate (funciona en todas partes), pero sin rlimits de memoria/CPU. Documentado de forma visible. Job Objects anotado como seguimiento si aparece demanda Windows.
+- [x] Techo de workers y TTL. — *Owner: Jesus Lara*: **Rechazo inmediato al alcanzar el techo** con error claro al LLM (sin cola indefinida, como ya decía la tabla de edge cases). Defaults: techo `max(4, cpu_count)` con tope ~16; TTL de inactividad 30 min. Los tres valores configurables por despliegue.
+- [x] ¿Pool de pre-calentado en v1? — *Owner: Jesus Lara*: **Sí, se incluye en v1** (tamaño configurable, default pequeño). La primera llamada en producción pasa de 1–3 s a milisegundos. *(Decisión del usuario, asumiendo el coste extra de lifecycle en la primera release.)*
+- [x] ¿Cómo se comunica la pérdida de namespace tras un kill? — *Owner: Jesus Lara*: **Error estructurado con lista de variables.** Mantiene la forma `{status, result, error}` (C5); el mensaje indica: causa **diferenciada** (timeout vs memoria — el LLM debe reintentar distinto), que TODAS las variables se perdieron, la **lista de nombres** que existían antes del kill (el host mantiene un shadow barato de solo-nombres vía `list_ns`), y la instrucción de recrear estado antes de reintentar.
 
 ---
 
 ## Nota de seguridad: `rtk` como bypass de allowlist en `ShellTool`
+
+> **Trasladada (2026-07-27)**: la versión normativa de esta nota, con las decisiones
+> ya tomadas, vive ahora en `sdd/proposals/shelltool-hardening.brainstorm.md`.
+> Se conserva aquí como contexto histórico.
 
 Va aparte porque no es un detalle de implementación, es un requisito de seguridad de `shell-rtk-integration`.
 
