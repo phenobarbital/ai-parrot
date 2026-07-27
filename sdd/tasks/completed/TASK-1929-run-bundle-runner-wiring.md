@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-378 — DevLoop Enhancement — Feature-Mode Topology
 **Spec**: `sdd/specs/devloop-enhancement.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-07-27
+**Verification**: verified
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1928
@@ -135,10 +137,57 @@ def test_package_exports(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
+**Notes**: Re-grepped `runner.py`'s anchors before implementing — the
+merged worktree now has THREE `_close_host` callers (initial :903,
+feature :1000, revision :1146; the contract's "initial :591 / revision
+:713" numbers had drifted after the FEAT-377 merge), confirming the
+"one insertion point" design still holds since all three funnel through
+the single `_close_host` method. Added `_persist_run_bundle(host, ctx)`
+mirroring `_persist_terminal_snapshot`'s swallow-and-log pattern exactly,
+called it right after `_persist_terminal_snapshot(host)` in `_close_host`
+(independent try/except — a bundle-export failure can't skip or break
+the snapshot persist, and vice versa). `ctx` is read defensively
+(`FlowContext` / plain dict / `None` → `{}`), matching
+`DevLoopNode.shared_state`'s duck-typing. Exported `RunBundle`,
+`build_run_bundle`, `render_markdown` from the package `__init__.py`
+(both the `from ... import` line and `__all__`, alphabetically placed).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Test-writing surfaced a real order-dependency bug unrelated to the
+production code: `monkeypatch.setattr("parrot.flows.dev_loop.runner.
+build_run_bundle", fn)` (the dotted-string form) silently failed to
+stick — the patched attribute reverted to the original function — only
+when `test_lazy_import.py`'s tests (which aggressively
+`del sys.modules[...]` / reimport / restore every
+`parrot.flows.dev_loop*` entry) ran earlier in the same session, even
+though the restored module object's identity and `__dict__` were
+verified (via a standalone repro script) to be byte-identical to the
+pre-churn one. Root cause not fully isolated (likely an interaction in
+pytest's dotted-path import resolution racing the sys.modules churn);
+sidestepped by monkeypatching the already-imported module OBJECT
+directly (`monkeypatch.setattr(_runner_module, "build_run_bundle", fn)`)
+instead of the string path — confirmed via the same repro script and a
+full-suite run that this form is robust regardless of ordering. Also
+found (again) and fixed the TASK-1928 completion commit's SDD-state
+step: the `mv` + selective `git add` pattern used for TASK-1927/1928
+left `sdd/tasks/active/TASK-1928-*.md`'s deletion unstaged (same class
+of bug documented in TASK-1927's completion note) — fixed with
+`git rm` + a follow-up commit, and switched to `git mv` for this task's
+own active→completed move to avoid a third occurrence.
+
+Tests: 4 new tests in `test_run_bundle_export.py`, all passing,
+reproducing every acceptance criterion (bundle+report written on
+success, still written on a failed run, export-failure swallowed
+without breaking teardown or skipping the terminal snapshot, package
+exports importable). Full `packages/ai-parrot/tests/flows/dev_loop/`
+suite: 830 passed, 7 skipped, 1 pre-existing order-dependent failure
+(`test_lazy_import.py::test_models_module_is_pure` — pre-existing,
+unrelated, documented in TASK-1927/1928's completion notes).
+`ruff check` clean on all three modified/created files.
+
+This closes out FEAT-378 — all 12 tasks (TASK-1918 through TASK-1929)
+are now `"done"` in the per-spec index; `completed_at` set on both this
+task and the feature header.
 
 **Deviations from spec**: none

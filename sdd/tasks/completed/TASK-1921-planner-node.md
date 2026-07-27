@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-378 — DevLoop Enhancement — Feature-Mode Topology
 **Spec**: `sdd/specs/devloop-enhancement.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-07-27
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1918, TASK-1919
@@ -66,6 +68,7 @@ pool size from the task dependency graph.
 | `packages/ai-parrot/src/parrot/flows/dev_loop/nodes/planner.py` | CREATE | PlannerNode |
 | `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-planner.md` | CREATE | Subagent prompt (authoritative) |
 | `.claude/agents/sdd-planner.md` | CREATE | Mirror of the prompt |
+| `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py` | MODIFY | Add `"sdd-planner"` to `_VALID_NAMES` — discovered during implementation: `load_subagent_definition()` gates on this frozenset (not just `ClaudeCodeDispatchProfile.subagent`'s Literal from TASK-1918); without this the dispatch raises `ValueError` unconditionally. Missing from the original Codebase Contract. |
 | `packages/ai-parrot/tests/flows/dev_loop/test_planner_node.py` | CREATE | Unit tests |
 
 ---
@@ -183,10 +186,38 @@ async def test_graph_memory_absent_degrades(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
+**Notes**: `PlannerNode` implemented in `nodes/planner.py`, registered as
+`"dev_loop.planner"` (node id `"planner"`, matching TASK-1919's `NodeId`
+extension). Dispatches `sdd-planner` with a locally-scoped `_PlannerBrief`
+(document_path/document_kind/jira_issue_key + ephemeral `graph_context`)
+rather than the canonical `FeatureBrief` directly, since the subagent
+brief needs a transient `graph_context` field `FeatureBrief` doesn't
+carry (mirrors `code_review.py`'s `_JudgeSynthesisBrief` local-model
+pattern). Jira is passthrough-only — the node never accepts a
+`jira_toolkit` dependency, so it structurally cannot create/transition/
+comment on a ticket. Pool sizing: brief `dev_agents` override wins;
+otherwise sizes from `TaskScheduler.from_worktree()`'s first wave width
+(feature_slug derived from `Path(planner_out.task_index_path).stem`),
+capped at `development_pool_max`; cycles propagate as `ValueError`
+(uncaught, matching `DevelopmentNode`'s own documented contract) so no
+dev dispatch follows a failed planning phase. `DevLoopGraphMemory`
+(FEAT-377/B) is guarded behind `try/except ImportError` and confirmed
+NOT on `dev` as of this task — degrades to `graph_context=""` with a
+debug log.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: (1) **Codebase Contract gap, fixed**:
+`_subagent_defs.py`'s `_VALID_NAMES` frozenset (not mentioned in the
+original contract) gates `load_subagent_definition()` independently of
+`ClaudeCodeDispatchProfile.subagent`'s Literal (TASK-1918) — without
+adding `"sdd-planner"` there, every dispatch would raise `ValueError`
+unconditionally. Added it (see the amended Files table above) and
+verified via a fresh-process import. TASK-1923 (FeedbackRouterNode) will
+need the equivalent `"sdd-feedback"` addition to the same frozenset —
+flagging here so that task's own Codebase Contract review catches it.
+(2) `sdd-planner.md`'s two copies (`_subagent_data/` and `.claude/agents/`)
+are byte-identical per this task's own acceptance criterion, even though
+the pre-existing `sdd-research.md` pair has since diverged (wiki-first
+triage guidance added only to the `.claude/agents/` mirror) — not
+reconciled here, out of scope.

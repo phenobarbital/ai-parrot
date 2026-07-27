@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-378 — DevLoop Enhancement — Feature-Mode Topology
 **Spec**: `sdd/specs/devloop-enhancement.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-07-27
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -179,10 +181,15 @@ def test_judge_panel_defaults():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
+**Notes**: `FeatureBrief`, `JudgeSpec`, `JudgePanelConfig`, `default_judge_panel()`,
+`PlannerOutput`, `SynthesisReport`, `FeedbackDecision` implemented in
+`models.py` per spec §2. `ClaudeCodeDispatchProfile.subagent` extended with
+`"sdd-planner"` and `"sdd-feedback"`. Discriminated-union gotcha handled via
+the `parse_brief()` loader shim (documented inline) rather than a bare
+`TypeAdapter(Brief)`, per the task's own guidance — `Brief` union is still
+exported for typing purposes. All 13 unit tests in
+`test_feature_models.py` pass; `ruff check` clean.
 
 **Deviations from spec**: none

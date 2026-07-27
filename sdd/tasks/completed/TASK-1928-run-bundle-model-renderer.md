@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-378 — DevLoop Enhancement — Feature-Mode Topology
 **Spec**: `sdd/specs/devloop-enhancement.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-07-27
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1927
@@ -159,10 +161,59 @@ def test_render_markdown_omits_empty_sections(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
+**Notes**: Created `run_bundle.py` as a pure module (only `time`, `typing`,
+`pydantic`, and `parrot.flows.dev_loop.session_state` imports — no I/O).
+Re-verified the Codebase Contract's line anchors against the merged
+worktree (session_state.py/models.py both shifted after this worktree
+merged `dev`); the classes/fields listed were all accurate, only line
+numbers moved. Traced the actual runtime shape of `shared` (`ctx.
+shared_data`) by grepping every dev_loop node for `shared["..."]` /
+`shared.get("...")` writes — confirmed `research_output`/`planner_output`
+are `ResearchOutput`/`PlannerOutput` Pydantic instances (not dicts),
+`qa_report` is a `QAReport` instance, `deployment_result`/`revision_result`
+are plain dicts (mirroring `nodes/close.py`'s own `shared.get(...) or {}`
+pattern). `DevelopedWork.jira_issue_key`/`pr_url` read from
+`snapshot.state` (already event-sourced via `RunClosed`) rather than
+`shared`, since that's the authoritative final value; `docs_artifact_path`
+reads `snapshot.state.docs_artifacts` (TASK-1919's feature-mode
+projection) for the same reason. `task_ids` is sourced from
+`development_output.worker_summaries[*].tasks_completed` (FEAT-323 pool
+mode) — no other in-memory source of task ids/titles exists without
+reading the per-spec index off disk (forbidden — pure module), so it's
+empty for the single-agent path, per spec ("when available").
+`RunBundle.mode` is `"feature"` when `planner_output` is present in
+`shared`, else `shared.get("mode", "initial")` — `close.py`/
+`revision_handoff.py` never set `mode="feature"` today, so this is
+inferred defensively rather than invented.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Discovered and fixed an unrelated bug from the TASK-1927 completion
+commit: the `git add` for that commit's SDD-state step only staged the
+index + the new `completed/` file, never the `active/`-side deletion —
+so `sdd/tasks/active/TASK-1927-*.md` stayed committed in the tree
+alongside the `completed/` copy. Fixed with a follow-up
+`git rm` + commit (`sdd: fix TASK-1927 completion commit — stage deletion
+of moved active task file`) — the exact same class of mistake, and the
+exact same fix, as an earlier `sdd: fix TASK-1906 completion commit` in
+this repo's history.
+
+Also discovered (and stashed aside, NOT committed — out of scope for this
+task) a large pre-existing uncommitted modification to
+`examples/dev_loop/server.py` already sitting dirty in this worktree
+before TASK-1927/1928 started (not part of either task's file list). It
+was breaking `test_code_review.py::TestServerWiringIntegration` (3 tests)
+by wiring a `ParallelPerspectiveReviewDispatcher` where the test expected
+`ClaudeCodeReviewDispatcher`. Stashed as
+`stash@{0}: PRE-EXISTING unrelated dirty state found in worktree (not
+part of TASK-1927/1928/1929) — examples/dev_loop/server.py` — recovering
+it (`git stash pop`) is a decision for whoever owns that in-flight demo
+server change, not this task.
+
+Tests: 8 new tests in `test_run_bundle.py`, all passing. Full
+`packages/ai-parrot/tests/flows/dev_loop/` suite: 826 passed, 7 skipped,
+1 pre-existing order-dependent failure (unrelated
+`test_lazy_import.py::test_models_module_is_pure` — see TASK-1927's
+completion note). `ruff check` clean on both new files.
 
 **Deviations from spec**: none

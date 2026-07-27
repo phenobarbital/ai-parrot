@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-378 — DevLoop Enhancement — Feature-Mode Topology
 **Spec**: `sdd/specs/devloop-enhancement.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-07-27
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1918
@@ -168,10 +170,42 @@ def test_default_panel_from_conf_unset(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
+**Notes**: `JudgePanelReviewDispatcher` implemented in `code_review.py`,
+registered as `"judge-panel"`. Judge → review-dispatcher mapping:
+`"claude-code"` → `ClaudeCodeReviewDispatcher`, `"gemini"` →
+`GeminiCodeReviewDispatcher`, `"codex"` → `CodexAdversarialReviewDispatcher`
+(the `sdd-secondopinion` adversarial profile, per spec). Other
+`DevAgentBackend` values (nvidia/grok/zai/moonshot) have no review profile
+defined anywhere in the codebase yet, so `_build_judge` raises a clear
+`ValueError` for them rather than guessing a shape — flagged as a gap for
+a future task, not invented here. Majority decision on non-errored judges;
+errored-majority or tie → escalate (`passed=False`), fail-closed. Findings
+tagged `source=<judge backend>` via `AdversarialFinding`. `DEV_LOOP_JUDGE_PANEL`
+conf key added (JSON `JudgePanelConfig` shape); unset/malformed → silent
+degrade to `default_judge_panel()`, mirroring `agent_builder.parse_pool_env`'s
+convention. `agent_builder`/`DevAgentSpec` imports inside `_build_judge` are
+lazily deferred (not module-level) — `code_review.py` sits on the transitive
+import path of the package's own `__init__.py` (via `flow.py` → `nodes/qa.py`),
+and `agent_builder.py` re-imports dispatch-profile names back from the
+package, which deadlocks on the partially-initialized module if imported
+eagerly here; verified with a fresh-process import exercising all 3
+supported judge backends. All 11 new unit tests + the full existing
+codereview-adjacent suite (39 tests) pass; `ruff check` clean (the one
+pre-existing `conf.py` E402 finding at line 450 predates this task and is
+unrelated).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: (1) `files_modified` on the merged verdict is the
+deduplicated union of every judge's own reported edits, rather than
+blanked to `[]` — documented in the class docstring along with a flagged,
+unresolved concurrency caveat: up to 2 write-enabled judges (claude-code +
+gemini) may run concurrently against the same `cwd` via `asyncio.gather`
+with no mutual synchronization. This mirrors the single-hardcoded-judge
+scope being generalized (that judge was also write-capable) and is
+explicitly flagged rather than silently accepted or redesigned away — a
+genuinely fix-free panel would need new read-only review profiles for
+claude-code/gemini, which do not exist yet and are out of this task's
+scope. (2) Non-claude/codex/gemini judge backends raise `ValueError`
+instead of being silently supported, per the "Does NOT Exist" contract
+note about not inventing new dispatcher shapes.
