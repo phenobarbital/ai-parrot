@@ -14,6 +14,10 @@ The dev-loop flow binds one of several subagents per dispatch:
 * ``sdd-planner`` — feature-mode document-driven planning (FEAT-378):
   generates missing SDD artifacts (spec/task index) and the feature
   worktree from a brainstorm/proposal/spec document.
+* ``sdd-feedback`` — feature-mode QA-failure feedback routing (FEAT-378):
+  read-only, proposes ``retry``/``escalate``/``accept_with_notes`` over a
+  QAReport + judge-panel verdicts; the deterministic envelope and stop
+  rule are enforced in Python, never trusted from the proposal alone.
 
 The Markdown files for each subagent are dual-sourced (per spec §7
 "Patterns"):
@@ -42,6 +46,7 @@ _VALID_NAMES: frozenset[str] = frozenset(
         "sdd-codereview",
         "sdd-secondopinion",
         "sdd-planner",
+        "sdd-feedback",
     }
 )
 
@@ -76,7 +81,8 @@ def load_subagent_definition(name: str) -> str:
 
     Args:
         name: One of ``"sdd-research"``, ``"sdd-worker"``, ``"sdd-qa"``,
-            ``"sdd-codereview"``, ``"sdd-secondopinion"``, ``"sdd-planner"``.
+            ``"sdd-codereview"``, ``"sdd-secondopinion"``, ``"sdd-planner"``,
+            ``"sdd-feedback"``.
 
     Returns:
         The Markdown body of the subagent definition with the YAML
