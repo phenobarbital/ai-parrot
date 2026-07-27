@@ -114,7 +114,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "Consumes panel verdict shape from 1920 and FEAT-377/A stop rule when available.",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1923-feedback-router-node.md"
+      "completed_at": "2026-07-27T01:22:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1923-feedback-router-node.md"
     },
     {
       "id": "TASK-1924",

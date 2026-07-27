@@ -59,6 +59,7 @@ consume only); judge panel internals (TASK-1920).
 | `packages/ai-parrot/src/parrot/flows/dev_loop/nodes/feedback_router.py` | CREATE | FeedbackRouterNode |
 | `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-feedback.md` | CREATE | Subagent prompt (authoritative) |
 | `.claude/agents/sdd-feedback.md` | CREATE | Mirror |
+| `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py` | MODIFY | Add `"sdd-feedback"` to `_VALID_NAMES` — same gap TASK-1921 found and flagged for this task: `load_subagent_definition()` gates on this frozenset independently of `ClaudeCodeDispatchProfile.subagent`'s Literal (TASK-1918). |
 | `packages/ai-parrot/tests/flows/dev_loop/test_feedback_router.py` | CREATE | Unit tests |
 
 ---
@@ -163,10 +164,36 @@ async def test_decision_recorded_action(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
+**Notes**: `FeedbackRouterNode` implemented in `nodes/feedback_router.py`,
+registered as `"dev_loop.feedback_router"` (node id `"feedback_router"`).
+Confirmed FEAT-377 (`qa_attempts`/`DEV_LOOP_QA_MAX_RETRIES`/
+`QaAttemptRecorded`/`_CEL_QA_RETRY`) is still NOT on `dev` — implemented
+the documented degradation: `_retry_allowed()` unconditionally returns
+`False` (isolated seam, one-line change once FEAT-377/A lands); every
+proposed `retry` downgrades to `escalate` with a warning log. Verified
+`CodeReviewFinding.severity` field name/values (`critical/major/minor/
+nit`) directly in models.py before coding the envelope. The envelope's
+per-finding severity check reads `shared["_code_review_verdict"]` —
+QANode's own internal/underscored stash of the structured
+`CodeReviewVerdict` — since `QAReport.code_review_findings` is plain
+strings with no severity data; documented this cross-node shared-state
+read explicitly in `_envelope_ok`'s docstring since it's the only place
+severities exist. Fail-closed when no verdict is available (cannot
+verify "all minor" without it). `FeedbackDecisionRecorded` is applied via
+`session_host.apply()` — the first node in the codebase to call `.apply()`
+directly for a custom action (previously only `qa.py`'s `open_gate` did).
+Judge-panel verdicts (TASK-1919's `judge_verdicts`) are surfaced to the
+LLM's brief as human-readable summaries of the latest round, for
+situational context only — the strict Python envelope does not depend on
+them (they don't carry per-finding severity). Same `_VALID_NAMES`
+frozenset gap TASK-1921 flagged: added `"sdd-feedback"` to
+`_subagent_defs.py` here (contract updated first, then implemented). All
+8 unit tests pass (including a fail-closed no-verdict case beyond the
+task's own list); full dev_loop suite green except the pre-existing,
+unrelated `test_models_module_is_pure` test-order flake.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none — the FEAT-377/A stop-rule degradation is
+explicitly documented as expected/interim behavior by the task's own
+Codebase Contract, not a deviation.
