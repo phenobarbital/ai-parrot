@@ -1023,24 +1023,49 @@ class DevLoopRunner:
             shared_data=shared,
         )
 
-        async with self._semaphore:
-            self._active.add(rid)
-            holder = getattr(feature_flow, "_run_id_holder", None)
-            if isinstance(holder, dict):
-                holder["run_id"] = rid
-            self.logger.info(
-                "Starting dev-loop FEATURE run %s (%d/%d active)",
-                rid, len(self._active), self.max_concurrent_runs,
-            )
-            try:
-                result = await feature_flow.run_flow(ctx)
-            finally:
+        # FEAT-377 TASK-1917 (G6) / code-review finding (post-TASK-1925): same
+        # manual acquire/park-aware structure as `run()`/`run_revision()` — a
+        # feature run's QA can open gates too (`review_escalation` via the
+        # judge panel, `manual_criterion`), so a plain `async with
+        # self._semaphore` is unsafe: `_park()` can release the slot WHILE
+        # `run_flow()` is still in flight (from deep inside whichever node
+        # opens a gate), which a context manager cannot express — and without
+        # registering `_run_completion[rid]`, `resume_run()` would have
+        # nothing to await for a parked feature run.
+        loop = asyncio.get_running_loop()
+        completion: "asyncio.Future[FlowResult]" = loop.create_future()
+        self._run_completion[rid] = completion
+        await self._semaphore.acquire()
+        self._active.add(rid)
+        holder = getattr(feature_flow, "_run_id_holder", None)
+        if isinstance(holder, dict):
+            holder["run_id"] = rid
+        self.logger.info(
+            "Starting dev-loop FEATURE run %s (%d/%d active)",
+            rid, len(self._active), self.max_concurrent_runs,
+        )
+        try:
+            result = await feature_flow.run_flow(ctx)
+        except BaseException as exc:
+            if not completion.done():
+                completion.set_exception(exc)
+            self._run_completion.pop(rid, None)
+            raise
+        finally:
+            if rid in self._active:
                 self._active.discard(rid)
+                self._semaphore.release()
+            else:
+                self._parked.discard(rid)
+            self._pending_gate_count.pop(rid, None)
 
         self.logger.info(
             "Dev-loop feature run %s finished status=%s", rid, result.status
         )
         self._close_host(host, result, ctx)
+        if not completion.done():
+            completion.set_result(result)
+        self._run_completion.pop(rid, None)
         return result
 
     async def run_revision(
