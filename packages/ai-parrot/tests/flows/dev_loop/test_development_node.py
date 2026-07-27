@@ -258,7 +258,7 @@ class TestFanOutWiring:
         )
 
         ctx = {"run_id": "r1", "research_output": research}
-        result = await node.execute(ctx)
+        await node.execute(ctx)
 
         single_dispatcher.dispatch.assert_not_awaited()
         dispatched_tasks = {c[0] for c in pool_dispatcher.calls}

@@ -447,7 +447,7 @@ GOOGLE_CREDENTIALS_FILE = Path(
 )
 
 ## LLM default config:
-from .models.google import GoogleModel
+from .models.google import GoogleModel  # noqa: E402
 DEFAULT_LLM_MODEL = config.get(
     'LLM_MODEL', fallback=GoogleModel.GEMINI_FLASH_LATEST.value
 )
