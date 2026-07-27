@@ -157,7 +157,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -170,8 +170,8 @@
       "parallelism_notes": "High-contention core files (definition/flow/runner/factories/classifier); must be last of the code tasks. Composes with FEAT-377/A if merged.",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1925-feature-topology-parity.md"
+      "completed_at": "2026-07-27T01:57:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1925-feature-topology-parity.md"
     },
     {
       "id": "TASK-1926",
