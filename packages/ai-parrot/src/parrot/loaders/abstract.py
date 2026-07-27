@@ -14,7 +14,6 @@ from datamodel.parsers.json import JSONContent  # pylint: disable=E0611 # noqa
 from ..stores.models import Document
 ## AI Models:
 from ..models.google import GoogleModel
-from ..models.groq import GroqModel
 from ..clients.factory import LLMFactory
 from .splitters import (
     TokenTextSplitter,
@@ -1038,22 +1037,12 @@ class AbstractLoader(ABC):
                     truncation=True
                 )
                 return content[0].get('summary_text', '')
-            # Use Summarize Method from GroqClient
-            system_prompt = f"""
-Your job is to produce a final summary from the following text and identify the main theme.
-- The summary should be concise and to the point.
-- The summary should be no longer than {max_length} characters and no less than {min_length} characters.
-- The summary should be in a single paragraph.
-"""
-            # Ensure the LLM client is initialized for the current loop
-            await summarizer._ensure_client()
-            summary = await summarizer.summarize_text(
+            # Use Summarize Method from GoogleGenAIClient (synchronous)
+            summary = await asyncio.to_thread(
+                summarizer.summarize_text,
                 text=text,
-                model=GroqModel.LLAMA_3_3_70B_VERSATILE,
-                system_prompt=system_prompt,
+                model=GoogleModel.GEMINI_2_5_FLASH_LITE,
                 temperature=0.1,
-                max_tokens=1000,
-                top_p=0.5
             )
             return summary.output
         except Exception as e:
@@ -1089,12 +1078,11 @@ Your job is to produce a final summary from the following text and identify the 
                     torch_dtype=torch_dtype if pipe_dev != -1 else None,
                 )
             else:
-                # Use Groq for Summarization:
+                # Use Google Gemini for Summarization:
                 self._summary_model = LLMFactory.create(
-                    llm=f"groq:{GroqModel.LLAMA_3_3_70B_VERSATILE}",
+                    llm=f"google:{GoogleModel.GEMINI_2_5_FLASH_LITE.value}",
                     model_kwargs={
                         "temperature": 0.1,
-                        "top_p": 0.5,
                     }
                 )
         return self._summary_model
