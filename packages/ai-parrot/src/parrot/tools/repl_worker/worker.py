@@ -54,6 +54,33 @@ from .protocol import (
 logger = logging.getLogger(__name__)
 
 
+def set_parent_death_signal() -> None:
+    """Best-effort Linux-only orphan-reaping safety net (spec Module 4/AC12).
+
+    If the host process dies WITHOUT running ``WorkerPool.shutdown()``'s
+    orderly sweep (crash, ``kill -9`` on the host, …), ``PR_SET_PDEATHSIG``
+    makes the kernel SIGKILL this worker the instant its parent exits — a
+    portable backstop that doesn't depend on the host doing anything right.
+    Linux-only (`prctl` doesn't exist elsewhere); a no-op everywhere else,
+    where the pool's own shutdown sweep is the (documented) only backstop.
+    """
+    if sys.platform != "linux":
+        return
+    try:
+        import ctypes
+        import signal
+
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        pr_set_pdeathsig = 1
+        if libc.prctl(pr_set_pdeathsig, signal.SIGKILL) != 0:
+            errno = ctypes.get_errno()
+            logger.warning("repl_worker: PR_SET_PDEATHSIG failed (errno=%s)", errno)
+        else:
+            logger.debug("repl_worker: PR_SET_PDEATHSIG(SIGKILL) armed")
+    except Exception as exc:  # noqa: BLE001 - best-effort safety net, never fatal
+        logger.warning("repl_worker: PR_SET_PDEATHSIG unavailable: %s", exc)
+
+
 def apply_rlimits(config: WorkerConfig) -> None:
     """Apply POSIX resource limits to the CURRENT process.
 
@@ -271,6 +298,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     write_fd = int(argv[2])
     output_dir = argv[3] if len(argv) > 3 else None
 
+    set_parent_death_signal()
     apply_rlimits(config)
 
     in_stream = os.fdopen(read_fd, "rb", buffering=0)
