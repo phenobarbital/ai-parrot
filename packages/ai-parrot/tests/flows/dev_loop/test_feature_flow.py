@@ -270,6 +270,37 @@ async def test_feature_flow_accept_with_notes(monkeypatch, tmp_path):
     assert "failure_handler" not in ran
 
 
+def test_feature_flow_forwards_graph_memory_and_plan_approval():
+    """FEAT-377 TASK-1914/1915/1916: build_dev_loop_feature_flow() must
+    thread graph_memory/require_plan_approval into
+    build_dev_loop_node_factories() — before this fix, feature-mode
+    always got graph_memory=None and require_plan_approval=False no
+    matter what the caller passed."""
+    from unittest.mock import patch
+
+    import parrot.flows.dev_loop.runner as runner_mod
+
+    sentinel_memory = object()
+
+    with patch.object(
+        runner_mod,
+        "build_dev_loop_node_factories",
+        wraps=runner_mod.build_dev_loop_node_factories,
+    ) as mock_factories:
+        build_dev_loop_feature_flow(
+            dispatcher=MagicMock(),
+            redis_url="redis://x",
+            publish_flow_events=False,
+            graph_memory=sentinel_memory,
+            require_plan_approval=True,
+        )
+
+    mock_factories.assert_called_once()
+    _, kwargs = mock_factories.call_args
+    assert kwargs["graph_memory"] is sentinel_memory
+    assert kwargs["require_plan_approval"] is True
+
+
 @pytest.mark.skipif(FEAT_377A_ABSENT, reason="retry edge requires FEAT-377/A")
 @pytest.mark.asyncio
 async def test_feature_flow_feedback_retry(monkeypatch, tmp_path):  # pragma: no cover
