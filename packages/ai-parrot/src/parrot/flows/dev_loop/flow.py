@@ -35,7 +35,10 @@ from parrot.flows.dev_loop.definition import build_dev_loop_definition
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.models import RepoSpec, WorkBrief
-from parrot.flows.dev_loop.session_state import action_from_flow_event
+from parrot.flows.dev_loop.session_state import (
+    PullRequestLinked,
+    action_from_flow_event,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -195,7 +198,7 @@ class FlowEventPublisher:
             redis_client = await self._ensure_redis()
             await redis_client.xadd(
                 f"flow:{run_id}:flow",
-                {"event": json.dumps(envelope)},
+                {"event": json.dumps(envelope, default=str)},
                 maxlen=10_000,
                 approximate=True,
             )
@@ -210,10 +213,21 @@ class FlowEventPublisher:
                 session_host = getattr(run_ctx, "shared_data", {}).get("session_host")
             if session_host is not None:
                 action = action_from_flow_event(
-                    event, node_id, ts, error=str(info.get("error", ""))
+                    event, node_id, ts,
+                    error=str(info.get("error", "")),
+                    node_result=info.get("node_result"),
                 )
                 if action is not None:
                     session_host.apply(action)
+                node_result = info.get("node_result")
+                if (
+                    event == "node_completed"
+                    and isinstance(node_result, dict)
+                    and node_result.get("pr_url")
+                ):
+                    session_host.apply(PullRequestLinked(
+                        pr_url=str(node_result["pr_url"]),
+                    ))
         except Exception:  # noqa: BLE001 - session-state fold must never break the run
             _logger.debug(
                 "dev-loop session-state fold failed for event %s (node=%s, run=%s)",

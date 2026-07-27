@@ -876,6 +876,14 @@ class AdversarialFinding(CodeReviewFinding):
         ),
     )
 
+    @field_validator("disposition", mode="before")
+    @classmethod
+    def _normalize_disposition(cls, v: Any) -> Any:
+        """Accept uppercase dispositions from subagents (CONFIRM → confirm)."""
+        if isinstance(v, str):
+            return v.lower()
+        return v
+
 
 class TriageBrief(BaseModel):
     """Brief for the primary worker's triage dispatch (FEAT-375).

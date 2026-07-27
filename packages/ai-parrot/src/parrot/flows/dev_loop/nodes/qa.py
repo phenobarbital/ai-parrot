@@ -20,6 +20,8 @@ The node returns the report regardless of ``passed`` — the flow factory
 from __future__ import annotations
 
 import asyncio
+import re
+import shlex
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
@@ -42,6 +44,7 @@ from parrot.flows.dev_loop.models import (
     ManualCriterion,
     QAReport,
     ResearchOutput,
+    ShellCriterion,
     TriageBrief,
     TriageReport,
 )
@@ -55,6 +58,13 @@ _DEFAULT_LINT_COMMAND = "ruff check . && mypy --no-incremental"
 # run (infra error). Used to detect a *skipped* (vs. genuinely passed) review
 # so the skip is surfaced loudly instead of masquerading as a clean review.
 _CODE_REVIEW_SKIP_PREFIX = "code-review could not run:"
+
+# Matches a positional ``.`` target in lint commands (e.g. ``ruff check .``).
+# Preceded by whitespace, followed by whitespace, chain operator, or EOL.
+_LINT_TARGET_RE = re.compile(
+    r"(?<=\s)\."
+    r"(?=\s|&&|;|$)"
+)
 
 
 class _QABrief(BaseModel):
@@ -139,10 +149,11 @@ class QANode(DevLoopNode):
         research: ResearchOutput = shared["research_output"]
         brief: BugBrief = shared["bug_brief"]
 
-        if self._skip_qa:
+        runtime_skip = shared.get("skip_qa", False)
+        if self._skip_qa or runtime_skip:
             self.logger.info(
-                "QA bypass enabled (skip_qa=True) for %s — returning synthetic pass.",
-                research.jira_issue_key or research.feat_id,
+                "QA bypass enabled (skip_qa=True, runtime=%s) for %s — returning synthetic pass.",
+                runtime_skip, research.jira_issue_key or research.feat_id,
             )
             report = QAReport(
                 passed=True,
@@ -349,9 +360,16 @@ class QANode(DevLoopNode):
             setting_sources=["project"],
         )
         effective_cwd = cwd_override or research.worktree_path
+
+        # Scope lint/ruff/mypy commands to changed files so pre-existing
+        # repo-wide errors don't fail the QA gate for unrelated code.
+        changed = await self._get_changed_files(effective_cwd)
+        lint_cmd = self._scope_lint_to_files(self._lint_command, changed)
+        scoped_criteria = self._scope_criteria(executable, changed)
+
         qa_brief = _QABrief(
-            acceptance_criteria=executable,
-            lint_command=self._lint_command,
+            acceptance_criteria=scoped_criteria,
+            lint_command=lint_cmd,
             worktree_path=effective_cwd,
             summary=brief.summary,
         )
@@ -367,6 +385,92 @@ class QANode(DevLoopNode):
             # dispatch() call for the same pattern/rationale).
             session_host=shared.get("session_host"),
         )
+
+    # ------------------------------------------------------------------
+    # Lint scoping helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _get_changed_files(worktree_path: str) -> List[str]:
+        """Return Python files changed in the worktree vs its merge base.
+
+        Tries ``origin/dev`` first (standard base branch), then falls
+        back to ``origin/main``. Returns an empty list on any error so
+        the caller degrades to the unscoped lint command.
+        """
+        for upstream in ("origin/dev", "origin/main"):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "git", "diff", "--name-only", "--diff-filter=d",
+                    f"{upstream}...HEAD", "--", "*.py",
+                    cwd=worktree_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await proc.communicate()
+                if proc.returncode == 0 and stdout:
+                    return [
+                        f.strip()
+                        for f in stdout.decode().strip().splitlines()
+                        if f.strip()
+                    ]
+            except Exception:
+                continue
+        return []
+
+    @staticmethod
+    def _scope_lint_to_files(command: str, files: List[str]) -> str:
+        """Replace whole-repo targets (``.``) with explicit file paths.
+
+        Processes each ``&&``/``;``-separated sub-command independently
+        so compound commands like ``ruff check . && mypy --no-incremental``
+        scope both halves. Also appends file paths to bare ``mypy``
+        invocations that have no positional target.
+        """
+        if not files:
+            return command
+        file_args = " ".join(shlex.quote(f) for f in files)
+
+        def _scope_part(part: str) -> str:
+            scoped = _LINT_TARGET_RE.sub(file_args, part)
+            if scoped == part and re.search(r"\bmypy\b", part):
+                scoped = f"{part.rstrip()} {file_args}"
+            return scoped
+
+        parts = re.split(r"(&&|;)", command)
+        return "".join(
+            _scope_part(p) if i % 2 == 0 else p
+            for i, p in enumerate(parts)
+        )
+
+    @classmethod
+    def _scope_criteria(
+        cls,
+        criteria: List[AcceptanceCriterion],
+        files: List[str],
+    ) -> List[AcceptanceCriterion]:
+        """Rewrite shell criteria that lint the whole repo to target changed files."""
+        if not files:
+            return criteria
+        scoped: List[AcceptanceCriterion] = []
+        for c in criteria:
+            if (
+                isinstance(c, ShellCriterion)
+                and _LINT_TARGET_RE.search(c.command)
+                and re.search(r"\b(ruff|mypy|flake8|pylint)\b", c.command)
+            ):
+                scoped.append(
+                    c.model_copy(
+                        update={
+                            "command": cls._scope_lint_to_files(
+                                c.command, files
+                            )
+                        }
+                    )
+                )
+            else:
+                scoped.append(c)
+        return scoped
 
     # ------------------------------------------------------------------
     # Code-review gate (FEAT-250, pluggable dispatcher since FEAT-270)

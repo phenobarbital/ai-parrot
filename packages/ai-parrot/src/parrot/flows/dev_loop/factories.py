@@ -159,6 +159,7 @@ def build_dev_loop_node_factories(
                 dispatcher_builder=development_dispatcher_builder,
                 pool_max=development_pool_max,
                 require_plan_approval=require_plan_approval,
+                jira_toolkit=jira_toolkit,
                 name=nd.id,
             ),
             deps,

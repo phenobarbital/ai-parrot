@@ -933,6 +933,15 @@ DEV_LOOP_CODEREVIEW_AGENT: str = config.get(
     "DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code"
 )
 
+# Default Jira workflow status chain for `jira_transition_to`'s multi-step
+# walker. Covers the standard NAV simplified-workflow path so the dev-loop
+# can reach "Resolved" from any earlier state without manual env config.
+# Override per-project via ``JIRA_WORKFLOW_PATH_<PROJECT>`` env var.
+DEV_LOOP_JIRA_WORKFLOW_PATH: str = config.get(
+    "DEV_LOOP_JIRA_WORKFLOW_PATH",
+    fallback="Backlog > To Do > Open > In Progress > In Review > Resolved > Closed",
+)
+
 # Jira transition labels the dev-loop applies at each hand-off point. Every
 # Jira project ships its own workflow, so each setting is an *ordered list of
 # candidate labels* (most specific first); the dev-loop tries them against the
@@ -942,8 +951,8 @@ DEV_LOOP_CODEREVIEW_AGENT: str = config.get(
 # workflow. Matching is alias/substring-tolerant (jira_transition_issue).
 DEV_LOOP_JIRA_TRANSITIONS_READY: list[str] = config.getlist(
     "DEV_LOOP_JIRA_TRANSITIONS_READY",
-    fallback=["Ready to Deploy", "Resolve Issue", "Resolved", "Done", "Close Issue", "Closed"],
-) or ["Ready to Deploy", "Resolve Issue", "Resolved", "Done", "Close Issue", "Closed"]
+    fallback=["Resolved", "Closed", "Done", "Ready to Deploy", "Resolve Issue", "Close Issue"],
+) or ["Resolved", "Closed", "Done", "Ready to Deploy", "Resolve Issue", "Close Issue"]
 DEV_LOOP_JIRA_TRANSITIONS_BLOCKED: list[str] = config.getlist(
     "DEV_LOOP_JIRA_TRANSITIONS_BLOCKED",
     fallback=["Deployment Blocked", "Blocked", "Blocked for Requirements", "On Hold", "Stop Progress"],
