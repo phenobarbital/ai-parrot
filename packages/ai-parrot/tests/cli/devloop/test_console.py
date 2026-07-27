@@ -72,14 +72,26 @@ class StubRunner:
     def __init__(self):
         self._hosts: Dict[str, StubHost] = {}
         self._active: Set[str] = set()
+        self._parked: Set[str] = set()
         self._resolve_gate_calls: list = []
         self._cancel_calls: list = []
 
     def get_host(self, run_id: str):
         return self._hosts.get(run_id)
 
+    @property
     def active_runs(self) -> Set[str]:
+        # Mirrors DevLoopRunner.active_runs — a @property, not a method
+        # (FEAT-377 TASK-1917 parked-run bookkeeping keeps this in sync
+        # with the real class's shape).
         return set(self._active)
+
+    @property
+    def parked_runs(self) -> Set[str]:
+        return set(self._parked)
+
+    def is_parked(self, run_id: str) -> bool:
+        return run_id in self._parked
 
     def registry_state(self):
         return MagicMock()
@@ -154,6 +166,26 @@ async def test_console_cmd_runs_with_runs():
     await dc._cmd_runs("")
     output = console.export_text()
     assert "run-123" in output
+
+
+@pytest.mark.asyncio
+async def test_console_cmd_runs_shows_parked_status():
+    # FEAT-377 TASK-1917 (G6): a parked run (awaiting a gate, slot
+    # released) must not be mislabeled "queued (cap)".
+    dc, console, runner = _make_console([])
+    task = asyncio.ensure_future(asyncio.sleep(10))
+    dc._runs["run-parked"] = task
+    runner._parked.add("run-parked")
+    try:
+        await dc._cmd_runs("")
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    output = console.export_text()
+    assert "run-parked" in output
+    assert "awaiting gate" in output
+    assert "queued (cap)" not in output
 
 
 @pytest.mark.asyncio

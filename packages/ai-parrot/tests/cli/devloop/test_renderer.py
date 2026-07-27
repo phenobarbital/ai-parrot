@@ -152,6 +152,20 @@ def test_renderer_maps_dispatch_tool_use():
     assert any("Edit" in str(r) for r in view._renderables)
 
 
+def test_renderer_maps_qa_attempt_recorded():
+    # FEAT-377 TASK-1910/1911: bounded QA repair-loop retry marker.
+    env = StubEnvelope(
+        server_seq=1,
+        action=_make_action(
+            "run/qaAttemptRecorded", attempt=1, qa_notes="pytest: 2 failed"
+        ),
+    )
+    view = _make_view([env])
+    view.poll_once()
+    assert any("attempt 1" in str(r) for r in view._renderables)
+    assert any("pytest: 2 failed" in str(r) for r in view._renderables)
+
+
 def test_renderer_unknown_action_tolerated():
     env = StubEnvelope(server_seq=1, action=_make_action("future/unknown_action"))
     view = _make_view([env])

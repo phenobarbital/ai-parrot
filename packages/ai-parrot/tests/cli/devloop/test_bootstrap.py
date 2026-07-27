@@ -8,6 +8,7 @@ import pytest
 from parrot.cli.devloop.bootstrap import (
     PreflightCheck,
     PreflightResult,
+    build_runtime,
     preflight,
 )
 
@@ -84,3 +85,91 @@ def test_preflight_check_model():
     assert check.name == "redis"
     assert check.passed is True
     assert check.hint == ""
+
+
+@pytest.mark.asyncio
+async def test_build_runtime_wires_graph_memory_and_plan_approval():
+    """FEAT-377 TASK-1914/1915/1916: build_runtime() must construct the
+    opt-in DevLoopGraphMemory via from_config() and forward both it and
+    conf.DEV_LOOP_REQUIRE_PLAN_APPROVAL to build_dev_loop_flow(), and
+    forward graph_memory to DevLoopRunner() too (consumed by its lazily
+    built revision flow). Before this fix, both were silently dropped —
+    parrot devloop could never reach either feature."""
+    import parrot.cli.devloop.bootstrap as bootstrap_mod
+
+    sentinel_memory = object()
+    sentinel_flow = object()
+    sentinel_runner = MagicMock()
+
+    ok_result = PreflightResult(ok=True, checks=[])
+
+    with patch.object(bootstrap_mod, "preflight", AsyncMock(return_value=ok_result)), \
+         patch.object(bootstrap_mod, "_build_jira_toolkit", return_value=None), \
+         patch.object(bootstrap_mod, "_build_log_toolkits", return_value={}), \
+         patch.object(
+             bootstrap_mod, "default_identities",
+             AsyncMock(return_value=("reporter", "escalation")),
+         ), \
+         patch("parrot.conf.DEV_LOOP_REQUIRE_PLAN_APPROVAL", True, create=True), \
+         patch("parrot.flows.dev_loop.ClaudeCodeDispatcher") as MockDispatcher, \
+         patch(
+             "parrot.flows.dev_loop.build_dev_loop_flow",
+             return_value=sentinel_flow,
+         ) as mock_build_flow, \
+         patch(
+             "parrot.flows.dev_loop.DevLoopRunner",
+             return_value=sentinel_runner,
+         ) as MockRunner, \
+         patch(
+             "parrot.flows.dev_loop.graph_memory.DevLoopGraphMemory.from_config",
+             AsyncMock(return_value=sentinel_memory),
+         ):
+        runtime = await build_runtime()
+
+    MockDispatcher.assert_called_once()
+
+    mock_build_flow.assert_called_once()
+    _, flow_kwargs = mock_build_flow.call_args
+    assert flow_kwargs["graph_memory"] is sentinel_memory
+    assert flow_kwargs["require_plan_approval"] is True
+
+    MockRunner.assert_called_once()
+    _, runner_kwargs = MockRunner.call_args
+    assert runner_kwargs["graph_memory"] is sentinel_memory
+
+    assert runtime.graph_memory is sentinel_memory
+    assert runtime.runner is sentinel_runner
+    assert runtime.flow is sentinel_flow
+
+
+@pytest.mark.asyncio
+async def test_build_runtime_graph_memory_disabled_by_default():
+    """When DEV_LOOP_GRAPH_MEMORY_PATH is unset, from_config() returns
+    None and build_runtime() must still pass graph_memory=None through
+    explicitly (never crash, never silently substitute a truthy value)."""
+    import parrot.cli.devloop.bootstrap as bootstrap_mod
+
+    ok_result = PreflightResult(ok=True, checks=[])
+
+    with patch.object(bootstrap_mod, "preflight", AsyncMock(return_value=ok_result)), \
+         patch.object(bootstrap_mod, "_build_jira_toolkit", return_value=None), \
+         patch.object(bootstrap_mod, "_build_log_toolkits", return_value={}), \
+         patch.object(
+             bootstrap_mod, "default_identities",
+             AsyncMock(return_value=("reporter", "escalation")),
+         ), \
+         patch("parrot.conf.DEV_LOOP_REQUIRE_PLAN_APPROVAL", False, create=True), \
+         patch("parrot.conf.DEV_LOOP_GRAPH_MEMORY_PATH", "", create=True), \
+         patch("parrot.flows.dev_loop.ClaudeCodeDispatcher"), \
+         patch(
+             "parrot.flows.dev_loop.build_dev_loop_flow", return_value=MagicMock(),
+         ) as mock_build_flow, \
+         patch("parrot.flows.dev_loop.DevLoopRunner", return_value=MagicMock()) as MockRunner:
+        runtime = await build_runtime()
+
+    _, flow_kwargs = mock_build_flow.call_args
+    assert flow_kwargs["graph_memory"] is None
+    assert flow_kwargs["require_plan_approval"] is False
+    _, runner_kwargs = MockRunner.call_args
+    assert runner_kwargs["graph_memory"] is None
+    assert runtime.graph_memory is None

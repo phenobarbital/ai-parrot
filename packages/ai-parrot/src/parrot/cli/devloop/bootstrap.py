@@ -49,6 +49,7 @@ class DevLoopRuntime:
     redis_url: str = ""
     reporter: str = ""
     escalation_assignee: str = ""
+    graph_memory: Any = None  # Optional[DevLoopGraphMemory] (FEAT-377 G2)
 
 
 async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
@@ -155,6 +156,7 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
         DevLoopRunner,
         build_dev_loop_flow,
     )
+    from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory  # noqa: PLC0415
 
     redis_url = conf.config.get("REDIS_URL", fallback="redis://localhost:6379/0")
 
@@ -171,11 +173,25 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
     jira_toolkit = _build_jira_toolkit()
     log_toolkits = _build_log_toolkits()
 
+    # FEAT-377 TASK-1914/1915 (G2): opt-in GraphIndex facade. `from_config()`
+    # returns None when DEV_LOOP_GRAPH_MEMORY_PATH is unset — every seam it
+    # backs (research context, run write-back, grounded findings) degrades
+    # to a no-op, so this is a strict extension, never a behavior change.
+    graph_memory = await DevLoopGraphMemory.from_config()
+
+    # FEAT-377 TASK-1916 (G5): opt-in plan_approval gate. False (default)
+    # preserves current behavior exactly.
+    require_plan_approval = bool(
+        getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False)
+    )
+
     flow = build_dev_loop_flow(
         dispatcher=dispatcher,
         jira_toolkit=jira_toolkit,
         log_toolkits=log_toolkits,
         redis_url=redis_url,
+        graph_memory=graph_memory,
+        require_plan_approval=require_plan_approval,
     )
 
     reporter, escalation = await default_identities(jira_toolkit)
@@ -187,6 +203,7 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
         git_toolkit=None,
         redis_url=redis_url,
         codereview_dispatcher=None,
+        graph_memory=graph_memory,
     )
 
     return DevLoopRuntime(
@@ -197,6 +214,7 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
         redis_url=redis_url,
         reporter=reporter,
         escalation_assignee=escalation,
+        graph_memory=graph_memory,
     )
 
 

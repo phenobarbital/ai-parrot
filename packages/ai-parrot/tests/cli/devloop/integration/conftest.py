@@ -92,6 +92,7 @@ class ScriptedRunner:
     def __init__(self):
         self._hosts: Dict[str, StubHost] = {}
         self._active: Set[str] = set()
+        self._parked: Set[str] = set()
         self._resolve_calls: List[dict] = []
         self._cancel_calls: List[dict] = []
         self.gate_event: asyncio.Event = asyncio.Event()
@@ -99,8 +100,17 @@ class ScriptedRunner:
     def get_host(self, run_id: str) -> Optional[StubHost]:
         return self._hosts.get(run_id)
 
+    @property
     def active_runs(self) -> Set[str]:
+        # Mirrors DevLoopRunner.active_runs — a @property, not a method.
         return set(self._active)
+
+    @property
+    def parked_runs(self) -> Set[str]:
+        return set(self._parked)
+
+    def is_parked(self, run_id: str) -> bool:
+        return run_id in self._parked
 
     @property
     def registry_state(self):

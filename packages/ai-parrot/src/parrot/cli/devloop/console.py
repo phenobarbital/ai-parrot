@@ -432,7 +432,9 @@ class DevLoopConsole:
         table.add_column("Active View")
 
         runner = self._runtime.runner
-        active_set = runner.active_runs()
+        # `active_runs`/`parked_runs` are properties (copies), not methods.
+        active_set = runner.active_runs
+        parked_set = runner.parked_runs
 
         for run_id, task in self._runs.items():
             if task.done():
@@ -441,6 +443,11 @@ class DevLoopConsole:
                     status = f"[green]finished ({getattr(result, 'status', '?')})[/green]"
                 except Exception:
                     status = "[red]errored[/red]"
+            elif run_id in parked_set:
+                # FEAT-377 TASK-1917 (G6): a parked run released its
+                # concurrency slot while awaiting a gate — it is in flight,
+                # not capacity-queued, so it must not show as "queued (cap)".
+                status = "[yellow]awaiting gate (parked)[/yellow]"
             elif run_id in active_set:
                 status = "[yellow]running[/yellow]"
             else:

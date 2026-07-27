@@ -242,6 +242,16 @@ class RunView:
         gate_id = getattr(action, "gate_id", "")
         self._add_line(Text(f"  Gate {gate_id} expired", style="dim red"))
 
+    def _handle_qa_attempt_recorded(self, action: Any) -> None:
+        # FEAT-377 TASK-1910/1911 (G1): bounded QA→development repair
+        # loop — emitted each time QA fails and a retry is redispatched.
+        attempt = getattr(action, "attempt", "?")
+        notes = getattr(action, "qa_notes", "")
+        text = f"  QA attempt {attempt} failed — redispatching development"
+        if notes:
+            text += f": {notes}"
+        self._add_line(Text(text, style="bold yellow"))
+
     def _handle_jira_linked(self, action: Any) -> None:
         key = getattr(action, "issue_key", "")
         self._add_line(Text(f"  Jira: {key}", style="cyan"))
@@ -272,6 +282,7 @@ _ACTION_HANDLERS: Dict[str, Any] = {
     "gate/opened": RunView._handle_gate_opened,
     "gate/resolved": RunView._handle_gate_resolved,
     "gate/expired": RunView._handle_gate_expired,
+    "run/qaAttemptRecorded": RunView._handle_qa_attempt_recorded,
     "jira/linked": RunView._handle_jira_linked,
     "pr/linked": RunView._handle_pr_linked,
 }
