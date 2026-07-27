@@ -1041,24 +1041,33 @@ async def handle_run(request: web.Request) -> web.Response:
     runner: DevLoopRunner = request.app["runner"]
     started_at = time.time()
 
+    skip_qa = bool(form.get("skip_qa", False))
+    skip_jira = bool(form.get("skip_jira", False))
+    extra_shared: dict[str, Any] = {}
+    if skip_qa:
+        extra_shared["skip_qa"] = True
+    if skip_jira:
+        extra_shared["skip_jira"] = True
+
     async def _run() -> None:
         try:
             logger.info(
-                "Starting %s flow run_id=%s (%s)",
-                "FEATURE" if is_feature else "bug", run_id, label,
+                "Starting %s flow run_id=%s (%s) skip_qa=%s skip_jira=%s",
+                "FEATURE" if is_feature else "bug", run_id, label, skip_qa, skip_jira,
             )
             result = await runner.run(
                 brief,
                 run_id=run_id,
                 initial_task=initial_task,
+                extra_shared=extra_shared or None,
             )
             logger.info("Flow run_id=%s finished status=%s in %.1fs", run_id, result.status, time.time() - started_at)
         except Exception:
             logger.exception("Flow run_id=%s failed", run_id)
 
     task = asyncio.create_task(_run(), name=f"flow-run-{run_id}")
-    request.app["flow_tasks"].add(task)
-    task.add_done_callback(request.app["flow_tasks"].discard)
+    request.app["flow_tasks"][run_id] = task
+    task.add_done_callback(lambda t: request.app["flow_tasks"].pop(run_id, None))
 
     return web.json_response(
         {
@@ -1069,6 +1078,24 @@ async def handle_run(request: web.Request) -> web.Response:
             "bundle_url": f"/api/flow/{run_id}/bundle",
         }
     )
+
+
+async def handle_cancel(request: web.Request) -> web.Response:
+    """Cancel a running flow: apply RunCancelled + cancel the asyncio task."""
+    run_id = request.match_info["run_id"]
+    runner: DevLoopRunner = request.app["runner"]
+
+    try:
+        envelope = await runner.cancel_run(run_id, requested_by="console-user")
+    except KeyError:
+        return web.json_response({"error": "unknown_run"}, status=404)
+
+    task = request.app["flow_tasks"].get(run_id)
+    if task and not task.done():
+        task.cancel()
+
+    logger.info("cancel_run: run_id=%s", run_id)
+    return web.json_response({"envelope": envelope.model_dump(mode="json")})
 
 
 def _run_id_is_safe(run_id: str) -> bool:
@@ -1351,7 +1378,7 @@ async def _on_startup(app: web.Application) -> None:
     app["runner"] = runner
     app["codereview_agent_key"] = codereview_agent_key
     app["development_pool_max"] = development_pool_max
-    app["flow_tasks"] = set()
+    app["flow_tasks"] = {}  # run_id -> asyncio.Task
     logger.info(
         "Dev-loop flow ready (max %d concurrent runs)",
         runner.max_concurrent_runs,
@@ -1367,7 +1394,7 @@ async def _on_cleanup(app: web.Application) -> None:
     swallows its own exceptions because shutdown errors should never
     mask each other.
     """
-    tasks = list(app.get("flow_tasks", []))
+    tasks = list(app.get("flow_tasks", {}).values())
     for task in tasks:
         task.cancel()
     if tasks:
@@ -1400,6 +1427,7 @@ def build_app(redis_url: str = "redis://localhost:6379/0") -> web.Application:
     app.router.add_get("/api/flow/{run_id}/bundle", handle_bundle)
     app.router.add_get("/api/flow/{run_id}/replay", handle_replay)
     app.router.add_get("/api/flow/{run_id}/ws", flow_stream_ws)
+    app.router.add_post("/api/flow/{run_id}/cancel", handle_cancel)
     return app
 
 

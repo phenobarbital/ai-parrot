@@ -17,6 +17,7 @@ plugins/*
 /outputs/**/*.html
 /outputs/**/*.jpg
 /outputs/**/*.png
+/outputs/dev_loop_runs/
 examples/**/*.py
 !examples/autonomous_analyst/**/*.py
 examples/**/*.csv
