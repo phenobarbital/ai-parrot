@@ -196,6 +196,15 @@ class DispatchState(_Frozen):
     tool_use_count: int = 0
     last_error: str = ""
     terminal: str = ""              # terminal channel URI (content by reference)
+    # -- FEAT-378 TASK-1927: dispatch telemetry harvest (v0.2 amendment) --
+    # Optional so old persisted envelopes (pre-TASK-1927) still validate.
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    cache_creation_input_tokens: Optional[int] = None
+    cache_read_input_tokens: Optional[int] = None
+    total_cost_usd: Optional[float] = None
+    num_turns: Optional[int] = None
+    duration_ms: Optional[int] = None
 
 
 class NodeState(_Frozen):
@@ -413,6 +422,15 @@ class DispatchFailed(_DispatchAction):
 
 class DispatchCompleted(_DispatchAction):
     type: Literal["dispatch/completed"] = "dispatch/completed"
+    # -- FEAT-378 TASK-1927: dispatch telemetry harvest (v0.2 amendment) --
+    # Optional so old persisted envelopes (pre-TASK-1927) still validate.
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    cache_creation_input_tokens: Optional[int] = None
+    cache_read_input_tokens: Optional[int] = None
+    total_cost_usd: Optional[float] = None
+    num_turns: Optional[int] = None
+    duration_ms: Optional[int] = None
 
 
 # -- HITL gates (new capability) --------------------------------------
@@ -787,8 +805,17 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
                               status="failed", finished_at=action.ts,
                               last_error=action.error)
     if t == "dispatch/completed":
-        return _with_dispatch(state, action.node_id,
-                              status="completed", finished_at=action.ts)
+        return _with_dispatch(
+            state, action.node_id,
+            status="completed", finished_at=action.ts,
+            input_tokens=action.input_tokens,
+            output_tokens=action.output_tokens,
+            cache_creation_input_tokens=action.cache_creation_input_tokens,
+            cache_read_input_tokens=action.cache_read_input_tokens,
+            total_cost_usd=action.total_cost_usd,
+            num_turns=action.num_turns,
+            duration_ms=action.duration_ms,
+        )
 
     # -- gates (HITL)
     if t == "gate/opened":
@@ -1222,6 +1249,27 @@ def action_from_dispatch_event(kind: str, node_id: str, ts: float,
         kwargs["tool_name"] = str(payload.get("tool_name", ""))
     if cls is DispatchQueued:
         kwargs["dispatcher"] = str(payload.get("dispatcher", ""))
+    if cls is DispatchCompleted:
+        usage = payload.get("usage")
+        if isinstance(usage, dict):
+            if usage.get("input_tokens") is not None:
+                kwargs["input_tokens"] = int(usage["input_tokens"])
+            if usage.get("output_tokens") is not None:
+                kwargs["output_tokens"] = int(usage["output_tokens"])
+            if usage.get("cache_creation_input_tokens") is not None:
+                kwargs["cache_creation_input_tokens"] = int(
+                    usage["cache_creation_input_tokens"]
+                )
+            if usage.get("cache_read_input_tokens") is not None:
+                kwargs["cache_read_input_tokens"] = int(
+                    usage["cache_read_input_tokens"]
+                )
+            if usage.get("total_cost_usd") is not None:
+                kwargs["total_cost_usd"] = float(usage["total_cost_usd"])
+            if usage.get("num_turns") is not None:
+                kwargs["num_turns"] = int(usage["num_turns"])
+            if usage.get("duration_ms") is not None:
+                kwargs["duration_ms"] = int(usage["duration_ms"])
     return cls(**kwargs)  # type: ignore[return-value]
 
 
