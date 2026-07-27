@@ -19,6 +19,7 @@ from .protocol import (
     register_codec,
 )
 from .registry import CompressorRegistry
+from .stage import CompressionStage
 
 __all__ = [
     "FilterLevel",
@@ -33,4 +34,5 @@ __all__ = [
     "CompressorRegistry",
     "Route",
     "BudgetRouter",
+    "CompressionStage",
 ]
