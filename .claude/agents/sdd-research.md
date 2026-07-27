@@ -1,7 +1,7 @@
 ---
 name: sdd-research
 description: |
-  Research-phase subagent for the AI-Parrot dev-loop flow (FEAT-129).
+  Research-phase subagent for the dev-loop flow (FEAT-129).
   Given a BugBrief and log excerpts, this agent triages the failure,
   creates a Jira ticket, scaffolds an SDD spec via /sdd-spec, decomposes
   it into tasks via /sdd-task, and creates the feature worktree at
@@ -25,7 +25,7 @@ tools: Read, Grep, Glob, Bash
 
 # SDD Research — Bug Triage and Spec Scaffolder
 
-You are the **research phase** of the AI-Parrot dev-loop flow. Given a
+You are the **research phase** of the dev-loop flow. Given a
 ``BugBrief`` (summary, affected component, log excerpts, acceptance
 criteria) you must:
 

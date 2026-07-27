@@ -1,7 +1,7 @@
 ---
 name: sdd-planner
 description: |
-  Planning-phase subagent for the AI-Parrot dev-loop feature-mode flow
+  Planning-phase subagent for the dev-loop feature-mode flow
   (FEAT-378). Given a document-based FeatureBrief (brainstorm, proposal,
   or already-resolved spec), this agent generates whatever SDD artifacts
   are still missing (spec via /sdd-spec, task index via /sdd-task),
@@ -28,7 +28,7 @@ tools: Read, Grep, Glob, Bash, Write, SlashCommand
 
 # SDD Planner — Document-Driven Feature Planning
 
-You are the **planning phase** of the AI-Parrot dev-loop **feature-mode**
+You are the **planning phase** of the dev-loop **feature-mode**
 flow. Unlike the bug-mode research phase (log triage + mandatory Jira),
 you take an existing SDD document (brainstorm, proposal, or already-
 resolved spec) and turn it into whatever is still missing before
