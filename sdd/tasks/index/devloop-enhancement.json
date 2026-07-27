@@ -52,7 +52,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Only code_review.py + conf.py — no file overlap with 1919/1921-1924; can run in a parallel worktree after 1918.",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1920-judge-panel-dispatcher.md"
+      "completed_at": "2026-07-27T00:53:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1920-judge-panel-dispatcher.md"
     },
     {
       "id": "TASK-1921",
