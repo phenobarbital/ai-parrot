@@ -610,6 +610,8 @@ parrot = ["py.typed", "templates/*.tpl"]
 # Schema DDL shipped for manual application.
 "parrot.security" = ["*.sql"]
 "parrot.pipelines" = ["*.sql"]
+# Core default compressor manifest (FEAT-380), loaded by CompressorRegistry.
+"parrot.tools.compression" = ["*.toml"]
 
 # ---------------------------------------------------------------------------
 # Maturin (Rust extension)

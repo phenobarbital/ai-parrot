@@ -1,0 +1,10 @@
+# Core default compressor manifest for the tool-result compression pipeline.
+#
+# Lowest-precedence source: applies only when neither the project
+# `.parrot/compressors.toml` nor a third-party package manifest declares a
+# matching entry. Conservative by design (G2): the wildcard entry applies
+# only lossless MINIMAL compression.
+
+[compressor."*"]
+codec = "json_compact"
+level = "minimal"

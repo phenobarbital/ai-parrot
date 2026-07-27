@@ -1,0 +1,6 @@
+# Third-party manifest fixture (G6): declares a compressor entry for a
+# fictitious tool without touching any parrot core file.
+
+[compressor."fixture_pkg_tool"]
+codec = "json_compact"
+level = "normal"
