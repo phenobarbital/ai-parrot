@@ -32,7 +32,7 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "session_state.py also touched by FEAT-377; keep sequential.",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1919-session-state-feature-actions.md"
+      "completed_at": "2026-07-27T00:43:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1919-session-state-feature-actions.md"
     },
     {
       "id": "TASK-1920",
