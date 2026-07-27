@@ -149,6 +149,18 @@ Key architectural facts (all verified, §6):
   broker, redaction, `ToolResult` standardization). It must be redirected
   through the pipeline, preserving the special `voice_text`/`display_data`
   handling, which must NOT be compressed.
+- **Decided (spec review, 2026-07-27):** the compression stage runs
+  **after** `_postprocess_result()` / `_run_result_hooks()` — extraction
+  and hooks observe the ORIGINAL payload (DataFrame auto-share keeps
+  working unchanged); the stage's output is what `execute_tool()` returns
+  and what gets persisted (Q1).
+- **Decided (spec review, 2026-07-27):** live.py gets **full routing**
+  through the pipeline in this feature — permissions, credential broker,
+  redaction and compression restored in one wiring change (Q4).
+- **Decided (spec review, 2026-07-27):** the Rust extension ships
+  **inside ai-parrot's existing maturin setup** (next to `yaml-rs`);
+  fixing the `python-source` hyphen/underscore discrepancy is part of
+  Module 6 (Q5).
 
 **Developer-facing behavior:** zero config → global `MINIMAL` (lossless
 only). A project `.parrot/compressors.toml` raises levels per tool. Kill
@@ -167,9 +179,13 @@ except better answers on bulky-result tasks.
                       │         _compressed marker               │
                       │      │                                   │
                       │      ▼                                   │
-                      │  CompressionStage                        │──→ _postprocess_result()
-                      │   1. resolve FilterLevel (precedence)    │    _run_result_hooks()
-                      │   2. resolve codec (exact>glob>"*")      │    return out
+                      │  _postprocess_result() +                 │
+                      │  _run_result_hooks()  (observe ORIGINAL) │
+                      │      │                                   │
+                      │      ▼                                   │
+                      │  CompressionStage                        │──→ return compressed
+                      │   1. resolve FilterLevel (precedence)    │
+                      │   2. resolve codec (exact>glob>"*")      │
                       │   3. codec.compress() [inline|executor]  │
                       │   4. tee if lossy/error ──────────────┐  │
                       │   5. metrics → ToolResult.metadata    │  │
@@ -201,8 +217,8 @@ then FilterLevel/tee/columnar-codec parallelize.
 | `parrot/core/events/lifecycle/events/tool.py` | extends | New fields on `AfterToolCallEvent`; it is `@dataclass(frozen=True)` → new fields need defaults |
 | `parrot/tools/discovery.py` | extends | TOML compressor-manifest discovery alongside `TOOL_REGISTRY` convention |
 | `parrot/tools/databasequery/` | depends on | First real consumer of the columnar codec |
-| `parrot/clients/live.py` | modifies | **In scope.** Redirect live.py:401 (`tool._execute()`) through the pipeline; `voice_text`/`display_data` (live.py:416-437) must not be compressed |
-| Rust extension (`parrot_codec`) | new | Optional PyO3/maturin module. Placement (extend ai-parrot's `yaml-rs` maturin setup vs. satellite crate like `navrules`) is Open Question Q5 |
+| `parrot/clients/live.py` | modifies | **In scope, full routing (Q4).** Replace live.py:401 (`tool._execute()`) with the real pipeline — permissions/credentials/redaction restored together with compression; `voice_text`/`display_data` (live.py:416-437) extracted after the pipeline, never compressed |
+| Rust extension (`parrot_codec`) | new | Optional PyO3/maturin module **inside ai-parrot's maturin setup, next to `yaml-rs` (Q5)**; fixing the `python-source` discrepancy is a prerequisite (Module 6) |
 
 ### Data Models
 
@@ -333,7 +349,10 @@ Tee pointer appended to lossy/failed results:
   (`compression_codec`, `compression_level`, `result_size_bytes_original`,
   `compression_duration_ms`, `compression_teed`; existing
   `result_size_bytes` re-documented as post-compression size + changelog
-  entry), `clone()` docstring/state-list update.
+  entry), `clone()` docstring/state-list update. **Stage placement (Q1
+  resolved):** after `_postprocess_result()` / `_run_result_hooks()`, which
+  both observe the original unwrapped payload; the stage's output is what
+  `execute_tool()` returns.
 - **Depends on**: Module 1.
 
 ### Module 3: compression-tee (working-memory escape hatch)
@@ -358,8 +377,8 @@ Tee pointer appended to lossy/failed results:
   (`columns`/`rows`/`constants`), null-column elision (recorded in
   metadata), constant-column factoring; passthrough guards: fewer than
   `min_rows = 20` rows (decided; per-tool configurable), heterogeneous
-  rows (key union/intersection ratio — threshold to calibrate, Q2), deep
-  nesting (only null-elision applied); first consumer:
+  rows (key union/intersection ratio > 1.5 — Q2 resolved; configurable),
+  deep nesting (only null-elision applied); first consumer:
   `DatabaseQueryToolkit`'s `QueryResult.rows`.
 - **Depends on**: Module 1 (parallelizable with Module 3 once Module 1 is
   merged).
@@ -372,16 +391,23 @@ Tee pointer appended to lossy/failed results:
   (≤ 1 ms p99); over threshold → `run_in_executor` + Rust
   `allow_threads()` (≤ 15 ms p99, off-loop); over threshold WITHOUT Rust →
   **passthrough, 0 ms** (G9 — without GIL release, executor offload is
-  theater). Initial threshold: 256 KB serialized or 5,000 rows, first
-  reached (calibrate, Q2). Per-codec rolling p99 window; 3 consecutive
-  budget-busting windows → self-degrade to passthrough + `logger.warning`;
-  re-arm after cooldown (window/re-arm policy: Q3). Duration metrics
-  travel in `AfterToolCallEvent` so savings are always shown against cost.
+  theater). **Defaults (Q2/Q3 resolved):** threshold 256 KB serialized or
+  5,000 rows, first reached; per-codec rolling p99 over windows of 100
+  calls or 60 s (first reached); 3 consecutive over-budget windows →
+  self-degrade to passthrough + `logger.warning`; half-open re-arm after a
+  5-minute cooldown. All values configurable; a benchmark task calibrates
+  them against real payloads. Duration metrics travel in
+  `AfterToolCallEvent` so savings are always shown against cost.
 - **Depends on**: Module 1 (consumed by Modules 2 and 4).
 
 ### Module 6: rust-codec (optional native path)
-- **Path**: new PyO3 module `parrot_codec` (placement: Q5) +
-  `parrot/tools/compression/codecs/columnar.py` (dispatch)
+- **Path**: new PyO3 module `parrot_codec` **inside ai-parrot's existing
+  maturin setup, next to `parrot/yaml-rs/` (Q5 resolved)** +
+  `parrot/tools/compression/codecs/columnar.py` (dispatch).
+  **Prerequisite within this module:** fix the `python-source`
+  hyphen/underscore discrepancy in `packages/ai-parrot/pyproject.toml:617-621`
+  (`src/parrot/yaml_rs` vs. on-disk `src/parrot/yaml-rs`) before adding
+  the second extension module.
 - **Responsibility**: bytes/str input path — parse, transform, return
   buffer with a **single FFI crossing** and `py.allow_threads()` GIL
   release; runtime detection via `lazy_import` (`parrot/_imports.py:84`);
@@ -395,13 +421,14 @@ Tee pointer appended to lossy/failed results:
 
 ### Module 7: live-py-redirect (close the bypass)
 - **Path**: `parrot/clients/live.py`
-- **Responsibility**: route the live/voice tool execution
-  (live.py:367/401) through the pipeline instead of calling the private
-  `tool._execute()` directly. `voice_text` and `display_data` keep their
-  special handling (live.py:416-437) and are NEVER compressed. Ordering
-  vs. their extraction: Q4. Note: the redirect surfaces the wider bypass
-  (permissions/credentials/redaction skipped) — whether the full
-  `execute()` restoration lands here or in its own feature is part of Q4.
+- **Responsibility**: **(Q4 resolved) full routing** — replace the private
+  `tool._execute()` call (live.py:367/401) with the real pipeline in this
+  feature, restoring permissions, credential broker, redaction AND
+  compression in one wiring change. `voice_text` and `display_data` keep
+  their special handling (live.py:416-437), are extracted AFTER the
+  pipeline from the uncompressed `ToolResult` fields, and are NEVER
+  compressed. Regression risk on the voice path is accepted and covered by
+  dedicated tests (`test_live_voice_fields_never_compressed`).
 - **Depends on**: Module 2.
 
 ### Module 8: savings-report (rtk-gain equivalent)
@@ -429,6 +456,7 @@ Tee pointer appended to lossy/failed results:
 | `test_compressor_exception_returns_original` | 2 | Codec raises → original payload intact + warning, call succeeds |
 | `test_after_tool_call_event_fields` | 2 | New fields populated; `result_size_bytes` = post-compression size; original in `result_size_bytes_original` |
 | `test_idempotency_marker` | 2 | Re-running a `_compressed`-marked payload → passthrough (fresh-execution-only) |
+| `test_extraction_sees_original` | 2 | `_postprocess_result()`/hooks receive the ORIGINAL payload; the returned value is the compressed one (Q1) |
 | `test_tee_on_lossy` | 3 | `outcome.lossy=True` → full payload in working memory + `_tee` pointer appended |
 | `test_tee_on_error_before_raise` | 3 | `status=="error"` → payload teed, `ValueError(result.error)` still raised (observable behavior unchanged) |
 | `test_tee_key_collision_counter` | 3 | Two tees same tool+turn → distinct keys (counter defends `put_generic` overwrite) |
@@ -797,8 +825,9 @@ Key attributes & constants:
 - `AbstractTool.return_direct` → `bool = False` (abstract.py:144).
 - `ToolManager.auto_share_dataframes` → `bool = True` (manager.py:272);
   `auto_push_to_pandas` → `bool = True` (manager.py:273);
-  `_postprocess_result()` (manager.py:1663) extracts DataFrames — ordering
-  vs. compression is Open Question Q1.
+  `_postprocess_result()` (manager.py:1663) extracts DataFrames — runs
+  BEFORE the compression stage and sees the original payload (Q1
+  resolved).
 - `GoogleGenAIClient.MAX_TOOL_RESULT_CHARS` → `200_000`
   (google/client.py:1197, class attribute).
 
@@ -807,10 +836,10 @@ Rust/PyO3 (G8 has real precedent):
 - `parrot/yaml-rs/` — PyO3 crate inside the ai-parrot package: `pyo3 0.29`
   + `extension-module`, `crate-type = ["cdylib"]`; maturin config at
   `packages/ai-parrot/pyproject.toml:617-621`
-  (`module-name = "parrot.yaml_rs._yaml_rs"`). ⚠️ Config discrepancy to
-  resolve before extending this setup (Q5): `python-source =
-  "src/parrot/yaml_rs"` (underscore) vs. on-disk `src/parrot/yaml-rs`
-  (hyphen).
+  (`module-name = "parrot.yaml_rs._yaml_rs"`). ⚠️ Q5 resolved: this setup
+  WILL host `parrot_codec`; fixing the config discrepancy first is part of
+  Module 6 — `python-source = "src/parrot/yaml_rs"` (underscore) vs.
+  on-disk `src/parrot/yaml-rs` (hyphen).
 - `packages/navrules/` — satellite maturin/PyO3 crate (`pyo3 0.24`,
   `abi3-py311`) — the alternative placement precedent.
 - `maturin==1.9.6` pinned as dev dependency (root `pyproject.toml:69`).
@@ -819,7 +848,7 @@ Rust/PyO3 (G8 has real precedent):
 
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
-| `CompressionStage` | `ToolManager.execute_tool()` | stage call after `tool.execute()`, before `_postprocess_result()`* | `manager.py:1490-1506` |
+| `CompressionStage` | `ToolManager.execute_tool()` | stage call after `_postprocess_result()` / `_run_result_hooks()` (Q1)* | `manager.py:1490-1506` |
 | `CompressionStage` (tee) | `WorkingMemoryToolkit.store_result()` | direct call with `__tee__:` key | `working_memory/tool.py:204` |
 | Tee recovery (LLM-side) | `wm_get_result` tool | already-registered tool schema | `working_memory/tool.py:255` |
 | `CompressorRegistry` | TOML manifests | `tomllib` + Pydantic validation, discovery-style multi-source | `discovery.py:22-139` (pattern) |
@@ -827,7 +856,8 @@ Rust/PyO3 (G8 has real precedent):
 | Rust codec | `parrot_codec` ext module | `lazy_import` runtime detection | `_imports.py:84` (pattern) |
 | Live route | `ToolManager.execute_tool()` | replaces direct `tool._execute()` call | `live.py:401` |
 
-\* exact ordering vs. `_postprocess_result()` DataFrame extraction is Q1.
+\* Q1 resolved: extraction and hooks observe the ORIGINAL payload; the
+stage's compressed output is what `execute_tool()` returns and persists.
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -913,8 +943,9 @@ is expected to have a test.)
   the loop, ever — sending a fat payload beats stalling the event loop).
 - Malformed TOML / unknown codec → startup error with file path and
   offending entry; never a silent first-call failure.
-- Circuit breaker: codec over budget 3 consecutive windows → auto
-  passthrough + warning; re-arm after cooldown (policy: Q3).
+- Circuit breaker: codec over budget 3 consecutive windows (100 calls or
+  60 s each, first reached) → auto passthrough + warning; half-open re-arm
+  after 5-minute cooldown (Q3 resolved; configurable).
 - `MINIMAL` honest calibration: BPE tokenizers merge whitespace runs —
   expect 5–15% token savings, not the 40% byte-diff suggests. The real
   return is in `NORMAL` (columnar + dedup). **Measure, don't assume** —
@@ -1002,26 +1033,39 @@ is expected to have a test.)
   REPL stdout noise the path is a future `repl_stdout` codec inside this
   same pipeline.
 
+### Resolved at spec review (user decisions, 2026-07-27)
+
+- [x] **Q1** — Ordering vs. `_postprocess_result()` /
+  `auto_share_dataframes` (manager.py:1663) — *Resolved by user*:
+  **compression runs AFTER extraction.** `_postprocess_result()` and
+  result hooks observe the original payload (DataFrame auto-share keeps
+  working unchanged); the compressed payload is what `execute_tool()`
+  returns and persists. Test: `test_extraction_sees_original`.
+- [x] **Q2** — Inline/executor threshold and heterogeneity ratio —
+  *Resolved by user*: **proposed defaults accepted** — 256 KB serialized
+  or 5,000 rows (first reached); heterogeneity passthrough at key
+  union/intersection ratio > 1.5. All configurable; a benchmark task
+  calibrates against real payloads.
+- [x] **Q3** — Circuit-breaker window and re-arm policy — *Resolved by
+  user*: **proposed defaults accepted** — rolling windows of 100 calls or
+  60 s (first reached); degrade after 3 consecutive over-budget windows;
+  half-open re-arm after a 5-minute cooldown. Configurable.
+- [x] **Q4** — `clients/live.py` scope — *Resolved by user*: **full
+  routing in this feature.** The private `tool._execute()` call is
+  replaced by the real pipeline, restoring permissions, credential broker,
+  redaction and compression in one wiring change; `voice_text` /
+  `display_data` are extracted after the pipeline from the uncompressed
+  `ToolResult` fields.
+- [x] **Q5** — Rust codec placement — *Resolved by user*: **inside
+  ai-parrot's maturin setup, next to `yaml-rs`** (not a satellite crate).
+  Prerequisite in Module 6: fix the `python-source` hyphen/underscore
+  discrepancy at `packages/ai-parrot/pyproject.toml:617-621`. Note: this
+  makes the core wheel build depend on the Rust toolchain; runtime
+  optionality (G8, pure-Python fallback) is unchanged.
+
 ### Unresolved
 
-- [ ] **Q1** — Ordering vs. `_postprocess_result()` /
-  `auto_share_dataframes` (manager.py:1663): does compression run before
-  or after DataFrame extraction? If before, extraction may not find the
-  DataFrame it expects. — *Owner: Jesus Lara*
-- [ ] **Q2** — Calibrate the inline/executor threshold (initial proposal:
-  256 KB serialized or 5,000 rows) and the key union/intersection ratio
-  that triggers heterogeneity passthrough. Calibrate against real
-  payloads; decidable during implementation. — *Owner: Jesus Lara*
-- [ ] **Q3** — Circuit-breaker window size and re-arm policy. Decidable
-  during implementation. — *Owner: Jesus Lara*
-- [ ] **Q4** — In `clients/live.py`: does the pipeline apply before or
-  after `voice_text`/`display_data` extraction? And does the full
-  `AbstractTool.execute()` restoration (permissions/credentials/redaction)
-  land in this feature or its own? — *Owner: Jesus Lara*
-- [ ] **Q5** — Rust codec placement: new module inside ai-parrot's maturin
-  setup (next to `yaml-rs`) or satellite crate like `navrules`? Resolve
-  the `python-source` hyphen/underscore pyproject discrepancy first. —
-  *Owner: Jesus Lara*
+- (none — all open questions resolved as of 2026-07-27)
 
 ---
 
@@ -1030,3 +1074,4 @@ is expected to have a test.)
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-27 | Jesus Lara | Initial draft from tool-result-compression brainstorm (Option B) |
+| 0.2 | 2026-07-27 | Jesus Lara | Q1–Q5 resolved at spec review; decisions routed into §2, §3, §4, §6, §7 |
