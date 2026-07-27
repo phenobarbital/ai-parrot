@@ -6,8 +6,10 @@ subsequent tasks).
 """
 from .base import SearchOrigin
 from .vector import VectorStoreOrigin
+from .pageindex import PageIndexOrigin
 
 __all__ = (
     "SearchOrigin",
     "VectorStoreOrigin",
+    "PageIndexOrigin",
 )
