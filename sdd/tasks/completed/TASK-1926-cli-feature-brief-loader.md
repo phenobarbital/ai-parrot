@@ -134,10 +134,57 @@ def test_run_yes_noninteractive_feature(tmp_path): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
+**Notes**: `console.py`'s brief loading refactored into 3 layers:
+`_read_brief_data(path_str)` (shared YAML/JSON-fallback file reader,
+extracted from the old `_load_brief_file`), `_load_brief_file(path,
+model_type)` (unchanged — still used for `RevisionBrief`, verified with
+its own pre-existing regression test), and a new `_load_brief(path_str)`
+routing through TASK-1918's `parse_brief` union entry point.
+`_collect_work_brief` now calls `_load_brief` on the `--brief` path
+instead of hardcoding `WorkBrief` — the wizard path (no `--brief`) is
+untouched and stays `WorkBrief`-only, per scope. `runner.run(brief, ...)`
+already dispatches on `isinstance` (TASK-1925), so `_dispatch_run` needed
+no changes beyond an additive `FeatureBrief` confirmation-summary panel
+(`_print_feature_brief_summary`, printed only for `FeatureBrief` — zero
+output change for `WorkBrief` runs, which have no equivalent pre-dispatch
+panel today).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviation, justified by an explicit acceptance criterion**: added a
+`except (FileNotFoundError, ValueError)` clause to `DevLoopConsole.
+start()` around `_dispatch_initial()`, printing a friendly `[bold
+red]Brief error:[/bold red]` message and returning exit code 1. This did
+NOT exist before for ANY brief type — a malformed WorkBrief file would
+previously have propagated a raw traceback all the way through Click,
+same as an invalid FeatureBrief would without this fix. Required to
+satisfy "Invalid feature brief → friendly CLI error, exit non-zero, no
+traceback" (`pydantic.ValidationError` subclasses `ValueError`, so this
+also catches invalid/missing WorkBrief fields — a strict robustness
+improvement on the failure path only; the success path for existing
+briefs is untouched, so "zero behavior change" still holds for the
+happy path).
 
-**Deviations from spec**: none
+`__init__.py`: extended `run` command's `--brief` help text and
+docstring to describe `kind: feature` routing; no `--kind` flag added
+(routing is by the brief's own field, per the contract's explicit "does
+NOT exist" note). Did not touch the pre-existing, unrelated
+`skip_wizard`/`--yes` plumbing gap (the flag is accepted but never
+threaded into `console.start()` — a latent gap in `run_cmd()` predating
+this task and outside its file list); the interactive command loop
+exits gracefully via `EOFError` on closed/non-tty stdin regardless
+(verified empirically by the CLI-wiring test, which uses a mocked
+`DevLoopConsole` rather than exercising the real loop).
+
+Tests: `packages/ai-parrot/tests/cli/test_devloop_feature_brief.py` (7
+tests — the task's own 4 plus a no-`kind`-key regression, an unchanged-
+`_load_brief_file`/RevisionBrief regression, and a not-found-file
+friendly-error case). All pass; full `tests/cli/` (95) and
+`tests/flows/dev_loop/` suites green except the pre-existing, unrelated
+`test_models_module_is_pure` test-order flake. `ruff check` clean on
+both modified `devloop/` CLI files (3 pre-existing unused-import findings
+in `console.py` — `List`, `Set`, `Text` — confirmed via `git stash` to
+predate this task; left untouched, out of scope).
+
+**Deviations from spec**: none beyond the justified `start()` error-
+handling addition documented above.
