@@ -11,6 +11,9 @@ The dev-loop flow binds one of several subagents per dispatch:
   under ``permission_mode="plan"``.
 * ``sdd-secondopinion`` — read-only adversarial second-opinion review
   (FEAT-375): advisory findings only, never modifies files.
+* ``sdd-planner`` — feature-mode document-driven planning (FEAT-378):
+  generates missing SDD artifacts (spec/task index) and the feature
+  worktree from a brainstorm/proposal/spec document.
 
 The Markdown files for each subagent are dual-sourced (per spec §7
 "Patterns"):
@@ -32,7 +35,14 @@ from __future__ import annotations
 from importlib.resources import files
 
 _VALID_NAMES: frozenset[str] = frozenset(
-    {"sdd-research", "sdd-worker", "sdd-qa", "sdd-codereview", "sdd-secondopinion"}
+    {
+        "sdd-research",
+        "sdd-worker",
+        "sdd-qa",
+        "sdd-codereview",
+        "sdd-secondopinion",
+        "sdd-planner",
+    }
 )
 
 
@@ -66,7 +76,7 @@ def load_subagent_definition(name: str) -> str:
 
     Args:
         name: One of ``"sdd-research"``, ``"sdd-worker"``, ``"sdd-qa"``,
-            ``"sdd-codereview"``, ``"sdd-secondopinion"``.
+            ``"sdd-codereview"``, ``"sdd-secondopinion"``, ``"sdd-planner"``.
 
     Returns:
         The Markdown body of the subagent definition with the YAML
