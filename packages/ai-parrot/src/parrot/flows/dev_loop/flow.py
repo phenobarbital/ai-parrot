@@ -73,6 +73,27 @@ def _qa_failed(result: Any) -> bool:
     return getattr(result, "passed", True) is False
 
 
+def _is_feature(result: Any) -> bool:
+    """True when the classifier result is a ``FeatureBrief`` (FEAT-378).
+
+    Mirrors the CEL predicate ``result.kind == "feature"``
+    (definition.py's ``_CEL_IS_FEATURE``). Checked by ``kind`` value
+    rather than ``isinstance`` so a plain dict-like stub (as used by
+    some tests) still routes correctly.
+    """
+    return getattr(result, "kind", None) == "feature"
+
+
+def _feedback_escalate(result: Any) -> bool:
+    """True when the router's ``FeedbackDecision.decision == "escalate"``."""
+    return getattr(result, "decision", None) == "escalate"
+
+
+def _feedback_accept(result: Any) -> bool:
+    """True when the router's ``FeedbackDecision.decision == "accept_with_notes"``."""
+    return getattr(result, "decision", None) == "accept_with_notes"
+
+
 def _make_qa_retry(max_retries: int) -> Callable[[Any], bool]:
     """Closure: QA failed but the bounded repair loop (FEAT-377 TASK-1910
     — G1) still has attempts left → redispatch development."""

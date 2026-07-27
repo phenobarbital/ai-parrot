@@ -427,12 +427,18 @@ class ClaudeCodeDispatcher:
                     )
                     raise
 
+                completed_payload: Dict[str, Any] = {
+                    "output_model": output_model.__name__,
+                }
+                usage_detail = self._extract_result_usage(messages)
+                if usage_detail:
+                    completed_payload["usage"] = usage_detail
                 await self._publish_event(
                     stream_key,
                     kind="dispatch.completed",
                     run_id=run_id,
                     node_id=node_id,
-                    payload={"output_model": output_model.__name__},
+                    payload=completed_payload,
                 )
                 return result
             finally:
@@ -720,6 +726,63 @@ class ClaudeCodeDispatcher:
             if denials:
                 detail["permission_denials"] = [str(d) for d in denials]
             return detail
+        return None
+
+    @staticmethod
+    def _extract_result_usage(messages: List[Any]) -> Optional[Dict[str, Any]]:
+        """Return telemetry (tokens/cost/turns/duration) from the terminal
+        ``ResultMessage``, if any.
+
+        Spec §3 Module 8 (v0.2 amendment): the dispatcher already mines the
+        terminal ``ResultMessage`` for error diagnosis
+        (:meth:`_extract_result_error`) but discards its telemetry on the
+        success path. This helper duck-types the same reverse-scan pattern
+        to also surface ``usage`` (tokens), ``total_cost_usd``, ``num_turns``
+        and ``duration_ms`` for the run bundle (TASK-1928/1929).
+
+        ``usage`` may arrive as a dict (the Claude Agent SDK's
+        ``ResultMessage.usage`` shape) or as an object with attributes —
+        both are supported. Never raises: a malformed/absent usage payload
+        must not fail a dispatch that otherwise succeeded.
+
+        Returns:
+            A dict with any of ``input_tokens``, ``output_tokens``,
+            ``cache_creation_input_tokens``, ``cache_read_input_tokens``,
+            ``total_cost_usd``, ``num_turns``, ``duration_ms`` present
+            (only non-``None`` keys are included), or ``None`` when no
+            terminal ``ResultMessage`` is found or nothing could be
+            extracted.
+        """
+        for msg in reversed(messages):
+            if not hasattr(msg, "is_error"):
+                continue
+            try:
+                usage = getattr(msg, "usage", None)
+
+                def _usage_get(key: str) -> Any:
+                    if usage is None:
+                        return None
+                    if isinstance(usage, dict):
+                        return usage.get(key)
+                    return getattr(usage, key, None)
+
+                detail: Dict[str, Any] = {
+                    "input_tokens": _usage_get("input_tokens"),
+                    "output_tokens": _usage_get("output_tokens"),
+                    "cache_creation_input_tokens": _usage_get(
+                        "cache_creation_input_tokens"
+                    ),
+                    "cache_read_input_tokens": _usage_get(
+                        "cache_read_input_tokens"
+                    ),
+                    "total_cost_usd": getattr(msg, "total_cost_usd", None),
+                    "num_turns": getattr(msg, "num_turns", None),
+                    "duration_ms": getattr(msg, "duration_ms", None),
+                }
+            except Exception:  # noqa: BLE001 — telemetry must never break dispatch
+                return None
+            detail = {k: v for k, v in detail.items() if v is not None}
+            return detail or None
         return None
 
     @staticmethod

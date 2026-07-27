@@ -25,14 +25,23 @@ def devloop(ctx: click.Context) -> None:
 
 @devloop.command("run")
 @click.option("--brief", "brief_file", type=click.Path(exists=True), default=None,
-              help="Path to a YAML/JSON brief file (skips the wizard).")
+              help="Path to a YAML/JSON brief file (skips the wizard). "
+                   "'kind: feature' routes to feature-mode (FEAT-378); "
+                   "everything else (or no 'kind') loads as a bug/enhancement/"
+                   "new_feature WorkBrief.")
 @click.option("--yes", "skip_wizard", is_flag=True, default=False,
               help="Skip confirmation prompts (requires --brief).")
 def run_cmd(brief_file: str | None = None, skip_wizard: bool = False) -> None:
     """Start a new dev-loop run.
 
-    Without --brief, opens the interactive wizard to collect a WorkBrief.
-    With --brief and --yes, dispatches non-interactively.
+    Without --brief, opens the interactive wizard to collect a WorkBrief
+    (the FeatureBrief wizard is out of scope — feature-mode runs always
+    load from --brief). With --brief and --yes, dispatches
+    non-interactively. The brief file's 'kind' field selects the topology:
+    'kind: feature' dispatches a FeatureBrief through the feature-mode
+    flow (document-driven planning, judge-panel QA, draft PR handoff);
+    any other/absent 'kind' dispatches the existing bug/enhancement/
+    new_feature WorkBrief path, unchanged.
     """
     from parrot.cli.devloop.console import DevLoopConsole  # noqa: PLC0415
 

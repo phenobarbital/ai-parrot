@@ -1050,6 +1050,33 @@ DEV_LOOP_ADVERSARIAL_BASE_REF: str = config.get(
     "DEV_LOOP_ADVERSARIAL_BASE_REF", fallback=""
 )
 
+# FEAT-378: JSON spec of the feature-mode QA judge panel used by
+# ``JudgePanelReviewDispatcher`` (registered as "judge-panel"), e.g.
+# '{"judges": [{"agent": "claude-code", "model": "claude-sonnet-4-6"},
+# {"agent": "codex", "model": "gpt-5.5"}, {"agent": "gemini"}],
+# "decision": "majority"}' — matches ``JudgePanelConfig``'s shape. Empty
+# (default) falls back to ``default_judge_panel()`` (3 judges: claude-code,
+# codex via the adversarial ``sdd-secondopinion`` profile, gemini; simple
+# majority, tie/majority-breaking abstention → escalate, fail-closed).
+DEV_LOOP_JUDGE_PANEL: str = config.get("DEV_LOOP_JUDGE_PANEL", fallback="")
+
+# FEAT-378: directory (relative to the feature worktree root) where
+# ``FeatureHandoffNode`` generates ``feat-<id>-<slug>.md`` docs artifacts
+# describing what was implemented — committed to the PR branch alongside
+# the change. ``docs/migration/`` stays reserved for migrations/breaking
+# changes (spec §2).
+DEV_LOOP_DOCS_ARTIFACT_DIR: str = config.get(
+    "DEV_LOOP_DOCS_ARTIFACT_DIR", fallback="docs/features"
+)
+# FEAT-378: whether ``FeatureHandoffNode`` ingests the docs artifact as a
+# queryable wiki page via ``LLMWikiToolkit.create_page``. Off by default —
+# requires a wiki_toolkit to actually be wired by the caller; when on but
+# no toolkit is configured (or the wiki is otherwise unavailable), the
+# node degrades with a warning rather than blocking the handoff.
+DEV_LOOP_WIKI_PAGE_INGEST: bool = config.getboolean(
+    "DEV_LOOP_WIKI_PAGE_INGEST", fallback=False
+)
+
 # ---------------------------------------------------------------------------
 # Remote Tool Executors (parrot.tools.executors)
 # ---------------------------------------------------------------------------

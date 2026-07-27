@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Dict
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -17,6 +18,7 @@ from parrot import conf
 from parrot.bots.flows.core.result import FlowResult
 from parrot.bots.flows.core.types import FlowStatus
 from parrot.flows.dev_loop import BugBrief, DevLoopRunner, ShellCriterion
+from parrot.flows.dev_loop.models import FeatureBrief
 
 
 @pytest.fixture
@@ -335,3 +337,92 @@ async def test_multiple_concurrent_gates_park_and_resume_once_each(brief, monkey
     result = await asyncio.wait_for(task, timeout=1.0)
     assert result.status == FlowStatus.COMPLETED
     assert not runner.is_parked("run-multi-gate")
+
+
+# ---------------------------------------------------------------------------
+# Feature-mode gate parking (code-review finding, post-TASK-1925):
+# `_run_feature` used a plain `async with self._semaphore` that neither
+# supports mid-flight release (park) nor registers `_run_completion`, so a
+# gate opened during a feature run would corrupt the concurrency slot and
+# leave `resume_run()`/auto-resume with nothing to await.
+# ---------------------------------------------------------------------------
+
+
+def _feature_brief(tmp_path) -> FeatureBrief:
+    doc = tmp_path / "x.proposal.md"
+    doc.write_text("# proposal")
+    return FeatureBrief(document_path=str(doc), document_kind="proposal")
+
+
+def _feature_runner(flow, **kwargs) -> DevLoopRunner:
+    """A ``DevLoopRunner`` wired just enough to satisfy `_run_feature`'s
+    dispatcher/redis_url guard, with ``_feature_flow`` pre-set to a stub so
+    the real ``build_dev_loop_feature_flow`` construction is never reached."""
+    runner = DevLoopRunner(
+        MagicMock(), dispatcher=MagicMock(), redis_url="redis://fake", **kwargs,
+    )
+    runner._feature_flow = flow
+    return runner
+
+
+@pytest.mark.asyncio
+async def test_feature_run_parks_and_frees_slot(tmp_path, monkeypatch):
+    """A feature-mode run that opens a gate parks exactly like a bug-mode
+    run: the slot is released and a second run can proceed."""
+    monkeypatch.setattr(conf, "DEV_LOOP_GATE_PARK", True)
+    brief = _feature_brief(tmp_path)
+    flow = _GateOpeningFlow()
+    runner = _feature_runner(flow, max_concurrent_runs=1)
+
+    task1 = asyncio.ensure_future(runner.run(brief, run_id="run-feat-park-1"))
+    for _ in range(50):
+        if runner.is_parked("run-feat-park-1"):
+            break
+        await asyncio.sleep(0.01)
+    assert runner.is_parked("run-feat-park-1")
+    assert not runner.is_active("run-feat-park-1")
+
+    # A single-slot runner would deadlock here if run 1 still held its slot.
+    runner._feature_flow = _InstantFlow()
+    result2 = await asyncio.wait_for(
+        runner.run(_feature_brief(tmp_path), run_id="run-feat-park-2"), timeout=1.0,
+    )
+    assert result2.status == FlowStatus.COMPLETED
+
+    host = runner.get_host("run-feat-park-1")
+    gate_id = flow.gate_ids["run-feat-park-1"]
+    host.resolve_gate(gate_id, "approved", resolved_by="alice")
+    result1 = await task1
+    assert result1.status == FlowStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_feature_run_resume_after_gate(tmp_path, monkeypatch):
+    """`resume_run()` works for a parked feature-mode run — `_run_feature`
+    must register `_run_completion[rid]` like `run()`/`run_revision()` do."""
+    monkeypatch.setattr(conf, "DEV_LOOP_GATE_PARK", True)
+    brief = _feature_brief(tmp_path)
+    flow = _GateOpeningFlow()
+    runner = _feature_runner(flow, max_concurrent_runs=1)
+
+    task = asyncio.ensure_future(runner.run(brief, run_id="run-feat-resume-1"))
+    for _ in range(50):
+        if runner.is_parked("run-feat-resume-1"):
+            break
+        await asyncio.sleep(0.01)
+    assert runner.is_parked("run-feat-resume-1")
+    assert runner.registry_state.runs["run-feat-resume-1"].parked is True
+
+    host = runner.get_host("run-feat-resume-1")
+    gate_id = flow.gate_ids["run-feat-resume-1"]
+    host.resolve_gate(gate_id, "approved", resolved_by="alice")
+
+    result = await asyncio.wait_for(task, timeout=1.0)
+    assert result.status == FlowStatus.COMPLETED
+    assert not runner.is_parked("run-feat-resume-1")
+    assert not runner.is_active("run-feat-resume-1")
+
+    # explicit resume_run() must also work (not just auto-resume) — this is
+    # exactly what a broken `_run_completion` registration would fail.
+    with pytest.raises(KeyError):
+        await runner.resume_run("run-feat-resume-1")  # already finished + popped

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-26T23:11:57.112397+00:00",
-  "completed_at": "2026-07-27T12:30:34+00:00",
+  "completed_at": "2026-07-27T11:28:34+00:00",
   "tasks": [
     {
       "id": "TASK-1918",
@@ -22,7 +22,7 @@
       "parallelism_notes": "Root of the graph; models.py is shared by every other task.",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": "2026-07-27T12:30:33+00:00",
+      "completed_at": "2026-07-27T00:37:46+00:00",
       "file": "sdd/tasks/completed/TASK-1918-feature-brief-models.md",
       "verification": "verified"
     },
@@ -43,7 +43,7 @@
       "parallelism_notes": "session_state.py also touched by FEAT-377; keep sequential.",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": "2026-07-27T12:30:33+00:00",
+      "completed_at": "2026-07-27T00:43:48+00:00",
       "file": "sdd/tasks/completed/TASK-1919-session-state-feature-actions.md",
       "verification": "verified"
     },
@@ -64,7 +64,7 @@
       "parallelism_notes": "Only code_review.py + conf.py — no file overlap with 1919/1921-1924; can run in a parallel worktree after 1918.",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": "2026-07-27T12:30:33+00:00",
+      "completed_at": "2026-07-27T00:53:34+00:00",
       "file": "sdd/tasks/completed/TASK-1920-judge-panel-dispatcher.md",
       "verification": "verified"
     },
@@ -86,7 +86,7 @@
       "parallelism_notes": "New files only, but consumes state actions; sequential in the feature worktree.",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": "2026-07-27T12:30:33+00:00",
+      "completed_at": "2026-07-27T01:12:47+00:00",
       "file": "sdd/tasks/completed/TASK-1921-planner-node.md",
       "verification": "verified"
     },
@@ -108,7 +108,7 @@
       "parallelism_notes": "New files only; could parallelize with 1921 but shares test fixtures — keep sequential per spec worktree strategy.",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": "2026-07-27T12:30:33+00:00",
+      "completed_at": "2026-07-27T01:16:26+00:00",
       "file": "sdd/tasks/completed/TASK-1922-synthesis-node.md",
       "verification": "verified"
     },
@@ -131,7 +131,7 @@
       "parallelism_notes": "Consumes panel verdict shape from 1920 and FEAT-377/A stop rule when available.",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": "2026-07-27T12:30:33+00:00",
+      "completed_at": "2026-07-27T01:22:39+00:00",
       "file": "sdd/tasks/completed/TASK-1923-feedback-router-node.md",
       "verification": "verified"
     },
@@ -153,7 +153,7 @@
       "parallelism_notes": "New file + conf.py (also touched by 1920 — coordinate small conf block).",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": "2026-07-27T12:30:34+00:00",
+      "completed_at": "2026-07-27T01:29:46+00:00",
       "file": "sdd/tasks/completed/TASK-1924-feature-handoff-node.md",
       "verification": "verified"
     },
@@ -177,7 +177,7 @@
       "parallelism_notes": "High-contention core files (definition/flow/runner/factories/classifier); must be last of the code tasks. Composes with FEAT-377/A if merged.",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": "2026-07-27T12:30:34+00:00",
+      "completed_at": "2026-07-27T01:57:36+00:00",
       "file": "sdd/tasks/completed/TASK-1925-feature-topology-parity.md",
       "verification": "verified"
     },
@@ -199,7 +199,7 @@
       "parallelism_notes": "Needs the runner union from 1925.",
       "assigned_to": null,
       "started_at": "2026-07-27T00:18:14+00:00",
-      "completed_at": "2026-07-27T12:30:34+00:00",
+      "completed_at": "2026-07-27T02:05:22+00:00",
       "file": "sdd/tasks/completed/TASK-1926-cli-feature-brief-loader.md",
       "verification": "verified"
     },
@@ -212,8 +212,8 @@
       "spec": "sdd/specs/devloop-enhancement.spec.md",
       "status": "done",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-07-27T12:30:34+00:00",
+      "started_at": "2026-07-27T10:59:05+00:00",
+      "completed_at": "2026-07-27T10:59:15+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -233,8 +233,8 @@
       "spec": "sdd/specs/devloop-enhancement.spec.md",
       "status": "done",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-07-27T12:30:34+00:00",
+      "started_at": "2026-07-27T11:14:32+00:00",
+      "completed_at": "2026-07-27T11:14:32+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -254,8 +254,8 @@
       "spec": "sdd/specs/devloop-enhancement.spec.md",
       "status": "done",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": "2026-07-27T12:30:34+00:00",
+      "started_at": "2026-07-27T11:28:26+00:00",
+      "completed_at": "2026-07-27T11:28:34+00:00",
       "priority": "medium",
       "effort": "S",
       "depends_on": [

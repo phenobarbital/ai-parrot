@@ -316,3 +316,91 @@ class TestRunnerSemaphore:
         assert ctx.shared_data["work_brief"] is brief
         assert ctx.shared_data["run_id"].startswith("run-")
         assert ctx.initial_task == brief.summary
+
+
+# ---------------------------------------------------------------------------
+# FEAT-378: DevLoopRunner.run() accepts FeatureBrief (union dispatch)
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureModeDispatch:
+    """DevLoopRunner.run() routes a FeatureBrief to the feature-mode flow."""
+
+    @pytest.mark.asyncio
+    async def test_run_dispatches_feature_brief_to_feature_flow(self, tmp_path, monkeypatch):
+        from parrot.flows.dev_loop.models import FeatureBrief
+
+        captured: dict[str, Any] = {}
+
+        # Patch DevLoopRunner._run_feature directly (a class attribute —
+        # unambiguous regardless of any module-level sys.modules churn
+        # elsewhere in the suite) to unit-test run()'s isinstance-based
+        # routing decision in isolation from build_dev_loop_feature_flow's
+        # own internals (already covered by test_feature_flow.py).
+        async def _fake_run_feature(self, brief, **kwargs):
+            captured["brief"] = brief
+            captured["kwargs"] = kwargs
+            return FlowResult(output="ok", status=FlowStatus.COMPLETED)
+
+        monkeypatch.setattr(DevLoopRunner, "_run_feature", _fake_run_feature)
+
+        runner = DevLoopRunner(MagicMock())  # the bug-topology flow — never used here
+
+        doc = tmp_path / "x.proposal.md"
+        doc.write_text("# proposal")
+        fb = FeatureBrief(document_path=str(doc), document_kind="proposal")
+
+        result = await runner.run(fb, run_id="run-abc123")
+
+        assert result.status == FlowStatus.COMPLETED
+        assert captured["brief"] is fb
+        assert captured["kwargs"]["run_id"] == "run-abc123"
+
+    @pytest.mark.asyncio
+    async def test_run_workbrief_path_unchanged(self, brief):
+        """A plain WorkBrief still drives self.flow, not the feature path."""
+        captured: dict[str, Any] = {}
+
+        class _Probe:
+            async def run_flow(self, ctx, **kwargs) -> FlowResult:
+                captured["ctx"] = ctx
+                return FlowResult(output="ok", status=FlowStatus.COMPLETED)
+
+        runner = DevLoopRunner(_Probe())  # type: ignore[arg-type]
+        result = await runner.run(brief)
+
+        assert result.status == FlowStatus.COMPLETED
+        assert captured["ctx"].shared_data["bug_brief"] is brief
+
+    @pytest.mark.asyncio
+    async def test_run_feature_without_deps_raises(self, tmp_path):
+        from parrot.flows.dev_loop.models import FeatureBrief
+
+        doc = tmp_path / "x.proposal.md"
+        doc.write_text("# proposal")
+        fb = FeatureBrief(document_path=str(doc), document_kind="proposal")
+
+        runner = DevLoopRunner(MagicMock())  # no dispatcher/redis_url configured
+
+        with pytest.raises(RuntimeError, match="feature-mode run requires"):
+            await runner.run(fb)
+
+    def test_feature_codereview_dispatcher_defaults_to_judge_panel(self):
+        """Code-review finding: an unconfigured codereview_dispatcher must
+        default feature-mode QA to a real JudgePanelReviewDispatcher, not
+        silently fall through to QANode's own bare ClaudeCodeReviewDispatcher
+        fallback (which bug/revision-mode already uses by default)."""
+        from parrot.flows.dev_loop.code_review import JudgePanelReviewDispatcher
+
+        runner = DevLoopRunner(MagicMock(), redis_url="redis://fake")
+        dispatcher = runner._feature_codereview_dispatcher()
+        assert isinstance(dispatcher, JudgePanelReviewDispatcher)
+
+    def test_feature_codereview_dispatcher_respects_explicit_override(self):
+        """An explicitly-configured codereview_dispatcher still wins for
+        feature-mode too — unchanged from before this fix."""
+        explicit = MagicMock()
+        runner = DevLoopRunner(
+            MagicMock(), redis_url="redis://fake", codereview_dispatcher=explicit,
+        )
+        assert runner._feature_codereview_dispatcher() is explicit

@@ -25,6 +25,7 @@ from parrot.flows.dev_loop.dispatcher import (
 )
 from parrot.flows.dev_loop.flow import FlowEventPublisher, build_dev_loop_flow
 from parrot.flows.dev_loop.runner import DevLoopRunner, gate_ttl_for
+from parrot.flows.dev_loop.run_bundle import RunBundle, build_run_bundle, render_markdown
 from parrot.flows.dev_loop.nodes.intent_classifier import IntentClassifierNode
 from parrot.flows.dev_loop.streaming import (
     FlowStreamMultiplexer,
@@ -127,6 +128,7 @@ __all__ = [
     "QAReport",
     "ResearchOutput",
     "RootAction",
+    "RunBundle",
     "RunRegistryState",
     "RunSummary",
     "SessionHost",
@@ -138,11 +140,13 @@ __all__ = [
     "WorkBrief",
     "WorkerSummary",
     "build_dev_loop_flow",
+    "build_run_bundle",
     "cleanup_worktree",
     "flow_stream_ws",
     "gate_ttl_for",
     "parse_repo_specs",
     "register_command_routes",
     "register_pull_request_webhook",
+    "render_markdown",
     "sweep_finished_worktrees",
 ]

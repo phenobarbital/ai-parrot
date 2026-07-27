@@ -389,6 +389,12 @@ class QANode(DevLoopNode):
                 # FEAT-322: fold dispatch-level events into the run's
                 # SessionHost when one is present.
                 session_host=shared.get("session_host"),
+                # FEAT-378 (code-review finding): the QA-attempt-scoped round
+                # identifier JudgePanelReviewDispatcher stamps onto each
+                # JudgeVerdictRecorded action ("qa-1", "qa-2", ... — same
+                # convention as QaAttemptRecorded's attempt number above).
+                # Ignored by every non-panel dispatcher.
+                round=f"qa-{shared.get('qa_attempt', 1)}",
             )
         except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
             self.logger.warning("Code-review dispatcher raised: %s", exc)
