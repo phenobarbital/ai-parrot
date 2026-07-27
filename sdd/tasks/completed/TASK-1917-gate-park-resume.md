@@ -164,10 +164,110 @@ async def test_parked_plan_gate_e2e(runner_one_slot):  # needs TASK-1916
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-27
 **Notes**:
 
-**Deviations from spec**: none
+Implementation:
+- `conf.py`: new `DEV_LOOP_GATE_PARK: bool` (default `True`).
+- `session_state.py`: `RunSummary.parked: bool = False`; new root actions
+  `RunParked`/`RunResumed` (added to the `RootAction` discriminated
+  union) with a flat reducer branch in `reduce_root` mirroring the
+  existing pattern (no registry).
+- `runner.py` — the core design:
+  - `_make_envelope_sink` now inspects every envelope's action `type`.
+    On the run's FIRST open gate (`_pending_gate_count` 0->1) it calls
+    `_park(run_id)` synchronously. On a gate resolving/expiring, it
+    decrements the counter and — once it reaches 0 while the run is
+    parked — schedules `_auto_resume(run_id)` via `create_task` (never
+    awaited inline; the sink is a synchronous callback).
+  - `_park`: synchronous, idempotent-by-guard (`run_id in self._active`)
+    slot release + `RunParked` action + `asyncio.Semaphore.release()`.
+    Semaphore release has no per-task ownership, so releasing from a
+    different call stack than the original `acquire()` is safe; the
+    guard enforces exactly-once.
+  - `resume_run(run_id) -> FlowResult`: the public re-acquire + await
+    entry point (also the automatic path's implementation). Looks up
+    the run's completion `Future` from a new `_run_completion` registry
+    (seeded in `run()`/`run_revision()`), re-acquires the semaphore if
+    still parked, and re-checks `fut.done()` AFTER the acquire — a
+    fast-finishing flow can complete while this coroutine was waiting
+    for a free slot, so the re-check releases immediately instead of
+    leaking an acquired-but-unused slot. Raises `KeyError` only when no
+    run is tracked at all (never started, or already finished AND
+    fully cleaned up before ANY caller's initial lookup — see below).
+  - `run()`/`run_revision()`: restructured from `async with
+    self._semaphore:` to manual acquire/release + a per-run
+    `asyncio.Future` completion registry, because a park can release
+    the slot from deep inside `run_flow()` — a context manager cannot
+    express "release now, maybe someone else re-acquires before I
+    return". `finally` distinguishes `_active` (release once) from
+    `_parked` (already released, no double-release) and always pops
+    `_pending_gate_count`; the completion future is resolved (result or
+    exception) and only then popped from the registry.
+  - `parked_runs` / `is_parked(run_id)` introspection properties.
+- Tests:
+  - `test_runner_park.py` (7 unit tests, stub flows, matching
+    `test_runner_host.py`'s harness): slot release, resume-after-gate,
+    the public `resume_run` API, flag-off parity, TTL fail-open expiry
+    resume, no-double-release-on-rejection, and two-concurrently-open
+    gates parking/resuming exactly once each (not once per gate).
+  - `integration/test_gate_park_e2e.py` (2 tests, real
+    `DevLoopRunner`/`build_dev_loop_flow(require_plan_approval=True)`,
+    mocked dispatcher/Jira, no network): a REAL `plan_approval` gate
+    (TASK-1916) parks the run (slot freed — proven by swapping in a
+    trivial second flow that completes immediately while run 1 is still
+    parked) and resuming it drives the SAME run through
+    Development/QA/Close; a rejected gate resumes straight into
+    `failure_handler`.
+
+Codebase Contract corrections (none needed — the contract's structural
+pointers, e.g. `self._semaphore = asyncio.Semaphore(...)` and the
+`async with self._semaphore:` block, matched the code as found; the
+"lines 573-586" range had drifted slightly by the time this task
+started but the referenced code shapes were still accurate).
+
+Investigation beyond the task's literal file list: the full-suite run
+(`pytest tests/flows/dev_loop/`) surfaced 2 pre-existing failures in
+`test_session_state_properties.py` — `test_action_union_schema_has_
+discriminator` (hardcoded `== 20`, stale since TASK-1913 added
+`run/qaAttemptRecorded` without updating this count to 21) and
+`test_root_action_union_schema_has_discriminator` (hardcoded exact
+mapping set, correctly invalidated by THIS task's new `root/runParked`/
+`root/runResumed` members). Both are property tests whose entire job is
+to enumerate discriminated-union membership exhaustively — by design
+they must be updated whenever a task legitimately adds a new action
+type. Updated both assertions (21, and the mapping set + the two new
+keys) rather than leaving the suite red; this is the direct,
+minimal fix these two hardcoded assertions require, not a
+reinterpretation of their intent. `test_session_state_properties.py`
+was not in this task's Files list, but leaving the pointed-out
+TASK-1913 gap unfixed would have kept the suite red for a cause
+unrelated to this task's own diff.
+
+The `test_resume_run_public_api` unit test needed a `post_gate_delay`
+parameter on the shared `_GateOpeningFlow` stub: with an instantaneous
+stub, resolving the gate races the sink's automatic `_auto_resume`
+against the test's own explicit `resume_run()` call for the SAME
+already-finishing run, both legitimately able to observe "run already
+cleaned up" nondeterministically. This is an artifact of an
+unrealistically-instant stub (real nodes do more work after a gate
+resolves), not a correctness gap in `resume_run` — its `fut.done()`
+re-check after acquiring is exactly the safety net that makes both the
+manual and automatic paths individually race-safe; the test now gives
+the stub flow a small delay so both assertions land deterministically.
+
+Full-suite verification: `pytest tests/flows/dev_loop/ -q -m "not
+live"` → 723 passed, 1 skipped, 1 failed
+(`test_lazy_import.py::test_models_module_is_pure`, the pre-existing
+test-order-dependent flake confirmed unrelated in every prior FEAT-377
+task's completion note) — no other regressions. `pytest
+tests/bots/flows/ -q -m "not live"` → 238 passed (sanity check on the
+shared flow engine, untouched by this task). `ruff check` clean on all
+touched files.
+
+**Deviations from spec**: none. The two additional touched-but-not-
+task-listed files (`test_session_state_properties.py` for the
+discriminator-count fixes) are covered above — a direct, minimal
+consequence of this task's own union changes plus a pre-existing
+TASK-1913 gap this task's full-suite run exposed.

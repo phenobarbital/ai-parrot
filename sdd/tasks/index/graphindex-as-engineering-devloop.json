@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-26T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-27T00:44:13+00:00",
   "tasks": [
     {
       "id": "TASK-1906",
@@ -224,7 +224,7 @@
       "feature_id": "FEAT-377",
       "feature": "graphindex-as-engineering-devloop",
       "spec": "sdd/specs/graphindex-as-engineering-devloop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -234,8 +234,8 @@
       "parallelism_notes": "Reworks runner.py slot lifecycle; e2e test uses the 1916 plan gate. Run last.",
       "assigned_to": null,
       "started_at": "2026-07-26T21:58:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1917-gate-park-resume.md"
+      "completed_at": "2026-07-27T00:43:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1917-gate-park-resume.md"
     }
   ]
 }
