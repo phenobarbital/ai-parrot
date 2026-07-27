@@ -1,0 +1,56 @@
+{
+  "feature": "eventbus-replacement-evaluation",
+  "feature_id": "FEAT-381",
+  "spec": "sdd/specs/eventbus-replacement-evaluation.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-27T16:34:00+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1939",
+      "slug": "audit-residual-bus-artifacts",
+      "title": "Audit — grep for residual old-bus symbols and verify pyproject.toml pin",
+      "feature_id": "FEAT-381",
+      "feature": "eventbus-replacement-evaluation",
+      "spec": "sdd/specs/eventbus-replacement-evaluation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1939-audit-residual-bus-artifacts.md"
+    },
+    {
+      "id": "TASK-1940",
+      "slug": "fix-residual-bus-issues",
+      "title": "Fix — apply targeted fixes for any residual old-bus references found in audit",
+      "feature_id": "FEAT-381",
+      "feature": "eventbus-replacement-evaluation",
+      "spec": "sdd/specs/eventbus-replacement-evaluation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": ["TASK-1939"],
+      "parallel": false,
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1940-fix-residual-bus-issues.md"
+    },
+    {
+      "id": "TASK-1941",
+      "slug": "guard-test-update-and-green-gate",
+      "title": "Guard test update — add PyPI-source assertion; ruff check + pytest green",
+      "feature_id": "FEAT-381",
+      "feature": "eventbus-replacement-evaluation",
+      "spec": "sdd/specs/eventbus-replacement-evaluation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": ["TASK-1940"],
+      "parallel": false,
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1941-guard-test-update-and-green-gate.md"
+    }
+  ]
+}
