@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/industry-b242f056-1c5c-4be1-8217-ec481221ae39/styles.css">
+<script src="_ds/industry-b242f056-1c5c-4be1-8217-ec481221ae39/_ds_bundle.js"></script>
+<style>
+body{margin:0;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body)}
+a{color:var(--color-accent-700);text-decoration:none}
+a:hover{color:var(--color-accent);text-decoration:underline}
+@keyframes afpulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+<div style="min-height:100vh;background:var(--color-bg);padding-bottom:80px">
+
+  <div class="nav" style="border-bottom:1px solid var(--color-divider);padding:12px 28px;gap:20px;position:sticky;top:0;z-index:20;background:var(--color-bg)">
+    <span class="nav-brand" style="display:flex;align-items:baseline;gap:10px;margin-right:auto">Agent Flow
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.06em;color:color-mix(in srgb,var(--color-text) 50%,transparent);text-transform:uppercase">development</span>
+    </span>
+    <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">{{ runLabel }}</span>
+    <span class="tag tag-outline" style="display:flex;align-items:center;gap:6px">
+      <i style="width:6px;height:6px;background:var(--color-accent);display:block"></i>{{ connLabel }}
+    </span>
+    <button class="btn btn-secondary" type="button" onClick="{{ onRestart }}">Restart run</button>
+  </div>
+
+  <div style="max-width:1560px;margin:0 auto;padding:26px 28px 0">
+
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--color-divider);border:1px solid var(--color-divider);margin-bottom:26px">
+      <sc-for list="{{ steps }}" as="s" hint-placeholder-count="3">
+        <div style="background:var(--color-bg);padding:12px 16px;display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-heading);font-size:22px;line-height:1;color:var(--color-accent);min-width:28px">{{ s.num }}</span>
+          <span style="display:flex;flex-direction:column;gap:1px;min-width:0">
+            <span style="font-family:var(--font-heading);font-size:16px;line-height:1.1">{{ s.title }}</span>
+            <span style="font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 50%,transparent)">{{ s.state }}</span>
+          </span>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- ── 01 REQUEST ───────────────────────────────────────────── -->
+    <section data-screen-label="01 Request" style="margin-bottom:26px">
+      <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:10px">
+        <h6 style="margin:0">01 — Request</h6>
+        <span style="flex:1;height:1px;background:var(--color-divider)"></span>
+      </div>
+
+      <sc-if value="{{ requestCollapsed }}" hint-placeholder-val="{{ false }}">
+        <div class="blueprint" style="padding:14px 18px;display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <span class="tag tag-accent">{{ form.kind }}</span>
+          <span style="font-family:var(--font-heading);font-size:18px;flex:1;min-width:240px">{{ form.summary }}</span>
+          <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">{{ form.affected }}</span>
+          <span style="font-size:12px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">{{ criteriaCount }} acceptance criteria</span>
+          <button class="btn btn-secondary" type="button" onClick="{{ onEditRequest }}">Edit request</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ requestOpen }}" hint-placeholder-val="{{ true }}">
+      <div class="blueprint" style="padding:22px 24px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:26px;align-items:start">
+          <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+            <div class="field">
+              <label for="af-prompt">Describe the work — the agent reads this first</label>
+              <textarea id="af-prompt" class="input" style="min-height:150px;font-family:ui-monospace,Menlo,monospace;font-size:13px;line-height:1.6" placeholder="Customer sync drops the last row on payloads over 1000 records. Started after the pagination change in release 2.14. Reproduce with a 1500-row CSV: the destination table ends at 1499 rows." value="{{ form.prompt }}" onChange="{{ onPrompt }}"></textarea>
+              <p style="margin:6px 0 0;font-size:11.5px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Plain prose is fine. Research will pull the ticket, the logs and the failing test on its own — anything you add below only narrows the search.</p>
+            </div>
+            <div class="field">
+              <label for="af-summary">Summary — becomes the ticket title (255 char Jira limit)</label>
+              <input id="af-summary" class="input" value="{{ form.summary }}" onChange="{{ onSummary }}">
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div class="field">
+              <label>Kind — picks the intake branch</label>
+              <div class="seg" style="width:100%">
+                <sc-for list="{{ kinds }}" as="k" hint-placeholder-count="3">
+                  <label class="seg-opt" style="flex:1;justify-content:center">
+                    <input type="radio" name="af-kind" checked="{{ k.checked }}" onChange="{{ k.select }}">{{ k.label }}
+                  </label>
+                </sc-for>
+              </div>
+            </div>
+            <div style="border:1px solid var(--color-divider);padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+              <span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Ready to dispatch</span>
+              <sc-for list="{{ readyRows }}" as="r" hint-placeholder-count="3">
+                <span style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px">
+                  <span style="color:color-mix(in srgb,var(--color-text) 60%,transparent)">{{ r.k }}</span>
+                  <span style="font-family:ui-monospace,Menlo,monospace">{{ r.v }}</span>
+                </span>
+              </sc-for>
+            </div>
+            <button class="btn btn-primary blueprint" type="button" style="height:44px;font-size:15px" onClick="{{ onSubmit }}">
+              <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+              {{ submitLabel }}
+            </button>
+            <p style="margin:0;font-size:11.5px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Dispatching opens a run and streams every node event below. Nothing is pushed to Jira or GitHub until Handoff.</p>
+          </div>
+        </div>
+
+        <!-- collapsible advanced area -->
+        <div style="margin-top:20px;border-top:1px solid var(--color-divider);padding-top:14px">
+          <button class="btn btn-ghost" type="button" style="padding-inline:0;gap:8px" onClick="{{ onToggleAdv }}">
+            <span style="display:inline-block;width:10px;font-family:ui-monospace,monospace">{{ advCaret }}</span>
+            Special &amp; advanced options
+            <span class="tag tag-neutral" style="margin-left:6px">{{ advBadge }}</span>
+          </button>
+
+          <sc-if value="{{ advOpen }}" hint-placeholder-val="{{ true }}">
+            <div style="margin-top:14px">
+              <div style="display:flex;flex-wrap:wrap;gap:0;border-bottom:1px solid var(--color-divider);margin-bottom:16px">
+                <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="6">
+                  <button type="button" class="btn" style="{{ t.style }}" onClick="{{ t.select }}">{{ t.label }}</button>
+                </sc-for>
+              </div>
+
+              <div style="display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:26px;align-items:start;min-height:190px">
+                <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px">
+                  <sc-for list="{{ tabFields }}" as="f" hint-placeholder-count="4">
+                    <div class="field" style="grid-column:{{ f.span }}">
+                      <label>{{ f.label }}</label>
+                      <sc-if value="{{ f.isArea }}" hint-placeholder-val="{{ false }}">
+                        <textarea class="input" style="min-height:132px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.7" value="{{ f.value }}" onChange="{{ f.onInput }}"></textarea>
+                      </sc-if>
+                      <sc-if value="{{ f.isText }}" hint-placeholder-val="{{ true }}">
+                        <input class="input" value="{{ f.value }}" placeholder="{{ f.placeholder }}" onChange="{{ f.onInput }}">
+                      </sc-if>
+                      <sc-if value="{{ f.isSelect }}" hint-placeholder-val="{{ false }}">
+                        <div class="seg" style="width:100%">
+                          <sc-for list="{{ f.pickers }}" as="o" hint-placeholder-count="2">
+                            <label class="seg-opt" style="flex:1;justify-content:center;font-size:12px">
+                              <input type="radio" name="{{ f.name }}" checked="{{ o.checked }}" onChange="{{ o.select }}">{{ o.label }}
+                            </label>
+                          </sc-for>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ f.hint }}" hint-placeholder-val="{{ false }}">
+                        <p style="margin:5px 0 0;font-size:11px;line-height:1.5;color:color-mix(in srgb,var(--color-text) 52%,transparent)">{{ f.hint }}</p>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+                <div class="blueprint" style="padding:14px;display:flex;flex-direction:column;gap:8px">
+                  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+                  <span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-accent-700)">What this tab does</span>
+                  <p style="margin:0;font-size:12.5px;line-height:1.6;color:color-mix(in srgb,var(--color-text) 72%,transparent)">{{ tabNote }}</p>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+      </sc-if>
+    </section>
+
+    <!-- ── 02 EXECUTION ─────────────────────────────────────────── -->
+    <sc-if value="{{ showExec }}" hint-placeholder-val="{{ false }}">
+    <section data-screen-label="02 Execution" style="margin-bottom:26px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+        <h6 style="margin:0">02 — Execution</h6>
+        <span style="font-size:12px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">{{ execProgress }}</span>
+        <span style="flex:1;height:1px;background:var(--color-divider);min-width:20px"></span>
+        <span style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 50%,transparent)">View</span>
+        <div class="seg">
+          <sc-for list="{{ treatments }}" as="tr" hint-placeholder-count="3">
+            <label class="seg-opt" style="font-size:12px">
+              <input type="radio" name="af-view" checked="{{ tr.checked }}" onChange="{{ tr.select }}">{{ tr.label }}
+            </label>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- A · panels -->
+      <sc-if value="{{ isPanels }}" hint-placeholder-val="{{ false }}">
+        <div style="max-height:640px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;padding:6px 8px 6px 6px">
+          <sc-for list="{{ nodes }}" as="n" hint-placeholder-count="4">
+            <div class="blueprint" style="{{ n.panelStyle }}">
+              <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--color-divider);flex-wrap:wrap">
+                <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:color-mix(in srgb,var(--color-text) 45%,transparent)">{{ n.num }}</span>
+                <span style="font-family:var(--font-heading);font-size:19px;line-height:1">{{ n.label }}</span>
+                <span style="{{ n.pillStyle }}">{{ n.statusLabel }}</span>
+                <span style="flex:1"></span>
+                <span style="font-size:12px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">{{ n.role }}</span>
+                <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;min-width:56px;text-align:right">{{ n.elapsed }}</span>
+              </div>
+              <sc-if value="{{ n.hasEvents }}" hint-placeholder-val="{{ true }}">
+                <div style="max-height:190px;overflow-y:auto;padding:6px 14px 10px">
+                  <sc-for list="{{ n.events }}" as="e" hint-placeholder-count="2">
+                    <div style="border-bottom:1px dashed color-mix(in srgb,var(--color-text) 12%,transparent);padding:5px 0">
+                      <div style="display:flex;gap:10px;align-items:baseline;cursor:pointer;font-family:ui-monospace,Menlo,monospace;font-size:12px" onClick="{{ e.toggle }}">
+                        <span style="width:9px;color:color-mix(in srgb,var(--color-text) 45%,transparent)">{{ e.caret }}</span>
+                        <span style="color:color-mix(in srgb,var(--color-text) 45%,transparent)">{{ e.ts }}</span>
+                        <span style="color:var(--color-accent-700)">{{ e.kind }}</span>
+                        <span style="flex:1"></span>
+                        <span style="color:color-mix(in srgb,var(--color-text) 45%,transparent)">{{ e.brief }}</span>
+                      </div>
+                      <sc-if value="{{ e.open }}" hint-placeholder-val="{{ false }}">
+                        <pre style="margin:6px 0 2px;padding:8px 10px;background:var(--color-surface);border:1px solid var(--color-divider);font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;overflow:auto;max-height:200px;color:color-mix(in srgb,var(--color-text) 78%,transparent)">{{ e.json }}</pre>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <sc-if value="{{ n.isIdle }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:14px;font-size:12.5px;color:color-mix(in srgb,var(--color-text) 45%,transparent)">Waiting on the upstream node — no events yet.</div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <!-- B · focus rail -->
+      <sc-if value="{{ isRail }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid;grid-template-columns:290px minmax(0,1fr);gap:18px;align-items:start">
+          <div style="max-height:600px;overflow-y:auto;display:flex;flex-direction:column;gap:1px;background:var(--color-divider);border:1px solid var(--color-divider)">
+            <sc-for list="{{ nodes }}" as="n" hint-placeholder-count="5">
+              <div style="{{ n.railStyle }}" onClick="{{ n.select }}">
+                <span style="display:block;width:8px;height:8px;flex:none;{{ n.dotStyle }}"></span>
+                <span style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1">
+                  <span style="font-family:var(--font-heading);font-size:16px;line-height:1.1">{{ n.label }}</span>
+                  <span style="font-size:11px;color:color-mix(in srgb,var(--color-text) 50%,transparent)">{{ n.statusLabel }} · {{ n.eventCount }} events</span>
+                </span>
+                <span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">{{ n.elapsed }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div class="blueprint" style="padding:0;min-height:420px">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+            <div style="display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--color-divider);flex-wrap:wrap">
+              <span style="font-family:var(--font-heading);font-size:22px;line-height:1">{{ selNode.label }}</span>
+              <span style="{{ selNode.pillStyle }}">{{ selNode.statusLabel }}</span>
+              <span style="flex:1"></span>
+              <span style="font-size:12px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">{{ selNode.role }}</span>
+              <span style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px">{{ selNode.elapsed }}</span>
+            </div>
+            <div style="max-height:520px;overflow-y:auto;padding:8px 16px 14px">
+              <sc-for list="{{ selNode.events }}" as="e" hint-placeholder-count="3">
+                <div style="border-bottom:1px dashed color-mix(in srgb,var(--color-text) 12%,transparent);padding:6px 0">
+                  <div style="display:flex;gap:10px;align-items:baseline;cursor:pointer;font-family:ui-monospace,Menlo,monospace;font-size:12.5px" onClick="{{ e.toggle }}">
+                    <span style="width:9px;color:color-mix(in srgb,var(--color-text) 45%,transparent)">{{ e.caret }}</span>
+                    <span style="color:color-mix(in srgb,var(--color-text) 45%,transparent)">{{ e.ts }}</span>
+                    <span style="color:var(--color-accent-700)">{{ e.kind }}</span>
+                    <span style="flex:1"></span>
+                    <span style="color:color-mix(in srgb,var(--color-text) 45%,transparent)">{{ e.brief }}</span>
+                  </div>
+                  <sc-if value="{{ e.open }}" hint-placeholder-val="{{ false }}">
+                    <pre style="margin:6px 0 2px;padding:8px 10px;background:var(--color-surface);border:1px solid var(--color-divider);font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;overflow:auto;max-height:240px;color:color-mix(in srgb,var(--color-text) 78%,transparent)">{{ e.json }}</pre>
+                  </sc-if>
+                </div>
+              </sc-for>
+              <sc-if value="{{ selNode.isIdle }}" hint-placeholder-val="{{ false }}">
+                <p style="margin:10px 0 0;font-size:12.5px;color:color-mix(in srgb,var(--color-text) 45%,transparent)">This node has not been dispatched yet.</p>
+              </sc-if>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- C · spine -->
+      <sc-if value="{{ isSpine }}" hint-placeholder-val="{{ false }}">
+        <div style="max-height:640px;overflow-y:auto;padding:4px 4px 4px 2px">
+          <sc-for list="{{ nodes }}" as="n" hint-placeholder-count="5">
+            <div style="display:grid;grid-template-columns:132px 1fr;gap:20px;align-items:start">
+              <div style="text-align:right;padding-top:9px;display:flex;flex-direction:column;gap:2px">
+                <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:color-mix(in srgb,var(--color-text) 50%,transparent)">{{ n.clockLabel }}</span>
+                <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:color-mix(in srgb,var(--color-text) 38%,transparent)">{{ n.elapsed }}</span>
+              </div>
+              <div style="display:grid;grid-template-columns:22px 1fr;gap:14px">
+                <div style="display:flex;flex-direction:column;align-items:center">
+                  <span style="width:11px;height:11px;margin-top:12px;flex:none;{{ n.dotStyle }}"></span>
+                  <span style="width:1px;flex:1;min-height:26px;background:var(--color-divider)"></span>
+                </div>
+                <div style="padding:6px 0 20px;min-width:0">
+                  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;cursor:pointer" onClick="{{ n.select }}">
+                    <span style="font-family:var(--font-heading);font-size:20px;line-height:1.1">{{ n.label }}</span>
+                    <span style="{{ n.pillStyle }}">{{ n.statusLabel }}</span>
+                    <span style="font-size:12px;color:color-mix(in srgb,var(--color-text) 52%,transparent)">{{ n.role }}</span>
+                  </div>
+                  <sc-if value="{{ n.spineOpen }}" hint-placeholder-val="{{ true }}">
+                    <div style="margin-top:8px;border-left:1px solid var(--color-divider);padding-left:14px">
+                      <sc-for list="{{ n.events }}" as="e" hint-placeholder-count="2">
+                        <div style="padding:4px 0">
+                          <div style="display:flex;gap:10px;align-items:baseline;cursor:pointer;font-family:ui-monospace,Menlo,monospace;font-size:12px" onClick="{{ e.toggle }}">
+                            <span style="width:9px;color:color-mix(in srgb,var(--color-text) 45%,transparent)">{{ e.caret }}</span>
+                            <span style="color:color-mix(in srgb,var(--color-text) 45%,transparent)">{{ e.ts }}</span>
+                            <span style="color:var(--color-accent-700)">{{ e.kind }}</span>
+                            <span style="flex:1"></span>
+                            <span style="color:color-mix(in srgb,var(--color-text) 45%,transparent)">{{ e.brief }}</span>
+                          </div>
+                          <sc-if value="{{ e.open }}" hint-placeholder-val="{{ false }}">
+                            <pre style="margin:6px 0 2px;padding:8px 10px;background:var(--color-surface);border:1px solid var(--color-divider);font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;overflow:auto;max-height:200px;color:color-mix(in srgb,var(--color-text) 78%,transparent)">{{ e.json }}</pre>
+                          </sc-if>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ n.spineClosed }}" hint-placeholder-val="{{ false }}">
+                    <p style="margin:5px 0 0;font-size:12.5px;color:color-mix(in srgb,var(--color-text) 50%,transparent)">{{ n.collapsedNote }}</p>
+                  </sc-if>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+    </section>
+    </sc-if>
+
+    <!-- ── 03 SUMMARY ───────────────────────────────────────────── -->
+    <sc-if value="{{ showSummary }}" hint-placeholder-val="{{ false }}">
+    <section data-screen-label="03 Summary" style="margin-bottom:20px">
+      <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:10px">
+        <h6 style="margin:0">03 — Job summary</h6>
+        <span style="flex:1;height:1px;background:var(--color-divider)"></span>
+        <span style="font-size:12px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">{{ sum.finishedNote }}</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;align-items:start">
+
+        <div class="blueprint" style="padding:0">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="padding:16px 18px;border-bottom:1px solid var(--color-divider);display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
+            <span style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:260px">
+              <span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-accent-700)">Pull request opened</span>
+              <span style="font-family:var(--font-heading);font-size:26px;line-height:1.12">{{ sum.pr.title }}</span>
+              <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">{{ sum.pr.base }} ← {{ sum.pr.head }}</span>
+            </span>
+            <span style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+              <span class="tag tag-accent">{{ sum.pr.state }}</span>
+              <a href="#" style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px">{{ sum.pr.number }} ↗</a>
+            </span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--color-divider)">
+            <sc-for list="{{ sum.pr.stats }}" as="st" hint-placeholder-count="4">
+              <span style="background:var(--color-bg);padding:12px 14px;display:flex;flex-direction:column;gap:2px">
+                <span style="{{ st.numStyle }}">{{ st.v }}</span>
+                <span style="font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 50%,transparent)">{{ st.k }}</span>
+              </span>
+            </sc-for>
+          </div>
+          <div style="padding:14px 18px;border-top:1px solid var(--color-divider)">
+            <span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Files changed</span>
+            <table class="table" style="margin-top:6px">
+              <tbody>
+                <sc-for list="{{ sum.pr.files }}" as="f" hint-placeholder-count="4">
+                  <tr>
+                    <td style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px">{{ f.path }}</td>
+                    <td style="width:90px;text-align:right;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--color-accent-700)">{{ f.add }}</td>
+                    <td style="width:70px;text-align:right;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">{{ f.del }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+          <div style="padding:14px 18px;border-top:1px solid var(--color-divider);display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <span style="font-size:12px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Reviewers requested</span>
+            <sc-for list="{{ sum.pr.reviewers }}" as="rv" hint-placeholder-count="2">
+              <span class="tag tag-neutral">{{ rv.name }} · {{ rv.state }}</span>
+            </sc-for>
+            <span style="flex:1"></span>
+            <button class="btn btn-secondary" type="button">Copy PR link</button>
+            <button class="btn btn-primary" type="button">Open in GitHub</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:18px">
+
+          <div class="blueprint" style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+            <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+              <a href="#" style="font-family:ui-monospace,Menlo,monospace;font-size:14px">{{ sum.jira.key }} ↗</a>
+              <span class="tag tag-accent">{{ sum.jira.status }}</span>
+              <span style="flex:1"></span>
+              <span style="font-size:11.5px;color:color-mix(in srgb,var(--color-text) 52%,transparent)">{{ sum.jira.meta }}</span>
+            </div>
+            <span style="font-family:var(--font-heading);font-size:18px;line-height:1.2">{{ sum.jira.title }}</span>
+            <div style="display:flex;flex-direction:column;gap:7px;border-top:1px solid var(--color-divider);padding-top:11px">
+              <span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Acceptance criteria — {{ sum.jira.passed }}</span>
+              <sc-for list="{{ sum.jira.criteria }}" as="c" hint-placeholder-count="4">
+                <span style="display:flex;gap:9px;align-items:flex-start;font-size:12.5px;line-height:1.5">
+                  <span style="width:14px;height:14px;margin-top:2px;flex:none;display:grid;place-items:center;font-size:10px;font-family:ui-monospace,monospace;{{ c.boxStyle }}">{{ c.mark }}</span>
+                  <span style="flex:1;font-family:{{ c.font }}">{{ c.text }}</span>
+                  <span class="tag tag-outline" style="flex:none">{{ c.type }}</span>
+                </span>
+              </sc-for>
+            </div>
+          </div>
+
+          <div class="blueprint" style="padding:16px 18px;display:flex;flex-direction:column;gap:10px">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+            <span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Run timeline — {{ sum.totalLabel }} wall clock</span>
+            <sc-for list="{{ sum.timeline }}" as="t" hint-placeholder-count="5">
+              <span style="display:grid;grid-template-columns:104px 1fr 58px;gap:10px;align-items:center;font-size:12px">
+                <span style="color:color-mix(in srgb,var(--color-text) 62%,transparent)">{{ t.label }}</span>
+                <span style="height:9px;background:color-mix(in srgb,var(--color-text) 7%,transparent);display:block">
+                  <span style="{{ t.barStyle }}"></span>
+                </span>
+                <span style="font-family:ui-monospace,Menlo,monospace;text-align:right;color:color-mix(in srgb,var(--color-text) 62%,transparent)">{{ t.dur }}</span>
+              </span>
+            </sc-for>
+          </div>
+
+          <div class="blueprint" style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+            <span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Cost &amp; tokens</span>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+              <sc-for list="{{ sum.cost }}" as="c" hint-placeholder-count="4">
+                <span style="display:flex;flex-direction:column;gap:1px">
+                  <span style="font-family:var(--font-heading);font-size:21px;line-height:1">{{ c.v }}</span>
+                  <span style="font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 50%,transparent)">{{ c.k }}</span>
+                </span>
+              </sc-for>
+            </div>
+            <p style="margin:0;padding-top:10px;border-top:1px solid var(--color-divider);font-size:11.5px;line-height:1.6;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Billed to the flow's budget envelope. The run stopped 41% under the ceiling set in Guardrails.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="blueprint" style="margin-top:18px;padding:16px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span style="font-family:var(--font-heading);font-size:19px">Handoff complete — waiting on human review</span>
+        <span style="font-size:12.5px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Close will run once the PR is merged and the manual criterion is signed off.</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-secondary" type="button">Download run bundle</button>
+        <button class="btn btn-secondary" type="button" onClick="{{ onRestart }}">Start another run</button>
+      </div>
+    </section>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;nodeTreatment&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;panels&quot;,&quot;rail&quot;,&quot;spine&quot;],&quot;default&quot;:&quot;rail&quot;,&quot;tsType&quot;:&quot;'panels'|'rail'|'spine'&quot;,&quot;section&quot;:&quot;Execution view&quot;},&quot;runSpeed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;min&quot;:0.5,&quot;max&quot;:6,&quot;step&quot;:0.5,&quot;default&quot;:1.5,&quot;tsType&quot;:&quot;number&quot;,&quot;unit&quot;:&quot;×&quot;,&quot;section&quot;:&quot;Simulation&quot;},&quot;simulateFailure&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Simulation&quot;}}">
+const PILL = {
+  idle:    ['color-mix(in srgb,var(--color-text) 8%,transparent)', 'color-mix(in srgb,var(--color-text) 55%,transparent)'],
+  queued:  ['color-mix(in srgb,var(--color-text) 8%,transparent)', 'color-mix(in srgb,var(--color-text) 62%,transparent)'],
+  running: ['var(--color-accent)', 'var(--color-bg)'],
+  passed:  ['var(--color-accent-100)', 'var(--color-accent-800)'],
+  failed:  ['var(--color-accent-900)', 'var(--color-bg)'],
+};
+
+const SPEC = [
+  { id:'intent_classifier', label:'Classify', role:'router · intent classification', events:[
+    ['node.queued', {queue:'flow.default', position:1, run_id:'run_8f31c2'}, 140],
+    ['node.started', {model:'claude-sonnet-4-5', prompt_tokens:1841}, 300],
+    ['flow.intake_validated', {kind:'bug', confidence:0.94, signals:['stack_trace','row_count_mismatch']}, 620],
+    ['node.completed', {duration_ms:1064, decision:'route → bug_intake'}, 340],
+  ]},
+  { id:'bug_intake', label:'Bug Intake', role:'normalises the request into a bug brief', events:[
+    ['node.started', {schema:'bug_brief.v3'}, 320],
+    ['node.progress', {step:'extract_component', value:'etl/customers/sync.yaml'}, 480],
+    ['node.progress', {step:'parse_criteria', shell:3, manual:1}, 420],
+    ['flow.bug_brief_validated', {severity:'S2', reproducible:true, blast_radius:'customers ETL only'}, 520],
+    ['node.completed', {duration_ms:1738}, 260],
+  ]},
+  { id:'research', label:'Research', role:'logs, duplicates, failing test', events:[
+    ['node.started', {tools:['cloudwatch','jira','repo_grep']}, 300],
+    ['node.progress', {step:'cloudwatch_query', log_group:'fluent-bit-cloudwatch', window_min:60, matches:37}, 700],
+    ['node.progress', {step:'jira_dedupe', query:'project=NAV AND summary~"customer sync"', hits:1, reuse:'NAV-8241'}, 560],
+    ['node.progress', {step:'locate_fault', file:'etl/customers/sync.yaml', line:118, note:'page cursor advanced before the final batch is flushed'}, 640],
+    ['node.completed', {duration_ms:2604, evidence_items:6}, 280],
+  ]},
+  { id:'development', label:'Development', role:'writes the patch, iterates on the loop', events:[
+    ['node.started', {branch:'agent/nav-8241-sync-last-row', base:'main'}, 300],
+    ['node.progress', {step:'edit', file:'etl/customers/sync.yaml', hunks:2}, 520],
+    ['node.progress', {step:'edit', file:'etl/customers/paginate.py', hunks:3}, 480],
+    ['node.progress', {step:'shell', cmd:'ruff check .', exit_code:0}, 460],
+    ['node.progress', {step:'shell', cmd:'pytest tests/etl/test_customers.py -v', exit_code:1, failed:1, note:'fixture still yields 1000 rows'}, 620],
+    ['node.progress', {step:'iteration', n:2, action:'widen the fixture to 1500 rows'}, 520],
+    ['node.progress', {step:'shell', cmd:'pytest tests/etl/test_customers.py -v', exit_code:0, passed:14}, 640],
+    ['node.completed', {duration_ms:4126, iterations:2, commits:3}, 300],
+  ]},
+  { id:'qa', label:'QA', role:'re-runs every acceptance criterion clean', events:[
+    ['node.started', {criteria:4, isolation:'fresh container'}, 300],
+    ['node.progress', {criterion:'task etl/customers/sync.yaml', kind:'shell', exit_code:0}, 520],
+    ['node.progress', {criterion:'ruff check .', kind:'shell', exit_code:0}, 400],
+    ['node.progress', {criterion:'pytest tests/etl/test_customers.py -v', kind:'shell', exit_code:0, passed:14}, 620],
+    ['node.progress', {criterion:'customer count equals 1500 after a 1500-row sync', kind:'manual', status:'attached_to_ticket'}, 420],
+    ['node.completed', {duration_ms:2792, shell_passed:3, manual_pending:1}, 300],
+  ]},
+  { id:'deployment_handoff', label:'Handoff', role:'opens the PR, updates the ticket', events:[
+    ['node.started', {}, 280],
+    ['flow.pr_opened', {number:'#482', url:'github.com/navio/data-platform/pull/482', head:'agent/nav-8241-sync-last-row', additions:314, deletions:96}, 560],
+    ['node.progress', {step:'jira_transition', key:'NAV-8241', from:'In Progress', to:'In Review'}, 440],
+    ['node.completed', {duration_ms:1584, reviewers:['m.okafor','j.tran']}, 280],
+  ]},
+  { id:'close', label:'Close', role:'waits for merge, then closes the loop', events:[
+    ['flow.node_started', {waiting_on:['pr_merge','manual_signoff']}, 300],
+    ['flow.completed', {status:'awaiting_review', total_ms:14790}, 480],
+  ]},
+];
+
+const FAIL_QA = { id:'qa', label:'QA', role:'re-runs every acceptance criterion clean', events:[
+  ['node.started', {criteria:4, isolation:'fresh container'}, 300],
+  ['node.progress', {criterion:'ruff check .', kind:'shell', exit_code:0}, 460],
+  ['node.progress', {criterion:'pytest tests/etl/test_customers.py -v', kind:'shell', exit_code:1, failed:2, note:'regression in the 250-row fast path'}, 680],
+  ['node.failed', {reason:'acceptance_criteria_failed', failed:['pytest tests/etl/test_customers.py -v'], retries_left:0}, 340],
+]};
+
+const FAIL_HANDLER = { id:'failure_handler', label:'Failure Handler', role:'on_error fan-in — parks the run for a human', events:[
+  ['flow.node_started', {trigger:'qa.node_failed'}, 280],
+  ['node.progress', {step:'jira_comment', key:'NAV-8241', body:'QA failed on iteration 2 — see run_8f31c2'}, 460],
+  ['node.progress', {step:'pr_draft', number:'#482', state:'converted to draft'}, 380],
+  ['flow.completed', {status:'failed', total_ms:11240}, 320],
+]};
+
+const TABS = [
+  { id:'criteria', label:'Acceptance criteria',
+    note:'Lines starting with task, flowtask, pytest, ruff, mypy or pylint run as shell criteria — exit code 0 passes. Every other line becomes a manual criterion, attached to the ticket for a human to sign off. Mix freely.',
+    fields:[
+      { label:'One criterion per line', kind:'area', span:'1 / -1',
+        value:'task etl/customers/sync.yaml\nruff check .\npytest tests/etl/test_customers.py -v\nThe customer count must equal 1500 after a sync of a 1500-row CSV' },
+      { label:'Fail the run on a manual criterion', kind:'select', name:'af-manual-fail',
+        options:['Never — attach and continue','Always'], hint:'Manual criteria cannot be machine-verified, so the default is to hand them off.' },
+      { label:'Max development iterations before QA', kind:'text', value:'3',
+        hint:'Each iteration is an edit-plus-test cycle inside the Development node.' },
+    ]},
+  { id:'context', label:'Context & scope',
+    note:'Narrows what the agent may read and write. Leave the component blank and Research will locate the fault itself, which costs one extra tool round-trip.',
+    fields:[
+      { label:'Affected component', kind:'text', value:'etl/customers/sync.yaml', hint:'Path, DAG or service name. Research starts here.' },
+      { label:'Repository', kind:'text', value:'navio/data-platform' },
+      { label:'Base branch', kind:'text', value:'main' },
+      { label:'Branch name', kind:'text', value:'agent/{issue-key}-{slug}', hint:'Placeholders are filled once the ticket key is known.' },
+      { label:'Paths the agent may edit', kind:'text', span:'1 / -1', value:'etl/**, tests/etl/**', hint:'Anything outside this glob is read-only for the run.' },
+    ]},
+  { id:'observability', label:'Observability',
+    note:'Research queries these logs before it reads any code, so a tight window keeps the evidence relevant and the token bill down.',
+    fields:[
+      { label:'CloudWatch log group', kind:'text', value:'', placeholder:'fluent-bit-cloudwatch (default)' },
+      { label:'Window (minutes)', kind:'text', value:'60', hint:'1 – 1440. Counted back from dispatch.' },
+      { label:'Extra log filter', kind:'text', span:'1 / -1', value:'', placeholder:'e.g. { $.component = "customers" }' },
+      { label:'Attach raw log excerpts to the ticket', kind:'select', name:'af-logs', options:['On failure only','Always'] },
+    ]},
+  { id:'jira', label:'Jira & ticketing',
+    note:'Leave the issue key blank and Research auto-detects duplicates — open tickets in the project with the same summary. Set it to force re-use, and Research appends a re-triggered comment instead of opening a new ticket.',
+    fields:[
+      { label:'Existing issue key', kind:'text', value:'', placeholder:'NAV-8241 — blank to auto-detect or create' },
+      { label:'Project', kind:'text', value:'NAV' },
+      { label:'Labels', kind:'text', value:'agent-flow, etl, regression' },
+      { label:'Transition on handoff', kind:'text', value:'In Review' },
+    ]},
+  { id:'model', label:'Model & agent',
+    note:'Development and QA can run on different models — a stronger model for the patch, a cheaper one for re-running criteria.',
+    fields:[
+      { label:'Development model', kind:'text', value:'claude-sonnet-4-5' },
+      { label:'QA model', kind:'text', value:'claude-haiku-4-5' },
+      { label:'Temperature', kind:'text', value:'0.2', hint:'Low values keep patches conservative and diffs small.' },
+      { label:'Max tokens per node', kind:'text', value:'64000' },
+      { label:'Replay tool calls in the event stream', kind:'select', name:'af-replay', options:['Yes','Summaries only'], span:'1 / -1' },
+    ]},
+  { id:'guardrails', label:'Guardrails',
+    note:'Hard stops. When any ceiling is hit the run routes to the Failure Handler, which parks the work and comments on the ticket rather than pushing a half-finished patch.',
+    fields:[
+      { label:'Max run cost (USD)', kind:'text', value:'8.00' },
+      { label:'Wall-clock timeout (min)', kind:'text', value:'45' },
+      { label:'Human approval before the PR opens', kind:'select', name:'af-approve', options:['Not required','Required'] },
+      { label:'Allow force-push to the agent branch', kind:'select', name:'af-force', options:['No','Yes'] },
+      { label:'On guardrail breach', kind:'text', span:'1 / -1', value:'route → failure_handler', hint:'Fan-in node; the PR is converted to a draft and the ticket gets a comment.' },
+    ]},
+];
+
+class Component extends DCLogic {
+  state = { phase:'idle', clock:0, open:{}, tab:'criteria', advOpen:true, kind:'Bug',
+            treatment:null, sel:'development', requestOpen:null, vals:{},
+            prompt:'Customer sync drops the last row on payloads over 1000 records. Started after the pagination change in release 2.14. Reproduce with a 1500-row CSV: the destination table ends at 1499 rows.',
+            summary:'Customer sync drops the last row on payloads over 1000 records' };
+
+  setVal(key, v) { this.setState(s => ({ vals: { ...s.vals, [key]: v } })); }
+
+  componentWillUnmount() { clearInterval(this.timer); }
+
+  specs() {
+    const fail = !!this.props.simulateFailure;
+    if (!fail) return SPEC;
+    return [SPEC[0], SPEC[1], SPEC[2], SPEC[3], FAIL_QA, FAIL_HANDLER];
+  }
+
+  buildSchedule() {
+    const rows = []; let t = 300;
+    for (const n of this.specs()) {
+      const items = [];
+      for (const [kind, payload, gap] of n.events) { t += gap; items.push({ kind, payload, t }); }
+      rows.push({ ...n, items, startT: items[0].t, endT: items[items.length - 1].t });
+      t += 200;
+    }
+    this.endT = t;
+    return rows;
+  }
+
+  start() {
+    clearInterval(this.timer);
+    this.schedule = this.buildSchedule();
+    this.setState({ phase:'running', clock:0, open:{}, requestOpen:false, sel:this.props.simulateFailure ? 'qa' : 'development' });
+    const speed = Number(this.props.runSpeed) || 1;
+    this.timer = setInterval(() => {
+      this.setState(s => {
+        const clock = s.clock + 120 * speed;
+        if (clock > this.endT + 400) { clearInterval(this.timer); return { clock, phase:'done' }; }
+        return { clock };
+      });
+    }, 120);
+  }
+
+  fmt(ms) { const s = ms / 1000; return (s < 10 ? s.toFixed(2) : s.toFixed(1)) + 's'; }
+  wall(ms) {
+    const base = 9 * 3600e3 + 41 * 60e3 + 8000;
+    const d = new Date(base + ms);
+    return d.toISOString().substr(11, 8) + '.' + String(Math.floor(ms % 1000 / 100));
+  }
+
+  brief(kind, p) {
+    if (p.decision) return p.decision;
+    if (p.cmd) return p.cmd + ' → exit ' + p.exit_code;
+    if (p.criterion) return (p.kind === 'manual' ? 'manual · ' : '') + p.criterion.slice(0, 44);
+    if (p.step) return String(p.step);
+    if (p.number) return p.number;
+    if (p.duration_ms) return this.fmt(p.duration_ms);
+    if (p.status) return p.status;
+    if (p.confidence) return 'confidence ' + p.confidence;
+    if (p.severity) return p.severity + ' · ' + (p.reproducible ? 'reproducible' : 'not reproducible');
+    if (p.reason) return p.reason;
+    return '';
+  }
+
+  statusOf(n, clock) {
+    if (clock < n.startT) return 'idle';
+    const shown = n.items.filter(i => i.t <= clock);
+    const last = shown[shown.length - 1];
+    const k = last.kind;
+    if (k.endsWith('.failed')) return 'failed';
+    if (k === 'flow.completed') return this.props.simulateFailure ? 'failed' : 'passed';
+    if (k.endsWith('.completed')) return 'passed';
+    if (k.endsWith('.queued')) return 'queued';
+    return 'running';
+  }
+
+  renderVals() {
+    const st = this.state;
+    const treatment = st.treatment ?? (this.props.nodeTreatment || 'panels');
+    const running = st.phase !== 'idle';
+    if (running && !this.schedule) this.schedule = this.buildSchedule();
+    const clock = st.clock;
+
+    const nodes = (running ? this.schedule : []).map((n, i) => {
+      const status = this.statusOf(n, clock);
+      const shown = n.items.filter(it => it.t <= clock);
+      const elapsedMs = status === 'idle' ? 0
+        : Math.min(clock, n.endT) - n.startT;
+      const selected = st.sel === n.id;
+      const events = shown.slice().reverse().map((it, j) => {
+        const key = n.id + ':' + (shown.length - 1 - j);
+        return {
+          ts: this.wall(it.t), kind: it.kind, brief: this.brief(it.kind, it.payload),
+          json: JSON.stringify(it.payload, null, 2),
+          open: !!st.open[key], caret: st.open[key] ? '▾' : '▸',
+          toggle: () => this.setState(s => ({ open: { ...s.open, [key]: !s.open[key] } })),
+        };
+      });
+      const pc = PILL[status];
+      const live = status === 'running';
+      return {
+        id: n.id, label: n.label, role: n.role, num: String(i + 1).padStart(2, '0'),
+        status, statusLabel: status, events, eventCount: shown.length,
+        hasEvents: shown.length > 0, isIdle: shown.length === 0,
+        elapsed: status === 'idle' ? '—' : this.fmt(elapsedMs),
+        clockLabel: status === 'idle' ? '—' : this.wall(n.startT),
+        pillStyle: 'display:inline-flex;align-items:center;padding:2px 9px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;background:' + pc[0] + ';color:' + pc[1] + (live ? ';animation:afpulse 1.4s ease-in-out infinite' : ''),
+        dotStyle: 'display:block;background:' + (status === 'idle' ? 'color-mix(in srgb,var(--color-text) 18%,transparent)' : status === 'failed' ? 'var(--color-accent-900)' : status === 'passed' ? 'var(--color-accent)' : 'var(--color-accent)') + (live ? ';animation:afpulse 1.2s ease-in-out infinite' : ''),
+        panelStyle: 'padding:0;background:' + (live ? 'color-mix(in srgb,var(--color-accent) 6%,transparent)' : 'transparent') + ';border-color:' + (live ? 'var(--color-accent)' : 'var(--color-divider)'),
+        railStyle: 'background:' + (selected ? 'color-mix(in srgb,var(--color-accent) 12%,transparent)' : 'var(--color-bg)') + ';padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer',
+        spineOpen: live || status === 'failed' || selected,
+        spineClosed: !(live || status === 'failed' || selected) && shown.length > 0,
+        collapsedNote: shown.length + ' events · ' + (status === 'idle' ? 'not dispatched' : 'finished in ' + this.fmt(elapsedMs)) + ' — click the title to expand',
+        select: () => this.setState({ sel: n.id }),
+      };
+    });
+
+    const selNode = nodes.find(n => n.id === st.sel) || nodes[0] || { label:'—', events:[], statusLabel:'idle', elapsed:'—', role:'', isIdle:true, pillStyle:'font-size:11px' };
+    const done = st.phase === 'done';
+    const finished = nodes.filter(n => n.status === 'passed' || n.status === 'failed').length;
+
+    const tab = TABS.find(t => t.id === st.tab) || TABS[0];
+    const durs = (this.schedule || []).map(n => ({ label: n.label, ms: n.endT - n.startT }));
+    const maxDur = Math.max(1, ...durs.map(d => d.ms));
+    const totalMs = this.schedule ? this.schedule[this.schedule.length - 1].endT - this.schedule[0].startT : 0;
+    const failed = !!this.props.simulateFailure;
+
+    return {
+      runLabel: running ? 'run_id = run_8f31c2' : 'no run yet',
+      connLabel: st.phase === 'running' ? 'streaming' : done ? 'stream closed' : 'idle',
+      submitLabel: running ? 'Re-dispatch run' : 'Dispatch run',
+      steps: [
+        { num:'01', title:'Request', state: running ? 'submitted' : 'awaiting input' },
+        { num:'02', title:'Execution', state: !running ? 'locked' : done ? finished + ' of ' + nodes.length + ' nodes finished' : 'streaming — ' + finished + ' of ' + nodes.length },
+        { num:'03', title:'Job summary', state: done ? (failed ? 'run parked — needs a human' : 'PR #482 open, awaiting review') : 'locked' },
+      ],
+      requestOpen: st.requestOpen ?? true,
+      requestCollapsed: !(st.requestOpen ?? true),
+      form: { kind: st.kind, summary: st.summary, affected: 'etl/customers/sync.yaml', prompt: st.prompt },
+      criteriaCount: 4,
+      kinds: ['Bug','Enhancement','New Feature'].map(k => ({ label:k, checked: st.kind === k, select: () => this.setState({ kind:k }) })),
+      readyRows: [
+        { k:'repository', v:'navio/data-platform' },
+        { k:'model', v:'sonnet-4-5' },
+        { k:'criteria', v:'3 shell · 1 manual' },
+        { k:'cost ceiling', v:'$8.00' },
+      ],
+      advOpen: st.advOpen, advCaret: st.advOpen ? '▾' : '▸',
+      advBadge: '6 groups · 4 changed',
+      onToggleAdv: () => this.setState(s => ({ advOpen: !s.advOpen })),
+      tabs: TABS.map(t => ({
+        label: t.label, select: () => this.setState({ tab: t.id }),
+        style: 'border:0;border-bottom:2px solid ' + (t.id === st.tab ? 'var(--color-accent)' : 'transparent')
+          + ';border-radius:0;padding:8px 13px;font-size:13.5px;background:transparent;color:'
+          + (t.id === st.tab ? 'var(--color-text)' : 'color-mix(in srgb,var(--color-text) 55%,transparent)'),
+      })),
+      tabNote: tab.note,
+      tabFields: tab.fields.map(f => {
+        const key = tab.id + '|' + f.label;
+        return {
+          label: f.label, value: st.vals[key] ?? f.value ?? '', placeholder: f.placeholder, hint: f.hint,
+          span: f.span || 'auto', name: f.name,
+          isArea: f.kind === 'area', isText: f.kind === 'text', isSelect: f.kind === 'select',
+          options: (f.options || []).map((o, i) => ({ label:o, checked: (st.vals[key] ?? f.options[0]) === o })),
+          onInput: e => this.setVal(key, e.target.value),
+          onPick: () => {},
+          pickers: (f.options || []).map(o => ({ label:o, checked: (st.vals[key] ?? f.options[0]) === o, select: () => this.setVal(key, o) })),
+        };
+      }),
+      onPrompt: e => this.setState({ prompt: e.target.value }),
+      onSummary: e => this.setState({ summary: e.target.value }),
+      onSubmit: () => this.start(),
+      onRestart: () => { clearInterval(this.timer); this.schedule = null; this.setState({ phase:'idle', clock:0, open:{}, requestOpen:true }); },
+      onEditRequest: () => this.setState({ requestOpen:true }),
+
+      showExec: running,
+      execProgress: st.phase === 'running' ? 'streaming ' + this.wall(clock) + ' · ' + nodes.reduce((a, n) => a + n.eventCount, 0) + ' envelopes' : 'stream closed · ' + nodes.reduce((a, n) => a + n.eventCount, 0) + ' envelopes',
+      treatments: [
+        { label:'Panels', checked: treatment === 'panels', select: () => this.setState({ treatment:'panels' }) },
+        { label:'Focus rail', checked: treatment === 'rail', select: () => this.setState({ treatment:'rail' }) },
+        { label:'Spine', checked: treatment === 'spine', select: () => this.setState({ treatment:'spine' }) },
+      ],
+      isPanels: treatment === 'panels', isRail: treatment === 'rail', isSpine: treatment === 'spine',
+      nodes, selNode,
+
+      showSummary: done,
+      sum: {
+        finishedNote: failed ? 'run parked by the Failure Handler' : 'handed off ' + this.wall(this.endT || 0),
+        totalLabel: this.fmt(totalMs),
+        pr: {
+          title: failed ? 'DRAFT — fix: flush the final page in the customer sync' : 'fix: flush the final page in the customer sync',
+          base:'main', head:'agent/nav-8241-sync-last-row', number:'#482',
+          state: failed ? 'Draft — QA failed' : 'Open · awaiting review',
+          stats: [
+            { k:'additions', v:'+314', color:'var(--color-accent-700)' },
+            { k:'deletions', v:'−96', color:'var(--color-text)' },
+            { k:'files', v:'4', color:'var(--color-text)' },
+            { k:'commits', v:'3', color:'var(--color-text)' },
+          ].map(s => ({ ...s, numStyle:'font-family:var(--font-heading);font-size:22px;line-height:1;color:' + s.color })),
+          files: [
+            { path:'etl/customers/sync.yaml', add:'+38', del:'−12' },
+            { path:'etl/customers/paginate.py', add:'+121', del:'−64' },
+            { path:'tests/etl/test_customers.py', add:'+142', del:'−18' },
+            { path:'tests/fixtures/customers_1500.csv', add:'+13', del:'−2' },
+          ],
+          reviewers: [
+            { name:'m.okafor', state:'requested' },
+            { name:'j.tran', state:'requested' },
+            { name:'codeowners/etl', state:'auto' },
+          ],
+        },
+        jira: {
+          key:'NAV-8241', status: failed ? 'In Progress' : 'In Review',
+          meta:'re-used · comment appended',
+          title:'Customer sync drops the last row on payloads over 1000 records',
+          passed: failed ? '2 of 4 passing' : '3 shell passed · 1 manual pending',
+          criteria: [
+            { text:'task etl/customers/sync.yaml', type:'shell', ok:true },
+            { text:'ruff check .', type:'shell', ok:true },
+            { text:'pytest tests/etl/test_customers.py -v', type:'shell', ok: !failed },
+            { text:'The customer count must equal 1500 after a sync of a 1500-row CSV', type:'manual', ok:null },
+          ].map(c => ({
+            text: c.text, type: c.type, font: c.type === 'shell' ? 'ui-monospace,Menlo,monospace' : 'var(--font-body)',
+            mark: c.ok === true ? '✓' : c.ok === false ? '✕' : '·',
+            boxStyle: 'border:1px solid ' + (c.ok === true ? 'var(--color-accent)' : c.ok === false ? 'var(--color-accent-900)' : 'var(--color-divider)')
+              + ';background:' + (c.ok === true ? 'var(--color-accent)' : c.ok === false ? 'var(--color-accent-900)' : 'transparent')
+              + ';color:' + (c.ok === null ? 'color-mix(in srgb,var(--color-text) 50%,transparent)' : 'var(--color-bg)'),
+          })),
+        },
+        timeline: durs.map(d => ({ label: d.label, dur: this.fmt(d.ms), barStyle:'display:block;height:9px;background:var(--color-accent);width:' + Math.round(d.ms / maxDur * 100) + '%' })),
+        cost: [
+          { k:'total cost', v: failed ? '$3.12' : '$4.71' },
+          { k:'input tokens', v:'412k' },
+          { k:'output tokens', v:'58.3k' },
+          { k:'tool calls', v: failed ? '31' : '47' },
+        ],
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>
