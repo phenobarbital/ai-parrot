@@ -32,7 +32,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Freezes the control protocol every later task builds on; per spec Worktree Strategy the feature runs sequentially in one worktree.",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1940-repl-worker-protocol-entrypoint.md"
+      "completed_at": "2026-07-27T20:18:42+00:00",
+      "file": "sdd/tasks/completed/TASK-1940-repl-worker-protocol-entrypoint.md"
     },
     {
       "id": "TASK-1941",

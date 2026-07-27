@@ -283,10 +283,67 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
 **Notes**:
+- `protocol.py`: implemented every spec-frozen model (`ExecRequest`,
+  `ExecResult`, `NamespaceLossError`, `WorkerConfig`) verbatim, plus request/
+  response models for the remaining ops table entries (`InjectDfRequest`,
+  `GetVarRequest`/`ValueResponse`, `SetVarRequest`/`OkResponse`,
+  `ListNsRequest`/`ListNsResponse`, `SnapshotRequest`/`SnapshotResponse`,
+  `ResetRequest`, `PingRequest`/`PongResponse`, `ErrorResponse`). Framing is
+  a 4-byte big-endian length prefix + JSON payload as scoped
+  (`write_frame`/`read_frame`), dispatched by the `op` discriminator.
+  `encode_value`/`decode_value` give `get_var`/`set_var`/`snapshot` a
+  pickle+base64 fallback for non-JSON-native values (DataFrames etc.) —
+  full Arrow IPC transport stays TASK-1945 as scoped.
+- `worker.py`: `apply_rlimits()` applies AS/CPU/NOFILE/CORE=0 via `resource`
+  in `main()`, before `WorkerNamespace` (and therefore pandas/numpy/
+  matplotlib) is ever imported; skips with a visible `logger.warning` when
+  `resource` is unavailable (AC16). **Design choice**: rather than
+  hand-copying `_execute_code()`/`_describe_new_var()` bodies into this
+  module (risking behavioural drift the task explicitly calls a bug),
+  `WorkerNamespace` imports and instantiates the real `PythonREPLTool` and
+  calls its actual `_execute_code()`/`_is_error_output()` — this guarantees
+  byte-identical behaviour (G5) and, as a side effect, fixes the
+  `_bootstrapped` class-variable bug (AC14) for free: each worker is a
+  fresh interpreter, so the class variable starts `False` in every worker
+  regardless, no code change to `pythonrepl.py` needed. `save_current_plot`
+  is recreated by that same instantiation pointed at the shared
+  `output_dir` argument, per spec.
+- All 31 new tests pass
+  (`pytest packages/ai-parrot/tests/repl_worker/ -v`); `ruff check` on
+  `repl_worker/` is clean.
 
-**Deviations from spec**: none
+**Deviations from spec / notable findings**:
+1. **Control channel is a dedicated pipe, not stdin/stdout.** Testing
+   revealed this framework's `navconfig`-based logging attaches a
+   colorized `StreamHandler` to **stdout** for every logger — including
+   `self.logger.debug/info(...)` calls made during `PythonREPLTool`
+   bootstrap — which silently corrupted a stdin/stdout-framed binary
+   protocol (verified: a bare `PythonREPLTool(...)` instantiation writes
+   ANSI-colored log lines to real stdout). The spec's own wording is
+   "pipe dedicado" (**a dedicated pipe**), not stdin/stdout, so `main()`'s
+   CLI contract takes explicit `<control_read_fd> <control_write_fd>` and
+   `serve()` is channel-agnostic (`in_stream`/`out_stream` params) — the
+   parent (`WorkerHandle`, TASK-1941) is expected to create two
+   `os.pipe()` pairs and pass the child's ends via
+   `subprocess.Popen(pass_fds=...)`. stdin/stdout/stderr are left free for
+   incidental library output.
+2. `test_worker_rlimits_applied`'s scaffold suggested proving rlimits via
+   sandboxed `exec` code (`import resource; resource.getrlimit(...)`), but
+   `resource` is not on the (unmodified, out-of-scope) allowlist — any
+   `import resource` sent through the gate is denied under
+   `default_deny=True`. Verified instead via a standalone helper script
+   that calls `apply_rlimits()` directly and reports back
+   `resource.getrlimit(...)`, independent of the sandbox gate.
+3. `worker_config`'s illustrative `rlimit_as_bytes=512 * 1024**2` (spec
+   Test Data / Fixtures) is too small for a REAL worker process that
+   imports pandas/numpy/matplotlib — `numpy.random`'s compiled extensions
+   fail to `mmap` under `RLIMIT_AS` at 512 MiB *or* 1 GiB. This is exactly
+   the calibration risk the spec flags in Known Risks/Gotchas ("RLIMIT_AS
+   mal calibrado") and the reason Module 8 (TASK not yet in this batch's
+   dependency slice) exists as a dedicated empirical-calibration task.
+   Tests that spawn the real worker use a separate `real_worker_config`
+   fixture at the spec's *default* (~4 GiB); tests that only need
+   `apply_rlimits()` in isolation keep the low-limit fixture.
