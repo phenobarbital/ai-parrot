@@ -221,10 +221,10 @@
       "feature_id": "FEAT-378",
       "feature": "devloop-enhancement",
       "spec": "sdd/specs/devloop-enhancement.spec.md",
-      "status": "pending",
+      "status": "done",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-07-27T11:14:32+00:00",
+      "completed_at": "2026-07-27T11:14:32+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -232,7 +232,7 @@
       ],
       "parallel": false,
       "parallelism_notes": "New pure module run_bundle.py; needs 1927's DispatchState telemetry fields.",
-      "file": "sdd/tasks/active/TASK-1928-run-bundle-model-renderer.md"
+      "file": "sdd/tasks/completed/TASK-1928-run-bundle-model-renderer.md"
     },
     {
       "id": "TASK-1929",
