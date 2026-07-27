@@ -72,7 +72,7 @@
       "feature_id": "FEAT-380",
       "feature": "tool-result-compression",
       "spec": "sdd/specs/tool-result-compression.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Owns budget.py exclusively (spec Module 5, worktree B). Consumed by TASK-1951 and TASK-1954 but shares no file with either; must be complete before the stage can route.",
       "assigned_to": null,
       "started_at": "2026-07-27T17:11:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1950-latency-budget-circuit-breaker.md"
+      "completed_at": "2026-07-27T19:32:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1950-latency-budget-circuit-breaker.md"
     },
     {
       "id": "TASK-1951",

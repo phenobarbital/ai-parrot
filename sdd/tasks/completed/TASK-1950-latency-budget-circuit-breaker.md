@@ -282,10 +282,24 @@ class TestCircuitBreaker:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-27
+**Notes**: Implemented `budget.py`: `Route` enum, `estimate_size()` (cheap
+sample-first-row-and-multiply heuristic, never fully walks a large list),
+`is_rust_available()` (cached `lazy_import("parrot_codec")` detection,
+absence logged once at debug), `CircuitBreaker` (per-codec rolling window
+of 100 calls OR 60s, whichever first; 3 consecutive over-budget windows
+opens the breaker; half-open single-probe re-arm after a 5-minute
+cooldown; `threading.Lock`-guarded state; rolling p99 exposed for
+TASK-1957), and `BudgetRouter` wrapping both with all spec-default,
+overridable thresholds. Added a time-based `_expire_if_stale` path (called
+from both `is_open()` and `record()`) so a window can close purely on
+elapsed time with zero calls without advancing the consecutive-over-budget
+count, matching the "empty window" constraint. Exported `Route` and
+`BudgetRouter` from `compression/__init__.py`. 29 new tests pass (routing
+table, no-rust passthrough, breaker degrade/rearm/reopen, per-codec
+isolation, empty-window handling, p99 exposure, size estimation without
+full serialization); every test runs with the Rust extension absent. Full
+compression suite: 47/47 green. `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
