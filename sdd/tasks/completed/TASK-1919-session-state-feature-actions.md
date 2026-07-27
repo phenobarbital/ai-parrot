@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-378 — DevLoop Enhancement — Feature-Mode Topology
 **Spec**: `sdd/specs/devloop-enhancement.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-07-27
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1918
@@ -139,10 +141,26 @@ def test_new_node_ids_valid(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
+**Notes**: `NodeId` extended with `planner`, `synthesis`, `feedback_router`,
+`feature_handoff`. Added `JudgeVerdict`, `FeedbackDecisionRecord`,
+`DocsArtifact` state-fragment models plus corresponding
+`judge_verdicts: Dict[str, List[JudgeVerdict]]` (keyed by QA round),
+`feedback_decisions: List[...]`, `docs_artifacts: List[...]` fields on
+`DevLoopSessionState`. Added `JudgeVerdictRecorded`,
+`FeedbackDecisionRecorded`, `DocsArtifactLinked` actions to the
+`DevLoopAction` discriminated union + pure `reduce()` branches
+(append/accumulate, all as `model_copy` — no mutation). Confirmed
+FEAT-377's `QaAttemptRecorded` had NOT landed on `dev` as of this task, so
+`qa_attempt` is carried only in `FeedbackDecisionRecorded`'s own payload,
+per the task's contingency note. Updated the pre-existing discriminator
+exhaustiveness test (`test_action_union_schema_has_discriminator`,
+20 → 23 mapping entries) in the same commit. All 6 new unit tests plus the
+full pre-existing session-state suite (75 tests) pass; `ruff check` clean.
+Noted (not fixed, pre-existing/out-of-scope): `test_lazy_import.py::
+test_models_module_is_pure` fails only under full-suite test-order
+pollution — reproduced identically on the pre-TASK-1919 tree, so it is
+unrelated to this task's changes.
 
 **Deviations from spec**: none

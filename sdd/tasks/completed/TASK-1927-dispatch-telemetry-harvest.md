@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-378 — DevLoop Enhancement — Feature-Mode Topology
 **Spec**: `sdd/specs/devloop-enhancement.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-07-27
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1919
@@ -150,10 +152,36 @@ def test_payloadless_completed_unchanged(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
+**Notes**: Added `ClaudeCodeDispatcher._extract_result_usage` (staticmethod,
+mirrors `_extract_result_error`'s reverse-scan + getattr pattern) and wired
+it into ONLY the Claude Code success-path `dispatch.completed` publish
+(dispatcher.py, inside `ClaudeCodeDispatcher`) — the other dispatcher
+families (Codex/Gemini/LLM/Grok/Zai/Moonshot) were left untouched per
+scope ("attach whatever subset they have, or nothing; do NOT invent
+values"). Confirmed the real SDK's `ResultMessage` dataclass shape
+(`usage: dict[str, Any] | None`, `total_cost_usd`, `num_turns`,
+`duration_ms`) via `inspect.getsource(claude_agent_sdk.ResultMessage)`;
+`_extract_result_usage` still supports both dict- and object-shaped
+`usage` per the task's instruction (defensive/future-proof, and matches
+the pattern of the new unit tests). Extended `DispatchState` and
+`DispatchCompleted` with the 7 optional telemetry fields (all
+default `None`), folded them in the `dispatch/completed` reducer branch,
+and extended `action_from_dispatch_event`'s usage-payload extraction with
+int/float coercion, ignoring unknown keys.
 
-**Completed by**:
-**Date**:
-**Notes**:
+This task also re-synced session_state.py/dispatcher.py's Codebase
+Contract line anchors, which had shifted after this worktree merged in
+`dev` (FEAT-377's bounded QA-repair-loop + the FEAT-378 spec's v0.2
+run-bundle amendment landed in the same merge, immediately prior to this
+task) — anchors in the task file were stale but the actual classes/
+signatures listed were all still accurate; only the line numbers moved.
+
+Tests: 8 new tests in `test_dispatch_telemetry.py`, all passing. Existing
+`test_dispatcher.py`, `test_session_state.py`, `test_session_state_properties.py`,
+`test_codex_dispatcher.py`, `test_gemini_dispatcher.py`,
+`test_llm_code_dispatcher.py` (107 tests) stay green. `ruff check` clean
+on both modified modules.
 
 **Deviations from spec**: none

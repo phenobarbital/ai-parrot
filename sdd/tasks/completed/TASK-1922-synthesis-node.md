@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-378 — DevLoop Enhancement — Feature-Mode Topology
 **Spec**: `sdd/specs/devloop-enhancement.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-07-27
+**Verification**: verified
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1918, TASK-1919
@@ -136,10 +138,28 @@ async def test_report_published_to_shared_state(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
+**Notes**: `SynthesisNode` implemented in `nodes/synthesis.py`, registered
+as `"dev_loop.synthesis"` (node id `"synthesis"`). No dedicated subagent
+prompt file — used `ClaudeCodeDispatchProfile(subagent=None,
+system_prompt_override=...)`, the documented inline-session fallback
+(models.py's own docstring), since the task explicitly allowed this
+choice for a brief this narrowly scoped; documented the decision in the
+module docstring. Reads `shared["research_output"]` for the integrated
+worktree path (the key every existing dev-loop node — including the
+unmodified `DevelopmentNode` — keys off; TASK-1925's topology bridge is
+expected to populate/alias it for the feature-mode path too, since
+`DevelopmentOutput` itself carries no `worktree_path`) and
+`shared["development_output"]`; writes `shared["synthesis_report"]`
+**before** raising on `consistent=False` so `failure_handler` gets the
+diagnostic. Dispatch failures (`DispatchExecutionError`/
+`DispatchOutputValidationError`) are intentionally left unhandled —
+they propagate straight to the `on_error` edge (TASK-1925), matching the
+"dispatch/parse failure → raise" acceptance criterion; nothing here
+degrades a synthesis failure to a passing result. All 4 unit tests pass;
+full dev_loop suite green except the pre-existing, unrelated
+`test_models_module_is_pure` test-order flake (reproduced identically
+before this task's changes).
 
 **Deviations from spec**: none

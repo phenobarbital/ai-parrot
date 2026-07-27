@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-378 — DevLoop Enhancement — Feature-Mode Topology
 **Spec**: `sdd/specs/devloop-enhancement.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-07-27
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1921, TASK-1922, TASK-1923, TASK-1924
@@ -187,10 +189,86 @@ async def test_feature_flow_feedback_retry(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
+**Notes**: Confirmed FEAT-377 (retry edge/attempt counter, definition.py/
+flow.py/session_state.py conflicts) still NOT on `dev` — no landed
+mechanism to compose with; wired the topology WITHOUT the retry edge
+per the documented degradation.
 
-**Completed by**:
-**Date**:
-**Notes**:
+`definition.py`: extended `build_dev_loop_definition(*, revision=False,
+feature=False)` — a second boolean flag mirroring the existing
+`revision` precedent exactly (chosen over a `mode` enum specifically so
+the bug/revision bodies gained ONLY a new early-return branch, nothing
+inside them changed — verified via `test_bug_topology_unchanged`, a
+literal node+edge snapshot of the pre-FEAT-378 bug/revision graphs).
+`_build_feature_definition()` adds the 9-node/16-edge feature graph
+(spec §2 diagram) with `_CEL_IS_FEATURE`/`_CEL_FEEDBACK_ESCALATE`/
+`_CEL_FEEDBACK_ACCEPT` predicates; a `_CEL_FEEDBACK_RETRY`-shaped edge is
+deliberately NOT defined (documented inline: `FeedbackRouterNode.
+_retry_allowed()` unconditionally returns `False` today, so it would be
+permanently dead code).
 
-**Deviations from spec**: none
+`flow.py`: added `_is_feature`/`_feedback_escalate`/`_feedback_accept`
+Python predicate callables alongside the existing `_is_bug`/`_qa_passed`
+family (same module, same un-exported convention).
+
+`factories.py`: +4 factories (`dev_loop.planner`/`synthesis`/
+`feedback_router`/`feature_handoff`) plus a new `wiki_toolkit` passthrough
+param for `feature_handoff_factory`.
+
+`runner.py`: `build_dev_loop_feature_flow()` mirrors
+`build_dev_loop_revision_flow` verbatim (declarative-materialize-then-
+explicit-wire pattern); `DevLoopRunner.run()` now accepts `Union[WorkBrief,
+FeatureBrief]` and dispatches a `FeatureBrief` to a new `_run_feature()`
+method (mirrors `run_revision`'s lazy-build-and-reuse `_feature_flow`
+lifecycle) — the `WorkBrief` body is byte-unchanged, only wrapped by an
+`isinstance` guard at the top. Fixed a real generalization gap in
+`_close_host`'s PR-url extraction (`result.responses.get(
+"deployment_handoff")`) to also check `"feature_handoff"` — required for
+`RunClosed.pr_url` to populate correctly on the feature-mode path.
+Documented a genuine, unavoidable modeling gap: `RunCreated.work_kind`'s
+closed `Literal["bug","enhancement","new_feature"]` (TASK-1918
+deliberately did not extend it) has no "feature" value — `_run_feature`
+passes the structural placeholder `"bug"`, commented as never
+semantically read on this path (no Jira-issuetype selection happens in
+feature-mode).
+
+`intent_classifier.py`: `_load_brief` now routes through `parse_brief`
+(TASK-1918) instead of `WorkBrief.model_validate(_json)` directly, adding
+`ctx["feature_brief"]` as a third resolution-order key; a validated
+`FeatureBrief` is returned as-is (no allowlist/path-traversal checks —
+those are `WorkBrief`-specific) and published to `shared["feature_brief"]`.
+Invalid `FeatureBrief`s fail via Pydantic's own `_document_path_must_be_
+readable` validator (a `ValidationError`, which subclasses `ValueError`)
+inside `_load_brief` — always before any node dispatch, satisfying "fails
+before dispatch" without new validation logic.
+
+Tests: split feature-mode coverage across `test_declarative_flow.py`
+(declarative definition/parity/CEL suite — `test_definition_feature_graph`,
+`test_bug_topology_unchanged`, CEL semantics) and a new
+`test_feature_flow.py` (integration — `test_definition_parity_feature_mode`
+comparing the declarative definition's node/edge set against the real
+`build_dev_loop_feature_flow`'s imperative wiring; classifier routing;
+3 end-to-end `flow.run_flow()` runs with stubbed node `execute()`s
+covering happy-path/escalate/accept_with_notes; `test_feature_flow_
+feedback_retry` skip-marked pending FEAT-377/A). Added 3 tests to
+`test_runner.py` covering `run()`'s `Union` dispatch (WorkBrief path
+unchanged, FeatureBrief routes to `_run_feature`, missing-deps raises).
+Discovered and worked around a pre-existing `monkeypatch.setattr("dotted.
+string.path", ...)` fragility (`test_lazy_import.py`'s aggressive
+`sys.modules` purge/restore leaves the dotted-string resolver's
+`__import__` fast-path pointing at a stale module in specific
+orderings) twice — fixed by patching already-imported module/class
+objects directly instead of dotted strings, not by touching
+`test_lazy_import.py` itself (out of scope, pre-existing, and the same
+class of flake — `test_models_module_is_pure` — reproduces identically
+on the pre-TASK-1925 tree).
+
+Full dev_loop suite: 729 passed, 1 skipped (FEAT-377/A retry test),
+1 pre-existing unrelated failure (`test_models_module_is_pure`,
+test-order flake, reproduced before this task's changes too).
+`ruff check` clean on every modified/created file.
+
+**Deviations from spec**: none — the retry-edge omission is the spec's
+own documented degradation for FEAT-377/A's absence, not a deviation.

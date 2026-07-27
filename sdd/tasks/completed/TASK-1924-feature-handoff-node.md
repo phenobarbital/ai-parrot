@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-378 — DevLoop Enhancement — Feature-Mode Topology
 **Spec**: `sdd/specs/devloop-enhancement.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-07-27
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1918, TASK-1919
@@ -175,10 +177,45 @@ async def test_accept_notes_in_pr_body(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
+**Notes**: `FeatureHandoffNode` implemented in `nodes/feature_handoff.py`,
+registered as `"dev_loop.feature_handoff"`. Mirrors
+`DeploymentHandoffNode`'s push/draft-PR/retry-once/gh-then-REST-fallback
+pattern almost verbatim (kept duplicated rather than extracted into a
+shared helper, per the task's own "ONLY if it avoids copy-paste without
+touching DeploymentHandoffNode behavior" guidance — extracting would have
+required either changing `DeploymentHandoffNode`'s private method
+signatures or introducing a new shared module, both riskier than a
+~150-line, well-isolated duplication for a node this size). Generalized
+`_push_branch` into `_run_git(cwd, *args)` so push/add/commit for the
+docs artifact reuse one subprocess helper — the only git verbs issued
+anywhere in this module are `push`/`add`/`commit`; verified by
+`test_never_merges` (records every `_run_git` call across a full run)
+plus `test_create_pr_with_gh_never_issues_merge` (asserts the *real*,
+unmocked `gh` subprocess argv is always `pr create`, never `pr merge`).
+Docs artifact: `{DEV_LOOP_DOCS_ARTIFACT_DIR}/feat-<id>-<slug>.md`
+(id/slug parsed from `branch_name`, falling back to `feat_id` digits +
+a local slugify if the branch doesn't match the `feat-<id>-<slug>`
+convention), written, committed, and pushed as a second commit on the
+same branch — its commit/push failure is logged and degrades rather
+than blocking the already-created PR. Wiki ingest
+(`LLMWikiToolkit.create_page`) is gated on `DEV_LOOP_WIKI_PAGE_INGEST`
+AND a caller-supplied `wiki_toolkit` (the constructor never builds one
+itself — composing `PageIndexToolkit`/`GraphIndexToolkit`/`OKFToolkit`/
+`WikiConfig` is bootstrap's job); added a `wiki_name` constructor param
+(default `"ai-parrot"`) since `create_page`'s first positional arg has
+no codebase-wide default. `DevLoopGraphMemory.publish_run_outcome()`
+confirmed NOT on `dev` — guarded behind `try/except ImportError`,
+no-op with debug log. Jira transition/comment gated on BOTH an
+`issue_key` being present AND `jira_toolkit` being configured (unlike
+`DeploymentHandoffNode`, Jira is now fully optional here). Added the 2
+conf keys (`DEV_LOOP_DOCS_ARTIFACT_DIR`, `DEV_LOOP_WIKI_PAGE_INGEST`)
+following the `DEV_LOOP_JUDGE_PANEL` block style immediately preceding
+them. `DocsArtifactLinked` recorded via `session_host.apply()` (TASK-1919).
+All 13 unit tests pass (5 more than the task's own 8-test list — added
+explicit wiki-ingest-success, jira-present, and push-failure coverage);
+full dev_loop suite green except the pre-existing, unrelated
+`test_models_module_is_pure` test-order flake.
 
 **Deviations from spec**: none
