@@ -13,8 +13,10 @@ and are re-exported here so the existing registry entry
 (TASK-1937).
 """
 from ._legacy_tool import MultiStoreSearchTool, MultiStoreSearchSchema
+from .toolkit import MultiStoreSearchToolkit
 
 __all__ = (
     "MultiStoreSearchTool",
     "MultiStoreSearchSchema",
+    "MultiStoreSearchToolkit",
 )
