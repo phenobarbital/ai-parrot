@@ -237,6 +237,7 @@ def build_dev_loop_flow(
     codereview_dispatcher: Optional[Any] = None,
     require_deployment_approval: bool = False,
     graph_memory: Optional[Any] = None,
+    require_plan_approval: bool = False,
 ) -> AgentsFlow:
     """Build the eight-node dev-loop ``AgentsFlow`` (FEAT-132).
 
@@ -300,6 +301,9 @@ def build_dev_loop_flow(
             from_config()``) forwarded to Research/QA/Close/FailureHandler
             via ``build_dev_loop_node_factories``. ``None`` (default)
             makes every graph-memory seam a strict no-op.
+        require_plan_approval: FEAT-377 TASK-1916 — forwarded to
+            ``DevelopmentNode`` via ``build_dev_loop_node_factories``.
+            ``False`` (default) preserves current behavior exactly.
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -324,6 +328,7 @@ def build_dev_loop_flow(
         codereview_dispatcher=codereview_dispatcher,
         require_deployment_approval=require_deployment_approval,
         graph_memory=graph_memory,
+        require_plan_approval=require_plan_approval,
     )
     staged = AgentsFlow.from_definition(
         definition,

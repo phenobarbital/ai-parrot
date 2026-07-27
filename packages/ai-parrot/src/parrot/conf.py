@@ -995,6 +995,15 @@ DEV_LOOP_QA_MAX_RETRIES: int = config.getint("DEV_LOOP_QA_MAX_RETRIES", fallback
 # 2026-07-26); no Arango dual publish.
 DEV_LOOP_GRAPH_MEMORY_PATH: str = config.get("DEV_LOOP_GRAPH_MEMORY_PATH", fallback="")
 
+# FEAT-377 (TASK-1916): opt-in plan_approval gate (G5) — approve the Jira
+# ticket + spec + task decomposition BEFORE the agent fleet burns tokens
+# implementing it. False (default) preserves current behavior exactly
+# (mirrors the FEAT-322 require_deployment_approval flag's shape; unlike
+# that flag, this one IS conf-backed per this task's explicit design).
+DEV_LOOP_REQUIRE_PLAN_APPROVAL: bool = config.getboolean(
+    "DEV_LOOP_REQUIRE_PLAN_APPROVAL", fallback=False
+)
+
 # FEAT-375: Codex CLI adversarial second-opinion agent. These settings back
 # the "codex-adversarial" / "parallel" ``DEV_LOOP_CODEREVIEW_AGENT`` values
 # above — kept append-only here (rather than reflowing the block near

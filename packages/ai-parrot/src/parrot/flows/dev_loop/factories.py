@@ -53,6 +53,7 @@ def build_dev_loop_node_factories(
     codereview_dispatcher: Optional[Any] = None,
     require_deployment_approval: bool = False,
     graph_memory: Optional[Any] = None,
+    require_plan_approval: bool = False,
 ) -> Dict[str, NodeFactory]:
     """Return the ``{dev_loop.* type: factory}`` map binding live deps.
 
@@ -97,6 +98,15 @@ def build_dev_loop_node_factories(
             ``DevLoopCloseNode`` and ``FailureHandlerNode``. ``None``
             (default) makes every graph-memory seam in those nodes a
             strict no-op — byte-identical to pre-TASK-1914 behavior.
+        require_plan_approval: FEAT-377 TASK-1916 (G5) — forwarded to
+            ``DevelopmentNode``. Defaults to ``False`` (today's behavior,
+            unchanged); set ``True`` to require a ``plan_approval`` HITL
+            gate (opened by ``DevelopmentNode`` on its first entry — the
+            earliest point after ``ResearchNode`` where a node can block
+            the engine's dispatch of the next step, mirroring
+            ``require_deployment_approval``'s node-side shape) before the
+            agent fleet dispatches. Only takes effect when the run also
+            has a ``SessionHost``.
 
     Returns:
         A mapping suitable for ``node_factories=`` on
@@ -135,6 +145,7 @@ def build_dev_loop_node_factories(
                 pool_config=development_pool_config,
                 dispatcher_builder=development_dispatcher_builder,
                 pool_max=development_pool_max,
+                require_plan_approval=require_plan_approval,
                 name=nd.id,
             ),
             deps,

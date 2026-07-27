@@ -87,6 +87,7 @@ class DevelopmentNode(DevLoopNode):
         pool_config: Optional[DevAgentPoolConfig] = None,
         dispatcher_builder: Optional[DispatcherBuilder] = None,
         pool_max: int = 4,
+        require_plan_approval: bool = False,
         name: str = "development",
     ) -> None:
         """Initialise the node.
@@ -104,6 +105,17 @@ class DevelopmentNode(DevLoopNode):
                 resolver's claude-code fallback. Required for the pool path;
                 its absence degrades to single-agent with a warning.
             pool_max: Hard cap on total pool workers (``DEV_LOOP_DEV_POOL_MAX``).
+            require_plan_approval: FEAT-377 TASK-1916 (G5) opt-in — when
+                ``True`` AND a ``SessionHost`` is present, opens a
+                ``plan_approval`` gate on this node's FIRST entry (before
+                any dispatch) and awaits its resolution. Mirrors
+                ``DeploymentHandoffNode.require_deployment_approval``'s
+                shape/fail-open-on-no-host semantics; placed here (the
+                first node after ``ResearchNode``) because the engine has
+                no external "pause between two nodes" hook — every
+                existing gate is opened and awaited FROM WITHIN the node
+                that would otherwise act next, which is what actually
+                blocks the scheduler's dispatch of that node's own work.
             name: Node id.
         """
         super().__init__(node_id=name)
@@ -112,6 +124,7 @@ class DevelopmentNode(DevLoopNode):
         object.__setattr__(self, "_pool_config", pool_config)
         object.__setattr__(self, "_dispatcher_builder", dispatcher_builder)
         object.__setattr__(self, "_pool_max", pool_max)
+        object.__setattr__(self, "_require_plan_approval", require_plan_approval)
 
     # ------------------------------------------------------------------
     # Execute
@@ -147,6 +160,7 @@ class DevelopmentNode(DevLoopNode):
         """
         shared = self.shared_state(ctx)
         research: ResearchOutput = shared["research_output"]
+        await self._check_plan_approval(shared, research)
         research = self._with_repair_feedback(shared, research)
 
         pool_cfg = self._resolve_pool_config(shared)
@@ -185,6 +199,83 @@ class DevelopmentNode(DevLoopNode):
             return await self._execute_single(shared, research)
 
         return await self._execute_pool(shared, research, pool_cfg, scheduler)
+
+    # ------------------------------------------------------------------
+    # plan_approval HITL gate (FEAT-377 TASK-1916 — G5)
+    # ------------------------------------------------------------------
+
+    async def _check_plan_approval(
+        self, shared: Dict[str, Any], research: ResearchOutput
+    ) -> None:
+        """Open and await the ``plan_approval`` gate on this run's FIRST
+        entry into this node (opt-in via ``require_plan_approval``).
+
+        No-op when the flag is off, when this run already checked the
+        gate (a QA-repair-loop re-entry must never re-open it — the plan
+        was already approved), or — matching
+        ``DeploymentHandoffNode.require_deployment_approval``'s fail-open
+        legacy fallback — when no ``SessionHost`` is present.
+
+        Args:
+            shared: The flow's shared state dict.
+            research: The upstream research output (Jira key, spec path).
+
+        Raises:
+            RuntimeError: The gate resolved to anything other than
+                ``"approved"`` (rejected, or expired with a fail-closed
+                policy — this gate is opened with ``on_expiry="approve"``,
+                so only an explicit human rejection reaches this branch).
+                Any hard error from this node routes to ``failure_handler``
+                via the flow's ``on_error`` edge, the same terminate-the-run
+                effect a rejected ``deployment_approval`` gate has.
+        """
+        if not self._require_plan_approval or shared.get("_plan_gate_checked"):
+            return
+        shared["_plan_gate_checked"] = True
+
+        host = shared.get("session_host")
+        if host is None:
+            self.logger.warning(
+                "DevelopmentNode: require_plan_approval=True but no "
+                "session_host in shared state (legacy DevLoopRunner "
+                "construction) — proceeding without a plan_approval gate."
+            )
+            return
+
+        # Lazy import — avoids a runner.py <-> factories.py <-> this module
+        # import cycle (runner.py imports factories.py, which imports this
+        # module to build the node) — same pattern as
+        # deployment_handoff.py's own gate helper.
+        from parrot.flows.dev_loop.runner import gate_ttl_for
+
+        task_count = await self._count_tasks(research)
+        instructions = (
+            f"Jira: {research.jira_issue_key}\n"
+            f"Spec: {research.spec_path}\n"
+            f"Tasks: {task_count if task_count is not None else 'not yet decomposed'}"
+        )
+        gate_id, _ = host.open_gate(
+            kind="plan_approval",
+            node_id=self.name,
+            title=f"Approve plan: {research.jira_issue_key}",
+            instructions=instructions,
+            ttl_seconds=gate_ttl_for("plan_approval"),
+            on_expiry="approve",
+        )
+        gate = await host.wait_gate(gate_id)
+        if gate.status != "approved":
+            raise RuntimeError(
+                f"plan_approval {gate.status} by {gate.resolved_by or 'ttl'}"
+            )
+
+    async def _count_tasks(self, research: ResearchOutput) -> Optional[int]:
+        """Best-effort total task count from the per-spec index, for the
+        gate's instructions text. ``None`` when no index is readable yet
+        (e.g. the research subagent hasn't scaffolded tasks)."""
+        scheduler = await self._build_scheduler(research)
+        if scheduler is None:
+            return None
+        return len(scheduler._tasks)  # noqa: SLF001 - same-package internal read
 
     # ------------------------------------------------------------------
     # QA repair-loop re-entry (FEAT-377 TASK-1911)
